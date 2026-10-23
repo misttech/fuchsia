@@ -455,6 +455,43 @@ std::map<std::string, zx::event> Node::DuplicateTokenOverrides(
   return copy;
 }
 
+bool Node::IsHermeticPowerTest() const {
+  auto has_local_markers = [](const Node& node) {
+    return node.subtree_dictionary_ref_.has_value() ||
+           node.power_dependency_overrides_.has_value() || node.cpu_token_override_.has_value() ||
+           !node.node_token_overrides_.empty();
+  };
+  if (has_local_markers(*this)) {
+    return true;
+  }
+
+  if (parents().empty()) {
+    return false;
+  }
+
+  std::queue<const Node*> ancestors;
+  std::unordered_set<const Node*> visited;
+  ancestors.push(this);
+  visited.insert(this);
+
+  while (!ancestors.empty()) {
+    const Node* current = ancestors.front();
+    ancestors.pop();
+    for (const auto& parent_weak : current->parents()) {
+      std::shared_ptr<Node> parent = parent_weak.lock();
+      if (!parent || !visited.insert(parent.get()).second) {
+        continue;
+      }
+      if (has_local_markers(*parent)) {
+        return true;
+      }
+      ancestors.push(parent.get());
+    }
+  }
+
+  return false;
+}
+
 zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     std::string_view node_name, std::vector<std::weak_ptr<Resource>> dependencies,
     std::vector<std::string> parents_names,
@@ -577,11 +614,42 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
     parent_index++;
   }
 
-  // Copy the subtree dictionary of the primary parent node down to the composite.
+  // Copy the CPU token override from the primary parent, or from another parent if not set on
+  // the primary parent.
+  if (primary->cpu_token_override_.has_value() && primary->cpu_token_override_->is_valid()) {
+    zx::event token_copy;
+    ZX_ASSERT(primary->cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy) == ZX_OK);
+    composite->SetCpuTokenOverride(std::move(token_copy));
+  } else {
+    for (const auto& parent_weak : composite->parents()) {
+      if (auto parent_ptr = parent_weak.lock(); parent_ptr &&
+                                                parent_ptr->cpu_token_override_.has_value() &&
+                                                parent_ptr->cpu_token_override_->is_valid()) {
+        zx::event token_copy;
+        ZX_ASSERT(parent_ptr->cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy) ==
+                  ZX_OK);
+        composite->SetCpuTokenOverride(std::move(token_copy));
+        break;
+      }
+    }
+  }
+
+  // Copy the subtree dictionary of the primary parent node (or another parent if not set on
+  // primary) down to the composite.
   if (primary->HasSubtreeDictionaryRef()) {
     composite->SetSubtreeDictionaryRef(primary->subtree_dictionary_ref_);
     ZX_ASSERT_MSG(!has_dictionary_offer, "Cannot use dictionary offers on node %s",
                   std::string(node_name).c_str());
+  } else {
+    for (const auto& parent_weak : composite->parents()) {
+      if (auto parent_ptr = parent_weak.lock();
+          parent_ptr && parent_ptr->HasSubtreeDictionaryRef()) {
+        composite->SetSubtreeDictionaryRef(parent_ptr->subtree_dictionary_ref_);
+        ZX_ASSERT_MSG(!has_dictionary_offer, "Cannot use dictionary offers on node %s",
+                      std::string(node_name).c_str());
+        break;
+      }
+    }
   }
 
   composite->InitializeSelfResource({}, std::move(node_offers));
@@ -803,6 +871,7 @@ void Node::CompleteBind(zx::result<> result) {
       QuarantineNode();
     } else {
       state_ = Unbound{};
+      ResetPowerHandles();
     }
   }
 
@@ -939,6 +1008,7 @@ void Node::FinishShutdown(fit::callback<void()> shutdown_callback) {
     fdf_log::warn("Parent freed before child {} could be removed from it", name());
   }
   state_ = Unbound{};
+  ResetPowerHandles();
 
   for (auto& resource : received_resources_) {
     if (resource) {
@@ -977,7 +1047,7 @@ void Node::FinishRestart() {
   ZX_ASSERT_MSG(shutdown_intent() == ShutdownIntent::kRestart,
                 "FinishRestart called when node is not restarting.");
 
-  pe_handles_.reset();
+  ResetPowerHandles();
   GetNodeShutdownCoordinator().ResetShutdown();
 
   // Store previous url before we reset the state_.
@@ -1075,6 +1145,7 @@ void Node::QuarantineNode() {
     ZX_ASSERT(std::holds_alternative<Starting>(state_));
   }
   state_ = Quarantined{.driver_url = driver_url()};
+  ResetPowerHandles();
 
   GetNodeShutdownCoordinator().set_shutdown_intent(ShutdownIntent::kQuarantine);
   Remove(RemovalSet::kAll, nullptr);
@@ -2019,7 +2090,14 @@ void Node::StartDriver(
       fdf_internal::ProgramValue(start_info.program(), "use_next_vdso").value_or("") == "true";
   bool use_dynamic_linker =
       fdf_internal::ProgramValue(start_info.program(), "use_dynamic_linker").value_or("") == "true";
+  bool suspend_enabled =
+      fdf_internal::ProgramValue(start_info.program(), "suspend_enabled").value_or("") == "true";
+  bool power_managed_dispatchers_enabled =
+      fdf_internal::ProgramValue(start_info.program(), "power_managed_dispatchers_enabled")
+          .value_or("") == "true";
+  bool driver_requests_power_element = suspend_enabled || power_managed_dispatchers_enabled;
 
+  ResetPowerHandles();
   state_ = Starting{.driver_url = std::string(url)};
 
   if (host_restart_on_crash && colocate) {
@@ -2107,80 +2185,239 @@ void Node::StartDriver(
   // These are the start args used if we're not starting with the dynamic linker.
   DriverHost::DriverStartArgs normal_start_args =
       DriverHost::DriverStartArgs(properties, symbols, offers, start_info);
-  std::vector<fuchsia_power_broker::DependencyToken> deps;
 
-  bool suspend_enabled_for_node = (*node_manager_)->SuspendEnabled() || IsHermeticPowerTest();
+  auto url_str = std::string(start_info.resolved_url().get());
 
-  // Only create a series of dependencies if this is a suspend-enabled platform. On non-enabled
-  // platforms we'll use an empty vector for the rest of this function, which is valid. The
-  // rest of the driver start code also has checks so it works properly on non-enabled platforms.
-  if (suspend_enabled_for_node) {
-    if (power_dependency_overrides_.has_value()) {
-      for (const auto& dep : power_dependency_overrides_.value()) {
-        if (!dep.requires_token().has_value()) {
-          fdf_log::error("Power dependency override is missing requires_token, skipping.");
-          continue;
-        }
-        fuchsia_power_broker::DependencyToken clone;
-        zx_status_t dupe_result = dep.requires_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
-        if (dupe_result != ZX_OK) {
-          fdf_log::error("Power token duplicate failed for node: {}", std::string(url));
-          cb(zx::error(dupe_result));
+  // Run this after we create the lease for the power element, or
+  // immediately if lease is not created because this is not a
+  // power-enabled platform or the driver did not request a power element.
+  fit::callback<void(zx::result<>)> create_host_and_start_driver_cb =
+      [weak_self = weak_from_this(), found_driver_host = found_driver_host,
+       use_dynamic_linker = use_dynamic_linker,
+       dynamic_linker_load_args = std::move(dynamic_linker_load_args),
+       dynamic_linker_start_args = std::move(dynamic_linker_start_args), url = url_str,
+       component_controller = std::move(component_controller), use_next_vdso = use_next_vdso,
+       cb = std::move(cb),
+       normal_start_args = std::move(normal_start_args)](zx::result<> power_setup) mutable {
+        std::shared_ptr<driver_manager::Node> self = weak_self.lock();
+        if (!self) {
+          cb(zx::error(ZX_ERR_CANCELED));
           return;
         }
-        deps.push_back(std::move(clone));
-      }
-    } else {
-      std::span<const std::weak_ptr<Node>> parent_nodes = parents();
-      std::queue<std::weak_ptr<Node>> ancestors;
-      for (const auto& parent : parent_nodes) {
-        ancestors.push(parent);
-      }
 
-      std::unordered_set<zx_handle_t> visited_ancestor_koids;
-
-      // Collect dependencies on the most immediate ancestor nodes which have attached drivers.
-      // A parent driver might give us a valid token if:
-      //   * the parent went away after we identified it
-      //   * the parent failed registering a dependency token when it was created
-      //   * duplication of the parent's dependency token fails
-      while (!ancestors.empty()) {
-        std::shared_ptr<Node> ancestor = ancestors.front().lock();
-        ancestors.pop();
-        if (!ancestor) {
-          continue;
+        if (power_setup.is_error()) {
+          fdf_log::warn("{} failed to start because power element setup failed", std::string(url));
+          cb(power_setup);
+          return;
         }
 
-        // If this node is part of a power test, but the ancestor is not, skip
-        // the ancestor because we can't mix, in-test and out-of-test nodes.
-        if (IsHermeticPowerTest() && !ancestor->IsHermeticPowerTest()) {
-          continue;
+        PowerElementStartArgs pe_args;
+        // Package up power-related args for sending to the driver host.
+        if (self->pe_handles_.has_value()) {
+          auto element_control_channel =
+              self->pe_handles_->element_control.UnbindMaybeGetEndpoint();
+          ZX_ASSERT_MSG(element_control_channel.is_ok(),
+                        "Failed unbinding element control channel for transfer");
+          pe_args.element_control = std::move(*element_control_channel);
+
+          auto lessor_channel = self->pe_handles_->lessor.UnbindMaybeGetEndpoint();
+          ZX_ASSERT_MSG(lessor_channel.is_ok(), "Failed unbinding lessor channel for transfer");
+          pe_args.lessor = std::move(*lessor_channel);
+
+          zx::event token_copy = self->DuplicatePowerToken();
+          ZX_ASSERT_MSG(token_copy.is_valid(),
+                        "Power element token invalid on suspend-enabled platform.");
+          pe_args.power_element_token = std::move(token_copy);
+
+          pe_args.element_runner = std::move(self->pe_handles_->element_runner);
         }
 
-        if (!ancestor->is_bound()) {
-          for (const auto& elder : ancestor->parents()) {
-            ancestors.push(elder);
+        // If we're using the dynamic linker, we don't continue
+        // starting the driver here.
+        if (use_dynamic_linker) {
+          self->CreateHostAndStartDriverWithDynamicLinker(
+              std::move(*dynamic_linker_load_args), std::move(*dynamic_linker_start_args), url,
+              std::move(component_controller), std::move(pe_args), found_driver_host,
+              std::move(cb));
+          return;
+        }
+
+        if (!found_driver_host) {
+          self->driver_host_ =
+              (*self->node_manager_)->GetDriverHost(self->driver_host_name_for_colocation_);
+          if (self->driver_host_) {
+            found_driver_host = true;
+            if (use_dynamic_linker != self->driver_host()->IsDynamicLinkingEnabled()) {
+              fdf_log::error(
+                  "Failed to start driver '{}', driver is colocated and set "
+                  "use_dynamic_linker={} but its driver host is not configured "
+                  "for this",
+                  url, use_dynamic_linker ? "true" : "false");
+              cb(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+        }
+
+        // Since we're not colocating we need to create a new driver host.
+        if (!found_driver_host) {
+          auto result =
+              (*self->node_manager_)
+                  ->CreateDriverHost(use_next_vdso, self->driver_host_name_for_colocation_);
+          if (result.is_error()) {
+            cb(result.take_error());
+            return;
+          }
+          self->driver_host_ = result.value();
+        }
+
+        // Finally, talk to the driver host and start the driver.
+
+        // Bind the Node associated with the driver.
+        auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
+        fdf_log::info("Binding {} to {}", url, self->name());
+        auto driver_endpoints = fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
+
+        zx::event node_token;
+        if (normal_start_args.start_info_.component_instance().has_value()) {
+          node_token = std::move(*normal_start_args.start_info_.component_instance());
+        } else {
+          fdf_log::warn("Component instance not provided in start request");
+          ZX_ASSERT(zx::event::create(0, &node_token) == ZX_OK);
+        }
+
+        zx::event node_token_dup;
+        ZX_ASSERT(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &node_token_dup) == ZX_OK);
+
+        self->state_.emplace<DriverComponent>(
+            *self, std::string(url), std::move(component_controller), std::move(server_end),
+            std::move(driver_endpoints.client), std::move(node_token_dup));
+        self->ResetHealthCheckState();
+
+        fidl::Arena arena;
+        auto properties = fidl::ToWire(arena, normal_start_args.node_properties_);
+        auto symbols = fidl::ToWire(arena, normal_start_args.symbols_);
+        auto offers = fidl::ToWire(arena, normal_start_args.offers_);
+        auto start_info = fidl::ToWire(arena, std::move(normal_start_args.start_info_));
+        self->driver_host_.value()->Start(
+            std::move(client_end), self->name_, properties, symbols, offers, start_info,
+            std::move(node_token), std::move(driver_endpoints.server), std::move(pe_args),
+            [weak_self = self->weak_from_this(), name = self->name_,
+             cb = std::move(cb)](zx::result<> result) mutable {
+              auto node_ptr = weak_self.lock();
+              if (!node_ptr) {
+                fdf_log::warn("Node '{}' freed before it is used", name);
+                cb(result);
+                return;
+              }
+
+              if (result.is_error()) {
+                fdf_log::warn("Failed to start driver host for {}",
+                              node_ptr->MakeComponentMoniker());
+              }
+              cb(result);
+            });
+      };
+
+  const bool should_create_power_element =
+      driver_requests_power_element &&
+      ((*node_manager_)->SuspendEnabled() || IsHermeticPowerTest());
+
+  // If the driver did not request a power element (or the platform is not suspend-enabled),
+  // start the driver directly without creating a power element or searching /svc for Topology.
+  if (!should_create_power_element) {
+    create_host_and_start_driver_cb(zx::ok());
+    return;
+  }
+
+  std::vector<fuchsia_power_broker::DependencyToken> deps;
+  if (power_dependency_overrides_.has_value()) {
+    for (const auto& dep : power_dependency_overrides_.value()) {
+      if (!dep.requires_token().has_value()) {
+        fdf_log::error("Power dependency override is missing requires_token, skipping.");
+        continue;
+      }
+      fuchsia_power_broker::DependencyToken clone;
+      zx_status_t dupe_result = dep.requires_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+      if (dupe_result != ZX_OK) {
+        fdf_log::error("Power token duplicate failed for node: {}", std::string(url));
+        create_host_and_start_driver_cb(zx::error(dupe_result));
+        return;
+      }
+      deps.push_back(std::move(clone));
+    }
+  } else {
+    std::span<const std::weak_ptr<Node>> parent_nodes = parents();
+    std::queue<std::weak_ptr<Node>> ancestors;
+    for (const auto& parent : parent_nodes) {
+      ancestors.push(parent);
+    }
+
+    std::unordered_set<const Node*> visited_ancestors;
+    std::unordered_set<zx_handle_t> visited_ancestor_koids;
+
+    // Collect dependencies on the most immediate ancestor nodes which have power elements.
+    // A parent driver might give us a valid token if:
+    //   * the parent went away after we identified it
+    //   * the parent failed registering a dependency token when it was created
+    //   * duplication of the parent's dependency token fails
+    while (!ancestors.empty()) {
+      std::shared_ptr<Node> ancestor = ancestors.front().lock();
+      ancestors.pop();
+      if (!ancestor || !visited_ancestors.insert(ancestor.get()).second) {
+        continue;
+      }
+
+      // If this node is part of a power test, but the ancestor is not, skip
+      // the ancestor because we can't mix, in-test and out-of-test nodes.
+      if (IsHermeticPowerTest() && !ancestor->IsHermeticPowerTest()) {
+        continue;
+      }
+
+      if (!ancestor->HasActivePowerElement()) {
+        if (ancestor->power_dependency_overrides_.has_value()) {
+          for (const auto& dep : ancestor->power_dependency_overrides_.value()) {
+            if (!dep.requires_token().has_value()) {
+              fdf_log::error("Power dependency override is missing requires_token, skipping.");
+              continue;
+            }
+            if (visited_ancestor_koids.contains(dep.requires_token()->get())) {
+              continue;
+            }
+            fuchsia_power_broker::DependencyToken clone;
+            zx_status_t dupe_result = dep.requires_token()->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone);
+            if (dupe_result != ZX_OK) {
+              fdf_log::error("Power token duplicate failed for node: {}", std::string(url));
+              create_host_and_start_driver_cb(zx::error(dupe_result));
+              return;
+            }
+            visited_ancestor_koids.insert(dep.requires_token()->get());
+            deps.push_back(std::move(clone));
           }
           continue;
         }
-
-        // Prevent multiple dependencies on the same ancestor.
-        if (visited_ancestor_koids.contains(ancestor->GetPowerTokenHandle())) {
-          // We arrived back at the same ancestors through multiple parents.
-          continue;
+        for (const auto& elder : ancestor->parents()) {
+          ancestors.push(elder);
         }
-
-        zx::event token_copy = ancestor->DuplicatePowerToken();
-        if (!token_copy.is_valid()) {
-          fdf_log::error("Power token invalid on suspend-enabled platform for node: {}",
-                         std::string(url));
-          cb(zx::error(ZX_ERR_BAD_STATE));
-          return;
-        }
-
-        visited_ancestor_koids.insert(ancestor->GetPowerTokenHandle());
-        deps.push_back(std::move(token_copy));
+        continue;
       }
+
+      // Prevent multiple dependencies on the same ancestor.
+      if (visited_ancestor_koids.contains(ancestor->GetPowerTokenHandle())) {
+        // We arrived back at the same ancestors through multiple parents.
+        continue;
+      }
+
+      zx::event token_copy = ancestor->DuplicatePowerToken();
+      if (!token_copy.is_valid()) {
+        fdf_log::error("Power token invalid on suspend-enabled platform for node: {}",
+                       std::string(url));
+        create_host_and_start_driver_cb(zx::error(ZX_ERR_BAD_STATE));
+        return;
+      }
+
+      visited_ancestor_koids.insert(ancestor->GetPowerTokenHandle());
+      deps.push_back(std::move(token_copy));
     }
   }
 
@@ -2203,26 +2440,46 @@ void Node::StartDriver(
       std::move(element_runner_server),
       fidl::Client<fuchsia_power_broker::Lessor>(std::move(lessor_client), dispatcher_));
 
-  auto url_str = std::string(start_info.resolved_url().get());
-
   std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override;
   if (cpu_token_override_.has_value()) {
     fuchsia_power_broker::DependencyToken clone_token;
     ZX_ASSERT_MSG(cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone_token) == ZX_OK,
                   "Event duplication failed for cpu token override");
     cpu_token_override = std::move(clone_token);
+  } else if (IsHermeticPowerTest()) {
+    std::queue<std::weak_ptr<Node>> ancestors;
+    for (const auto& parent : parents()) {
+      ancestors.push(parent);
+    }
+    std::unordered_set<const Node*> visited_ancestors;
+    while (!ancestors.empty()) {
+      std::shared_ptr<Node> ancestor = ancestors.front().lock();
+      ancestors.pop();
+      if (!ancestor || !visited_ancestors.insert(ancestor.get()).second) {
+        continue;
+      }
+      if (!ancestor->IsHermeticPowerTest()) {
+        continue;
+      }
+      if (ancestor->cpu_token_override_.has_value() && ancestor->cpu_token_override_->is_valid()) {
+        fuchsia_power_broker::DependencyToken clone_token;
+        ZX_ASSERT_MSG(
+            ancestor->cpu_token_override_->duplicate(ZX_RIGHT_SAME_RIGHTS, &clone_token) == ZX_OK,
+            "Event duplication failed for ancestor cpu token override");
+        cpu_token_override = std::move(clone_token);
+        break;
+      }
+      for (const auto& elder : ancestor->parents()) {
+        ancestors.push(elder);
+      }
+    }
   }
 
   fit::callback<void(zx::result<std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>>)>
       do_start_driver = [weak_self = weak_from_this(), handles_ptr = handles_ptr,
-                         cb = std::move(cb), use_dynamic_linker = use_dynamic_linker, url = url_str,
-                         found_driver_host = found_driver_host,
-                         dynamic_linker_start_args = std::move(dynamic_linker_start_args),
-                         dynamic_linker_load_args = std::move(dynamic_linker_load_args),
-                         component_controller = std::move(component_controller),
-                         use_next_vdso = use_next_vdso,
-                         normal_start_args = std::move(normal_start_args), clone = std::move(clone),
-                         deps = std::move(deps),
+                         create_host_and_start_driver_cb =
+                             std::move(create_host_and_start_driver_cb),
+                         url = url_str, clone = std::move(clone), deps = std::move(deps),
                          element_control_server = std::move(element_control_server),
                          element_runner_client = std::move(element_runner_client),
                          lessor_server = std::move(lessor_server),
@@ -2232,7 +2489,7 @@ void Node::StartDriver(
                                 topology_client) mutable {
         std::shared_ptr<driver_manager::Node> self = weak_self.lock();
         if (!self) {
-          cb(zx::error(ZX_ERR_CANCELED));
+          create_host_and_start_driver_cb(zx::error(ZX_ERR_CANCELED));
           return;
         }
 
@@ -2259,172 +2516,25 @@ void Node::StartDriver(
                 std::move(element_control_server), std::move(element_runner_client),
                 std::move(lessor_server), self->collection(), std::move(cpu_token_override),
                 std::move(startup_lease_peer), self->IsHermeticPowerTest(),
-                [weak_self = self->weak_from_this(), handles_ptr = handles_ptr, cb = std::move(cb),
-                 use_dynamic_linker = use_dynamic_linker, url = url,
-                 found_driver_host = found_driver_host,
-                 dynamic_linker_start_args = std::move(dynamic_linker_start_args),
-                 dynamic_linker_load_args = std::move(dynamic_linker_load_args),
-                 component_controller = std::move(component_controller),
-                 use_next_vdso = use_next_vdso, normal_start_args = std::move(normal_start_args)](
-                    zx::result<bool> pe_created) mutable {
+                [weak_self = self->weak_from_this(), handles_ptr = handles_ptr,
+                 create_host_and_start_driver_cb = std::move(create_host_and_start_driver_cb),
+                 url = url](zx::result<bool> pe_created) mutable {
                   std::shared_ptr<driver_manager::Node> self = weak_self.lock();
                   if (!self) {
-                    cb(zx::error(ZX_ERR_CANCELED));
+                    create_host_and_start_driver_cb(zx::error(ZX_ERR_CANCELED));
                     return;
                   }
 
                   if (pe_created.is_error()) {
                     fdf_log::warn("Failed creating power element for driver {}", url);
-                    cb(pe_created.take_error());
+                    self->ResetPowerHandles();
+                    create_host_and_start_driver_cb(pe_created.take_error());
                     return;
                   }
                   zx::event copy;
                   ZX_ASSERT_MSG(
                       self->power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy) == ZX_OK,
                       "Power element token duplication failed after element creation.");
-
-                  // Run this after we create the lease for the power element, or
-                  // immediately if lease is not created because this is not a
-                  // power-enabled platform.
-                  fit::callback<void(zx::result<>)> create_host_and_start_driver_cb =
-                      [weak_self = self->weak_from_this(), found_driver_host = found_driver_host,
-                       use_dynamic_linker = use_dynamic_linker,
-                       dynamic_linker_load_args = std::move(dynamic_linker_load_args),
-                       dynamic_linker_start_args = std::move(dynamic_linker_start_args), url = url,
-                       component_controller = std::move(component_controller),
-                       use_next_vdso = use_next_vdso, cb = std::move(cb),
-                       normal_start_args =
-                           std::move(normal_start_args)](zx::result<> power_setup) mutable {
-                        std::shared_ptr<driver_manager::Node> self = weak_self.lock();
-                        if (!self) {
-                          return;
-                        }
-
-                        if (power_setup.is_error()) {
-                          fdf_log::warn("{} failed to start because power element setup failed",
-                                        std::string(url));
-                          cb(power_setup);
-                          return;
-                        }
-
-                        PowerElementStartArgs pe_args;
-                        // Package up power-related args for sending to the driver host.
-                        if (self->pe_handles_.has_value()) {
-                          auto element_control_channel =
-                              self->pe_handles_->element_control.UnbindMaybeGetEndpoint();
-                          ZX_ASSERT_MSG(element_control_channel.is_ok(),
-                                        "Failed unbinding element control channel for transfer");
-                          pe_args.element_control = std::move(*element_control_channel);
-
-                          auto lessor_channel = self->pe_handles_->lessor.UnbindMaybeGetEndpoint();
-                          ZX_ASSERT_MSG(lessor_channel.is_ok(),
-                                        "Failed unbinding lessor channel for transfer");
-                          pe_args.lessor = std::move(*lessor_channel);
-
-                          zx::event token_copy = self->DuplicatePowerToken();
-                          ZX_ASSERT_MSG(token_copy.is_valid(),
-                                        "Power element token invalid on suspend-enabled platform.");
-                          pe_args.power_element_token = std::move(token_copy);
-
-                          pe_args.element_runner = std::move(self->pe_handles_->element_runner);
-                        }
-
-                        // If we're using the dynamic linker, we don't continue
-                        // starting the driver here.
-                        if (use_dynamic_linker) {
-                          self->CreateHostAndStartDriverWithDynamicLinker(
-                              std::move(*dynamic_linker_load_args),
-                              std::move(*dynamic_linker_start_args), url,
-                              std::move(component_controller), std::move(pe_args),
-                              found_driver_host, std::move(cb));
-                          return;
-                        }
-
-                        if (!found_driver_host) {
-                          self->driver_host_ =
-                              (*self->node_manager_)
-                                  ->GetDriverHost(self->driver_host_name_for_colocation_);
-                          if (self->driver_host_) {
-                            found_driver_host = true;
-                            if (use_dynamic_linker !=
-                                self->driver_host()->IsDynamicLinkingEnabled()) {
-                              fdf_log::error(
-                                  "Failed to start driver '{}', driver is colocated and set "
-                                  "use_dynamic_linker={} but its driver host is not configured "
-                                  "for this",
-                                  url, use_dynamic_linker ? "true" : "false");
-                              cb(zx::error(ZX_ERR_INVALID_ARGS));
-                              return;
-                            }
-                          }
-                        }
-
-                        // Since we're not colocating we need to create a new driver host.
-                        if (!found_driver_host) {
-                          auto result =
-                              (*self->node_manager_)
-                                  ->CreateDriverHost(use_next_vdso,
-                                                     self->driver_host_name_for_colocation_);
-                          if (result.is_error()) {
-                            cb(result.take_error());
-                            return;
-                          }
-                          self->driver_host_ = result.value();
-                        }
-
-                        // Finally, talk to the driver host and start the driver.
-
-                        // Bind the Node associated with the driver.
-                        auto [client_end, server_end] = fidl::Endpoints<fdf::Node>::Create();
-                        fdf_log::info("Binding {} to {}", url, self->name());
-                        auto driver_endpoints =
-                            fidl::Endpoints<fuchsia_driver_host::Driver>::Create();
-
-                        zx::event node_token;
-                        if (normal_start_args.start_info_.component_instance().has_value()) {
-                          node_token =
-                              std::move(*normal_start_args.start_info_.component_instance());
-                        } else {
-                          fdf_log::warn("Component instance not provided in start request");
-                          ZX_ASSERT(zx::event::create(0, &node_token) == ZX_OK);
-                        }
-
-                        zx::event node_token_dup;
-                        ZX_ASSERT(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &node_token_dup) ==
-                                  ZX_OK);
-
-                        self->state_.emplace<DriverComponent>(
-                            *self, std::string(url), std::move(component_controller),
-                            std::move(server_end), std::move(driver_endpoints.client),
-                            std::move(node_token_dup));
-                        self->ResetHealthCheckState();
-
-                        fidl::Arena arena;
-                        auto properties = fidl::ToWire(arena, normal_start_args.node_properties_);
-                        auto symbols = fidl::ToWire(arena, normal_start_args.symbols_);
-                        auto offers = fidl::ToWire(arena, normal_start_args.offers_);
-                        auto start_info =
-                            fidl::ToWire(arena, std::move(normal_start_args.start_info_));
-                        self->driver_host_.value()->Start(
-                            std::move(client_end), self->name_, properties, symbols, offers,
-                            start_info, std::move(node_token), std::move(driver_endpoints.server),
-                            std::move(pe_args),
-                            [weak_self = self->weak_from_this(), name = self->name_,
-                             cb = std::move(cb)](zx::result<> result) mutable {
-                              auto node_ptr = weak_self.lock();
-                              if (!node_ptr) {
-                                fdf_log::warn("Node '{}' freed before it is used", name);
-                                cb(result);
-                                return;
-                              }
-
-                              if (result.is_error()) {
-                                fdf_log::warn("Failed to start driver host for {}",
-                                              node_ptr->MakeComponentMoniker());
-                              }
-                              cb(result);
-                            });
-                      };
 
                   // If this is a suspend-enabled platform, CreatePowerElement returns
                   // zx::result<true>. If suspend isn't enabled, we get a zx::result<false>, which
@@ -2456,6 +2566,7 @@ void Node::StartDriver(
                             fdf_log::warn(
                                 "Failed creating power dependency token for {}, this may lead to improper ",
                                 std::string(url), "power management behavior.");
+                            self->ResetPowerHandles();
                             self->power_element_token_.reset();
                             if (call_result.error_value().is_framework_error()) {
                               create_host_and_start_driver_cb(
@@ -2466,20 +2577,16 @@ void Node::StartDriver(
                             }
                             return;
                           }
+                          self->has_power_element_ = true;
                           create_host_and_start_driver_cb(zx::ok());
                         });
                   } else {
                     // CreatePowerElement returned zx::ok(false).
+                    self->ResetPowerHandles();
                     create_host_and_start_driver_cb(zx::ok());
                   }
                 });
       };
-
-  // If the platform is not suspend enabled, skip the directory search below.
-  if (!suspend_enabled_for_node) {
-    do_start_driver(zx::ok(std::nullopt));
-    return;
-  }
 
   // Skip the directory search if the driver doesn't have a svc dir.
   if (!svc_dir.is_valid()) {

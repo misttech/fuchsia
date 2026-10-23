@@ -243,7 +243,24 @@ enum DriverPowerState {
 enum PowerConfiguration {
     DriverOwned,
     RuntimeControlled,
-    HostOwned,
+    NoElement,
+}
+
+impl From<&fdata::Dictionary> for PowerConfiguration {
+    fn from(program: &fdata::Dictionary) -> Self {
+        let power_aware = get_program_string(program, "suspend_enabled")
+            .map_or_else(|_| false, |val| matches!(val, "true"));
+
+        let power_managed_dispatchers_enabled =
+            get_program_string(program, "power_managed_dispatchers_enabled")
+                .map_or_else(|_| false, |val| matches!(val, "true"));
+
+        match (power_aware, power_managed_dispatchers_enabled) {
+            (_, true) => PowerConfiguration::RuntimeControlled,
+            (true, false) => PowerConfiguration::DriverOwned,
+            (false, false) => PowerConfiguration::NoElement,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -308,10 +325,8 @@ struct PowerElementHandles {
     topology: Option<TopologyProxy>,
 }
 
-#[allow(unused)]
 #[derive(Debug)]
 enum PowerElementState {
-    HostOwned(PowerElementHandles),
     DriverOwned(Option<ClientEnd<ElementControlMarker>>),
     RuntimeControlled(PowerElementHandles),
     NoElement,
@@ -422,16 +437,7 @@ impl Driver {
                 });
                 (power_element, for_driver)
             }
-            PowerConfiguration::HostOwned => {
-                let power_element = PowerElementState::HostOwned(PowerElementHandles {
-                    control: Some(control_client),
-                    runner: Some(runner_server),
-                    lessor: lessor_client.into_proxy(),
-                    element_token: token,
-                    topology: None,
-                });
-                (power_element, None)
-            }
+            PowerConfiguration::NoElement => (PowerElementState::NoElement, None),
         }
     }
 
@@ -484,18 +490,7 @@ impl Driver {
             None
         };
 
-        let power_aware = get_program_string(program, "suspend_enabled")
-            .map_or_else(|_| false, |val| matches!(val, "true"));
-
-        let power_managed_dispatchers_enabled =
-            get_program_string(program, "power_managed_dispatchers_enabled")
-                .map_or_else(|_| false, |val| matches!(val, "true"));
-
-        let power_config = match (power_aware, power_managed_dispatchers_enabled) {
-            (_, true) => PowerConfiguration::RuntimeControlled,
-            (true, false) => PowerConfiguration::DriverOwned,
-            (false, false) => PowerConfiguration::HostOwned,
-        };
+        let power_config = PowerConfiguration::from(program);
 
         let library = LoaderService::try_load(vmo, &vmar).await?;
         start_args.vmar = vmar;
@@ -581,18 +576,7 @@ impl Driver {
             get_program_string(program, "default_dispatcher_scheduler_role").unwrap_or("");
         let allowed_scheduler_roles = get_program_strvec(program, "allowed_scheduler_roles")?;
 
-        let power_aware = get_program_string(program, "suspend_enabled")
-            .map_or_else(|_| false, |val| matches!(val, "true"));
-
-        let power_managed_dispatchers_enabled =
-            get_program_string(program, "power_managed_dispatchers_enabled")
-                .map_or_else(|_| false, |val| matches!(val, "true"));
-
-        let power_config = match (power_aware, power_managed_dispatchers_enabled) {
-            (_, true) => PowerConfiguration::RuntimeControlled,
-            (true, false) => PowerConfiguration::DriverOwned,
-            (false, false) => PowerConfiguration::HostOwned,
-        };
+        let power_config = PowerConfiguration::from(program);
 
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
         let incoming: Namespace = incoming.try_into().map_err(|_| Status::INVALID_ARGS)?;
@@ -1007,56 +991,37 @@ impl Driver {
         scope: &fuchsia_async::Scope,
     ) {
         let mut inner = self.inner.lock();
-        match &mut inner.power_element {
-            PowerElementState::HostOwned(PowerElementHandles { runner, .. }) => {
-                // Host-owned power element: simply acknowledges the level-change request.
-                if let Some(runner_channel) = runner.take() {
-                    scope.spawn_local(async move {
-                        let mut element_runner_req_stream = runner_channel.into_stream();
-                        while let Ok(Some(ElementRunnerRequest::SetLevel { level: _, responder })) =
-                            element_runner_req_stream.try_next().await
-                        {
-                            responder.send().ok();
-                        }
-                    });
+        if let PowerElementState::RuntimeControlled(PowerElementHandles { runner, .. }) =
+            &mut inner.power_element
+        {
+            // Runtime-controlled power element: Deeply integrated with the driver and the
+            // driver runtime. Element changes propagate through to the driver runtime to
+            // manage task dispatching, and call a lifecycle hook on the driver to manage
+            // the state of the hardware.
+            inner.power_element_runner_task = Some(self.spawn_power_element_runner(
+                runner.take().expect("runner"),
+                client,
+                scope,
+            ));
+            drop(inner);
+
+            let weak_self = Arc::downgrade(self);
+            let resume_requester = fdf_env::ResumeRequester::new(move || {
+                if let Some(driver) = weak_self.upgrade() {
+                    driver.request_power_lease();
+                    Ok(())
                 } else {
-                    log::error!(
-                        "Host-owned power element: Failed to get power element runner handle for {}",
-                        self.node_name
-                    );
+                    Err(zx::Status::PEER_CLOSED)
                 }
-            }
-            PowerElementState::RuntimeControlled(PowerElementHandles { runner, .. }) => {
-                // Runtime-controlled power element: Deeply integrated with the driver and the
-                // driver runtime. Element changes propagate through to the driver runtime to
-                // manage task dispatching, and call a lifecycle hook on the driver to manage
-                // the state of the hardware.
-                inner.power_element_runner_task = Some(self.spawn_power_element_runner(
-                    runner.take().expect("runner"),
-                    client,
-                    scope,
-                ));
-                drop(inner);
+            });
 
-                let weak_self = Arc::downgrade(self);
-                let resume_requester = fdf_env::ResumeRequester::new(move || {
-                    if let Some(driver) = weak_self.upgrade() {
-                        driver.request_power_lease();
-                        Ok(())
-                    } else {
-                        Err(zx::Status::PEER_CLOSED)
-                    }
-                });
-
-                let registration = self
-                    .runtime_handle
-                    .lock()
-                    .as_ref()
-                    .expect("driver must have a runtime handle")
-                    .register_resume_requester(resume_requester);
-                self.inner.lock().resume_requester = Some(registration);
-            }
-            _ => {}
+            let registration = self
+                .runtime_handle
+                .lock()
+                .as_ref()
+                .expect("driver must have a runtime handle")
+                .register_resume_requester(resume_requester);
+            self.inner.lock().resume_requester = Some(registration);
         }
     }
 
@@ -1347,8 +1312,7 @@ impl Driver {
 
         // Drop the element control channel to destroy the power element
         match &mut self.inner.lock().power_element {
-            PowerElementState::HostOwned(PowerElementHandles { control, .. })
-            | PowerElementState::RuntimeControlled(PowerElementHandles { control, .. })
+            PowerElementState::RuntimeControlled(PowerElementHandles { control, .. })
             | PowerElementState::DriverOwned(control) => {
                 drop(control.take());
             }
@@ -1745,6 +1709,130 @@ mod tests {
             }
         }
         scope.abort().await;
+    }
+
+    #[fuchsia::test]
+    fn power_configuration_from_program() {
+        let empty = fdata::Dictionary::default();
+        assert_eq!(PowerConfiguration::from(&empty), PowerConfiguration::NoElement);
+
+        let false_both = fdata::Dictionary {
+            entries: Some(vec![
+                fdata::DictionaryEntry {
+                    key: "suspend_enabled".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("false".to_string()))),
+                },
+                fdata::DictionaryEntry {
+                    key: "power_managed_dispatchers_enabled".to_string(),
+                    value: Some(Box::new(fdata::DictionaryValue::Str("false".to_string()))),
+                },
+            ]),
+            ..Default::default()
+        };
+        assert_eq!(PowerConfiguration::from(&false_both), PowerConfiguration::NoElement);
+
+        let driver_owned = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "suspend_enabled".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(PowerConfiguration::from(&driver_owned), PowerConfiguration::DriverOwned);
+
+        let runtime_controlled = fdata::Dictionary {
+            entries: Some(vec![fdata::DictionaryEntry {
+                key: "power_managed_dispatchers_enabled".to_string(),
+                value: Some(Box::new(fdata::DictionaryValue::Str("true".to_string()))),
+            }]),
+            ..Default::default()
+        };
+        assert_eq!(
+            PowerConfiguration::from(&runtime_controlled),
+            PowerConfiguration::RuntimeControlled
+        );
+    }
+
+    #[fuchsia::test]
+    async fn process_power_elements_respects_configuration() {
+        let incoming: Incoming = namespace::Namespace::new().into();
+
+        // 1. NoElement with no handles -> NoElement
+        let (state, for_driver) =
+            Driver::process_power_elements(None, PowerConfiguration::NoElement, &incoming);
+        assert!(matches!(state, PowerElementState::NoElement));
+        assert!(for_driver.is_none());
+
+        // 2. DriverOwned with handles -> DriverOwned, runner and lessor remain in for_driver
+        let (control_client, _control_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::ElementControlMarker>();
+        let (_runner_client, runner_server) =
+            fidl::endpoints::create_endpoints::<ElementRunnerMarker>();
+        let (lessor_client, _lessor_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::LessorMarker>();
+        let pe_args = fidl_fdf::PowerElementArgs {
+            control_client: Some(control_client),
+            runner_server: Some(runner_server),
+            lessor_client: Some(lessor_client),
+            token: Some(zx::Event::create()),
+            ..Default::default()
+        };
+        let (state, for_driver) = Driver::process_power_elements(
+            Some(pe_args),
+            PowerConfiguration::DriverOwned,
+            &incoming,
+        );
+        assert!(matches!(state, PowerElementState::DriverOwned(Some(_))));
+        let pe_args = for_driver.as_ref().unwrap();
+        assert!(pe_args.control_client.is_none());
+        assert!(pe_args.runner_server.is_some());
+        assert!(pe_args.lessor_client.is_some());
+        assert!(pe_args.token.is_some());
+
+        // 3. RuntimeControlled with handles -> RuntimeControlled, only token remains in for_driver
+        let (control_client, _control_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::ElementControlMarker>();
+        let (_runner_client, runner_server) =
+            fidl::endpoints::create_endpoints::<ElementRunnerMarker>();
+        let (lessor_client, _lessor_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::LessorMarker>();
+        let pe_args = fidl_fdf::PowerElementArgs {
+            control_client: Some(control_client),
+            runner_server: Some(runner_server),
+            lessor_client: Some(lessor_client),
+            token: Some(zx::Event::create()),
+            ..Default::default()
+        };
+        let (state, for_driver) = Driver::process_power_elements(
+            Some(pe_args),
+            PowerConfiguration::RuntimeControlled,
+            &incoming,
+        );
+        assert!(matches!(state, PowerElementState::RuntimeControlled(_)));
+        let pe_args = for_driver.as_ref().unwrap();
+        assert!(pe_args.control_client.is_none());
+        assert!(pe_args.runner_server.is_none());
+        assert!(pe_args.lessor_client.is_none());
+        assert!(pe_args.token.is_some());
+
+        // 4. NoElement even if handles are provided -> NoElement and None for driver
+        let (control_client, _control_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::ElementControlMarker>();
+        let (_runner_client, runner_server) =
+            fidl::endpoints::create_endpoints::<ElementRunnerMarker>();
+        let (lessor_client, _lessor_server) =
+            fidl::endpoints::create_endpoints::<fidl_fuchsia_power_broker::LessorMarker>();
+        let pe_args = fidl_fdf::PowerElementArgs {
+            control_client: Some(control_client),
+            runner_server: Some(runner_server),
+            lessor_client: Some(lessor_client),
+            token: Some(zx::Event::create()),
+            ..Default::default()
+        };
+        let (state, for_driver) =
+            Driver::process_power_elements(Some(pe_args), PowerConfiguration::NoElement, &incoming);
+        assert!(matches!(state, PowerElementState::NoElement));
+        assert!(for_driver.is_none());
     }
 }
 

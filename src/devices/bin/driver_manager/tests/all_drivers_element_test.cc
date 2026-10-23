@@ -154,7 +154,7 @@ TEST_F(AllDriversElementTest, TestSetLevel) {
 
   // Create a bound leaf node and set its startup lease.
   auto child = CreateNode("child_node");
-  child->set_bound_for_testing(true);
+  child->UpdateBoundStateForTesting(true);
   zx::eventpair startup_lease, lease_peer;
   ASSERT_EQ(zx::eventpair::create(0, &startup_lease, &lease_peer), ZX_OK);
   child->set_startup_lease_for_testing(std::move(startup_lease));
@@ -196,8 +196,8 @@ TEST_F(AllDriversElementTest, TestCompleteStartupTransitionLinearChain) {
   auto parent = CreateNode("parent", root());
   auto child = CreateNode("child", parent);
 
-  parent->set_bound_for_testing(true);
-  child->set_bound_for_testing(true);
+  parent->UpdateBoundStateForTesting(true);
+  child->UpdateBoundStateForTesting(true);
 
   zx::eventpair lease_a, lease_a_peer;
   ASSERT_EQ(zx::eventpair::create(0, &lease_a, &lease_a_peer), ZX_OK);
@@ -248,8 +248,8 @@ TEST_F(AllDriversElementTest, TestCompleteStartupTransitionBranchingTree) {
   auto child_a = CreateNode("child_a", root());
   auto child_b = CreateNode("child_b", root());
 
-  child_a->set_bound_for_testing(true);
-  child_b->set_bound_for_testing(true);
+  child_a->UpdateBoundStateForTesting(true);
+  child_b->UpdateBoundStateForTesting(true);
 
   zx::eventpair lease_a, lease_a_peer;
   ASSERT_EQ(zx::eventpair::create(0, &lease_a, &lease_a_peer), ZX_OK);
@@ -302,9 +302,9 @@ TEST_F(AllDriversElementTest, TestCompleteStartupTransitionDiamondDAG) {
   std::vector<std::weak_ptr<Node>> parents = {parent_a, parent_b};
   auto composite = CreateCompositeNode("composite", parents, {{}, {}});
 
-  parent_a->set_bound_for_testing(true);
-  parent_b->set_bound_for_testing(true);
-  composite->set_bound_for_testing(true);
+  parent_a->UpdateBoundStateForTesting(true);
+  parent_b->UpdateBoundStateForTesting(true);
+  composite->UpdateBoundStateForTesting(true);
 
   zx::eventpair lease_a, lease_a_peer;
   ASSERT_EQ(zx::eventpair::create(0, &lease_a, &lease_a_peer), ZX_OK);
@@ -380,7 +380,7 @@ TEST_F(AllDriversElementTest, TestOnNodeBoundLeaf) {
 
   // Create a bound leaf node
   auto child = CreateNode("child_node");
-  child->set_bound_for_testing(true);
+  child->UpdateBoundStateForTesting(true);
 
   element.OnNodeBound(child);
 
@@ -429,10 +429,10 @@ TEST_F(AllDriversElementTest, TestOnNodeBoundNonLeaf) {
 
   // Create a parent node (non-leaf because it will have a bound child)
   auto parent = CreateNode("parent_node");
-  parent->set_bound_for_testing(true);
+  parent->UpdateBoundStateForTesting(true);
 
   auto child = CreateNode("child_node", parent);
-  child->set_bound_for_testing(true);
+  child->UpdateBoundStateForTesting(true);
 
   element.OnNodeBound(parent);
 
@@ -446,8 +446,8 @@ TEST_F(AllDriversElementTest, TestCompleteStartupTransitionAddsDependencies) {
   auto parent = CreateNode("parent", root());
   auto child = CreateNode("child", parent);
 
-  parent->set_bound_for_testing(true);
-  child->set_bound_for_testing(true);
+  parent->UpdateBoundStateForTesting(true);
+  child->UpdateBoundStateForTesting(true);
 
   AllDriversElement element(nullptr, root());
   auto [runner_client, runner_server] =
@@ -508,7 +508,7 @@ TEST_F(AllDriversElementTest, TestOnNodeBoundAfterRestartAddsDependencyAgain) {
   SetTransitionComplete(element, true);
 
   auto child = CreateNode("child_node");
-  child->set_bound_for_testing(true);
+  child->UpdateBoundStateForTesting(true);
   zx::eventpair first_lease, first_lease_peer;
   ASSERT_EQ(zx::eventpair::create(0, &first_lease, &first_lease_peer), ZX_OK);
   child->set_startup_lease_for_testing(std::move(first_lease));
@@ -554,13 +554,13 @@ TEST_F(AllDriversElementTest, TestLeaseAllDrivers) {
   // (bound)
   auto parent = CreateNode("parent_node");
   auto child_a = CreateNode("child_a", parent);
-  child_a->set_bound_for_testing(true);
+  child_a->UpdateBoundStateForTesting(true);
 
   auto child_b = CreateNode("child_b", parent);
-  child_b->set_bound_for_testing(false);
+  child_b->UpdateBoundStateForTesting(false);
 
   auto grandchild = CreateNode("grandchild", child_b);
-  grandchild->set_bound_for_testing(true);
+  grandchild->UpdateBoundStateForTesting(true);
 
   // Call LeaseAllDrivers
   power_manager.LeaseAllDrivers(parent, [] {});
@@ -609,7 +609,7 @@ TEST_F(AllDriversElementTest, TestStartupLeaseHeldUntilAddDependencyCompletes) {
   SetTransitionComplete(element, true);
 
   auto child = CreateNode("child_node");
-  child->set_bound_for_testing(true);
+  child->UpdateBoundStateForTesting(true);
   zx::eventpair startup_lease, lease_peer;
   ASSERT_EQ(zx::eventpair::create(0, &startup_lease, &lease_peer), ZX_OK);
   child->set_startup_lease_for_testing(std::move(startup_lease));
@@ -632,6 +632,162 @@ TEST_F(AllDriversElementTest, TestStartupLeaseHeldUntilAddDependencyCompletes) {
   // The startup lease should now be dropped.
   EXPECT_EQ(lease_peer.wait_one(ZX_EVENTPAIR_PEER_CLOSED, zx::time::infinite_past(), &pending),
             ZX_OK);
+}
+
+TEST_F(AllDriversElementTest, TestCompleteStartupTransitionDeepestPowerEnabledNodes) {
+  // Topology:
+  // root -> branch1_pe (PE) -> branch1_leaf_non_pe (bound, no PE)
+  // root -> branch2_non_pe (bound, no PE) -> branch2_leaf_pe (PE)
+  auto branch1_pe = CreateNode("branch1_pe", root());
+  auto branch1_leaf_non_pe = CreateNode("branch1_leaf_non_pe", branch1_pe);
+  branch1_pe->UpdateBoundStateForTesting(true, true);
+  branch1_leaf_non_pe->UpdateBoundStateForTesting(true, false);
+
+  auto branch2_non_pe = CreateNode("branch2_non_pe", root());
+  auto branch2_leaf_pe = CreateNode("branch2_leaf_pe", branch2_non_pe);
+  branch2_non_pe->UpdateBoundStateForTesting(true, false);
+  branch2_leaf_pe->UpdateBoundStateForTesting(true, true);
+
+  AllDriversElement element(nullptr, root());
+  auto [control_client, control_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+  FakeElementControl fake_control;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> bindings;
+  bindings.AddBinding(dispatcher(), std::move(control_server), &fake_control,
+                      fidl::kIgnoreBindingClosure);
+
+  PowerElementHandles handles{
+      .element_control = fidl::Client<fuchsia_power_broker::ElementControl>(
+          std::move(control_client), dispatcher()),
+  };
+  element.AttachElement(dispatcher(), std::move(handles));
+  SetCurrentLevel(element, 1);
+
+  CompleteStartupTransition(element);
+  RunLoopUntilIdle();
+
+  // Both branch1_pe (whose only child has no PE) and branch2_leaf_pe should be added.
+  ASSERT_EQ(fake_control.added_dependencies_.size(), 2u);
+
+  zx_info_handle_basic_t b1_info, b2_info;
+  ASSERT_EQ(branch1_pe->DuplicatePowerToken().get_info(ZX_INFO_HANDLE_BASIC, &b1_info,
+                                                       sizeof(b1_info), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(branch2_leaf_pe->DuplicatePowerToken().get_info(ZX_INFO_HANDLE_BASIC, &b2_info,
+                                                            sizeof(b2_info), nullptr, nullptr),
+            ZX_OK);
+
+  std::unordered_set<zx_koid_t> added_koids;
+  for (const auto& dep : fake_control.added_dependencies_) {
+    zx_info_handle_basic_t info;
+    ASSERT_EQ(
+        dep.requires_token()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr),
+        ZX_OK);
+    added_koids.insert(info.koid);
+  }
+  EXPECT_TRUE(added_koids.contains(b1_info.koid));
+  EXPECT_TRUE(added_koids.contains(b2_info.koid));
+}
+
+TEST_F(AllDriversElementTest, TestOnNodeBoundWithNonPowerEnabledNodes) {
+  AllDriversElement element(nullptr, root());
+  auto [control_client, control_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+  FakeElementControl fake_control;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> bindings;
+  bindings.AddBinding(dispatcher(), std::move(control_server), &fake_control,
+                      fidl::kIgnoreBindingClosure);
+
+  PowerElementHandles handles{
+      .element_control = fidl::Client<fuchsia_power_broker::ElementControl>(
+          std::move(control_client), dispatcher()),
+  };
+  element.AttachElement(dispatcher(), std::move(handles));
+  SetTransitionComplete(element, true);
+
+  // 1. Node without PE -> OnNodeBound does not add dependency.
+  auto non_pe = CreateNode("non_pe", root());
+  non_pe->UpdateBoundStateForTesting(true, false);
+  element.OnNodeBound(non_pe);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fake_control.added_dependencies_.empty());
+
+  // 2. Node with PE whose child is bound without PE -> OnNodeBound adds dependency.
+  auto pe_parent = CreateNode("pe_parent", root());
+  pe_parent->UpdateBoundStateForTesting(true, true);
+  auto non_pe_child = CreateNode("non_pe_child", pe_parent);
+  non_pe_child->UpdateBoundStateForTesting(true, false);
+
+  element.OnNodeBound(pe_parent);
+  RunLoopUntilIdle();
+  EXPECT_EQ(fake_control.added_dependencies_.size(), 1u);
+}
+
+TEST_F(AllDriversElementTest, TestZeroPowerEnabledDrivers) {
+  auto child1 = CreateNode("child1", root());
+  auto child2 = CreateNode("child2", child1);
+  child1->UpdateBoundStateForTesting(true, false);
+  child2->UpdateBoundStateForTesting(true, false);
+
+  AllDriversElement element(nullptr, root());
+  auto [control_client, control_server] =
+      fidl::Endpoints<fuchsia_power_broker::ElementControl>::Create();
+  FakeElementControl fake_control;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> bindings;
+  bindings.AddBinding(dispatcher(), std::move(control_server), &fake_control,
+                      fidl::kIgnoreBindingClosure);
+
+  PowerElementHandles handles{
+      .element_control = fidl::Client<fuchsia_power_broker::ElementControl>(
+          std::move(control_client), dispatcher()),
+  };
+  element.AttachElement(dispatcher(), std::move(handles));
+  SetCurrentLevel(element, 1);
+
+  CompleteStartupTransition(element);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fake_control.added_dependencies_.empty());
+}
+
+TEST_F(AllDriversElementTest, TestLeaseAllDriversMixedPowerTopology) {
+  auto [topology_client, topology_server] =
+      fidl::Endpoints<fuchsia_power_broker::Topology>::Create();
+
+  FakeTopology fake_topology;
+  fidl::ServerBindingGroup<fuchsia_power_broker::Topology> bindings;
+  bindings.AddBinding(dispatcher(), std::move(topology_server), &fake_topology,
+                      fidl::kIgnoreBindingClosure);
+
+  PowerManager power_manager(dispatcher(), std::move(topology_client), std::nullopt, false);
+
+  auto parent = CreateNode("parent_node");
+  parent->UpdateBoundStateForTesting(true, false);  // bound, no PE
+
+  auto child_pe = CreateNode("child_pe", parent);
+  child_pe->UpdateBoundStateForTesting(true, true);  // bound, has PE
+
+  auto child_no_pe = CreateNode("child_no_pe", parent);
+  child_no_pe->UpdateBoundStateForTesting(true, false);  // bound, no PE
+
+  auto grandchild_pe = CreateNode("grandchild_pe", child_no_pe);
+  grandchild_pe->UpdateBoundStateForTesting(true, true);  // bound, has PE
+
+  bool completed = false;
+  power_manager.LeaseAllDrivers(parent, [&completed] { completed = true; });
+  RunLoopUntilIdle();
+  EXPECT_TRUE(completed);
+
+  // Only child_pe and grandchild_pe should be leased.
+  ASSERT_EQ(fake_topology.lease_requests_.size(), 2u);
+  std::unordered_set<std::string> leased_names;
+  for (const auto& req : fake_topology.lease_requests_) {
+    ASSERT_TRUE(req.lease_name().has_value());
+    leased_names.insert(*req.lease_name());
+  }
+  EXPECT_TRUE(leased_names.contains("child_pe"));
+  EXPECT_TRUE(leased_names.contains("grandchild_pe"));
+  EXPECT_FALSE(leased_names.contains("parent_node"));
+  EXPECT_FALSE(leased_names.contains("child_no_pe"));
 }
 
 }  // namespace

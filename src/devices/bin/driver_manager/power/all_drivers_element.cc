@@ -47,7 +47,7 @@ void PerformPostOrderDFS(const std::shared_ptr<const Node>& starting_node,
   }
 }
 
-bool HasBoundDescendants(const std::shared_ptr<const Node>& start_node) {
+bool HasPowerEnabledDescendants(const std::shared_ptr<const Node>& start_node) {
   std::unordered_set<const Node*> visited;
   std::vector<std::shared_ptr<const Node>> stack;
 
@@ -61,7 +61,7 @@ bool HasBoundDescendants(const std::shared_ptr<const Node>& start_node) {
     auto current = stack.back();
     stack.pop_back();
 
-    if (current->is_bound()) {
+    if (current->HasActivePowerElement()) {
       return true;
     }
 
@@ -89,11 +89,12 @@ void AllDriversElement::AttachElement(async_dispatcher_t* dispatcher, PowerEleme
 }
 
 void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
-  if (!transition_complete_) {
+  if (!transition_complete_ || !node->HasActivePowerElement()) {
     return;
   }
-  // During normal operation, every bound node takes its startup lease out. If it is not a
-  // leaf node, this lease will immediately fall out of scope and be safely dropped.
+  // During normal operation, every power-enabled bound node takes its startup lease out. If
+  // it is not a leaf node, this lease will immediately fall out of scope and be safely
+  // dropped.
   std::optional<zx::eventpair> startup_lease =
       std::const_pointer_cast<Node>(node)->TakeStartupLease();
 
@@ -101,8 +102,9 @@ void AllDriversElement::OnNodeBound(std::shared_ptr<const Node> node) {
     return;
   }
 
-  if (HasBoundDescendants(node)) {
-    // Already has bound descendants, so it is not a leaf and we want to drop its startup lease.
+  if (HasPowerEnabledDescendants(node)) {
+    // Already has power-enabled descendants, so it is not a leaf and we want to drop its
+    // startup lease.
     return;
   }
 
@@ -157,9 +159,10 @@ void AllDriversElement::AddDependency(const std::shared_ptr<const Node>& node,
 }
 
 void AllDriversElement::ProcessStartupNode(const std::shared_ptr<const Node>& node,
-                                           bool has_bound_descendant) {
-  // We only process driver-bound nodes. Unbound nodes do not take startup leases.
-  if (!node->is_bound()) {
+                                           bool has_power_enabled_descendant) {
+  // We only process nodes that have a power element. Nodes without power elements do not take
+  // startup leases or get added as dependencies of AllDrivers.
+  if (!node->HasActivePowerElement()) {
     return;
   }
 
@@ -172,8 +175,9 @@ void AllDriversElement::ProcessStartupNode(const std::shared_ptr<const Node>& no
     return;
   }
 
-  // If this node has bound descendants, it is not a leaf node in the active topology.
-  if (has_bound_descendant) {
+  // If this node has power-enabled descendants, it is not a leaf node in the active power
+  // topology.
+  if (has_power_enabled_descendant) {
     // The startup lease goes out of scope here and is dropped. It is safe to drop it
     // because leaf nodes (visited earlier in post-order DFS) already held their leases
     // synchronously, ensuring the parent node remains powered.
@@ -190,26 +194,27 @@ void AllDriversElement::CompleteStartupTransition() {
 
   transition_complete_ = true;
 
-  // Identify all leaf nodes and safely transfer their startup leases.
+  // Identify all power-enabled leaf nodes and safely transfer their startup leases.
   if (auto root = root_.lock()) {
-    // Memoization set to track which nodes have bound descendants.
+    // Memoization set to track which nodes have power-enabled descendants.
     // Bottom-up post-order DFS guarantees that when we visit a node, we have already processed
-    // all of its children, allowing O(1) checks for bound descendants.
-    std::unordered_set<const Node*> has_bound_descendant_set;
+    // all of its children, allowing O(1) checks for power-enabled descendants.
+    std::unordered_set<const Node*> has_power_enabled_descendant_set;
 
     PerformPostOrderDFS(
-        root, [this, &has_bound_descendant_set](const std::shared_ptr<const Node>& node) {
-          // Check if this node has any descendants bound to a driver.
-          bool has_bound_descendant = false;
+        root, [this, &has_power_enabled_descendant_set](const std::shared_ptr<const Node>& node) {
+          // Check if this node has any descendants with a power element.
+          bool has_power_enabled_descendant = false;
           for (const auto& child : node->children()) {
-            if (child->is_bound() || has_bound_descendant_set.contains(child.get())) {
-              has_bound_descendant = true;
-              has_bound_descendant_set.insert(node.get());
+            if (child->HasActivePowerElement() ||
+                has_power_enabled_descendant_set.contains(child.get())) {
+              has_power_enabled_descendant = true;
+              has_power_enabled_descendant_set.insert(node.get());
               break;
             }
           }
 
-          ProcessStartupNode(node, has_bound_descendant);
+          ProcessStartupNode(node, has_power_enabled_descendant);
         });
   }
 }

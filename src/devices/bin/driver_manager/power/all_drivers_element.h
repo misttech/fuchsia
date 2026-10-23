@@ -46,12 +46,14 @@ class AllDriversElement : public fidl::WireServer<fuchsia_power_broker::ElementR
   void CompleteStartupTransition();
 
   // Processes startup transition logic for a single |node|:
-  // If the node is not bound, does nothing.
+  // If the node does not have a power element, does nothing.
   // Otherwise, retrieves the node's startup lease.
-  //   - If |has_bound_descendant| is false (the node is a leaf driver instance), adds a power
-  //     dependency on the node and passes the startup lease.
-  //   - If |has_bound_descendant| is true, the node is not a leaf; its startup lease is dropped.
-  void ProcessStartupNode(const std::shared_ptr<const Node>& node, bool has_bound_descendant);
+  //   - If |has_power_enabled_descendant| is false (the node is a power-enabled leaf driver
+  //     instance), adds a power dependency on the node and passes the startup lease.
+  //   - If |has_power_enabled_descendant| is true, the node is not a leaf; its startup lease is
+  //     dropped.
+  void ProcessStartupNode(const std::shared_ptr<const Node>& node,
+                          bool has_power_enabled_descendant);
 
   // Adds a power dependency on a leaf driver node to the AllDrivers element.
   // The optional |startup_lease| is held until the AddDependency call completes asynchronously,

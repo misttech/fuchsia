@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.component/cpp/wire_test_base.h>
 #include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <fidl/fuchsia.driver.host/cpp/test_base.h>
+#include <fidl/fuchsia.power.broker/cpp/wire_test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
@@ -232,6 +233,21 @@ class FakeDictionaryUtil : public driver_manager::DictionaryUtil {
       receivers_;
 };
 
+class FakeElementControl final
+    : public fidl::testing::WireTestBase<fuchsia_power_broker::ElementControl> {
+ public:
+  void RegisterDependencyToken(RegisterDependencyTokenRequestView request,
+                               RegisterDependencyTokenCompleter::Sync& completer) override {
+    completer.ReplySuccess();
+  }
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    ZX_PANIC("Unimplemented %s", name.c_str());
+  }
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementControl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+};
+
 class FakeNodeManager : public TestNodeManagerBase {
  public:
   FakeNodeManager(async_dispatcher_t* dispatcher, fidl::WireClient<fuchsia_component::Realm> realm)
@@ -262,16 +278,23 @@ class FakeNodeManager : public TestNodeManagerBase {
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
       std::optional<zx::eventpair> initial_lease_token, bool is_hermetic_power_test,
       fit::callback<void(zx::result<bool>)> cb) override {
+    create_power_element_calls_++;
     last_topology_client_ = std::move(topology_client);
     last_element_token_ = std::move(element_token);
     last_deps_ = std::move(deps);
     last_cpu_token_override_ = std::move(cpu_token_override);
+    element_controls_.AddBinding(dispatcher_, std::move(control), &fake_element_control_,
+                                 fidl::kIgnoreBindingClosure);
+    lessors_.push_back(std::move(lessor));
+    runners_.push_back(std::move(runner));
     if (defer_power_element_creation_) {
       power_element_callbacks_.push_back(std::move(cb));
       return;
     }
-    cb(zx::ok(false));
+    cb(zx::ok(true));
   }
+
+  int create_power_element_calls() const { return create_power_element_calls_; }
 
   std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>>& last_topology_client() {
     return last_topology_client_;
@@ -317,7 +340,7 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   void RunPendingPowerElementCallbacks() {
     for (auto& cb : power_element_callbacks_) {
-      cb(zx::ok(false));
+      cb(zx::ok(true));
     }
     power_element_callbacks_.clear();
   }
@@ -331,6 +354,11 @@ class FakeNodeManager : public TestNodeManagerBase {
   FakeDictionaryUtil dictionary_util_;
 
   int create_driver_host_calls_ = 0;
+  int create_power_element_calls_ = 0;
+  FakeElementControl fake_element_control_;
+  fidl::ServerBindingGroup<fuchsia_power_broker::ElementControl> element_controls_;
+  std::vector<fidl::ServerEnd<fuchsia_power_broker::Lessor>> lessors_;
+  std::vector<fidl::ClientEnd<fuchsia_power_broker::ElementRunner>> runners_;
   std::unordered_map<std::string, driver_manager::DriverHost*> hosts_;
   bool defer_power_element_creation_ = false;
   bool suspend_enabled_ = false;
@@ -440,13 +468,15 @@ class FakeDriver : public fidl::testing::TestBase<fuchsia_driver_host::Driver> {
   std::optional<HealthCheckCompleter::Async> pending_health_check_;
 };
 
+struct StartDriverOptions {
+  bool host_restart_on_crash = false;
+  bool colocate = false;
+  bool suspend_enabled = false;
+  bool power_managed_dispatchers_enabled = false;
+};
+
 class Dfv2NodeTest : public DriverManagerTestBase {
  public:
-  struct StartDriverOptions {
-    bool host_restart_on_crash = false;
-    bool colocate = false;
-  };
-
   void SetUp() override {
     realm_ = std::make_unique<TestRealm>(dispatcher());
 
@@ -457,8 +487,7 @@ class Dfv2NodeTest : public DriverManagerTestBase {
   }
 
   void StartTestDriver(std::shared_ptr<driver_manager::Node> node,
-                       StartDriverOptions options = {.host_restart_on_crash = false,
-                                                     .colocate = false}) {
+                       StartDriverOptions options = {}) {
     std::vector<fuchsia_data::DictionaryEntry> program_entries = {
         {{
             .key = "binary",
@@ -475,6 +504,22 @@ class Dfv2NodeTest : public DriverManagerTestBase {
     if (options.host_restart_on_crash) {
       program_entries.emplace_back(fuchsia_data::DictionaryEntry({
           .key = "host_restart_on_crash",
+          .value = std::make_unique<fuchsia_data::DictionaryValue>(
+              fuchsia_data::DictionaryValue::WithStr("true")),
+      }));
+    }
+
+    if (options.suspend_enabled) {
+      program_entries.emplace_back(fuchsia_data::DictionaryEntry({
+          .key = "suspend_enabled",
+          .value = std::make_unique<fuchsia_data::DictionaryValue>(
+              fuchsia_data::DictionaryValue::WithStr("true")),
+      }));
+    }
+
+    if (options.power_managed_dispatchers_enabled) {
+      program_entries.emplace_back(fuchsia_data::DictionaryEntry({
+          .key = "power_managed_dispatchers_enabled",
           .value = std::make_unique<fuchsia_data::DictionaryValue>(
               fuchsia_data::DictionaryValue::WithStr("true")),
       }));
@@ -556,7 +601,12 @@ TEST_F(Dfv2NodeTest, StartDriverWithNamespaceTopology) {
               .directory(std::move(svc_client))
               .Build();
 
-  auto program = fuchsia_data::wire::Dictionary::Builder(arena).Build();
+  fidl::VectorView<fuchsia_data::wire::DictionaryEntry> entries(arena, 1);
+  entries[0] = {
+      .key = fidl::StringView(arena, "suspend_enabled"),
+      .value = fuchsia_data::wire::DictionaryValue::WithStr(arena, "true"),
+  };
+  auto program = fuchsia_data::wire::Dictionary::Builder(arena).entries(entries).Build();
   auto start_info = fuchsia_component_runner::wire::ComponentStartInfo::Builder(arena)
                         .resolved_url("fuchsia-boot:///#meta/test-driver.cm")
                         .ns(ns)
@@ -593,7 +643,11 @@ TEST_F(Dfv2NodeTest, StartDriverWithPowerDependencyOverrides) {
   }});
   node->SetPowerDependencyOverrides(std::move(overrides));
 
-  StartTestDriver(node);
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node->IsHermeticPowerTest());
+  StartTestDriver(node, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node->HasActivePowerElement());
 
   ASSERT_EQ(1u, node_manager->last_deps().size());
   zx_info_handle_basic_t info;
@@ -631,7 +685,11 @@ TEST_F(Dfv2NodeTest, NodeTokenOverridesConstruction) {
   overrides.emplace("test_node", std::move(override_token_copy));
 
   auto node = CreateNode("test_node", std::move(overrides));
-  StartTestDriver(node);
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node->IsHermeticPowerTest());
+  StartTestDriver(node, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node->HasActivePowerElement());
 
   ASSERT_TRUE(node_manager->last_element_token().has_value());
   zx_info_handle_basic_t node_token_info;
@@ -690,12 +748,13 @@ TEST_F(Dfv2NodeTest, StartDriverRaceCondition) {
   ASSERT_TRUE(child1);
   ASSERT_TRUE(child2);
 
+  node_manager->set_suspend_enabled(true);
   node_manager->set_defer_power_element_creation(true);
   int initial_calls = node_manager->create_driver_host_calls();
 
   // Start both drivers.
-  StartTestDriver(child1);
-  StartTestDriver(child2);
+  StartTestDriver(child1, {.suspend_enabled = true});
+  StartTestDriver(child2, {.suspend_enabled = true});
 
   // Both should be waiting on power element creation.
   ASSERT_EQ(initial_calls, node_manager->create_driver_host_calls());
@@ -2457,4 +2516,262 @@ TEST_F(Dfv2NodeTest, OnHealthAlertSelfFaultRecordsAndPingsParent) {
   RunLoopUntilIdle();
   EXPECT_EQ(2u, parent_ping_count);
   EXPECT_EQ(fuchsia_driver_framework::HealthCheckRequest::kFast, *parent_check_level);
+}
+
+TEST_F(Dfv2NodeTest, StartDriverPowerElementOptIn) {
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+
+  // 0. When platform suspend is disabled and IsHermeticPowerTest() is false, drivers requesting
+  // suspend_enabled or power_managed_dispatchers_enabled do not create power elements.
+  auto node_no_platform_suspend = CreateNode("node_no_platform_suspend");
+  ASSERT_FALSE(node_no_platform_suspend->IsHermeticPowerTest());
+  StartTestDriver(node_no_platform_suspend, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node_no_platform_suspend->is_bound());
+  EXPECT_EQ(0, node_manager->create_power_element_calls());
+  EXPECT_FALSE(node_no_platform_suspend->HasActivePowerElement());
+
+  auto node_pm_no_platform_suspend = CreateNode("node_pm_no_platform_suspend");
+  ASSERT_FALSE(node_pm_no_platform_suspend->IsHermeticPowerTest());
+  StartTestDriver(node_pm_no_platform_suspend, {.power_managed_dispatchers_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(node_pm_no_platform_suspend->is_bound());
+  EXPECT_EQ(0, node_manager->create_power_element_calls());
+  EXPECT_FALSE(node_pm_no_platform_suspend->HasActivePowerElement());
+
+  node_manager->set_suspend_enabled(true);
+
+  // 1. Default driver (neither suspend_enabled nor power_managed_dispatchers_enabled) -> no PE
+  auto node_default = CreateNode("node_default");
+  StartTestDriver(node_default);
+  EXPECT_EQ(0, node_manager->create_power_element_calls());
+  EXPECT_FALSE(node_default->HasActivePowerElement());
+
+  // 2. Driver with suspend_enabled: "true" -> PE created
+  auto node_suspend = CreateNode("node_suspend");
+  StartTestDriver(node_suspend, {.suspend_enabled = true});
+  EXPECT_EQ(1, node_manager->create_power_element_calls());
+  EXPECT_TRUE(node_suspend->HasActivePowerElement());
+
+  // 3. Driver with power_managed_dispatchers_enabled: "true" -> PE created
+  auto node_pm = CreateNode("node_pm");
+  StartTestDriver(node_pm, {.power_managed_dispatchers_enabled = true});
+  EXPECT_EQ(2, node_manager->create_power_element_calls());
+  EXPECT_TRUE(node_pm->HasActivePowerElement());
+}
+
+TEST_F(Dfv2NodeTest, AncestorPowerDependencySkipsNonPowerEnabledNodes) {
+  node_manager->set_suspend_enabled(true);
+
+  // Linear chain: grandparent (PE) -> parent (bound, no PE) -> child (PE)
+  auto grandparent = CreateNode("grandparent");
+  StartTestDriver(grandparent, {.suspend_enabled = true});
+  ASSERT_TRUE(grandparent->HasActivePowerElement());
+
+  zx_info_handle_basic_t gp_token_info;
+  ASSERT_EQ(grandparent->DuplicatePowerToken().get_info(ZX_INFO_HANDLE_BASIC, &gp_token_info,
+                                                        sizeof(gp_token_info), nullptr, nullptr),
+            ZX_OK);
+
+  auto parent = CreateNode("parent", grandparent);
+  StartTestDriver(parent);  // bound, but no PE
+  ASSERT_TRUE(parent->is_bound());
+  ASSERT_FALSE(parent->HasActivePowerElement());
+
+  auto child = CreateNode("child", parent);
+  StartTestDriver(child, {.suspend_enabled = true});
+  ASSERT_TRUE(child->HasActivePowerElement());
+
+  // Child's power dependencies should contain grandparent's token, skipping parent.
+  ASSERT_EQ(1u, node_manager->last_deps().size());
+  zx_info_handle_basic_t child_dep_info;
+  ASSERT_EQ(node_manager->last_deps()[0].get_info(ZX_INFO_HANDLE_BASIC, &child_dep_info,
+                                                  sizeof(child_dep_info), nullptr, nullptr),
+            ZX_OK);
+  EXPECT_EQ(child_dep_info.koid, gp_token_info.koid);
+
+  // Composite DAG:
+  // comp_p1 (bound, no PE) with parent comp_gp1 (PE)
+  // comp_p2 (PE)
+  auto comp_gp1 = CreateNode("comp_gp1");
+  StartTestDriver(comp_gp1, {.suspend_enabled = true});
+  zx_info_handle_basic_t comp_gp1_info;
+  ASSERT_EQ(comp_gp1->DuplicatePowerToken().get_info(ZX_INFO_HANDLE_BASIC, &comp_gp1_info,
+                                                     sizeof(comp_gp1_info), nullptr, nullptr),
+            ZX_OK);
+
+  auto comp_p1 = CreateNode("comp_p1", comp_gp1);
+  StartTestDriver(comp_p1);  // bound, no PE
+  ASSERT_FALSE(comp_p1->HasActivePowerElement());
+
+  auto comp_p2 = CreateNode("comp_p2");
+  StartTestDriver(comp_p2, {.suspend_enabled = true});
+  zx_info_handle_basic_t comp_p2_info;
+  ASSERT_EQ(comp_p2->DuplicatePowerToken().get_info(ZX_INFO_HANDLE_BASIC, &comp_p2_info,
+                                                    sizeof(comp_p2_info), nullptr, nullptr),
+            ZX_OK);
+
+  auto composite = CreateCompositeNode("composite_pe", {comp_p1, comp_p2}, {{}, {}});
+  StartTestDriver(composite, {.suspend_enabled = true});
+  ASSERT_TRUE(composite->HasActivePowerElement());
+  ASSERT_EQ(2u, node_manager->last_deps().size());
+
+  std::set<zx_koid_t> dep_koids;
+  for (const auto& dep : node_manager->last_deps()) {
+    zx_info_handle_basic_t info;
+    ASSERT_EQ(dep.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+    dep_koids.insert(info.koid);
+  }
+  EXPECT_TRUE(dep_koids.count(comp_gp1_info.koid));
+  EXPECT_TRUE(dep_koids.count(comp_p2_info.koid));
+}
+
+TEST_F(Dfv2NodeTest, RestartFamilyRootWithoutPowerElementPropagatesOverridesToDescendants) {
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+
+  auto family_root = CreateNode("family_root");
+
+  zx::event cpu_token;
+  ASSERT_EQ(zx::event::create(0, &cpu_token), ZX_OK);
+  zx::event cpu_token_copy;
+  ASSERT_EQ(cpu_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &cpu_token_copy), ZX_OK);
+  family_root->SetCpuTokenOverride(std::move(cpu_token_copy));
+
+  zx::event dep_token;
+  ASSERT_EQ(zx::event::create(0, &dep_token), ZX_OK);
+  zx::event dep_token_copy;
+  ASSERT_EQ(dep_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &dep_token_copy), ZX_OK);
+
+  std::vector<fuchsia_power_broker::LevelDependency> overrides;
+  overrides.push_back(fuchsia_power_broker::LevelDependency{{
+      .dependent_level = 1,
+      .requires_token = std::move(dep_token_copy),
+      .requires_level_by_preference = std::vector<uint8_t>{1},
+  }});
+  family_root->SetPowerDependencyOverrides(std::move(overrides));
+
+  // Start family_root WITHOUT power element opt-in.
+  StartTestDriver(family_root);
+  ASSERT_TRUE(family_root->is_bound());
+  ASSERT_FALSE(family_root->HasActivePowerElement());
+  ASSERT_TRUE(family_root->IsHermeticPowerTest());
+
+  // Add child under family_root and start it WITH power element opt-in.
+  auto child = CreateNode("child", family_root);
+  EXPECT_TRUE(child->IsHermeticPowerTest());
+  StartTestDriver(child, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(child->HasActivePowerElement());
+
+  // Child should have inherited both the power_dependency_overrides_ and cpu_token_override_
+  // from family_root since family_root has no power element of its own.
+  ASSERT_EQ(1u, node_manager->last_deps().size());
+  zx_info_handle_basic_t info;
+  zx_info_handle_basic_t expected_info;
+  ASSERT_EQ(node_manager->last_deps()[0].get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info),
+                                                  nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(dep_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info), nullptr,
+                               nullptr),
+            ZX_OK);
+  EXPECT_EQ(info.koid, expected_info.koid);
+
+  ASSERT_TRUE(node_manager->last_cpu_token_override().has_value());
+  ASSERT_EQ(node_manager->last_cpu_token_override()->get_info(ZX_INFO_HANDLE_BASIC, &info,
+                                                              sizeof(info), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(cpu_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info), nullptr,
+                               nullptr),
+            ZX_OK);
+  EXPECT_EQ(info.koid, expected_info.koid);
+}
+
+TEST_F(Dfv2NodeTest, IsHermeticPowerTestCompositeAndDiamondAncestors) {
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+
+  // 1. Multi-parent composite where Parent B (primary/first parent) has no hermetic test markers
+  // and a deep ancestor chain, while Parent A (second parent) has power_dependency_overrides_.
+  auto b_root = CreateNode("b_root");
+  StartTestDriver(b_root);
+  auto b_mid = CreateNode("b_mid", b_root);
+  StartTestDriver(b_mid);
+  auto parent_b = CreateNode("parent_b", b_mid);
+  StartTestDriver(parent_b);
+  ASSERT_FALSE(parent_b->IsHermeticPowerTest());
+
+  auto parent_a = CreateNode("parent_a");
+  zx::event parent_a_dep_token;
+  ASSERT_EQ(zx::event::create(0, &parent_a_dep_token), ZX_OK);
+  zx::event parent_a_dep_copy;
+  ASSERT_EQ(parent_a_dep_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &parent_a_dep_copy), ZX_OK);
+  std::vector<fuchsia_power_broker::LevelDependency> parent_a_overrides;
+  parent_a_overrides.push_back(fuchsia_power_broker::LevelDependency{{
+      .dependent_level = 1,
+      .requires_token = std::move(parent_a_dep_copy),
+      .requires_level_by_preference = std::vector<uint8_t>{1},
+  }});
+  parent_a->SetPowerDependencyOverrides(std::move(parent_a_overrides));
+  StartTestDriver(parent_a);
+  ASSERT_FALSE(parent_a->HasActivePowerElement());
+  ASSERT_TRUE(parent_a->IsHermeticPowerTest());
+
+  auto composite = CreateCompositeNode("composite_hermetic", {parent_b, parent_a}, {{}, {}});
+  EXPECT_TRUE(composite->IsHermeticPowerTest());
+
+  StartTestDriver(composite, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(composite->HasActivePowerElement());
+  ASSERT_EQ(1u, node_manager->last_deps().size());
+
+  zx_info_handle_basic_t dep_info;
+  zx_info_handle_basic_t expected_info;
+  ASSERT_EQ(node_manager->last_deps()[0].get_info(ZX_INFO_HANDLE_BASIC, &dep_info, sizeof(dep_info),
+                                                  nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(parent_a_dep_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info),
+                                        nullptr, nullptr),
+            ZX_OK);
+  EXPECT_EQ(dep_info.koid, expected_info.koid);
+
+  // 2. Diamond ancestor topology: diamond_root -> {diamond_left, diamond_right} ->
+  // diamond_composite.
+  auto diamond_root = CreateNode("diamond_root");
+  StartTestDriver(diamond_root);
+  auto diamond_left = CreateNode("diamond_left", diamond_root);
+  StartTestDriver(diamond_left);
+  auto diamond_right = CreateNode("diamond_right", diamond_root);
+  StartTestDriver(diamond_right);
+  auto diamond_composite =
+      CreateCompositeNode("diamond_composite", {diamond_left, diamond_right}, {{}, {}});
+
+  // Without markers on diamond_root, IsHermeticPowerTest() traverses the diamond and returns false.
+  EXPECT_FALSE(diamond_composite->IsHermeticPowerTest());
+
+  // Setting power_dependency_overrides_ on diamond_root makes diamond_composite detect hermetic
+  // test mode across 2 levels and deduplicate the shared ancestor's dependency token.
+  zx::event diamond_dep_token;
+  ASSERT_EQ(zx::event::create(0, &diamond_dep_token), ZX_OK);
+  zx::event diamond_dep_copy;
+  ASSERT_EQ(diamond_dep_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &diamond_dep_copy), ZX_OK);
+  std::vector<fuchsia_power_broker::LevelDependency> diamond_overrides;
+  diamond_overrides.push_back(fuchsia_power_broker::LevelDependency{{
+      .dependent_level = 1,
+      .requires_token = std::move(diamond_dep_copy),
+      .requires_level_by_preference = std::vector<uint8_t>{1},
+  }});
+  diamond_root->SetPowerDependencyOverrides(std::move(diamond_overrides));
+
+  EXPECT_TRUE(diamond_composite->IsHermeticPowerTest());
+
+  StartTestDriver(diamond_composite, {.suspend_enabled = true});
+  ASSERT_FALSE(node_manager->SuspendEnabled());
+  ASSERT_TRUE(diamond_composite->HasActivePowerElement());
+  ASSERT_EQ(1u, node_manager->last_deps().size());
+  ASSERT_EQ(node_manager->last_deps()[0].get_info(ZX_INFO_HANDLE_BASIC, &dep_info, sizeof(dep_info),
+                                                  nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(diamond_dep_token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info),
+                                       nullptr, nullptr),
+            ZX_OK);
+  EXPECT_EQ(dep_info.koid, expected_info.koid);
 }

@@ -157,16 +157,6 @@ TEST_F(PowerSystemIntegration, SuspendResume) {
                                                  std::move(real_archives_result.value()));
 
   const std::string pb_moniker = "power-broker";
-  const auto aml_gpu_element_id = GetPowerElementId(test_reader, pb_moniker, "gpu-ffe40000");
-  ASSERT_TRUE(aml_gpu_element_id.is_ok());
-  const std::vector<std::string> aml_gpu_required_level = {"root",     "broker",
-                                                           "topology", "fuchsia.inspect.Graph",
-                                                           "topology", aml_gpu_element_id.value(),
-                                                           "meta",     "required_level"};
-  const std::vector<std::string> aml_gpu_current_level = {"root",     "broker",
-                                                          "topology", "fuchsia.inspect.Graph",
-                                                          "topology", aml_gpu_element_id.value(),
-                                                          "meta",     "current_level"};
   const auto mali_element_id = GetPowerElementId(test_reader, pb_moniker, "arm-mali-0");
   ASSERT_TRUE(mali_element_id.is_ok());
   const std::vector<std::string> mali_required_level = {"root",     "broker",
@@ -192,14 +182,12 @@ TEST_F(PowerSystemIntegration, SuspendResume) {
 
   std::cout << "Verify boot complete state using inspect data:\n";
   // - SAG: exec state level active
-  // - Power Broker: aml-gpu and mali on
+  // - Power Broker: mali on
   // - msd_arm_mali - not powered on.
   // - msd_arm_mali - system is not suspending.
   // - msd_arm_mali - no power on after suspend.
   MatchInspectData(test_reader, InspectSelectors::kSagMoniker, std::nullopt,
                    InspectSelectors::kSagExecStateLevel, uint64_t{2});  // kActive
-  MatchInspectData(test_reader, pb_moniker, std::nullopt, aml_gpu_required_level, uint64_t{1});
-  MatchInspectData(test_reader, pb_moniker, std::nullopt, aml_gpu_current_level, uint64_t{1});
   MatchInspectData(test_reader, pb_moniker, std::nullopt, mali_required_level, uint64_t{1});
   MatchInspectData(test_reader, pb_moniker, std::nullopt, mali_current_level, uint64_t{1});
   MatchInspectData(real_reader, InspectSelectors::kMsdArmMaliMoniker,
@@ -245,8 +233,6 @@ TEST_F(PowerSystemIntegration, SuspendResume) {
   MatchInspectData(test_reader, pb_moniker, std::nullopt, cpu_req, uint64_t{0});
   MatchInspectData(test_reader, pb_moniker, std::nullopt, mali_required_level, uint64_t{0});
   MatchInspectData(test_reader, pb_moniker, std::nullopt, mali_current_level, uint64_t{0});
-  MatchInspectData(test_reader, pb_moniker, std::nullopt, aml_gpu_required_level, uint64_t{0});
-  MatchInspectData(test_reader, pb_moniker, std::nullopt, aml_gpu_current_level, uint64_t{0});
 
   std::cout << "Work is still queuing but system is suspending:\n";
   // - msd_arm_mali - not powered on.

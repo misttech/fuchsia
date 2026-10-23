@@ -607,7 +607,7 @@ void PowerManager::LeaseAllDrivers(const std::shared_ptr<Node>& root_node,
     }
     visited.insert(topo_path);
 
-    if (node->is_bound()) {
+    if (node->HasActivePowerElement()) {
       AcquireRebootLease(node, std::move(topo_path), deferred);
     }
     for (const auto& child : node->children()) {

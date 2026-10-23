@@ -504,6 +504,24 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       power_element_token_ = std::move(injected);
       return;
     }
+
+    ZX_ASSERT(zx::event::create(0, &power_element_token_) == ZX_OK);
+  }
+
+  // Returns true if any of the following are true:
+  //   * node has a regular power elements is bound
+  //   * node has a power element override
+  bool HasActivePowerElement() const {
+    if (has_power_element_override_.has_value()) {
+      return *has_power_element_override_;
+    }
+    return is_bound() && has_power_element_;
+  }
+
+  // Exposed for testing.
+  void UpdateBoundStateForTesting(bool bound, bool has_power_element = true) {
+    is_bound_override_ = bound;
+    has_power_element_override_ = bound && has_power_element;
   }
 
   /// Creates a duplicate copy of the given map of node power token overrides.
@@ -522,10 +540,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   /// Returns true if this node or subtree is operating within a hermetic power test,
   /// indicated by active dictionary, power dependency, CPU token, or node power token overrides.
-  bool IsHermeticPowerTest() const {
-    return subtree_dictionary_ref_.has_value() || power_dependency_overrides_.has_value() ||
-           cpu_token_override_.has_value() || !node_token_overrides_.empty();
-  }
+  bool IsHermeticPowerTest() const;
 
   void set_collection(Collection collection) { collection_ = collection; }
 
@@ -578,9 +593,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   }
 
   std::optional<std::shared_ptr<Resource>> GetSelfResource() const;
-
-  // Exposed for testing.
-  void set_bound_for_testing(bool bound) { is_bound_override_ = bound; }
 
   // The latest health check outcome for a node. driver_manager caches it so that failures such
   // as a wedged driver dispatcher or a crashed driver host are preserved out-of-process.
@@ -940,7 +952,11 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   /// Resets the power handles for this node. This should be called when the
   /// power element needs to be recreated.
-  void ResetPowerHandles() { pe_handles_ = std::nullopt; }
+  void ResetPowerHandles() {
+    pe_handles_ = std::nullopt;
+    startup_lease_ = std::nullopt;
+    has_power_element_ = false;
+  }
 
   std::optional<std::vector<fuchsia_power_broker::LevelDependency>> power_dependency_overrides_;
   std::optional<zx::event> cpu_token_override_;
@@ -1009,7 +1025,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   fuchsia_power_broker::DependencyToken power_element_token_;
   std::optional<PowerElementHandles> pe_handles_;
   std::optional<zx::eventpair> startup_lease_;
+
+  // True once the node's power element is created. Notably it is false when
+  // Node has decided to create a power element, but has not yet completed the
+  // task. This is set to false when `ResetPowerHandles` is called such as when
+  // the bound driver stops or is being restarted.
+  bool has_power_element_ = false;
   std::optional<bool> is_bound_override_;
+  std::optional<bool> has_power_element_override_;
   std::optional<HealthCheckRecord> last_health_check_;
   // The most recent informative record that did not come from a PING (FAST, DEEP or a self_fault
   // alert). See replacement policy (b) on HealthCheckRecord.

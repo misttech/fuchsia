@@ -539,8 +539,17 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
 
   fidl::Arena arena;
 
-  // The "compat" field is optional.
-  size_t num_program_entries = (driver.compat == "") ? 5 : 6;
+  // The "compat", "suspend_enabled", and "power_managed_dispatchers_enabled" fields are optional.
+  size_t num_program_entries = 5;
+  if (driver.compat != "") {
+    num_program_entries++;
+  }
+  if (driver.suspend_enabled) {
+    num_program_entries++;
+  }
+  if (driver.power_managed_dispatchers_enabled) {
+    num_program_entries++;
+  }
 
   fidl::VectorView<fdata::wire::DictionaryEntry> program_entries(arena, num_program_entries);
   program_entries[0].key.Set(arena, "binary");
@@ -562,9 +571,21 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriver(
   program_entries[4].value =
       fdata::wire::DictionaryValue::WithStr(arena, driver.use_dynamic_linker ? "true" : "false");
 
+  size_t next_idx = 5;
   if (driver.compat != "") {
-    program_entries[5].key.Set(arena, "compat");
-    program_entries[5].value = fdata::wire::DictionaryValue::WithStr(arena, driver.compat);
+    program_entries[next_idx].key.Set(arena, "compat");
+    program_entries[next_idx].value = fdata::wire::DictionaryValue::WithStr(arena, driver.compat);
+    next_idx++;
+  }
+  if (driver.suspend_enabled) {
+    program_entries[next_idx].key.Set(arena, "suspend_enabled");
+    program_entries[next_idx].value = fdata::wire::DictionaryValue::WithStr(arena, "true");
+    next_idx++;
+  }
+  if (driver.power_managed_dispatchers_enabled) {
+    program_entries[next_idx].key.Set(arena, "power_managed_dispatchers_enabled");
+    program_entries[next_idx].value = fdata::wire::DictionaryValue::WithStr(arena, "true");
+    next_idx++;
   }
 
   auto program_builder = fdata::wire::Dictionary::Builder(arena);
@@ -672,7 +693,8 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartDriverWithCon
                      std::move(driver_host_pkg_endpoints.client));
 }
 
-zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartRootDriver() {
+zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartRootDriver(
+    bool suspend_enabled) {
   realm().SetCreateChildHandler(
       [](fdecl::CollectionRef collection, fdecl::Child decl, auto offers) {
         EXPECT_EQ("boot-drivers", collection.name());
@@ -692,13 +714,15 @@ zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartR
                             {
                                 .url = root_driver_url,
                                 .binary = root_driver_binary,
+                                .suspend_enabled = suspend_enabled,
                             },
                             std::move(start_handler)));
 }
 
 zx::result<DriverRunnerTestBase::StartDriverResult>
 DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config driver_host_config,
-                                                    test_utils::TestPkg::Config driver_config) {
+                                                    test_utils::TestPkg::Config driver_config,
+                                                    bool suspend_enabled) {
   PrepareRealmForDriverComponentStart("root", driver_runner::root_driver_url);
 
   auto start = driver_runner().StartRootDriver(driver_runner::root_driver_url);
@@ -726,6 +750,7 @@ DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config 
                                 .url = driver_runner::root_driver_url,
                                 .binary = std::string(driver_config.main_module.open_path),
                                 .use_dynamic_linker = true,
+                                .suspend_enabled = suspend_enabled,
                             },
                             std::move(start_handler), std::move(pkg_endpoints.client),
                             fidl::ClientEnd<fuchsia_io::Directory>(),
@@ -754,8 +779,8 @@ void DriverRunnerTestBase::ValidateProgram(std::optional<::fuchsia_data::Diction
   auto& entries_opt = program.value().entries();
   ZX_ASSERT(entries_opt.has_value());
   auto& entries = entries_opt.value();
-  size_t expected_num_entries = (compat == "") ? 5u : 6u;
-  EXPECT_EQ(expected_num_entries, entries.size());
+  size_t min_expected_entries = (compat == "") ? 5u : 6u;
+  EXPECT_GE(entries.size(), min_expected_entries);
   EXPECT_EQ("binary", entries[0].key());
   EXPECT_EQ(std::string(binary), entries[0].value()->str().value());
   EXPECT_EQ("colocate", entries[1].key());
@@ -798,7 +823,7 @@ void DriverRunnerTestBase::SetupDevfs() {
 }
 DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
     std::string_view moniker, bool colocate, bool host_restart_on_crash, bool use_next_vdso,
-    bool use_dynamic_linker, fidl::ClientEnd<fuchsia_io::Directory> ns_svc) {
+    bool use_dynamic_linker, fidl::ClientEnd<fuchsia_io::Directory> ns_svc, bool suspend_enabled) {
   auto second_driver_config = kDefaultSecondDriverPkgConfig;
   std::string binary = std::string(second_driver_config.main_module.open_path);
   StartDriverHandler start_handler = [colocate, host_restart_on_crash, use_next_vdso, binary,
@@ -820,6 +845,7 @@ DriverRunnerTestBase::StartDriverResult DriverRunnerTestBase::StartSecondDriver(
                                    .host_restart_on_crash = host_restart_on_crash,
                                    .use_next_vdso = use_next_vdso,
                                    .use_dynamic_linker = use_dynamic_linker,
+                                   .suspend_enabled = suspend_enabled,
                                },
                                std::move(start_handler), second_driver_config,
                                kDefaultDriverHostPkgConfig, std::move(ns_svc));
