@@ -94,6 +94,7 @@ Thread* cpp_thread_create_with_profile(const char* name_ptr, size_t name_len,
                                        const SchedulerState::BaseProfile* profile);
 void cpp_thread_resume(Thread* thread);
 zx_status_t cpp_thread_join(Thread* thread, int* out_retcode, zx_instant_mono_t deadline);
+void cpp_thread_forget(Thread* thread);
 void cpp_thread_current_yield();
 void cpp_thread_kill(Thread* thread);
 zx_status_t cpp_thread_suspend(Thread* thread);
@@ -194,6 +195,12 @@ FFI_ALWAYS_INLINE void cpp_thread_resume(Thread* thread) {
 zx_status_t cpp_thread_join(Thread* thread, int* out_retcode, zx_instant_mono_t deadline) {
   DEBUG_ASSERT(thread != nullptr);
   return thread->Join(out_retcode, deadline);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_forget(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  thread->Forget();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

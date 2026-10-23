@@ -83,6 +83,8 @@ class Exceptionate {
 };
 
 extern "C" {
+void cpp_exceptionate_init(void* storage, uint32_t exception_type);
+void cpp_exceptionate_destroy(void* storage);
 zx_status_t cpp_exceptionate_set_channel(Exceptionate* exceptionate,
                                          KernelHandle<ChannelDispatcher>* channel,
                                          zx_rights_t thread_rights, zx_rights_t process_rights);

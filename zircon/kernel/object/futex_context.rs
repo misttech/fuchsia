@@ -230,7 +230,7 @@ impl ThreadDispatcher {
     ///   and pending-operation references for the threads involved, and obeying its lock
     ///   ordering for `core_thread_lock_` relative to chain locks).
     #[inline]
-    unsafe fn observe_core_thread_locked(
+    pub(crate) unsafe fn observe_core_thread_locked(
         &self,
         _token: &LockToken<'_, ThreadDispatcherLockClass>,
     ) -> CoreThreadObservation {

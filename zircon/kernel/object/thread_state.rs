@@ -20,11 +20,6 @@
 ///
 /// The only legal transition that isn't from top-to-bottom occurs when a thread is resumed
 /// after being suspended.
-///
-/// The discriminants match `ThreadState::Lifecycle` in C++, which the transitional
-/// `rust_thread_dispatcher_{lifecycle,set_state}_locked` bridges exchange as raw `u32`s.
-// LINT.IfChange(Lifecycle)
-#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Lifecycle {
     /// The ThreadDispatcher has been allocated, but not yet associated to a Thread or an aspace.
@@ -51,33 +46,12 @@ pub enum Lifecycle {
     /// userspace (including exception handlers) is possible.
     Dead = 5,
 }
-// LINT.ThenChange(//zircon/kernel/object/thread_dispatcher_ffi.cc:thread_lifecycle)
-
-impl Lifecycle {
-    /// Returns the lifecycle `raw` names, or `None` if it is not a valid discriminant.
-    pub(crate) fn from_raw(raw: u32) -> Option<Self> {
-        match raw {
-            0 => Some(Self::Initial),
-            1 => Some(Self::Initialized),
-            2 => Some(Self::Running),
-            3 => Some(Self::Suspended),
-            4 => Some(Self::Dying),
-            5 => Some(Self::Dead),
-            _ => None,
-        }
-    }
-}
 
 /// The exception handler state of a thread.
 ///
 /// Idle threads become Unprocessed. Unprocessed threads are told to either Resume or TryNext in
 /// a loop until they are killed (no more exception handlers) or resumed, in which case they
 /// become Idle again.
-///
-/// The discriminants match `ThreadState::Exception` in C++, which the transitional
-/// `rust_thread_dispatcher_set_exception_state_locked` bridge receives as a raw `u32`.
-// LINT.IfChange(Exception)
-#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Exception {
     /// There's no pending exception.
@@ -91,20 +65,6 @@ pub enum Exception {
 
     /// The exception has been processed, and the thread should resume.
     Resume = 3,
-}
-// LINT.ThenChange(//zircon/kernel/object/thread_dispatcher_ffi.cc:thread_exception)
-
-impl Exception {
-    /// Returns the exception state `raw` names, or `None` if it is not a valid discriminant.
-    pub(crate) fn from_raw(raw: u32) -> Option<Self> {
-        match raw {
-            0 => Some(Self::Idle),
-            1 => Some(Self::Unprocessed),
-            2 => Some(Self::TryNext),
-            3 => Some(Self::Resume),
-            _ => None,
-        }
-    }
 }
 
 /// Internal representation of the combined lifecycle and exception state.
@@ -285,7 +245,6 @@ impl ThreadState {
 }
 
 /// Converts a lifecycle enum value to its human-readable string representation.
-// LINT.IfChange(lifecycle_to_string)
 pub fn lifecycle_to_string(lifecycle: Lifecycle) -> &'static str {
     match lifecycle {
         Lifecycle::Initial => "initial",
@@ -296,7 +255,6 @@ pub fn lifecycle_to_string(lifecycle: Lifecycle) -> &'static str {
         Lifecycle::Dead => "dead",
     }
 }
-// LINT.ThenChange(//zircon/kernel/object/thread_dispatcher.cc:lifecycle_to_string)
 
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_state_rust")]

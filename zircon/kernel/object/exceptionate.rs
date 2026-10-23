@@ -5,11 +5,28 @@
 // https://opensource.org/licenses/MIT
 
 use super::channel_dispatcher::ChannelDispatcher;
-use super::exceptionate_ffi::{cpp_exceptionate_set_channel, cpp_exceptionate_shutdown};
+use super::exceptionate_ffi::{
+    cpp_exceptionate_init, cpp_exceptionate_set_channel, cpp_exceptionate_shutdown,
+};
 use super::handle::KernelHandle;
+use object_constants_rs as object_constants;
 use zr::OpaqueFacade;
 use zx_status::Status;
 use zx_types::zx_rights_t;
+
+zr::define_opaque_storage_ffi! {
+    /// Opaque storage wrapper for `Exceptionate`.
+    ///
+    /// `Exceptionate` has a non-trivial destructor (it shuts down its channel), and this storage
+    /// has no drop hook of its own: the owner's `PinnedDrop` runs the destructor.
+    pub(crate) struct ExceptionateStorage(
+        object_constants::kExceptionateStorageSize,
+        object_constants::kExceptionateStorageAlign,
+        8,
+        cpp_exceptionate_init,
+        exception_type: u32,
+    );
+}
 
 /// Facade for the C++ `Exceptionate` class.
 #[repr(C)]

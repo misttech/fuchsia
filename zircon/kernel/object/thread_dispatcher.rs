@@ -5,32 +5,37 @@
 // https://opensource.org/licenses/MIT
 
 use super::channel_dispatcher::MessageWaiter;
+use super::dispatcher::{DispatcherOps, impl_dispatcher_facade_with_state};
+use super::exception_dispatcher::ExceptionDispatcher;
+use super::exceptionate::{Exceptionate, ExceptionateStorage};
+use super::exceptionate_ffi::cpp_exceptionate_destroy;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
     cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_alloc,
     cpp_thread_dispatcher_attach_to_core_thread, cpp_thread_dispatcher_current,
-    cpp_thread_dispatcher_get_core_thread, cpp_thread_dispatcher_get_current_message_waiter,
-    cpp_thread_dispatcher_get_exception_report, cpp_thread_dispatcher_get_exceptionate_type_locked,
+    cpp_thread_dispatcher_get_core_thread, cpp_thread_dispatcher_get_exception_report,
     cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_lock_acquire,
     cpp_thread_dispatcher_lock_release, cpp_thread_dispatcher_read_state,
-    cpp_thread_dispatcher_release_core_thread_observation, cpp_thread_dispatcher_set_core_thread,
-    cpp_thread_dispatcher_set_user_entry, cpp_thread_dispatcher_write_state,
-    cpp_thread_start_routine_entry,
+    cpp_thread_dispatcher_release_core_thread_observation, cpp_thread_dispatcher_reset_core_thread,
+    cpp_thread_dispatcher_set_core_thread, cpp_thread_dispatcher_set_user_entry,
+    cpp_thread_dispatcher_write_state, cpp_thread_handle_single_shot_exiting,
+    cpp_thread_runtime_stats_add_lock_contention_ticks,
+    cpp_thread_runtime_stats_add_page_fault_ticks, cpp_thread_runtime_stats_get_compensated,
+    cpp_thread_runtime_stats_init, cpp_thread_runtime_stats_update, cpp_thread_start_routine_entry,
 };
-use super::thread_state::{Exception, Lifecycle, ThreadState};
+use super::thread_state::{Exception, Lifecycle, ThreadState, lifecycle_to_string};
 use crate::arch_rs::UserEntryState;
 use crate::counters::define_kcounter;
 use crate::kernel::scheduler_state::{
     DEFAULT_PRIORITY, SchedulerStateBaseProfile, ThreadStateKind,
 };
 use crate::kernel::thread::{Thread, ThreadPtr};
-use crate::object::dispatcher::DispatcherOps;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use debug::{ltrace_entry_obj, ltrace_exit_obj, ltracef};
 use fbl::{Canary, RefPtr};
-use ksync::{KMutex, LockToken, RawCriticalMutex, guarded};
+use ksync::{KMutex, LockToken, RawCriticalMutex, RawSpinlock, guarded};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
@@ -53,7 +58,7 @@ zr::define_opaque_storage_ffi! {
         object_constants::kThreadRuntimeStatsStorageSize,
         object_constants::kThreadRuntimeStatsStorageAlign,
         8,
-        crate::object::thread_dispatcher_ffi::cpp_thread_runtime_stats_init,
+        cpp_thread_runtime_stats_init,
     );
 }
 
@@ -93,10 +98,40 @@ pub struct ThreadDispatcherState {
     /// value may no longer be accurate.
     blocked_reason: core::sync::atomic::AtomicU32,
 
+    /// Support for sending an exception to an exception handler and then waiting for a response.
+    /// Exceptionates have internal locking so we don't need to guard it here.
+    #[pin]
+    pub(crate) exceptionate: ExceptionateStorage,
+
+    /// Non-null if the thread is currently processing a channel exception.
+    #[guarded_by(lock)]
+    pub(crate) exception: Option<RefPtr<ExceptionDispatcher>>,
+
+    /// Holds the type of the exceptionate currently processing the exception,
+    /// which may be our `exceptionate` or one of our parents'.
+    #[guarded_by(lock)]
+    exceptionate_type: u32,
+
     /// Tracks the number of times `suspend()` has been called. `resume()` will resume this
     /// thread only when this reference count reaches 0.
     #[guarded_by(lock)]
     suspend_count: i32,
+
+    /// Per-thread structure used while waiting in a `ChannelDispatcher::call`.
+    /// Needed to support the requirements of being able to interrupt a call
+    /// in order to suspend a thread.
+    #[pin]
+    pub(crate) channel_waiter: MessageWaiter,
+
+    /// A lower level lock which is needed to satisfy some odd synchronization
+    /// requirements when blocking a thread in a futex and declaring a new owner in
+    /// the process.
+    ///
+    /// It guards the C++ `core_thread_` field, so it has no `#[guarded_by]` users here; C++
+    /// resolves it through `rust_thread_dispatcher_get_core_thread_lock` and acquires it with
+    /// `Guard<SpinLock, IrqSave>`. Declaring it `#[mutex]` registers its lockdep class.
+    #[mutex]
+    pub(crate) core_thread_lock: KMutex<RawSpinlock>,
 
     #[mutex]
     lock: KMutex<RawCriticalMutex>,
@@ -132,7 +167,16 @@ impl ThreadDispatcherState {
             // placement new.
             runtime_stats <- unsafe { ThreadRuntimeStatsStorage::init() },
             blocked_reason: core::sync::atomic::AtomicU32::new(Blocked::NONE.0),
+            // SAFETY: `ExceptionateStorage::init()` initializes the opaque storage via
+            // placement new.
+            exceptionate <- unsafe {
+                ExceptionateStorage::init(zx_types::ZX_EXCEPTION_CHANNEL_TYPE_THREAD)
+            },
+            exception: None.into(),
+            exceptionate_type: zx_types::ZX_EXCEPTION_CHANNEL_TYPE_NONE.into(),
             suspend_count: 0.into(),
+            channel_waiter <- MessageWaiter::init(),
+            core_thread_lock <- KMutex::init(),
             lock <- KMutex::init(),
         })
     }
@@ -141,13 +185,54 @@ impl ThreadDispatcherState {
 #[pinned_drop]
 impl PinnedDrop for ThreadDispatcherState {
     fn drop(self: core::pin::Pin<&mut Self>) {
+        let disp_ptr = core::ptr::from_ref(self.as_ref().get_ref())
+            .wrapping_byte_sub(object_constants::kThreadDispatcherStateOffset)
+            .cast::<ThreadDispatcher>();
         let this = self.project();
-        this.canary.assert();
         DISPATCHER_THREAD_DESTROY_COUNT.add(1);
+
+        let state = this.state.get_inner_mut();
+        let has_started =
+            state.lifecycle() != Lifecycle::Initial && state.lifecycle() != Lifecycle::Initialized;
+        let is_dying_or_dead =
+            state.lifecycle() == Lifecycle::Dying || state.lifecycle() == Lifecycle::Dead;
+        // The state is read without taking the lock. Destruction implies the last reference is
+        // gone, so there is no concurrent access to race with.
+        debug_assert!(
+            !has_started || is_dying_or_dead,
+            "Thread {:p} killed in bad state: {}",
+            disp_ptr,
+            lifecycle_to_string(state.lifecycle())
+        );
+
+        if state.lifecycle() != Lifecycle::Initial {
+            // We grew the pool in initialize(), which transitioned the thread from its initial
+            // state.
+            this.process.futex_context().shrink_futex_state_pool();
+        }
+
+        // If make_runnable hasn't been called, then our core_thread has never run and we need to
+        // be the ones to remove it.
+        // SAFETY: `disp_ptr` points to the enclosing `ThreadDispatcher`, and destruction has
+        // exclusive access because the last reference is gone.
+        if !has_started
+            && let Some(core_thread) =
+                unsafe { ThreadPtr::from_raw(cpp_thread_dispatcher_get_core_thread(disp_ptr)) }
+        {
+            // Since the Thread is in an initialized state we can directly destruct it.
+            // SAFETY: `core_thread` was initialized but never started, so forgetting it is safe.
+            unsafe { core_thread.forget() };
+        }
+
+        // Run the `Exceptionate` destructor: `ExceptionateStorage` has no drop hook of its own.
+        // SAFETY: `exceptionate` was initialized by `ExceptionateStorage::init` in
+        // `ThreadDispatcherState::init`, nothing can reach it once the last reference to the
+        // dispatcher is gone, and it is destroyed exactly once here.
+        unsafe { cpp_exceptionate_destroy(this.exceptionate.as_void_ptr()) };
     }
 }
 
-crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+impl_dispatcher_facade_with_state!(
     pub struct ThreadDispatcher,
     ThreadDispatcherState,
     ZX_OBJ_TYPE_THREAD,
@@ -220,12 +305,11 @@ impl ThreadDispatcher {
     }
 
     /// Returns a wrapper that dereferences to the current thread's [`MessageWaiter`].
+    /// For ChannelDispatcher use.
     #[inline]
     pub fn get_current_message_waiter() -> CurrentMessageWaiter {
-        // SAFETY: Calling `cpp_thread_dispatcher_get_current_message_waiter` is safe when
-        // executing in a valid user thread context.
-        let ptr = unsafe { cpp_thread_dispatcher_get_current_message_waiter() };
-        CurrentMessageWaiter { ptr }
+        let current = Self::get_current();
+        CurrentMessageWaiter { ptr: &raw const current.state().channel_waiter }
     }
 
     /// Asserts that the dispatcher state is valid.
@@ -289,7 +373,12 @@ impl ThreadDispatcher {
     /// Changes states of the object, doing what is appropriate for the state transition.
     ///
     /// Callers have already asserted the canary before taking the state lock.
-    pub(crate) fn set_state_locked(
+    ///
+    /// # Safety
+    ///
+    /// `token` must have been obtained from locking **this particular instance's** state lock
+    /// (`self.state().lock`).
+    pub(crate) unsafe fn set_state_locked(
         &self,
         token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
         lifecycle: Lifecycle,
@@ -298,10 +387,10 @@ impl ThreadDispatcher {
             "thread {:p}: state {} ({})\n",
             self,
             lifecycle as u32,
-            super::thread_state::lifecycle_to_string(lifecycle)
+            lifecycle_to_string(lifecycle)
         );
 
-        // SAFETY: The caller holds the state lock, proven by `token`.
+        // SAFETY: The caller guarantees `token` was obtained by locking `self.state().lock`.
         unsafe { self.state().state.get_mut(token) }.set_lifecycle(lifecycle);
 
         match lifecycle {
@@ -335,17 +424,6 @@ impl ThreadDispatcher {
         self.state().canary.assert();
         // SAFETY: The caller holds the state lock, proven by `token`.
         unsafe { self.state().state.get(token) }.lifecycle()
-    }
-
-    /// Transitions the exception axis of the state machine.
-    pub(crate) fn set_exception_locked(
-        &self,
-        token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
-        exception: Exception,
-    ) {
-        self.state().canary.assert();
-        // SAFETY: The caller holds the state lock, proven by `token`.
-        unsafe { self.state().state.get_mut(token) }.set_exception(exception);
     }
 
     /// Returns true if the thread is dying or dead. Threads never return to a previous state
@@ -433,7 +511,10 @@ impl ThreadDispatcher {
         let core_thread = self.core_thread_locked(guard.token());
         self.process().attach_normal_aspace_to_thread(core_thread);
         // we've entered the initialized state
-        self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Initialized);
+        // SAFETY: `guard` holds `self`'s state lock.
+        unsafe {
+            self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Initialized);
+        }
         Ok(())
     }
 
@@ -494,7 +575,10 @@ impl ThreadDispatcher {
 
         // start the thread in Running state, if we're starting suspended it will transition to
         // Suspended when it checks thread signals before executing any user code
-        self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Running);
+        // SAFETY: `guard` holds `self`'s state lock.
+        unsafe {
+            self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Running);
+        }
 
         // Given this is no longer a kernel-only thread, start memory stall accounting
         // by entering the Inactive state.
@@ -521,6 +605,86 @@ impl ThreadDispatcher {
         crate::kernel::thread::current_exit(0)
     }
 
+    /// Sets the exception dispatcher and exceptionate type for the thread.
+    ///
+    /// This state is needed by [`Self::get_info_for_userspace`].
+    ///
+    /// # Safety
+    ///
+    /// `token` must have been obtained from locking **this particular instance's** state lock
+    /// (`self.state().lock`).
+    pub(crate) unsafe fn set_exception_dispatcher_locked(
+        &self,
+        token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
+        exception: RefPtr<ExceptionDispatcher>,
+        exceptionate_type: u32,
+    ) {
+        self.state().canary.assert();
+        // SAFETY: The caller guarantees `token` was obtained by locking `self.state().lock`.
+        unsafe {
+            *self.state().exception.get_mut(token) = Some(exception);
+            *self.state().exceptionate_type.get_mut(token) = exceptionate_type;
+            self.state().state.get_mut(token).set_exception(Exception::Unprocessed);
+        }
+    }
+
+    /// Clears the exception dispatcher on the thread and returns whether the thread is dying or
+    /// dead.
+    ///
+    /// # Safety
+    ///
+    /// `token` must have been obtained from locking **this particular instance's** state lock
+    /// (`self.state().lock`).
+    pub(crate) unsafe fn clear_exception_locked(
+        &self,
+        token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
+    ) -> bool {
+        self.state().canary.assert();
+        // SAFETY: The caller guarantees `token` was obtained by locking `self.state().lock`.
+        unsafe {
+            let lifecycle = self.state().state.get(token).lifecycle();
+            let dying_or_dead = lifecycle == Lifecycle::Dying || lifecycle == Lifecycle::Dead;
+            *self.state().exception.get_mut(token) = None;
+            *self.state().exceptionate_type.get_mut(token) =
+                zx_types::ZX_EXCEPTION_CHANNEL_TYPE_NONE;
+            self.state().state.get_mut(token).set_exception(Exception::Idle);
+            dying_or_dead
+        }
+    }
+
+    /// Returns true if waiting for an exception response.
+    ///
+    /// # Safety
+    ///
+    /// `token` must have been obtained from locking **this particular instance's** state lock
+    /// (`self.state().lock`).
+    pub(crate) unsafe fn in_exception_locked(
+        &self,
+        token: &ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
+    ) -> bool {
+        ltrace_entry_obj!(self);
+        // SAFETY: The caller guarantees `token` was obtained by locking `self.state().lock`.
+        unsafe { self.state().exception.get(token).is_some() }
+    }
+
+    /// Returns true if the thread is suspended or processing an exception.
+    ///
+    /// # Safety
+    ///
+    /// `token` must have been obtained from locking **this particular instance's** state lock
+    /// (`self.state().lock`).
+    pub(crate) unsafe fn suspended_or_in_exception_locked(
+        &self,
+        token: &ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
+    ) -> bool {
+        self.state().canary.assert();
+        // SAFETY: The caller guarantees `token` was obtained by locking `self.state().lock`.
+        unsafe {
+            self.state().state.get(token).lifecycle() == Lifecycle::Suspended
+                || self.in_exception_locked(token)
+        }
+    }
+
     /// Kills this thread.
     pub fn kill(&self) {
         self.state().canary.assert();
@@ -538,7 +702,10 @@ impl ThreadDispatcher {
                 unsafe { self.core_thread_locked(guard.token()).kill() };
 
                 // enter the dying state
-                self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dying);
+                // SAFETY: `guard` holds `self`'s state lock.
+                unsafe {
+                    self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dying);
+                }
             }
             Lifecycle::Dying | Lifecycle::Dead => {
                 // already going down
@@ -564,7 +731,7 @@ impl ThreadDispatcher {
         ltracef!(
             "{:p}: state {}\n",
             self,
-            super::thread_state::lifecycle_to_string(self.lifecycle_locked(guard.token()))
+            lifecycle_to_string(self.lifecycle_locked(guard.token()))
         );
 
         // Update `suspend_count` in all cases so that we can always verify a sane value - it's
@@ -661,7 +828,10 @@ impl ThreadDispatcher {
 
             // Don't suspend if we are racing with our own death.
             if self.lifecycle_locked(guard.token()) != Lifecycle::Dying {
-                self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Suspended);
+                // SAFETY: `guard` holds `self`'s state lock.
+                unsafe {
+                    self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Suspended);
+                }
             }
         }
 
@@ -680,7 +850,10 @@ impl ThreadDispatcher {
 
             // Don't resume if we are racing with our own death.
             if self.lifecycle_locked(guard.token()) != Lifecycle::Dying {
-                self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Running);
+                // SAFETY: `guard` holds `self`'s state lock.
+                unsafe {
+                    self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Running);
+                }
             }
         }
 
@@ -798,10 +971,7 @@ impl ThreadDispatcher {
         let blocked_reason =
             Blocked(self.state().blocked_reason.load(core::sync::atomic::Ordering::Acquire));
         info.state = Self::thread_lifecycle_to_state(fields.state.lifecycle(), blocked_reason);
-        // SAFETY: `self` is a valid ThreadDispatcher pointer, and `guard` holds the required
-        // state lock (`ThreadDispatcherState::lock`).
-        info.wait_exception_channel_type =
-            unsafe { cpp_thread_dispatcher_get_exceptionate_type_locked(self as *const _) };
+        info.wait_exception_channel_type = *fields.exceptionate_type;
         // If we've exited then return with the lifecycle and exception type, and keep the
         // cpu_affinity_mask at 0.
         if let Some(core_thread) = self.try_core_thread_locked(guard.token()) {
@@ -838,7 +1008,10 @@ impl ThreadDispatcher {
         {
             // Set ourselves in the Dying state before calling the Debugger.
             ksync::lock!(let mut guard = self.state().lock_lock());
-            self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dying);
+            // SAFETY: `guard` holds `self`'s state lock.
+            unsafe {
+                self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dying);
+            }
         }
 
         // Notify a debugger if attached. Do this before marking the thread as
@@ -852,7 +1025,7 @@ impl ThreadDispatcher {
         // SAFETY: `self` and `self.process()` are valid references, making the underlying
         // pointers valid.
         unsafe {
-            crate::object::thread_dispatcher_ffi::cpp_thread_handle_single_shot_exiting(
+            cpp_thread_handle_single_shot_exiting(
                 self.process().as_ffi_mut(),
                 self as *const _ as *mut ThreadDispatcher,
             );
@@ -878,13 +1051,11 @@ impl ThreadDispatcher {
             }
             ksync::lock!(let mut guard = self.state().lock_lock());
             // put ourselves into the dead state
-            self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dead);
             // Then obtain the core thread lock and reset our core thread pointer.
-            // SAFETY: `self` is a valid pointer, and `guard` holds the required state lock.
+            // SAFETY: `self` is a valid pointer, and `guard` holds `self`'s state lock.
             unsafe {
-                crate::object::thread_dispatcher_ffi::cpp_thread_dispatcher_reset_core_thread(
-                    self as *const _ as *mut ThreadDispatcher,
-                );
+                self.set_state_locked(guard.as_mut().token_mut(), Lifecycle::Dead);
+                cpp_thread_dispatcher_reset_core_thread(self as *const _ as *mut ThreadDispatcher);
             }
         }
 
@@ -911,10 +1082,7 @@ impl ThreadDispatcher {
         // SAFETY: Storage pointer is valid and points to initialized ThreadRuntimeStats; the
         // caller ensures interrupts are disabled, which the shim asserts.
         unsafe {
-            crate::object::thread_dispatcher_ffi::cpp_thread_runtime_stats_update(
-                self.state().runtime_stats.as_void_ptr(),
-                new_state,
-            );
+            cpp_thread_runtime_stats_update(self.state().runtime_stats.as_void_ptr(), new_state);
         }
     }
 
@@ -924,7 +1092,7 @@ impl ThreadDispatcher {
         self.state().canary.assert();
         // SAFETY: Storage pointer is valid and points to initialized ThreadRuntimeStats.
         unsafe {
-            crate::object::thread_dispatcher_ffi::cpp_thread_runtime_stats_add_page_fault_ticks(
+            cpp_thread_runtime_stats_add_page_fault_ticks(
                 self.state().runtime_stats.as_void_ptr(),
                 ticks,
             );
@@ -937,8 +1105,7 @@ impl ThreadDispatcher {
         // SAFETY: Storage pointer is valid and points to initialized ThreadRuntimeStats.
         unsafe {
             let stats = self.state().runtime_stats.as_void_ptr();
-            crate::object::thread_dispatcher_ffi::
-                cpp_thread_runtime_stats_add_lock_contention_ticks(stats, ticks);
+            cpp_thread_runtime_stats_add_lock_contention_ticks(stats, ticks);
         }
     }
 
@@ -981,7 +1148,7 @@ impl ThreadDispatcher {
         // SAFETY: `info` is a valid uninitialized out-pointer and the runtime stats pointer
         // is valid.
         unsafe {
-            crate::object::thread_dispatcher_ffi::cpp_thread_runtime_stats_get_compensated(
+            cpp_thread_runtime_stats_get_compensated(
                 self.state().runtime_stats.as_void_ptr(),
                 &raw mut info,
             );
@@ -1021,14 +1188,11 @@ impl ThreadDispatcher {
     }
 
     /// Returns the thread's `Exceptionate`.
-    pub fn exceptionate(&self) -> &super::exceptionate::Exceptionate {
-        // SAFETY: `self` is a valid `ThreadDispatcher`, which owns `exceptionate_` for its entire
-        // lifetime.
-        unsafe {
-            &*super::thread_dispatcher_ffi::cpp_thread_dispatcher_exceptionate(
-                self as *const _ as *mut _,
-            )
-        }
+    pub fn exceptionate(&self) -> &Exceptionate {
+        self.assert_canary();
+        // SAFETY: `exceptionate` is initialized by `ThreadDispatcherState::init` and lives until
+        // `PinnedDrop::drop`, so it holds a valid `Exceptionate` for `self`'s whole lifetime.
+        unsafe { &*self.state().exceptionate.as_void_ptr().cast::<Exceptionate>() }
     }
 }
 
@@ -1097,8 +1261,9 @@ impl Drop for NullableThreadDispatcherGuard<'_> {
     }
 }
 
-/// RAII observation of a [`ThreadDispatcher`]'s `core_thread_` under `core_thread_lock_`,
-/// mirroring C++ `ThreadDispatcher::CoreThreadObservation`.
+/// RAII observation of a [`ThreadDispatcher`]'s `core_thread_` under
+/// [`ThreadDispatcherState::core_thread_lock`], mirroring C++
+/// `ThreadDispatcher::CoreThreadObservation`.
 #[repr(C)]
 pub struct CoreThreadObservation {
     core_thread: *mut Thread,
@@ -1124,11 +1289,11 @@ impl CoreThreadObservation {
     #[inline]
     pub fn core_thread(&self) -> Option<ThreadPtr> {
         // SAFETY: `self.core_thread` is either null or a valid `Thread*` observed under
-        // `core_thread_lock_`.
+        // `core_thread_lock`.
         unsafe { ThreadPtr::from_raw(self.core_thread) }
     }
 
-    /// Releases `core_thread_lock_` if an observation is active.
+    /// Releases `core_thread_lock` if an observation is active.
     #[inline]
     pub fn release(&mut self) {
         // SAFETY: `self` is a valid `CoreThreadObservation` initialized by `Default` or
@@ -1213,9 +1378,11 @@ extern "C" fn rust_thread_start_routine(arg: *mut c_void) -> i32 {
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_dispatcher_rust")]
 mod tests {
+    use super::super::exception_dispatcher::{ArchExceptionContext, ExceptionDispatcher};
     use super::super::job_dispatcher::JobDispatcher;
     use super::super::process_dispatcher::ProcessDispatcher;
-    use super::ThreadDispatcher;
+    use super::{Blocked, Lifecycle, ThreadDispatcher, cpp_thread_dispatcher_reset_core_thread};
+    use crate::arch_rs::InterruptDisableGuard;
     use crate::kernel::scheduler_state::{DEFAULT_PRIORITY, SchedulerStateBaseProfile};
     use unittest::{assert_ok, expect_eq, expect_ok, expect_true, unwrap_ok};
     use zx_status::Status;
@@ -1305,5 +1472,234 @@ mod tests {
         expect_true!(stats.is_ok());
 
         thread.dispatcher().assert_canary();
+    }
+
+    /// Tests mapping thread lifecycle and blocked reason to user-facing thread state.
+    #[test]
+    fn test_thread_lifecycle_to_state() {
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Initial, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_NEW
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Initialized, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_NEW
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_RUNNING
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::EXCEPTION),
+            zx_types::ZX_THREAD_STATE_BLOCKED_EXCEPTION
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::SLEEPING),
+            zx_types::ZX_THREAD_STATE_BLOCKED_SLEEPING
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::FUTEX),
+            zx_types::ZX_THREAD_STATE_BLOCKED_FUTEX
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::PORT),
+            zx_types::ZX_THREAD_STATE_BLOCKED_PORT
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::CHANNEL),
+            zx_types::ZX_THREAD_STATE_BLOCKED_CHANNEL
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::WAIT_ONE),
+            zx_types::ZX_THREAD_STATE_BLOCKED_WAIT_ONE
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::WAIT_MANY),
+            zx_types::ZX_THREAD_STATE_BLOCKED_WAIT_MANY
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::INTERRUPT),
+            zx_types::ZX_THREAD_STATE_BLOCKED_INTERRUPT
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Running, Blocked::PAGER),
+            zx_types::ZX_THREAD_STATE_BLOCKED_PAGER
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Suspended, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_SUSPENDED
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Dying, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_DYING
+        );
+        expect_eq!(
+            ThreadDispatcher::thread_lifecycle_to_state(Lifecycle::Dead, Blocked::NONE),
+            zx_types::ZX_THREAD_STATE_DEAD
+        );
+    }
+
+    /// Tests thread exception state, channel types, and clear_exception_locked.
+    #[test]
+    fn test_thread_exception_state() {
+        let root_job = JobDispatcher::create_root_job();
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(root_job, b"k-ut-p2", 0).expect("process created");
+        let (thread_handle, _rights) =
+            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t2")
+                .expect("thread created");
+        let thread = thread_handle.dispatcher();
+
+        expect_ok!(thread.initialize());
+
+        let report = zx_types::zx_exception_report_t {
+            header: zx_types::zx_exception_header_t {
+                size: core::mem::size_of::<zx_types::zx_exception_report_t>() as u32,
+                type_: zx_types::ZX_EXCP_GENERAL,
+            },
+            // SAFETY: `zx_exception_context_t` is a C ABI struct of integer fields where all-zeroes
+            // is a valid bit pattern.
+            context: unsafe { core::mem::zeroed() },
+        };
+        let dummy_arch_context: u64 = 0;
+        // SAFETY: `report` and `dummy_arch_context` remain valid on this stack frame until
+        // `exception.clear()` is called below.
+        let exception = unsafe {
+            ExceptionDispatcher::create(
+                thread.clone(),
+                zx_types::ZX_EXCP_GENERAL,
+                &raw const report,
+                (&raw const dummy_arch_context).cast::<ArchExceptionContext>(),
+            )
+        }
+        .expect("exception created");
+
+        {
+            ksync::lock!(let mut guard = thread.state().lock_lock());
+            let token = guard.as_mut().token_mut();
+
+            // SAFETY: `token` was obtained by locking `thread`'s state lock.
+            unsafe {
+                // Transition the state machine to Running before participating in exception
+                // handling.
+                thread.set_state_locked(token, Lifecycle::Running);
+
+                // Initially not in exception or suspended.
+                expect_eq!(thread.in_exception_locked(token), false);
+                expect_eq!(thread.suspended_or_in_exception_locked(token), false);
+
+                thread.set_exception_dispatcher_locked(
+                    token,
+                    exception.clone(),
+                    zx_types::ZX_EXCEPTION_CHANNEL_TYPE_DEBUGGER,
+                );
+
+                expect_eq!(thread.in_exception_locked(token), true);
+                expect_eq!(thread.suspended_or_in_exception_locked(token), true);
+            }
+        }
+
+        // Check get_info_for_userspace and get_exception_report while in exception.
+        // The lock guard is released before calling these methods, which acquire it.
+        let info = thread.get_info_for_userspace();
+        expect_eq!(info.wait_exception_channel_type, zx_types::ZX_EXCEPTION_CHANNEL_TYPE_DEBUGGER);
+        let fetched_report = unwrap_ok!(thread.get_exception_report(), "exception report fetched");
+        expect_eq!(fetched_report.header.type_, zx_types::ZX_EXCP_GENERAL);
+
+        {
+            ksync::lock!(let mut guard = thread.state().lock_lock());
+            let token = guard.as_mut().token_mut();
+
+            // clear_exception_locked returns false when thread is not dying/dead.
+            // SAFETY: `token` was obtained by locking `thread`'s state lock.
+            unsafe {
+                expect_eq!(thread.clear_exception_locked(token), false);
+                expect_eq!(thread.in_exception_locked(token), false);
+            }
+        }
+
+        let info_cleared = thread.get_info_for_userspace();
+        expect_eq!(
+            info_cleared.wait_exception_channel_type,
+            zx_types::ZX_EXCEPTION_CHANNEL_TYPE_NONE
+        );
+
+        {
+            ksync::lock!(let mut guard = thread.state().lock_lock());
+            let token = guard.as_mut().token_mut();
+
+            // SAFETY: `token` was obtained by locking `thread`'s state lock.
+            unsafe {
+                // Transition to Dying so clear_exception_locked returns true.
+                thread.set_state_locked(token, Lifecycle::Dying);
+
+                thread.set_exception_dispatcher_locked(
+                    token,
+                    exception.clone(),
+                    zx_types::ZX_EXCEPTION_CHANNEL_TYPE_THREAD,
+                );
+                // clear_exception_locked returns true when thread is dying or dead.
+                expect_eq!(thread.clear_exception_locked(token), true);
+            }
+        }
+
+        exception.clear();
+
+        // Clean up the allocated core thread since it was never started.
+        {
+            ksync::lock!(let guard = thread.state().lock_lock());
+            if let Some(core_thread) = thread.try_core_thread_locked(guard.token()) {
+                // SAFETY: `thread` is valid and `guard` holds the state lock.
+                unsafe {
+                    cpp_thread_dispatcher_reset_core_thread(
+                        core::ptr::from_ref(&**thread).cast_mut(),
+                    );
+                }
+                // SAFETY: `core_thread` was initialized but never started, so forgetting it is
+                // safe.
+                unsafe { core_thread.forget() };
+            }
+        }
+    }
+
+    /// Tests observing the core thread and resetting it under the state lock.
+    #[test]
+    fn test_observe_core_thread_and_reset() {
+        let root_job = JobDispatcher::create_root_job();
+        let (proc_handle, _proc_rights, _vmar, _vmar_rights) =
+            ProcessDispatcher::create(root_job, b"k-ut-p3", 0).expect("process created");
+        let (thread_handle, _rights) =
+            ThreadDispatcher::create(proc_handle.dispatcher().clone(), 0, b"k-ut-t3")
+                .expect("thread created");
+        let thread = thread_handle.dispatcher();
+
+        {
+            ksync::lock!(let guard = thread.state().lock_lock());
+            let token = guard.token();
+            let core_thread = thread.try_core_thread_locked(token);
+            expect_true!(core_thread.is_some());
+
+            {
+                let _irqd = InterruptDisableGuard::new();
+                // SAFETY: `token` is from `thread`'s state lock and interrupts are disabled.
+                let obs = unsafe { thread.observe_core_thread_locked(token) };
+                expect_true!(obs.core_thread().is_some());
+            }
+
+            // Reset the core thread under the state lock. A CoreThreadObservation is only valid
+            // while the thread still has a core thread, so the reset is verified through the plain
+            // accessor rather than by observing again.
+            // SAFETY: `thread` is valid and `guard` holds the state lock.
+            unsafe {
+                cpp_thread_dispatcher_reset_core_thread(core::ptr::from_ref(&**thread).cast_mut());
+            }
+            expect_true!(thread.try_core_thread_locked(token).is_none());
+
+            if let Some(core_thread) = core_thread {
+                // SAFETY: `core_thread` was initialized but never started, so forgetting it cleans
+                // up.
+                unsafe { core_thread.forget() };
+            }
+        }
     }
 }

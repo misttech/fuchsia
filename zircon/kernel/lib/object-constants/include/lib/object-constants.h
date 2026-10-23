@@ -239,19 +239,17 @@ constexpr size_t kFutexContextStorageAlign = 8;
 
 // Size, alignment, and offset for ThreadDispatcherState.
 //
-// The offset is large because most of ThreadDispatcher's fields are still C++ and precede
-// opaque_storage_; it shrinks as those fields migrate into the Rust state.
+// The offset is larger than for most dispatchers because a few of ThreadDispatcher's fields are
+// still C++ and precede opaque_storage_; it shrinks as those fields migrate into the Rust state.
+// None of them contain a lockdep-instrumented lock, so the offset does not vary with lockdep.
 //
-// It is also configuration dependent, unlike every other dispatcher here, whose state sits
-// immediately after the Dispatcher base. Two lockdep-instrumented locks live in the C++ fields
-// that precede opaque_storage_ - exceptionate_'s mutex and core_thread_lock_ - and each grows by
-// one lock class id when lockdep is enabled, moving opaque_storage_ later by
-// 2 * kLockClassIdSize bytes. The Rust state itself holds two more - its own mutex and the
-// SeqLock inside runtime_stats - so its size grows by the same amount. The base values are
-// taken from the compiler, not computed by hand.
-constexpr size_t kThreadDispatcherStateSize = 120 + (2 * kLockClassIdSize);
+// The size does: the Rust state holds four lockdep-instrumented locks - its own mutex, the
+// SeqLock inside runtime_stats, the mutex inside the embedded Exceptionate, and the
+// core_thread_lock spinlock - and each grows by one lock class id when lockdep is enabled. The
+// base value is taken from the compiler, not computed by hand.
+constexpr size_t kThreadDispatcherStateSize = 328 + (4 * kLockClassIdSize);
 constexpr size_t kThreadDispatcherStateAlign = 8;
-constexpr size_t kThreadDispatcherStateOffset = 352 + (2 * kLockClassIdSize);
+constexpr size_t kThreadDispatcherStateOffset = 136;
 
 // Size and alignment for ThreadRuntimeStatsStorage (ThreadRuntimeStats).
 constexpr size_t kThreadRuntimeStatsStorageSize = 56 + kLockClassIdSize;
@@ -277,5 +275,10 @@ constexpr size_t kHandleTableStorageSize = 176;
 #endif
 constexpr size_t kHandleTableStorageAlign = 16;
 #endif
+
+// Size and alignment for ExceptionateStorage (Exceptionate). The Exceptionate's mutex grows by one
+// lock class id when lockdep is enabled.
+constexpr size_t kExceptionateStorageSize = 56 + kLockClassIdSize;
+constexpr size_t kExceptionateStorageAlign = 8;
 
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

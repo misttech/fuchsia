@@ -19,25 +19,8 @@ KCOUNTER(thread_legacy_yield, "thread.legacy_yield")
 static_assert(sizeof(ThreadDispatcher::CoreThreadObservation) == 2 * sizeof(uintptr_t));
 static_assert(alignof(ThreadDispatcher::CoreThreadObservation) == alignof(uintptr_t));
 
-// The transitional rust_thread_dispatcher_{lifecycle,set_state,set_exception_state}_locked
-// bridges pass these enumerations across the FFI boundary as raw discriminants, so the two
-// numberings have to agree exactly. The Rust enums are #[repr(u32)] with explicit discriminants;
-// these asserts hold the C++ side to the same values.
-// LINT.IfChange(thread_lifecycle)
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::INITIAL) == 0);
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::INITIALIZED) == 1);
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::RUNNING) == 2);
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::SUSPENDED) == 3);
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::DYING) == 4);
-static_assert(static_cast<uint32_t>(ThreadState::Lifecycle::DEAD) == 5);
-// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:Lifecycle)
-
-// LINT.IfChange(thread_exception)
-static_assert(static_cast<uint32_t>(ThreadState::Exception::IDLE) == 0);
-static_assert(static_cast<uint32_t>(ThreadState::Exception::UNPROCESSED) == 1);
-static_assert(static_cast<uint32_t>(ThreadState::Exception::TRY_NEXT) == 2);
-static_assert(static_cast<uint32_t>(ThreadState::Exception::RESUME) == 3);
-// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:Exception)
+static_assert(sizeof(ChannelDispatcher::MessageWaiter) == kMessageWaiterSize);
+static_assert(alignof(ChannelDispatcher::MessageWaiter) == kMessageWaiterAlign);
 
 // The blocked reason crosses the FFI as a raw uint32_t in both directions (SetBlockedReason and
 // rust_thread_dispatcher_set_blocked_reason), and the mapping to zx_thread_state_t lives on the
@@ -204,18 +187,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_exception_report(
       out_report->GetAddressUnchecked());
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE ChannelDispatcher::MessageWaiter*
-cpp_thread_dispatcher_get_current_message_waiter() {
-  return ThreadDispatcher::GetCurrent()->GetMessageWaiter();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE Exceptionate* cpp_thread_dispatcher_exceptionate(ThreadDispatcher* thread) {
-  return thread->exceptionate();
-}
-
-// TRANSITIONAL: while `exceptionate_` remains a C++ field.
+// TRANSITIONAL: while HandleSingleShotException remains a C++ method.
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_handle_single_shot_exiting(ProcessDispatcher* process,
                                                              ThreadDispatcher* thread) {
@@ -223,25 +195,15 @@ FFI_ALWAYS_INLINE void cpp_thread_handle_single_shot_exiting(ProcessDispatcher* 
   thread->HandleSingleShotException(process->debug_exceptionate(), ZX_EXCP_THREAD_EXITING, context);
 }
 
-// TRANSITIONAL: while `core_thread_` and `core_thread_lock_` remain C++ fields.
-// TA_NO_THREAD_SAFETY_ANALYSIS: ResetCoreThread() requires get_lock(), which is the Rust-side
-// `ThreadDispatcherState::lock`; the Rust caller (ThreadDispatcher::exiting_current) holds it via
-// its `guard` across this call. The `core_thread_lock_` capability is acquired here so Clang
-// still verifies it.
+// TRANSITIONAL: while `core_thread_` remains a C++ field. The core thread spinlock already lives
+// in the Rust ThreadDispatcherState and is resolved back here so the clear happens under it.
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_dispatcher_reset_core_thread(ThreadDispatcher* thread)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-  Guard<SpinLock, IrqSave> core_thread_guard{&thread->core_thread_lock_};
-  thread->ResetCoreThread();
-}
-
-// TRANSITIONAL: while `exceptionate_type_` remains a C++ field.
-// TA_NO_THREAD_SAFETY_ANALYSIS: `exceptionate_type_` is TA_GUARDED(get_lock()), which is the
-// Rust-side `ThreadDispatcherState::lock`; the Rust caller
-// (ThreadDispatcher::get_info_for_userspace) holds it via its `guard` across this call.
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_thread_dispatcher_get_exceptionate_type_locked(
-    const ThreadDispatcher* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return static_cast<uint32_t>(const_cast<ThreadDispatcher*>(thread)->exceptionate_type_);
+    TA_REQ(thread->get_lock()) {
+  DEBUG_ASSERT(thread->core_thread_ != nullptr);
+  auto* core_thread_lock =
+      static_cast<Lock<SpinLock>*>(rust_thread_dispatcher_get_core_thread_lock(thread));
+  Guard<SpinLock, IrqSave> core_thread_guard{core_thread_lock};
+  thread->core_thread_ = nullptr;
 }
 }  // extern "C"

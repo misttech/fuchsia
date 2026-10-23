@@ -6,15 +6,25 @@
 
 #include "object/exceptionate.h"
 
+#include <lib/object-constants.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/exception.h>
 
 #include <kernel/ffi.h>
+#include <ktl/type_traits.h>
 #include <object/exception_dispatcher.h>
 #include <object/handle.h>
 #include <object/message_packet.h>
 #include <object/process_dispatcher.h>
 #include <object/thread_dispatcher.h>
+
+static_assert(sizeof(Exceptionate) == kExceptionateStorageSize);
+static_assert(alignof(Exceptionate) == kExceptionateStorageAlign);
+// The Rust ExceptionateStorage that holds this object has no drop hook of its own. Exceptionate's
+// destructor does real work (it shuts the exception channel down), so the owner's PinnedDrop runs
+// it through cpp_exceptionate_destroy; retire that shim together with this assertion if the
+// destructor ever becomes trivial.
+static_assert(!ktl::is_trivially_destructible_v<Exceptionate>);
 
 Exceptionate::Exceptionate(uint32_t type) : type_(type) {}
 
@@ -124,6 +134,16 @@ zx_status_t Exceptionate::SendException(const fbl::RefPtr<ExceptionDispatcher>& 
 }
 
 extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_exceptionate_init(void* storage, uint32_t exception_type) {
+  new (storage) Exceptionate(exception_type);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_exceptionate_destroy(void* storage) {
+  static_cast<Exceptionate*>(storage)->~Exceptionate();
+}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_exceptionate_set_channel(Exceptionate* exceptionate,

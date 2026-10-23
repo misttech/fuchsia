@@ -73,6 +73,7 @@ unsafe extern "C" {
         out_retcode: *mut i32,
         deadline: zx_instant_mono_t,
     ) -> i32;
+    fn cpp_thread_forget(thread: *mut Thread);
     fn cpp_thread_current_yield();
     fn cpp_thread_kill(thread: *mut Thread);
     fn cpp_thread_suspend(thread: *mut Thread) -> zx_status_t;
@@ -1253,6 +1254,19 @@ impl ThreadPtr {
         let mut retcode = 0;
         let status = unsafe { cpp_thread_join(self.as_raw(), &mut retcode, deadline.0) };
         Status::ok(status).map(|_| retcode)
+    }
+
+    /// Drops the kernel thread without joining or waiting for it (`Thread::Forget`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `self` points to a valid `Thread` in a state where
+    /// `Thread::Forget` is permitted (e.g. initialized but never started) and is not used after
+    /// this call.
+    #[inline]
+    pub unsafe fn forget(self) {
+        // SAFETY: The caller guarantees `self` points to a valid `Thread` that can be forgotten.
+        unsafe { cpp_thread_forget(self.as_raw()) }
     }
 
     /// Delivers a kill signal to a thread.

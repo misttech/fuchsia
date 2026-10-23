@@ -56,7 +56,7 @@ zx_status_t ThreadDispatcher::Create(fbl::RefPtr<ProcessDispatcher> process, uin
 
 // |flags| is accepted for symmetry with Create() but is unused.
 ThreadDispatcher::ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags)
-    : Dispatcher(0u), exceptionate_(ZX_EXCEPTION_CHANNEL_TYPE_THREAD) {
+    : Dispatcher(0u) {
   DISPATCHER_VERIFY_OFFSET(ThreadDispatcher, kThreadDispatcherStateOffset);
   rust_thread_dispatcher_state_init(&opaque_storage_, this, fbl::ExportToRawPtr(&process));
 }
@@ -68,27 +68,6 @@ Lock<CriticalMutex>* ThreadDispatcher::get_lock() const {
 ThreadDispatcher::~ThreadDispatcher() {
   LTRACE_ENTRY_OBJ;
 
-  // The _locked accessors below are called without taking get_lock(). Destruction implies the
-  // last reference is gone, so there is no concurrent access to race with.
-  DEBUG_ASSERT_MSG(!HasStartedLocked() || IsDyingOrDeadLocked(),
-                   "Thread %p killed in bad state: %s\n", this,
-                   ThreadLifecycleToString(lifecycle_locked()));
-
-  if (lifecycle_locked() != ThreadState::Lifecycle::INITIAL) {
-    // We grew the pool in Initialize(), which transitioned the thread from its
-    // inintial state.
-    process()->futex_context().ShrinkFutexStatePool();
-  }
-
-  // If MakeRunnable hasn't been called, then our core_thread_ has never run and
-  // we need to be the ones to remove it.
-  if (!HasStartedLocked() && core_thread_ != nullptr) {
-    // Since the Thread is in an initialized state we can directly destruct it.
-    core_thread_->Forget();
-    core_thread_ = nullptr;
-  }
-
-  // Runs last so that the code above can still reach the parent process through the Rust state.
   rust_thread_dispatcher_state_destroy(&opaque_storage_);
 }
 
@@ -163,40 +142,23 @@ int ThreadDispatcher::StartRoutine(void* arg) {
   __UNREACHABLE;
 }
 
-bool ThreadDispatcher::InExceptionLocked() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-  DEBUG_ASSERT(get_lock()->lock().IsHeld());
-  return exception_ != nullptr;
-}
-
-bool ThreadDispatcher::SuspendedOrInExceptionLocked() {
-  AssertCanary();
-  return lifecycle_locked() == ThreadState::Lifecycle::SUSPENDED || InExceptionLocked();
-}
-
 zx_status_t ThreadDispatcher::GetExceptionReport(zx_exception_report_t* report) {
   AssertCanary();
 
   LTRACE_ENTRY_OBJ;
   Guard<CriticalMutex> guard{get_lock()};
 
-  if (InExceptionLocked()) {
+  ExceptionDispatcher* exception = rust_thread_dispatcher_get_exception_locked(this);
+  if (exception != nullptr) {
     // We always leave exception handling before the report gets wiped
     // so this must succeed.
-    [[maybe_unused]] bool success = exception_->FillReport(report);
+    [[maybe_unused]] bool success = exception->FillReport(report);
     DEBUG_ASSERT(success);
   } else {
     return ZX_ERR_BAD_STATE;
   }
 
   return ZX_OK;
-}
-
-Exceptionate* ThreadDispatcher::exceptionate() {
-  AssertCanary();
-  return &exceptionate_;
 }
 
 zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
@@ -224,9 +186,7 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
     *sent = true;
 
     // This state is needed by ThreadDispatcher::get_info_for_userspace() in thread_dispatcher.rs.
-    exception_ = exception;
-    exceptionate_type_ = exceptionate->type();
-    SetExceptionStateLocked(ThreadState::Exception::UNPROCESSED);
+    rust_thread_dispatcher_set_exception_locked(this, exception.get(), exceptionate->type());
   }
 
   LTRACEF("blocking on exception response\n");
@@ -246,12 +206,9 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
   // whether the thread was killed or is exiting normally, but that's fine
   // because that exception only ever goes to a single handler so we ignore
   // the handler return value anyway.
-  if (IsDyingOrDeadLocked()) {
+  if (rust_thread_dispatcher_clear_exception_locked(this)) {
     status = ZX_ERR_INTERNAL_INTR_KILLED;
   }
-
-  exception_.reset();
-  SetExceptionStateLocked(ThreadState::Exception::IDLE);
 
   return status;
 }
@@ -437,31 +394,3 @@ zx_status_t ThreadDispatcher::WriteState(zx_thread_state_topic_t state_kind,
       return ZX_ERR_INVALID_ARGS;
   }
 }
-
-// TRANSITIONAL. Duplicates lifecycle_to_string() in thread_state.rs. Two callers remain, both
-// in this file: the DEBUG_ASSERT_MSG in ~ThreadDispatcher() and the LTRACEF in Suspend(). Once
-// both move to Rust this definition and its declaration in thread_state.h are deleted. Do not
-// add callers.
-//
-// LINT.IfChange(lifecycle_to_string)
-const char* ThreadLifecycleToString(ThreadState::Lifecycle lifecycle) {
-  switch (lifecycle) {
-    case ThreadState::Lifecycle::INITIAL:
-      return "initial";
-    case ThreadState::Lifecycle::INITIALIZED:
-      return "initialized";
-    case ThreadState::Lifecycle::RUNNING:
-      return "running";
-    case ThreadState::Lifecycle::SUSPENDED:
-      return "suspended";
-    case ThreadState::Lifecycle::DYING:
-      return "dying";
-    case ThreadState::Lifecycle::DEAD:
-      return "dead";
-  }
-  // Fallback for an out-of-range discriminant. lifecycle_locked() range-checks the value it
-  // returns with a DEBUG_ASSERT, which is compiled out at LK_DEBUGLEVEL <= 1; in those builds an
-  // invalid value matches no case above and must still yield a well-formed string.
-  return "unknown";
-}
-// LINT.ThenChange(//zircon/kernel/object/thread_state.rs:lifecycle_to_string)
