@@ -5,31 +5,22 @@
 Test that the device has at least one WifiChip.
 """
 
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_wlan_base_test
+import wlanix_testing
 from mobly import test_runner
-from mobly.asserts import assert_greater, assert_is_not
-from wlanix_testing import base_test
+from mobly.asserts import assert_greater
 
 
-class WifiChipExistenceTest(base_test.WlanixBaseTestClass):
+class WifiChipExistenceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    wlanix: wlanix_testing.Wlanix
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+
     async def test_get_chip_ids(self) -> None:
-        (
-            proxy,
-            server,
-        ) = self.dut.fuchsia_controller.channel_create()
-        self.wlanix_proxy.get_wifi(wifi=server.take())
-        wifi_proxy = fidl_wlanix.WifiClient(proxy)
-
-        response = (await wifi_proxy.get_chip_ids()).unwrap()
-        assert_is_not(
-            response.chip_ids,
-            None,
-            "Wifi.GetChipIds() response is missing a chip_ids value",
-        )
-        assert (
-            response.chip_ids is not None
-        ), "Wifi.GetChipIds() response is missing chip_ids"
-        assert_greater(len(response.chip_ids), 0)
+        chip_ids = await self.wlanix.get_chip_ids()
+        assert_greater(len(chip_ids), 0)
 
 
 if __name__ == "__main__":

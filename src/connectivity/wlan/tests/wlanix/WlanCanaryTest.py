@@ -11,12 +11,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 import fidl_fuchsia_wlan_device_service as fidl_wlan_device_service
-import fuchsia_base_test
+import fuchsia_wlan_base_test
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import test_runner
 
 
-class WlanCanaryTest(fuchsia_base_test.FuchsiaBaseTest):
+class WlanCanaryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.wlan_device_monitor_proxy = (

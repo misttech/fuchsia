@@ -6,17 +6,32 @@ Tests of various (mostly hardcoded) properties returned from a WifiChip.
 """
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+import fuchsia_wlan_base_test
+import wlanix_testing
 from mobly import test_runner
 from mobly.asserts import assert_equal
-from wlanix_testing import base_test
 
 
-class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
+class WifiChipCorrectnessAndConsistencyTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
+
     async def test_chip_id_match(self) -> None:
-        response = (await self.wifi_chip_proxy.get_id()).unwrap()
+        response = (await self.chip.proxy.get_id()).unwrap()
         assert_equal(
             response.id_,
-            self.chip_id,
+            self.chip.id,
             "WifiChip itself returns a different id than chip_id",
         )
 
@@ -24,7 +39,7 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
     async def test_chip_mode_zeroed(
         self,
     ) -> None:
-        response = (await self.wifi_chip_proxy.get_mode()).unwrap()
+        response = (await self.chip.proxy.get_mode()).unwrap()
         assert_equal(
             response.mode, 0, "WifiChip should have returned a hardcoded 0 mode"
         )
@@ -33,13 +48,13 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
     async def test_chip_available_modes_as_hardcoded(
         self,
     ) -> None:
-        response = (await self.wifi_chip_proxy.get_available_modes()).unwrap()
+        response = (await self.chip.proxy.get_available_modes()).unwrap()
         assert_equal(
             response,
             fidl_wlanix.WifiChipGetAvailableModesResponse(
                 chip_modes=[
                     fidl_wlanix.ChipMode(
-                        id_=self.chip_id,
+                        id_=self.chip.id,
                         available_combinations=[
                             fidl_wlanix.ChipConcurrencyCombination(
                                 limits=[
@@ -60,7 +75,7 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
 
     # TODO(https://fxbug.dev/366027491): GetCapabilities is hardcoded.
     async def test_chip_capabilities_zeroed(self) -> None:
-        response = (await self.wifi_chip_proxy.get_capabilities()).unwrap()
+        response = (await self.chip.proxy.get_capabilities()).unwrap()
         assert_equal(
             response.capabilities_mask,
             0,
@@ -68,10 +83,9 @@ class WifiChipCorrectnessAndConsistencyTest(base_test.WifiChipBaseTestClass):
         )
 
     async def test_chip_iface_names_empty(self) -> None:
-        response = (await self.wifi_chip_proxy.get_sta_iface_names()).unwrap()
-        assert response.iface_names is not None
+        iface_names = await self.chip.get_sta_iface_names()
         assert_equal(
-            len(response.iface_names),
+            len(iface_names),
             0,
             "WifiChip should have returned an empty list of iface names",
         )
