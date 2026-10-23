@@ -270,9 +270,6 @@ impl InputDevice {
     /// the `input{minor}` directory, without an intermediate class directory. Each is also linked
     /// from `/sys/class/input`.
     ///
-    /// Only the `eventN` device generates a uevent, since it is the only device with a `/dev`
-    /// node.
-    ///
     /// Returns the `eventN` [`Device`], which should be passed to [`Self::unregister`] to remove
     /// both devices.
     pub fn register(self, kernel: &Kernel, minor: u32) -> Result<Device, Errno> {

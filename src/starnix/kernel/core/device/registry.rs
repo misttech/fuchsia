@@ -113,6 +113,15 @@ pub trait DeviceListener: Send + Sync {
     fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext);
 }
 
+impl<F> DeviceListener for F
+where
+    F: Fn(UEventAction, Device, UEventContext) + Send + Sync,
+{
+    fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext) {
+        self(action, device, context);
+    }
+}
+
 pub struct DeviceOpsWrapper(Box<dyn DeviceOps>);
 impl ReleaserAction<DeviceOpsWrapper> for DeviceOpsWrapper {
     fn release(device_ops: ReleaseGuard<DeviceOpsWrapper>) {
@@ -272,17 +281,6 @@ struct DeviceRegistryState {
 }
 
 impl DeviceRegistry {
-    /// Notify devfs and listeners that a device has been added to the registry.
-    fn notify_device(&self, kernel: &Kernel, device: Device) -> Result<(), Errno> {
-        if let Some(metadata) = device.metadata() {
-            if kernel.features.devtmpfs {
-                devtmpfs_create_device(kernel, metadata.clone())?;
-            }
-            self.dispatch_uevent(UEventAction::Add, device);
-        }
-        Ok(())
-    }
-
     /// Register a device with the `DeviceRegistry`.
     ///
     /// If you are registering a device that exists in other systems, please check the metadata
@@ -493,11 +491,14 @@ impl DeviceRegistry {
             name,
             parent,
             Some(subsystem.into()),
-            Some(metadata),
+            Some(metadata.clone()),
             build_directory,
         );
 
-        self.notify_device(kernel, device.clone())?;
+        if kernel.features.devtmpfs {
+            devtmpfs_create_device(kernel, metadata)?;
+        }
+        self.dispatch_uevent(UEventAction::Add, device.clone());
         Ok(device)
     }
 
@@ -534,7 +535,26 @@ impl DeviceRegistry {
     /// See [`Self::add_net_device`] for more details.
     pub fn remove_net_device(&self, device: Device) {
         assert!(device.metadata().is_none());
+        self.dispatch_uevent(UEventAction::Remove, device.clone());
         self.objects.remove(&device);
+    }
+
+    fn add_device_without_metadata(
+        &self,
+        name: &FsStr,
+        parent: Option<Device>,
+        subsystem: Option<DeviceSubsystem>,
+        build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
+    ) -> Device {
+        let device = self.objects.create_device(
+            name,
+            parent,
+            subsystem,
+            /* metadata = */ None,
+            build_directory,
+        );
+        self.dispatch_uevent(UEventAction::Add, device.clone());
+        device
     }
 
     /// Directly add a device without a bus or class subsystem to the [`KObjectStore`].
@@ -550,13 +570,7 @@ impl DeviceRegistry {
         parent: Option<Device>,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Device {
-        self.objects.create_device(
-            name,
-            parent,
-            /* subsystem = */ None,
-            /* metadata = */ None,
-            build_directory,
-        )
+        self.add_device_without_metadata(name, parent, /* subsystem = */ None, build_directory)
     }
 
     /// Directly add a bus device to the [`KObjectStore`].
@@ -573,13 +587,7 @@ impl DeviceRegistry {
         bus: Bus,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Device {
-        self.objects.create_device(
-            name,
-            parent,
-            Some(bus.into()),
-            /* metadata = */ None,
-            build_directory,
-        )
+        self.add_device_without_metadata(name, parent, Some(bus.into()), build_directory)
     }
 
     /// Directly add a class device to the [`KObjectStore`] that lacks a device number.
@@ -599,21 +607,15 @@ impl DeviceRegistry {
         class: Class,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
     ) -> Device {
-        self.objects.create_device(
-            name,
-            parent,
-            Some(class.into()),
-            /* metadata = */ None,
-            build_directory,
-        )
+        self.add_device_without_metadata(name, parent, Some(class.into()), build_directory)
     }
 
     /// Unregisters `device` from sysfs, devtmpfs, and the device-number table, recycling any
     /// dynamically allocated [`DeviceId`] and dispatching a [`UEventAction::Remove`] uevent.
     pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
-        if let Some(metadata) = device.metadata() {
-            self.dispatch_uevent(UEventAction::Remove, device.clone());
+        self.dispatch_uevent(UEventAction::Remove, device.clone());
 
+        if let Some(metadata) = device.metadata() {
             if current_task.kernel().features.devtmpfs {
                 if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
                     log_error!("Cannot remove device {:?} ({:?})", device, err);
@@ -1346,6 +1348,90 @@ mod tests {
             },
             KernelFeatures { devtmpfs: true, ..Default::default() },
         )
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn registry_dispatches_uevents_for_bus_and_numberless_devices() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+            let events = Arc::new(starnix_sync::Mutex::new(Vec::new()));
+            let listener_events = events.clone();
+            let key = registry.register_listener(
+                move |action: UEventAction, device: Device, _context: UEventContext| {
+                    listener_events.lock().push((
+                        action,
+                        device.path_from_depth(0),
+                        device.subsystem().map(|s| s.name().to_owned()),
+                    ));
+                },
+            );
+
+            let root_dev = registry.add_subsystemless_device(
+                "my-root".into(),
+                /* parent = */ None,
+                build_device_directory,
+            );
+            let bus = registry.objects.get_or_create_bus("my-bus".into());
+            let bus_dev = registry.add_bus_device(
+                "my-bus-dev".into(),
+                Some(root_dev.clone()),
+                bus,
+                build_device_directory,
+            );
+            let class = registry.objects.get_or_create_class("my-class".into());
+            let class_dev = registry.add_numberless_device(
+                "my-class-dev".into(),
+                /* parent = */ None,
+                class,
+                build_device_directory,
+            );
+            let net_dev = registry.add_net_device("wlan0".into());
+
+            assert_eq!(
+                std::mem::take(&mut *events.lock()),
+                vec![
+                    (UEventAction::Add, "devices/my-root".into(), None),
+                    (
+                        UEventAction::Add,
+                        "devices/my-root/my-bus-dev".into(),
+                        Some("my-bus".into()),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/virtual/my-class/my-class-dev".into(),
+                        Some("my-class".into()),
+                    ),
+                    (UEventAction::Add, "devices/virtual/net/wlan0".into(), Some("net".into())),
+                ]
+            );
+
+            registry.remove_net_device(net_dev);
+            registry.remove_device(&current_task, class_dev);
+            registry.remove_device(&current_task, bus_dev);
+            registry.remove_device(&current_task, root_dev);
+
+            assert_eq!(
+                std::mem::take(&mut *events.lock()),
+                vec![
+                    (UEventAction::Remove, "devices/virtual/net/wlan0".into(), Some("net".into())),
+                    (
+                        UEventAction::Remove,
+                        "devices/virtual/my-class/my-class-dev".into(),
+                        Some("my-class".into()),
+                    ),
+                    (
+                        UEventAction::Remove,
+                        "devices/my-root/my-bus-dev".into(),
+                        Some("my-bus".into()),
+                    ),
+                    (UEventAction::Remove, "devices/my-root".into(), None),
+                ]
+            );
+
+            registry.unregister_listener(&key);
+        })
         .await;
     }
 }

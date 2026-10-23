@@ -653,22 +653,7 @@ fn check_nlctrl_is_available() {
 }
 
 fn check_cooling_fcc_is_available() {
-    // The fcc cooling device is registered asynchronously when ChargerService
-    // is discovered. Loop until the sysfs entry is available.
-    let start = Instant::now();
-    let sensor_name = loop {
-        match std::fs::read("/sys/class/thermal/cooling_device2/type") {
-            Ok(name) => break name,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                assert!(
-                    start.elapsed() < Duration::from_secs(30),
-                    "cooling_device2 did not appear within 30s"
-                );
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => panic!("Failed to read cooling_device2/type: {e:?}"),
-        }
-    };
+    let sensor_name = std::fs::read("/sys/class/thermal/cooling_device2/type").unwrap();
     assert_eq!("fcc\n", str::from_utf8(&sensor_name).unwrap());
     let cur_state = std::fs::read("/sys/class/thermal/cooling_device2/cur_state").unwrap();
     assert_eq!("0\n", str::from_utf8(&cur_state).unwrap());

@@ -12,11 +12,12 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use starnix_logging::{log_error, log_warn};
-use starnix_sync::{LockDepMutex, ThermalChargeLevelLock};
+use starnix_sync::{LockDepMutex, Mutex, ThermalChargeLevelLock};
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 trait CoolingOps: Send + Sync + 'static {
     fn get_max_state(&self) -> u32;
@@ -107,27 +108,19 @@ impl CoolingDeviceRegistrar {
 
     /// Register a device in the thermal class.
     fn register<T: CoolingOps>(&mut self, kernel: &Kernel, device_type: String, ops: T) -> Device {
-        register_cooling_device(kernel, self.get_next_id(), device_type, ops)
+        let device_registry = &kernel.device_registry;
+        let device_class = device_registry.objects.thermal_class();
+
+        let cooling_device =
+            Arc::new(CoolingDevice::<T> { device_id: self.get_next_id(), device_type, ops });
+
+        device_registry.add_numberless_device(
+            cooling_device.get_device_name().as_str().into(),
+            /* parent = */ None,
+            device_class,
+            |device, dir| cooling_device.build_device_dir(device, dir),
+        )
     }
-}
-
-fn register_cooling_device<T: CoolingOps>(
-    kernel: &Kernel,
-    device_id: u32,
-    device_type: String,
-    ops: T,
-) -> Device {
-    let device_registry = &kernel.device_registry;
-    let device_class = device_registry.objects.thermal_class();
-
-    let cooling_device = Arc::new(CoolingDevice::<T> { device_id, device_type, ops });
-
-    device_registry.add_numberless_device(
-        cooling_device.get_device_name().as_str().into(),
-        /* parent = */ None,
-        device_class,
-        |device, dir| cooling_device.build_device_dir(device, dir),
-    )
 }
 
 const COOLING_DEVICE_VOTER: &str = "cooling_device";
@@ -212,15 +205,66 @@ pub fn cooling_device_init(kernel: &Kernel, devices: Vec<String>) -> Result<(), 
     Ok(())
 }
 
+const CHARGER_SYNC_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
+
 struct FccCoolingOps {
-    proxy: Arc<fbattery::ChargerSynchronousProxy>,
+    proxy: Mutex<Option<Arc<fbattery::ChargerSynchronousProxy>>>,
+    proxy_ready: zx::Event,
+    timeout: zx::MonotonicDuration,
     max_charge_level: u32,
-    charge_level: LockDepMutex<u32, ThermalChargeLevelLock>,
+    charge_level: AtomicU32,
+    /// Serializes `set_state` transitions across the `enable()` FIDL call and `charge_level`
+    /// update so concurrent writers cannot interleave charger state changes.
+    write_lock: LockDepMutex<(), ThermalChargeLevelLock>,
 }
 
 impl FccCoolingOps {
-    fn new(proxy: Arc<fbattery::ChargerSynchronousProxy>, max_charge_level: u32) -> Self {
-        Self { proxy, max_charge_level, charge_level: 0.into() }
+    fn new(max_charge_level: u32, charge_level: u32) -> Self {
+        Self::new_with_timeout(max_charge_level, charge_level, CHARGER_SYNC_TIMEOUT)
+    }
+
+    fn new_with_timeout(
+        max_charge_level: u32,
+        charge_level: u32,
+        timeout: zx::MonotonicDuration,
+    ) -> Self {
+        Self {
+            proxy: Mutex::new(None),
+            proxy_ready: zx::Event::create(),
+            timeout,
+            max_charge_level,
+            charge_level: AtomicU32::new(charge_level),
+            write_lock: ().into(),
+        }
+    }
+
+    fn set_proxy(&self, proxy: Arc<fbattery::ChargerSynchronousProxy>) {
+        let mut guard = self.proxy.lock();
+        *guard = Some(proxy);
+        let _ = self.proxy_ready.signal(zx::Signals::NONE, zx::Signals::USER_0);
+    }
+
+    fn clear_proxy(&self, disconnected: &Arc<fbattery::ChargerSynchronousProxy>) {
+        let mut guard = self.proxy.lock();
+        if guard.as_ref().is_some_and(|current| Arc::ptr_eq(current, disconnected)) {
+            *guard = None;
+            let _ = self.proxy_ready.signal(zx::Signals::USER_0, zx::Signals::NONE);
+        }
+    }
+
+    fn proxy(
+        &self,
+        deadline: zx::MonotonicInstant,
+    ) -> Result<Arc<fbattery::ChargerSynchronousProxy>, Errno> {
+        loop {
+            if let Some(proxy) = self.proxy.lock().clone() {
+                return Ok(proxy);
+            }
+            self.proxy_ready
+                .wait_one(zx::Signals::USER_0, deadline)
+                .to_result()
+                .map_err(|e| errno!(ENODEV, e))?;
+        }
     }
 }
 
@@ -230,13 +274,10 @@ impl CoolingOps for FccCoolingOps {
     }
 
     fn get_state(&self) -> Result<u32, Errno> {
-        let locked_charge_level = self.charge_level.lock();
-        Ok(*locked_charge_level)
+        Ok(self.charge_level.load(Ordering::Relaxed))
     }
 
     fn set_state(&self, state: u32) -> Result<(), Errno> {
-        let mut locked_charge_level = self.charge_level.lock();
-
         // Attempting to set a charge level greater than the maximum results in 0 being set.
         // This is based on observations of how this node behaves on Linux.
         // See b/446016549#comment4 for details.
@@ -251,21 +292,31 @@ impl CoolingOps for FccCoolingOps {
             state
         };
 
-        // When the charge level goes to the maximum, disable charging. Otherwise, when dropping
-        // below the maximum, enable charging.
-        if charge_level == self.max_charge_level {
-            self.proxy
-                .enable(false, zx::MonotonicInstant::INFINITE)
-                .map_err(|e| errno!(EIO, e))?
-                .map_err(|e| errno!(EIO, e))?;
-        } else if *locked_charge_level == self.max_charge_level {
-            self.proxy
-                .enable(true, zx::MonotonicInstant::INFINITE)
+        let _guard = self.write_lock.lock();
+        let prev_charge_level = self.charge_level.load(Ordering::Relaxed);
+
+        // When the charge level transitions to the maximum, disable charging. Otherwise, when
+        // dropping below the maximum, enable charging.
+        let enable = if charge_level == self.max_charge_level
+            && prev_charge_level != self.max_charge_level
+        {
+            Some(false)
+        } else if charge_level != self.max_charge_level
+            && prev_charge_level == self.max_charge_level
+        {
+            Some(true)
+        } else {
+            None
+        };
+        if let Some(enable) = enable {
+            let deadline = zx::MonotonicInstant::after(self.timeout);
+            self.proxy(deadline)?
+                .enable(enable, deadline)
                 .map_err(|e| errno!(EIO, e))?
                 .map_err(|e| errno!(EIO, e))?;
         }
 
-        *locked_charge_level = charge_level;
+        self.charge_level.store(charge_level, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -276,11 +327,17 @@ fn register_fcc_device(
     param: &str,
 ) -> Result<(), Error> {
     let max_charge_level: u32 = param.parse().context("Invalid max_charge_level")?;
-    let device_id = registrar.get_next_id();
+    let ops = Arc::new(FccCoolingOps::new(max_charge_level, /* charge_level = */ 0));
+
+    // Register the cooling device synchronously so sysfs scanners (such as Android's thermal
+    // init scripts and Thermal HAL) find `/sys/class/thermal/cooling_device*` at startup before
+    // asynchronous ChargerService discovery completes.
+    registrar.register(kernel, "fcc".to_string(), ops.clone());
+
     ServiceWatcher::register_singleton(
         kernel,
         fbattery::ChargerServiceMarker,
-        move |current_task, instance, scope| {
+        move |_current_task, instance, scope| {
             let proxy = match instance.connect_to_device_sync() {
                 Ok(proxy) => Arc::new(proxy),
                 Err(e) => {
@@ -289,11 +346,102 @@ fn register_fcc_device(
                 }
             };
             scope.monitor_channel(proxy.clone());
-            let ops = FccCoolingOps::new(proxy, max_charge_level);
-            let device =
-                register_cooling_device(current_task.kernel(), device_id, "fcc".to_string(), ops);
-            scope.add_scoped_device(device);
+            ops.set_proxy(proxy.clone());
+            let ops_for_disconnect = ops.clone();
+            scope.on_disconnect(move |_current_task| {
+                ops_for_disconnect.clear_proxy(&proxy);
+            });
         },
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt;
+    use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_uapi::error;
+
+    #[::fuchsia::test]
+    async fn fcc_cooling_device_registered_before_charger_service_attaches() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            cooling_device_init(kernel, vec!["fcc=8".to_string()]).expect("cooling_device_init");
+
+            let root = &kernel.device_registry.objects.root;
+            assert!(root.lookup("class/thermal/cooling_device0".into()).is_some());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn fcc_set_state_waits_for_delayed_proxy_and_skips_duplicate_transitions() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_sync_proxy_and_stream::<fbattery::ChargerMarker>();
+        let ops = Arc::new(FccCoolingOps::new(8, /* charge_level = */ 0));
+
+        let ops_for_writer = ops.clone();
+        let writer_thread = std::thread::spawn(move || {
+            // Transitioning to `max_charge_level` blocks on `proxy_ready` until `set_proxy` runs.
+            ops_for_writer.set_state(8).expect("set_state(8)");
+            assert_eq!(ops_for_writer.get_state().expect("get_state"), 8);
+
+            // Setting `max_charge_level` again when already at `max_charge_level` must not issue a
+            // duplicate `Enable(false)` FIDL call.
+            ops_for_writer.set_state(8).expect("duplicate set_state(8)");
+            assert_eq!(ops_for_writer.get_state().expect("get_state"), 8);
+
+            // Dropping below `max_charge_level` re-enables charging.
+            ops_for_writer.set_state(4).expect("set_state(4)");
+            assert_eq!(ops_for_writer.get_state().expect("get_state"), 4);
+        });
+
+        ops.set_proxy(Arc::new(proxy));
+
+        let mut requests = Vec::new();
+        while let Some(Ok(req)) = stream.next().await {
+            match req {
+                fbattery::ChargerRequest::Enable { enable, responder } => {
+                    requests.push(enable);
+                    let _ = responder.send(Ok(()));
+                }
+                other => panic!("unexpected request: {other:?}"),
+            }
+            if requests.len() == 2 {
+                break;
+            }
+        }
+        assert_eq!(requests, vec![false, true]);
+        writer_thread.join().expect("writer_thread");
+    }
+
+    #[::fuchsia::test]
+    async fn fcc_set_state_returns_enodev_on_proxy_timeout_and_after_disconnect() {
+        let ops = FccCoolingOps::new_with_timeout(
+            8,
+            /* charge_level = */ 0,
+            zx::MonotonicDuration::from_millis(10),
+        );
+
+        // State changes below `max_charge_level` do not toggle charging and succeed without a
+        // connected `ChargerService`.
+        ops.set_state(3).expect("set_state(3)");
+        assert_eq!(ops.get_state().expect("get_state"), 3);
+
+        // Transitioning to `max_charge_level` without an attached `ChargerService` times out with
+        // `ENODEV` and preserves the previous `charge_level`.
+        assert_eq!(ops.set_state(8), error!(ENODEV));
+        assert_eq!(ops.get_state().expect("get_state"), 3);
+
+        // Attaching and then disconnecting a proxy resets readiness so subsequent transitions time
+        // out with `ENODEV`.
+        let (proxy, _stream) =
+            fidl::endpoints::create_sync_proxy_and_stream::<fbattery::ChargerMarker>();
+        let proxy = Arc::new(proxy);
+        ops.set_proxy(proxy.clone());
+        ops.clear_proxy(&proxy);
+        assert_eq!(ops.set_state(8), error!(ENODEV));
+        assert_eq!(ops.get_state().expect("get_state"), 3);
+    }
 }

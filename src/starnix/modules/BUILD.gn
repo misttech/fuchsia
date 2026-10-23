@@ -20,6 +20,7 @@ group("tests") {
     "framebuffer:tests",
     "functionfs:tests",
     "goog_chip_info:tests",
+    "hvdcp_opti:tests",
     "inotify:tests",
     "input:tests",
     "kgsl:tests",

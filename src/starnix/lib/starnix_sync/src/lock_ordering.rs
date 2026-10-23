@@ -169,6 +169,7 @@ lock_ordering! {
     NetlinkSocketInnerLock => EventHandlerReadyQueueLock,
     NetlinkSocketInnerLock => MemoryManagerStateLock,
     NetlinkSocketInnerLock => PortWaiterCallbacksLock,
+    NetstackDevicesLock => DeviceRegistryStateLevel,
     NetstackDevicesLock => SimpleDirectoryEntriesLock,
     NflogListenersLock => NetlinkSocketInnerLock,
     OverlayFsDirEntriesLock => MemoryManagerStateLock,

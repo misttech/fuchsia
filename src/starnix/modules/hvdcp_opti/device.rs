@@ -62,9 +62,82 @@ fn register_hvdcp_opti_devices(
     let iio = objects.get_or_create_bus("iio".into());
     let power_supply = objects.get_or_create_class("power_supply".into());
 
+    let spmi = registry.add_bus_device(
+        "1c40000.qcom,spmi".into(),
+        Some(soc),
+        platform_bus.clone(),
+        build_device_directory,
+    );
+    let spmi_0 = registry.add_bus_device(
+        "spmi-0".into(),
+        Some(spmi.clone()),
+        spmi_bus.clone(),
+        build_device_directory,
+    );
+    let spmi_0_00 = registry.add_bus_device(
+        "0-00".into(),
+        Some(spmi_0.clone()),
+        spmi_bus,
+        build_device_directory,
+    );
+    let smblite = registry.add_bus_device(
+        "1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite".into(),
+        Some(spmi_0_00.clone()),
+        platform_bus.clone(),
+        build_device_directory,
+    );
+    let qbg = registry.add_bus_device(
+        "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
+        Some(spmi_0_00.clone()),
+        platform_bus,
+        build_device_directory,
+    );
+
+    // /sys/bus/iio/devices/iio:device{0,3}
+    let iio0 = registry.add_bus_device(
+        "iio:device0".into(),
+        Some(smblite.clone()),
+        iio.clone(),
+        |device, dir| build_iio0_directory(device, &proxy, dir),
+    );
+
+    let iio3 =
+        registry.add_bus_device("iio:device3".into(), Some(qbg.clone()), iio, |device, dir| {
+            build_iio3_directory(device, &proxy, dir)
+        });
+
+    // /sys/class/power_supply/usb
+    let usb = registry.add_numberless_device(
+        "usb".into(),
+        Some(smblite.clone()),
+        power_supply.clone(),
+        |device, dir| build_usb_power_supply_directory(device, &proxy, dir),
+    );
+
+    // /sys/class/power_supply/battery
+    let battery = registry.add_numberless_device(
+        "battery".into(),
+        Some(smblite.clone()),
+        power_supply.clone(),
+        |device, dir| build_battery_power_supply_directory(device, &proxy, dir),
+    );
+
+    // /sys/class/power_supply/bms
+    let bms = registry.add_numberless_device(
+        "bms".into(),
+        Some(qbg.clone()),
+        power_supply,
+        build_bms_power_supply_directory,
+    );
+
+    let sysfs_devices = [spmi, spmi_0, spmi_0_00, smblite, qbg, iio0, iio3, usb, battery, bms];
+
+    // Register /dev/qbg and /dev/qbg_battery after the bus, IIO, and power_supply sysfs nodes
+    // exist, because the userspace hvdcp_opti daemon waits on /dev/qbg and immediately accesses
+    // those sysfs paths.
     // /dev/qbg
     let qbg_service = service_proxy.clone();
-    let qbg_dev = registry.register_device(
+    let qbg_dev = match registry.register_device(
         kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
@@ -73,7 +146,15 @@ fn register_hvdcp_opti_devices(
               _id: DeviceId,
               _node: &NamespaceNode,
               _flags: OpenFlags| create_qbg_device(&qbg_service),
-    )?;
+    ) {
+        Ok(dev) => dev,
+        Err(e) => {
+            for dev in sysfs_devices.into_iter().rev() {
+                registry.remove_device(current_task, dev);
+            }
+            return Err(e);
+        }
+    };
 
     // /dev/qbg_battery
     let battery_service = service_proxy;
@@ -90,83 +171,107 @@ fn register_hvdcp_opti_devices(
         Ok(dev) => dev,
         Err(e) => {
             registry.remove_device(current_task, qbg_dev);
+            for dev in sysfs_devices.into_iter().rev() {
+                registry.remove_device(current_task, dev);
+            }
             return Err(e);
         }
     };
 
+    for dev in sysfs_devices {
+        scope.add_scoped_device(dev);
+    }
     scope.add_scoped_device(qbg_dev);
     scope.add_scoped_device(qbg_battery_dev);
-
-    let spmi = scope.add_scoped_device(registry.add_bus_device(
-        "1c40000.qcom,spmi".into(),
-        Some(soc),
-        platform_bus.clone(),
-        build_device_directory,
-    ));
-    let spmi_0 = scope.add_scoped_device(registry.add_bus_device(
-        "spmi-0".into(),
-        Some(spmi),
-        spmi_bus.clone(),
-        build_device_directory,
-    ));
-    let spmi_0_00 = scope.add_scoped_device(registry.add_bus_device(
-        "0-00".into(),
-        Some(spmi_0),
-        spmi_bus,
-        build_device_directory,
-    ));
-    let smblite = scope.add_scoped_device(registry.add_bus_device(
-        "1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite".into(),
-        Some(spmi_0_00.clone()),
-        platform_bus.clone(),
-        build_device_directory,
-    ));
-    let qbg = scope.add_scoped_device(registry.add_bus_device(
-        "1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
-        Some(spmi_0_00),
-        platform_bus,
-        build_device_directory,
-    ));
-
-    // /sys/bus/iio/devices/iio:device{0,3}
-    scope.add_scoped_device(registry.add_bus_device(
-        "iio:device0".into(),
-        Some(smblite.clone()),
-        iio.clone(),
-        |device, dir| build_iio0_directory(device, &proxy, dir),
-    ));
-
-    scope.add_scoped_device(registry.add_bus_device(
-        "iio:device3".into(),
-        Some(qbg.clone()),
-        iio,
-        |device, dir| build_iio3_directory(device, &proxy, dir),
-    ));
-
-    // /sys/class/power_supply/usb
-    scope.add_scoped_device(registry.add_numberless_device(
-        "usb".into(),
-        Some(smblite.clone()),
-        power_supply.clone(),
-        |device, dir| build_usb_power_supply_directory(device, &proxy, dir),
-    ));
-
-    // /sys/class/power_supply/battery
-    scope.add_scoped_device(registry.add_numberless_device(
-        "battery".into(),
-        Some(smblite),
-        power_supply.clone(),
-        |device, dir| build_battery_power_supply_directory(device, &proxy, dir),
-    ));
-
-    // /sys/class/power_supply/bms
-    scope.add_scoped_device(registry.add_numberless_device(
-        "bms".into(),
-        Some(qbg),
-        power_supply,
-        build_bms_power_supply_directory,
-    ));
-
     scope.monitor_channel(proxy);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::{MemberOpener, ServiceProxy as _};
+    use starnix_core::device::kobject::{Device, UEventAction, UEventContext};
+    use starnix_core::testing::spawn_kernel_and_run;
+    use starnix_sync::Mutex;
+
+    struct NoopMemberOpener;
+
+    impl MemberOpener for NoopMemberOpener {
+        fn open_member(&self, _member: &str, _server_end: zx::Channel) -> Result<(), fidl::Error> {
+            Ok(())
+        }
+
+        fn instance_name(&self) -> &str {
+            "default"
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn register_hvdcp_opti_devices_registers_sysfs_before_dev_nodes() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let qbg_class = kernel.device_registry.objects.class_with_dir("qbg".into(), |dir| {
+                dir.entry("qbg_context", ReadWriteBytesFile::new_node(), mode!(IFREG, 0o666));
+            });
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let listener_events = events.clone();
+            let key = kernel.device_registry.register_listener(
+                move |action: UEventAction, device: Device, _context: UEventContext| {
+                    listener_events.lock().push((action, device.path_from_depth(0)));
+                },
+            );
+
+            let service_proxy =
+                Arc::new(fhvdcpopti::ServiceProxy::from_member_opener(Box::new(NoopMemberOpener)));
+            let mut scope = ServiceBindingScope::default();
+            register_hvdcp_opti_devices(current_task, &qbg_class, service_proxy, &mut scope)
+                .expect("register_hvdcp_opti_devices");
+
+            kernel.device_registry.unregister_listener(&key);
+
+            assert_eq!(
+                std::mem::take(&mut *events.lock()),
+                vec![
+                    (UEventAction::Add, "devices/platform/soc/1c40000.qcom,spmi".into()),
+                    (UEventAction::Add, "devices/platform/soc/1c40000.qcom,spmi/spmi-0".into()),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite/iio:device0".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00/iio:device3".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite/power_supply/usb".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qcom,qpnp-smblite/power_supply/battery".into(),
+                    ),
+                    (
+                        UEventAction::Add,
+                        "devices/platform/soc/1c40000.qcom,spmi/spmi-0/0-00/1c40000.qcom,spmi:qcom,pm5100@0:qpnp,qbg@4f00/power_supply/bms".into(),
+                    ),
+                    (UEventAction::Add, "devices/virtual/qbg/qbg".into()),
+                    (UEventAction::Add, "devices/virtual/qbg_battery/qbg_battery".into()),
+                ]
+            );
+        })
+        .await;
+    }
 }
