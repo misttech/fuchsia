@@ -19,7 +19,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::time::SystemTime;
-use zx::MonotonicDuration;
 
 use crate::task::{ArgNameAndValue, CurrentTask, Kernel};
 const DEFAULT_BACKLOG_LIMIT: u32 = 128;
@@ -135,7 +134,9 @@ impl AuditLogger {
         Self {
             configuration: AuditConfig::new(kernel.cmdline_args_iter()),
             lost_audit_messages: Default::default(),
-            serial_counter: Default::default(),
+            // Audit event serial numbers start at 1 (0 is reserved to indicate an error in
+            // `auparse_get_serial(3)`).
+            serial_counter: AtomicCounter::new(1),
             audit_queue: Default::default(),
         }
     }
@@ -340,15 +341,12 @@ impl AuditLogger {
 
     /// Function to prepend an audit message with a timestamp and serial number.
     fn prepend_audit_metadata<M: Display, T: FnOnce() -> M>(&self, audit: T) -> String {
-        let epoch_time = MonotonicDuration::from(
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default(),
-        )
-        .into_millis();
+        let duration = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
 
         format!(
-            "audit({}.{}:{}): {}",
-            epoch_time / 1000,
-            epoch_time % 1000,
+            "audit({}.{:03}:{}): {}",
+            duration.as_secs(),
+            duration.subsec_millis(),
             self.serial_counter.next(),
             audit()
         )
@@ -361,4 +359,28 @@ pub struct AuditMessage {
     pub audit_type: u16,
     /// The message to be audit-logged.
     pub message: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use regex_lite::Regex;
+
+    #[::fuchsia::test]
+    fn prepend_audit_metadata_formats_millis_and_serial() {
+        let logger = AuditLogger {
+            configuration: AuditConfig::default(),
+            lost_audit_messages: Default::default(),
+            serial_counter: AtomicCounter::new(1),
+            audit_queue: Default::default(),
+        };
+
+        let re1 = Regex::new(r"^audit\(\d+\.\d{3}:1\): msg1$").unwrap();
+        let msg1 = logger.prepend_audit_metadata(|| "msg1");
+        assert!(re1.is_match(&msg1), "unexpected format: {msg1}");
+
+        let re2 = Regex::new(r"^audit\(\d+\.\d{3}:2\): msg2$").unwrap();
+        let msg2 = logger.prepend_audit_metadata(|| "msg2");
+        assert!(re2.is_match(&msg2), "unexpected format: {msg2}");
+    }
 }
