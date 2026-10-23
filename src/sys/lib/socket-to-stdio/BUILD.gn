@@ -10,13 +10,19 @@ rustc_library("socket-to-stdio") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fdomain/client",
-    "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:termion",
   ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//src/lib/fidl/rust/fidl",
+    ]
+  } else {
+    deps += [ "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common" ]
+  }
   test_deps = [ "//src/lib/fuchsia" ]
   sources = [ "src/lib.rs" ]
 }

@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
+#[cfg(target_os = "fuchsia")]
 use fidl_fuchsia_io as fio;
+#[cfg(not(target_os = "fuchsia"))]
+use fidl_fuchsia_io_common as fio;
 use futures::future::Either;
 use futures::stream::StreamExt as _;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -60,6 +63,7 @@ impl Stdout<'_> {
 ///   1. locks stdin and copies the input to `socket`
 ///   2. reads data from `socket` and writes it to `stdout`
 /// Finishes when the remote end of the socket closes (when (2) completes).
+#[cfg(target_os = "fuchsia")]
 pub async fn connect_socket_to_stdio(
     socket: fidl::Socket,
     stdout: Stdout<'_>,
@@ -148,7 +152,7 @@ where
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "fuchsia"))]
 mod tests {
     use super::*;
 
