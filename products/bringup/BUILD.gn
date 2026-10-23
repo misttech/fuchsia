@@ -72,7 +72,7 @@ if (current_cpu == "x64") {
 
     # Note: this is last so that local variables cannot mask anything set in
     # that scope, so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
+    forward_variables_from(bazel_product_bundle_with_tests_params, "*")
   }
 }
 
@@ -106,7 +106,7 @@ if (current_cpu == "arm64") {
 
     # Note: this is last so that local variables cannot mask anything set in
     # that scope, so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
+    forward_variables_from(bazel_product_bundle_with_tests_params, "*")
   }
 
   bazel_product_bundle("product_bundle.qemu-arm64") {
@@ -140,7 +140,7 @@ if (current_cpu == "arm64") {
 
     # Note: this is last so that local variables cannot mask anything set in
     # that scope, so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
+    forward_variables_from(bazel_product_bundle_with_tests_params, "*")
   }
 
   bazel_product_bundle("product_bundle.vim3") {
@@ -170,7 +170,7 @@ if (current_cpu == "arm64") {
 
     # Note: this is last so that local variables cannot mask anything set in
     # that scope, so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
+    forward_variables_from(bazel_product_bundle_with_tests_params, "*")
   }
 }
 
@@ -204,6 +204,6 @@ if (current_cpu == "riscv64") {
 
     # Note: this is last so that local variables cannot mask anything set in
     # that scope, so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
+    forward_variables_from(bazel_product_bundle_with_tests_params, "*")
   }
 }

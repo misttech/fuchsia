@@ -11,6 +11,13 @@ bazel_product_bundle_params = {
   image_has_fvm = false
 }
 
+# Common params for all bazel_product_bundle() template instances for
+# bringup_with_tests products
+bazel_product_bundle_with_tests_params = {
+  forward_variables_from(bazel_product_bundle_params, "*")
+  generate_size_report = false
+}
+
 bringup_bazel_inputs = []
 
 bringup_with_tests_bazel_inputs = [
