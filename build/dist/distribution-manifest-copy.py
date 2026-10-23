@@ -24,6 +24,18 @@ def main() -> None:
         required=True,
     )
     parser.add_argument(
+        "--expect-output",
+        help="A file in the `--output` directory that will be produced.",
+        type=Path,
+        action="append",
+        default=[],
+    )
+    parser.add_argument(
+        "--expect-any-output",
+        help="Don't require `--expect-output=...` switches and don't check.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--depfile",
         type=Path,
         help="Depfile",
@@ -36,6 +48,22 @@ def main() -> None:
             args.output.joinpath(entry["destination"]): Path(entry["source"])
             for entry in json.load(f)
         }
+
+    if args.expect_any_output:
+        assert not args.expect_output
+    else:
+        expected_files = set(args.expect_output)
+        listed_files = set(files.keys())
+        unexpected_files = sorted(listed_files - expected_files)
+        missing_files = sorted(expected_files - listed_files)
+        assert not unexpected_files, "\n".join(
+            ["Listed but not expected:"]
+            + [f"  {file}" for file in unexpected_files]
+        )
+        assert not missing_files, "\n".join(
+            ["Not listed as expected:"]
+            + [f"  {file}" for file in unexpected_files]
+        )
 
     # Always completely remove any old directory.
     if args.output.exists():

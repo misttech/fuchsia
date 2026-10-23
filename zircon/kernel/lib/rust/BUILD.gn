@@ -232,6 +232,7 @@ action("rust-custom-target") {
 # to populate its `lib` directory; and the crate targets to build (using the
 # previous stage's custom target).
 previous_crates = []  # Accumulates all the crate names from every stage.
+previous_outputs = []  # Accumulates the expected_outputs from those.
 foreach(stage, stages) {
   stage.sysroot = "$root_gen_dir/${stage.name}"
   stage.rustlib = "${stage.sysroot}/$custom_target_relpath"
@@ -328,6 +329,7 @@ foreach(stage, stages) {
 
     # Add to the collection the next iteration of the outer loop will use.
     previous_crates += [ crate ]
+    previous_outputs += [ "lib${crate.name}.rlib" ]
   }
 
   # Collect the details for populating ${stage.rustlib}/lib.  Everything in
@@ -350,6 +352,7 @@ foreach(stage, stages) {
   distribution_manifest_copy("${stage.name}.sysroot") {
     visibility = [ ":*" ]
     outputs = [ "${stage.rustlib}/lib" ]
+    expected_outputs = previous_outputs
     deps = [ ":${stage.name}.manifest" ]
     metadata = {
       # This will roll up into the generated_file()s fed to the RBE wrapper so

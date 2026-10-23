@@ -178,6 +178,7 @@ template("distribution_manifest_host_test_data") {
     forward_variables_from(invoker,
                            "*",
                            [
+                             "expected_outputs",
                              "metadata",
                              "testonly",
                            ])
@@ -188,6 +189,10 @@ template("distribution_manifest_host_test_data") {
       }
       test_runtime_deps += outputs
     }
+
+    # It's safe for GN/Ninja not to know the file list, because only the test
+    # running actually looks in the output directory.
+    expected_outputs = true
   }
 }
 

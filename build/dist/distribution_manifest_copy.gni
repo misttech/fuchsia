@@ -28,6 +28,19 @@
 #    - Type: list(label)
 #    - Default: []
 #
+#  * expected_outputs
+#    - Required: If this is `true`, then there **MUST NOT** be any use of the
+#    contents of the $outputs directory as _inputs_ to other parts of the build;
+#    the contents of $outputs will not be checked by this build action and must
+#    be used only for things like test-running where the build system is not
+#    considering the modification time of any of those files.  Otherwise, this
+#    must be a complete list of files populating the $outputs directory, given
+#    as paths relative to that directory (the destinations in the metadata).
+#    Order does not matter but the set must be complete; these become GN outputs
+#    of the action() target so that Ninja will know to re-check their timestamps
+#    after running this action in case any is an input to another build step.
+#    - Type: true or list(path)
+#
 #  * metadata, testonly, visibility
 #    - Optional: Usual GN meanings.
 #
@@ -59,6 +72,18 @@ template("distribution_manifest_copy") {
       "--manifest=" + rebase_path(sources[0], root_build_dir),
       "--depfile=" + rebase_path(depfile, root_build_dir),
     ]
+
+    assert(defined(invoker.expected_outputs),
+           "distribution_manifest_copy() rqeuires expected_outputs")
+    if (invoker.expected_outputs == true) {
+      args += [ "--expect-any-output" ]
+    } else {
+      foreach(file, invoker.expected_outputs) {
+        args += [ "--expect-output=" +
+                  rebase_path(file, root_build_dir, outputs[0]) ]
+        outputs += [ "${outputs[0]}/${file}" ]
+      }
+    }
 
     # This action is in fact hermetic enough.  Its inputs are all accounted for
     # in the depfile.  It does have individual output _files_ that are not
