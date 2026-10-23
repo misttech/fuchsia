@@ -605,6 +605,39 @@ pub fn fs_node_init_on_create(
     })
 }
 
+/// Called by remote file-system implementations before creating a new `FsNode` with `mode` and
+/// `name` under `parent`, to obtain the extended attribute with which the new node should be
+/// labeled, so that it can be supplied to the remote file-system inline with the creation request.
+///
+/// Once the node has been created, the file-system implementation should call
+/// `fs_node_notify_security_context()` with the attribute's value, so that the node's security
+/// state reflects the label that was applied remotely.
+///
+/// Returns `Ok(None)` if SELinux is not enabled, no policy has yet been loaded, or the file-system
+/// does not persist labels as extended attributes.
+///
+/// Corresponds to the `dentry_init_security()` LSM hook.
+pub fn dentry_init_security(
+    current_task: &CurrentTask,
+    parent: &FsNode,
+    mode: FileMode,
+    name: &FsStr,
+) -> Result<Option<FsNodeSecurityXattr>, Errno> {
+    track_hook_duration!("security.hooks.dentry_init_security");
+    let Some(parent) = NonPrivateFsNode::assert_from(parent) else {
+        return Ok(None);
+    };
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::fs_node::dentry_init_security(
+            security_server,
+            current_task,
+            parent,
+            mode,
+            name,
+        )
+    })
+}
+
 /// Called by specialist file-system implementations before creating a new `FsNode`, to obtain the
 /// SID with which the code will be labeled, in advance.
 ///
@@ -2382,7 +2415,7 @@ pub fn set_procattr(
     )
 }
 
-/// Returns true if SELinux is enabled on the kernel for this task.
+/// Returns true if the file system persists labels in extended attributes.
 pub fn fs_is_xattr_labeled(fs: FileSystemHandle) -> bool {
     fs.security_state.state.supports_xattr()
 }

@@ -399,6 +399,36 @@ pub(in crate::security) fn compute_new_fs_node_sid(
     })
 }
 
+/// Returns the `FsNodeSecurityXattr` with which a new `FsNode` of `mode` and `name` created under
+/// `parent` should be labeled, or `None` if no policy has yet been loaded or the file-system does
+/// not persist labels as extended attributes.
+pub(in crate::security) fn dentry_init_security(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    parent: NonPrivateFsNode<'_>,
+    mode: FileMode,
+    name: &FsStr,
+) -> Result<Option<FsNodeSecurityXattr>, Errno> {
+    let fs = parent.fs();
+    if !fs.security_state.state.supports_xattr() {
+        return Ok(None);
+    }
+    let Some(fs_label) = fs.security_state.state.label() else {
+        return Ok(None);
+    };
+
+    let new_node_class = file_class_from_file_mode(mode)?.into();
+    let sid = compute_new_fs_node_sid(
+        security_server,
+        current_task,
+        fs_label,
+        Some(parent),
+        new_node_class,
+        name.into(),
+    )?;
+    Ok(Some(make_fs_node_security_xattr(security_server, sid)?))
+}
+
 /// Called by file-system implementations when creating the `FsNode` for a new file.
 pub(in crate::security) fn fs_node_init_on_create(
     security_server: &SecurityServer,
@@ -407,14 +437,24 @@ pub(in crate::security) fn fs_node_init_on_create(
     parent: Option<NonPrivateFsNode<'_>>,
     name: &FsStr,
 ) -> Result<Option<FsNodeSecurityXattr>, Errno> {
-    // By definition this is a new `FsNode` so should not have already been labeled.
-    let label_class = new_node.selinux_state().read();
-    let is_uninitialized = matches!(label_class.label, FsNodeLabel::Uninitialized);
-    assert!(is_uninitialized, "init_on_create() for {:?} with label {:?}", new_node, *label_class);
-
     // If the `new_node` does not already have a specific security class selected then choose one
     // based on its file mode.
     let new_node_class = fs_node_ensure_class(new_node)?;
+
+    // By definition this is a new `FsNode` so should not have already been labeled, except by a
+    // file-system implementation that supplied the security context inline when creating the node
+    // remotely (see `dentry_init_security()`), which is only possible for xattr-labeled
+    // file-systems.
+    let label_class = new_node.selinux_state().read();
+    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
+        assert!(
+            new_node.fs().security_state.state.supports_xattr(),
+            "init_on_create() for {:?} with label {:?}",
+            new_node,
+            *label_class
+        );
+        return Ok(None);
+    }
 
     // If the file system is not yet labeled (i.e. no policy has been loaded) then no label can
     // be applied yet.

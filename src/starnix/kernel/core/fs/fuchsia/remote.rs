@@ -702,6 +702,83 @@ impl<I: SyncIo> RemoteNode<I> {
             self.node.io.fetch_remote_memory(p)
         })
     }
+
+    /// Shared implementation of `mknod()` and `mkdir()`.
+    ///
+    /// Creates a child of this directory named `name` with the given `protocol` (file or
+    /// directory), supplying its mode, ownership, `extra_attributes`, and (if the file-system is
+    /// xattr-labeled) its security context inline with the creation request, so that no separate
+    /// `UpdateAttributes` or `SetExtendedAttribute` round-trips are needed afterwards.
+    fn create_child(
+        &self,
+        node: &FsNode,
+        current_task: &CurrentTask,
+        name: Option<&FsStr>,
+        mut node_info: FsNodeInfo,
+        create_flags: fio::Flags,
+        extra_attributes: fio::MutableNodeAttributes,
+    ) -> Result<FsNodeHandle, Errno> {
+        let name_str = if let Some(name) = name {
+            node.fail_if_locked(current_task, &node.info())?;
+            get_name_str(name)?
+        } else {
+            "."
+        };
+
+        let fs = node.fs();
+        let fs_ops = RemoteFs::<I>::from_fs(&fs);
+        let mode = node_info.mode;
+
+        // Ask the LSM for the label the new node should receive, so that it can be applied by the
+        // remote file-system as part of creation.
+        let security_xattr =
+            security::dentry_init_security(current_task, node, mode, name.unwrap_or_default())?;
+        // `fio::MutableNodeAttributes::selinux_context` carries specifically the SELinux label (up
+        // to `MAX_SELINUX_CONTEXT_ATTRIBUTE_LEN` bytes); any other or larger security xattr is left
+        // to be applied by the VFS via `SetExtendedAttribute`.
+        let selinux_context = security_xattr
+            .as_ref()
+            .filter(|xattr| {
+                xattr.name.as_bytes() == XATTR_NAME_SELINUX.to_bytes()
+                    && xattr.value.len() <= fio::MAX_SELINUX_CONTEXT_ATTRIBUTE_LEN as usize
+            })
+            .map(|xattr| xattr.value.clone());
+
+        let (ops, node_id) = will_dirty(&[&self.node], || {
+            self.node
+                .io
+                .open(
+                    name_str,
+                    create_flags | fio::PERM_READABLE | fio::PERM_WRITABLE,
+                    Some(fio::MutableNodeAttributes {
+                        mode: Some(mode.bits()),
+                        uid: Some(node_info.uid),
+                        gid: Some(node_info.gid),
+                        selinux_context: selinux_context
+                            .clone()
+                            .map(|ctx| fio::SelinuxContext::Data(ctx.into())),
+                        ..extra_attributes
+                    }),
+                    NODE_INFO_ATTRIBUTES
+                        | fio::NodeAttributesQuery::ID
+                        | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
+                    Factory::new(&mut node_info, !(mode.is_reg() || mode.is_dir())),
+                )
+                .map_err(|status| from_status_like_fdio!(status, name_str))
+        })?;
+
+        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
+
+        let child = fs.create_node(node_id, ops, node_info);
+        if let Some(context) = selinux_context {
+            let _ = security::fs_node_notify_security_context(
+                current_task,
+                &child,
+                FsStr::new(&context),
+            );
+        }
+        Ok(child)
+    }
 }
 
 /// Classified Fuchsia handle representation returned by [`classify_remote_handle`].
@@ -1203,45 +1280,17 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
         dev: DeviceId,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.fail_if_locked(current_task, &node.info())?;
-        let name = get_name_str(name)?;
-
-        let fs = node.fs();
-        let fs_ops = RemoteFs::<I>::from_fs(&fs);
-
         if !(mode.is_reg() || mode.is_chr() || mode.is_blk() || mode.is_fifo() || mode.is_sock()) {
             return error!(EINVAL, name);
         }
-
-        let mut node_info = FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) };
-        let (ops, node_id) = will_dirty(&[&self.node], || {
-            self.node
-                .io
-                .open(
-                    name,
-                    fio::Flags::FLAG_MUST_CREATE
-                        | fio::Flags::PROTOCOL_FILE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                    Some(fio::MutableNodeAttributes {
-                        mode: Some(mode.bits()),
-                        uid: Some(owner.uid),
-                        gid: Some(owner.gid),
-                        rdev: Some(dev.bits()),
-                        ..Default::default()
-                    }),
-                    NODE_INFO_ATTRIBUTES
-                        | fio::NodeAttributesQuery::ID
-                        | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory::new(&mut node_info, !mode.is_reg()),
-                )
-                .map_err(|status| from_status_like_fdio!(status, name))
-        })?;
-
-        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
-
-        let child = fs.create_node(node_id, ops, node_info);
-        Ok(child)
+        self.create_child(
+            node,
+            current_task,
+            Some(name),
+            FsNodeInfo { rdev: dev, ..FsNodeInfo::new(mode, owner) },
+            fio::Flags::FLAG_MUST_CREATE | fio::Flags::PROTOCOL_FILE,
+            fio::MutableNodeAttributes { rdev: Some(dev.bits()), ..Default::default() },
+        )
     }
 
     fn mkdir(
@@ -1252,40 +1301,14 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        node.fail_if_locked(current_task, &node.info())?;
-        let name = get_name_str(name)?;
-
-        let fs = node.fs();
-        let fs_ops = RemoteFs::<I>::from_fs(&fs);
-
-        let mut node_info = FsNodeInfo::new(mode, owner);
-        let (ops, node_id) = will_dirty(&[&self.node], || {
-            self.node
-                .io
-                .open(
-                    name,
-                    fio::Flags::FLAG_MUST_CREATE
-                        | fio::Flags::PROTOCOL_DIRECTORY
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                    Some(fio::MutableNodeAttributes {
-                        mode: Some(mode.bits()),
-                        uid: Some(owner.uid),
-                        gid: Some(owner.gid),
-                        ..Default::default()
-                    }),
-                    NODE_INFO_ATTRIBUTES
-                        | fio::NodeAttributesQuery::ID
-                        | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory::new(&mut node_info, false),
-                )
-                .map_err(|status| from_status_like_fdio!(status, name))
-        })?;
-
-        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
-
-        let child = fs.create_node(node_id, ops, node_info);
-        Ok(child)
+        self.create_child(
+            node,
+            current_task,
+            Some(name),
+            FsNodeInfo::new(mode, owner),
+            fio::Flags::FLAG_MUST_CREATE | fio::Flags::PROTOCOL_DIRECTORY,
+            fio::MutableNodeAttributes::default(),
+        )
     }
 
     fn lookup(
@@ -1506,13 +1529,10 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
     fn create_tmpfile(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         mode: FileMode,
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
-        let fs = node.fs();
-        let fs_ops = RemoteFs::<I>::from_fs(&fs);
-
         if !mode.is_reg() {
             return error!(EINVAL);
         }
@@ -1523,32 +1543,14 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
         // there exist fuchsia flags `fio::FLAG_TEMPORARY_AS_NOT_LINKABLE`, the starnix vfs already
         // handles this case and makes sure that the created file is not linkable. There is also no
         // way of passing the open flags to this function.
-        let mut node_info = FsNodeInfo::new(mode, owner);
-        let (ops, node_id) = will_dirty(&[&self.node], || {
-            self.node
-                .io
-                .open(
-                    ".",
-                    fio::Flags::PROTOCOL_FILE
-                        | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                    Some(fio::MutableNodeAttributes {
-                        mode: Some(mode.bits()),
-                        uid: Some(owner.uid),
-                        gid: Some(owner.gid),
-                        ..Default::default()
-                    }),
-                    NODE_INFO_ATTRIBUTES
-                        | fio::NodeAttributesQuery::ID
-                        | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
-                    Factory::new(&mut node_info, false),
-                )
-                .map_err(|status| from_status_like_fdio!(status))
-        })?;
-
-        let node_id = if fs_ops.use_remote_ids { node_id } else { fs.allocate_ino() };
-        Ok(fs.create_node(node_id, ops, node_info))
+        self.create_child(
+            node,
+            current_task,
+            None,
+            FsNodeInfo::new(mode, owner),
+            fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY | fio::Flags::PROTOCOL_FILE,
+            fio::MutableNodeAttributes::default(),
+        )
     }
 
     fn link(
@@ -2675,6 +2677,7 @@ mod test {
     use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
+    use std::collections::BTreeMap;
     use std::sync::Barrier;
     use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
     use storage_device::DeviceHolder;
@@ -4333,9 +4336,13 @@ mod test {
     struct MockRemoteFs {
         get_attrs_count: AtomicU32,
         get_backing_memory_count: AtomicU32,
+        get_xattr_count: AtomicU32,
+        set_xattr_count: AtomicU32,
         file_size: AtomicUsize,
         write_offsets: Mutex<Vec<u64>>,
         open_paths: Mutex<Vec<String>>,
+        create_selinux_contexts: Mutex<Vec<(String, Option<Vec<u8>>)>>,
+        xattrs: Mutex<BTreeMap<Vec<u8>, Vec<u8>>>,
         data: Mutex<Vec<u8>>,
         get_attrs_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
         write_hook: Mutex<Option<futures::future::BoxFuture<'static, ()>>>,
@@ -4346,11 +4353,25 @@ mod test {
             self: Arc<Self>,
             mut stream: fio::FileRequestStream,
             control_handle: fio::FileControlHandle,
+            attributes_query: fio::NodeAttributesQuery,
         ) {
             let size = self.file_size.load(Ordering::SeqCst) as u64;
+            let selinux_context =
+                if attributes_query.contains(fio::NodeAttributesQuery::SELINUX_CONTEXT) {
+                    self.xattrs
+                        .lock()
+                        .get(b"security.selinux".as_slice())
+                        .cloned()
+                        .map(fio::SelinuxContext::Data)
+                } else {
+                    None
+                };
             let info = fio::FileInfo {
                 attributes: Some(fio::NodeAttributes2 {
-                    mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
+                    mutable_attributes: fio::MutableNodeAttributes {
+                        selinux_context,
+                        ..Default::default()
+                    },
                     immutable_attributes: fio::ImmutableNodeAttributes {
                         id: Some(2),
                         link_count: Some(1),
@@ -4388,6 +4409,29 @@ mod test {
                                 .unwrap();
                         })
                         .detach();
+                    }
+                    fio::FileRequest::GetExtendedAttribute { name, responder } => {
+                        self.get_xattr_count.fetch_add(1, Ordering::SeqCst);
+                        match self.xattrs.lock().get(&name).cloned() {
+                            Some(val) => {
+                                responder.send(Ok(fio::ExtendedAttributeValue::Bytes(val))).unwrap()
+                            }
+                            None => responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap(),
+                        }
+                    }
+                    fio::FileRequest::SetExtendedAttribute { name, value, responder, .. } => {
+                        self.set_xattr_count.fetch_add(1, Ordering::SeqCst);
+                        if let fio::ExtendedAttributeValue::Bytes(bytes) = value {
+                            self.xattrs.lock().insert(name, bytes);
+                        }
+                        responder.send(Ok(())).unwrap();
+                    }
+                    fio::FileRequest::RemoveExtendedAttribute { name, responder } => {
+                        if self.xattrs.lock().remove(&name).is_some() {
+                            responder.send(Ok(())).unwrap();
+                        } else {
+                            responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
+                        }
                     }
                     fio::FileRequest::ReadAt { count, offset, responder } => {
                         let data = self.data.lock();
@@ -4442,9 +4486,6 @@ mod test {
                         };
                         responder.send(Ok(new_offset)).unwrap();
                     }
-                    fio::FileRequest::GetExtendedAttribute { responder, .. } => {
-                        responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
-                    }
                     fio::FileRequest::GetBackingMemory { flags, responder } => {
                         self.get_backing_memory_count.fetch_add(1, Ordering::SeqCst);
                         let vmo = zx::Vmo::create(4096).unwrap();
@@ -4468,11 +4509,25 @@ mod test {
             self: Arc<Self>,
             mut stream: fio::DirectoryRequestStream,
             control_handle: fio::DirectoryControlHandle,
+            attributes_query: fio::NodeAttributesQuery,
         ) -> futures::future::BoxFuture<'static, ()> {
             async move {
+                let selinux_context =
+                    if attributes_query.contains(fio::NodeAttributesQuery::SELINUX_CONTEXT) {
+                        self.xattrs
+                            .lock()
+                            .get(b"security.selinux".as_slice())
+                            .cloned()
+                            .map(fio::SelinuxContext::Data)
+                    } else {
+                        None
+                    };
                 let info = fio::DirectoryInfo {
                     attributes: Some(fio::NodeAttributes2 {
-                        mutable_attributes: fio::MutableNodeAttributes { ..Default::default() },
+                        mutable_attributes: fio::MutableNodeAttributes {
+                            selinux_context,
+                            ..Default::default()
+                        },
                         immutable_attributes: fio::ImmutableNodeAttributes {
                             id: Some(1),
                             link_count: Some(1),
@@ -4486,9 +4541,24 @@ mod test {
                 let mut sub_tasks = Vec::new();
                 while let Some(Ok(request)) = stream.next().await {
                     match request {
-                        fio::DirectoryRequest::Open { path, flags, object, .. } => {
+                        fio::DirectoryRequest::Open { path, flags, options, object, .. } => {
                             self.open_paths.lock().push(path.clone());
-                            if flags.contains(fio::Flags::FLAG_MUST_CREATE) {
+                            let query = options.attributes.unwrap_or_default();
+                            if flags.intersects(
+                                fio::Flags::FLAG_MUST_CREATE
+                                    | fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY,
+                            ) {
+                                let selinux_ctx = options
+                                    .create_attributes
+                                    .as_ref()
+                                    .and_then(|attrs| attrs.selinux_context.as_ref())
+                                    .and_then(|ctx| match ctx {
+                                        fio::SelinuxContext::Data(d) => Some(d.clone()),
+                                        _ => None,
+                                    });
+                                self.create_selinux_contexts
+                                    .lock()
+                                    .push((path.clone(), selinux_ctx));
                                 let self_clone = Arc::clone(&self);
                                 if flags.contains(fio::Flags::PROTOCOL_DIRECTORY) {
                                     sub_tasks.push(fasync::Task::spawn(async move {
@@ -4496,7 +4566,11 @@ mod test {
                                             ServerEnd::<fio::DirectoryMarker>::new(object)
                                                 .into_stream_and_control_handle();
                                         self_clone
-                                            .handle_directory_requests(stream, control_handle)
+                                            .handle_directory_requests(
+                                                stream,
+                                                control_handle,
+                                                query,
+                                            )
                                             .await;
                                     }));
                                 } else {
@@ -4505,19 +4579,19 @@ mod test {
                                             ServerEnd::<fio::FileMarker>::new(object)
                                                 .into_stream_and_control_handle();
                                         self_clone
-                                            .handle_file_requests(stream, control_handle)
+                                            .handle_file_requests(stream, control_handle, query)
                                             .await;
                                     }));
                                 }
-                            } else if path == "file"
-                                || flags.contains(fio::Flags::FLAG_CREATE_AS_UNNAMED_TEMPORARY)
-                            {
+                            } else if path == "file" {
                                 let self_clone = Arc::clone(&self);
                                 sub_tasks.push(fasync::Task::spawn(async move {
                                     let (stream, control_handle) =
                                         ServerEnd::<fio::FileMarker>::new(object)
                                             .into_stream_and_control_handle();
-                                    self_clone.handle_file_requests(stream, control_handle).await;
+                                    self_clone
+                                        .handle_file_requests(stream, control_handle, query)
+                                        .await;
                                 }));
                             } else if path == "dir" || path == "dir2" || path == "sub" {
                                 let self_clone = Arc::clone(&self);
@@ -4526,7 +4600,7 @@ mod test {
                                         ServerEnd::<fio::DirectoryMarker>::new(object)
                                             .into_stream_and_control_handle();
                                     self_clone
-                                        .handle_directory_requests(stream, control_handle)
+                                        .handle_directory_requests(stream, control_handle, query)
                                         .await;
                                 }));
                             } else {
@@ -4548,6 +4622,36 @@ mod test {
                                 )))
                                 .unwrap();
                         }
+                        fio::DirectoryRequest::GetExtendedAttribute { name, responder } => {
+                            self.get_xattr_count.fetch_add(1, Ordering::SeqCst);
+                            match self.xattrs.lock().get(&name).cloned() {
+                                Some(val) => responder
+                                    .send(Ok(fio::ExtendedAttributeValue::Bytes(val)))
+                                    .unwrap(),
+                                None => {
+                                    responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap()
+                                }
+                            }
+                        }
+                        fio::DirectoryRequest::SetExtendedAttribute {
+                            name,
+                            value,
+                            responder,
+                            ..
+                        } => {
+                            self.set_xattr_count.fetch_add(1, Ordering::SeqCst);
+                            if let fio::ExtendedAttributeValue::Bytes(bytes) = value {
+                                self.xattrs.lock().insert(name, bytes);
+                            }
+                            responder.send(Ok(())).unwrap();
+                        }
+                        fio::DirectoryRequest::RemoveExtendedAttribute { name, responder } => {
+                            if self.xattrs.lock().remove(&name).is_some() {
+                                responder.send(Ok(())).unwrap();
+                            } else {
+                                responder.send(Err(zx::Status::NOT_FOUND.into_raw())).unwrap();
+                            }
+                        }
                         fio::DirectoryRequest::Close { responder } => {
                             responder.send(Ok(())).unwrap();
                         }
@@ -4565,14 +4669,17 @@ mod test {
             let mut sub_tasks = Vec::new();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fio::DirectoryRequest::Open { path, object, .. } => {
+                    fio::DirectoryRequest::Open { path, options, object, .. } => {
                         if path == "." {
+                            let query = options.attributes.unwrap_or_default();
                             let self_clone = Arc::clone(&self);
                             sub_tasks.push(fasync::Task::spawn(async move {
                                 let (stream, control_handle) =
                                     ServerEnd::<fio::DirectoryMarker>::new(object)
                                         .into_stream_and_control_handle();
-                                self_clone.handle_directory_requests(stream, control_handle).await;
+                                self_clone
+                                    .handle_directory_requests(stream, control_handle, query)
+                                    .await;
                             }));
                         }
                     }
@@ -4589,6 +4696,85 @@ mod test {
                 let _ = sub_task.await;
             }
         }
+    }
+
+    #[::fuchsia::test]
+    async fn test_mknod_and_mkdir_pass_selinux_context_inline() {
+        let (client, stream) = create_request_stream::<fio::DirectoryMarker>();
+        let state = Arc::new(MockRemoteFs::default());
+
+        let server_task = fasync::Task::spawn(Arc::clone(&state).run(stream));
+
+        const TEST_POLICY: &[u8] = include_bytes!(
+            "../../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy"
+        );
+
+        spawn_kernel_with_selinux_and_run(async move |current_task, security_server| {
+            security_server.set_enforcing(false);
+            security_server.load_policy(TEST_POLICY.to_vec()).expect("policy load failed");
+            security::selinuxfs_policy_loaded(current_task);
+
+            let fs = RemoteFs::new_fs(
+                &current_task.kernel(),
+                client.into_channel(),
+                FileSystemOptions { source: FlyByteStr::new(b"."), ..Default::default() },
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .expect("failed to mount test remote FS");
+            security::file_system_resolve_security(current_task, &fs).expect("resolve fs security");
+
+            let ns = Namespace::new(fs);
+            let root = ns.root();
+
+            let file_node = root
+                .create_node(current_task, "new_file".into(), mode!(IFREG, 0o644), DeviceId::NONE)
+                .expect("create_node file failed");
+            {
+                let _info = file_node
+                    .entry
+                    .node
+                    .fetch_and_refresh_info(current_task)
+                    .expect("fetch file info");
+            }
+
+            let dir_node = root
+                .create_node(current_task, "new_dir".into(), mode!(IFDIR, 0o755), DeviceId::NONE)
+                .expect("create_node dir failed");
+            {
+                let _info = dir_node
+                    .entry
+                    .node
+                    .fetch_and_refresh_info(current_task)
+                    .expect("fetch dir info");
+            }
+
+            let tmp_node = root
+                .create_tmpfile(current_task, mode!(IFREG, 0o644), OpenFlags::RDWR)
+                .expect("create_tmpfile failed");
+            {
+                let _info = tmp_node
+                    .entry
+                    .node
+                    .fetch_and_refresh_info(current_task)
+                    .expect("fetch tmpfile info");
+            }
+
+            // mknod, mkdir, and create_tmpfile should all pass selinux_context inline in
+            // create_attributes, with 0 SetExtendedAttribute RPCs and 0 GetAttributes RPCs!
+            let created = state.create_selinux_contexts.lock().clone();
+            assert_eq!(created.len(), 3);
+            assert_eq!(created[0].0, "new_file");
+            assert!(created[0].1.is_some(), "expected inline selinux_context for new_file");
+            assert_eq!(created[1].0, "new_dir");
+            assert!(created[1].1.is_some(), "expected inline selinux_context for new_dir");
+            assert_eq!(created[2].0, ".");
+            assert!(created[2].1.is_some(), "expected inline selinux_context for tmpfile");
+            assert_eq!(state.set_xattr_count.load(Ordering::SeqCst), 0);
+            assert_eq!(state.get_attrs_count.load(Ordering::SeqCst), 0);
+        })
+        .await;
+
+        server_task.await;
     }
 
     #[::fuchsia::test]
