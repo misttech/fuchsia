@@ -272,6 +272,38 @@ async fn try_restore_bonds_redacts_secret_keys_on_error() {
 }
 
 #[fuchsia::test]
+async fn add_host_device_continues_when_restore_bonds_reports_errors() {
+    let dispatcher = hd_test::make_simple_test_dispatcher();
+    let host_id = HostId(1);
+    let host_addr = Address::Public([1; 6]);
+    let mut rejected_bond = example::bond(host_addr, Address::Public([3; 6]));
+    rejected_bond.identifier = PeerId(11);
+    let rejected_id = rejected_bond.identifier;
+    dispatcher.stash().store_bonds(vec![rejected_bond]).await.expect("store_bonds succeeds");
+
+    let (_host_server, _host_device, _gas_endpoints, _bonding_delegate) =
+        hd_test::create_and_add_test_host_with_bond_behavior(
+            host_id,
+            &dispatcher,
+            hd_test::RestoreBondsBehavior::RejectPeers(HashSet::from([rejected_id])),
+        )
+        .await
+        .expect("host init should succeed even when RestoreBonds rejects a bond");
+    assert!(host_is_in_dispatcher(&host_id, &dispatcher));
+
+    let second_host_id = HostId(2);
+    let second_host_addr = Address::Public([2; 6]);
+    let accepted_bond = example::bond(second_host_addr, Address::Public([4; 6]));
+    dispatcher.stash().store_bonds(vec![accepted_bond]).await.expect("store_bonds succeeds");
+
+    let (_host_server, _host_device, _gas_endpoints, _bonding_delegate) =
+        hd_test::create_and_add_test_host_to_dispatcher(second_host_id, &dispatcher)
+            .await
+            .expect("host init should succeed when RestoreBonds accepts persisted bonds");
+    assert!(host_is_in_dispatcher(&second_host_id, &dispatcher));
+}
+
+#[fuchsia::test]
 async fn test_notify_host_watcher_of_active_hosts() {
     let watch_peers_broker = hanging_get::HangingGetBroker::new(
         HashMap::new(),

@@ -1171,9 +1171,9 @@ impl HostDispatcher {
         assign_host_data(host_device.clone(), self.clone(), &address)
             .await
             .context(format!("{:?}: failed to assign identity to bt-host", dbg_ids))?;
-        try_restore_bonds(host_device.clone(), self.clone(), &address)
-            .await
-            .map_err(|e| e.as_failure())?;
+        if let Err(e) = try_restore_bonds(host_device.clone(), self.clone(), &address).await {
+            error!("{:?}: failed to restore persisted bonds to bt-host: {}", dbg_ids, e);
+        }
 
         let config = self.state.read().config_settings.clone();
         host_device
@@ -1611,10 +1611,16 @@ pub(crate) mod test {
         LocalServiceProxy, Server_Request, Server_RequestStream as GattServerRequestStream,
     };
     use fidl_fuchsia_bluetooth_host::{
-        BondingDelegateRequestStream, HostRequest, HostRequestStream,
+        BondingDelegateRequest, BondingDelegateRequestStream, HostRequest, HostRequestStream,
     };
     use futures::StreamExt;
     use futures::future::join;
+    use std::collections::HashSet;
+
+    pub(crate) enum RestoreBondsBehavior {
+        AcceptAll,
+        RejectPeers(HashSet<PeerId>),
+    }
 
     pub(crate) fn make_test_dispatcher(
         watch_peers_publisher: hanging_get::Publisher<HashMap<PeerId, Peer>>,
@@ -1666,51 +1672,78 @@ pub(crate) mod test {
         service: Option<LocalServiceProxy>,
     }
 
-    async fn handle_standard_host_server_init(
+    async fn handle_host_server_init(
         mut host_server: HostRequestStream,
+        restore_bonds_behavior: RestoreBondsBehavior,
     ) -> (HostRequestStream, GasEndpoints, BondingDelegateRequestStream) {
         let mut gas_endpoints = GasEndpoints::default();
         let mut bonding_delegate: Option<BondingDelegateRequestStream> = None;
         while gas_endpoints.gatt_server.is_none() || bonding_delegate.is_none() {
-            match host_server.next().await {
-                Some(Ok(HostRequest::SetLocalName { responder, .. })) => {
-                    info!("Setting Local Name");
-                    let _ = responder.send(Ok(()));
-                }
-                Some(Ok(HostRequest::SetDeviceClass { responder, .. })) => {
-                    info!("Setting Device Class");
-                    let _ = responder.send(Ok(()));
-                }
-                Some(Ok(HostRequest::RequestProtocol {
-                    payload: ProtocolRequest::Gatt2Server(server),
-                    ..
-                })) => {
-                    // don't respond at all on the server side.
-                    info!("Storing Gatt Server");
-                    let mut gatt_server = server.into_stream();
-                    info!("GAS Server was started, waiting for publish");
-                    // The Generic Access Service now publishes itself.
-                    match gatt_server.next().await {
-                        Some(Ok(Server_Request::PublishService { info, service, responder })) => {
-                            info!("Captured publish of GAS Service: {:?}", info);
-                            gas_endpoints.service = Some(service.into_proxy());
-                            let _ = responder.send(Ok(()));
-                        }
-                        x => error!("Got unexpected GAS Server request: {:?}", x),
+            let mut restore_bonds_fut = bonding_delegate
+                .as_mut()
+                .map(|stream| stream.next().fuse())
+                .unwrap_or_else(futures::future::Fuse::terminated);
+            futures::select! {
+                host_req = host_server.next() => match host_req {
+                    Some(Ok(HostRequest::SetLocalData { .. })) => {
+                        info!("Setting Local Data");
                     }
-                    gas_endpoints.gatt_server = Some(gatt_server);
-                }
-                Some(Ok(HostRequest::SetConnectable { responder, .. })) => {
-                    info!("Setting connectable");
-                    let _ = responder.send(Ok(()));
-                }
-                Some(Ok(HostRequest::SetBondingDelegate { delegate, .. })) => {
-                    info!("Storing Bonding Delegate");
-                    bonding_delegate = Some(delegate.into_stream());
-                }
-                Some(Ok(req)) => info!("Unhandled Host Request in add: {:?}", req),
-                Some(Err(e)) => error!("Error in host server: {:?}", e),
-                None => break,
+                    Some(Ok(HostRequest::SetLocalName { responder, .. })) => {
+                        info!("Setting Local Name");
+                        let _ = responder.send(Ok(()));
+                    }
+                    Some(Ok(HostRequest::SetDeviceClass { responder, .. })) => {
+                        info!("Setting Device Class");
+                        let _ = responder.send(Ok(()));
+                    }
+                    Some(Ok(HostRequest::RequestProtocol {
+                        payload: ProtocolRequest::Gatt2Server(server),
+                        ..
+                    })) => {
+                        // don't respond at all on the server side.
+                        info!("Storing Gatt Server");
+                        let mut gatt_server = server.into_stream();
+                        info!("GAS Server was started, waiting for publish");
+                        // The Generic Access Service now publishes itself.
+                        match gatt_server.next().await {
+                            Some(Ok(Server_Request::PublishService { info, service, responder })) => {
+                                info!("Captured publish of GAS Service: {:?}", info);
+                                gas_endpoints.service = Some(service.into_proxy());
+                                let _ = responder.send(Ok(()));
+                            }
+                            x => error!("Got unexpected GAS Server request: {:?}", x),
+                        }
+                        gas_endpoints.gatt_server = Some(gatt_server);
+                    }
+                    Some(Ok(HostRequest::SetConnectable { responder, .. })) => {
+                        info!("Setting connectable");
+                        let _ = responder.send(Ok(()));
+                    }
+                    Some(Ok(HostRequest::SetBondingDelegate { delegate, .. })) => {
+                        info!("Storing Bonding Delegate");
+                        bonding_delegate = Some(delegate.into_stream());
+                    }
+                    Some(Ok(req)) => info!("Unhandled Host Request in add: {:?}", req),
+                    Some(Err(e)) => error!("Error in host server: {:?}", e),
+                    None => break,
+                },
+                bond_req = restore_bonds_fut => match bond_req {
+                    Some(Ok(BondingDelegateRequest::RestoreBonds { bonds, responder })) => {
+                        let rejected: Vec<sys::BondingData> = match &restore_bonds_behavior {
+                            RestoreBondsBehavior::AcceptAll => Vec::new(),
+                            RestoreBondsBehavior::RejectPeers(rejected_peers) => bonds
+                                .into_iter()
+                                .filter(|bond: &sys::BondingData| {
+                                    bond.identifier
+                                        .map(PeerId::from)
+                                        .is_some_and(|id| rejected_peers.contains(&id))
+                                })
+                                .collect(),
+                        };
+                        responder.send(&rejected).expect("send RestoreBonds response");
+                    }
+                    other => panic!("expected RestoreBonds request, got: {other:?}"),
+                },
             }
         }
         info!("Finishing host_device mocking for add host");
@@ -1722,8 +1755,18 @@ pub(crate) mod test {
         dispatcher: &HostDispatcher,
     ) -> types::Result<(HostRequestStream, HostDevice, GasEndpoints, BondingDelegateRequestStream)>
     {
+        create_and_add_test_host_with_bond_behavior(id, dispatcher, RestoreBondsBehavior::AcceptAll)
+            .await
+    }
+
+    pub(crate) async fn create_and_add_test_host_with_bond_behavior(
+        id: HostId,
+        dispatcher: &HostDispatcher,
+        restore_bonds_behavior: RestoreBondsBehavior,
+    ) -> types::Result<(HostRequestStream, HostDevice, GasEndpoints, BondingDelegateRequestStream)>
+    {
         let (host_server, host_device) = HostDevice::mock_from_id(id);
-        let host_server_init_handler = handle_standard_host_server_init(host_server);
+        let host_server_init_handler = handle_host_server_init(host_server, restore_bonds_behavior);
         let (res, (host_server, gas_endpoints, bonding_delegate)) =
             join(dispatcher.add_host_device(&host_device), host_server_init_handler).await;
         res?;

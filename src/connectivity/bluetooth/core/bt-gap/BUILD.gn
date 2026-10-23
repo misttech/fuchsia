@@ -114,6 +114,7 @@ fuchsia_test_package("bt-gap-unittests") {
   #  - new_stash_fails_with_malformed_key_value_entry (ERROR with malformed string)
   #  - test_commit_bootstrap_doesnt_fail_from_host_failure (ERROR log is expected, should continue)
   #  - try_restore_bonds_redacts_secret_keys_on_error (ERROR log on rejected bond)
+  #  - add_host_device_continues_when_restore_bonds_reports_errors (ERROR log on rejected bond)
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
