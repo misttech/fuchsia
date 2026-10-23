@@ -83,7 +83,7 @@ rust_library(
     version = "0.3.4",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
             "//third_party/rust_crates/forks/libc-0.2.190:libc",  # cfg(all(any(target_os = "linux", target_os = "android"), not(any(all(target_os = "linux", target_env = ""), getrandom_backend = "custom", getrandom_backend = "linux_raw", getrandom_backend = "rdrand", getrandom_backend = "rndr"))))

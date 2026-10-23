@@ -79,7 +79,7 @@ rust_library(
     version = "0.15.0",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
         "//third_party/rust_crates/vendor/downcast-0.11.0:downcast",
         "//third_party/rust_crates/vendor/fragile-2.0.1:fragile",
         "//third_party/rust_crates/vendor/predicates-3.1.3:predicates",

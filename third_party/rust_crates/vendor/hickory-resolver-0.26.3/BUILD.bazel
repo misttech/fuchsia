@@ -82,7 +82,7 @@ rust_library(
     }),
     version = "0.26.3",
     deps = [
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
         "//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util",
         "//third_party/rust_crates/vendor/hickory-net-0.26.3:hickory_net",
         "//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto",

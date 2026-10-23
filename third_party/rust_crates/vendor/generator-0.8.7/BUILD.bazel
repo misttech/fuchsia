@@ -76,7 +76,7 @@ rust_library(
     version = "0.8.7",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [

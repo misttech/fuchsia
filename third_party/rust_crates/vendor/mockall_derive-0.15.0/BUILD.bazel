@@ -76,7 +76,7 @@ rust_proc_macro(
     version = "0.15.0",
     deps = [
         ":build_script_build",
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.47:quote",
         "//third_party/rust_crates/vendor/syn-2.0.119:syn",

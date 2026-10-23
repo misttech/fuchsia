@@ -82,7 +82,7 @@ rust_library(
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
-        "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
+        "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
         "//third_party/rust_crates/vendor/home-0.5.12:home",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
         "//third_party/rust_crates/vendor/radix_trie-0.3.0:radix_trie",
