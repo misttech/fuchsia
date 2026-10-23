@@ -267,14 +267,24 @@ def _replace_placeholders(input_str, ctx):
     """
     return input_str.replace("$<current_cpu>", _get_current_cpu_arch(ctx))
 
-def _replace_placeholders_in_map(input_map, ctx):
-    """Replaces placeholders in the values of `input_map` with values from `ctx`.
+def _replace_placeholders_in_map_keys(input_map, ctx):
+    """Replaces placeholders in the keys of `input_map` with values from `ctx`.
 
     See `_replace_placeholders()` for details.
     """
     output_map = {}
     for key, value in input_map.items():
         output_map[_replace_placeholders(key, ctx)] = value
+    return output_map
+
+def _replace_placeholders_in_map_values(input_map, ctx):
+    """Replaces placeholders in the values of `input_map` with values from `ctx`.
+
+    See `_replace_placeholders()` for details.
+    """
+    output_map = {}
+    for key, value in input_map.items():
+        output_map[key] = _replace_placeholders(value, ctx)
     return output_map
 
 def _get_additional_info(ctx, files_map, additional_prebuild_info):
@@ -460,14 +470,16 @@ def _create_idk_atom_impl(ctx):
             api_area = ctx.attr.api_area,
             api_file_path = ctx.attr.api_file_path,
             api_contents_map = api_contents_map,
-            atom_files_map = _replace_placeholders_in_map(files_map, ctx),
+            atom_files_map = _replace_placeholders_in_map_keys(files_map, ctx),
             deps = deps,
             atoms_depset = depset(
                 direct = deps,
                 transitive = [dep[FuchsiaIdkAtomInfo].atoms_depset for dep in deps],
             ),
             atom_build_deps = ctx.attr.atom_build_deps,
-            additional_prebuild_info = additional_prebuild_info,
+            # Replace placeholders like `$<current_cpu>` in JSON-encoded values
+            # (used by `idk_ffx_tool` to record `"arch"`).
+            additional_prebuild_info = _replace_placeholders_in_map_values(additional_prebuild_info, ctx),
         ),
         # LINT.ThenChange(//build/bazel/rules/idk/private/providers.bzl:idk_atom_info)
     ]
@@ -482,7 +494,7 @@ provided `files_map` and `additional_prebuild_info`.
 
 Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
 
-The `id`, `meta_dest`, and `atom_files_map` attributes support placeholders.
+The `id`, `meta_dest`, `atom_files_map`, and `additional_prebuild_info` attributes support placeholders.
 See the `_replace_placeholders()` function for supported placeholders.
 """,
     implementation = _create_idk_atom_impl,

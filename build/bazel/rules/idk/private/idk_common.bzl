@@ -8,6 +8,7 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels")
 load(
     "//sdk:atom_lists.bzl",
+    "ALL_FFX_TOOL_ATOMS",
     "ALL_HOST_TOOL_ATOMS",
     "CC_PREBUILT_SHARED_LIBRARY_ATOMS",
     "CC_PREBUILT_STATIC_LIBRARY_ATOMS",
@@ -167,6 +168,9 @@ def verify_atom_is_in_allowlist(
             allowed_targets = HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST
         elif category == "compat_test" and stable:
             allowed_targets = COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST
+    elif type == "ffx_tool":
+        if category == "partner" and stable:
+            allowed_targets = ALL_FFX_TOOL_ATOMS
     elif type == "host_tool":
         if category == "partner" and stable:
             allowed_targets = ALL_HOST_TOOL_ATOMS

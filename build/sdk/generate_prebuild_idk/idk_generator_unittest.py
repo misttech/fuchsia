@@ -845,6 +845,76 @@ sdk://pkg/fuchsia.simple must specify an API area. Valid areas: \\['Bluetooth', 
         ):
             generator.GenerateMetaFileContents()
 
+    def test_generate_meta_file_contents_ffx_tool_atom(self) -> None:
+        self._write_build_file("host_x64/ffx-test-tool", "")
+        self._write_build_file("host_x64/ffx-test-tool.json", "{}")
+        executable_entry = {
+            "dest": "tools/x64/ffx_tools/ffx-test-tool",
+            "source": "host_x64/ffx-test-tool",
+        }
+        metadata_entry = {
+            "dest": "tools/x64/ffx_tools/ffx-test-tool.json",
+            "source": "host_x64/ffx-test-tool.json",
+        }
+        for atom_files in (
+            [executable_entry, metadata_entry],
+            [metadata_entry, executable_entry],
+        ):
+            manifest: list[AtomInfo] = [
+                self._COLLECTION_INFO,
+                {
+                    "atom_id": "sdk://tools/x64/ffx_tools/ffx-test-tool",
+                    "atom_label": "//src/developer/ffx/tools/test:ffx-test-tool_idk",
+                    "atom_type": "ffx_tool",
+                    "category": "partner",
+                    "meta_dest": "tools/x64/ffx_tools/ffx-test-tool-meta.json",
+                    "idk_name": "ffx-test-tool",
+                    "prebuild_info": {
+                        "arch": "x64",
+                        "file_base": "tools",
+                    },
+                    "atom_deps": [],
+                    "atom_files": atom_files,
+                    "is_stable": True,
+                    "api_area": "Developer",
+                },
+            ]
+
+            generator = IdkGenerator(manifest, self.build_dir, self.source_dir)
+            ret_code, files_read = generator.GenerateMetaFileContents()
+
+            self.assertEqual(ret_code, 0)
+            self.assertEqual(files_read, set())
+            self.assertIn(
+                "tools/x64/ffx_tools/ffx-test-tool-meta.json",
+                generator._meta_files,
+            )
+            self.assertEqual(
+                generator._meta_files[
+                    "tools/x64/ffx_tools/ffx-test-tool-meta.json"
+                ],
+                {
+                    "name": "ffx-test-tool",
+                    "root": "tools",
+                    "type": "ffx_tool",
+                    "files": {},
+                    "target_files": {
+                        "x64": {
+                            "executable": "tools/x64/ffx_tools/ffx-test-tool",
+                            "executable_metadata": "tools/x64/ffx_tools/ffx-test-tool.json",
+                        },
+                    },
+                },
+            )
+            self.assertEqual(
+                generator._atom_files["tools/x64/ffx_tools/ffx-test-tool"],
+                "host_x64/ffx-test-tool",
+            )
+            self.assertEqual(
+                generator._atom_files["tools/x64/ffx_tools/ffx-test-tool.json"],
+                "host_x64/ffx-test-tool.json",
+            )
+
 
 class RelativeToWalkUpTest(unittest.TestCase):
     def test_relative_to_walk_up(self) -> None:

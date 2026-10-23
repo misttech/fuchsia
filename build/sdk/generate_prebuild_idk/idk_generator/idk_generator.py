@@ -411,7 +411,7 @@ class PrebuildMap(object):
             #   "config"
             #   "data"
             #   "documentation"
-            #   "ffx_tool"
+            #   "ffx_tool" (GN only)
             #   "loadable_module"
             #   "sysroot"
             assert "atom_deps" not in info and "idk_name" not in info
@@ -425,6 +425,7 @@ class PrebuildMap(object):
             "companion_host_tool": self._meta_for_companion_host_tool,
             "dart_library": self._meta_for_dart_library,
             "experimental_python_e2e_test": self._meta_for_experimental_python_e2e_test,
+            "ffx_tool": self._meta_for_ffx_tool,
             "host_tool": self._meta_for_host_tool,
             "package": self._meta_for_package,
             "version_history": self._meta_for_version_history,
@@ -507,6 +508,34 @@ class PrebuildMap(object):
                 "sources": prebuild["sources"],
                 "stable": info["is_stable"],
                 "type": info["atom_type"],
+            },
+            {},
+            {},
+            set(),
+        )
+
+    def _meta_for_ffx_tool(self, info: AtomInfo) -> GetMetaResult:
+        prebuild = info["prebuild_info"]
+        files = [f["dest"] for f in info["atom_files"]]
+        assert len(files) == 2
+        if files[0].endswith(".json"):
+            executable_metadata, executable = files
+        else:
+            executable, executable_metadata = files
+        assert executable_metadata == f"{executable}.json"
+
+        return self.GetMetaResult(
+            {
+                "name": info["idk_name"],
+                "root": prebuild["file_base"],
+                "type": info["atom_type"],
+                "files": {},
+                "target_files": {
+                    prebuild["arch"]: {
+                        "executable": executable,
+                        "executable_metadata": executable_metadata,
+                    }
+                },
             },
             {},
             {},

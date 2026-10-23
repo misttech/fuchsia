@@ -21,9 +21,11 @@ load(
     "idk_cc_source_library_zx",
 )
 load("//build/bazel/rules/idk:idk_data.bzl", "idk_data")
+load("//build/bazel/rules/idk:idk_ffx_tool.bzl", "idk_ffx_tool")
 load(
     "//build/bazel/rules/idk:idk_molecule.bzl",
     "idk_all_api_level_and_cpu_combinations_molecule",
+    "idk_host_tool_molecule_for_configured_host_cpus",
     "idk_molecule",
 )
 load(
@@ -87,6 +89,51 @@ verify_atom_info(
     testonly = True,
     atom = ":test_data_atom_idk",
     expected_atom_info = ":test_data_atom_golden_info",
+)
+
+idk_ffx_tool(
+    name = "test_ffx_tool",
+    testonly = True,
+    srcs = ["test_ffx_tool.rs"],
+    category = "partner",
+    edition = "2024",
+    idk_name = "ffx-test-tool",
+)
+
+create_test_atom_info(
+    name = "test_ffx_tool_atom_golden_info",
+    testonly = True,
+    additional_prebuild_info = {
+        "arch": '"x64"',
+        "file_base": '"tools"',
+    },
+    api_area = "Developer",
+    api_contents_map = {},
+    api_file_path = None,
+    atom_build_deps = [],
+    atom_files_map_generated_files = {},
+    atom_files_map_source_files = {
+        "tools/x64/ffx_tools/ffx-test-tool": "//build/bazel/bazel_idk/tests:test_ffx_tool_versioned",
+        "tools/x64/ffx_tools/ffx-test-tool.json": "//build/bazel/bazel_idk/tests:test_ffx_tool_metadata",
+    },
+    atoms_depset_as_list = [],
+    category = "partner",
+    id = "sdk://tools/x64/ffx_tools/ffx-test-tool",
+    idk_name = "ffx-test-tool",
+    is_stable = True,
+    label = "//build/bazel/bazel_idk/tests:test_ffx_tool_idk",
+    meta_dest = "tools/x64/ffx_tools/ffx-test-tool-meta.json",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    type = "ffx_tool",
+    deps = [],
+)
+
+verify_atom_info(
+    name = "verify_test_ffx_tool_atom_info",
+    testonly = True,
+    atom = ":test_ffx_tool_idk",
+    expected_atom_info = ":test_ffx_tool_atom_golden_info",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
 # TODO(https://fxbug.dev/417305295): Add test coverage for `implementation_deps`
@@ -820,6 +867,7 @@ idk_molecule(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         ":test_data_atom_idk",
+        ":test_host_tools_for_configured_host_cpus_idk",
 
         # Test FIDL using real libraries because there are no test libraries
         # like there are for C++ libraries.
@@ -829,6 +877,25 @@ idk_molecule(
         # This tests direct FIDL library dependencies.
         "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
         "//zircon/vdso/zx:zx_idk",
+    ],
+)
+
+idk_molecule(
+    name = "test_host_tools_molecule_idk",
+    testonly = True,
+    allowed_in_configurations = "PLATFORM",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":test_ffx_tool_idk",
+    ],
+)
+
+idk_host_tool_molecule_for_configured_host_cpus(
+    name = "test_host_tools_for_configured_host_cpus_idk",
+    testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":test_host_tools_molecule_idk",
     ],
 )
 
@@ -1043,6 +1110,10 @@ filegroup(
     name = "targets_to_build_in_host_configurations",
     testonly = True,
     srcs = [
+        # Verify that host tool IDK atoms and molecules build on the host toolchain.
+        ":test_host_tools_molecule_idk",
+        ":verify_test_ffx_tool_atom_info",
+
         # Verify that a target using `select()` statements for `hdrs`,
         # `hdrs_for_internal_use`, and `srcs` can be built on the host toolchain.
         ":test_executable_using_platform_dependent_source_library",

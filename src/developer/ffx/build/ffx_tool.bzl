@@ -55,23 +55,10 @@ _ffx_tool_metadata = rule(
 def _ffx_tool_impl(
         name,
         binary_name,
-        sdk_target_name,
-        sdk_category,
-        sdk_area,
-        sdk_deps,
         target_compatible_with,
         visibility,
         testonly,
         **kwargs):
-    if sdk_category and not sdk_target_name:
-        fail("Must specify `sdk_target_name` when `sdk_category` is set on ffx_tool.")
-    if sdk_category and sdk_category != "partner":
-        fail("Unexpected SDK category '{}'.".format(sdk_category))
-    if (sdk_area or sdk_deps) and not sdk_category:
-        fail("`sdk_area` and `sdk_deps` require `sdk_category` to be set on ffx_tool.")
-    if sdk_category:
-        fail("TODO(https://fxbug.dev/512640761): `sdk_category` on `ffx_tool` is not yet supported in Bazel.")
-
     output_name = binary_name or name
     metadata_name = name + "_metadata"
     versioned_name = name + "_versioned"
@@ -123,6 +110,8 @@ def _ffx_tool_impl(
 ffx_tool = macro(
     doc = """Defines an ffx-compatible subtool.
 
+    To also include the tool in the IDK, use `idk_ffx_tool()` instead.
+
     Wraps `rustc_binary_host_tool` to create an unversioned binary, generates its
     subtool metadata JSON, applies version info to create the versioned binary,
     and exposes host test data.
@@ -140,27 +129,15 @@ ffx_tool = macro(
     A versioned binary is created for official builds, SDK distributions, and runtime compatibility
     checks. The version metadata is required by ffx and the daemon to verify compatibility between
     the subtools and the target device.
-
-    TODO(https://fxbug.dev/512640761): Match SDK atom support implemented in ffx_tool.gni
     """,
     implementation = _ffx_tool_impl,
     inherit_attrs = rustc_binary_host_tool,
     attrs = {
-        "sdk_target_name": attr.string(
-            doc = "Target name for the SDK atom definition (required if `sdk_category` is set).",
-            configurable = False,
-        ),
-        "sdk_category": attr.string(
-            doc = "SDK category this tool will be installed to (e.g. \"partner\").",
-            configurable = False,
-        ),
-        "sdk_area": attr.string(
-            doc = "API area responsible for maintaining this tool.",
-            configurable = False,
-        ),
-        "sdk_deps": attr.label_list(
-            doc = "Dependencies for inclusion in the SDK.",
-            default = [],
+        # Redefined from `rustc_binary_host_tool` to document the default and
+        # set `configurable = False`; otherwise an unset value reaches the impl
+        # as an always-truthy `select()`, and the `name` fallback never applies.
+        "binary_name": attr.string(
+            doc = "Name of the output binary. Defaults to the target name.",
             configurable = False,
         ),
     },

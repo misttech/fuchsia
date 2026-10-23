@@ -24,8 +24,10 @@ load(
     ":atom_lists.bzl",
     "ALL_CC_PREBUILT_LIBRARY_ATOMS",
     "ALL_CC_SOURCE_LIBRARY_ATOMS",
+    "BUILD_FFX_TOOLS_ATOMS",
     "BUILD_HOST_TOOLS_ATOMS",
     "DATA_ATOMS",
+    "NON_BUILD_FFX_TOOLS_ATOMS",
     "NON_BUILD_HOST_TOOLS_ATOMS",
     "NOOP_ATOMS_LIST",
 )
@@ -212,7 +214,7 @@ idk_molecule(
     name = "build_host_tools_idk",
     allowed_in_configurations = "PLATFORM",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    deps = BUILD_HOST_TOOLS_ATOMS,
+    deps = BUILD_HOST_TOOLS_ATOMS + BUILD_FFX_TOOLS_ATOMS,
 )
 
 # Tools and data used on a host development machine to interact with a
@@ -222,7 +224,7 @@ idk_molecule(
     name = "non_build_host_tools_idk",
     allowed_in_configurations = "PLATFORM",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    deps = NON_BUILD_HOST_TOOLS_ATOMS,
+    deps = NON_BUILD_HOST_TOOLS_ATOMS + NON_BUILD_FFX_TOOLS_ATOMS,
 )
 
 # Builds the source libraries represented by the atoms in
