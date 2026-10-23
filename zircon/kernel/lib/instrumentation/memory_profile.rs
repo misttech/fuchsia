@@ -17,8 +17,13 @@ use {
 static MEM_PROF_LIVE_DATA: LazyInit<KernelMappedVmo> = LazyInit::uninit();
 
 /// Publishes the live kernel memory profile VMO when `kernel_memory_profiler` is enabled.
+///
+/// # Safety
+///
+/// Must be called at most once, after the VM system and heap profiler are initialized, because it
+/// initializes `MEM_PROF_LIVE_DATA`.
 #[cfg(kernel_memory_profiler)]
-pub(super) fn memory_profile_vmo() -> InstrumentationDataVmo {
+pub(super) unsafe fn memory_profile_vmo() -> InstrumentationDataVmo {
     const SINK: &str = "memory-profile";
     const MODULE: &str = "heap";
     const SUFFIX: &str = "bin";
@@ -39,8 +44,8 @@ pub(super) fn memory_profile_vmo() -> InstrumentationDataVmo {
             b"memory-profile-live-data",
         )
         .expect("KernelMappedVmo::init");
-    // SAFETY: `MEM_PROF_LIVE_DATA` is private to this module and only initialized here, and
-    // `memory_profile_vmo` is called exactly once, from `InstrumentationData::GetVmos`.
+    // SAFETY: `MEM_PROF_LIVE_DATA` is private to this module and only initialized here, and the
+    // caller guarantees `memory_profile_vmo` is called at most once.
     unsafe {
         MEM_PROF_LIVE_DATA.init(mapped_vmo);
     }
@@ -55,7 +60,11 @@ pub(super) fn memory_profile_vmo() -> InstrumentationDataVmo {
 }
 
 /// Returns an empty `InstrumentationDataVmo` when `kernel_memory_profiler` is disabled.
+///
+/// # Safety
+///
+/// Must be called at most once (matches the `#[cfg(kernel_memory_profiler)]` signature).
 #[cfg(not(kernel_memory_profiler))]
-pub(super) fn memory_profile_vmo() -> InstrumentationDataVmo {
+pub(super) unsafe fn memory_profile_vmo() -> InstrumentationDataVmo {
     InstrumentationDataVmo::default()
 }

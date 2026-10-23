@@ -4,15 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-//! C++ FFI entry points for `KernelMappedVmo` and `memory_profile_vmo`.
+//! C++ FFI entry points for `KernelMappedVmo`.
 
 use super::kernel_mapped_vmo::KernelMappedVmo;
-use super::memory_profile::memory_profile_vmo;
 use crate::kernel::types::VAddr;
 use crate::object::HandleOwner;
 use crate::vm::vm_object::VmObject;
 use core::ffi::c_char;
-use core::mem::{MaybeUninit, offset_of};
+use core::mem::MaybeUninit;
 use zx_status::Status;
 
 /// Constructs an empty `KernelMappedVmo` into `storage`.
@@ -107,48 +106,4 @@ pub extern "C" fn rust_kernel_mapped_vmo_base_locking(this: &KernelMappedVmo) ->
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_kernel_mapped_vmo_size_locking(this: &KernelMappedVmo) -> usize {
     this.size_locking()
-}
-
-/// C ABI projection of `InstrumentationDataVmo`.  Matches `InstrumentationDataVmoFfi` in
-/// private.h.
-#[repr(C)]
-pub struct InstrumentationDataVmoFfi {
-    announce: *const c_char,
-    announce_len: usize,
-    sink_name: *const c_char,
-    sink_name_len: usize,
-    units: *const c_char,
-    units_len: usize,
-    scale: usize,
-    handle: Option<HandleOwner>,
-}
-
-zr::static_assert_size_and_align!(InstrumentationDataVmoFfi, 64, 8);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, announce) == 0);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, announce_len) == 8);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, sink_name) == 16);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, sink_name_len) == 24);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, units) == 32);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, units_len) == 40);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, scale) == 48);
-zr::static_assert!(offset_of!(InstrumentationDataVmoFfi, handle) == 56);
-
-/// Populates `out` with the data for `MemoryProfileVmo()`.  All strings are `'static`.
-///
-/// # Safety
-///
-/// `out` must be valid for writes, properly aligned, and not aliased for the duration of the call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_profile_vmo(out: &mut MaybeUninit<InstrumentationDataVmoFfi>) {
-    let data = memory_profile_vmo();
-    out.write(InstrumentationDataVmoFfi {
-        announce: data.announce.as_ptr().cast(),
-        announce_len: data.announce.len(),
-        sink_name: data.sink_name.as_ptr().cast(),
-        sink_name_len: data.sink_name.len(),
-        units: data.units.as_ptr().cast(),
-        units_len: data.units.len(),
-        scale: data.scale,
-        handle: data.handle,
-    });
 }

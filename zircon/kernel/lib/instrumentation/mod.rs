@@ -12,6 +12,10 @@ pub mod kernel_mapped_vmo;
 mod memory_profile;
 mod sancov;
 mod sancov_ffi;
+mod vmo;
+mod vmo_ffi;
+
+pub use vmo::InstrumentationData;
 
 use crate::object::HandleOwner;
 

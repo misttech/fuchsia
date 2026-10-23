@@ -15,6 +15,7 @@ pub use vdso::VDso;
 use crate::counters::{
     ARENA_VMO_NAME, CounterArena, CounterDesc, DESCRIPTOR_VMO_NAME, define_kcounter,
 };
+use crate::instrumentation::InstrumentationData;
 use crate::object::{
     ChannelDispatcher, HandleOwner, InitialMutability, JobDispatcher, KernelHandle, LogDispatcher,
     MessagePacket, ProcessDispatcher, ThreadDispatcher, VmAddressRegionDispatcher,
@@ -35,9 +36,7 @@ use page::SIZE as PAGE_SIZE;
 use resource::get_resource_handle;
 #[cfg(all(target_arch = "aarch64", debug_assertions))]
 use userabi_ffi::arm64_print_midr_cpu_name;
-use userabi_ffi::{
-    File, HandoffEndElf, InstrumentationData, PlatformCrashlog, boot_options_show, crashlog_stash,
-};
+use userabi_ffi::{File, HandoffEndElf, PlatformCrashlog, boot_options_show, crashlog_stash};
 #[cfg(enable_entropy_collector_test)]
 use userabi_ffi::{entropy_vmo, entropy_vmo_stream_size, entropy_was_lost};
 use zr::{defer, slice_from_raw_parts_mut};
@@ -367,7 +366,9 @@ fn bootstrap_vmos(
 
     // Instrumentation VMOs
     let mut inst_handles = [const { None }; InstrumentationData::vmo_count()];
-    InstrumentationData::get_vmos(&mut inst_handles)?;
+    // SAFETY: `bootstrap_vmos` runs once during `userboot_init` at the end of kernel boot handoff,
+    // after `LK_INIT_LEVEL_KERNEL` (`InitSancov`) and VM/heap initialization have completed.
+    unsafe { InstrumentationData::get_vmos(&mut inst_handles) }?;
     for h in inst_handles.into_iter().flatten() {
         push_handle(h);
     }

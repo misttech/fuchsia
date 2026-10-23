@@ -15,8 +15,7 @@ use core::ptr::{NonNull, drop_in_place, from_mut, null_mut, slice_from_raw_parts
 use core::slice;
 use fbl::RefPtr;
 use zr::{slice_from_raw_parts, static_assert_size_and_align};
-use zx_status::Status;
-use zx_types::{ZX_MAX_NAME_LEN, zx_status_t};
+use zx_types::ZX_MAX_NAME_LEN;
 
 pub const ZERO_FILL: usize = usize::MAX;
 const MAX_EXTRA_HANDOFF_PHYS_VMOS: usize = 3;
@@ -234,24 +233,6 @@ pub fn arm64_print_midr_cpu_name(out: &mut File<'_>) {
     unsafe { cpp_arm64_print_midr_cpu_name(out) }
 }
 
-pub struct InstrumentationData;
-
-impl InstrumentationData {
-    pub const fn vmo_count() -> usize {
-        5
-    }
-
-    pub fn get_vmos(handles: &mut [Option<HandleOwner>; Self::vmo_count()]) -> Result<(), Status> {
-        handles.fill_with(|| None);
-        // SAFETY: `HandleOwner` is `#[repr(transparent)]` around `NonNull<c_void>`, so
-        // `Option<HandleOwner>` has the exact layout of `Handle*`. `handles` points to
-        // `vmo_count()` initialized null slots that `cpp_instrumentation_data_get_vmos` populates
-        // with owned `Handle*` pointers.
-        let status = unsafe { cpp_instrumentation_data_get_vmos(handles.as_mut_ptr().cast()) };
-        Status::ok(status)
-    }
-}
-
 unsafe extern "C" {
     fn cpp_platform_crashlog_recover(tgt: *mut File<'_>) -> usize;
     fn cpp_crashlog_stash(vmo: *mut c_void);
@@ -265,7 +246,6 @@ unsafe extern "C" {
     fn cpp_entropy_vmo_stream_size() -> usize;
     #[cfg(all(target_arch = "aarch64", debug_assertions))]
     fn cpp_arm64_print_midr_cpu_name(out: *mut File<'_>);
-    fn cpp_instrumentation_data_get_vmos(handles: *mut *mut c_void) -> zx_status_t;
 }
 
 /// FFI entry point launching the `userboot` process at the end of kernel boot handoff.

@@ -8,6 +8,9 @@
 #define ZIRCON_KERNEL_LIB_INSTRUMENTATION_PRIVATE_H_
 
 #include <stddef.h>
+#include <stdint.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
 #include <ktl/span.h>
 #include <ktl/string_view.h>
@@ -37,9 +40,9 @@ InstrumentationDataVmo LlvmProfdataVmo();
 InstrumentationDataVmo SancovGetPcVmo();
 InstrumentationDataVmo SancovGetCountsVmo();
 
-extern "C" {
+__BEGIN_CDECLS
 
-// Matches `InstrumentationDataVmoFfi` in instrumentation_ffi.rs.
+// Matches `InstrumentationDataVmoFfi` in vmo_ffi.rs.
 struct InstrumentationDataVmoFfi {
   const char* announce;
   size_t announce_len;
@@ -51,9 +54,12 @@ struct InstrumentationDataVmoFfi {
   Handle* handle;
 };
 
-void rust_memory_profile_vmo(InstrumentationDataVmoFfi* out);
+void cpp_llvm_profdata_vmo(InstrumentationDataVmoFfi* out);
+void cpp_sancov_get_pc_vmo(InstrumentationDataVmoFfi* out);
+void cpp_sancov_get_counts_vmo(InstrumentationDataVmoFfi* out);
+const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* out_size);
 
-}  // extern "C"
+__END_CDECLS
 
 static_assert(sizeof(InstrumentationDataVmoFfi) == 64);
 static_assert(alignof(InstrumentationDataVmoFfi) == 8);
@@ -66,18 +72,5 @@ static_assert(offsetof(InstrumentationDataVmoFfi, units_len) == 40);
 static_assert(offsetof(InstrumentationDataVmoFfi, scale) == 48);
 static_assert(offsetof(InstrumentationDataVmoFfi, handle) == 56);
 static_assert(ktl::is_trivial_v<InstrumentationDataVmoFfi>);
-
-// memory_profile.rs
-inline InstrumentationDataVmo MemoryProfileVmo() {
-  InstrumentationDataVmoFfi data;
-  rust_memory_profile_vmo(&data);
-  return {
-      .announce = {data.announce, data.announce_len},
-      .sink_name = {data.sink_name, data.sink_name_len},
-      .units = {data.units, data.units_len},
-      .scale = data.scale,
-      .handle = data.handle,
-  };
-}
 
 #endif  // ZIRCON_KERNEL_LIB_INSTRUMENTATION_PRIVATE_H_

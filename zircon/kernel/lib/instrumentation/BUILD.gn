@@ -13,7 +13,7 @@ static_library("instrumentation") {
 
   sources = []
   if (toolchain_environment == "kernel") {
-    sources += [ "vmo.cc" ]
+    sources += [ "vmo_ffi.cc" ]
     deps = [
       ":instrumentation-rs",
       ":private",
@@ -53,10 +53,13 @@ if (is_kernel) {
       "mod.rs",
       "sancov.rs",
       "sancov_ffi.rs",
+      "vmo.rs",
+      "vmo_ffi.rs",
     ]
     deps = [
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
+      "//src/lib/kprint",
       "//src/lib/lazy_init:lazy_init_rs",
       "//src/lib/zr",
       "//zircon/kernel/lib/heap:heap-rs",

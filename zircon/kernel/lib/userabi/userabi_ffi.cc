@@ -6,7 +6,6 @@
 
 #include <lib/boot-options/boot-options.h>
 #include <lib/crashlog.h>
-#include <lib/instrumentation/vmo.h>
 #include <lib/userabi/userboot.h>
 #include <lib/userabi/vdso.h>
 
@@ -29,7 +28,6 @@ static_assert(sizeof(fbl::Vector<PhysMapping>) == 24 && alignof(fbl::Vector<Phys
 static_assert(sizeof(HandoffEnd::Elf) == 72 && alignof(HandoffEnd::Elf) == 8);
 static_assert(sizeof(HandoffEnd) == 176 && alignof(HandoffEnd) == 8);
 static_assert(sizeof(FILE) == 16 && alignof(FILE) == 8);
-static_assert(InstrumentationData::vmo_count() == 5);
 static_assert(PhysVmo::kMaxExtraHandoffPhysVmos == 3);
 static_assert(VDso::kNumVdsoVariants == 4);
 
@@ -69,10 +67,6 @@ FFI_ALWAYS_INLINE size_t cpp_entropy_vmo_stream_size() {
 #if defined(__aarch64__) && ZX_DEBUG_ASSERT_IMPLEMENTED
 FFI_ALWAYS_INLINE void cpp_arm64_print_midr_cpu_name(FILE* out) { arm64_print_midr_cpu_name(out); }
 #endif
-
-FFI_ALWAYS_INLINE zx_status_t cpp_instrumentation_data_get_vmos(Handle** handles) {
-  return InstrumentationData::GetVmos(handles);
-}
 
 }  // extern "C"
 

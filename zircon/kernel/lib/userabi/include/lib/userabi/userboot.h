@@ -40,8 +40,6 @@ FFI_ALWAYS_INLINE size_t cpp_entropy_vmo_stream_size();
 FFI_ALWAYS_INLINE void cpp_arm64_print_midr_cpu_name(FILE* out);
 #endif
 
-FFI_ALWAYS_INLINE zx_status_t cpp_instrumentation_data_get_vmos(Handle** handles);
-
 __END_CDECLS
 
 #endif  // _KERNEL
