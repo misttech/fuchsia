@@ -77,12 +77,12 @@ use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_co
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_logging::{log_debug, log_error, log_warn};
-use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
+use starnix_modules_input_app_event_conversion::button_fuchsia_to_linux::{
     new_touch_buttons_bitvec, parse_fidl_media_button_event, parse_fidl_touch_button_event,
 };
-use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
-use starnix_modules_input_event_conversion::mouse_fuchsia_to_linux::FuchsiaMouseEventToLinuxMouseEventConverter;
-use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
+use starnix_modules_input_app_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
+use starnix_modules_input_app_event_conversion::mouse_fuchsia_to_linux::FuchsiaMouseEventToLinuxMouseEventConverter;
+use starnix_modules_input_app_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
 use starnix_sync::{
     InputEventRelayOpenedFilesLock, InputRelayDeviceInfosLock, InputRelayDisplaySizeLock,
     LockDepMutex,

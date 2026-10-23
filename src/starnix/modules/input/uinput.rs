@@ -19,8 +19,8 @@ use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::{self, FileObject, FileOps, fileops_impl_noop_sync};
 use starnix_logging::log_warn;
-use starnix_modules_input_event_conversion::key_linux_to_fuchsia::LinuxKeyboardEventParser;
-use starnix_modules_input_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
+use starnix_modules_input_app_event_conversion::key_linux_to_fuchsia::LinuxKeyboardEventParser;
+use starnix_modules_input_app_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
 use starnix_sync::{LockDepMutex, UinputDeviceStateLock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 

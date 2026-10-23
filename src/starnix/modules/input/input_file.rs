@@ -329,7 +329,8 @@ fn touch_properties() -> BitSet<{ min_bytes(INPUT_PROP_CNT) }> {
 /// Returns appropriate `KEY`-board related flags for a keyboard device.
 fn keyboard_key_attributes() -> BitSet<{ min_bytes(KEY_CNT) }> {
     let mut attrs = BitSet::new();
-    for keycode in starnix_modules_input_event_conversion::keymap::KEY_MAP.all_linux_keycodes() {
+    for keycode in starnix_modules_input_app_event_conversion::keymap::KEY_MAP.all_linux_keycodes()
+    {
         // `KEY_MAP` also carries a block of test-only keycodes (see b/311425670), 31 of which
         // fall in the `BTN_*` range. Advertising those would make evdev clients classify this
         // device as a gamepad in addition to a keyboard, which is the opposite of what this

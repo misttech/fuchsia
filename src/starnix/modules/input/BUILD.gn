@@ -57,7 +57,7 @@ rustc_library("input") {
     "//src/starnix/lib/starnix_syscalls",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
-    "//src/starnix/modules/input/event_conversion",
+    "//src/starnix/modules/input/event_conversion/app_event_conversion",
     "//third_party/rust_crates:bit-vec",
     "//third_party/rust_crates:crossbeam",
     "//third_party/rust_crates:futures",

@@ -8,7 +8,7 @@ package(default_applicable_licenses = ["//:license"])
 
 # The unit tests stay hand-written in BUILD.gn, see the comment there.
 rustc_library(
-    name = "event_conversion",
+    name = "app_event_conversion",
     srcs = [
         "button_fuchsia_to_linux.rs",
         "key_fuchsia_to_linux.rs",
@@ -19,10 +19,10 @@ rustc_library(
         "touch_fuchsia_to_linux.rs",
         "touch_linux_to_fuchsia.rs",
     ],
-    crate_name = "starnix_modules_input_event_conversion",
+    crate_name = "starnix_modules_input_app_event_conversion",
     crate_root = "lib.rs",
     edition = "2024",
-    visibility = ["//src/starnix/modules/input:__pkg__"],
+    visibility = ["//src/starnix/modules/input:__subpackages__"],
     deps = [
         "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
         "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
