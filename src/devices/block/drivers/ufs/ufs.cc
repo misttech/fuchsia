@@ -7,6 +7,7 @@
 #include <endian.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/wire_types.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
+#include <lib/arch/intrin.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -66,17 +67,31 @@ zx::result<> Ufs::Notify(NotifyEvent event, uint64_t data) {
 
 zx_status_t Ufs::WaitWithTimeout(fit::function<bool()> wait_for, zx::duration timeout,
                                  const fbl::String& timeout_message, zx::duration granularity) {
-  int64_t sleeps_left = (timeout + granularity - zx::nsec(1)) / granularity;
+  if (wait_for()) {
+    return ZX_OK;
+  }
+  const zx::time deadline = zx::deadline_after(timeout);
+  // Most conditions polled here (UIC command completion, controller ready) are satisfied within
+  // ~2-15us in hardware; spin for up to 25us before paying the kernel timer slack of nanosleep.
+  const zx::time spin_deadline = zx::deadline_after(std::min(timeout, zx::usec(25)));
+  while (zx::clock::get_monotonic() < spin_deadline) {
+    if (wait_for()) {
+      return ZX_OK;
+    }
+    arch::Yield();
+  }
   while (true) {
     if (wait_for()) {
       return ZX_OK;
     }
-    if (sleeps_left == 0) {
+    if (zx::clock::get_monotonic() >= deadline) {
+      if (wait_for()) {
+        return ZX_OK;
+      }
       fdf::error("{} after {} usecs", timeout_message.begin(), timeout.to_usecs());
       return ZX_ERR_TIMED_OUT;
     }
     zx::nanosleep(zx::deadline_after(granularity));
-    sleeps_left--;
   }
 }
 

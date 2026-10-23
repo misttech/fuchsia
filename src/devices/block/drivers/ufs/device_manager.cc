@@ -80,7 +80,7 @@ zx::result<> DeviceManager::DeviceInit() {
       fdf::error("Wait for fDeviceInit timed out");
       return zx::error(ZX_ERR_TIMED_OUT);
     }
-    usleep(10000);
+    zx::nanosleep(zx::deadline_after(kDeviceInitPollInterval));
   }
   return zx::ok();
 }
@@ -582,8 +582,25 @@ zx::result<> DeviceManager::ConfigureReferenceClock() {
   const AttributeReferenceClock reference_clock = controller_.intel_quirk()
                                                       ? AttributeReferenceClock::k19_2MHz
                                                       : AttributeReferenceClock::k38_4MHz;
-  if (auto result = WriteAttribute(Attributes::bRefClkFreq, reference_clock); result.is_error()) {
-    return result.take_error();
+
+  // Per JEDEC JESD220, bRefClkFreq is a persistent attribute retained across power cycles, and
+  // redundant writes can incur flash/NVRAM write latency and wear. Only write it when the device
+  // reports a different frequency. If it cannot be read, write it anyway unless the read timed out:
+  // the write would then most likely time out as well.
+  zx::result<uint32_t> current_reference_clock = ReadAttribute(Attributes::bRefClkFreq);
+  if (current_reference_clock.is_error()) {
+    if (current_reference_clock.status_value() == ZX_ERR_TIMED_OUT) {
+      fdf::error("Timed out reading bRefClkFreq");
+      return current_reference_clock.take_error();
+    }
+    fdf::warn("Failed to read bRefClkFreq, writing it unconditionally: {}",
+              current_reference_clock);
+  }
+  if (current_reference_clock.is_error() ||
+      current_reference_clock.value() != static_cast<uint32_t>(reference_clock)) {
+    if (auto result = WriteAttribute(Attributes::bRefClkFreq, reference_clock); result.is_error()) {
+      return result.take_error();
+    }
   }
 
   std::string reference_clock_string;
@@ -689,34 +706,51 @@ zx::result<> DeviceManager::ConfigureUicPowerMode() {
     return result.take_error();
   }
 
-  // Update lanes with available TX/RX lanes.
-  zx::result<uint32_t> tx_lanes = DmeGet(PA_AvailTxDataLanes);
-  if (tx_lanes.is_error()) {
-    return tx_lanes.take_error();
-  }
-  zx::result<uint32_t> rx_lanes = DmeGet(PA_AvailRxDataLanes);
-  if (rx_lanes.is_error()) {
-    return rx_lanes.take_error();
-  }
-  // Get max HS-GEAR.
-  zx::result<uint32_t> max_rx_hs_gear = DmeGet(PA_MaxRxHSGear);
-  if (max_rx_hs_gear.is_error()) {
-    return max_rx_hs_gear.take_error();
+  // Query available TX/RX lanes and max HS-GEAR once at initial boot and reuse the cached
+  // capability values across PowerDown resumes, as these are static link capabilities determined
+  // during UniPro link startup.
+  uint32_t tx_lanes = 0;
+  uint32_t rx_lanes = 0;
+  uint32_t max_rx_hs_gear = 0;
+  if (cached_avail_tx_lanes_.has_value() && cached_avail_rx_lanes_.has_value() &&
+      cached_max_rx_hs_gear_.has_value()) {
+    tx_lanes = *cached_avail_tx_lanes_;
+    rx_lanes = *cached_avail_rx_lanes_;
+    max_rx_hs_gear = *cached_max_rx_hs_gear_;
+  } else {
+    zx::result<uint32_t> tx_lanes_res = DmeGet(PA_AvailTxDataLanes);
+    if (tx_lanes_res.is_error()) {
+      return tx_lanes_res.take_error();
+    }
+    zx::result<uint32_t> rx_lanes_res = DmeGet(PA_AvailRxDataLanes);
+    if (rx_lanes_res.is_error()) {
+      return rx_lanes_res.take_error();
+    }
+    zx::result<uint32_t> max_rx_hs_gear_res = DmeGet(PA_MaxRxHSGear);
+    if (max_rx_hs_gear_res.is_error()) {
+      return max_rx_hs_gear_res.take_error();
+    }
+    tx_lanes = tx_lanes_res.value();
+    rx_lanes = rx_lanes_res.value();
+    max_rx_hs_gear = max_rx_hs_gear_res.value();
+    cached_avail_tx_lanes_ = tx_lanes;
+    cached_avail_rx_lanes_ = rx_lanes;
+    cached_max_rx_hs_gear_ = max_rx_hs_gear;
   }
 
   // Set data lanes.
-  if (zx::result<> result = DmeSet(PA_ActiveTxDataLanes, tx_lanes.value()); result.is_error()) {
+  if (zx::result<> result = DmeSet(PA_ActiveTxDataLanes, tx_lanes); result.is_error()) {
     return result.take_error();
   }
-  if (zx::result<> result = DmeSet(PA_ActiveRxDataLanes, rx_lanes.value()); result.is_error()) {
+  if (zx::result<> result = DmeSet(PA_ActiveRxDataLanes, rx_lanes); result.is_error()) {
     return result.take_error();
   }
 
   // Set HS-GEAR to max gear.
-  if (zx::result<> result = DmeSet(PA_TxGear, max_rx_hs_gear.value()); result.is_error()) {
+  if (zx::result<> result = DmeSet(PA_TxGear, max_rx_hs_gear); result.is_error()) {
     return result.take_error();
   }
-  if (zx::result<> result = DmeSet(PA_RxGear, max_rx_hs_gear.value()); result.is_error()) {
+  if (zx::result<> result = DmeSet(PA_RxGear, max_rx_hs_gear); result.is_error()) {
     return result.take_error();
   }
 
@@ -744,14 +778,14 @@ zx::result<> DeviceManager::ConfigureUicPowerMode() {
   constexpr uint32_t kPaInitialAdapt = 1;
   constexpr uint32_t kPaNoAdapt = 3;
   constexpr uint32_t kMinAdaptGear = 4;
-  const bool needs_adapt = max_rx_hs_gear.value() >= kMinAdaptGear;
+  const bool needs_adapt = max_rx_hs_gear >= kMinAdaptGear;
   const uint32_t adapt_type = needs_adapt ? kPaInitialAdapt : kPaNoAdapt;
   if (zx::result<> result = DmeSet(PA_TxHsAdaptType, adapt_type); result.is_error()) {
     if (needs_adapt) {
       return result.take_error();
     }
     fdf::warn("Failed to set PA_TxHsAdaptType = NO_ADAPT for HS-G{}; continuing: {}",
-              max_rx_hs_gear.value(), result);
+              max_rx_hs_gear, result);
   }
 
   // Set Timeout values.
@@ -843,11 +877,11 @@ zx::result<> DeviceManager::ConfigureUicPowerMode() {
     }
   }
 
-  properties_.pa_active_tx_data_lanes.Set(tx_lanes.value());
-  properties_.pa_active_rx_data_lanes.Set(rx_lanes.value());
-  properties_.pa_max_rx_hs_gear.Set(max_rx_hs_gear.value());
-  properties_.pa_tx_gear.Set(max_rx_hs_gear.value());
-  properties_.pa_rx_gear.Set(max_rx_hs_gear.value());
+  properties_.pa_active_tx_data_lanes.Set(tx_lanes);
+  properties_.pa_active_rx_data_lanes.Set(rx_lanes);
+  properties_.pa_max_rx_hs_gear.Set(max_rx_hs_gear);
+  properties_.pa_tx_gear.Set(max_rx_hs_gear);
+  properties_.pa_rx_gear.Set(max_rx_hs_gear);
   properties_.tx_termination.Set(true);
   properties_.rx_termination.Set(true);
   properties_.pa_hs_series.Set(kHsSeries);
@@ -870,8 +904,14 @@ zx::result<> DeviceManager::RestoreDeviceAndLinkConfig() {
   }
 
   if (!controller_.qemu_quirk()) {
-    if (zx::result<> result = ConfigureUniproAttributes(); result.is_error()) {
-      return result.take_error();
+    // The UniPro attributes that InitUniproAttributes() reads (UniPro versions, PA_TActivate and
+    // PA_Granularity) are either fixed or re-established by the link startup that preceded this,
+    // and are only reported through inspect, so they are not re-read here. The exception is the
+    // Intel quirk, whose volatile DME_PEER_SET of PA_TActivate was undone by the power cycle.
+    if (controller_.intel_quirk()) {
+      if (zx::result<> result = ConfigureUniproAttributes(); result.is_error()) {
+        return result.take_error();
+      }
     }
     if (zx::result<> result = ConfigureUicPowerMode(); result.is_error()) {
       return result.take_error();
@@ -889,18 +929,20 @@ zx::result<> DeviceManager::RestoreDeviceAndLinkConfig() {
   }
 
   // A PowerDown suspend removes VCC/VCCQ, which resets fPowerOnWPEn (JESD220). SuspendPower() does
-  // not enter PowerDown while a power-on write-protected LU is present, but re-read the flag so the
-  // cached state and inspect never silently disagree with the device.
-  if (zx::result<uint8_t> flag = ReadFlag(Flags::fPowerOnWPEn); flag.is_ok()) {
-    const bool enabled = flag.value() != 0;
-    if (enabled != is_power_on_write_protect_enabled_) {
-      fdf::warn("fPowerOnWPEn changed across PowerDown suspend: {} -> {}",
-                is_power_on_write_protect_enabled_, enabled);
-      is_power_on_write_protect_enabled_ = enabled;
-      properties_.is_power_on_write_protect_enabled.Set(enabled);
+  // not enter PowerDown while a power-on write-protected LU is present; only re-read the flag if
+  // power-on write protect was previously enabled so the cached state and inspect stay consistent.
+  if (is_power_on_write_protect_enabled_) {
+    if (zx::result<uint8_t> flag = ReadFlag(Flags::fPowerOnWPEn); flag.is_ok()) {
+      const bool enabled = flag.value() != 0;
+      if (enabled != is_power_on_write_protect_enabled_) {
+        fdf::warn("fPowerOnWPEn changed across PowerDown suspend: {} -> {}",
+                  is_power_on_write_protect_enabled_, enabled);
+        is_power_on_write_protect_enabled_ = enabled;
+        properties_.is_power_on_write_protect_enabled.Set(enabled);
+      }
+    } else {
+      fdf::warn("Failed to re-read fPowerOnWPEn on resume: {}", flag);
     }
-  } else {
-    fdf::warn("Failed to re-read fPowerOnWPEn on resume: {}", flag);
   }
 
   return zx::ok();

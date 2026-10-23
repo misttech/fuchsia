@@ -33,12 +33,16 @@ constexpr uint8_t kHighestActiveIcclevel = 0x0f;
 // How long SuspendPower() waits for in-flight I/O to drain before giving up on the suspend.
 constexpr zx::duration kSuspendIoDrainTimeout = zx::sec(5);
 // Number of PHY/device power cycles attempted synchronously when resuming from PowerDown fails.
-// ufshcd_reset_and_restore() uses MAX_HOST_RESET_RETRIES = 5; we stop at 3 because each attempt
-// can take several seconds of UIC/UPIU timeouts while Power Broker's SetLevel is outstanding, and
-// the driver keeps retrying in the background afterwards (see Ufs::RetryResume()).
+// We cap synchronous retries at 3 because each attempt can take several seconds of UIC/UPIU
+// timeouts while Power Broker's SetLevel is outstanding, and the driver keeps retrying in the
+// background afterwards (see Ufs::RetryResume()).
 constexpr int kMaxPowerDownResumeAttempts = 3;
 // Pause between retries of a SCSI command that was answered with UNIT ATTENTION / NOT READY.
 constexpr zx::duration kUnavailableRetryDelay = zx::msec(10);
+// How often DeviceInit() re-reads fDeviceInit while waiting (up to kDeviceInitTimeoutUs) for the
+// device to clear it per JEDEC JESD220. Kept at 500us because this wait is on the boot and
+// resume-from-PowerDown paths where a coarse polling interval adds avoidable resume latency.
+constexpr zx::duration kDeviceInitPollInterval = zx::usec(500);
 
 enum class LinkState : uint8_t {
   kOff = 0,     // Power down / Disable
@@ -242,6 +246,12 @@ class DeviceManager {
   uint8_t write_booster_dedicated_lu_;
   WriteBoosterBufferType write_booster_buffer_type_;
   UserSpaceConfigurationOption user_space_configuration_option_;
+
+  // Static UniPro link capabilities, queried once so that PowerDown resume does not repeat the
+  // DME_GETs.
+  std::optional<uint32_t> cached_avail_tx_lanes_;
+  std::optional<uint32_t> cached_avail_rx_lanes_;
+  std::optional<uint32_t> cached_max_rx_hs_gear_;
 
   // Power management.
   //

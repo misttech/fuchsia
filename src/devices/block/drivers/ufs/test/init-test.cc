@@ -5,6 +5,8 @@
 #include <lib/fpromise/single_threaded_executor.h>
 #include <lib/sync/cpp/completion.h>
 
+#include <atomic>
+
 #include <fbl/unaligned.h>
 
 #include "src/devices/block/drivers/ufs/device_manager.h"
@@ -179,6 +181,64 @@ TEST_F(InitTest, Inspect) {
   auto local_version = unipro->node().get_property<inspect::UintPropertyValue>("local_version");
   ASSERT_NE(local_version, nullptr);
   EXPECT_EQ(local_version->value(), kUniproVersion);
+}
+
+class ReferenceClockTest : public InitTest {
+ public:
+  void SetUp() override {
+    InitTest::SetUp();
+    mock_device_.GetQueryRequestProcessor().SetHook(
+        QueryOpcode::kWriteAttribute,
+        [this](UfsMockDevice& mock_device, QueryRequestUpiuData& req_upiu,
+               QueryResponseUpiuData& rsp_upiu) {
+          if (req_upiu.idn == static_cast<uint8_t>(Attributes::bRefClkFreq)) {
+            reference_clock_writes_.fetch_add(1);
+          }
+          return mock_device_.GetQueryRequestProcessor().DefaultWriteAttributeHandler(
+              mock_device, req_upiu, rsp_upiu);
+        });
+  }
+
+ protected:
+  static constexpr uint32_t kRefClk19_2MHz =
+      static_cast<uint32_t>(AttributeReferenceClock::k19_2MHz);
+  static constexpr uint32_t kRefClk38_4MHz =
+      static_cast<uint32_t>(AttributeReferenceClock::k38_4MHz);
+
+  std::atomic<uint32_t> reference_clock_writes_{0};
+};
+
+// bRefClkFreq is a persistent attribute whose writes may be slow, so it is only written when the
+// device reports a different frequency than the one the host provides.
+TEST_F(ReferenceClockTest, WrittenWhenDifferent) {
+  mock_device_.SetAttribute(Attributes::bRefClkFreq, kRefClk19_2MHz);
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+  EXPECT_EQ(reference_clock_writes_.load(), 1u);
+  EXPECT_EQ(mock_device_.GetAttribute(Attributes::bRefClkFreq), kRefClk38_4MHz);
+}
+
+TEST_F(ReferenceClockTest, NotWrittenWhenUnchanged) {
+  mock_device_.SetAttribute(Attributes::bRefClkFreq, kRefClk38_4MHz);
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+  EXPECT_EQ(reference_clock_writes_.load(), 0u);
+  EXPECT_EQ(mock_device_.GetAttribute(Attributes::bRefClkFreq), kRefClk38_4MHz);
+}
+
+TEST_F(ReferenceClockTest, WrittenWhenReadFails) {
+  mock_device_.SetAttribute(Attributes::bRefClkFreq, kRefClk38_4MHz);
+  mock_device_.GetQueryRequestProcessor().SetHook(
+      QueryOpcode::kReadAttribute,
+      [this](UfsMockDevice& mock_device, QueryRequestUpiuData& req_upiu,
+             QueryResponseUpiuData& rsp_upiu) {
+        if (req_upiu.idn == static_cast<uint8_t>(Attributes::bRefClkFreq)) {
+          rsp_upiu.header.response = UpiuHeaderResponseCode::kTargetFailure;  // Error injection
+          return ZX_OK;
+        }
+        return mock_device_.GetQueryRequestProcessor().DefaultReadAttributeHandler(
+            mock_device, req_upiu, rsp_upiu);
+      });
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+  EXPECT_EQ(reference_clock_writes_.load(), 1u);
 }
 
 TEST_F(InitTest, WriteBoosterIsSupportedSharedBuffer) {

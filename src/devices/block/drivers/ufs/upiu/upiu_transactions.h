@@ -630,16 +630,39 @@ class NopOutUpiu : public AbstractRequestUpiu<NopOutUpiuData, NopInUpiuData> {
   ~NopOutUpiu() override = default;
 };
 
-// Used to avoid std::memset() on uncacheable memory.
+// Used to avoid std::memset() on uncacheable memory while using 32-bit word stores when aligned.
 inline void CustomMemSet(void* dest, int c, size_t count) {
+  using MayAliasU32 __attribute__((__may_alias__)) = uint32_t;
+  const uint8_t byte_val = static_cast<uint8_t>(c);
+  if ((reinterpret_cast<uintptr_t>(dest) & (alignof(uint32_t) - 1)) == 0) {
+    const uint32_t word_val = static_cast<uint32_t>(byte_val) * 0x01010101u;
+    volatile MayAliasU32* d32 = static_cast<volatile MayAliasU32*>(dest);
+    while (count >= sizeof(uint32_t)) {
+      *d32++ = word_val;
+      count -= sizeof(uint32_t);
+    }
+    dest = const_cast<MayAliasU32*>(d32);
+  }
   volatile uint8_t* d = static_cast<volatile uint8_t*>(dest);
   while (count--) {
-    *d++ = static_cast<uint8_t>(c);
+    *d++ = byte_val;
   }
 }
 
-// Used to avoid std::memcpy() on uncacheable memory.
+// Used to avoid std::memcpy() on uncacheable memory while using 32-bit word copies when aligned.
 inline void CustomMemCpy(void* dest, const void* src, size_t count) {
+  using MayAliasU32 __attribute__((__may_alias__)) = uint32_t;
+  if (((reinterpret_cast<uintptr_t>(dest) | reinterpret_cast<uintptr_t>(src)) &
+       (alignof(uint32_t) - 1)) == 0) {
+    volatile MayAliasU32* d32 = static_cast<volatile MayAliasU32*>(dest);
+    const volatile MayAliasU32* s32 = static_cast<const volatile MayAliasU32*>(src);
+    while (count >= sizeof(uint32_t)) {
+      *d32++ = *s32++;
+      count -= sizeof(uint32_t);
+    }
+    dest = const_cast<MayAliasU32*>(d32);
+    src = const_cast<const MayAliasU32*>(s32);
+  }
   volatile uint8_t* d = static_cast<volatile uint8_t*>(dest);
   const volatile uint8_t* s = static_cast<const volatile uint8_t*>(src);
   while (count--) {
