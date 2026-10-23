@@ -142,11 +142,7 @@ if (current_toolchain == default_toolchain) {
   # compile and link go binaries.
   ninja_implicit_file_inputs("go_toolchain") {
     _go_base_dir = "//prebuilt/third_party/go/${host_os}-${host_cpu}"
-    files = [
-      "${_go_base_dir}/bin/go",
-      "${_go_base_dir}/makefuchsia/makefuchsia.go",
-      "${_go_base_dir}/makeroot/makeroot.go",
-    ]
+    files = [ "${_go_base_dir}/bin/go" ]
   }
 }
 
