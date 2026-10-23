@@ -19,6 +19,25 @@ use crate::pdev_power::{power_opp_get, power_opp_get_domain_count, power_opp_set
 
 ksync::declare_singleton_mutex!(InstanceLock);
 
+// Serializes posting a power level request to the pdev driver with updating the scheduler's
+// power level bookkeeping for that request.
+//
+// `post` is reached from `Scheduler::send_pending_power_level_request` on any CPU in a domain,
+// with no `queue_lock_` held. Without serialization, two CPUs in the same domain posting
+// different levels can have their hardware writes land in one order and their bookkeeping
+// updates land in the other, leaving the scheduler believing the domain is at a level the
+// hardware is not. Because `PowerState::request_transition` suppresses requests for the level the
+// scheduler already believes is active, that disagreement persists until demand moves to a third
+// level. See b/576640818.
+//
+// Lock ordering: this lock is acquired with no `queue_lock_` held and is held across
+// `scheduler::update_power_level`, which acquires the `queue_lock_` of every CPU in the domain.
+// It is therefore strictly outer to `queue_lock_` and to the pdev driver's own locks (which
+// `power_opp_get` may take under `queue_lock_`), and must never be acquired with any of those
+// held. A single lock is used rather than one per domain because posts are infrequent and
+// domains are few; this can be split per domain if contention is ever observed.
+ksync::declare_singleton_lock!(PostLock, ::ksync::RawSpinlock);
+
 static INSTANCE: KCell<Option<RefPtr<PDevPowerLevelController>>, InstanceLock> = KCell::new(None);
 
 /// Power level controller backed by the platform device (pdev) power driver.
@@ -94,6 +113,11 @@ impl PowerLevelController for PDevPowerLevelController {
         if (pending.domain_id as usize) >= self.domain_count() {
             return Err(Status::OUT_OF_RANGE);
         }
+
+        // Hold `PostLock` across both the hardware write and the bookkeeping update so that the
+        // scheduler's active power level always reflects the most recent hardware write. See the
+        // lock declaration for the rationale and ordering.
+        ksync::lock!(PostLock::lock());
 
         power_opp_set(pending.domain_id, pending.control_argument)?;
 
