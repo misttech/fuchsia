@@ -7,13 +7,8 @@ Tests for connecting to an access point.
 
 import logging
 
-logger = logging.getLogger(__name__)
-
-import asyncio
-import struct
-
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-import wlanix_testing.base_test as base_test
+import fuchsia_wlan_base_test
+import wlanix_testing
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib.hostapd_constants import (
     AP_DEFAULT_CHANNEL_2G,
@@ -23,8 +18,6 @@ from legacy_access_point.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from mobly import signals, test_runner
-from mobly.asserts import assert_equal, assert_true
-from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -38,13 +31,35 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
-from wlanix_testing import (
-    Nl80211MulticastServer,
-    SupplicantStaIfaceCallbackServer,
-)
+
+logger = logging.getLogger(__name__)
 
 
-class ConnectToApTest(base_test.ConnectionBaseTestClass):
+class ConnectToApTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        if not self.openwrt_ap and not self.access_point:
+            raise signals.TestError("Requires at least one access point")
+        if isinstance(self.access_point, AccessPoint):
+            self.access_point.stop_all_aps()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
+
+    async def teardown_test(self) -> None:
+        try:
+            await self.chip.destroy_all_sta_ifaces()
+        finally:
+            if isinstance(self.access_point, AccessPoint):
+                self.access_point.stop_all_aps()
+            await super().teardown_test()
+
     async def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
@@ -62,11 +77,11 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
     async def _test_logic(
         self, security: Security, password: str | None
     ) -> None:
+        iface = await self.chip.create_sta_iface()
         ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
 
-        ap = self.access_point()
-        if isinstance(ap, OpenWrtAP):
-            ap.configure_wifi(
+        if self.openwrt_ap:
+            self.openwrt_ap.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -82,9 +97,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-        elif isinstance(ap, AccessPoint):
+        elif isinstance(self.access_point, AccessPoint):
             setup_ap(
-                access_point=ap,
+                access_point=self.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_2G,
                 ssid=ssid,
@@ -94,143 +109,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 ),
             )
 
-        logger.info("Querying for IfaceIndex...")
-        get_interface_message = fidl_wlanix.Nl80211Message(
-            message=fidl_wlanix.Message(
-                # fmt: off
-                payload=[
-                    # Generic Netlink Header
-                    0x05,  # Command: GetInterface
-                    0x01,  # Version
-                    0x00, 0x00 # Reserved
-                ],
-                # fmt: on
-            )
+        await iface.scan_and_connect(
+            ssid=ssid, security=security, password=password
         )
-        response_list = (
-            (await self.nl80211_proxy.message(message=get_interface_message))
-            .unwrap()
-            .responses
-        )
-        assert response_list is not None
-        attrs = base_test.verify_new_interface_response(response_list)
-        iface_index = struct.unpack(
-            "<I", attrs[base_test.NL80211_ATTR_IFINDEX]
-        )[0]
-        logger.info("Using IfaceIndex %d for connection test", iface_index)
-
-        logger.info("Triggering a scan on IfaceIndex %d", iface_index)
-        client, server = self.dut.fuchsia_controller.channel_create()
-        async with Nl80211MulticastServer(client, server) as ctx:
-            scan_queue = ctx.message_queue
-            scan_callback_channel = ctx.callback_channel
-
-            self.nl80211_proxy.get_multicast(
-                group="scan", multicast=scan_callback_channel.take()
-            )
-
-            trigger_scan_message = fidl_wlanix.Nl80211Message(
-                message=fidl_wlanix.Message(
-                    # fmt: off
-                    payload=[
-                        # Generic Netlink Header
-                        0x21,  # Command: TriggerScan
-                        0x01,  # Version
-                        0x00, 0x00,  # Reserved
-                        0x08, 0x00,  # Length
-                        0x03, 0x00,  # Type: IfaceIndex (little-endian)
-                        *list(struct.pack("<I", iface_index)),
-                    ],
-                    # fmt: on
-                )
-            )
-            response_list = (
-                (await self.nl80211_proxy.message(message=trigger_scan_message))
-                .unwrap()
-                .responses
-            )
-            assert response_list is not None
-            assert_equal(
-                len(response_list),
-                1,
-                "Response from TriggerScan should contain a single ACK message.",
-            )
-            assert response_list[0].ack, "Response should have been an ACK."
-
-            # Wait for a multicast message to indicate the scan has completed.
-            try:
-                scan_message = await asyncio.wait_for(
-                    scan_queue.get(), timeout=20
-                )
-                logger.info("Recieved nl80211 scan result signal")
-                assert (
-                    scan_message.message
-                ), "Received a non-message nl80211 message"
-                assert (
-                    scan_message.message.payload is not None
-                ), "Received scan result indication without payload"
-                assert_equal(
-                    scan_message.message.payload[0],
-                    34,  # Command: NewScanResults
-                    "Received unexpected scan result",
-                )
-            except TimeoutError:
-                raise signals.TestFailure(
-                    "Did not receive a scan result within 20 seconds"
-                )
-
-        client, server = self.dut.fuchsia_controller.channel_create()
-        async with SupplicantStaIfaceCallbackServer(client, server) as ctx:
-            state_change_queue = ctx.state_change_queue
-            callback_channel = ctx.callback_channel
-
-            self.supplicant_sta_iface_proxy.register_callback(
-                callback=callback_channel.take()
-            )
-
-            (
-                proxy,
-                server,
-            ) = self.dut.fuchsia_controller.channel_create()
-            self.supplicant_sta_iface_proxy.add_network(network=server.take())
-            supplicant_sta_network_proxy = (
-                fidl_wlanix.SupplicantStaNetworkClient(proxy)
-            )
-
-            supplicant_sta_network_proxy.set_ssid(
-                ssid=list(ssid.encode("ascii"))
-            )
-            if password:
-                if isinstance(security, SecurityWpa3):
-                    supplicant_sta_network_proxy.set_sae_password(
-                        password=list(password.encode("ascii"))
-                    )
-                else:
-                    supplicant_sta_network_proxy.set_psk_passphrase(
-                        passphrase=list(password.encode("ascii"))
-                    )
-
-            try:
-                (await supplicant_sta_network_proxy.select()).unwrap()
-            except AssertionError as e:
-                raise signals.TestFailure(
-                    f'Failed to connect to "{ssid}" with {security}'
-                ) from e
-
-            state_change = await state_change_queue.get()
-            assert isinstance(
-                state_change,
-                fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest,
-            ), f"Expected OnStateChanged. Got {state_change!r}"
-            assert_equal(
-                state_change.new_state,
-                fidl_wlanix.StaIfaceCallbackState.COMPLETED,
-            )
-            assert_true(
-                state_change_queue.empty(),
-                "Unexpectedly received additional callback messages.",
-            )
-            logger.info(f'Successfully connected to "{ssid}"!')
 
 
 if __name__ == "__main__":

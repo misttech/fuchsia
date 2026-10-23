@@ -12,8 +12,8 @@ import time
 from datetime import timedelta
 from typing import Any, Iterator
 
-import fidl_fuchsia_wlan_wlanix as fidl_wlanix
-import wlanix_testing.base_test as base_test
+import fuchsia_wlan_base_test
+import wlanix_testing
 from common.utils.ies import read_ssid
 from honeydew.utils.deadline import Deadline
 from legacy_access_point.access_point import AccessPoint, setup_ap
@@ -28,9 +28,8 @@ from legacy_access_point.ap_lib.hostapd_security import (
 from legacy_access_point.ap_lib.hostapd_security import (
     SecurityMode,
 )
-from mobly import test_runner
+from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
-from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -60,7 +59,6 @@ from wlanix_testing import (
     NL80211_SCHED_SCAN_MATCH_ATTR_SSID,
     NL80211_SCHED_SCAN_PLAN_INTERVAL,
     NL80211_SCHED_SCAN_PLAN_ITERATIONS,
-    Nl80211MulticastServer,
     build_nla,
     parse_netlink_attributes,
 )
@@ -121,14 +119,34 @@ def build_start_sched_scan_payload(
     return payload
 
 
-class SchedScanTest(base_test.ConnectionBaseTestClass):
+class SchedScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    wlanix: wlanix_testing.Wlanix
+    chip: wlanix_testing.WifiChip
+    iface: wlanix_testing.StaIface
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        if not self.openwrt_ap and not self.access_point:
+            raise signals.TestError("Requires at least one access point")
+        if isinstance(self.access_point, AccessPoint):
+            self.access_point.stop_all_aps()
+        self.wlanix = wlanix_testing.Wlanix(self.dut)
+        self.chip = await self.wlanix.ensure_single_chip()
+
     async def setup_test(self) -> None:
         await super().setup_test()
+        await self.chip.destroy_all_sta_ifaces()
+        self.iface = await self.chip.create_sta_iface()
         await self._stop_sched_scan()
 
     async def teardown_test(self) -> None:
-        await self._stop_sched_scan()
-        await super().teardown_test()
+        try:
+            await self._stop_sched_scan()
+            await self.chip.destroy_all_sta_ifaces()
+        finally:
+            if isinstance(self.access_point, AccessPoint):
+                self.access_point.stop_all_aps()
+            await super().teardown_test()
 
     def _setup_ap(
         self,
@@ -148,9 +166,8 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
             else AP_DEFAULT_CHANNEL_5G
         )
 
-        ap = self.access_point()
-        if isinstance(ap, OpenWrtAP):
-            ap.configure_wifi(
+        if self.openwrt_ap:
+            self.openwrt_ap.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -170,9 +187,9 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-        elif isinstance(ap, AccessPoint):
+        elif isinstance(self.access_point, AccessPoint):
             setup_ap(
-                access_point=ap,
+                access_point=self.access_point,
                 profile_name="whirlwind",
                 channel=ap_channel,
                 ssid=ssid,
@@ -186,7 +203,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def _stop_sched_scan(self) -> None:
         try:
-            iface_index = await self._query_iface_index()
+            iface_index = await self.iface.get_iface_index()
             payload = [
                 NL80211_CMD_STOP_SCHED_SCAN,  # Command
                 0x01,  # Version
@@ -198,35 +215,12 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                     )
                 ),
             ]
-            stop_sched_scan_message = fidl_wlanix.Nl80211Message(
-                message=fidl_wlanix.Message(payload=payload)
-            )
             logger.info("Stopping any active scheduled scans")
-            await self.nl80211_proxy.message(message=stop_sched_scan_message)
+            await self.iface.nl80211.send_message(payload)
         except Exception as e:
             logger.warning(
                 "Failed to stop scheduled scan during teardown/setup: %s", e
             )
-
-    async def _query_iface_index(self) -> int:
-        get_interface_message = fidl_wlanix.Nl80211Message(
-            message=fidl_wlanix.Message(
-                payload=[
-                    0x05,  # Command: GetInterface
-                    0x01,  # Version
-                    0x00,
-                    0x00,  # Reserved
-                ],
-            )
-        )
-        response_list = (
-            (await self.nl80211_proxy.message(message=get_interface_message))
-            .unwrap()
-            .responses
-        )
-        assert response_list is not None
-        attrs = base_test.verify_new_interface_response(response_list)
-        return struct.unpack("<I", attrs[base_test.NL80211_ATTR_IFINDEX])[0]
 
     async def _trigger_and_verify_sched_scan(
         self,
@@ -235,35 +229,11 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         expected_ssids: list[str],
         timeout_seconds: int = 10,
     ) -> None:
-        # Send command
         logger.info("Sending start scheduled scan netlink message")
-        start_sched_scan_message = fidl_wlanix.Nl80211Message(
-            message=fidl_wlanix.Message(payload=payload)
-        )
-
-        # Listen for multicast events
-        client, server = self.dut.fuchsia_controller.channel_create()
-        async with Nl80211MulticastServer(client, server) as ctx:
-            scan_queue = ctx.message_queue
-            scan_callback_channel = ctx.callback_channel
-
-            self.nl80211_proxy.get_multicast(
-                group="scan", multicast=scan_callback_channel.take()
-            )
-
-            # Send command
-            response_list = (
-                (
-                    await self.nl80211_proxy.message(
-                        message=start_sched_scan_message
-                    )
-                )
-                .unwrap()
-                .responses
-            )
+        async with self.iface.nl80211.listen_multicast("scan") as scan_queue:
+            response_list = await self.iface.nl80211.send_message(payload)
 
             # Verify acknowledgement
-            assert response_list is not None
             assert_equal(
                 len(response_list),
                 1,
@@ -309,21 +279,11 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                                     )
                                 ),
                             ]
-                            get_scan_message = fidl_wlanix.Nl80211Message(
-                                message=fidl_wlanix.Message(
-                                    payload=get_scan_payload
-                                )
-                            )
                             get_scan_response = (
-                                (
-                                    await self.nl80211_proxy.message(
-                                        message=get_scan_message
-                                    )
+                                await self.iface.nl80211.send_message(
+                                    get_scan_payload
                                 )
-                                .unwrap()
-                                .responses
                             )
-                            assert get_scan_response is not None
 
                             def get_ssids_from_responses(
                                 responses: Any,
@@ -391,7 +351,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_basic_sched_scan_2g(self) -> None:
         ssid = self._setup_ap(hidden=False)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -409,7 +369,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_basic_sched_scan_5g(self) -> None:
         ssid = self._setup_ap(hidden=False, band=Band.BAND_5G)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -427,7 +387,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_start_sched_scan_hidden_ssid(self) -> None:
         ssid = self._setup_ap(hidden=True)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -449,7 +409,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_start_sched_scan_with_frequency_filter_match(self) -> None:
         ssid = self._setup_ap(hidden=False)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -473,7 +433,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         self,
     ) -> None:
         ssid = self._setup_ap(hidden=False)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -503,10 +463,9 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         ssid_a = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         ssid_b = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         logger.info(f"Setting up APs with SSIDs: {ssid_a} and {ssid_b}")
-        ap = self.access_point()
-        if isinstance(ap, OpenWrtAP):
+        if self.openwrt_ap:
             # Setup a 2.4GHz and 5GHz AP.
-            ap.configure_wifi(
+            self.openwrt_ap.configure_wifi(
                 AccessPointConfig(
                     radios=[
                         RadioConfig(
@@ -528,26 +487,26 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
                     ]
                 )
             )
-        elif isinstance(ap, AccessPoint):
+        elif isinstance(self.access_point, AccessPoint):
             # Whirlwind's setup_ap() manages hostapd per physical radio interface (wlan0 for 2.4GHz
             # and wlan1 for 5GHz). Calling setup_ap() with 2.4GHz twice overwrites /tmp/hostapd-wlan0.conf,
             # so we broadcast one SSID on 2.4GHz and the other on 5GHz to have both active simultaneously.
             setup_ap(
-                access_point=ap,
+                access_point=self.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_2G,
                 ssid=ssid_a,
                 security=DeprecatedSecurity(security_mode=SecurityMode.OPEN),
             )
             setup_ap(
-                access_point=ap,
+                access_point=self.access_point,
                 profile_name="whirlwind",
                 channel=AP_DEFAULT_CHANNEL_5G,
                 ssid=ssid_b,
                 security=DeprecatedSecurity(security_mode=SecurityMode.OPEN),
             )
 
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH,
@@ -566,7 +525,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_start_sched_scan_with_rssi_threshold_match(self) -> None:
         ssid = self._setup_ap(hidden=False)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         # Construct match attributes with a very permissive RSSI threshold (e.g. -100 dBm)
         match_attr = build_nla(
@@ -586,7 +545,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
 
     async def test_start_sched_scan_with_rssi_threshold_no_match(self) -> None:
         ssid = self._setup_ap(hidden=False)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         # Construct match attributes with a restrictive RSSI threshold (e.g. -10 dBm)
         match_attr = build_nla(
@@ -608,7 +567,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
     async def test_start_sched_scan_with_scan_plans(self) -> None:
         """Verify that scan plans execute at the requested multi-tiered intervals."""
         ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH, build_match_set(ssid)
@@ -649,30 +608,17 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
             plans_attr=plans_attr,
         )
 
-        client, server = self.dut.fuchsia_controller.channel_create()
         async with odpm_utils.record_odpm_metrics(
             self.dut.tracing,
             test_case_path=self.test_case_path,
             test_name=self.current_test_info.name,
         ):
-            async with Nl80211MulticastServer(client, server) as ctx:
-                scan_queue = ctx.message_queue
-                self.nl80211_proxy.get_multicast(
-                    group="scan", multicast=ctx.callback_channel.take()
-                )
+            async with self.iface.nl80211.listen_multicast(
+                "scan"
+            ) as scan_queue:
                 start_time = time.time()
 
-                response_list = (
-                    (
-                        await self.nl80211_proxy.message(
-                            message=fidl_wlanix.Nl80211Message(
-                                message=fidl_wlanix.Message(payload=payload)
-                            )
-                        )
-                    )
-                    .unwrap()
-                    .responses
-                )
+                response_list = await self.iface.nl80211.send_message(payload)
                 assert_true(
                     response_list and response_list[0].ack is not None,
                     "Response should be an ack",
@@ -734,7 +680,7 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
         logger.info(f"Setting up initial AP with SSID: {ssid_a}")
         self._setup_ap(preset_ssid=ssid_a)
 
-        iface_index = await self._query_iface_index()
+        iface_index = await self.iface.get_iface_index()
 
         match_attr = build_nla(
             NL80211_ATTR_SCHED_SCAN_MATCH,
@@ -746,25 +692,9 @@ class SchedScanTest(base_test.ConnectionBaseTestClass):
             interval_ms=3000,
         )
 
-        client, server = self.dut.fuchsia_controller.channel_create()
-        async with Nl80211MulticastServer(client, server) as ctx:
-            scan_queue = ctx.message_queue
-            self.nl80211_proxy.get_multicast(
-                group="scan", multicast=ctx.callback_channel.take()
-            )
-
+        async with self.iface.nl80211.listen_multicast("scan") as scan_queue:
             # Send command
-            response_list = (
-                (
-                    await self.nl80211_proxy.message(
-                        message=fidl_wlanix.Nl80211Message(
-                            message=fidl_wlanix.Message(payload=payload)
-                        )
-                    )
-                )
-                .unwrap()
-                .responses
-            )
+            response_list = await self.iface.nl80211.send_message(payload)
             assert_true(
                 response_list and response_list[0].ack is not None,
                 "Response should be an ack",

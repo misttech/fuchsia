@@ -61,8 +61,7 @@ antlion_host_test("connect_to_ap_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/ConnectToApTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
 }
 
@@ -78,12 +77,11 @@ antlion_host_test("apf_test") {
 antlion_host_test("sched_scan_test") {
   main_source = "//src/connectivity/wlan/tests/wlanix/SchedScanTest.py"
   libraries = [
-    "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
-    "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",
-    "//src/testing/end_to_end/mobly_base_tests/fuchsia_async_extension",
-    "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_python",
     "//src/connectivity/wlan/tests/common",
     "//src/connectivity/wlan/tests/utils:wlan_test_utils",
+    "//src/connectivity/wlan/tests/wlanix/wlanix_testing",
+    "//src/testing/end_to_end/honeydew",
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
   ]
 }
 
