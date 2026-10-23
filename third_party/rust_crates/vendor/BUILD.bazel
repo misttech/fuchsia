@@ -1120,14 +1120,14 @@ alias(
 )
 
 alias(
-    name = "googletest-0.14.2",
-    actual = "//third_party/rust_crates/vendor/googletest-0.14.2:googletest",
+    name = "googletest-0.14.3",
+    actual = "//third_party/rust_crates/vendor/googletest-0.14.3:googletest",
     tags = ["manual"],
 )
 
 alias(
     name = "googletest",
-    actual = "//third_party/rust_crates/vendor/googletest-0.14.2:googletest",
+    actual = "//third_party/rust_crates/vendor/googletest-0.14.3:googletest",
     tags = ["manual"],
 )
 

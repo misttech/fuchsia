@@ -784,11 +784,11 @@ group("glob-0.3.4") {
 }
 
 group("googletest") {
-  public_deps = [ ":googletest-v0_14_2" ]
+  public_deps = [ ":googletest-v0_14_3" ]
 }
 
-group("googletest-0.14.2") {
-  public_deps = [ ":googletest-v0_14_2" ]
+group("googletest-0.14.3") {
+  public_deps = [ ":googletest-v0_14_3" ]
 }
 
 group("gpt") {
@@ -10833,16 +10833,16 @@ rustc_library("glob-v0_3_4") {
   applicable_licenses = [ ":glob-v0_3_4.license" ]
 }
 
-license("googletest-v0_14_2.license") {
+license("googletest-v0_14_3.license") {
   public_package_name = "googletest"
   license_files =
-      [ "//third_party/rust_crates/vendor/googletest-0.14.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/googletest-0.14.3/LICENSE" ]
 }
 
-rustc_library("googletest-v0_14_2") {
+rustc_library("googletest-v0_14_3") {
   crate_name = "googletest"
-  source_root = "//third_party/rust_crates/vendor/googletest-0.14.2/src/lib.rs"
-  output_name = "googletest-4cf6f29be45395b1"
+  source_root = "//third_party/rust_crates/vendor/googletest-0.14.3/src/lib.rs"
+  output_name = "googletest-5eff6514b97a586a"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10850,7 +10850,7 @@ rustc_library("googletest-v0_14_2") {
 
   deps = []
   deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
-  deps += [ ":googletest_macro-v0_14_2($host_toolchain)" ]
+  deps += [ ":googletest_macro-v0_14_3($host_toolchain)" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":regex-v1_13_1" ]
 
@@ -10858,26 +10858,26 @@ rustc_library("googletest-v0_14_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4cf6f29be45395b1",
-    "-Cextra-filename=-4cf6f29be45395b1",
+    "-Cmetadata=5eff6514b97a586a",
+    "-Cextra-filename=-5eff6514b97a586a",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":googletest-v0_14_2.license" ]
+  applicable_licenses = [ ":googletest-v0_14_3.license" ]
 }
 
-license("googletest_macro-v0_14_2.license") {
+license("googletest_macro-v0_14_3.license") {
   public_package_name = "googletest_macro"
   license_files =
-      [ "//third_party/rust_crates/vendor/googletest_macro-0.14.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/googletest_macro-0.14.3/LICENSE" ]
 }
 
-rustc_macro("googletest_macro-v0_14_2") {
+rustc_macro("googletest_macro-v0_14_3") {
   crate_name = "googletest_macro"
   source_root =
-      "//third_party/rust_crates/vendor/googletest_macro-0.14.2/src/lib.rs"
-  output_name = "googletest_macro-7197cc5aac8d7f93"
+      "//third_party/rust_crates/vendor/googletest_macro-0.14.3/src/lib.rs"
+  output_name = "googletest_macro-f2676cf83ddfaf41"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10892,13 +10892,13 @@ rustc_macro("googletest_macro-v0_14_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7197cc5aac8d7f93",
-    "-Cextra-filename=-7197cc5aac8d7f93",
+    "-Cmetadata=f2676cf83ddfaf41",
+    "-Cextra-filename=-f2676cf83ddfaf41",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":googletest_macro-v0_14_2.license" ]
+  applicable_licenses = [ ":googletest_macro-v0_14_3.license" ]
 }
 
 license("gpt-v4_1_0.license") {
