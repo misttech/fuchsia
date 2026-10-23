@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp",
+    srcs = [
+        "component_context.cc",
+        "outgoing_directory.cc",
+        "service_directory.cc",
+    ],
+    hdrs = [
+        "component_context.h",
+        "outgoing_directory.h",
+        "service_directory.h",
+    ],
+    api_area = "Component Framework",
+    category = "partner",
+    idk_name = "sys_cpp",
+    implementation_deps = [
+        "//sdk/lib/fdio",
+        "//sdk/lib/vfs/cpp",
+    ],
+    include_base = "//sdk",
+    public_configs = ["//sdk/config"],  # For bazel2gn.
+    stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/fit",
+        "//sdk/lib/sys/service/cpp",
+        "//zircon/system/ulib/zx",
+    ],
+)

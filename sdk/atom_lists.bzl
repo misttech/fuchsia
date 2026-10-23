@@ -41,6 +41,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/magma_common:magma_common_idk",
     "//sdk/lib/media/cpp:no_converters_idk",
     "//sdk/lib/stdcompat:stdcompat_idk",
+    "//sdk/lib/sys/cpp:cpp_idk",
     "//sdk/lib/sys/service/cpp:cpp_idk",
     "//sdk/lib/syslog/cpp:cpp_idk",
     "//sdk/lib/syslog/structured_backend:structured_backend_idk",
