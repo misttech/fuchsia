@@ -10,10 +10,24 @@ group("tests") {
   deps = [
     ":related_invocations_test($host_toolchain)",
     ":rs_profile_test($host_toolchain)",
+    ":rsninja_test($host_toolchain)",
   ]
 }
 
 if (is_host) {
+  python_library("rsninja") {
+    sources = [ "rsninja.py" ]
+    library_deps = [
+      ":related_invocations",
+      ":rs_profile",
+    ]
+  }
+
+  python_build_time_tests("rsninja_test") {
+    tests = [ "rsninja_test.py" ]
+    deps = [ ":rsninja" ]
+  }
+
   python_library("related_invocations") {
     sources = [ "related_invocations.py" ]
   }
