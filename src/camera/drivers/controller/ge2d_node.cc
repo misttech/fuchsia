@@ -14,6 +14,7 @@
 #include <zircon/types.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include <safemath/safe_conversions.h>
 
@@ -224,13 +225,18 @@ zx_status_t Ge2dNode::SetCropRect(float x_min, float y_min, float x_max, float y
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (x_max < x_min) {
-    zxlogf(DEBUG, "Invalid crop parameters: x_max(%f) < x_min(%f)", x_min, x_max);
+  if (std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)) {
+    zxlogf(DEBUG, "Invalid crop parameters: NaN");
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (y_max < y_min) {
-    zxlogf(DEBUG, "Invalid crop parameters: y_max(%f) < y_min(%f)", y_min, y_max);
+  if (x_max <= x_min) {
+    zxlogf(DEBUG, "Invalid crop parameters: x_max(%f) <= x_min(%f)", x_max, x_min);
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (y_max <= y_min) {
+    zxlogf(DEBUG, "Invalid crop parameters: y_max(%f) <= y_min(%f)", y_max, y_min);
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -251,6 +257,11 @@ zx_status_t Ge2dNode::SetCropRect(float x_min, float y_min, float x_max, float y
 
   auto width = normalized_x_max - normalized_x_min;
   auto height = normalized_y_max - normalized_y_min;
+
+  if (width == 0 || height == 0) {
+    zxlogf(DEBUG, "Invalid crop parameters: resulting width or height is 0");
+    return ZX_ERR_INVALID_ARGS;
+  }
 
   rect_t crop = {
       .x = normalized_x_min,
