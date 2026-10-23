@@ -4,6 +4,10 @@
 
 import("//build/toolchain/toolchain_environment.gni")
 
+# True iff $current_toolchain uses a custom Rust target rather than just the
+# toolchain-supplied Rust sysroot.  See //build/toolchain/rust for details.
+rust_custom_target = toolchain_environment == "kernel"
+
 # Define a config() with conveniences for cross-language complexities.
 #
 # This is a thin wrapper around config() that handles passing related switches
@@ -13,7 +17,7 @@ import("//build/toolchain/toolchain_environment.gni")
 # This mostly just translates into `config(target_name)` with some parameters
 # expanded out to avoid boilerplate and conditionalization.  In the kernel
 # environment it also defines a "$target_name.rust-target-edits" group().  This
-# is used by //zircon/kernel/switch:rust-custom-target.
+# is used by //build/toolchain/rust:rust-custom-target.
 #
 # Parameters
 #
@@ -97,8 +101,6 @@ import("//build/toolchain/toolchain_environment.gni")
 # Other parameters are as for config().
 #
 template("compiler_config") {
-  _custom_target = toolchain_environment == "kernel"
-
   _compiler_configs = []
   if (defined(invoker.compiler_configs)) {
     _compiler_configs = invoker.compiler_configs
@@ -226,17 +228,17 @@ template("compiler_config") {
       }
     }
 
-    if (!_custom_target) {
+    if (!rust_custom_target) {
       assert(
           _edits == [],
-          "compiler_config() cannot set rust_target_edits outside kernel environment")
+          "compiler_config() cannot set rust_target_edits outside rust_custom_target environments")
       foreach(feature, _features) {
         rustflags += [ "-Ctarget-feature=$feature" ]
       }
     }
   }
 
-  if (_custom_target) {
+  if (rust_custom_target) {
     group("$target_name.rust-target-edits") {
       forward_variables_from(invoker,
                              [

@@ -128,7 +128,7 @@ template("kernel_executable") {
     mnemonic = "CLIPPY"
 
     forward_variables_from(_crate_vars, "*")
-    deps += [ "//zircon/kernel/lib/rust:rust-custom-target" ]
+    deps += default_common_source_deps
 
     # Prevent distribution_entries from dependency crates evaluated in other
     # toolchains (such as static-checks referenced via validations) from leaking

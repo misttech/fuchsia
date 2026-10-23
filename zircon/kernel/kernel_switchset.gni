@@ -238,7 +238,7 @@ template("kernel_switchset") {
 
         # The :abi configs tree doesn't do all the work for Rust.  Instead,
         # they contribute to the rules for creating the custom target JSON.
-        "//zircon/kernel/lib/rust:target",
+        "//build/toolchain/rust:target",
 
         # This rolls up configs that don't need to be separately removable.
         "//zircon/kernel/switch:kernel_config",

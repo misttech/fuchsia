@@ -10,21 +10,22 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 
-def read_json_file(file: Path):
+def read_json_file(file: Path) -> Any:
     with open(file) as f:
         return json.load(f)
 
 
-def write_json_file(file: Path, contents) -> None:
+def write_json_file(file: Path, contents: Any) -> None:
     if file.exists() and read_json_file(file) == contents:
         return
     with open(file, "w") as f:
         json.dump(contents, f, indent=2, sort_keys=True)
 
 
-def erase(full: list, sublist: list) -> list:
+def erase[T](full: list[T], sublist: list[T]) -> list[T]:
     if sublist:
         for i in range(len(full) - len(sublist) + 1):
             if full[i : i + len(sublist)] == sublist:
@@ -71,6 +72,7 @@ def main() -> int:
         "target-spec-json",
     ]
     with subprocess.Popen(rustc_cmd, stdout=subprocess.PIPE) as proc:
+        assert proc.stdout is not None
         original = json.load(proc.stdout)
         if proc.wait() != 0:
             raise subprocess.CalledProcessError(proc.returncode, rustc_cmd)
@@ -112,8 +114,10 @@ def main() -> int:
                     continue
             features.append(new_feature)
 
-    def apply_edits(output: dict, edits: list):
-        def apply_edit(key: str, action: str, value):
+    def apply_edits(
+        output: dict[str, Any], edits: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        def apply_edit(key: str, action: str, value: Any) -> None:
             if action == "unset":
                 assert value is None
                 if key in output:

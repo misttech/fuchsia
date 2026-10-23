@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/compiler_config.gni")
 import("//build/dist/distribution_manifest.gni")
 import("//build/dist/distribution_manifest_copy.gni")
 import("//build/rust/config.gni")
@@ -67,7 +68,7 @@ import("//build/toolchain/toolchain_environment.gni")
 # `--sysroot` setting, so only previous stages' crates are available to it.
 # Its `lib` directory gets those crates along with all previous stages' crates.
 
-assert(toolchain_environment == "kernel",
+assert(rust_custom_target,
        "This file should not be reached by deps in $current_toolchain")
 
 # Where the Rust library sources are found in the toolchain package.
@@ -205,7 +206,7 @@ group("rust-target-edits.prologue") {
 
 # Generate the full target spec from the base target and the edits.
 action("rust-custom-target") {
-  visibility = [ "//zircon/kernel/*" ]
+  visibility = [ ":*" ]
 
   script = "rust-custom-target.py"
 
@@ -287,7 +288,7 @@ foreach(stage, stages) {
       # The custom target defined by the previous stage goes early in the list.
       # The default (final) custom target and a few other things come out.
       configs = [ ":$previous_stage" ] + default_common_binary_configs -
-                [ "//zircon/kernel/lib/rust:target" ] + stage.remove_configs -
+                [ "//build/toolchain/rust:target" ] + stage.remove_configs -
                 stage.remove_configs
 
       # The config() confers an inputs list for the file dependency on the

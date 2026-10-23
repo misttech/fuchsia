@@ -40,7 +40,7 @@ if (toolchain_environment == "kernel.phys" ||
       "-aes",
       "-sha2",
     ]
-    if (toolchain_environment == "kernel") {
+    if (rust_custom_target) {
       rust_target_edits = [
         {
           key = "abi"

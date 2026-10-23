@@ -99,7 +99,10 @@ if (is_host) {
 
     # This target only exists for type checking; depending on it would package
     # a grab-bag of unrelated scripts.
-    visibility = [ ":*" ]
+    visibility = [
+      ":*",
+      "//:*",  # So it can go into args.gn target_labels.
+    ]
     library_deps = [
       # For packages/generate_package_debug_symbols_manifest.py.
       "//build/api:debug_symbols",
@@ -196,6 +199,7 @@ if (is_host) {
       "testing/verify_files_match.py",
       "testing/verify_golden_files.py",
       "toolchain/get_concurrent_jobs.py",
+      "toolchain/rust/rust-custom-target.py",
       "toolchain/verify-undefined-symbols.py",
       "toolchain/verify_depfile.py",
       "tools/json_validator/test/json_validator_valico_test_runner.py",
@@ -557,8 +561,8 @@ group("non_hermetic_deps") {
 
   # distribution_manifest_copy() uses.
   visibility += [
+    "//build/toolchain/rust/*",
     "//sdk/lib/ld/test/modules/*",
-    "//zircon/kernel/lib/rust/*",
   ]
 }
 

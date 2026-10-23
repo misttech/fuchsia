@@ -26,7 +26,7 @@ compiler_config("arm64") {
 
   c_family_flags = [ "-mtune=generic" ]
 
-  if (toolchain_environment != "kernel") {
+  if (!rust_custom_target) {
     c_family_flags += [ "-march=armv8-a+simd+crc+crypto" ]
 
     # For supported target features see:

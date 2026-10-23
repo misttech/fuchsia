@@ -330,7 +330,7 @@ template("riscv64_abi_config") {
       linker_llvm_flags += [ "-mattr=$attr" ]
     }
 
-    if (toolchain_environment == "kernel") {
+    if (rust_custom_target) {
       # LLVM only inlines a callee whose target features are a subset of the
       # caller's, and every C++ function carries two features that rustc does
       # not derive on its own, so without these no C++ FFI shim can inline into

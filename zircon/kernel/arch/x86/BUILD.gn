@@ -43,7 +43,7 @@ compiler_config("integer-register-abi") {
   ]
   cflags_cc = cflags_c
   rust_target_features = [ "+soft-float" ]
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_target_edits = [
       {
         key = "rustc-abi"
@@ -85,7 +85,7 @@ compiler_config("thread-pointer-abi") {
   if (toolchain_environment != "kernel.phys32") {
     c_family_flags = [ "-mcmodel=kernel" ]
   }
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_target_edits = [
       {
         key = "code-model"
@@ -103,7 +103,7 @@ compiler_config("thread-pointer-abi") {
 # hardware at any time.
 compiler_config("stack-pointer-abi") {
   c_family_flags = [ "-mno-red-zone" ]
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_target_edits = [
       {
         key = "disable-redzone"

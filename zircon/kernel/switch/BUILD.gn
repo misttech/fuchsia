@@ -37,7 +37,7 @@ declare_args() {
 compiler_config("standalone") {
   compiler_configs = [ ":static-pic-link" ]
 
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_linker = "$rebased_clang_prefix/lld"
     if (rust_rbe_enable) {
       rustflags = [ "--remote-inputs=$rust_linker" ]
@@ -82,7 +82,7 @@ compiler_config("static-pic-link") {
   ]
 
   rustflags = []
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_target_edits = [
       {
         key = "no-default-libraries"
@@ -200,8 +200,8 @@ config("instrumented-stack-size") {
 
 # This is the "top" compiler_config().  Its $compiler_configs must reach all
 # other compiler_config()s that could be reached in any way as normal config()s
-# in this toolchain.  It's paired with //zircon/kernel/lib/rust:kernel-target
-# to roll up the compiler_config() instructions for the custom Rust target.
+# in this toolchain.  It's paired with //build/toolchain/rust:target to roll up
+# the compiler_config() instructions for the custom Rust target.
 compiler_config("abi") {
   # These always come first, so they can enable target features that need to be
   # disabled for ABI purposes later.
