@@ -35,7 +35,10 @@ use fidl_fuchsia_bluetooth_sys::{
     PairingDelegateProxy, PairingDelegateRequestStream,
 };
 use fuchsia_async as fasync;
+use fuchsia_bluetooth::inspect::DebugExt;
 use fuchsia_bluetooth::types::{HostId, Peer, PeerId};
+use fuchsia_inspect as inspect;
+use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc;
 use futures::future::{BoxFuture, FutureExt};
 use futures::select;
@@ -66,6 +69,17 @@ pub struct PairingDispatcher {
     inflight_requests: PairingRequests<(PairingResponse, Responder)>,
     /// New hosts that we have been asked to begin processing
     hosts_added: mpsc::Receiver<(HostId, HostProxy)>,
+    /// Inspect node for this pairing dispatcher.
+    inspect_node: inspect::Node,
+}
+
+impl Inspect for &mut PairingDispatcher {
+    fn iattach(self, parent: &inspect::Node, name: impl AsRef<str>) -> Result<(), AttachError> {
+        self.inspect_node = parent.create_child(name.as_ref());
+        self.inspect_node.record_string("input_capability", self.input.debug());
+        self.inspect_node.record_string("output_capability", self.output.debug());
+        Ok(())
+    }
 }
 
 impl Drop for PairingDispatcher {
@@ -98,6 +112,7 @@ impl PairingDispatcher {
             hosts: IndexedStreams::empty(),
             inflight_requests: PairingRequests::empty(),
             hosts_added,
+            inspect_node: inspect::Node::default(),
         };
 
         (dispatcher, handle)
@@ -309,6 +324,7 @@ impl PairingDispatcherHandle {
 mod test {
     use super::*;
     use assert_matches::assert_matches;
+    use diagnostics_assertions::assert_data_tree;
     use fidl_fuchsia_bluetooth::Appearance;
     use fidl_fuchsia_bluetooth_sys as sys;
     use fuchsia_bluetooth::types::Address;
@@ -519,5 +535,29 @@ mod test {
         // will close as the upstream channel is dropped
         future::join3(make_request, run_handler, run_upstream).await;
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_inspect_lifecycle() {
+        let inspector = inspect::Inspector::default();
+
+        let (upstream, upstream_server) =
+            fidl::endpoints::create_proxy_and_stream::<sys::PairingDelegateMarker>();
+        let (mut dispatcher, _handle) =
+            PairingDispatcher::new(upstream, InputCapability::Keyboard, OutputCapability::Display);
+        dispatcher.iattach(inspector.root(), "pairing_delegate").expect("should attach inspect");
+
+        assert_data_tree!(inspector, root: {
+            pairing_delegate: {
+                input_capability: "Keyboard",
+                output_capability: "Display",
+            }
+        });
+
+        // Closing the upstream channel terminates the dispatcher and drops its inspect node.
+        std::mem::drop(upstream_server);
+        dispatcher.run().await;
+
+        assert_data_tree!(inspector, root: {});
     }
 }

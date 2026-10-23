@@ -115,6 +115,88 @@ async fn on_device_changed_inspect_state() {
 }
 
 #[fuchsia::test]
+fn set_pairing_delegate_inspect_state() {
+    let mut exec = fasync::TestExecutor::new();
+    let stash = Stash::in_memory_mock();
+    let inspector = inspect::Inspector::default();
+    let system_inspect = inspector.root().create_child("system");
+    let (gas_channel_sender, _generic_access_req_stream) = mpsc::channel(0);
+    let watch_peers_broker = hanging_get::HangingGetBroker::new(
+        HashMap::new(),
+        |_, _| true,
+        hanging_get::DEFAULT_CHANNEL_SIZE,
+    );
+    let watch_hosts_broker = hanging_get::HangingGetBroker::new(
+        Vec::new(),
+        |_, _| true,
+        hanging_get::DEFAULT_CHANNEL_SIZE,
+    );
+    let dispatcher = HostDispatcher::new(
+        Appearance::Display,
+        Default::default(),
+        stash,
+        system_inspect,
+        gas_channel_sender,
+        watch_peers_broker.new_publisher(),
+        watch_peers_broker.new_registrar(),
+        watch_hosts_broker.new_publisher(),
+        watch_hosts_broker.new_registrar(),
+    );
+
+    // Initially, no pairing_delegate node is present under system.
+    assert_data_tree!(@executor exec, inspector, root: {
+        system: {
+            host_count: 0u64,
+            peer_count: 0u64,
+            device_class: "default",
+            peers: {},
+            hosts: {},
+            discovery_sessions: 0u64,
+            discovery_history: {},
+            recently_removed: {},
+        }
+    });
+
+    // Setting a pairing delegate creates the pairing_delegate node with capabilities.
+    let (delegate_proxy, delegate_server) =
+        fidl::endpoints::create_proxy_and_stream::<sys::PairingDelegateMarker>();
+    dispatcher
+        .set_pairing_delegate(
+            delegate_proxy,
+            sys::InputCapability::Confirmation,
+            sys::OutputCapability::Display,
+        )
+        .expect("should set pairing delegate");
+
+    assert_data_tree!(@executor exec, inspector, root: {
+        system: contains {
+            pairing_delegate: {
+                input_capability: "Confirmation",
+                output_capability: "Display",
+            }
+        }
+    });
+
+    // Closing the upstream PairingDelegate channel terminates PairingDispatcher and removes the
+    // pairing_delegate node from the Inspect hierarchy.
+    drop(delegate_server);
+    let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+    assert_data_tree!(@executor exec, inspector, root: {
+        system: {
+            host_count: 0u64,
+            peer_count: 0u64,
+            device_class: "default",
+            peers: {},
+            hosts: {},
+            discovery_sessions: 0u64,
+            discovery_history: {},
+            recently_removed: {},
+        }
+    });
+}
+
+#[fuchsia::test]
 async fn test_change_name_no_deadlock() {
     let dispatcher = hd_test::make_simple_test_dispatcher();
     // Call a function that used to use the self.state.write().gas_channel_sender.send().await

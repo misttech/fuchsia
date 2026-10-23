@@ -17,7 +17,7 @@ use fidl_fuchsia_bluetooth_sys::{
     self as sys, InputCapability, OutputCapability, PairingDelegateProxy,
 };
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
-use fuchsia_bluetooth::inspect::{DebugExt, Inspectable, ToProperty};
+use fuchsia_bluetooth::inspect::{DebugExt, Inspectable};
 use fuchsia_bluetooth::types::pairing_options::PairingOptions;
 use fuchsia_bluetooth::types::{
     Address, BondingData, HostData, HostId, HostInfo, Identity, Peer, PeerId,
@@ -25,6 +25,7 @@ use fuchsia_bluetooth::types::{
 use fuchsia_inspect::{self as inspect, NumericProperty, Property, unique_name};
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_inspect_derive::Inspect;
 use fuchsia_sync::RwLock;
 use futures::FutureExt;
 use futures::channel::{mpsc, oneshot};
@@ -465,9 +466,6 @@ struct HostDispatcherInspect {
     host_count: inspect::UintProperty,
     device_class: inspect::StringProperty,
     peer_count: inspect::UintProperty,
-    input_capability: inspect::StringProperty,
-    output_capability: inspect::StringProperty,
-    has_pairing_delegate: inspect::UintProperty,
     evicted_peers: BoundedListNode,
     discovery_sessions: inspect::UintProperty,
     discovery_history: BoundedListNode,
@@ -479,9 +477,6 @@ impl HostDispatcherInspect {
             host_count: inspect.create_uint("host_count", 0),
             peer_count: inspect.create_uint("peer_count", 0),
             device_class: inspect.create_string("device_class", "default"),
-            input_capability: inspect.create_string("input_capability", "unknown"),
-            output_capability: inspect.create_string("output_capability", "unknown"),
-            has_pairing_delegate: inspect.create_uint("has_pairing_delegate", 0),
             peers: inspect.create_child("peers"),
             hosts: inspect.create_child("hosts"),
             discovery_sessions: inspect.create_uint("discovery_sessions", 0),
@@ -583,10 +578,8 @@ impl HostDispatcherState {
                 Err(format_err!("Another Delegate is active"))?
             }
             _ => {
-                self.inspect.input_capability.set(&input.debug());
-                self.inspect.output_capability.set(&output.debug());
-                self.inspect.has_pairing_delegate.set(true.to_property());
-                let (dispatcher, handle) = PairingDispatcher::new(delegate, input, output);
+                let (mut dispatcher, handle) = PairingDispatcher::new(delegate, input, output);
+                let _ = dispatcher.iattach(&self.inspect._inspect, "pairing_delegate");
                 for host in self.host_devices.values() {
                     handle.add_host(host.id(), host.proxy().clone());
                 }
