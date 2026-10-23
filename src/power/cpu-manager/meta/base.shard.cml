@@ -16,6 +16,7 @@
             protocol: [
                 "fuchsia.kernel.CpuResource",
                 "fuchsia.kernel.Stats",
+                "fuchsia.power.powercap.ClientStateWatcher",
                 "fuchsia.thermal.ClientStateConnector",
             ],
         },

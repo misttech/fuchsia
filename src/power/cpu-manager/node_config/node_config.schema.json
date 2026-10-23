@@ -35,6 +35,34 @@
             {
                 "properties": {
                     "type": {
+                        "pattern": "PowercapWatcher"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "dependencies": {
+                        "type": "object",
+                        "properties": {
+                            "cpu_manager_main_node": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "cpu_manager_main_node"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "type",
+                    "name",
+                    "dependencies"
+                ]
+            },
+            {
+                "properties": {
+                    "type": {
                         "pattern": "CpuControlHandler"
                     },
                     "name": {

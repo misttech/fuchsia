@@ -18,9 +18,9 @@ use std::rc::Rc;
 // nodes
 use crate::{
     activity_handler, crash_report_handler, debug_service, input_settings_handler,
-    platform_metrics, system_power_mode_handler, system_profile_handler, system_shutdown_handler,
-    temperature_handler, thermal_load_driver, thermal_policy, thermal_sensor_manager,
-    thermal_shutdown, thermal_state_handler,
+    platform_metrics, powercap_controller, system_power_mode_handler, system_profile_handler,
+    system_shutdown_handler, temperature_handler, thermal_load_driver, thermal_policy,
+    thermal_sensor_manager, thermal_shutdown, thermal_state_handler,
 };
 
 pub struct PowerManager {
@@ -158,6 +158,10 @@ impl PowerManager {
             "PlatformMetrics" => {
                 platform_metrics::PlatformMetricsBuilder::new_from_json(json_data, &self.nodes)
                     .build(node_futures)?
+            }
+            "PowercapController" => {
+                powercap_controller::PowercapControllerBuilder::new_from_json(json_data, service_fs)
+                    .build()?
             }
             "SystemPowerModeHandler" => {
                 system_power_mode_handler::SystemPowerModeHandlerBuilder::new_from_json(

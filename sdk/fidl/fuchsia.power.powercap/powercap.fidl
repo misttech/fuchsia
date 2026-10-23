@@ -86,7 +86,8 @@ open protocol Client {
     /// limit (`max_power_uw`, or the highest entry in `power_levels_uw` if
     /// `max_power_uw` is omitted, or `0` if neither is configured).
     ///
-    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown.
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown or
+    /// refers to an unconstrained container zone.
     flexible GetPowerLimit(struct {
         node_id uint64;
     }) -> (struct {
@@ -95,7 +96,8 @@ open protocol Client {
 
     /// Writes `constraint_0_power_limit_uw` for `node_id` (in microwatts).
     ///
-    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown.
+    /// Returns `PowercapError.INVALID_ARGUMENTS` if `node_id` is unknown or
+    /// refers to an unconstrained container zone.
     flexible SetPowerLimit(struct {
         node_id uint64;
         power_limit_uw uint64;

@@ -44,6 +44,9 @@ pub enum Message {
     /// Communicate a thermal load value
     UpdateThermalLoad(ThermalLoad),
 
+    /// Update per-cluster maximum operating point limits from PowercapController.
+    UpdatePowercapDomainOpps(Vec<u64>),
+
     /// Whether or not to enable cpu boost.
     /// Args:
     ///     - enable: true to enable boost, false to disable.
@@ -116,6 +119,9 @@ pub enum MessageReturn {
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     UpdateThermalLoad,
+
+    /// There is no arg in this MessageReturn type. It only serves as an ACK.
+    UpdatePowercapDomainOpps,
 
     /// There is no arg in this MessageReturn type. It only serves as an ACK.
     SetBoost,

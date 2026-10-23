@@ -22,6 +22,7 @@ mod crash_report_handler;
 mod debug_service;
 mod input_settings_handler;
 mod platform_metrics;
+mod powercap_controller;
 mod system_power_mode_handler;
 mod system_profile_handler;
 mod system_shutdown_handler;

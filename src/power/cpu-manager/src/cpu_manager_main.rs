@@ -49,6 +49,7 @@ use zx::sys;
 ///     - GetMinFrequency
 ///     - LeaseMinFrequency
 ///     - UpdateThermalLoad
+///     - UpdatePowercapDomainOpps
 ///
 /// Sends Messages:
 ///     - GetCpuLoads
@@ -225,6 +226,9 @@ struct CpuCluster {
     /// The max frequency limit OPP that this cluster can run at.
     max_frequency_limit_opp_index: Option<u64>,
 
+    /// The max frequency limit OPP imposed by PowercapController on this cluster.
+    powercap_max_frequency_limit_opp_index: Option<u64>,
+
     /// Optional initial minimum OPP floor held from startup until the first boost cycle ends.
     /// On headless builds (such as `minimal`) where nothing requests a boost, this keeps the
     /// cluster pinned at a fixed floor for predictable microbenchmark performance.
@@ -384,9 +388,18 @@ impl CpuCluster {
     ) -> Result<(), CpuManagerError> {
         // Constrain the index if it indicates an OPP higher than the maximum. OPPs are sorted from
         // highest frequency to lowest, so a lower index indicates a higher frequency.
+        // Note: `min_frequency_limit_opp_index` (configured via `SetMinimumOperatingPointLimit` by
+        // boost or floor leases) is clamped by the current operating point ceiling
+        // (`[max(minimum_opp, maximum_opp), maximum_opp]` in `fuchsia.hardware.cpu.ctrl/Device`),
+        // so a boost or floor lease cannot override the `max_frequency_limit_opp_index` or
+        // `powercap_max_frequency_limit_opp_index` ceiling set via `SetOperatingPoint`.
         if let Some(ref opp_limit_index) = self.max_frequency_limit_opp_index {
             index = index.max(*opp_limit_index as usize);
         }
+        if let Some(ref powercap_opp_limit_index) = self.powercap_max_frequency_limit_opp_index {
+            index = index.max(*powercap_opp_limit_index as usize);
+        }
+        index = index.min(self.opps.len() - 1);
 
         fuchsia_trace::counter!(
             c"cpu_manager",
@@ -1640,6 +1653,57 @@ impl CpuManagerMain {
         });
     }
 
+    async fn handle_update_powercap_domain_opps(
+        &self,
+        domain_opps: &[u64],
+    ) -> Result<MessageReturn, CpuManagerError> {
+        self.init_done.wait().await;
+        let mut inner = self.mutable_inner.lock().await;
+        let thermal_limited_opps = inner.thermal_states
+            [inner.current_thermal_state.unwrap_or_default()]
+        .cluster_opps
+        .clone();
+
+        for cluster in inner.clusters.iter_mut() {
+            cluster.powercap_max_frequency_limit_opp_index =
+                domain_opps.get(cluster.cluster_index).copied().filter(|&opp| opp > 0);
+        }
+        for (cluster_index, &opp_index) in domain_opps.iter().enumerate() {
+            if !inner.clusters.iter().any(|c| c.cluster_index == cluster_index) {
+                log::warn!(
+                    "Ignoring powercap OPP ceiling {} for unknown cluster index {}",
+                    opp_index,
+                    cluster_index
+                );
+            }
+        }
+
+        let cluster_update_futures: Vec<_> = inner
+            .clusters
+            .iter()
+            .map(|cluster| {
+                cluster
+                    .update_opp(&self.syscall_handler, thermal_limited_opps[cluster.cluster_index])
+            })
+            .collect();
+
+        let errors: Vec<_> = futures::future::join_all(cluster_update_futures)
+            .await
+            .into_iter()
+            .filter_map(|r| r.err())
+            .collect();
+
+        if !errors.is_empty() {
+            return Err(CpuManagerError::GenericError(anyhow!(
+                "Failed to update powercap opp(s) ({:?}): {:?}",
+                domain_opps,
+                errors
+            )));
+        }
+
+        Ok(MessageReturn::UpdatePowercapDomainOpps)
+    }
+
     async fn update_cluster_opps(
         &self,
         inner: &MutexGuard<'_, MutableInner>,
@@ -1871,6 +1935,7 @@ impl Node for CpuManagerMain {
                 opps,
                 current_opp,
                 max_frequency_limit_opp_index: boot_max_opp,
+                powercap_max_frequency_limit_opp_index: None,
                 boot_min_opp: cluster_config.boot_min_opp,
                 boost_opp,
                 element_controls: Vec::new(),
@@ -2000,6 +2065,9 @@ impl Node for CpuManagerMain {
             }
             Message::UpdateThermalLoad(thermal_load) => {
                 self.handle_update_thermal_load(*thermal_load).await
+            }
+            Message::UpdatePowercapDomainOpps(domain_opps) => {
+                self.handle_update_powercap_domain_opps(domain_opps).await
             }
             _ => Err(CpuManagerError::Unsupported),
         }
@@ -4247,5 +4315,105 @@ mod tests {
             node.handle_message(&Message::GetMinFrequency(BIG_CLUSTER_INDEX as u64)).await,
             Ok(MessageReturn::GetMinFrequency(opp)) if opp == (BIG_OPPS.len() - 1) as u64
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_update_powercap_domain_opps() {
+        let handlers = Handlers::new();
+        let cluster_configs = make_default_cluster_configs();
+        let thermal_state_configs = vec![
+            ThermalStateConfig {
+                cluster_opps: vec![0, 0],
+                min_performance_normperfs: 0.0,
+                static_power_w: 2.0,
+                dynamic_power_per_normperf_w: 1.0,
+            },
+            ThermalStateConfig {
+                cluster_opps: vec![0, 1],
+                min_performance_normperfs: 0.2,
+                static_power_w: 1.5,
+                dynamic_power_per_normperf_w: 0.8,
+            },
+            ThermalStateConfig {
+                cluster_opps: vec![2, 2],
+                min_performance_normperfs: 0.4,
+                static_power_w: 1.0,
+                dynamic_power_per_normperf_w: 0.6,
+            },
+        ];
+
+        let node = handlers.builder(cluster_configs, thermal_state_configs).build_and_init().await;
+
+        // Apply powercap ceiling [1, 2] -> both clusters throttle to [1, 2].
+        handlers.expect_big_opp(1);
+        handlers.expect_little_opp(2);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![1, 2])).await.unwrap();
+
+        // Enabling boost sends SetMinimumOperatingPointLimit(0) without overriding the active
+        // powercap operating point ceiling [1, 2] (clamped by the CPU driver).
+        handlers.expect_big_min_opp(0);
+        handlers.expect_little_min_opp(0);
+        node.handle_message(&Message::SetBoost(true, 0)).await.unwrap();
+        handlers.expect_big_min_opp((BIG_OPPS.len() - 1) as u32);
+        handlers.expect_little_min_opp((LITTLE_OPPS.len() - 1) as u32);
+        node.handle_message(&Message::SetBoost(false, 0)).await.unwrap();
+
+        // Transition to thermal state 1 ([0, 1]), which is looser than the active powercap ceiling
+        // ([1, 2]) on both clusters -> neither cluster changes OPP.
+        handlers.enqueue_cpu_loads(vec![0.25; 4]);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(52))).await.unwrap();
+
+        // Transition to thermal state 2 ([2, 2]), which is stricter than the powercap ceiling on
+        // the big cluster (max(2, 1) = 2) -> big cluster throttles to OPP 2.
+        handlers.enqueue_cpu_loads(vec![0.25; 4]);
+        handlers.expect_big_opp(2);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(70))).await.unwrap();
+
+        // Returning to thermal state 0 ([0, 0]) relaxes the big cluster back to the active
+        // powercap ceiling (OPP 1).
+        handlers.enqueue_cpu_loads(vec![0.0; 4]);
+        handlers.expect_big_opp(1);
+        node.handle_message(&Message::UpdateThermalLoad(ThermalLoad(0))).await.unwrap();
+
+        // Set a stricter DomainController ceiling on big cluster (2 > 1) -> big cluster throttles to 2.
+        handlers.expect_big_opp(2);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+
+        // Clearing DomainController ceiling on big cluster keeps the active powercap ceiling (1).
+        handlers.expect_big_opp(1);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+
+        // Passing a shorter `domain_opps` slice (`vec![1]`) clears the powercap ceiling (`None`)
+        // for clusters with `cluster_index >= domain_opps.len()` -> little cluster restores OPP 0.
+        handlers.expect_little_opp(0);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![1])).await.unwrap();
+
+        // Clearing powercap ceilings ([0, 0]) restores big cluster to 0.
+        handlers.expect_big_opp(0);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![0, 0])).await.unwrap();
+
+        // Out-of-bounds OPP index (>= opps.len()) clamps to the lowest-frequency OPP (opps.len() - 1 = 2),
+        // while GetMaxFrequency still reports the unthrottled DomainController ceiling (0).
+        handlers.expect_big_opp((BIG_OPPS.len() - 1) as u32);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![99, 0])).await.unwrap();
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(BIG_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(0))
+        );
+
+        // Unknown cluster index (domain_opps.len() > clusters.len()) logs a warning and still
+        // applies ceilings to known clusters.
+        handlers.expect_big_opp(1);
+        handlers.expect_little_opp(2);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![1, 2, 3])).await.unwrap();
+
+        // Reset powercap ceilings to [0, 0].
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        node.handle_message(&Message::UpdatePowercapDomainOpps(vec![0, 0])).await.unwrap();
     }
 }

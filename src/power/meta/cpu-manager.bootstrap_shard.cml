@@ -31,7 +31,10 @@
             to: "#cpu_manager",
         },
         {
-            protocol: [ "fuchsia.thermal.ClientStateConnector" ],
+            protocol: [
+                "fuchsia.power.powercap.ClientStateWatcher",
+                "fuchsia.thermal.ClientStateConnector",
+            ],
             from: "#power_manager",
             to: "#cpu_manager",
         },

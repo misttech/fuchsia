@@ -571,6 +571,106 @@
                     "name",
                     "config"
                 ]
+            },
+            {
+                "properties": {
+                    "type": {
+                        "pattern": "PowercapController"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "config": {
+                        "type": "object",
+                        "properties": {
+                            "nodes": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "node_id": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "parent_node_id": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "zone_path": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "constraint_name": {
+                                            "type": "string"
+                                        },
+                                        "max_power_uw": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "min_power_uw": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                        },
+                                        "power_levels_uw": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "items": {
+                                                "type": "integer",
+                                                "minimum": 0
+                                            }
+                                        },
+                                        "supports_bypass": {
+                                            "type": "boolean"
+                                        },
+                                        "domain_mappings": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "cluster_id": {
+                                                        "type": "integer",
+                                                        "minimum": 0
+                                                    },
+                                                    "opps": {
+                                                        "type": "array",
+                                                        "minItems": 1,
+                                                        "items": {
+                                                            "type": "integer",
+                                                            "minimum": 0
+                                                        }
+                                                    }
+                                                },
+                                                "additionalProperties": false,
+                                                "required": [
+                                                    "cluster_id"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "node_id",
+                                        "zone_path",
+                                        "name"
+                                    ]
+                                }
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "nodes"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "required": [
+                    "type",
+                    "name",
+                    "config"
+                ]
             }
         ]
     }

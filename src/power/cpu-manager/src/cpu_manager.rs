@@ -23,7 +23,8 @@ use zx;
 // nodes
 use crate::{
     cpu_control_handler, cpu_device_handler, cpu_manager_main, cpu_stats_handler,
-    cpu_stats_recorder, domain_controller, syscall_handler, thermal_watcher, trippoint_watcher,
+    cpu_stats_recorder, domain_controller, powercap_watcher, syscall_handler, thermal_watcher,
+    trippoint_watcher,
 };
 
 pub struct CpuManager {
@@ -149,6 +150,11 @@ impl CpuManager {
         Ok(match json_data["type"].as_str().unwrap() {
             "ThermalWatcher" => {
                 thermal_watcher::ThermalWatcherBuilder::new_from_json(json_data, &self.nodes)
+                    .build(node_futures)
+                    .await?
+            }
+            "PowercapWatcher" => {
+                powercap_watcher::PowercapWatcherBuilder::new_from_json(json_data, &self.nodes)
                     .build(node_futures)
                     .await?
             }

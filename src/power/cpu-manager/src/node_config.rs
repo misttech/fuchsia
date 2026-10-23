@@ -13,6 +13,10 @@ pub enum NodeConfig {
         name: String,
         dependencies: ThermalWatcherDependencies,
     },
+    PowercapWatcher {
+        name: String,
+        dependencies: PowercapWatcherDependencies,
+    },
     TrippointWatcher {
         name: String,
         config: TrippointWatcherConfig,
@@ -56,6 +60,7 @@ impl NodeConfig {
     pub fn name(&self) -> &str {
         match self {
             NodeConfig::ThermalWatcher { name, .. }
+            | NodeConfig::PowercapWatcher { name, .. }
             | NodeConfig::TrippointWatcher { name, .. }
             | NodeConfig::CpuControlHandler { name, .. }
             | NodeConfig::CpuDeviceHandler { name, .. }
@@ -72,6 +77,12 @@ impl NodeConfig {
 #[serde(deny_unknown_fields)]
 pub struct ThermalWatcherDependencies {
     pub thermal_handler_node: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PowercapWatcherDependencies {
+    pub cpu_manager_main_node: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
