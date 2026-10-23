@@ -1,0 +1,62 @@
+[
+    {
+        "pid": "a020",
+        "descriptor": "CDC"
+    },
+    {
+        "pid": "a021",
+        "descriptor": "UMS"
+    },
+    {
+        "pid": "a022",
+        "descriptor": "Function Test"
+    },
+    {
+        "pid": "a023",
+        "descriptor": "CDC + Function Test"
+    },
+    {
+        "pid": "a024",
+        "descriptor": "RNDIS"
+    },
+    {
+        "pid": "a025",
+        "descriptor": "ADB"
+    },
+    {
+        "pid": "a026",
+        "descriptor": "CDC + ADB"
+    },
+    {
+        "pid": "a027",
+        "descriptor": "CDC + Fastboot"
+    },
+    {
+        "pid": "a028",
+        "descriptor": "VSOCK Bridge"
+    },
+    {
+        "pid": "a029",
+        "descriptor": "CDC + VSOCK Bridge (platform default)"
+    },
+    {
+        "pid": "a02a",
+        "descriptor": "ADB + VSOCK Bridge"
+    },
+    {
+        "pid": "a02b",
+        "descriptor": "CDC + ADB + VSOCK Bridge"
+    },
+    {
+        "pid": "a02c",
+        "descriptor": "CDC + ADB + Fastboot"
+    },
+    {
+        "pid": "4ee0",
+        "descriptor": "Fastboot (Fuchsia userspace and Pixel bootloader)"
+    },
+    {
+        "pid": "d00d",
+        "descriptor": "Fastboot (LK-based bootloaders; not in peripheral.h)"
+    }
+]

@@ -52,6 +52,9 @@
 
 // USB Product ID for Fastboot function
 #define GOOGLE_USB_FASTBOOT_PID 0x4ee0
-// LINT.ThenChange(//src/devices/usb/bin/usb-cli/src/config.rs)
+// LINT.ThenChange(
+//   //src/devices/usb/bin/usb-cli/src/config.rs,
+//   //src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json,
+// )
 
 #endif  // SRC_DEVICES_USB_LIB_USB_INCLUDE_USB_PERIPHERAL_H_

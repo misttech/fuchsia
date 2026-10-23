@@ -18,6 +18,11 @@ python_library("usb_lib") {
     "usb_config.py",
     "usb_power_hub_base_test.py",
   ]
+
+  # Shared with //src/tests/end_to_end/usb/lib/disconnect/udev.sh. Read by
+  # linux_virtual_usb_hub.py via `from . import data`.
+  data_sources = [ "fuchsia_usb_pids.json" ]
+  data_package_name = "data"
   library_deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_python",
     "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_python",

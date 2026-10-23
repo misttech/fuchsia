@@ -48,7 +48,10 @@ pub const GOOGLE_USB_ADB_AND_VSOCK_BRIDGE_PID: u16 = 0xa02a;
 pub const GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID: u16 = 0xa02b;
 pub const GOOGLE_USB_CDC_AND_ADB_AND_FASTBOOT_PID: u16 = 0xa02c;
 pub const GOOGLE_USB_FASTBOOT_PID: u16 = 0x4ee0;
-// LINT.ThenChange(//src/devices/usb/lib/usb/include/usb/peripheral.h)
+// LINT.ThenChange(
+//   //src/devices/usb/lib/usb/include/usb/peripheral.h,
+//   //src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json,
+// )
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

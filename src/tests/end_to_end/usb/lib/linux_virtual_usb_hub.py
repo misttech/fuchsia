@@ -4,11 +4,13 @@
 """Linux Virtual UsbPower auxiliary device implementation."""
 
 import glob
+import json
 import logging
 import os
 import platform
 import re
 import time
+from importlib import resources
 
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
@@ -19,6 +21,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_BUS_ID_LOOKUP_ATTEMPTS: int = 5
 DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC: float = 10.0
 _BUS_ID_LOOKUP_RETRY_INTERVAL_SEC: float = 1.0
+
+# Shared with //src/tests/end_to_end/usb/lib/disconnect/udev.sh.
+_PID_LIST_FILE: str = "fuchsia_usb_pids.json"
 
 
 class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
@@ -63,6 +68,31 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         self._target_serial = target_serial
         self._bus_id_lookup_attempts = bus_id_lookup_attempts
         self._bus_id_lookup_timeout_sec = bus_id_lookup_timeout_sec
+
+        # The PID list is shared with udev.sh and shipped as usb_lib data
+        # (see `data_sources` in this directory's BUILD.gn), so it is only
+        # present when usb_lib is built with GN.
+        try:
+            # pylint: disable-next=import-outside-toplevel
+            from . import data  # type: ignore[attr-defined,unused-ignore]
+
+            pid_entries = json.loads(
+                resources.files(data)
+                .joinpath(_PID_LIST_FILE)
+                .read_text(encoding="utf-8")
+            )
+        # KeyError (a LookupError) is raised instead of OSError when the
+        # resource is missing from a zip/wheel package.
+        except (ImportError, OSError, LookupError) as err:
+            raise usb_power_hub.UsbPowerHubError(
+                f"usb_lib data resource {_PID_LIST_FILE} not found; it is "
+                "only bundled when usb_lib is built with GN "
+                "(fx build / fx test)."
+            ) from err
+        self._product_ids: set[str] = {
+            entry["pid"].lower() for entry in pid_entries
+        }
+
         self._usb_bus_id: str = self._find_usb_bus_id()
 
         if not common.is_infra() and not os.access(
@@ -149,7 +179,6 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
     def _find_usb_bus_id(self) -> str:
         """Finds the USB bus ID for the target device."""
         vendor_id = "18d1"
-        product_ids = {p.lower() for p in ["a02b", "a025", "d00d"]}
 
         serial = self._target_serial
 
@@ -171,7 +200,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
                     v_id = f_v.read().strip().lower()
                     p_id = f_p.read().strip().lower()
 
-                if v_id != vendor_id.lower() or p_id not in product_ids:
+                if v_id != vendor_id.lower() or p_id not in self._product_ids:
                     continue
 
                 if serial:
@@ -188,7 +217,7 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
 
         if not matching_devices:
             raise ValueError(
-                f"No USB device with vendor {vendor_id} and products {product_ids} (serial: {serial}) found."
+                f"No USB device with vendor {vendor_id} and products {sorted(self._product_ids)} (serial: {serial}) found."
             )
         if len(matching_devices) > 1:
             raise ValueError(

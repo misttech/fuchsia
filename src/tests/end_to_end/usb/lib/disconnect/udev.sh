@@ -12,31 +12,11 @@ fi
 # toggle USB authorization (/sys/bus/usb/devices/<bus_id>/authorized) for
 # Fuchsia/Android devices during local E2E testing (e.g., usb_virtual_disconnect_test).
 #
-# Reference sources for USB Vendor ID (VID) and Product IDs (PIDs):
-#   1. Fuchsia USB Peripheral Definitions:
-#      //src/devices/usb/lib/usb/include/usb/peripheral.h
-#      //src/devices/usb/bin/usb-cli/src/config.rs
-#        - 18d1 : GOOGLE_USB_VID (Google Inc. USB Vendor ID)
-#        - a020 : GOOGLE_USB_CDC_PID
-#        - a021 : GOOGLE_USB_UMS_PID
-#        - a022 : GOOGLE_USB_FUNCTION_TEST_PID
-#        - a023 : GOOGLE_USB_CDC_AND_FUNCTION_TEST_PID
-#        - a024 : GOOGLE_USB_RNDIS_PID
-#        - a025 : GOOGLE_USB_ADB_PID
-#        - a026 : GOOGLE_USB_CDC_AND_ADB_PID
-#        - a027 : GOOGLE_USB_CDC_AND_FASTBOOT_PID
-#        - a028 : GOOGLE_USB_VSOCK_BRIDGE_PID
-#        - a029 : GOOGLE_USB_CDC_AND_VSOCK_BRIDGE_PID
-#        - a02a : GOOGLE_USB_ADB_AND_VSOCK_BRIDGE_PID
-#        - a02b : GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID
-#        - a02c : GOOGLE_USB_CDC_AND_ADB_AND_FASTBOOT_PID
-#        - 4ee0 : GOOGLE_USB_FASTBOOT_PID (userspace Fastboot)
-#   2. Virtual USB Hub Driver:
-#      //src/tests/end_to_end/usb/lib/linux_virtual_usb_hub.py
-#        - d00d : Standard Google Fastboot / Bootloader / Recovery USB Product ID
-#
-# Every PID above is covered so that a virtual disconnect works regardless of
-# which USB function combination the device happens to be booted into.
+# The covered USB Product IDs (PIDs) under Google's Vendor ID (VID) 18d1 are
+# read from the list shared with linux_virtual_usb_hub.py:
+#   //src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json
+# so a virtual disconnect works regardless of which USB function combination
+# the device happens to be booted into.
 
 set -uo pipefail
 
@@ -48,18 +28,25 @@ fi
 RULE_FILE="/etc/udev/rules.d/99-fuchsia-usb-authorize.rules"
 
 # The USB Vendor ID and Product IDs that the rules below grant access to.
-#
-# `_find_usb_bus_id()` in
-# //src/tests/end_to_end/usb/lib/linux_virtual_usb_hub.py
-# hardcodes its own narrower copy of this list. A later CL will replace both
-# copies with a shared .txt file listing the PIDs, read by this script and by
-# linux_virtual_usb_hub.py, so the two can no longer drift apart.
 TARGET_VID="18d1"
-TARGET_PIDS=(
-  "a020" "a021" "a022" "a023" "a024" "a025" "a026"
-  "a027" "a028" "a029" "a02a" "a02b" "a02c"
-  "4ee0" "d00d"
-)
+# udev.sh lives at //src/tests/end_to_end/usb/lib/disconnect, six levels below
+# the Fuchsia root. Resolve it so errors show an absolute path even when the
+# script is invoked through a symlink or a relative path.
+UDEV_FUCHSIA_DIR="$(realpath -m "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../../../../../..")"
+PID_FILE="${UDEV_FUCHSIA_DIR}/src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json"
+PYTHON="${UDEV_FUCHSIA_DIR}/scripts/fuchsia-vendored-python"
+if [[ ! -f "${PID_FILE}" || ! -x "${PYTHON}" ]]; then
+  echo "[ERROR]: USB PID list or fuchsia-vendored-python not found under ${UDEV_FUCHSIA_DIR}." \
+    "Run udev.sh from a Fuchsia checkout." >&2
+  exit 1
+fi
+mapfile -t TARGET_PIDS < <("${PYTHON}" -c \
+  'import json, sys; print("\n".join(e["pid"].lower() for e in json.load(open(sys.argv[1]))))' \
+  "${PID_FILE}")
+if [[ "${#TARGET_PIDS[@]}" -eq 0 ]]; then
+  echo "[ERROR]: Failed to read USB PIDs from ${PID_FILE}." >&2
+  exit 1
+fi
 
 # Returns 0 if the given USB Product ID is one that the udev rules cover.
 #
@@ -145,25 +132,18 @@ run_cmd() {
   return "${status}"
 }
 
-read -r -d '' EXPECTED_RULES << 'EOF' || true
-# Google USB VID (18d1) rules for Fuchsia / Fastboot virtual USB disconnect testing
-# Reference: //src/devices/usb/lib/usb/include/usb/peripheral.h
-#
 # udev matches alternatives separated by `|`, so a single rule covers every
-# Google USB peripheral function combination:
-#   a020 CDC                     a027 CDC + Fastboot
-#   a021 UMS                     a028 VSOCK Bridge
-#   a022 Function Test           a029 CDC + VSOCK Bridge
-#   a023 CDC + Function Test     a02a ADB + VSOCK Bridge
-#   a024 RNDIS                   a02b CDC + ADB + VSOCK Bridge
-#   a025 ADB                     a02c CDC + ADB + Fastboot
-#   a026 CDC + ADB               4ee0 Fastboot (userspace)
-#                                d00d Fastboot (bootloader / recovery)
-SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="18d1", ATTR{idProduct}=="a020|a021|a022|a023|a024|a025|a026|a027|a028|a029|a02a|a02b|a02c|4ee0|d00d", RUN+="/bin/chmod a+w /sys/bus/usb/devices/$kernel/authorized"
+# PID in the shared list. `$kernel` is escaped so udev, not bash, expands it.
+PID_ALTERNATIVES="$(IFS='|'; echo "${TARGET_PIDS[*]}")"
+read -r -d '' EXPECTED_RULES << EOF || true
+# Google USB VID (${TARGET_VID}) rules for Fuchsia / Fastboot virtual USB disconnect testing
+# PIDs from //src/tests/end_to_end/usb/lib/fuchsia_usb_pids.json
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="${TARGET_VID}", ATTR{idProduct}=="${PID_ALTERNATIVES}", RUN+="/bin/chmod a+w /sys/bus/usb/devices/\$kernel/authorized"
 EOF
 
 needs_sudo_setup=0
-if [[ ! -f "${RULE_FILE}" ]] || [[ "$(cat "${RULE_FILE}" 2>/dev/null)" != "${EXPECTED_RULES}" ]]; then
+# Compare rule lines only, so comment-only changes do not force a sudo re-run.
+if [[ ! -f "${RULE_FILE}" ]] || [[ "$(grep -v '^#' "${RULE_FILE}" 2>/dev/null)" != "$(grep -v '^#' <<< "${EXPECTED_RULES}")" ]]; then
   needs_sudo_setup=1
 else
   # Rule file exists and matches; also verify any currently connected target device has write permission
