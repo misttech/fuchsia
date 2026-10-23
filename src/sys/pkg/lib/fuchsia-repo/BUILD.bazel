@@ -1,0 +1,99 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:fuchsia-repo_test`) stay in BUILD.gn because they depend on
+# `//src/developer/ffx/lib/pkg:empty-repo-keys` and
+# `//src/developer/ffx/lib/pkg:empty-repo-metadata`, which are GN-only.
+rustc_library(
+    name = "fuchsia-repo",
+    srcs = [
+        "src/body.rs",
+        "src/lib.rs",
+        "src/manager.rs",
+        "src/package_manifest_watcher.rs",
+        "src/range.rs",
+        "src/repo_builder.rs",
+        "src/repo_client.rs",
+        "src/repo_keys.rs",
+        "src/repository.rs",
+        "src/repository/file_system.rs",
+        "src/repository/gcs_repository.rs",
+        "src/repository/http_repository.rs",
+        "src/repository/pm.rs",
+        "src/repository/repo_tests.rs",
+        "src/resource.rs",
+        "src/server.rs",
+        "src/test_utils.rs",
+        "src/util.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = select({
+        "//build/bazel/platforms:is_host_os": [
+            "//third_party/rust_crates/vendor:derivative",
+        ],
+        "//conditions:default": [],
+    }),
+    rustc_env = {
+        "ROOT_OUT_DIR": ".",  # @bazel2gn:value_overwrite:$relative_root_out_dir
+    },
+    visibility = [
+        "//src/developer/ffx:__subpackages__",
+        "//src/lib/assembly/product_bundle:__pkg__",
+        "//src/recovery/system:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+        "//tools/pbtool:__pkg__",
+        "//tools/pkgstats:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-url",
+        "//src/lib/mundane",
+        "//src/lib/versioning/version-history/rust",
+        "//src/storage/lib/delivery_blob",
+        "//src/sys/lib/fidl-fuchsia-pkg-ext",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//third_party/rust_crates/forks/tuf-0.3.0-beta14:tuf",  # @bazel2gn:path_overwrite://third_party/rust_crates:tuf
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bytes",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:url",
+        "//third_party/rust_crates/vendor:walkdir",
+    ] + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//src/developer/ffx/lib/netext:lib",
+            "//src/developer/ffx/lib/target_net:lib",
+            "//src/lib/fuchsia-fs",
+            "//src/lib/gcs",
+            "//src/lib/http-sse:http_sse",
+            "//src/sys/lib/notify-batch-watcher",
+            "//third_party/rust_crates/vendor:async-lock",
+            "//third_party/rust_crates/vendor:hyper-util",
+            "//third_party/rust_crates/vendor:notify",
+            "//third_party/rust_crates/vendor:pin-project",
+            "//third_party/rust_crates/vendor:tokio",
+        ],
+        "//conditions:default": [],
+    }),
+)

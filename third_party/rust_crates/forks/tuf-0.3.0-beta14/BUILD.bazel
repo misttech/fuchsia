@@ -79,7 +79,10 @@ rustc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     version = "0.3.0-beta14",
-    visibility = ["//src/sys/pkg/lib/tuf:__pkg__"],
+    visibility = [
+        "//src/sys/pkg/lib/fuchsia-repo:__pkg__",
+        "//src/sys/pkg/lib/tuf:__pkg__",
+    ],
     deps = [
         "//third_party/rust_crates/vendor:chrono",
         "//third_party/rust_crates/vendor:data-encoding",
