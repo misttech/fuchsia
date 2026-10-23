@@ -741,6 +741,7 @@ failure_mode_checks:
   log_types: ["swarmingOutputType"]
 
 # For https://fxbug.dev/42173783.
+# LINT.IfChange(timeout_reaching_target)
 - kind: "string_in_log"
   string: "Timeout attempting to reach target"
   log_types: ["swarmingOutputType"]
@@ -750,6 +751,11 @@ failure_mode_checks:
   skip_passed_task: true
   attribute_to_test: true
   add_tag: true
+# LINT.ThenChange(
+#     //src/developer/ffx/lib/target/src/lib.rs:timeout_reaching_target,
+#     //src/testing/end_to_end/honeydew/honeydew/transports/ffx/ffx.py:timeout_reaching_target,
+#     //tools/lib/ffxutil/constants/constants.go:timeout_reaching_target
+# )
 
 # For https://fxbug.dev/354707902.
 - kind: "string_in_log"

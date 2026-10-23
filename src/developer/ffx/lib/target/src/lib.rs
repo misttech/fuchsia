@@ -127,6 +127,14 @@ pub enum WaitFor {
 
 const DOWN_REPOLL_DELAY_MS: u64 = 500;
 
+// LINT.IfChange(timeout_reaching_target)
+const TIMEOUT_REACHING_TARGET_MSG: &str = "Timeout attempting to reach target";
+// LINT.ThenChange(
+//     //src/testing/end_to_end/honeydew/honeydew/transports/ffx/ffx.py:timeout_reaching_target,
+//     //tools/lib/ffxutil/constants/constants.go:timeout_reaching_target,
+//     //tools/testing/tefmocheck/check-configs.yaml:timeout_reaching_target
+// )
+
 pub async fn wait_for_device(
     wait_timeout: Option<Duration>,
     env: &EnvironmentContext,
@@ -236,7 +244,7 @@ async fn wait_for_discovered_state(
     futures_lite::FutureExt::or(discover_fut, async move {
         timer.await;
         Err(ffx_command_error::Error::User(anyhow::anyhow!(
-            "Timeout attempting to reach the target {target_str}."
+            "{TIMEOUT_REACHING_TARGET_MSG} {target_str}."
         )))
     })
     .await
@@ -309,7 +317,7 @@ async fn wait_for_device_inner(
         let was_knocked = ever_knocked_clone.load(std::sync::atomic::Ordering::Relaxed);
         Err(ffx_command_error::Error::User(match behavior {
             WaitFor::DeviceOnline | WaitFor::Fastboot | WaitFor::Product => {
-                anyhow::anyhow!("Timeout attempting to reach the target {target_str}.").into()
+                anyhow::anyhow!("{TIMEOUT_REACHING_TARGET_MSG} {target_str}.").into()
             }
             WaitFor::DeviceOffline => {
                 if was_knocked {
@@ -887,7 +895,12 @@ mod test {
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
-        assert!(res.is_err(), "{:?}", res);
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Timeout attempting to reach target \"foo\"."),
+            "expected reach target timeout message, got: {err_msg}"
+        );
     }
 
     #[fuchsia::test]
@@ -953,7 +966,12 @@ mod test {
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
-        assert!(res.is_err(), "{:?}", res);
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Timeout attempting to reach target \"foo\"."),
+            "expected reach target timeout message, got: {err_msg}"
+        );
     }
 
     #[fuchsia::test]
@@ -1126,7 +1144,12 @@ mod test {
             WaitFor::Fastboot,
         )
         .await;
-        assert!(res.is_err(), "{:?}", res);
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Timeout attempting to reach target \"foo\"."),
+            "expected reach target timeout message, got: {err_msg}"
+        );
     }
 
     #[fuchsia::test]
@@ -1151,7 +1174,12 @@ mod test {
             WaitFor::Product,
         )
         .await;
-        assert!(res.is_err(), "{:?}", res);
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Timeout attempting to reach target \"foo\"."),
+            "expected reach target timeout message, got: {err_msg}"
+        );
     }
 
     #[fuchsia::test]

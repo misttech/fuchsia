@@ -47,7 +47,13 @@ _FFX_CMDS: dict[str, list[str]] = {
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
+# LINT.IfChange(timeout_reaching_target)
 _DEVICE_NOT_CONNECTED: str = "Timeout attempting to reach target"
+# LINT.ThenChange(
+#     //src/developer/ffx/lib/target/src/lib.rs:timeout_reaching_target,
+#     //tools/lib/ffxutil/constants/constants.go:timeout_reaching_target,
+#     //tools/testing/tefmocheck/check-configs.yaml:timeout_reaching_target
+# )
 
 # Timeout for `ffx target status` when collecting diagnostic logs after a command failure.
 # 30 seconds provides sufficient headroom for FFX discovery and SSH connection attempts
