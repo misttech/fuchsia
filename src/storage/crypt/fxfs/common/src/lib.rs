@@ -5,6 +5,8 @@
 use aes_gcm_siv::aead::Aead;
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit as _, Nonce};
 use async_trait::async_trait;
+use fidl_fuchsia_fxfs_common as fidl_fuchsia_fxfs;
+use fidl_fuchsia_io_common as fidl_fuchsia_io;
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{
     Crypt, EncryptionKey, FscryptKeyIdentifierAndNonce, KeyPurpose, ObjectType, UnwrappedKey,
