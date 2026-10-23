@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "golang",
+    srcs = ["golang.go"],
+    embedsrcs = [
+        "templates/alias.tmpl",
+        "templates/bits.tmpl",
+        "templates/const.tmpl",
+        "templates/enum.tmpl",
+        "templates/file.tmpl",
+        "templates/handle.tmpl",
+        "templates/overlay.tmpl",
+        "templates/struct.tmpl",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/golang",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//zircon/tools/zither:__subpackages__"],
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//zircon/tools/zither:common",
+    ],
+)

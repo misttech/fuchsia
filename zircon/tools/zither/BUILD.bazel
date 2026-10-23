@@ -2,4 +2,74 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//tools/fidl/lib/fidlgentest:fidlgentest_go_test.bzl", "fidlgentest_go_test")
+
 package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "common",
+    srcs = [
+        "c_family.go",
+        "names.go",
+        "readme.go",
+        "zither_ir.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//zircon/tools/zither:__subpackages__"],
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//tools/fidl/lib/fidlgen_cpp",
+    ],
+)
+
+go_library(
+    name = "main",
+    srcs = [
+        "cmd/main.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/cmd",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":common",
+        "//tools/fidl/lib/fidlgen",
+        "//tools/lib/color",
+        "//tools/lib/flagmisc",
+        "//tools/lib/logger",
+        "//zircon/tools/zither/backends/asm",
+        "//zircon/tools/zither/backends/c",
+        "//zircon/tools/zither/backends/golang",
+        "//zircon/tools/zither/backends/kernel",
+        "//zircon/tools/zither/backends/legacy_syscall_cdecl",
+        "//zircon/tools/zither/backends/rust",
+        "//zircon/tools/zither/backends/rust_syscall",
+        "//zircon/tools/zither/backends/syscall_docs",
+        "//zircon/tools/zither/backends/zircon_ifs",
+    ],
+)
+
+go_binary_host_tool(
+    name = "zither",
+    embed = [":main"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//:__pkg__",
+        "//sdk:__pkg__",
+        "//sdk/fidl/zbi:__pkg__",
+        "//zircon/tools/zither:__subpackages__",
+        "//zircon/vdso:__pkg__",
+    ],
+)
+
+fidlgentest_go_test(
+    name = "zither-unittests",
+    srcs = ["zither_ir_test.go"],
+    embed = [":common"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+    ],
+)

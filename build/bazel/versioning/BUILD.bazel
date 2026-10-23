@@ -66,6 +66,7 @@ config_setting(
         "//sdk/ctf/plasa:__subpackages__",
         "//src/sys/pkg/tests/pkg-resolver/template:__pkg__",
         "//src/tests/benchmarks/fidl/benchmark_suite/gen:__pkg__",
+        "//zircon/tools/zither:__pkg__",
     ],
 )
 

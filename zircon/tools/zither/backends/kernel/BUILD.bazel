@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "kernel",
+    srcs = [
+        "kernel.go",
+        "syscall_cdecl.go",
+    ],
+    embedsrcs = [
+        "templates/category.inc.tmpl",
+        "templates/kernel-wrappers.inc.tmpl",
+        "templates/kernel.inc.tmpl",
+        "templates/syscall_sigs.rs.tmpl",
+        "templates/syscalls.inc.tmpl",
+        "templates/zx-syscall-numbers.h.tmpl",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/zircon/tools/zither/backends/kernel",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//zircon/tools/zither:__subpackages__"],
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//zircon/tools/zither:common",
+        "//zircon/tools/zither/backends/c",
+        "//zircon/tools/zither/backends/rust",
+    ],
+)
