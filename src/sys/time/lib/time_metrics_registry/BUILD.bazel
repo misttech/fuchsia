@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
+package(default_applicable_licenses = ["//:license"])
+
+metrics_registry(
+    name = "time_metrics_registry",
+    generate_binarypb = False,
+    generate_rust = True,
+    # This must match the ID of our Cobalt project as specified in:
+    # third_party/cobalt_config/projects.yaml
+    project_id = 6,
+    visibility = [
+        "//src/sys/time/httpsdate_time_source:__pkg__",
+        "//src/sys/time/testing:__pkg__",
+        "//src/sys/time/timekeeper:__pkg__",
+        "//src/sys/time/timekeeper_integration:__pkg__",
+    ],
+)
