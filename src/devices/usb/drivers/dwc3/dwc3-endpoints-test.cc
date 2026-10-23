@@ -155,14 +155,18 @@ class Dwc3EndpointsTestBase : public TestFixture<true> {
     std::vector<frequest::Request> reqs;
     reqs.reserve(count);
     for (size_t i = 0; i < count; i++) {
-      frequest::BufferRegion region;
-      region.buffer(frequest::Buffer::WithVmoId(vmo_id));
-      region.offset(offset + (size * i));
-      region.size(size);
-
+      // EndpointServer::get_iter rejects a BufferRegion with size == 0 with ZX_ERR_INVALID_ARGS;
+      // zero-length transfers are represented by an empty `data` vector.
       std::vector<frequest::BufferRegion> regions;
-      regions.reserve(1);
-      regions.push_back(std::move(region));
+      if (size > 0) {
+        frequest::BufferRegion region;
+        region.buffer(frequest::Buffer::WithVmoId(vmo_id));
+        region.offset(offset + (size * i));
+        region.size(size);
+
+        regions.reserve(1);
+        regions.push_back(std::move(region));
+      }
 
       frequest::RequestInfo req_info =
           (ep_type == fdescriptor::EndpointType::kBulk)
@@ -1491,52 +1495,62 @@ TEST_P(Dwc3EndpointsTest, ShortPacketTransfer) {
   sync_client = {};
 }
 
-// TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
-TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransfer) {
+TEST_P(Dwc3EndpointsTest, ZeroLengthTransfer) {
   SetUpAndPowerOnEndpoints();
 
-  auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
-  ASSERT_TRUE(endpoints.is_ok());
+  constexpr uint8_t kInEpNum = 3;
+  constexpr uint16_t kMaxPacketSize = 512;
+
+  zx::result endpoints = fidl::CreateEndpoints<fendpoint::Endpoint>();
+  ASSERT_OK(endpoints);
 
   bool completed = false;
-  zx_status_t completion_status = ZX_OK;
+  zx_status_t completion_status = ZX_ERR_INTERNAL;
   TestEndpointEventHandler event_handler(completed, completion_status);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
-    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 3);  // Use IN endpoint 3
+    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, kInEpNum);
     ASSERT_NE(uep, nullptr);
     uep->ep.type = fdescriptor::EndpointType::kBulk;
-    uep->ep.max_packet_size = 512;
+    uep->ep.max_packet_size = kMaxPacketSize;
     uep->ep.enabled = true;
     uep->ep.got_not_ready = true;
-    ASSERT_TRUE(Dwc3TestHelper::InitFifo(drv, 3).is_ok());  // Use IN endpoint 3
+    ASSERT_OK(Dwc3TestHelper::InitFifo(drv, kInEpNum));
 
     auto* dispatcher = Dwc3TestHelper::GetDispatcher(drv);
     uep->server->Connect(dispatcher, std::move(endpoints->server));
   });
 
-  fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
-      std::move(endpoints->client)};
+  fidl::SyncClient<fendpoint::Endpoint> sync_client{std::move(endpoints->client)};
 
-  auto requests = CreateVmoBuffer(sync_client, 512, 0, 1);
-  QueueRequestsAndWaitForStartTransfer(3, sync_client, std::move(requests));
+  auto requests = CreateVmoBuffer(sync_client, kMaxPacketSize, 0, 1);
+  ASSERT_FALSE(requests.empty());
+  ASSERT_TRUE(requests[0].data().has_value());
+  // CreateVmoBuffer unconditionally populates a BufferRegion, but EndpointServer::get_iter
+  // rejects zero-sized regions with ZX_ERR_INVALID_ARGS; clear `data` for a zero-length request.
+  requests[0].data()->clear();
+  QueueRequestsAndWaitForStartTransfer(kInEpNum, sync_client, std::move(requests));
 
-  // Verify TRB length is 0
+  // Verify TRB length is 0.
   dut_.RunInDriverContext([&](Dwc3& drv) {
-    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 3);  // Use IN endpoint 3
+    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, kInEpNum);
+    ASSERT_NE(uep, nullptr);
     dwc3_trb_t* trb = uep->fifo.current_read();
+    ASSERT_NE(trb, nullptr);
     EXPECT_EQ(TRB_BUFSIZ(trb->status), 0UL);
   });
 
-  // Simulate completion event
+  // Simulate completion event.
   dut_.RunInDriverContext([&](Dwc3& drv) {
-    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 3);  // Use IN endpoint 3
+    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, kInEpNum);
+    ASSERT_NE(uep, nullptr);
     dwc3_trb_t* trb = uep->fifo.current_read();
+    ASSERT_NE(trb, nullptr);
     trb->control &= ~TRB_HWO;
-    Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, 3);
+    Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, kInEpNum);
   });
 
-  // Wait for request completion
+  // Wait for request completion.
   ASSERT_TRUE(sync_client.HandleOneEvent(event_handler).ok());
   EXPECT_TRUE(completed);
   EXPECT_OK(completion_status);
@@ -2558,8 +2572,7 @@ TEST_F(Dwc3EndpointsTestBase, DISABLED_UnregisteredVmoIdImmediatelyCompletesNotF
 
 // Verifies that a zero-length transfer on an IN endpoint correctly generates a zero-length TRB
 // and completes with ZX_OK and 0 bytes transferred.
-// DISABLED: Requires driver support for 0-byte IN TRB generation.
-TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthInTransfer) {
+TEST_P(Dwc3EndpointsTest, ZeroLengthInTransfer) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
 
@@ -2573,17 +2586,19 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthInTransfer) {
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
   dut_.runtime().RunUntilIdle();
 
-  // Queue a 0-length request
+  // Queue a 0-length request (size == 0 populates an empty `data` vector, as opposed to
+  // ZeroLengthTransferNoDataField which leaves the `data` field unset).
   QueueRequest(1, 0, 0, fdescriptor::EndpointType::kBulk);
 
   TransferState expected_starting_state =
       enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
   WaitForState(ep_num, expected_starting_state);
 
-  // Verify TRB length is 0
+  // Verify TRB length is 0.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     dwc3_trb_t* trb = uep.fifo.current_read();
+    ASSERT_NE(trb, nullptr);
     EXPECT_EQ(TRB_BUFSIZ(trb->status), 0UL);
   });
 
@@ -2593,7 +2608,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthInTransfer) {
       enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
   WaitForState(ep_num, expected_state);
 
-  // Complete TRB
+  // Complete TRB.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     if (enqueue_many) {
       TriggerEpTransferInProgress(drv, ep_num);
@@ -2616,8 +2631,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthInTransfer) {
 
 // Verifies that a request with no data buffer regions specified is treated as a valid zero-length
 // transfer on an IN endpoint and completes with ZX_OK and 0 bytes transferred.
-// DISABLED: Requires driver support for 0-byte IN TRB generation with empty data fields.
-TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransferNoDataField) {
+TEST_P(Dwc3EndpointsTest, ZeroLengthTransferNoDataField) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
 
@@ -2630,7 +2644,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransferNoDataField) {
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
   dut_.runtime().RunUntilIdle();
 
-  // Queue a request with NO data field
+  // Queue a request with no data field.
   frequest::Request req;
   req.defer_completion(false);
   req.information(frequest::RequestInfo::WithBulk(frequest::BulkRequestInfo{}));
@@ -2639,6 +2653,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransferNoDataField) {
   std::vector<frequest::Request> reqs;
   reqs.reserve(1);
   reqs.push_back(std::move(req));
+
   // Note: QueueRequests is a one-way FIDL method returning fit::result<fidl::OneWayError>
   // synchronously.
   fit::result result = ep_client_->QueueRequests({std::move(reqs)});
@@ -2649,10 +2664,11 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransferNoDataField) {
       enqueue_many ? TransferState::kStartingOngoing : TransferState::kStartingSingle;
   WaitForState(ep_num, expected_starting_state);
 
-  // Verify TRB length is 0
+  // Verify TRB length is 0.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     dwc3_trb_t* trb = uep.fifo.current_read();
+    ASSERT_NE(trb, nullptr);
     EXPECT_EQ(TRB_BUFSIZ(trb->status), 0UL);
   });
 
@@ -2662,7 +2678,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransferNoDataField) {
       enqueue_many ? TransferState::kActiveOngoing : TransferState::kActiveSingle;
   WaitForState(ep_num, expected_state);
 
-  // Complete TRB
+  // Complete TRB.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     if (enqueue_many) {
       TriggerEpTransferInProgress(drv, ep_num);
