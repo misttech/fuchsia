@@ -42,9 +42,15 @@ pub type cpu_stats = CpuStats;
 
 pub use crate::kernel::dpc::DpcRunner;
 
-/// An opaque type representing the C++ `PlatformCpuResumeState` struct.
-#[repr(transparent)]
-pub struct PlatformCpuResumeState(pub bindings::PlatformCpuResumeState);
+/// Holds platform-specific, per-cpu state used to suspend/resume a CPU.
+#[repr(C)]
+pub struct PlatformCpuResumeState {
+    /// CNTKCTL_EL1 saved by `platform_suspend_timer_curr_cpu` and restored on resume.
+    #[cfg(target_arch = "aarch64")]
+    pub cntkctl_el1: AtomicU64,
+    #[cfg(not(target_arch = "aarch64"))]
+    pub _opaque: bindings::PlatformCpuResumeState,
+}
 
 /// Rust representation of the C++ `struct percpu`.
 #[repr(C)]

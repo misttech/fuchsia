@@ -206,6 +206,10 @@ pub mod power_moonflower;
 pub mod power_motmot;
 
 #[cfg(target_arch = "aarch64")]
+#[path = "dev/timer/arm_generic/arm_generic_timer.rs"]
+pub mod arm_generic_timer;
+
+#[cfg(target_arch = "aarch64")]
 #[path = "dev/timer/armv7_mmio_timer/armv7_mmio_timer.rs"]
 pub mod armv7_mmio_timer;
 

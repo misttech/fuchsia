@@ -15,7 +15,4 @@ source_set("init") {
 group("kernel-tests") {
   testonly = true
   deps = []
-  if (current_cpu == "arm64") {
-    deps += [ "timer/arm_generic:kernel-tests" ]
-  }
 }

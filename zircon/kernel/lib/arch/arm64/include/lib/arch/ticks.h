@@ -42,7 +42,7 @@ struct EarlyTicks {
   mrs \outv, cntvct_el0
 
   // Workaround for Cortex-A73 erratum 858921.
-  // See kernel/dev/timer/arm_generic/arm_generic_timer.cc::read_cntpct_a73.
+  // See kernel/dev/timer/arm_generic/arm_generic_timer.rs::read_cntpct_a73.
   mrs \tmp1, cntpct_el0
   mrs \tmp2, cntvct_el0
   eor \tmp3, \outp, \tmp1
