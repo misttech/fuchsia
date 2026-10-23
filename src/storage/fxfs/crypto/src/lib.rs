@@ -8,6 +8,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use chacha20::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
 use chacha20::{self, ChaCha20};
+use fidl_fuchsia_fxfs_common as fidl_fuchsia_fxfs;
+use fidl_fuchsia_io_common as fidl_fuchsia_io;
 use fprint::TypeFingerprint;
 use futures::TryStreamExt as _;
 use futures::stream::FuturesUnordered;

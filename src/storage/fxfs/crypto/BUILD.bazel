@@ -43,9 +43,9 @@ rustc_library(
     ],
     with_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
         "//sdk/rust/zx-status",
-        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust_common",
         "//src/storage/fxfs/trace",
         "//src/storage/lib/fscrypt",
         "//src/storage/lib/ptr_slice",
