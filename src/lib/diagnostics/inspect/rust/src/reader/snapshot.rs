@@ -12,7 +12,7 @@ use crate::reader::readable_tree::SnapshotSource;
 use diagnostics_hierarchy::{ArrayContent, Property};
 use inspect_format::{
     Array, Block, BlockAccessorExt, BlockContainer, BlockIndex, BlockType, Bool, Buffer, Container,
-    CopyBytes, Double, Extent, Header, Int, Link, Name, PropertyFormat, ReadBytes, StringRef, Uint,
+    CopyBytes, Double, Extent, Int, Link, Name, PropertyFormat, ReadBytes, StringRef, Uint,
     Unknown, ValueBlockKind, constants, utils,
 };
 use std::cmp;
@@ -46,15 +46,23 @@ impl Snapshot {
         }
     }
 
-    /// Try to take a consistent snapshot of the given VMO once.
-    ///
-    /// Returns a Snapshot on success or an Error if a consistent snapshot could not be taken.
-    pub fn try_once_from_vmo(source: &SnapshotSource) -> Result<Snapshot, ReaderError> {
-        Snapshot::try_once_with_callback(source, &mut || {})
-    }
+    // =========================================================================
+    // Generic snapshot helpers (shared by regular "INSP" VMOs and "BLOB" VMOs)
+    //
+    // `try_once_*` methods perform a single snapshot attempt and return
+    // `Err(ReaderError::InconsistentSnapshot)` immediately if the VMO header is
+    // locked or modified concurrently during the read.
+    //
+    // `try_from_*` methods retry `try_once_*` up to `SNAPSHOT_TRIES` (1024)
+    // times to obtain a consistent snapshot under concurrent writer activity.
+    // =========================================================================
 
-    fn try_once_with_callback<F>(
+    /// Performs a single attempt to take a consistent snapshot of `source` with
+    /// the given `expected_magic` header word (`"INSP"` or `"BLOB"`), without retrying.
+    pub(crate) fn try_once_with_magic_and_callback<F>(
         source: &SnapshotSource,
+        expected_magic: u32,
+        max_vmo_size: Option<usize>,
         read_callback: &mut F,
     ) -> Result<Snapshot, ReaderError>
     where
@@ -63,11 +71,14 @@ impl Snapshot {
         // Read the generation count one time
         let mut header_bytes: [u8; 32] = [0; 32];
         source.copy_bytes(&mut header_bytes);
-        let Some(header_block) = header_bytes.maybe_block_at::<Header>(BlockIndex::HEADER) else {
+        let Some(header_block) = Block::parse_header_with_magic(&header_bytes, expected_magic)
+        else {
             return Err(ReaderError::InvalidVmo);
         };
-        let generation = header_block.generation_count();
-        if generation == constants::VMO_FROZEN {
+        let Some(generation) = header_block.unlocked_generation_count() else {
+            return Err(ReaderError::InconsistentSnapshot);
+        };
+        if header_block.is_frozen() {
             #[cfg(target_os = "fuchsia")]
             {
                 let info = source.info().map_err(ReaderError::Vmo)?;
@@ -81,11 +92,14 @@ impl Snapshot {
         }
 
         // Read the buffer
-        let vmo_size = if let Some(vmo_size) = header_block.vmo_size()? {
-            cmp::min(vmo_size as usize, constants::MAX_VMO_SIZE)
+        let mut vmo_size = if let Some(vmo_size) = header_block.vmo_size()? {
+            vmo_size as usize
         } else {
-            cmp::min(source.len(), constants::MAX_VMO_SIZE)
+            source.len()
         };
+        if let Some(max_size) = max_vmo_size {
+            vmo_size = cmp::min(vmo_size, max_size);
+        }
         let mut buffer = vec![0u8; vmo_size];
         source.copy_bytes(&mut buffer);
         if cfg!(test) {
@@ -96,7 +110,7 @@ impl Snapshot {
         // consistent. It's safe to unwrap this time, we already checked we can read 32 bytes from
         // the slice.
         source.copy_bytes(&mut header_bytes);
-        match header_generation_count(&header_bytes) {
+        match header_generation_count_with_magic(&header_bytes, expected_magic) {
             None => Err(ReaderError::InconsistentSnapshot),
             Some(new_generation) if new_generation != generation => {
                 Err(ReaderError::InconsistentSnapshot)
@@ -105,8 +119,12 @@ impl Snapshot {
         }
     }
 
-    fn try_from_with_callback<F>(
+    /// Tries to take a consistent snapshot of `source` with the given `expected_magic`
+    /// header word, retrying up to `SNAPSHOT_TRIES` times if concurrent writes are detected.
+    pub(crate) fn try_from_with_magic_and_callback<F>(
         source: &SnapshotSource,
+        expected_magic: u32,
+        max_vmo_size: Option<usize>,
         mut read_callback: F,
     ) -> Result<Snapshot, ReaderError>
     where
@@ -114,7 +132,12 @@ impl Snapshot {
     {
         let mut i = 0;
         loop {
-            match Snapshot::try_once_with_callback(source, &mut read_callback) {
+            match Snapshot::try_once_with_magic_and_callback(
+                source,
+                expected_magic,
+                max_vmo_size,
+                &mut read_callback,
+            ) {
                 Ok(snapshot) => return Ok(snapshot),
                 Err(e) => {
                     if i >= SNAPSHOT_TRIES {
@@ -124,6 +147,94 @@ impl Snapshot {
             };
             i += 1;
         }
+    }
+
+    // =========================================================================
+    // Regular Inspect VMO ("INSP" header) snapshot methods
+    //
+    // Regular Inspect VMOs begin with an "INSP" (`HEADER_MAGIC_NUMBER`) header
+    // block followed by a buddy-allocated hierarchy of 16-byte blocks. Because
+    // block indices are 24-bit values, regular Inspect VMOs are capped at
+    // `constants::MAX_VMO_SIZE`. See also the `TryFrom` implementations below.
+    // =========================================================================
+
+    /// Try to take a consistent snapshot of the given regular Inspect VMO once,
+    /// without retrying if a concurrent write is in progress.
+    ///
+    /// Returns a Snapshot on success or an Error if a consistent snapshot could not be taken.
+    pub fn try_once_from_vmo(source: &SnapshotSource) -> Result<Snapshot, ReaderError> {
+        Snapshot::try_once_with_callback(source, &mut || {})
+    }
+
+    /// Single-attempt helper for regular Inspect VMOs ("INSP" header), used by tests
+    /// to inject a callback between reading the buffer and re-verifying the header.
+    fn try_once_with_callback<F>(
+        source: &SnapshotSource,
+        read_callback: &mut F,
+    ) -> Result<Snapshot, ReaderError>
+    where
+        F: FnMut(),
+    {
+        Snapshot::try_once_with_magic_and_callback(
+            source,
+            constants::HEADER_MAGIC_NUMBER,
+            Some(constants::MAX_VMO_SIZE),
+            read_callback,
+        )
+    }
+
+    /// Multi-attempt helper for regular Inspect VMOs ("INSP" header) that retries
+    /// up to `SNAPSHOT_TRIES` times; backs `Snapshot::try_from`.
+    fn try_from_with_callback<F>(
+        source: &SnapshotSource,
+        read_callback: F,
+    ) -> Result<Snapshot, ReaderError>
+    where
+        F: FnMut(),
+    {
+        Snapshot::try_from_with_magic_and_callback(
+            source,
+            constants::HEADER_MAGIC_NUMBER,
+            Some(constants::MAX_VMO_SIZE),
+            read_callback,
+        )
+    }
+
+    // =========================================================================
+    // Blob VMO ("BLOB" header) snapshot methods
+    //
+    // Blob VMOs (`BlobProperty`) share the same 32-byte header block format and
+    // seqlock/CoW synchronization protocol as regular Inspect VMOs, but use the
+    // "BLOB" (`BLOB_HEADER_MAGIC_NUMBER`) magic word and store raw, contiguous
+    // payload bytes immediately after the 32-byte header rather than 16-byte
+    // Inspect blocks. Because they do not use 24-bit block indices, their size
+    // is not capped at `constants::MAX_VMO_SIZE` (`max_vmo_size = None`).
+    // =========================================================================
+
+    /// Try to take a consistent snapshot of the given Blob VMO once, without
+    /// retrying if a concurrent write is in progress.
+    ///
+    /// Returns a Snapshot on success or an Error if a consistent snapshot could not be taken.
+    pub fn try_once_from_blob_vmo(source: &SnapshotSource) -> Result<Snapshot, ReaderError> {
+        Snapshot::try_once_with_magic_and_callback(
+            source,
+            constants::BLOB_HEADER_MAGIC_NUMBER,
+            None,
+            &mut || {},
+        )
+    }
+
+    /// Try to take a consistent snapshot of the given Blob VMO, retrying up to
+    /// `SNAPSHOT_TRIES` times if concurrent writes are detected.
+    ///
+    /// Returns a Snapshot on success or an Error if a consistent snapshot could not be taken.
+    pub fn try_from_blob_vmo(source: &SnapshotSource) -> Result<Snapshot, ReaderError> {
+        Snapshot::try_from_with_magic_and_callback(
+            source,
+            constants::BLOB_HEADER_MAGIC_NUMBER,
+            None,
+            || {},
+        )
     }
 
     pub(crate) fn get_name(&self, index: BlockIndex) -> Option<String> {
@@ -327,24 +438,23 @@ impl Snapshot {
     }
 }
 
-/// Reads the given 16 bytes as an Inspect Block Header and returns the
-/// generation count if the header is valid: correct magic number, version number
-/// and nobody is writing to it.
-fn header_generation_count<T: ReadBytes>(bytes: &T) -> Option<u64> {
-    if bytes.len() < 16 {
-        return None;
-    }
-    let block = bytes.maybe_block_at::<Header>(BlockIndex::HEADER)?;
-    if block.magic_number() == constants::HEADER_MAGIC_NUMBER
-        && block.version() <= constants::HEADER_VERSION_NUMBER
-        && !block.is_locked()
-    {
-        return Some(block.generation_count());
-    }
-    None
+/// Parses the HEADER block with `expected_magic` and returns its generation count
+/// if the header is valid and unlocked (even generation count).
+fn header_generation_count_with_magic<T: ReadBytes>(bytes: &T, expected_magic: u32) -> Option<u64> {
+    Block::parse_header_with_magic(bytes, expected_magic)?.unlocked_generation_count()
 }
 
-/// Construct a snapshot from a byte vector.
+/// Reads the given bytes as a regular Inspect VMO ("INSP") HEADER block and returns the
+/// generation count if the header is valid and nobody is writing to it.
+fn header_generation_count<T: ReadBytes>(bytes: &T) -> Option<u64> {
+    header_generation_count_with_magic(bytes, constants::HEADER_MAGIC_NUMBER)
+}
+
+// =============================================================================
+// `TryFrom` implementations for regular Inspect VMOs ("INSP" header)
+// =============================================================================
+
+/// Construct a snapshot of a regular Inspect VMO from a byte vector.
 impl TryFrom<Vec<u8>> for Snapshot {
     type Error = ReaderError;
 
@@ -502,7 +612,7 @@ mod tests {
     use super::*;
     use anyhow::Error;
     use assert_matches::assert_matches;
-    use inspect_format::{BlockAccessorMutExt, WriteBytes};
+    use inspect_format::{BlockAccessorMutExt, Header, WriteBytes};
 
     #[cfg(target_os = "fuchsia")]
     macro_rules! get_snapshot {
@@ -520,6 +630,21 @@ mod tests {
         }};
     }
 
+    #[cfg(target_os = "fuchsia")]
+    macro_rules! get_source {
+        ($container:ident, $storage:expr) => {
+            $storage
+        };
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    macro_rules! get_source {
+        ($container:ident, $storage:expr) => {{
+            let _storage = $storage;
+            $container.get_slice($container.len()).unwrap().to_vec()
+        }};
+    }
+
     #[fuchsia::test]
     fn test_string_reference_short_total_length() -> Result<(), Error> {
         let size = 4096;
@@ -531,7 +656,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
 
         let mut str_block = Block::free(&mut container, 2.into(), 0, BlockIndex::EMPTY)?
             .become_reserved()
@@ -557,7 +682,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         let _ = Block::free(&mut container, 2.into(), 2, BlockIndex::EMPTY)?
             .become_reserved()
             .become_extent(6.into());
@@ -649,9 +774,16 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         header.lock();
-        assert!(get_snapshot!(container, storage, || {}).is_err());
+        let mut full_copy_performed = false;
+        assert!(
+            get_snapshot!(container, storage, || {
+                full_copy_performed = true;
+            })
+            .is_err()
+        );
+        assert!(!full_copy_performed);
         Ok(())
     }
 
@@ -666,7 +798,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         header.set_magic(3);
         assert!(get_snapshot!(container, storage, || {}).is_err());
         Ok(())
@@ -683,7 +815,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         let result = get_snapshot!(container, storage, || {
             let mut header = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
             header.lock();
@@ -718,7 +850,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         container.copy_from_slice_at(8, &[0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
 
         let snapshot;
@@ -748,7 +880,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         container2.copy_from_slice_at(8, &[2u8; 8]);
         let snapshot = get_snapshot!(container2, storage2, || {})?;
         assert!(matches!(snapshot.buffer, BackingBuffer::Bytes(_)));
@@ -770,7 +902,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
         container.copy_from_slice_at(8, &[0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
 
         assert_matches!(
@@ -792,7 +924,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(constants::PAGE_SIZE_BYTES)?;
+        .become_inspect_header(constants::PAGE_SIZE_BYTES)?;
 
         let snapshot = get_snapshot!(container, storage, || {})?;
         assert_eq!(snapshot.buffer.len(), constants::PAGE_SIZE_BYTES);
@@ -811,7 +943,7 @@ mod tests {
             BlockIndex::EMPTY,
         )?
         .become_reserved()
-        .become_header(size)?;
+        .become_inspect_header(size)?;
 
         let snapshot = get_snapshot!(container, storage, || {})?;
         assert_eq!(snapshot.buffer.len(), constants::MAX_VMO_SIZE);
@@ -825,11 +957,57 @@ mod tests {
         let (mut container, storage) = Container::read_and_write(size).unwrap();
         let mut header = Block::free(&mut container, BlockIndex::HEADER, 0, BlockIndex::EMPTY)?
             .become_reserved()
-            .become_header(constants::PAGE_SIZE_BYTES)?;
+            .become_inspect_header(constants::PAGE_SIZE_BYTES)?;
         header.set_order(0)?;
 
         let snapshot = get_snapshot!(container, storage, || {})?;
         assert_eq!(snapshot.buffer.len(), size);
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn valid_main_vmo_does_not_snapshot_with_blob_vmo_method() -> Result<(), Error> {
+        let size = 4096;
+        let (mut container, storage) = Container::read_and_write(size).unwrap();
+        let _ = Block::free(
+            &mut container,
+            BlockIndex::HEADER,
+            constants::HEADER_ORDER,
+            BlockIndex::EMPTY,
+        )?
+        .become_reserved()
+        .become_inspect_header(size)?;
+
+        let source = get_source!(container, storage);
+        assert!(Snapshot::try_once_from_vmo(&source).is_ok());
+        assert!(Snapshot::try_from(&source).is_ok());
+
+        assert_matches!(Snapshot::try_once_from_blob_vmo(&source), Err(ReaderError::InvalidVmo));
+        assert_matches!(Snapshot::try_from_blob_vmo(&source), Err(ReaderError::InvalidVmo));
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn valid_blob_vmo_does_not_snapshot_with_main_vmo_method() -> Result<(), Error> {
+        let size = 4096;
+        let (mut container, storage) = Container::read_and_write(size).unwrap();
+        let _ = Block::free(
+            &mut container,
+            BlockIndex::HEADER,
+            constants::HEADER_ORDER,
+            BlockIndex::EMPTY,
+        )?
+        .become_reserved()
+        .become_blob_header(size)?;
+
+        let source = get_source!(container, storage);
+        assert!(Snapshot::try_once_from_blob_vmo(&source).is_ok());
+        assert!(Snapshot::try_from_blob_vmo(&source).is_ok());
+
+        assert_matches!(Snapshot::try_once_from_vmo(&source), Err(ReaderError::InvalidVmo));
+        assert_matches!(Snapshot::try_from(&source), Err(ReaderError::InvalidVmo));
 
         Ok(())
     }

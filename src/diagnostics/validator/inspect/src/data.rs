@@ -246,6 +246,13 @@ impl Property {
                     }
                     FormattedEntries { nodes, properties }
                 }
+                // TODO(https://fxbug.dev/573703359): Support formatting LinkNodeDisposition::Blob
+                // in the Inspect validator.
+                LinkNodeDisposition::Blob => {
+                    todo!(
+                        "https://fxbug.dev/573703359: Implement LinkNodeDisposition::Blob formatting"
+                    )
+                }
             },
             // Non-link property, just format as the only returned property.
             _ => FormattedEntries { nodes: vec![], properties: vec![self.to_string(prefix)] },
