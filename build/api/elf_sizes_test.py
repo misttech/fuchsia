@@ -174,6 +174,47 @@ class ElfSizesTest(unittest.TestCase):
                 ]
             },
         )
+
+        # Prebuilt assembly container (e.g. fuchsia_prebuilt_product_configuration)
+        # recorded via container_dir in a Bazel *.debug_symbols.json manifest.
+        prebuilt_container = (
+            bazel_execroot / "vendor/product/prebuilt_product_config"
+        )
+        (prebuilt_container / "blobs").mkdir(parents=True, exist_ok=True)
+        (
+            prebuilt_container / "blobs/merkle_prebuilt_container_blob"
+        ).write_bytes(b"")
+        (prebuilt_container / "blobs/unexpected_subdir").mkdir(
+            parents=True, exist_ok=True
+        )
+        _write_json(
+            prebuilt_container / "packages/starnix_container",
+            {
+                "blobs": [
+                    {
+                        "merkle": "merkle_prebuilt_container_pkg",
+                        "path": "system/bin/init",
+                        "source_path": "../blobs/merkle_prebuilt_container_pkg",
+                    }
+                ]
+            },
+        )
+        (prebuilt_container / "packages/README.txt").write_text("not json")
+        (prebuilt_container / "subpackages").mkdir(parents=True, exist_ok=True)
+        (prebuilt_container / "subpackages/binary.bin").write_bytes(b"\xff\xfe")
+        _write_json(
+            bazel_execroot
+            / "bazel-out/aarch64-opt/bin/vendor/product/elf_sizes.debug_symbols.json",
+            [
+                {
+                    "container_dir": "vendor/product/prebuilt_product_config",
+                    "cpu": "arm64",
+                    "label": "@@//vendor/product:prebuilt_product_config",
+                    "os": "fuchsia",
+                }
+            ],
+        )
+
         _write_json(
             bazel_execroot
             / "bazel-out/aarch64-opt/bin/src/pkg/pkg_expanded/rebased_package_manifest.json",
@@ -221,6 +262,14 @@ class ElfSizesTest(unittest.TestCase):
                         "path": "bazel-out/fuchsia_sdk_arm64-opt/bin/vendor/product/smart_product_config/blobs/merkle_bazel_product_config_bucket2",
                     },
                     {
+                        "build_id": "ee5555555555",
+                        "path": "bazel-out/fuchsia_sdk_arm64-opt/bin/vendor/product/hybrid_product_config/blobs/merkle_prebuilt_container_blob",
+                    },
+                    {
+                        "build_id": "ff6666666666",
+                        "path": "bazel-out/fuchsia_sdk_arm64-opt/bin/vendor/product/hybrid_product_config/blobs/merkle_prebuilt_container_pkg",
+                    },
+                    {
                         "build_id": "aa1111111111",
                         "path": "bazel-out/fuchsia/blobs/merkle_toolchain_libcxx",
                     },
@@ -257,6 +306,8 @@ class ElfSizesTest(unittest.TestCase):
                 "merkle_gn_bucket2",
                 "merkle_bazel_bucket2",
                 "merkle_bazel_product_config_bucket2",
+                "merkle_prebuilt_container_blob",
+                "merkle_prebuilt_container_pkg",
             },
         )
         self.assertNotIn("merkle_missing_source", prebuilt_merkles)

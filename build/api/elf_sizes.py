@@ -130,17 +130,49 @@ def collect_elf_sizes_verification_inputs(
         bazel_execroot = build_utils.BazelPaths(fuchsia_dir, build_dir).execroot
 
         def _collect_rebased_pm(rebased_pm: Path) -> None:
-            with rebased_pm.open("rt") as f:
-                pm = json.load(f)
+            if not rebased_pm.is_file():
+                return
+            try:
+                with rebased_pm.open("rt") as f:
+                    pm = json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return
+            if not isinstance(pm, dict):
+                return
             for blob in pm.get("blobs", []):
                 src = blob.get("source_path", "")
                 if (
-                    src.startswith(("content/blobs/", "blobs/"))
+                    src.startswith(("content/blobs/", "blobs/", "../blobs/"))
                     or "/prebuilt/" in f"/{src}"
                 ):
                     merkle = blob.get("merkle")
                     if merkle and merkle not in gn_source_merkles:
                         prebuilt_merkles.add(merkle)
+
+        visited_containers: set[str] = set()
+
+        def _collect_prebuilt_container(container_rel: str) -> None:
+            if container_rel in visited_containers or container_rel.startswith(
+                ("bazel-out/", "external/gn_targets")
+            ):
+                return
+            visited_containers.add(container_rel)
+            container_path = bazel_execroot / container_rel
+            if not container_path.is_dir():
+                return
+            blobs_dir = container_path / "blobs"
+            if blobs_dir.is_dir():
+                for merkle in os.listdir(blobs_dir):
+                    if (
+                        merkle not in gn_source_merkles
+                        and (blobs_dir / merkle).is_file()
+                    ):
+                        prebuilt_merkles.add(merkle)
+            for sub_dir_name in ("packages", "subpackages"):
+                sub_dir = container_path / sub_dir_name
+                if sub_dir.is_dir():
+                    for pkg_file in sub_dir.rglob("*"):
+                        _collect_rebased_pm(pkg_file)
 
         visited_dirs: set[Path] = set()
         for blob_path in unmatched_blob_paths:
@@ -158,9 +190,10 @@ def collect_elf_sizes_verification_inputs(
                 cur = cur.parent
 
         # Also scan Bazel output directories for unpacked fuchsia_prebuilt_package
-        # manifests (rebased_package_manifest.json), since fuchsia_product_configuration
-        # copies package blobs into <product_config>/blobs/<merkle> outside the original
-        # <target>_expanded directory.
+        # manifests (rebased_package_manifest.json) and prebuilt assembly containers
+        # recorded in *.debug_symbols.json, since fuchsia_product_configuration and
+        # fuchsia_hybrid_product_configuration copy package blobs into
+        # <product_config>/blobs/<merkle> outside the original prebuilt directory.
         bazel_out_dir = bazel_execroot / "bazel-out"
         if bazel_out_dir.is_dir():
             for cfg_entry in os.scandir(bazel_out_dir):
@@ -174,6 +207,23 @@ def collect_elf_sizes_verification_inputs(
                         _collect_rebased_pm(
                             Path(dirpath) / "rebased_package_manifest.json"
                         )
+                    for filename in filenames:
+                        if filename.endswith(".debug_symbols.json"):
+                            with (Path(dirpath) / filename).open("rt") as f:
+                                ds_manifest = json.load(f)
+                            if isinstance(ds_manifest, list):
+                                for entry in ds_manifest:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    if "container_dir" in entry:
+                                        _collect_prebuilt_container(
+                                            entry["container_dir"]
+                                        )
+                                    elif "package_manifest" in entry:
+                                        _collect_rebased_pm(
+                                            bazel_execroot
+                                            / entry["package_manifest"]
+                                        )
                     dirnames[:] = [
                         d
                         for d in dirnames
@@ -181,6 +231,7 @@ def collect_elf_sizes_verification_inputs(
                         not in {
                             "bazel_inputs",
                             "blobs",
+                            "buildfiles_genquery",
                             "content",
                             "packages",
                             "subpackages",
