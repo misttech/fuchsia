@@ -24,4 +24,5 @@ fx_unittest_package(
     name = "timestamp_extrapolator_tests",
     package_name = "timestamp_extrapolator_tests",
     unit_tests = [":timestamp_extrapolator_test_bin"],
+    visibility = ["//src/media:__pkg__"],
 )

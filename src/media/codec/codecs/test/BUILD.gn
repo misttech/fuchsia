@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 import("//build/testing/cc_test_executable.gni")
 
@@ -15,7 +14,6 @@ group("test") {
     ":codec_adapter_sbc_test",
     ":codec_adapter_sw_test",
     ":output_sink_tests",
-    ":timestamp_extrapolator_tests",
   ]
 }
 
@@ -143,11 +141,6 @@ cc_test_executable("output_sink_test_bin") {
 
 fuchsia_unittest_package("output_sink_tests") {
   deps = [ ":output_sink_test_bin" ]
-}
-
-bazel_test_suite("timestamp_extrapolator_tests") {
-  target_tests =
-      [ "//src/media/codec/codecs/test:timestamp_extrapolator_tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

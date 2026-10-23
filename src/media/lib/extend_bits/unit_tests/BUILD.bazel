@@ -25,4 +25,5 @@ fx_unittest_package(
     name = "extend-bits-tests",
     package_name = "extend-bits-tests",
     unit_tests = [":extend_bits_tests"],
+    visibility = ["//src/media:__pkg__"],
 )

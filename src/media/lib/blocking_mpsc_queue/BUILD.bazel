@@ -49,4 +49,5 @@ fx_cc_binary(
 fx_unittest_package(
     name = "blocking_mpsc_queue_unittests",
     unit_tests = [":blocking_mpsc_queue_unittest_bin"],
+    visibility = ["//src/media:__pkg__"],
 )

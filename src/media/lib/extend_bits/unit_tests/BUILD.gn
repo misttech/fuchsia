@@ -2,17 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_suite.gni")
-
-bazel_test_suite("extend-bits-tests") {
-  target_tests = [ "//src/media/lib/extend_bits/unit_tests:extend-bits-tests" ]
-}
-
-group("unit_tests") {
-  testonly = true
-  deps = [ ":extend-bits-tests" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
