@@ -18,9 +18,7 @@ rustc_library(
     visibility = ["//:__subpackages__"],
     with_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-        "//src/lib/fidl/rust/fidl",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
         "//src/storage/lib/vfs/rust/name",
         "//third_party/rust_crates/vendor:flyweights",
         "//third_party/rust_crates/vendor:serde",
@@ -28,8 +26,12 @@ rustc_library(
         "//third_party/rust_crates/vendor:url",
     ] + select({
         "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+            "//src/lib/fidl/rust/fidl",
             "//src/lib/fuchsia-runtime",
         ],
-        "//conditions:default": [],
+        "//conditions:default": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
+        ],
     }),
 )

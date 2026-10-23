@@ -6,8 +6,11 @@
 //! (`.cml` files and binary `.cm` files). These types come with `serde` serialization
 //! and deserialization implementations that perform the required validation.
 
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
+#[cfg(target_os = "fuchsia")]
 use fidl_fuchsia_io as fio;
+#[cfg(not(target_os = "fuchsia"))]
+use fidl_fuchsia_io_common as fio;
 use flyweights::FlyStr;
 use serde::{Deserialize, Serialize, de, ser};
 use std::borrow::Borrow;
@@ -1716,6 +1719,7 @@ impl<'de> de::Deserialize<'de> for HandleType {
 
 /// A namespace entry type. Identical to the type in the `namespace` crate but can be used in
 /// contexts where that crate is not included.
+#[cfg(target_os = "fuchsia")]
 #[derive(Debug)]
 pub struct NamespaceEntry {
     pub path: NamespacePath,

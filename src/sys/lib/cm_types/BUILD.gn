@@ -53,9 +53,7 @@ rustc_library("cm_types") {
   with_unit_tests = true
   deps = []
   deps += [
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//src/lib/fidl/rust/fidl",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
     "//src/storage/lib/vfs/rust/name",
     "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:serde",
@@ -63,6 +61,12 @@ rustc_library("cm_types") {
     "//third_party/rust_crates:url",
   ]
   if (is_fuchsia) {
-    deps += [ "//src/lib/fuchsia-runtime" ]
+    deps += [
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia-runtime",
+    ]
+  } else {
+    deps += [ "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common" ]
   }
 }
