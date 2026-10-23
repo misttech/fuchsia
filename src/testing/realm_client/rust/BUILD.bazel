@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Test-support library used by integration tests across several areas
+# (examples, sdk/ctf, src/connectivity, src/devices, src/diagnostics,
+# src/sensors), so it is visible to those top-level subtrees.
+rustc_library(
+    name = "rust",
+    testonly = True,
+    srcs = [
+        "src/error.rs",
+        "src/lib.rs",
+    ],
+    aspect_hints = [":includes"],
+    crate_name = "realm_client",
+    edition = "2024",
+    visibility = [
+        "//examples:__subpackages__",
+        "//sdk/ctf:__subpackages__",
+        "//src:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:uuid",
+    ],
+)
+
+expect_includes(
+    name = "includes",
+    # @bazel2gn:transformer=file_paths
+    includes = ["//src/testing/realm_client:meta/realm_client.shard.cml"],
+)
