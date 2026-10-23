@@ -1511,6 +1511,219 @@ class BuildInvocationTest(MainBuildTestBase):
                             str(cm.exception),
                         )
 
+    def test_configured_env_does_not_contain_ephemeral_state(self) -> None:
+        """Verifies that configured_env contains static configuration without ephemeral UUID or log directory."""
+        context = self.create_context(resultstore="none")
+        context.env = {"USER": "test-user"}
+        configured = context.configured_env
+        self.assertIn("NINJA_STATUS", configured)
+        self.assertIn("PYTHONPATH", configured)
+        self.assertIn("FX_BUILD_RBE_AUTH_TYPE", configured)
+        self.assertIn("FX_BUILD_RS_AUTH_TYPE", configured)
+        self.assertNotIn("FX_BUILD_UUID", configured)
+        self.assertNotIn("FX_BUILD_LOGDIR", configured)
+        self.assertNotIn("HOME", configured)
+
+    def test_configured_env_pythonpath_defaults_to_source_dir(self) -> None:
+        """Verifies that PYTHONPATH in configured_env defaults to source_dir when not in env."""
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        self.assertEqual(
+            context.configured_env["PYTHONPATH"], str(context.source_dir)
+        )
+
+    def test_configured_env_pythonpath_honors_explicit_env(self) -> None:
+        """Verifies that an explicit PYTHONPATH in env is preserved."""
+        context = self.create_context()
+        context.env = {
+            "USER": "test-user",
+            "PYTHONPATH": "/custom/python/path",
+        }
+        self.assertEqual(
+            context.configured_env["PYTHONPATH"], "/custom/python/path"
+        )
+
+    def test_configured_env_empty_home_omitted(self) -> None:
+        """Verifies that empty string HOME is treated as falsy and omitted from configured_env."""
+        context = self.create_context()
+        context.env = {"USER": "test-user", "HOME": ""}
+        self.assertNotIn("HOME", context.configured_env)
+
+    def test_ephemeral_env_ignores_empty_logdir(self) -> None:
+        """Verifies that empty FX_BUILD_LOGDIR is ignored rather than resolving to CWD."""
+        context = self.create_context()
+        context.env = {
+            "USER": "test-user",
+            "FX_BUILD_LOGDIR": "",
+        }
+        with self.mock_invocation_context("new-uuid", "new-ts"):
+            invocation = main_build.BuildInvocation(context)
+            ephemeral = invocation.ephemeral_env
+            self.assertNotEqual(
+                ephemeral["FX_BUILD_LOGDIR"],
+                str(pathlib.Path("").resolve()),
+            )
+            self.assertIn("_build_logs", ephemeral["FX_BUILD_LOGDIR"])
+
+    def test_ephemeral_env_generation_and_inheritance(self) -> None:
+        """Verifies ephemeral_env generates fresh UUID/logdir or inherits existing parent values."""
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        with self.mock_invocation_context("new-uuid", "new-ts"):
+            invocation = main_build.BuildInvocation(context)
+            ephemeral = invocation.ephemeral_env
+            self.assertEqual(ephemeral["FX_BUILD_UUID"], "new-uuid")
+            self.assertIn("_build_logs", ephemeral["FX_BUILD_LOGDIR"])
+            self.assertEqual(ephemeral["HOME"], str(invocation.temp_home))
+
+        # Test inheritance when already in environment
+        context_inherited = self.create_context()
+        context_inherited.env = {
+            "USER": "test-user",
+            "HOME": "/existing/home",
+            "FX_BUILD_UUID": "parent-uuid-999",
+            "FX_BUILD_LOGDIR": "/tmp/parent_logs",
+        }
+        invocation_inherited = main_build.BuildInvocation(context_inherited)
+        self.assertEqual(
+            invocation_inherited.ephemeral_env["FX_BUILD_UUID"],
+            "parent-uuid-999",
+        )
+        self.assertEqual(
+            invocation_inherited.ephemeral_env["FX_BUILD_LOGDIR"],
+            str(pathlib.Path("/tmp/parent_logs").resolve()),
+        )
+        self.assertNotIn("HOME", invocation_inherited.ephemeral_env)
+
+
+class EnvSubcommandTest(MainBuildTestBase):
+    """Tests for the 'env' subcommand and environment formatting."""
+
+    def test_format_env_export(self) -> None:
+        env = {"FOO": "bar", "SPACE": "a b"}
+        out = main_build.format_env(env, fmt="export")
+        self.assertEqual(out, "export FOO=bar\nexport SPACE='a b'\n")
+
+    def test_format_env_raw(self) -> None:
+        env = {"FOO": "bar", "BAZ": "qux"}
+        out = main_build.format_env(env, fmt="raw")
+        self.assertEqual(out, "BAZ=qux\nFOO=bar\n")
+
+    def test_format_env_json(self) -> None:
+        env = {"FOO": "bar"}
+        out = main_build.format_env(env, fmt="json")
+        self.assertEqual(json.loads(out), {"FOO": "bar"})
+
+    def test_format_env_null(self) -> None:
+        env = {"FOO": "bar", "BAZ": "qux"}
+        out = main_build.format_env(env, fmt="null")
+        self.assertEqual(out, "BAZ=qux\0FOO=bar\0")
+
+    def test_format_env_unknown_format_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            main_build.format_env({}, fmt="invalid")
+
+    def test_new_env_command_execution_inspection_mode(self) -> None:
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        exec_info = main_build.new_env_command_execution(context, [])
+        self.assertIsInstance(exec_info, main_build.EnvInspectionExecution)
+        self.assertIsNotNone(exec_info.invocation)
+        self.assertFalse(exec_info.invocation._create_log_dir)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = exec_info.run()
+        self.assertEqual(result.return_code, 0)
+        output = buf.getvalue()
+        self.assertIn("export NINJA_STATUS=", output)
+        self.assertNotIn("FX_BUILD_UUID", output)
+
+    def test_new_env_command_execution_inspection_mode_all(self) -> None:
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        exec_info = main_build.new_env_command_execution(context, ["--all"])
+        self.assertIsInstance(exec_info, main_build.EnvInspectionExecution)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = exec_info.run()
+        self.assertEqual(result.return_code, 0)
+        output = buf.getvalue()
+        self.assertIn("export NINJA_STATUS=", output)
+        self.assertIn("export FX_BUILD_UUID=", output)
+        self.assertIn("export FX_BUILD_LOGDIR=", output)
+
+    def test_new_env_command_execution_inspection_mode_json(self) -> None:
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        exec_info = main_build.new_env_command_execution(
+            context, ["--format=json"]
+        )
+        self.assertIsInstance(exec_info, main_build.EnvInspectionExecution)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = exec_info.run()
+        self.assertEqual(result.return_code, 0)
+        parsed = json.loads(buf.getvalue())
+        self.assertIn("NINJA_STATUS", parsed)
+        self.assertNotIn("FX_BUILD_UUID", parsed)
+
+    def test_new_env_command_execution_run_mode(self) -> None:
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        exec_info = main_build.new_env_command_execution(
+            context, ["--", "ninja", "-t", "compdb"]
+        )
+        self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+        self.assertFalse(exec_info.is_build)
+        self.assertEqual(exec_info.full_command, ["ninja", "-t", "compdb"])
+        self.assertIn("FX_BUILD_UUID", exec_info.env)
+        self.assertIn("FX_BUILD_LOGDIR", exec_info.env)
+        self.assertFalse(exec_info.invocation._create_log_dir)
+
+    def test_new_env_command_execution_no_disk_litter(
+        self,
+    ) -> None:
+        """Verifies that env subcommand does not create directories or invocation_id files on disk."""
+        context = self.create_context()
+        context.env = {"USER": "test-user"}
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            with mock.patch.object(
+                main_build, "mkdir"
+            ) as mock_mkdir, mock.patch.object(
+                main_build, "write_text"
+            ) as mock_write:
+                exec_info = main_build.new_env_command_execution(context, [])
+                exec_info.run()
+                mock_mkdir.assert_not_called()
+                mock_write.assert_not_called()
+
+                # Even with --all, no disk litter is produced:
+                exec_info_all = main_build.new_env_command_execution(
+                    context, ["--all"]
+                )
+                exec_info_all.run()
+                mock_mkdir.assert_not_called()
+                mock_write.assert_not_called()
+
+                # Execution mode also produces no disk litter:
+                exec_info_cmd = main_build.new_env_command_execution(
+                    context, ["--", "ninja", "-t", "compdb"]
+                )
+                mock_mkdir.assert_not_called()
+                mock_write.assert_not_called()
+
+    def test_env_subparser_help_passthrough(self) -> None:
+        """Verifies that -h and --help pass through to new_env_command_execution."""
+        args, unknown = main_build._MAIN_ARG_PARSER.parse_known_args(
+            ["--build-dir", "out/default", "env", "--help"]
+        )
+        self.assertEqual(args.func, main_build.new_env_command_execution)
+        self.assertEqual(unknown, ["--help"])
+
 
 class BuildCommandExecutionTest(MainBuildTestBase):
     @mock.patch.object(main_build, "BuildLock")
