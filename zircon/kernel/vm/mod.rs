@@ -32,6 +32,7 @@ pub mod pmm_arena;
 pub mod pmm_checker;
 pub mod pmm_node;
 pub mod scanner;
+pub mod slot_page_storage;
 pub mod stream_size_manager;
 #[allow(clippy::module_inception)]
 pub mod vm;

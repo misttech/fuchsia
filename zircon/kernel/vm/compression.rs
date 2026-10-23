@@ -15,7 +15,7 @@ use crate::vm::compressor::{
 };
 use crate::vm::page::VmPagePtr;
 use crate::vm::vm::{vm_ktrace_duration, vm_ktrace_duration_begin, vm_ktrace_duration_end};
-use crate::vm::{physmap, pmm};
+use crate::vm::{physmap, pmm, slot_page_storage};
 use boot_options::{BootOptions, CompressionStorageStrategy, CompressionStrategy};
 use compression_bindings as bindings;
 use core::array;
@@ -97,8 +97,8 @@ pub struct Stats {
 ///
 /// Implementers must ensure that:
 /// 1. If [`store`][Self::store] returns `(_, Some(returned_page))`, `returned_page` is a valid,
-///    uniquely owned PMM page in the `Alloc` state whose physmap mapping is valid for reads and
-///    exclusive writes of `page::SIZE` initialized bytes.
+///    uniquely owned PMM page in the `Alloc` state that is not in any list, and whose physmap
+///    mapping is valid for reads and exclusive writes of `page::SIZE` initialized bytes.
 /// 2. If [`store`][Self::store] returns `(Some(reference), _)`, `reference` is a valid, live
 ///    [`CompressedRef`] for `self` (and not equal to [`VmCompression::TEMP_REFERENCE_VALUE`])
 ///    that remains valid for [`compressed_data`][Self::compressed_data],
@@ -133,8 +133,8 @@ pub unsafe trait VmCompressedStorage: Send + Sync {
     /// # Safety
     ///
     /// The caller must ensure that `page` is a valid, uniquely owned page in the `Alloc` state
-    /// whose physmap mapping contains at least `len` (`<= page::SIZE`) initialized bytes starting
-    /// at offset 0.
+    /// that is not in any list, that `0 < len <= page::SIZE`, and that the physmap mapping of
+    /// `page` contains at least `len` initialized bytes starting at offset 0.
     unsafe fn store(
         &self,
         page: VmPagePtr,
@@ -203,10 +203,10 @@ pub unsafe trait VmCompressedStorage: Send + Sync {
 
 // This forwarding impl exists so that a ref-counted storage, in practice the C++ shim
 // `RefPtr<VmSlotPageStorage>`, can be passed to `VmCompression::new` and stored as a
-// `Box<dyn VmCompressedStorage>`. The C++ shim is opaque and only ever lives behind a `RefPtr`,
-// so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressedStorage>` is not possible
-// since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait gives an
-// owned, sized value that can be type erased.
+// `Pin<Box<dyn VmCompressedStorage>>`. The C++ shim is opaque and only ever lives behind a
+// `RefPtr`, so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressedStorage>` is not
+// possible since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait
+// gives an owned, sized value that can be type erased.
 //
 // TODO: This can be removed once the C++ `VmCompressedStorage` implementations (and therefore
 // `VmSlotPageStorage`) have been ported to Rust, at which point storage implementations can be
@@ -697,7 +697,7 @@ impl<'a> CompressorGuard<'a> {
 #[repr(C)]
 pub struct VmCompression {
     /// References to the backing storage and compression strategies.
-    storage: Box<dyn VmCompressedStorage>,
+    storage: Pin<Box<dyn VmCompressedStorage>>,
     strategy: Box<dyn VmCompressionStrategy>,
     /// Pages must compress to less than or equal to this threshold for compression to be
     /// considered a success. The largest amount we might need to store is larger than this, as
@@ -724,8 +724,8 @@ pub struct VmCompression {
     /// to and from the PMM every compression attempt we attempt to reuse a single buffer page as
     /// much as possible.
     // Safety invariant: If `Some(page)`, `page` is a valid, uniquely owned PMM-allocated page in
-    // the `Alloc` state whose physmap mapping is valid for reads and exclusive writes of
-    // `page::SIZE` initialized bytes.
+    // the `Alloc` state that is not in any list, and whose physmap mapping is valid for reads and
+    // exclusive writes of `page::SIZE` initialized bytes.
     #[guarded_by(compression_lock)]
     buffer_page: Option<VmPagePtr>,
 
@@ -785,7 +785,7 @@ impl VmCompression {
     /// have failed and should not be considered worth storing.
     /// TODO(https://fxbug.dev/42138396): Limit total amount of pages stored.
     pub fn new<S, C>(
-        storage: S,
+        storage: Pin<Box<S>>,
         strategy: C,
         compression_threshold: usize,
     ) -> Result<RefPtr<Self>, Status>
@@ -793,10 +793,14 @@ impl VmCompression {
         S: VmCompressedStorage + 'static,
         C: VmCompressionStrategy + 'static,
     {
-        let boxed_storage = Box::try_new(storage).map_err(|_| Status::NO_MEMORY)?;
+        // SAFETY: The storage is not moved out of its heap allocation, which is pinned again
+        // below.
+        let boxed_storage = unsafe { Pin::into_inner_unchecked(storage) };
         let raw_storage: *mut dyn VmCompressedStorage = Box::<S>::into_raw(boxed_storage);
         // SAFETY: `raw_storage` was just produced by `Box::<S>::into_raw` from a `kalloc::Box`.
         let storage: Box<dyn VmCompressedStorage> = unsafe { Box::from_raw(raw_storage) };
+        // SAFETY: The contents of `storage` were pinned when passed in and have not been moved.
+        let storage = unsafe { Pin::new_unchecked(storage) };
 
         let boxed_strategy = Box::try_new(strategy).map_err(|_| Status::NO_MEMORY)?;
         let raw_strategy: *mut dyn VmCompressionStrategy = Box::<C>::into_raw(boxed_strategy);
@@ -870,7 +874,7 @@ impl VmCompression {
 
         let storage = match boot_options.compression_storage_strategy {
             CompressionStorageStrategy::Slot => {
-                let Some(storage) = VmSlotPageStorage::create() else {
+                let Some(storage) = slot_page_storage::VmSlotPageStorage::create() else {
                     kprintln!("[ZRAM]: Failed to create slot compressed storage area");
                     return None;
                 };
@@ -1036,8 +1040,9 @@ impl VmCompression {
         // VMO lock and requests compression results.
         let buffer_page = buffer_page_slot.take().unwrap();
         // SAFETY: By the `buffer_page` safety invariant, `buffer_page` is a valid, uniquely owned
-        // allocated page in the `Alloc` state containing `storage_size` initialized bytes starting
-        // at offset 0, where `storage_size <= page::SIZE` was guaranteed by the bounds checked
+        // allocated page in the `Alloc` state that is not in any list, containing `storage_size`
+        // initialized bytes starting at offset 0. `storage_size` includes the timestamp so is
+        // non-zero, and `storage_size <= page::SIZE` was guaranteed by the bounds checked
         // timestamp write above. By `VmCompressedStorage::store`'s safety postcondition, any
         // returned `page` satisfies the `buffer_page` safety invariant.
         let (maybe_ref, page) = unsafe { self.storage.store(buffer_page, storage_size) };
@@ -1444,7 +1449,11 @@ pub unsafe extern "C" fn rust_vm_compression_create(
             RefPtr::from_raw(strategy.cast::<VmLz4Compressor>()),
         )
     };
-    match VmCompression::new(storage_ref, strategy_ref, compression_threshold) {
+    let Ok(boxed_storage) = Box::try_new(storage_ref) else {
+        return core::ptr::null_mut();
+    };
+    let pinned_storage = Pin::new(boxed_storage);
+    match VmCompression::new(pinned_storage, strategy_ref, compression_threshold) {
         Ok(compression) => RefPtr::into_raw(compression).cast_mut(),
         Err(_) => core::ptr::null_mut(),
     }

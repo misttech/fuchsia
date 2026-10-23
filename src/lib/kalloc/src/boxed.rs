@@ -7,7 +7,9 @@
 use crate::allocator::{AllocError, Allocator, DefaultAllocator};
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 use core::ptr::NonNull;
+use pin_init::PinInit;
 use zerocopy::FromZeros;
 
 /// Helper to construct a dangling slice of a given length.
@@ -352,6 +354,18 @@ impl<T, A: Allocator> Box<T, A> {
         Ok(unsafe { b.assume_init() })
     }
 
+    /// Tries to allocate a new instance of `T` and pin-initialize it in place.
+    pub fn try_pin_init_in(init: impl PinInit<T>, allocator: A) -> Result<Pin<Self>, AllocError> {
+        let mut b = Self::try_new_uninit_in(allocator)?;
+        // SAFETY: `b.as_mut_ptr()` points to valid, aligned, uninitialized storage for `T`, which
+        // is never moved out of the box as the box is pinned below.
+        let Ok(()) = unsafe { init.__pinned_init(b.as_mut_ptr()) };
+        // SAFETY: `b` was fully initialized in place above.
+        let b = unsafe { b.assume_init() };
+        // SAFETY: The allocation owned by `b` is never moved out of the box.
+        Ok(unsafe { Pin::new_unchecked(b) })
+    }
+
     /// Constructs a new box with uninitialized contents on the heap.
     pub fn try_new_uninit_in(allocator: A) -> Result<Box<MaybeUninit<T>, A>, AllocError> {
         if core::mem::size_of::<T>() == 0 {
@@ -378,6 +392,10 @@ impl<T, A: Allocator> Box<T, A> {
 impl<T> Box<T, DefaultAllocator> {
     pub fn try_new(value: T) -> Result<Self, AllocError> {
         Self::try_new_in(value, DefaultAllocator)
+    }
+
+    pub fn try_pin_init(init: impl PinInit<T>) -> Result<Pin<Self>, AllocError> {
+        Self::try_pin_init_in(init, DefaultAllocator)
     }
 
     pub fn try_new_uninit() -> Result<Box<MaybeUninit<T>>, AllocError> {
@@ -817,5 +835,53 @@ mod tests {
         }
         let b = Box::<[NotZeroable]>::try_new_zeroed_uninit_slice(4).unwrap();
         assert_eq!(b.len(), 4);
+    }
+
+    #[pin_init::pin_data(PinnedDrop)]
+    struct PinnedTest<'a> {
+        self_ptr: *const PinnedTest<'a>,
+        dropped: &'a core::cell::Cell<bool>,
+        #[pin]
+        _pin: core::marker::PhantomPinned,
+    }
+
+    #[pin_init::pinned_drop]
+    impl PinnedDrop for PinnedTest<'_> {
+        fn drop(self: Pin<&mut Self>) {
+            assert!(core::ptr::eq(self.self_ptr, &*self));
+            self.dropped.set(true);
+        }
+    }
+
+    impl<'a> PinnedTest<'a> {
+        fn new(dropped: &'a core::cell::Cell<bool>) -> impl PinInit<Self> {
+            pin_init::pin_init!(&this in Self {
+                self_ptr: this.as_ptr(),
+                dropped,
+                _pin: core::marker::PhantomPinned,
+            })
+        }
+    }
+
+    #[test]
+    fn test_box_try_pin_init() {
+        let dropped = core::cell::Cell::new(false);
+        {
+            let b = Box::try_pin_init(PinnedTest::new(&dropped)).unwrap();
+            assert!(core::ptr::eq(b.self_ptr, &*b));
+            assert!(!dropped.get());
+        }
+        assert!(dropped.get());
+    }
+
+    #[test]
+    fn test_box_try_pin_init_failing() {
+        let dropped = core::cell::Cell::new(false);
+        let b = Box::<PinnedTest<'_>, AlwaysFailingAllocator>::try_pin_init_in(
+            PinnedTest::new(&dropped),
+            AlwaysFailingAllocator,
+        );
+        assert!(b.is_err());
+        assert!(!dropped.get());
     }
 }

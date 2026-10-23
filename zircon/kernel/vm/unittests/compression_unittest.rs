@@ -4,15 +4,16 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-/// Unit tests for `VmCompression` and `VmCompressor`.
+/// Unit tests for `VmCompression`, `VmCompressor` and `VmSlotPageStorage`.
 #[cfg(ktest)]
 #[unittest::suite]
 mod compression_rs {
-    use crate::vm::compression::{VmCompression, VmLz4Compressor, VmSlotPageStorage};
+    use crate::vm::compression::{VmCompressedStorage, VmCompression, VmLz4Compressor};
     use crate::vm::compressor::{CompressResult, CompressedRef, PageAndMetadata};
     use crate::vm::page::VmPagePtr;
     use crate::vm::physmap::paddr_to_physmap;
     use crate::vm::pmm;
+    use crate::vm::slot_page_storage::{NUM_SLOTS, SLOT_SIZE, VmSlotPageStorage};
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{assert_ok, assert_true, expect_eq, expect_true, unwrap_ok};
@@ -62,6 +63,128 @@ mod compression_rs {
             }
         }
         true
+    }
+
+    /// # Safety
+    ///
+    /// `reference` must be a valid, live reference returned by `storage.store`.
+    unsafe fn validate_pattern_ref(
+        storage: &VmSlotPageStorage,
+        reference: CompressedRef,
+        expected_len: usize,
+        offset: u64,
+    ) -> bool {
+        // SAFETY: By caller precondition, `reference` is a valid, live reference of `storage`.
+        let (data, _metadata) = unsafe { storage.compressed_data(reference) };
+        if data.len() != expected_len {
+            return false;
+        }
+        validate_pattern(data, offset)
+    }
+
+    /// # Safety
+    ///
+    /// `page` must be a valid, exclusively owned page in the `Alloc` state that is not in any list,
+    /// with at least `len` (`0 < len <= PAGE_SIZE_USIZE`) initialized bytes.
+    unsafe fn store(storage: &VmSlotPageStorage, page: VmPagePtr, len: usize) -> CompressedRef {
+        // SAFETY: Discharged by caller's `# Safety` precondition.
+        let (maybe_ref, return_page) = unsafe { storage.store(page, len) };
+        if let Some(return_page) = return_page {
+            // SAFETY: `return_page` is now exclusively owned by us.
+            unsafe { pmm::free_page(return_page) };
+        }
+        assert!(maybe_ref.is_some());
+        maybe_ref.unwrap()
+    }
+
+    fn store_pattern(storage: &VmSlotPageStorage, len: usize, offset: u64) -> CompressedRef {
+        let status = pmm::alloc_page(0);
+        assert!(status.is_ok());
+        let (page, _) = status.unwrap();
+
+        // SAFETY: `page` was just allocated from the PMM and is exclusively owned.
+        unsafe { write_pattern(page, len, offset) };
+
+        // SAFETY: `page` is exclusively owned, in the `Alloc` state, not in any list, and has `len`
+        // initialized bytes.
+        unsafe { store(storage, page, len) }
+    }
+
+    /// Test that slot page storage rounds item sizes to slots and tracks the remainder correctly.
+    #[test]
+    fn slot_page_storage_size_rounding() {
+        let storage = VmSlotPageStorage::create();
+        assert_true!(storage.is_some());
+        let storage = storage.unwrap();
+
+        const NUM_ITEMS: usize = 5;
+        const ITEMS: [usize; NUM_ITEMS] = [64, 128, 63, 1, 65];
+
+        // Store items that are a perfect multiple of the slot size, as well as +/- 1 byte, to
+        // ensure that the correct number of slots is used and the remainder is calculated
+        // correctly.
+        let refs: [CompressedRef; NUM_ITEMS] = [
+            store_pattern(&storage, ITEMS[0], 0),
+            store_pattern(&storage, ITEMS[1], 1),
+            store_pattern(&storage, ITEMS[2], 2),
+            store_pattern(&storage, ITEMS[3], 3),
+            store_pattern(&storage, ITEMS[4], 4),
+        ];
+
+        // So far should have used 7 slots to store our 5 items. Using the remaining 57 slots
+        // should not cause us to need a second storage page.
+        let padding = store_pattern(&storage, 57 * 64, 5);
+        expect_eq!(storage.get_internal_memory_usage().data_bytes, PAGE_SIZE_USIZE);
+
+        for (i, (&r, &len)) in refs.iter().zip(ITEMS.iter()).enumerate() {
+            // SAFETY: `r` is a live reference returned by `storage.store`.
+            expect_true!(unsafe { validate_pattern_ref(&storage, r, len, i as u64) });
+        }
+
+        for r in refs {
+            // SAFETY: `r` is a live reference returned by `storage.store` that is not used again.
+            unsafe { storage.free(r) };
+        }
+        // SAFETY: `padding` is a live reference returned by `storage.store` that is not used
+        // again.
+        unsafe { storage.free(padding) };
+    }
+
+    /// Test that slot page storage handles items that need every slot of a page.
+    #[test]
+    fn slot_page_storage_full_page_items() {
+        let storage = VmSlotPageStorage::create();
+        assert_true!(storage.is_some());
+        let storage = storage.unwrap();
+
+        const NUM_ITEMS: usize = 2;
+        // The smallest item that needs every slot, and the largest item that may be stored.
+        const ITEMS: [usize; NUM_ITEMS] = [(NUM_SLOTS - 1) * SLOT_SIZE + 1, PAGE_SIZE_USIZE];
+
+        let refs: [CompressedRef; NUM_ITEMS] =
+            [store_pattern(&storage, ITEMS[0], 0), store_pattern(&storage, ITEMS[1], 1)];
+
+        // Each item fills an entire page, so they cannot share a storage page.
+        expect_eq!(storage.get_internal_memory_usage().data_bytes, NUM_ITEMS * PAGE_SIZE_USIZE);
+        expect_eq!(
+            storage.get_memory_usage().compressed_storage_used_bytes,
+            (ITEMS[0] + ITEMS[1]) as u64
+        );
+
+        for (i, (&r, &len)) in refs.iter().zip(ITEMS.iter()).enumerate() {
+            // SAFETY: `r` is a live reference returned by `storage.store`.
+            expect_true!(unsafe { validate_pattern_ref(&storage, r, len, i as u64) });
+        }
+
+        for r in refs {
+            // SAFETY: `r` is a live reference returned by `storage.store` that is not used again.
+            unsafe { storage.free(r) };
+        }
+
+        // Freeing the items should have returned both storage pages to the PMM.
+        expect_eq!(storage.get_internal_memory_usage().data_bytes, 0);
+        expect_eq!(storage.get_memory_usage().uncompressed_content_bytes, 0);
+        expect_eq!(storage.get_memory_usage().compressed_storage_used_bytes, 0);
     }
 
     /// Test that the high-level compression-deconmpression flow preserves page data and metadata.
