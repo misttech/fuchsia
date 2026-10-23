@@ -9,6 +9,8 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/connectivity/wlan/lib/bitfield/wlan-bitfield-tests",
+        "//src/connectivity/wlan/lib/common/cpp:mcs_rate_lookup_tests",
+        "//src/connectivity/wlan/lib/common/cpp:wlan_cpp_bitfield_tests",
         "//src/connectivity/wlan/lib/common/rust:wlan-common-tests",
         "//src/connectivity/wlan/lib/eapol:eapol-tests",
         "//src/connectivity/wlan/lib/fcg-crypto:wlan-fcg-crypto-tests",

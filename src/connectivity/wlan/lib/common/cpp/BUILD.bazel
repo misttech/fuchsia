@@ -2,14 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
-
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 fx_cc_library(
     name = "common",
@@ -34,15 +31,72 @@ fx_cc_library(
     ],
     build_flags = ["//build/config/fuchsia:enable_zircon_asserts"],
     includes = ["include"],
+    public_configs = [":wlan_common_config"],
+    visibility = [
+        "//src/connectivity/wlan:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = [
         "//src/connectivity/wlan/drivers/lib/macaddr",
         "//zircon/system/ulib/fbl",
         "//zircon/system/ulib/zx",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
-        "@fuchsia_sdk//pkg/async-cpp",
-        "@fuchsia_sdk//pkg/async-loop-cpp",
-        "@fuchsia_sdk//pkg/async-loop-default",
+    ] + select({
+        # In-tree platform builds (e.g. mcs_rate_lookup_tests and sim-env)
+        # cannot use @fuchsia_sdk targets, which require an SDK API level.
+        "//build/bazel/platforms:is_fuchsia_platform": [
+            "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
+            "//sdk/lib/async:async-cpp",
+            "//sdk/lib/async-loop:async-loop-cpp",
+            "//sdk/lib/async-loop:async-loop-default",
+        ],
+        # Drivers built with the Bazel SDK rules (e.g. bcmdhd, iwlwifi) use @fuchsia_sdk.
+        "//conditions:default": [
+            # @bazel2gn:skip
+            "@fuchsia_sdk//fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_cpp",
+            # @bazel2gn:skip
+            "@fuchsia_sdk//pkg/async-cpp",
+            # @bazel2gn:skip
+            "@fuchsia_sdk//pkg/async-loop-cpp",
+            # @bazel2gn:skip
+            "@fuchsia_sdk//pkg/async-loop-default",
+        ],
+    }),
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "mcs_rate_lookup_test",
+    testonly = True,
+    srcs = ["mcs_rate_lookup_test.cc"],
+    tags = ["manual"],
+    deps = [
+        ":common",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_cpp",
+        "//src/lib/fxl/test:gtest_main",
     ],
 )
 
-# LINT.ThenChange(BUILD.gn)
+fx_unittest_package(
+    name = "mcs_rate_lookup_tests",
+    package_name = "mcs-rate-lookup-tests",
+    unit_tests = [":mcs_rate_lookup_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
+
+fx_cc_binary(
+    name = "wlan_cpp_bitfield_test",
+    testonly = True,
+    srcs = ["bitfield_test.cc"],
+    tags = ["manual"],
+    deps = [
+        ":common",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan_cpp_bitfield_tests",
+    package_name = "wlan-cpp-bitfield-tests",
+    unit_tests = [":wlan_cpp_bitfield_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)

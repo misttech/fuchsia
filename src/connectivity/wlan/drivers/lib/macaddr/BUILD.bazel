@@ -2,16 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# LINT.IfChange
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
+package(default_applicable_licenses = ["//:license"])
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
-
-cc_library(
+fx_cc_library(
     name = "macaddr",
     srcs = [
         "macaddr.cc",
@@ -20,6 +15,10 @@ cc_library(
         "include/wlan/drivers/macaddr.h",
     ],
     includes = ["include"],
+    public_configs = [":macaddr_config"],
+    visibility = [
+        "//src/connectivity/wlan:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    alwayslink = True,
 )
-
-# LINT.ThenChange(BUILD.gn)
