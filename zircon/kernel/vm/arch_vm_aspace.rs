@@ -7,9 +7,8 @@
 use crate::kernel::types::PAddr;
 use arch_vm_aspace_bindings as bindings;
 use bindings::zx_status_t;
-use core::marker::{PhantomData, PhantomPinned};
 use core::ptr;
-use zr::ToMutPtr;
+use zr::{OpaqueFacade, ToMutPtr};
 use zx_status::Status;
 
 // TODO(https://fxbug.dev/529507187): Use bitflags! or equivalent once available.
@@ -153,10 +152,7 @@ zr::static_assert!(
 pub struct ArchVmAspace {
     // TODO(https://fxbug.dev/529915725): Use zx::OpaqueBytes with the correct size and alignment of
     // the underlying arch specific aspace structure to allow for correct Rust allocation.
-    _data: [u8; 0],
-    // Mark with PhantomPinned as this is a shared C++ struct and this object is not trivially
-    // movable. Wrap it with PhantomData to allow for FFI usage.
-    _marker: PhantomData<PhantomPinned>,
+    _data: OpaqueFacade,
 }
 
 impl ArchVmAspace {
