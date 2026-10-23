@@ -5,6 +5,7 @@
 import("//build/assembly/product_bundle.gni")
 import("//build/assembly/product_bundle_test_group.gni")
 import("//build/testing/environments.gni")
+import("//bundles/buildbot/target_tests.gni")
 
 declare_args() {
   # True if we are running in postsubmit, false if we are running in presubmit.
@@ -76,45 +77,11 @@ group("additional_build_targets") {
     # product_bundle_test_group().
     tests_barrier = []
   }
-  deps = [
-    "//build/bazel/examples",
-    "//examples",
-    "//src/lib/ui/carnelian:examples",
-    "//src/media/bundles:examples",
-  ]
+  deps = core_examples_targets
 }
 
 ########
 # Tests to build or run on minimal.
-
-minimal_target_tests = [
-  "//examples:tests",
-  "//examples:hermetic_tests",
-  "//src/sys/component_manager:hermetic_tests",
-  "//src/sys/pkg:hermetic_tests",
-  "//sdk:tests",
-  "//src/connectivity/network:tests",
-  "//src/bringup:tests",
-  "//src/devices:tests",
-  "//src/diagnostics:tests",
-  "//src/fonts:tests",
-  "//src/hwinfo:tests",
-  "//src/intl:tests",
-  "//src/lib:tests",
-  "//src/media/audio/drivers/tests:admin",
-  "//src/media/audio/drivers/tests:basic",
-  "//src/performance:tests",
-  "//src/power:tests",
-  "//src/starnix:tests",
-  "//src/storage:tests",
-  "//src/sys:tests",
-  "//src/zircon:tests",
-
-  # reboot_hang is a non-hermetic e2e test. It is added to minimal because
-  # iris only has bringup and minimal builders in infra. Execution is
-  # restricted to iris_env.
-  "//src/tests/end_to_end/reboot_hang:tests",
-]
 
 if (target_cpu == "arm64") {
   product_bundle_test_group("minimal.arm64") {
@@ -126,7 +93,7 @@ if (target_cpu == "arm64") {
       build_only = true
     }
 
-    target_tests = minimal_target_tests + [ "//src/ui:tests" ]
+    target_tests = minimal_target_tests + minimal_ui_target_tests
   }
 
   # Included so that there are _some_ tests to run on
@@ -156,7 +123,7 @@ if (target_cpu == "x64") {
     # https://fxbug.dev/42083237. Since they are only run on x64 (the test spec
     # requires AEMU), disable them only for that architecture
     build_only = true
-    target_tests = [ "//src/ui:tests" ]
+    target_tests = minimal_ui_target_tests
   }
 
   if (is_debug) {
@@ -180,41 +147,12 @@ if (target_cpu == "riscv64") {
       build_only = true
     }
 
-    target_tests = minimal_target_tests + [ "//src/ui:tests" ]
+    target_tests = minimal_target_tests + minimal_ui_target_tests
   }
 }
 
 ########
 # Core
-
-# All the core tests.
-core_target_tests =
-    [
-      "//examples:hermetic_tests",
-      "//src/sys/pkg:hermetic_tests",
-
-      # no_e2e_dep
-      "//build:tests",
-      "//examples:tests",
-      "//scripts:tests",
-      "//src/diagnostics:tests",
-      "//src/media/bundles:services",
-      "//third_party:tests",
-
-      # Used by tests
-      "//src/diagnostics/archivist:archivist-for-embedding",
-
-      # The following groups have known e2e tests explicitly excluded.
-      "//bundles/fidl:tests_no_e2e",
-      "//sdk:tests_no_e2e",
-      "//src:tests_no_e2e",
-      "//tools:tests_no_e2e",
-
-      "//bundles/fidl:tests",
-      "//sdk:tests",
-      "//src:e2e_tests",
-      "//src/media/audio/drivers/tests:basic",
-    ] + e2e_lib_unit_tests
 
 if (target_cpu == "arm64") {
   product_bundle_test_group("core.arm64") {
