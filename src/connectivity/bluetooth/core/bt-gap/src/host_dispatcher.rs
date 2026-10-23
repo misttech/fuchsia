@@ -916,7 +916,7 @@ impl HostDispatcher {
             .map_err(|_| format_err!("Pending connection suppression client channel closed").into())
     }
 
-    fn stash(&self) -> Stash {
+    pub(crate) fn stash(&self) -> Stash {
         self.state.read().stash.clone()
     }
 
@@ -1538,7 +1538,7 @@ impl Future for WhenHostsFound {
     }
 }
 
-async fn try_restore_bonds(
+pub(crate) async fn try_restore_bonds(
     host_device: HostDevice,
     hd: HostDispatcher,
     address: &Address,
@@ -1558,9 +1558,11 @@ async fn try_restore_bonds(
             if errors.is_empty() {
                 Ok(())
             } else {
-                let msg =
-                    errors.into_iter().fold("".to_string(), |acc, b| format!("{}, {:?}", acc, b));
-                let msg = format!("failed to restore bonding data: {}", msg);
+                // Do not Debug-format `sys::BondingData`: doing so recursively formats
+                // secret LTK, IRK, CSRK, and BR/EDR link-key bytes into logs.
+                let peers: Vec<Option<PeerId>> =
+                    errors.iter().map(|b| b.identifier.map(PeerId::from)).collect();
+                let msg = format!("failed to restore bonding data for peers: {:?}", peers);
                 error!("{}", msg);
                 Err(anyhow!(msg).into())
             }

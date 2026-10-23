@@ -6,6 +6,7 @@ use fidl_fuchsia_bluetooth as bt;
 use fidl_fuchsia_bluetooth_sys as sys;
 #[cfg(target_os = "fuchsia")]
 use fuchsia_inspect as inspect;
+use std::fmt;
 
 use crate::error::Error;
 #[cfg(target_os = "fuchsia")]
@@ -185,8 +186,33 @@ impl IsInspectable for BondingData {
     type I = BondingDataInspect;
 }
 
+const REDACTED_KEY: &str = "<REDACTED>";
+
+struct RedactedPeerKey<'a>(&'a sys::PeerKey);
+
+impl fmt::Debug for RedactedPeerKey<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PeerKey")
+            .field("security", &self.0.security)
+            .field("data", &REDACTED_KEY)
+            .finish()
+    }
+}
+
+struct RedactedLtk<'a>(&'a sys::Ltk);
+
+impl fmt::Debug for RedactedLtk<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ltk")
+            .field("key", &RedactedPeerKey(&self.0.key))
+            .field("ediv", &self.0.ediv)
+            .field("rand", &self.0.rand)
+            .finish()
+    }
+}
+
 /// Bluetooth Low Energy specific bonding data
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct LeBondData {
     /// The peer's preferred connection parameters, if known.
     pub connection_parameters: Option<sys::LeConnectionParameters>,
@@ -212,8 +238,21 @@ pub struct LeBondData {
     pub csrk: Option<sys::PeerKey>,
 }
 
+impl fmt::Debug for LeBondData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LeBondData")
+            .field("connection_parameters", &self.connection_parameters)
+            .field("services", &self.services)
+            .field("peer_ltk", &self.peer_ltk.as_ref().map(RedactedLtk))
+            .field("local_ltk", &self.local_ltk.as_ref().map(RedactedLtk))
+            .field("irk", &self.irk.as_ref().map(RedactedPeerKey))
+            .field("csrk", &self.csrk.as_ref().map(RedactedPeerKey))
+            .finish()
+    }
+}
+
 /// Bluetooth BR/EDR (Classic) specific bonding data
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct BredrBondData {
     /// True if the peer prefers to lead the piconet. This is determined by role switch procedures.
     /// Paging and connecting from a peer does not automatically set this flag.
@@ -223,6 +262,16 @@ pub struct BredrBondData {
     /// The semi-permanent BR/EDR key. Present if link was paired with Secure Simple Pairing or
     /// stronger.
     pub link_key: Option<sys::PeerKey>,
+}
+
+impl fmt::Debug for BredrBondData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BredrBondData")
+            .field("role_preference", &self.role_preference)
+            .field("services", &self.services)
+            .field("link_key", &self.link_key.as_ref().map(RedactedPeerKey))
+            .finish()
+    }
 }
 
 impl From<sys::LeBondData> for LeBondData {
@@ -307,13 +356,15 @@ impl BondingData {
 impl TryFrom<sys::BondingData> for BondingData {
     type Error = Error;
     fn try_from(fidl: sys::BondingData) -> Result<BondingData, Self::Error> {
-        let fidl_clone = fidl.clone();
-        let data = match (fidl_clone.le_bond, fidl_clone.bredr_bond) {
+        let data = match (fidl.le_bond, fidl.bredr_bond) {
             (Some(le_bond), Some(bredr_bond)) => OneOrBoth::Both(le_bond.into(), bredr_bond.into()),
             (Some(le_bond), None) => OneOrBoth::Left(le_bond.into()),
             (None, Some(bredr_bond)) => OneOrBoth::Right(bredr_bond.into()),
-            _ => {
-                return Err(Error::missing(format!("bond data: {fidl:?}")));
+            (None, None) => {
+                return Err(Error::missing(format!(
+                    "bond transport data (le_bond or bredr_bond) for peer {:?}",
+                    fidl.identifier.map(PeerId::from)
+                )));
             }
         };
 
@@ -368,11 +419,19 @@ impl From<BondingData> for sys::BondingData {
 }
 
 /// Persisted data for a local bt-host.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct HostData {
     /// A local IRK that is distributed to peers and used to generate RPAs when in LE peripheral
     /// mode.
     pub irk: Option<sys::Key>,
+}
+
+impl fmt::Debug for HostData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HostData")
+            .field("irk", &self.irk.as_ref().map(|_: &sys::Key| REDACTED_KEY))
+            .finish()
+    }
 }
 
 impl From<HostData> for sys::HostData {
@@ -691,6 +750,24 @@ mod tests {
             assert!(BondingData::try_from(test_sys_bond(&le_bond, &bredr_bond)).is_ok());
 
             assert!(BondingData::try_from(test_sys_bond(&None, &None)).is_err());
+        }
+
+        #[test]
+        fn debug_and_try_from_redact_secret_keys() {
+            let bond = example::bond(Address::Public([1; 6]), Address::Public([2; 6]));
+            let bond_dbg = format!("{bond:?}");
+            assert_eq!(bond_dbg.matches(REDACTED_KEY).count(), 5);
+            assert!(!bond_dbg.contains(&format!("{:?}", [0u8; 16])));
+
+            let host_data = HostData { irk: Some(sys::Key { value: [0xAA; 16] }) };
+            let host_dbg = format!("{host_data:?}");
+            assert_eq!(host_dbg.matches(REDACTED_KEY).count(), 1);
+            assert!(!host_dbg.contains(&format!("{:?}", [0xAAu8; 16])));
+
+            let missing_transport = test_sys_bond(&None, &None);
+            let err_msg = BondingData::try_from(missing_transport).unwrap_err().to_string();
+            assert!(err_msg.contains(&format!("{:?}", Some(PeerId(42)))));
+            assert!(!err_msg.contains("BondingData {"));
         }
     }
 

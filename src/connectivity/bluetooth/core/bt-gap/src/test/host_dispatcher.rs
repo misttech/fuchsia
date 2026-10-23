@@ -21,7 +21,10 @@ use log::info;
 use std::collections::{HashMap, HashSet};
 
 use crate::build_config::{BrEdrConfig, Config};
-use crate::host_dispatcher::{DEFAULT_DEVICE_NAME, HostDispatcher, NameReplace, test as hd_test};
+use crate::host_device::HostDevice;
+use crate::host_dispatcher::{
+    DEFAULT_DEVICE_NAME, HostDispatcher, NameReplace, test as hd_test, try_restore_bonds,
+};
 use crate::store::stash::Stash;
 use crate::types;
 
@@ -236,6 +239,36 @@ async fn test_commit_bootstrap_doesnt_fail_from_host_failure() {
     let (result, _bonding_delegate_stream) =
         futures::future::join(host_dispatcher.commit_bootstrap(vec![identity]), run_delegate).await;
     assert_matches!(result, Ok(()));
+}
+
+#[fuchsia::test]
+async fn try_restore_bonds_redacts_secret_keys_on_error() {
+    let host_addr = Address::Public([1; 6]);
+    let bond = example::bond(host_addr, Address::Public([2; 6]));
+    let peer_id = bond.identifier;
+
+    let (mut host_server, host_device) = HostDevice::mock_from_id(HostId(1));
+    let dispatcher = hd_test::make_simple_test_dispatcher();
+    dispatcher.stash().store_bonds(vec![bond]).await.expect("store_bonds succeeds");
+
+    let echo_errors = async {
+        let mut bonding_stream = match host_server.next().await {
+            Some(Ok(HostRequest::SetBondingDelegate { delegate, .. })) => delegate.into_stream(),
+            other => panic!("expected SetBondingDelegate, got: {other:?}"),
+        };
+        match bonding_stream.next().await {
+            Some(Ok(BondingDelegateRequest::RestoreBonds { bonds, responder })) => {
+                responder.send(&bonds).expect("send RestoreBonds errors");
+            }
+            other => panic!("expected RestoreBonds, got: {other:?}"),
+        }
+    };
+
+    let (result, ()) =
+        join(try_restore_bonds(host_device, dispatcher, &host_addr), echo_errors).await;
+    let err_msg = result.expect_err("try_restore_bonds should report rejected bonds").to_string();
+    assert!(err_msg.contains(&format!("{:?}", Some(peer_id))));
+    assert!(!err_msg.contains(&format!("{:?}", [0u8; 16])));
 }
 
 #[fuchsia::test]
