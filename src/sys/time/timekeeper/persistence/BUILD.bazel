@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "time_persistence",
+    edition = "2024",
+    visibility = ["//src/sys/time/timekeeper:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_test(
+    name = "lib_test",
+    # Propagates `tmp_storage.shard.cml` to `fx_unittest_package` in Bazel and
+    # maps to `deps` in GN via bazel2gn.
+    aspect_hints = ["//src/sys/test_runners:tmp_storage"],
+    crate = ":lib",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+# Target names are chosen to avoid an existing global name clash.
+fx_unittest_package(
+    name = "time-persistence-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":lib_test"],
+    visibility = ["//src/sys:__pkg__"],
+)

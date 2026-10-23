@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -18,4 +20,10 @@ exports_files(
         "//src/sys/pkg/testing/mock-resolver:__pkg__",
         "//src/sys/pkg/tests/far:__pkg__",
     ],
+)
+
+expect_includes(
+    name = "tmp_storage",
+    includes = ["tmp_storage.shard.cml"],
+    visibility = ["//src/sys/time/timekeeper/persistence:__pkg__"],
 )
