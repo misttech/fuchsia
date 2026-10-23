@@ -31,7 +31,7 @@ aes-gcm = "0.11.1"
 aes-gcm-siv = "0.12.1"
 ansi_term = "0.12.0"
 anyhow = "1.0.104"
-arbitrary = { version = "1.4.2", features = ["derive"] }
+arbitrary = { version = "1.5.0", features = ["derive"] }
 arc-swap = { version = "1.9.1", features = ["weak"] }
 argh = "0.1.19"
 argh_complete = "0.1.19"
@@ -586,7 +586,7 @@ rustflags = [
 ]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.arbitrary."1.4.2"]
+[gn.package.arbitrary."1.5.0"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.ash."0.38.0+1.3.281"]

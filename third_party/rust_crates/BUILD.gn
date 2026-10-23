@@ -54,11 +54,11 @@ group("anyhow-1.0.104") {
 }
 
 group("arbitrary") {
-  public_deps = [ ":arbitrary-v1_4_2" ]
+  public_deps = [ ":arbitrary-v1_5_0" ]
 }
 
-group("arbitrary-1.4.2") {
-  public_deps = [ ":arbitrary-v1_4_2" ]
+group("arbitrary-1.5.0") {
+  public_deps = [ ":arbitrary-v1_5_0" ]
 }
 
 group("arc-swap") {
@@ -3403,37 +3403,37 @@ rustc_library("anyhow-v1_0_104") {
   applicable_licenses = [ ":anyhow-v1_0_104.license" ]
 }
 
-license("arbitrary-v1_4_2.license") {
+license("arbitrary-v1_5_0.license") {
   public_package_name = "arbitrary"
   license_files =
-      [ "//third_party/rust_crates/vendor/arbitrary-1.4.2/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/arbitrary-1.5.0/LICENSE-APACHE" ]
 }
 
-rustc_library("arbitrary-v1_4_2") {
+rustc_library("arbitrary-v1_5_0") {
   crate_name = "arbitrary"
-  source_root = "//third_party/rust_crates/vendor/arbitrary-1.4.2/src/lib.rs"
-  output_name = "arbitrary-ccbde66569636cf5"
+  source_root = "//third_party/rust_crates/vendor/arbitrary-1.5.0/src/lib.rs"
+  output_name = "arbitrary-4e24b980096a2f03"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":derive_arbitrary-v1_4_2($host_toolchain)" ]
+  deps += [ ":derive_arbitrary-v1_5_0($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ccbde66569636cf5",
-    "-Cextra-filename=-ccbde66569636cf5",
+    "-Cmetadata=4e24b980096a2f03",
+    "-Cextra-filename=-4e24b980096a2f03",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"derive_arbitrary\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":arbitrary-v1_4_2.license" ]
+  applicable_licenses = [ ":arbitrary-v1_5_0.license" ]
 }
 
 license("arc-swap-v1_9_1.license") {
@@ -8052,19 +8052,19 @@ rustc_macro("derivative-v2_2_0") {
   applicable_licenses = [ ":derivative-v2_2_0.license" ]
 }
 
-license("derive_arbitrary-v1_4_2.license") {
+license("derive_arbitrary-v1_5_0.license") {
   public_package_name = "derive_arbitrary"
   license_files = [
-    "//third_party/rust_crates/vendor/derive_arbitrary-1.4.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/derive_arbitrary-1.4.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/derive_arbitrary-1.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/derive_arbitrary-1.5.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("derive_arbitrary-v1_4_2") {
+rustc_macro("derive_arbitrary-v1_5_0") {
   crate_name = "derive_arbitrary"
   source_root =
-      "//third_party/rust_crates/vendor/derive_arbitrary-1.4.2/src/lib.rs"
-  output_name = "derive_arbitrary-c3585033c7812551"
+      "//third_party/rust_crates/vendor/derive_arbitrary-1.5.0/src/lib.rs"
+  output_name = "derive_arbitrary-60de8d823f2fc670"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -8073,19 +8073,19 @@ rustc_macro("derive_arbitrary-v1_4_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_6" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c3585033c7812551",
-    "-Cextra-filename=-c3585033c7812551",
+    "-Cmetadata=60de8d823f2fc670",
+    "-Cextra-filename=-60de8d823f2fc670",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":derive_arbitrary-v1_4_2.license" ]
+  applicable_licenses = [ ":derive_arbitrary-v1_5_0.license" ]
 }
 
 license("derive_builder-v0_20_2.license") {

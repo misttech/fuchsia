@@ -92,14 +92,14 @@ alias(
 )
 
 alias(
-    name = "arbitrary-1.4.2",
-    actual = "//third_party/rust_crates/vendor/arbitrary-1.4.2:arbitrary",
+    name = "arbitrary-1.5.0",
+    actual = "//third_party/rust_crates/vendor/arbitrary-1.5.0:arbitrary",
     tags = ["manual"],
 )
 
 alias(
     name = "arbitrary",
-    actual = "//third_party/rust_crates/vendor/arbitrary-1.4.2:arbitrary",
+    actual = "//third_party/rust_crates/vendor/arbitrary-1.5.0:arbitrary",
     tags = ["manual"],
 )
 

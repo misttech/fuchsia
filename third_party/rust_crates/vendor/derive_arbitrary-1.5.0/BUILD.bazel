@@ -8,7 +8,7 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 
 package(
     default_package_metadata = [
@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "arbitrary",
-    package_url = "https://github.com/rust-fuzz/arbitrary/",
-    package_version = "1.4.2",
+    package_name = "derive_arbitrary",
+    package_url = "https://github.com/rust-fuzz/arbitrary",
+    package_version = "1.5.0",
 )
 
 license(
@@ -34,8 +34,8 @@ license(
     license_text = "LICENSE-APACHE",
 )
 
-rust_library(
-    name = "arbitrary",
+rust_proc_macro(
+    name = "derive_arbitrary",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,21 +52,14 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "derive",
-        "derive_arbitrary",
-    ],
     crate_root = "src/lib.rs",
     edition = "2021",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/derive_arbitrary-1.4.2:derive_arbitrary",
-    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=arbitrary",
+        "crate-name=derive_arbitrary",
         "manual",
         "noclippy",
         "norustfmt",
@@ -79,5 +72,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.4.2",
+    version = "1.5.0",
+    deps = [
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
+        "//third_party/rust_crates/vendor/quote-1.0.47:quote",
+        "//third_party/rust_crates/vendor/syn-3.0.6:syn",
+    ],
 )
