@@ -61,6 +61,7 @@ rustc_library("rust") {
   sources = [
     "src/context.rs",
     "src/error.rs",
+    "src/health.rs",
     "src/incoming.rs",
     "src/lib.rs",
     "src/macros.rs",

@@ -11,6 +11,7 @@ use core::future::Future;
 
 mod context;
 mod error;
+mod health;
 mod incoming;
 pub mod macros;
 mod node;
@@ -19,15 +20,23 @@ pub mod testing;
 
 pub use context::*;
 pub use error::DriverError;
+pub use health::HealthCheckResult;
 pub use incoming::*;
 pub use node::*;
+
+/// The `fuchsia.driver.framework` health check types used by [`Driver::health_check`], re-exported
+/// so drivers do not need a direct dependency on the `fidl_next` bindings to implement it.
+pub use fidl_next_fuchsia_driver_framework::{
+    HealthCheckError, HealthCheckRequest, HealthCheckResponse, HealthCondition,
+    HealthDiagnosticItem, HealthDiagnosticValue, HealthStatus,
+};
 
 /// Entry points into a driver for starting and stopping.
 ///
 /// Driver authors should implement this trait, taking information from the [`DriverContext`]
 /// passed to the [`Driver::start`] method to set up, and then tearing down any resources they use
 /// in the [`Driver::stop`] method.
-pub trait Driver: Sized + Send + 'static {
+pub trait Driver: Sized + Send + Sync + 'static {
     /// The name of the driver as it will appear in logs
     const NAME: &str;
 
@@ -89,5 +98,38 @@ pub trait Driver: Sized + Send + 'static {
         _lease: Option<zx::EventPair>,
     ) -> impl Future<Output = Result<(), DriverError>> + Send {
         async { Ok(()) }
+    }
+
+    /// Called when the driver framework asks the driver to check its health.
+    ///
+    /// Answers a `fuchsia.driver.framework/Driver.HealthCheck` request at the given level. By
+    /// default `PING` answers with an empty (`OK`) [`HealthCheckResponse`] and `FAST` and `DEEP`
+    /// answer [`HealthCheckError::NotSupported`], matching the C++ `DriverBase2::HealthCheck`
+    /// default. Drivers override this to inspect their hardware and return structured
+    /// diagnostics.
+    ///
+    /// The driver host enforces a deadline per level: 250ms for [`HealthCheckRequest::Ping`], 2s
+    /// for [`HealthCheckRequest::Fast`], and 2 minutes for [`HealthCheckRequest::Deep`]. A check
+    /// that misses its deadline is reported as [`HealthCheckError::Timeout`]. Checks run as their
+    /// own tasks, so a slow check never delays `Stop`, `Suspend` or `Resume`; checks still in
+    /// flight when the driver is asked to stop are cancelled before [`Driver::stop`] is called.
+    ///
+    /// `Ping` must stay cheap (no hardware access or blocking I/O) and must never return
+    /// [`HealthCheckError::Unavailable`]: it answers "is the driver alive", not "is the hardware
+    /// healthy". Before any level reaches this method the framework first confirms that the
+    /// driver's root dispatcher is still processing tasks, so a wedged dispatcher fails the check
+    /// without this method ever running.
+    ///
+    /// Note: This will only be called after the driver has successfully finished [`Driver::start`].
+    fn health_check(
+        &self,
+        request: HealthCheckRequest,
+    ) -> impl Future<Output = Result<HealthCheckResponse, HealthCheckError>> + Send {
+        async move {
+            match request {
+                HealthCheckRequest::Ping => Ok(HealthCheckResponse::default()),
+                _ => Err(HealthCheckError::NotSupported),
+            }
+        }
     }
 }
