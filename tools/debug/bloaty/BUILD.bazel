@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "bloaty",
+    srcs = [
+        "bloaty.go",
+        "chart.go",
+        "symbols.go",
+    ],
+    importpath = "go.fuchsia.dev/fuchsia/tools/debug/bloaty",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools/debug/bloatalyzer:__pkg__"],
+)
+
+host_go_test(
+    name = "bloaty_tests",
+    srcs = [
+        "bloaty_test.go",
+        "chart_test.go",
+        "symbols_test.go",
+    ],
+    embed = [":bloaty"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+)

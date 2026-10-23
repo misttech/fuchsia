@@ -2,18 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
+import("//build/bazel/bazel_host_tool.gni")
 
-go_library("main") {
-  source_dir = "cmd"
-  sources = [ "main.go" ]
-  deps = [
-    "//tools/debug/bloaty",
-    "//tools/lib/logger",
-  ]
-}
-
-go_binary("bloatalyzer") {
-  embed = [ ":main" ]
+bazel_host_tool("bloatalyzer") {
+  bazel_target = ":bloatalyzer"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/bloatalyzer_/bloatalyzer"
 }

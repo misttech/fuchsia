@@ -3,9 +3,10 @@
 # found in the LICENSE file.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -61,5 +62,41 @@ go_binary_host_tool(
     embed = [
         ":main",
     ],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_test_data_files(
+    name = "testdata",
+    testonly = True,
+    srcs = [
+        "testdata/gobug.elf",
+        "testdata/gobug.yaml",
+        "testdata/libc.elf",
+        "testdata/libc.yaml",
+        "testdata/libcrypto.elf",
+        "testdata/libcrypto.yaml",
+    ],
+    dest_dir = "testdata",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# bazel2gn does not support test_data on host_go_test.
+# @bazel2gn:skip
+host_go_test(
+    name = "symbolize_tests",
+    srcs = [
+        "demuxer_test.go",
+        "filter_test.go",
+        "index_test.go",
+        "mock_elf_test.go",
+        "parser_test.go",
+        "regextokenizer_test.go",
+        "repo_test.go",
+        "symbolizer_test.go",
+    ],
+    embed = [":symbolize_lib"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [":testdata"],
+    visibility = ["//tools:__pkg__"],
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

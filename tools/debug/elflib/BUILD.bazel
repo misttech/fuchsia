@@ -4,6 +4,8 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -16,5 +18,39 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/elflib",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//:__subpackages__"],
+    visibility = ["//tools:__subpackages__"],
+)
+
+host_test_data_files(
+    name = "testdata",
+    testonly = True,
+    srcs = [
+        "testdata/cycle.elf",
+        "testdata/empty-note-section.elf",
+        "testdata/empty-relocatable.elf",
+        "testdata/libc.elf.section-only",
+        "testdata/libc.elf.stripped",
+        "testdata/libc.yaml",
+        "testdata/libc.yaml.section-only",
+        "testdata/pe-no-id.exe",
+        "testdata/pe-x64.efi",
+        "testdata/pe-x64.yaml",
+    ],
+    dest_dir = "testdata",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# bazel2gn does not support test_data on host_go_test.
+# @bazel2gn:skip
+host_go_test(
+    name = "elflib_tests",
+    srcs = [
+        "elflib_test.go",
+        "pe_test.go",
+        "sources_test.go",
+    ],
+    embed = [":elflib"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [":testdata"],
+    visibility = ["//tools:__pkg__"],
 )

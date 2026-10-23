@@ -2,19 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
+import("//build/bazel/bazel_host_tool.gni")
 
-go_library("main") {
-  source_dir = "cmd"
-  sources = [ "main.go" ]
-  deps = [
-    "//tools/debug/elflib",
-    "//tools/lib/color",
-    "//tools/lib/logger",
-  ]
-}
-
-go_binary("sourcerer") {
-  embed = [ ":main" ]
+bazel_host_tool("sourcerer") {
+  bazel_target = ":sourcerer"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/sourcerer_/sourcerer"
 }
