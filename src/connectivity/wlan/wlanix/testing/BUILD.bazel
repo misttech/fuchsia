@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "fake-wlanix",
+    srcs = [
+        "fake-wlanix.cc",
+    ],
+    hdrs = [
+        "fake-wlanix.h",
+    ],
+    deps = [
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_cpp",
+        "//zircon/system/ulib/fzl",
+        "//zircon/system/ulib/zircon-internal",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
