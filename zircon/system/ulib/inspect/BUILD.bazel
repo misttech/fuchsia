@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library_zx(
+    name = "inspect",
+    srcs = [
+        "bounded_list_node.cc",
+        "health.cc",
+        "hierarchy.cc",
+        "inspector.cc",
+        "reader.cc",
+        "vmo/heap.cc",
+        "vmo/scanner.cc",
+        "vmo/snapshot.cc",
+        "vmo/state.cc",
+        "vmo/types.cc",
+    ],
+    hdrs = [
+        "include/lib/inspect/cpp/bounded_list_node.h",
+        "include/lib/inspect/cpp/health.h",
+        "include/lib/inspect/cpp/hierarchy.h",
+        "include/lib/inspect/cpp/inspect.h",
+        "include/lib/inspect/cpp/inspector.h",
+        "include/lib/inspect/cpp/reader.h",
+        "include/lib/inspect/cpp/vmo/block.h",
+        "include/lib/inspect/cpp/vmo/heap.h",
+        "include/lib/inspect/cpp/vmo/limits.h",
+        "include/lib/inspect/cpp/vmo/scanner.h",
+        "include/lib/inspect/cpp/vmo/snapshot.h",
+        "include/lib/inspect/cpp/vmo/state.h",
+        "include/lib/inspect/cpp/vmo/types.h",
+    ],
+    api_area = "Diagnostics",
+    api_file_path = "//sdk/lib/inspect:inspect.api",
+    category = "partner",
+    idk_name = "inspect",
+    implementation_deps = [
+        "//sdk/lib/fdio",
+    ],
+    stable = True,
+    # inspect uses Zircon VMO types and depends on Fuchsia-only //sdk/lib/fdio.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sdk/lib/fit-promise",
+        "//sdk/lib/stdcompat",
+        "//zircon/system/ulib/zx",
+    ],
+)

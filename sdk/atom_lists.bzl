@@ -47,6 +47,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/syslog/structured_backend:structured_backend_idk",
     "//sdk/lib/utf-utils:utf-utils_idk",
     "//sdk/lib/vfs/cpp:cpp_idk",
+    "//zircon/system/ulib/inspect:inspect_idk",
     "//zircon/system/ulib/sync:sync-cpp_idk",
     "//zircon/system/ulib/zx:zx_idk",
 ]

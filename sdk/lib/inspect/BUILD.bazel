@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -25,16 +26,19 @@ exports_files(
     ],
 )
 
+# @bazel2gn:skip
 cml_shard(
     name = "offer.shard",
     shard = "offer.shard.cml",
 )
 
+# @bazel2gn:skip
 cml_shard(
     name = "use.shard",
     shard = "use.shard.cml",
 )
 
+# @bazel2gn:skip
 cml_shard(
     name = "client.shard",
     includes = [
@@ -43,4 +47,23 @@ cml_shard(
     ],
     shard = "client.shard.cml",
     visibility = ["//src/power/shutdown-shim:__subpackages__"],
+)
+
+# Require dependent components to include required capabilities in their
+# component manifests in order to export Inspect data.
+expect_includes(
+    name = "client_includes",
+    includes = [":client.shard"],
+    visibility = [
+        "//sdk/lib/inspect/component/cpp:__pkg__",
+        "//src/lib/diagnostics/inspect/runtime/rust:__pkg__",
+    ],
+)
+
+# Expose the .api file to the definition of the library.
+exports_files(
+    ["inspect.api"],
+    visibility = [
+        "//zircon/system/ulib/inspect:__pkg__",
+    ],
 )
