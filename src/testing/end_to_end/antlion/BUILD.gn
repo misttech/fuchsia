@@ -36,21 +36,11 @@ python_library("antlion") {
   testonly = true
   sources = [
     "__init__.py",
-    "base_test.py",
     "controllers/__init__.py",
-    "controllers/fuchsia_device.py",
-    "controllers/fuchsia_lib/__init__.py",
-    "controllers/fuchsia_lib/lib_controllers/__init__.py",
-    "controllers/fuchsia_lib/lib_controllers/wlan_controller.py",
-    "controllers/fuchsia_lib/lib_controllers/wlan_policy_controller.py",
-    "controllers/fuchsia_lib/ssh.py",
     "controllers/pdu.py",
     "controllers/pdu_lib/__init__.py",
     "controllers/pdu_lib/synaccess/__init__.py",
     "controllers/pdu_lib/synaccess/np02b.py",
-    "decorators.py",
-    "error.py",
-    "keys.py",
     "utils.py",
   ]
   library_deps = [

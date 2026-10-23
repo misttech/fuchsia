@@ -14,10 +14,7 @@ from legacy_access_point import (
     ap_lib,
 )
 
-from . import (
-    fuchsia_device,
-    pdu,
-)
+from . import pdu
 
 # Reexport so static type checkers can find these modules when importing and
 # using antlion.controllers instead of "from antlion.controller import ..."
@@ -25,7 +22,6 @@ __all__ = [
     "access_point",
     "ap_lib",
     "attenuator",
-    "fuchsia_device",
     "iperf_client",
     "iperf_server",
     "pdu",
