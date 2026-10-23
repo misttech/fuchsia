@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "watch_handler",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/sys/time/lib/push-source:__pkg__",
+        "//src/ui/bin/brightness_manager:__pkg__",
+    ],
+    deps = ["//third_party/rust_crates/vendor:thiserror"],
+)
+
+rustc_test(
+    name = "watch_handler_test",
+    crate = ":watch_handler",
+    edition = "2024",
+)
+
+fx_unittest_package(
+    name = "watch-handler-tests",
+    unit_tests = [":watch_handler_test"],
+    visibility = ["//src/lib:__pkg__"],
+)

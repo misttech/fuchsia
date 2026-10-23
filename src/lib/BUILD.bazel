@@ -35,5 +35,6 @@ test_suite(
         "//src/lib/fuchsia-image-format:fuchsia-image-format-tests",
         "//src/lib/inet:libinet_tests",
         "//src/lib/listnode:listnode-package",
+        "//src/lib/watch_handler:watch-handler-tests",
     ],
 )
