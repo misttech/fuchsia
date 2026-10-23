@@ -87,7 +87,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/chrono-0.4.45:chrono",
         "//third_party/rust_crates/vendor/dyn-clone-1.0.20:dyn_clone",
-        "//third_party/rust_crates/vendor/ref-cast-1.0.26:ref_cast",
+        "//third_party/rust_crates/vendor/ref-cast-1.0.27:ref_cast",
         "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.151:serde_json",
     ],

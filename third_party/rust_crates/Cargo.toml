@@ -204,7 +204,7 @@ range-alloc = "0.1.5"
 # values to change. We rely on this crate for stable hashes.
 rapidhash = { version = "1.4.0", features = ["unsafe"] }
 rayon = "1.12.0"
-ref-cast = "1.0.26"
+ref-cast = "1.0.27"
 regex = "1.13.1"
 regex-lite = "0.1.9"
 ring = "0.17.14"
@@ -1029,17 +1029,17 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.rayon-core."1.13.0"]
 # Has build script but no config needed.
 
-[gn.package.ref-cast."1.0.26"]
+[gn.package.ref-cast."1.0.27"]
 rustflags = []
 env_vars = [
-  "CARGO_PKG_VERSION_PATCH=26",
+  "CARGO_PKG_VERSION_PATCH=27",
   "OUT_DIR=../../../compat/ref-cast",
 ]
 
-[gn.package.ref-cast-impl."1.0.26"]
+[gn.package.ref-cast-impl."1.0.27"]
 rustflags = []
 env_vars = [
-  "CARGO_PKG_VERSION_PATCH=26",
+  "CARGO_PKG_VERSION_PATCH=27",
 ]
 
 [gn.package.regex."1.13.1"]

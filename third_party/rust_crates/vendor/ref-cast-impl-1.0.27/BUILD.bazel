@@ -8,8 +8,7 @@
 
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
-load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 
 package(
     default_package_metadata = [
@@ -21,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "ref-cast",
+    package_name = "ref-cast-impl",
     package_url = "https://github.com/dtolnay/ref-cast",
-    package_version = "1.0.26",
+    package_version = "1.0.27",
 )
 
 license(
@@ -35,8 +34,8 @@ license(
     license_text = "LICENSE-APACHE",
 )
 
-rust_library(
-    name = "ref_cast",
+rust_proc_macro(
+    name = "ref_cast_impl",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -55,18 +54,15 @@ rust_library(
     ),
     crate_root = "src/lib.rs",
     edition = "2021",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/ref-cast-impl-1.0.26:ref_cast_impl",
-    ],
     rustc_env = {
-        "CARGO_PKG_VERSION_PATCH": "26",
+        "CARGO_PKG_VERSION_PATCH": "27",
     },
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=ref-cast",
+        "crate-name=ref-cast-impl",
         "manual",
         "noclippy",
         "norustfmt",
@@ -79,64 +75,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.26",
+    version = "1.0.27",
     deps = [
-        ":build_script_build",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
+        "//third_party/rust_crates/vendor/quote-1.0.47:quote",
+        "//third_party/rust_crates/vendor/syn-3.0.6:syn",
     ],
-)
-
-cargo_build_script(
-    name = "_bs",
-    srcs = glob(
-        include = ["**/*.rs"],
-        allow_empty = False,
-    ),
-    compile_data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            "**/*.rs",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    crate_name = "build_script_build",
-    crate_root = "build.rs",
-    data = glob(
-        include = ["**"],
-        allow_empty = True,
-        exclude = [
-            "**/* *",
-            ".tmp_git_root/**/*",
-            "BUILD",
-            "BUILD.bazel",
-            "WORKSPACE",
-            "WORKSPACE.bazel",
-        ],
-    ),
-    edition = "2021",
-    emit_warnings = False,
-    pkg_name = "ref-cast",
-    rustc_flags = [
-        "--cap-lints=allow",
-    ],
-    tags = [
-        "cargo-bazel",
-        "crate-name=ref-cast",
-        "manual",
-        "noclippy",
-        "norustfmt",
-    ],
-    version = "1.0.26",
-    visibility = ["//visibility:private"],
-)
-
-alias(
-    name = "build_script_build",
-    actual = ":_bs",
-    tags = ["manual"],
 )

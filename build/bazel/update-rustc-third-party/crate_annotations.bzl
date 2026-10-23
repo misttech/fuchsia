@@ -377,17 +377,17 @@ CRATE_ANNOTATIONS = {
     ],
     "ref-cast": [
         crate.annotation(
-            version = "1.0.26",
+            version = "1.0.27",
             rustc_env = {
-                "CARGO_PKG_VERSION_PATCH": "26",
+                "CARGO_PKG_VERSION_PATCH": "27",
             },
         ),
     ],
     "ref-cast-impl": [
         crate.annotation(
-            version = "1.0.26",
+            version = "1.0.27",
             rustc_env = {
-                "CARGO_PKG_VERSION_PATCH": "26",
+                "CARGO_PKG_VERSION_PATCH": "27",
             },
         ),
     ],
