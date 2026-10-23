@@ -7,7 +7,6 @@ use crate::nested::nested_set;
 use crate::{ConfigMap, Environment, EnvironmentContext};
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::{NamedTempFile, TempDir};
@@ -82,7 +81,7 @@ impl TestEnv {
                 isolate_root: Some(isolate_root_path),
             },
             ExecutableKind::Test,
-            Some(env_vars),
+            env_vars,
             runtime_args,
             Some(env_file.path().to_owned()),
             false,
@@ -165,7 +164,7 @@ impl TestEnv {
             EnvironmentKind::Isolated { .. } => EnvironmentContext::isolated(
                 self.context.exe_kind(),
                 self.isolate_root.path().to_owned(),
-                self.context.env_vars.clone().unwrap_or_default(),
+                self.context.env_vars.clone(),
                 self.context.runtime_args.clone(),
                 Some(self.env_file.path().to_owned()),
                 None,
@@ -210,15 +209,6 @@ pub struct TestEnvBuilder {
 ///  - is initialized with an empty runtime configuration.
 pub fn test_env() -> TestEnvBuilder {
     TestEnvBuilder { ..Default::default() }
-}
-
-/// Creates a TestEnvBuilder that inherits environment variables from the real
-/// test environment.
-fn test_builder_with_envs() -> TestEnvBuilder {
-    let env_vars: HashMap<String, String> = std::env::vars()
-        .filter(|(key, _)| !key.starts_with("FFX_") && !key.starts_with("FUCHSIA_"))
-        .collect();
-    TestEnvBuilder { env_vars, ..Default::default() }
 }
 
 impl TestEnvBuilder {
@@ -335,9 +325,6 @@ impl TestEnvBuilder {
 ///
 /// You must hold the returned object object for the duration of the test.
 /// Not doing so will result in strange behaviour.
-///
-/// Note: This function inherits environment variables from the real test
-/// environment.
 pub fn test_init() -> Result<TestEnv> {
-    test_builder_with_envs().build()
+    test_env().build()
 }

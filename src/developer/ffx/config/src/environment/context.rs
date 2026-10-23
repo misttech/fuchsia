@@ -73,7 +73,7 @@ pub(crate) type EnvVars = HashMap<String, String>;
 pub struct EnvironmentContext {
     pub(crate) kind: EnvironmentKind,
     exe_kind: ExecutableKind,
-    pub(crate) env_vars: Option<EnvVars>,
+    pub(crate) env_vars: EnvVars,
     pub(crate) runtime_args: ConfigMap,
     env_file_path: Option<PathBuf>,
     pub(crate) config: Config,
@@ -116,15 +116,34 @@ impl EnvironmentContext {
         serde_json::from_reader(std::io::BufReader::new(file)).map_err(Into::into)
     }
 
+    fn default_env_vars(exe_kind: ExecutableKind, is_isolated: bool) -> EnvVars {
+        if exe_kind == ExecutableKind::Test || is_isolated {
+            EnvVars::new()
+        } else {
+            EnvVars::from_iter(std::env::vars())
+        }
+    }
+
     /// Initializes a new environment type with the given kind and runtime arguments.
     pub(crate) fn new(
         kind: EnvironmentKind,
         exe_kind: ExecutableKind,
-        env_vars: Option<EnvVars>,
+        mut env_vars: EnvVars,
         runtime_args: ConfigMap,
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
+        if let Some(isolate_root) = kind.isolate_root() {
+            let keep_existing_home = exe_kind == ExecutableKind::Test
+                || env_vars.get("HOME").is_some_and(|h| Path::new(h).starts_with(isolate_root));
+            if keep_existing_home {
+                env_vars
+                    .entry("HOME".to_string())
+                    .or_insert_with(|| isolate_root.to_string_lossy().into_owned());
+            } else {
+                env_vars.insert("HOME".to_string(), isolate_root.to_string_lossy().into_owned());
+            }
+        }
         let config = if !no_environment {
             let unisolated_test = exe_kind == ExecutableKind::Test && kind.isolate_root().is_none();
             let env_files = match &env_file_path {
@@ -187,7 +206,7 @@ impl EnvironmentContext {
             exe_kind: exe_kind.clone(),
             // For simplicity, the runtime_args will be kept empty.
             runtime_args: ConfigMap::new(),
-            env_vars: None,
+            env_vars: EnvVars::new(),
             env_file_path: None,
             no_environment: true,
             override_target_spec: None,
@@ -216,10 +235,11 @@ impl EnvironmentContext {
         isolate_root: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
+        let env_vars = Self::default_env_vars(exe_kind, isolate_root.is_some());
         Self::new(
             EnvironmentKind::ConfigDomain { domain: Box::new(domain), isolate_root },
             exe_kind,
-            None,
+            env_vars,
             runtime_args,
             None,
             no_environment,
@@ -251,10 +271,11 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
+        let env_vars = Self::default_env_vars(exe_kind, false);
         Self::new(
             EnvironmentKind::InTree { tree_root, build_dir, isolate_root: None },
             exe_kind,
-            None,
+            env_vars,
             runtime_args,
             env_file_path,
             no_environment,
@@ -271,16 +292,26 @@ impl EnvironmentContext {
         current_dir: Option<&Utf8Path>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
+        // Isolate dirs should be absolute paths
+        let isolate_root = std::path::absolute(&isolate_root)?;
         if let Some(domain_path) = current_dir.and_then(ConfigDomain::find_root) {
             let domain = ConfigDomain::load_from(&domain_path)?;
-            Self::config_domain(exe_kind, domain, runtime_args, Some(isolate_root), no_environment)
+            Self::new(
+                EnvironmentKind::ConfigDomain {
+                    domain: Box::new(domain),
+                    isolate_root: Some(isolate_root),
+                },
+                exe_kind,
+                env_vars,
+                runtime_args,
+                env_file_path,
+                no_environment,
+            )
         } else {
-            // Isolate dirs should be absolute paths
-            let isolate_root = std::path::absolute(&isolate_root)?;
             Self::new(
                 EnvironmentKind::Isolated { isolate_root },
                 exe_kind,
-                Some(env_vars),
+                env_vars,
                 runtime_args,
                 env_file_path,
                 no_environment,
@@ -318,10 +349,11 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
+        let env_vars = Self::default_env_vars(exe_kind, false);
         Self::new(
             EnvironmentKind::NoContext,
             exe_kind,
-            None,
+            env_vars,
             runtime_args,
             env_file_path,
             no_environment,
@@ -439,17 +471,12 @@ impl EnvironmentContext {
     /// Gets an environment variable, either from the system environment or from the isolation-configured
     /// environment.
     pub fn env_var(&self, name: &str) -> Result<String, std::env::VarError> {
-        match &self.env_vars {
-            Some(env_vars) => env_vars.get(name).cloned().ok_or(std::env::VarError::NotPresent),
-            _ => std::env::var(name),
-        }
+        self.env_vars.get(name).cloned().ok_or(std::env::VarError::NotPresent)
     }
 
     // Some tests need to clear out the env
     pub fn remove_var(&mut self, name: &str) {
-        if let Some(env_vars) = &mut self.env_vars {
-            env_vars.remove(name);
-        }
+        self.env_vars.remove(name);
     }
 
     /// Creates a [`ConfigQuery`] against the global config cache and
@@ -620,13 +647,9 @@ impl EnvironmentContext {
             // for isolation we're always going to clear the environment,
             // because it's better to fail than poison the isolation with something
             // external.
-            // But an isolated context without an env var hash shouldn't be
-            // constructable anyways.
             cmd.env_clear();
-            if let Some(env_vars) = &self.env_vars {
-                for (k, v) in env_vars {
-                    cmd.env(k, v);
-                }
+            for (k, v) in &self.env_vars {
+                cmd.env(k, v);
             }
         }
         cmd.env(Self::FFX_BIN_ENV, &ffx_path);
@@ -918,7 +941,12 @@ mod test {
             ctx.get_shared_data_path(),
             Err(PathsError::UnisolatedTestEnvironment("get_shared_data_path"))
         );
+        assert_matches!(
+            ctx.get_home_dir(),
+            Err(PathsError::UnisolatedTestEnvironment("get_home_dir"))
+        );
         assert_eq!(ctx.get_analytics_path(), None);
+        assert_eq!(ctx.env_var("PATH"), Err(std::env::VarError::NotPresent));
     }
 
     fn check_config_domain_paths(context: &EnvironmentContext, domain_root: &Utf8Path) {
@@ -945,6 +973,8 @@ mod test {
         assert_eq!(context.get_config_path().unwrap(), isolate_dir.join("config"));
         assert_eq!(context.get_data_path().unwrap(), isolate_dir.join("data"));
         assert_eq!(context.get_shared_data_path().unwrap(), isolate_dir.join("shared"));
+        assert_eq!(context.get_home_dir().unwrap(), isolate_dir);
+        assert_eq!(context.env_var("HOME").unwrap(), isolate_dir.to_string_lossy());
         assert!(context.is_isolated());
     }
 

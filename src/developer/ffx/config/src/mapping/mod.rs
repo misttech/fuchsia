@@ -78,7 +78,7 @@ impl BuiltinMacro {
             Self::Cache => to_utf8_path(ctx.get_cache_path().ok()),
             Self::Data => to_utf8_path(ctx.get_data_path().ok()),
             Self::Config => to_utf8_path(ctx.get_config_path().ok()),
-            Self::Home => to_utf8_path(home::home_dir()),
+            Self::Home => to_utf8_path(ctx.get_home_dir().ok()),
         }
     }
 }
@@ -316,7 +316,7 @@ mod tests {
         let config = ctx.get_config_path().unwrap().to_string_lossy().to_string();
         let runtime = ctx.get_runtime_path().unwrap().to_string_lossy().to_string();
         let shared = ctx.get_shared_data_path().unwrap().to_string_lossy().to_string();
-        let home = home::home_dir().and_then(|p| p.to_str().map(String::from));
+        let home = ctx.env_kind().isolate_root().and_then(|p| p.to_str().map(String::from));
 
         for (macro_str, expected) in [
             ("$DATA", Some(data.clone())),
@@ -334,6 +334,12 @@ mod tests {
                 "failed for macro: {macro_str}"
             );
         }
+
+        let ctx_with_home = isolated_env(&[("HOME", "/custom/isolated/home")]);
+        assert_eq!(
+            expand_macros(&ctx_with_home, json!("$HOME/.ssh")).unwrap(),
+            Some(json!("/custom/isolated/home/.ssh"))
+        );
     }
 
     #[test]

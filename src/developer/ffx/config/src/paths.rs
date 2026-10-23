@@ -171,6 +171,20 @@ impl EnvironmentContext {
             None => get_analytics_base_path().ok(),
         }
     }
+
+    pub fn get_home_dir(&self) -> std::result::Result<PathBuf, PathsError> {
+        if let Some(home) = self.env_var("HOME").ok().filter(|h| !h.is_empty()) {
+            Ok(PathBuf::from(home))
+        } else if let Some(isolate_root) = self.env_kind().isolate_root() {
+            Ok(isolate_root.to_path_buf())
+        } else if self.exe_kind() == ExecutableKind::Test {
+            Err(PathsError::UnisolatedTestEnvironment("get_home_dir"))
+        } else if self.is_strict() {
+            Err(PathsError::HomeDirectoryNotFound)
+        } else {
+            home::home_dir().ok_or(PathsError::HomeDirectoryNotFound)
+        }
+    }
 }
 
 fn get_runtime_base() -> std::result::Result<PathBuf, PathsError> {
