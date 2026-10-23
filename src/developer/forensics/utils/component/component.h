@@ -7,6 +7,8 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fidl/cpp/binding.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
@@ -42,6 +44,14 @@ class Component {
   zx_status_t AddPublicService(::fidl::InterfaceRequestHandler<Interface> handler,
                                std::string service_name = Interface::Name_) {
     return context_->outgoing()->AddPublicService(std::move(handler), std::move(service_name));
+  }
+
+  template <typename Protocol>
+  zx_status_t AddPublicService(
+      ::fit::function<void(::fidl::ServerEnd<Protocol>)> handler,
+      std::string protocol_name = ::fidl::DiscoverableProtocolName<Protocol>) {
+    return context_->outgoing()->AddProtocol<Protocol>(std::move(handler),
+                                                       std::move(protocol_name));
   }
 
   // Returns true if this is the first time an instance of the current component has been started

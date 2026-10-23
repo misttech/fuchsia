@@ -4,6 +4,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_MAIN_SERVICE_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_MAIN_SERVICE_H_
 
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -56,7 +57,12 @@ class MainService {
   ~MainService();
 
   template <typename Protocol>
-  ::fidl::InterfaceRequestHandler<Protocol> GetHandler();
+    requires(!fidl::IsProtocolV<Protocol>)
+  fidl::InterfaceRequestHandler<Protocol> GetHandler();
+
+  template <typename Protocol>
+    requires(fidl::IsProtocolV<Protocol>)
+  fidl::ProtocolHandler<Protocol> GetHandler();
 
  private:
   async_dispatcher_t* dispatcher_;
@@ -78,8 +84,7 @@ class MainService {
   async::Loop system_time_tracker_loop_;
   SystemTimeTracker system_time_tracker_;
 
-  InstrumentedBindingSet<fuchsia::feedback::ComponentDataRegister>
-      component_data_register_bindings_;
+  InstrumentedBindingSet<fuchsia_feedback::ComponentDataRegister> component_data_register_bindings_;
   InstrumentedBindingSet<fuchsia::feedback::CrashReporter> crash_reporter_bindings_;
   InstrumentedBindingSet<fuchsia::feedback::CrashReportingProductRegister> crash_register_bindings_;
   InstrumentedBindingSet<fuchsia::feedback::DataProvider> data_provider_bindings_;

@@ -45,30 +45,33 @@ DataRegister::DataRegister(size_t max_num_annotations,
   RestoreFromJson();
 }
 
-void DataRegister::Upsert(fuchsia::feedback::ComponentData data, UpsertCallback callback) {
-  auto execute_callback = ::fit::defer(std::move(callback));
+void DataRegister::Upsert(UpsertRequest& request, UpsertCompleter::Sync& completer) {
+  auto execute_callback = ::fit::defer([&completer]() { completer.Reply(); });
 
-  if (!data.has_annotations()) {
+  const fuchsia_feedback::ComponentData& data = request.data();
+  if (!data.annotations().has_value()) {
     FX_LOGS(WARNING) << "No non-platform annotations to upsert";
     return;
   }
 
-  if (data.has_namespace() && disallowed_annotation_namespaces_.contains(data.namespace_())) {
+  if (data.namespace_().has_value() &&
+      disallowed_annotation_namespaces_.contains(*data.namespace_())) {
     FX_LOGS(WARNING) << fxl::StringPrintf(
-        "Ignoring non-platform annotations, %s is a reserved namespace", data.namespace_().c_str());
+        "Ignoring non-platform annotations, %s is a reserved namespace",
+        data.namespace_()->c_str());
 
     // TODO(https://fxbug.dev/42125546): close connection with ZX_ERR_INVALID_ARGS instead.
     return;
   }
 
-  if (!data.has_namespace()) {
+  if (!data.namespace_().has_value()) {
     FX_LOGS(WARNING) << "No namespace specified, defaulting to " << kDefaultNamespace;
   }
-  const std::string ns = (data.has_namespace()) ? data.namespace_() : kDefaultNamespace;
+  const std::string ns = data.namespace_().value_or(kDefaultNamespace);
 
   Annotations new_annotations = namespaced_annotations_[ns];
-  for (const auto& [key, value] : data.annotations()) {
-    new_annotations.insert_or_assign(key, ErrorOrString(value));
+  for (const auto& annotation : *data.annotations()) {
+    new_annotations.insert_or_assign(annotation.key(), ErrorOrString(annotation.value()));
   }
 
   size_t new_size = new_annotations.size();

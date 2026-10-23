@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/feedback/main_service.h"
 
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
 
 #include <gmock/gmock.h>
@@ -65,7 +66,7 @@ class MainServiceTest : public UnitTestFixture {
     AddHandler(main_service_.GetHandler<fuchsia::feedback::LastRebootInfoProvider>());
     AddHandler(main_service_.GetHandler<fuchsia::feedback::CrashReporter>());
     AddHandler(main_service_.GetHandler<fuchsia::feedback::CrashReportingProductRegister>());
-    AddHandler(main_service_.GetHandler<fuchsia::feedback::ComponentDataRegister>());
+    AddHandler(main_service_.GetHandler<fuchsia_feedback::ComponentDataRegister>());
     AddHandler(main_service_.GetHandler<fuchsia::feedback::DataProvider>());
   }
 
@@ -170,15 +171,22 @@ TEST_F(MainServiceTest, CrashReports) {
 }
 
 TEST_F(MainServiceTest, FeedbackData) {
-  fuchsia::feedback::ComponentDataRegisterPtr component_data_ptr_;
-  services()->Connect(component_data_ptr_.NewRequest(dispatcher()));
+  zx::result endpoints = fidl::CreateEndpoints<fuchsia_feedback::ComponentDataRegister>();
+  ASSERT_TRUE(endpoints.is_ok());
+  services()->Connect(fidl::DiscoverableProtocolName<fuchsia_feedback::ComponentDataRegister>,
+                      endpoints->server.TakeChannel());
+  fidl::Client component_data_client(std::move(endpoints->client), dispatcher());
 
   fuchsia::feedback::DataProviderPtr data_provider_ptr_;
   services()->Connect(data_provider_ptr_.NewRequest(dispatcher()));
 
   bool component_data_called = false;
-  component_data_ptr_->Upsert(fuchsia::feedback::ComponentData{},
-                              [&component_data_called]() { component_data_called = true; });
+  component_data_client->Upsert(fuchsia_feedback::ComponentData{})
+      .Then([&component_data_called](
+                fidl::Result<fuchsia_feedback::ComponentDataRegister::Upsert>& result) {
+        FX_CHECK(result.is_ok());
+        component_data_called = true;
+      });
 
   fuchsia::feedback::GetSnapshotParameters snapshot_params;
   snapshot_params.set_collection_timeout_per_data(0u);
@@ -201,7 +209,7 @@ TEST_F(MainServiceTest, FeedbackData) {
                                        }))),
                              })));
 
-  component_data_ptr_.Unbind();
+  component_data_client = {};
   data_provider_ptr_.Unbind();
 
   RunLoopUntilIdle();

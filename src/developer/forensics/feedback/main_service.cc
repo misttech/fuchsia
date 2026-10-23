@@ -184,10 +184,10 @@ MainService::GetHandler() {
 }
 
 template <>
-::fidl::InterfaceRequestHandler<fuchsia::feedback::ComponentDataRegister>
-MainService::GetHandler() {
-  return [this](::fidl::InterfaceRequest<fuchsia::feedback::ComponentDataRegister> request) {
-    component_data_register_bindings_.AddBinding(std::move(request));
+::fidl::ProtocolHandler<fuchsia_feedback::ComponentDataRegister>
+MainService::GetHandler<fuchsia_feedback::ComponentDataRegister>() {
+  return [this](::fidl::ServerEnd<fuchsia_feedback::ComponentDataRegister> server_end) {
+    component_data_register_bindings_.AddBinding(std::move(server_end));
   };
 }
 

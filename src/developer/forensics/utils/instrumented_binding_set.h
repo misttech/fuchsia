@@ -7,7 +7,9 @@
 
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/binding_set.h>
+#include <lib/fidl/cpp/channel.h>
 #include <lib/fidl/cpp/interface_request.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/inspect/cpp/vmo/types.h>
 
 #include <string>
@@ -50,6 +52,34 @@ void InstrumentedBindingSet<Interface>::AddBinding(::fidl::InterfaceRequest<Inte
     current_num_connections_.Subtract(1u);
   });
 }
+
+template <typename Protocol>
+  requires(fidl::IsProtocolV<Protocol>)
+class InstrumentedBindingSet<Protocol> {
+ public:
+  InstrumentedBindingSet(async_dispatcher_t* dispatcher, fidl::Server<Protocol>* impl,
+                         InspectNodeManager* node, const std::string& path)
+      : dispatcher_(dispatcher),
+        impl_(impl),
+        current_num_connections_(node->Get(path).CreateUint("current_num_connections", 0)),
+        total_num_connections_(node->Get(path).CreateUint("total_num_connections", 0)) {}
+
+  void AddBinding(fidl::ServerEnd<Protocol> server_end) {
+    current_num_connections_.Add(1u);
+    total_num_connections_.Add(1u);
+    connections_.AddBinding(
+        dispatcher_, std::move(server_end), impl_,
+        [this](const fidl::UnbindInfo) { current_num_connections_.Subtract(1u); });
+  }
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  fidl::Server<Protocol>* impl_;
+
+  inspect::UintProperty current_num_connections_;
+  inspect::UintProperty total_num_connections_;
+  fidl::ServerBindingGroup<Protocol> connections_;
+};
 
 }  // namespace forensics
 

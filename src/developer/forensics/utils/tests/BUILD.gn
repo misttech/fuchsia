@@ -118,6 +118,7 @@ cc_test_executable("instrumented_binding_set_unittest_exe") {
   sources = [ "instrumented_binding_set_unittest.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:unit_test_fixture",

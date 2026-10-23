@@ -4,7 +4,7 @@
 
 #include "src/developer/forensics/feedback/annotations/data_register.h"
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <limits>
@@ -20,7 +20,7 @@
 namespace forensics::feedback {
 namespace {
 
-using fuchsia::feedback::ComponentData;
+using fuchsia_feedback::ComponentData;
 using testing::Pair;
 using testing::UnorderedElementsAreArray;
 
@@ -32,8 +32,21 @@ class DataRegisterTest : public UnitTestFixture {
 
  protected:
   void Upsert(ComponentData data) {
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_feedback::ComponentDataRegister>();
+    FX_CHECK(endpoints.is_ok());
+
+    fidl::ServerBinding<fuchsia_feedback::ComponentDataRegister> binding(
+        dispatcher(), std::move(endpoints->server), data_register_.get(),
+        fidl::kIgnoreBindingClosure);
+    fidl::Client client(std::move(endpoints->client), dispatcher());
+
     bool called_back = false;
-    data_register_->Upsert(std::move(data), [&called_back]() { called_back = true; });
+    client->Upsert(std::move(data))
+        .Then(
+            [&called_back](fidl::Result<fuchsia_feedback::ComponentDataRegister::Upsert>& result) {
+              FX_CHECK(result.is_ok());
+              called_back = true;
+            });
     RunLoopUntilIdle();
     FX_CHECK(called_back);
   }
@@ -57,10 +70,10 @@ class DataRegisterTest : public UnitTestFixture {
 
 TEST_F(DataRegisterTest, Upsert_Basic) {
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -77,9 +90,9 @@ TEST_F(DataRegisterTest, Upsert_Basic) {
 
 TEST_F(DataRegisterTest, Upsert_DefaultNamespaceIfNoNamespaceProvided) {
   ComponentData data;
-  data.set_annotations({
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -106,10 +119,10 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnEmptyAnnotations) {
 
 TEST_F(DataRegisterTest, Upsert_NoInsertionsOnReservedNamespace) {
   ComponentData data;
-  data.set_namespace_(kReservedNamespace);
-  data.set_annotations({
+  data.namespace_(kReservedNamespace);
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -122,10 +135,10 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnReservedNamespace) {
 TEST_F(DataRegisterTest, Upsert_NoInsertionsOnTooMany) {
   MakeNewDataRegister(/*max_size=*/1);
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -140,10 +153,10 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnTooMany) {
 })");
 
   ComponentData data2;
-  data2.set_namespace_("namespace");
-  data2.set_annotations({
+  data2.namespace_("namespace");
+  data2.annotations({{
       {"k2", "v2"},
-  });
+  }});
 
   Upsert(std::move(data2));
 
@@ -160,10 +173,10 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnTooMany) {
 
 TEST_F(DataRegisterTest, Upsert_NoUpdatesOnEmptyAnnotations) {
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -197,10 +210,10 @@ TEST_F(DataRegisterTest, Upsert_NoUpdatesOnEmptyAnnotations) {
 
 TEST_F(DataRegisterTest, Upsert_InsertIfDifferentNamespaces) {
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -216,10 +229,10 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentNamespaces) {
 
   // We upsert another ComponentData with the same annotations, but under a different namespace.
   ComponentData data2;
-  data2.set_namespace_("namespace2");
-  data2.set_annotations({
+  data2.namespace_("namespace2");
+  data2.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data2));
 
@@ -240,10 +253,10 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentNamespaces) {
 
 TEST_F(DataRegisterTest, Upsert_InsertIfDifferentKey) {
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -254,10 +267,10 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentKey) {
 
   // We upsert another ComponentData under the same namespace, but with a different key.
   ComponentData data2;
-  data2.set_namespace_("namespace");
-  data2.set_annotations({
+  data2.namespace_("namespace");
+  data2.annotations({{
       {"k2", "v2"},
-  });
+  }});
 
   Upsert(std::move(data2));
 
@@ -276,10 +289,10 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentKey) {
 
 TEST_F(DataRegisterTest, Upsert_UpdateIfSameKey) {
   ComponentData data;
-  data.set_namespace_("namespace");
-  data.set_annotations({
+  data.namespace_("namespace");
+  data.annotations({{
       {"k", "v"},
-  });
+  }});
 
   Upsert(std::move(data));
 
@@ -295,10 +308,10 @@ TEST_F(DataRegisterTest, Upsert_UpdateIfSameKey) {
 
   // We upsert another ComponentData under the same namespace and the same key.
   ComponentData data2;
-  data2.set_namespace_("namespace");
-  data2.set_annotations({
+  data2.namespace_("namespace");
+  data2.annotations({{
       {"k", "v2"},
-  });
+  }});
 
   Upsert(std::move(data2));
 
@@ -315,20 +328,20 @@ TEST_F(DataRegisterTest, Upsert_UpdateIfSameKey) {
 
 TEST_F(DataRegisterTest, ReinitializesFromJson) {
   ComponentData data1;
-  data1.set_namespace_("namespace1");
-  data1.set_annotations({
+  data1.namespace_("namespace1");
+  data1.annotations({{
       {"k1", "v1"},
       {"k2", "v2"},
-  });
+  }});
 
   Upsert(std::move(data1));
 
   ComponentData data2;
-  data2.set_namespace_("namespace2");
-  data2.set_annotations({
+  data2.namespace_("namespace2");
+  data2.annotations({{
       {"k3", "v3"},
       {"k4", "v4"},
-  });
+  }});
 
   Upsert(std::move(data2));
 

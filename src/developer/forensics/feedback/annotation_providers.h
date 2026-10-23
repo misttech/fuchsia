@@ -5,10 +5,8 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATION_PROVIDERS_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATION_PROVIDERS_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/fidl/cpp/interface_request.h>
 #include <lib/sys/cpp/service_directory.h>
 
 #include <memory>
@@ -40,7 +38,7 @@ class AnnotationProviders {
 
   AnnotationManager* GetAnnotationManager() { return &annotation_manager_; }
 
-  fuchsia::feedback::ComponentDataRegister* ComponentDataRegister();
+  fidl::Server<fuchsia_feedback::ComponentDataRegister>* ComponentDataRegister();
 
   static std::unique_ptr<backoff::Backoff> AnnotationProviderBackoff();
 

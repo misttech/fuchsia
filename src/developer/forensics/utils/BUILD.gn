@@ -78,6 +78,8 @@ source_set("instrumented_binding_set") {
   sources = [ "instrumented_binding_set.h" ]
 
   public_deps = [
+    "//sdk/lib/fidl/cpp",
+    "//sdk/lib/fidl/cpp/wire",
     "//src/developer/forensics/utils:inspect_node_manager",
     "//zircon/system/ulib/inspect",
   ]

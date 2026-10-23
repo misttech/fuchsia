@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_DATA_REGISTER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_DATA_REGISTER_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 
 #include "src/developer/forensics/feedback/annotations/provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
@@ -13,14 +13,14 @@
 namespace forensics::feedback {
 
 // Registers data useful to attach in feedback reports (crash, user feedback or bug reports).
-class DataRegister : public fuchsia::feedback::ComponentDataRegister,
+class DataRegister : public fidl::Server<fuchsia_feedback::ComponentDataRegister>,
                      public NonPlatformAnnotationProvider {
  public:
   DataRegister(size_t max_num_annotations, std::set<std::string> disallowed_annotation_namespaces,
                std::string register_filepath);
 
-  // |fuchsia.feedback.ComponentDataRegister|
-  void Upsert(fuchsia::feedback::ComponentData data, UpsertCallback callback) override;
+  // |fuchsia_feedback::ComponentDataRegister|
+  void Upsert(UpsertRequest& request, UpsertCompleter::Sync& completer) override;
 
   // |forensics.feedback.DynamicAnnotationProvider|
   //

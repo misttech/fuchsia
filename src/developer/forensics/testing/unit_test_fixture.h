@@ -8,6 +8,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
+#include <lib/fit/function.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/reader.h>
@@ -45,6 +46,17 @@ class UnitTestFixture : public gtest::TestLoopFixture {
     } else {
       FX_CHECK(service_directory_provider_.AddService(std::move(handler)) == ZX_OK);
     }
+  }
+
+  template <typename Protocol>
+  void AddHandler(::fit::function<void(::fidl::ServerEnd<Protocol>)> handler,
+                  std::string name = ::fidl::DiscoverableProtocolName<Protocol>) {
+    InjectServiceProvider(
+        std::make_unique<vfs::Service>(
+            [handler = std::move(handler)](zx::channel channel, async_dispatcher_t* /*unused*/) {
+              handler(::fidl::ServerEnd<Protocol>(std::move(channel)));
+            }),
+        std::move(name));
   }
 
   template <typename ServiceProvider>

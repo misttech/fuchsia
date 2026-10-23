@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
@@ -197,7 +198,7 @@ int main() {
   component.AddPublicService(main_service->GetHandler<fuchsia::feedback::CrashReporter>());
   component.AddPublicService(
       main_service->GetHandler<fuchsia::feedback::CrashReportingProductRegister>());
-  component.AddPublicService(main_service->GetHandler<fuchsia::feedback::ComponentDataRegister>());
+  component.AddPublicService(main_service->GetHandler<fuchsia_feedback::ComponentDataRegister>());
   component.AddPublicService(main_service->GetHandler<fuchsia::feedback::DataProvider>());
 
   component.RunLoop();

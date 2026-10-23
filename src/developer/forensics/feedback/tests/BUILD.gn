@@ -165,7 +165,7 @@ cc_test_executable("data_register_unittest_exe") {
   sources = [ "data_register_unittest.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//src/developer/forensics/feedback/annotations:data_register",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:unit_test_fixture",
@@ -416,6 +416,7 @@ cc_test_executable("main_service_unittest_exe") {
   sources = [ "main_service_unittest.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//src/developer/forensics/feedback:main_service",
     "//src/developer/forensics/feedback/reboot_log",

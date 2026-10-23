@@ -48,7 +48,8 @@ AnnotationProviders::AnnotationProviders(
   }
 }
 
-fuchsia::feedback::ComponentDataRegister* AnnotationProviders::ComponentDataRegister() {
+fidl::Server<fuchsia_feedback::ComponentDataRegister>*
+AnnotationProviders::ComponentDataRegister() {
   return &data_register_;
 }
 
