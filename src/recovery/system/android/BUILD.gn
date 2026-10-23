@@ -41,7 +41,9 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
   ]
-  test_deps = []
+  test_deps = [
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
+  ]
   sources = [
     "src/bootloader.rs",
     "src/fdr.rs",
@@ -51,4 +53,8 @@ rustc_binary("bin") {
     "src/update.rs",
     "src/view_sender.rs",
   ]
+}
+
+fuchsia_unittest_package("system_recovery_android_unittests") {
+  deps = [ ":bin_test" ]
 }

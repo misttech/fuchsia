@@ -37,6 +37,7 @@ group("tests") {
     ":fdr_lib_unittests",
     ":ota_lib_unittests",
     ":system_recovery_fdr_unittests",
+    "android:system_recovery_android_unittests",
   ]
 }
 
