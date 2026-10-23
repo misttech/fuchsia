@@ -20,6 +20,7 @@
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <lib/hid-parser/parser.h>
 #include <lib/hid-parser/usages.h>
 #include <lib/svc/outgoing.h>
@@ -32,6 +33,7 @@
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
 
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -46,6 +48,7 @@
 #include "src/bringup/bin/critical-services/monitor.h"
 #include "src/bringup/bin/critical-services/oom_watcher.h"
 #include "src/bringup/bin/critical-services/pwrbtn_monitor_config.h"
+#include "src/bringup/bin/critical-services/storage-watchdog/storage_watchdog.h"
 
 #define INPUT_PATH "/input"
 
@@ -300,7 +303,7 @@ void RunOomThread() {
   }
 }
 
-void RunCrashSvcThread(bool exception_handler_available) {
+void RunCrashSvcThread(bool exception_handler_available, bool storage_stall_watchdog_enabled) {
   // Get the root job.
   zx::result<zx::job> root_job = GetRootJob();
   if (!root_job.is_ok()) {
@@ -327,9 +330,18 @@ void RunCrashSvcThread(bool exception_handler_available) {
     }
     svc = std::move(result.value());
   }
+  // Debug watchdog for storage stalls, on boards that opt in. It's triggered by fxfs's backtrace
+  // requests, which crashsvc sees. It lives here because critical-services runs from bootfs, so a
+  // stuck storage stack can't stop it from being paged in, and it already holds the root job.
+  fit::function<bool(const zx::process&, std::string_view)> backtrace_request_hook;
+  if (storage_stall_watchdog_enabled) {
+    storage_watchdog::Arm();
+    backtrace_request_hook = storage_watchdog::OnBacktraceRequest;
+  }
+
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  zx::result crashsvc =
-      start_crashsvc(loop.dispatcher(), std::move(exception_channel), std::move(svc));
+  zx::result crashsvc = start_crashsvc(loop.dispatcher(), std::move(exception_channel),
+                                       std::move(svc), std::move(backtrace_request_hook));
   if (crashsvc.is_error()) {
     // The system can still function without crashsvc, log the error but
     // keep going.
@@ -395,7 +407,8 @@ int main(int argc, char** argv) {
 
   // Handle exceptions on another thread; the system won't deliver exceptions to the thread that
   // generated them.
-  std::thread crashsvc(RunCrashSvcThread, config.exception_handler_available());
+  std::thread crashsvc(RunCrashSvcThread, config.exception_handler_available(),
+                       config.storage_stall_watchdog_enabled());
 
   component::OutgoingDirectory outgoing{loop.dispatcher()};
   zx::result result = outgoing.ServeFromStartupInfo();

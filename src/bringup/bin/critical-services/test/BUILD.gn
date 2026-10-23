@@ -65,6 +65,7 @@ fuchsia_structured_config_values2("config_values") {
   component_name = "critical-services"
   values = {
     exception_handler_available = false
+    storage_stall_watchdog_enabled = false
   }
 }
 

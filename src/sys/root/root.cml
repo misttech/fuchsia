@@ -28,6 +28,7 @@
                 "fuchsia.diagnostics.ExceptionHandlerAvailable",
                 "fuchsia.diagnostics.LogsMaxCachedOriginalBytes",
                 "fuchsia.diagnostics.MaximumConcurrentSnapshotsPerReader",
+                "fuchsia.diagnostics.StorageStallWatchdogEnabled",
                 "fuchsia.display.FallbackHorizontalSizeMm",
                 "fuchsia.display.FallbackVerticalSizeMm",
                 "fuchsia.driver.BaseDrivers",

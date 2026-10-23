@@ -7,7 +7,11 @@
 
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async/cpp/wait.h>
+#include <lib/fit/function.h>
 #include <lib/zx/job.h>
+#include <lib/zx/process.h>
+
+#include <string_view>
 
 // Initialize the crash service, this supersedes the standalone service with
 // the same name that lived in zircon/system/core/crashsvc/crashsvc.cpp
@@ -22,8 +26,14 @@
 //
 // Which one depends if |exception_handler_svc| is a valid channel handle, which
 // svchost sets depending on "use_system".
+//
+// |backtrace_request_hook|, if set, is called with the requesting process and thread name of each
+// backtrace request. If it returns true, crashsvc just resumes the thread instead of printing
+// backtraces.
 zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
     async_dispatcher_t* dispatcher, zx::channel exception_channel,
-    fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc);
+    fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc,
+    fit::function<bool(const zx::process& process, std::string_view thread_name)>
+        backtrace_request_hook = nullptr);
 
 #endif  // SRC_BRINGUP_BIN_CRITICAL_SERVICES_CRASHSVC_CRASHSVC_H_

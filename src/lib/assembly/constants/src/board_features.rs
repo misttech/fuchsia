@@ -93,6 +93,11 @@ pub enum BoardFeature {
     StorageInlineCrypto,
     /// Power management features for storage devices.
     StoragePowerManagement,
+    /// Debug watchdog that reboots with backtraces in the crashlog when storage stops responding.
+    /// Routed as `fuchsia.diagnostics.StorageStallWatchdogEnabled` to `critical-services` and
+    /// `fxfs` on non-user builds; products can disable it with
+    /// `platform.diagnostics.storage_stall_watchdog_enabled`.
+    StorageStallWatchdog,
     /// System suspend/resume support.
     Suspender,
     /// Support for waiting for suspending token during suspend.
@@ -167,6 +172,7 @@ impl AsRef<str> for BoardFeature {
             Self::SlotManagement => "fuchsia::slot_management",
             Self::StorageInlineCrypto => "fuchsia::storage_inline_crypto",
             Self::StoragePowerManagement => "fuchsia::storage_power_management",
+            Self::StorageStallWatchdog => "fuchsia::storage_stall_watchdog",
             Self::Suspender => "fuchsia::suspender",
             Self::SuspendingToken => "fuchsia::suspending_token",
             Self::UfsPci => "fuchsia::ufs_pci",

@@ -25,9 +25,21 @@
             ],
         },
         {
+            // For the storage stall watchdog's test-only boot argument.
+            protocol: "fuchsia.boot.Arguments",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.diagnostics.ExceptionHandlerAvailable",
             key: "exception_handler_available",
             type: "bool",
+        },
+        {
+            config: "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            key: "storage_stall_watchdog_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
         },
     ],
     expose: [

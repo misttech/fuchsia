@@ -26,6 +26,9 @@
 
 #include <list>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
@@ -152,12 +155,16 @@ class TestBase : public zxtest::Test, public loop_fixture::RealLoop {
     GenerateException(&process, &thread);
   }
 
-  // Synchronously creates a process under |job_| that requests a backtrace.
-  void GenerateBacktraceRequest() {
+  // Synchronously creates a process under |job_| whose thread, optionally named |thread_name|,
+  // requests a backtrace.
+  void GenerateBacktraceRequest(std::string_view thread_name = {}) {
     zx::channel command_channel;
     zx::process process;
     zx::thread thread;
     ASSERT_NO_FATAL_FAILURE(CreateMiniProcess(&process, &thread, &command_channel));
+    if (!thread_name.empty()) {
+      ASSERT_OK(thread.set_property(ZX_PROP_NAME, thread_name.data(), thread_name.size()));
+    }
 
     printf("Intentionally dumping test thread '%s', the following dump is expected\n", kTaskName);
     ASSERT_OK(mini_process_cmd_send(command_channel.get(), MINIP_CMD_BACKTRACE_REQUEST));
@@ -269,7 +276,9 @@ class CrashsvcTest : public TestBase {
     ASSERT_OK(job().kill());
   }
 
-  void StartCrashsvc(bool with_svc = false) {
+  void StartCrashsvc(
+      bool with_svc = false,
+      fit::function<bool(const zx::process&, std::string_view)> backtrace_request_hook = nullptr) {
     zx::channel exception_channel;
     ASSERT_OK(job().create_exception_channel(0, &exception_channel));
     fidl::ClientEnd<fuchsia_io::Directory> svc;
@@ -278,8 +287,10 @@ class CrashsvcTest : public TestBase {
     }
     async::PostTask(loop().dispatcher(), [dispatcher = loop().dispatcher(),
                                           exception_channel = std::move(exception_channel),
-                                          svc = std::move(svc)]() mutable {
-      zx::result result = start_crashsvc(dispatcher, std::move(exception_channel), std::move(svc));
+                                          svc = std::move(svc),
+                                          hook = std::move(backtrace_request_hook)]() mutable {
+      zx::result result =
+          start_crashsvc(dispatcher, std::move(exception_channel), std::move(svc), std::move(hook));
       ASSERT_OK(result);
       // Move the wait onto the dispatcher so that it is destroyed on its thread.
       async::PostDelayedTask(
@@ -359,6 +370,25 @@ TEST_F(CrashsvcTest, ThreadBacktraceExceptionHandler) {
 
   RunLoopUntilIdle();
   EXPECT_EQ(stub_handler().exception_count(), 0);
+}
+
+TEST_F(CrashsvcTest, BacktraceRequestHook) {
+  // The hook sees the requesting process and thread's name, and the thread resumes whether or not
+  // the hook takes over.
+  std::vector<std::string> names;
+  ASSERT_NO_FATAL_FAILURE(
+      StartCrashsvc(true, [&names](const zx::process& process, std::string_view thread_name) {
+        EXPECT_TRUE(process.is_valid());
+        names.emplace_back(thread_name);
+        return thread_name == "take-over";
+      }));
+  ASSERT_NO_FATAL_FAILURE(GenerateBacktraceRequest("take-over"));
+  ASSERT_NO_FATAL_FAILURE(GenerateBacktraceRequest("print"));
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(names, (std::vector<std::string>{"take-over", "print"}));
+  EXPECT_EQ(stub_handler().exception_count(), 0);
+  EXPECT_EQ(CheckPendingException(zx::sec(0)), ZX_ERR_TIMED_OUT);
 }
 
 constexpr auto kExceptionHandlerTimeout = zx::sec(3);

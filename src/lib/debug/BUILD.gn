@@ -50,6 +50,7 @@ source_set("backtrace-request") {
   public = [ "backtrace-request.h" ]
   visibility = [
     ":*",
+    "//src/bringup/bin/critical-services/storage-watchdog:*",
     "//src/connectivity/network/drivers/network-device/device:*",
     "//src/developer/debug/debug_agent/test_data:*",
     "//src/graphics/drivers/msd-arm-mali/src:*",

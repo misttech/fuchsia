@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("storage-watchdog") {
+  sources = [
+    "storage_watchdog.cc",
+    "storage_watchdog.h",
+    "wedge_dump.cc",
+    "wedge_dump.h",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/lib/component/incoming/cpp",
+    "//src/lib/debug:backtrace-request",
+    "//src/lib/elf-search",
+    "//zircon/system/ulib/task-utils",
+    "//zircon/system/ulib/zx",
+  ]
+}

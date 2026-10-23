@@ -13,7 +13,7 @@ use std::str::FromStr;
 pub use diagnostics_log_types::Severity;
 
 /// Diagnostics configuration options for the diagnostics area.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct DiagnosticsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,6 +56,31 @@ pub struct DiagnosticsConfig {
     /// Disable the console.
     #[serde(default)]
     pub no_console: bool,
+
+    /// Whether the debug storage stall watchdog may be armed on non-user builds. Gates the
+    /// `fuchsia.diagnostics.StorageStallWatchdogEnabled` config capability. Only takes effect if
+    /// the board provides the `fuchsia::storage_stall_watchdog` feature and the build type is not
+    /// `user`. Products can set this to false to disable the watchdog.
+    /// Defaults to 'true'.
+    #[serde(skip_serializing_if = "bool::clone")]
+    pub storage_stall_watchdog_enabled: bool,
+}
+
+impl Default for DiagnosticsConfig {
+    fn default() -> Self {
+        Self {
+            archivist: None,
+            archivist_pipelines: Vec::new(),
+            additional_serial_log_components: Vec::new(),
+            additional_denied_serial_log_components: Vec::new(),
+            sampler: SamplerConfig::default(),
+            persistence: PersistenceConfig::default(),
+            memory_monitor: MemoryMonitorConfig::default(),
+            component_log_initial_interests: Vec::new(),
+            no_console: false,
+            storage_stall_watchdog_enabled: true,
+        }
+    }
 }
 
 /// Diagnostics configuration options for the archivist configuration area.
@@ -514,5 +539,25 @@ mod tests {
         let deserialized: ComponentInitialInterest =
             serde_json::from_str(&serialized).expect("deserialize interest");
         assert_eq!(deserialized, original);
+    }
+
+    #[test]
+    fn test_storage_stall_watchdog_enabled_default_and_override() {
+        let default_config: DiagnosticsConfig =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(default_config.storage_stall_watchdog_enabled);
+
+        let disabled_config: DiagnosticsConfig = serde_json::from_value(serde_json::json!({
+            "storage_stall_watchdog_enabled": false,
+        }))
+        .unwrap();
+        assert!(!disabled_config.storage_stall_watchdog_enabled);
+        assert_eq!(
+            serde_json::to_value(&disabled_config).unwrap(),
+            serde_json::json!({
+                "no_console": false,
+                "storage_stall_watchdog_enabled": false,
+            })
+        );
     }
 }

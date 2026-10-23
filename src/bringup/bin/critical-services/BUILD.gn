@@ -37,6 +37,7 @@ executable("critical-services") {
     "//sdk/lib/fdio-caller",
     "//sdk/lib/sys/cpp",
     "//src/bringup/bin/critical-services/crashsvc",
+    "//src/bringup/bin/critical-services/storage-watchdog",
     "//src/sys/lib/stdout-to-debuglog/cpp",
     "//src/ui/input/lib/hid-parser",
     "//zircon/system/ulib/fbl",

@@ -61,9 +61,10 @@ bool ResumeIfBacktraceRequest(const zx::thread& thread, const zx::exception& exc
   return false;
 }
 
-void HandOffException(async_dispatcher_t* dispatcher, zx::exception exception,
-                      const zx_exception_info_t& info, ExceptionHandler& handler,
-                      bool& early_bailout) {
+void HandOffException(
+    async_dispatcher_t* dispatcher, zx::exception exception, const zx_exception_info_t& info,
+    ExceptionHandler& handler, bool& early_bailout,
+    fit::function<bool(const zx::process&, std::string_view)>& backtrace_request_hook) {
   zx::process process;
   if (const zx_status_t status = exception.get_process(&process); status != ZX_OK) {
     LogError("failed to get exception process when receiving exception", info, status);
@@ -85,6 +86,11 @@ void HandOffException(async_dispatcher_t* dispatcher, zx::exception exception,
 
   // If this is a backtrace request, we print the requested thread(s) and then return.
   if (ResumeIfBacktraceRequest(thread, exception, info, &regs)) {
+    if (backtrace_request_hook &&
+        backtrace_request_hook(process, fsl::GetObjectName(thread.get()))) {
+      // Releasing |exception| resumes the thread.
+      return;
+    }
     if (is_backtrace_request_current_thread(&regs)) {
       inspector_print_debug_info(stdout, process.get(), thread.get());
     } else if (is_backtrace_request_specific_thread(&regs)) {
@@ -190,14 +196,17 @@ void HandOffException(async_dispatcher_t* dispatcher, zx::exception exception,
 
 zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
     async_dispatcher_t* dispatcher, zx::channel exception_channel,
-    fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc) {
+    fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc,
+    fit::function<bool(const zx::process& process, std::string_view thread_name)>
+        backtrace_request_hook) {
   std::unique_ptr wait = std::make_unique<async::Wait>(
       exception_channel.get(), ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED, /*options=*/0u,
       [exception_channel = std::move(exception_channel),
        handler = std::make_unique<ExceptionHandler>(dispatcher, std::move(exception_handler_svc),
                                                     kExceptionHandlerTimeout),
-       early_bailout = false](async_dispatcher_t* dispatcher, async::Wait* wait, zx_status_t status,
-                              const zx_packet_signal_t* signal) mutable {
+       early_bailout = false, backtrace_request_hook = std::move(backtrace_request_hook)](
+          async_dispatcher_t* dispatcher, async::Wait* wait, zx_status_t status,
+          const zx_packet_signal_t* signal) mutable {
         if (status == ZX_ERR_CANCELED) {
           return;
         }
@@ -217,7 +226,8 @@ zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
           return;
         }
 
-        HandOffException(dispatcher, std::move(exception), info, *handler, early_bailout);
+        HandOffException(dispatcher, std::move(exception), info, *handler, early_bailout,
+                         backtrace_request_hook);
 
         if (const zx_status_t status = wait->Begin(dispatcher); status != ZX_OK) {
           LogError("Failed to restart wait, crashsvc won't continue", status);

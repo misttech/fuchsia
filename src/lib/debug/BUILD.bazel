@@ -22,6 +22,7 @@ cc_library(
     name = "backtrace-request",
     hdrs = ["backtrace-request.h"],
     visibility = [
+        "//src/bringup/bin/critical-services/storage-watchdog:__pkg__",
         "//src/connectivity/network/drivers/network-device/device:__pkg__",
         "//src/developer/debug/debug_agent/test_data:__pkg__",
         "//src/graphics/drivers/msd-arm-mali/src:__pkg__",

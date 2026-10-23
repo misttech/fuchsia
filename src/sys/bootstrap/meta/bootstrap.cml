@@ -22,7 +22,10 @@
     ],
     offer: [
         {
-            config: [ "fuchsia.diagnostics.ExceptionHandlerAvailable" ],
+            config: [
+                "fuchsia.diagnostics.ExceptionHandlerAvailable",
+                "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            ],
             from: "parent",
             to: "#critical-services",
         },
@@ -93,6 +96,13 @@
             ],
             from: "parent",
             to: [ "#critical-services" ],
+        },
+
+        // For critical-services' storage stall watchdog, which only runs on boards that opt in.
+        {
+            protocol: "fuchsia.boot.Arguments",
+            from: "parent",
+            to: "#critical-services",
         },
         {
             directory: "dev-class",

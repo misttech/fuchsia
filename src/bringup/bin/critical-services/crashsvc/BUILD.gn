@@ -25,7 +25,10 @@ source_set("crashsvc") {
     "//zircon/system/ulib/inspector",
   ]
 
-  public_deps = [ "//zircon/system/ulib/zx" ]
+  public_deps = [
+    "//sdk/lib/fit",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 test("crashsvc-test") {

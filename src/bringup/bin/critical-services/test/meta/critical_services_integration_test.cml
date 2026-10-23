@@ -40,7 +40,10 @@
     ],
     offer: [
         {
-            config: "fuchsia.diagnostics.ExceptionHandlerAvailable",
+            config: [
+                "fuchsia.diagnostics.ExceptionHandlerAvailable",
+                "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            ],
             from: "#config",
             to: "#critical-services",
         },

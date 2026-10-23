@@ -63,6 +63,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             memory_monitor,
             component_log_initial_interests,
             no_console,
+            storage_stall_watchdog_enabled,
         } = config.diagnostics;
 
         // Console is enabled unless specifically turned off.
@@ -248,6 +249,15 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
         builder.set_config_capability(
             "fuchsia.diagnostics.ExceptionHandlerAvailable",
             Config::new(ConfigValueType::Bool, exception_handler_available.into()),
+        )?;
+
+        // The watchdog is a debug facility enabled only on eng and userdebug builds.
+        let storage_stall_watchdog_enabled = *context.build_type != BuildType::User
+            && *storage_stall_watchdog_enabled
+            && context.board_config.provides_feature(BoardFeature::StorageStallWatchdog);
+        builder.set_config_capability(
+            "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            Config::new(ConfigValueType::Bool, storage_stall_watchdog_enabled.into()),
         )?;
 
         match context.feature_set_level {
@@ -664,6 +674,11 @@ mod tests {
         );
         assert_eq!(
             config.configuration_capabilities["fuchsia.diagnostics.persist.EnableShutdownSnapshot"]
+                .value(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.StorageStallWatchdogEnabled"]
                 .value(),
             Value::Bool(false)
         );
@@ -1362,5 +1377,50 @@ mod tests {
             .expect("triage-detect package configuration should exist");
 
         assert!(detect_package_config.config_data.contains_key("brcmfmac-detect.triage"));
+    }
+
+    #[test]
+    fn test_storage_stall_watchdog() {
+        let resource_dir = ResourceDir::new();
+        let board_config = BoardConfig {
+            name: "Test Board".into(),
+            provided_features: vec!["fuchsia::storage_stall_watchdog".into()],
+            ..Default::default()
+        };
+        for (build_type, product_enabled, expected) in [
+            (BuildType::Eng, true, true),
+            (BuildType::UserDebug, true, true),
+            (BuildType::User, true, false),
+            (BuildType::Eng, false, false),
+            (BuildType::UserDebug, false, false),
+        ] {
+            let context = ConfigurationContext {
+                feature_set_level: &FeatureSetLevel::Standard,
+                build_type: &build_type,
+                resource_dir: resource_dir.path(),
+                board_config: &board_config,
+                ..ConfigurationContext::default_for_tests()
+            };
+            let mut builder = ConfigurationBuilderImpl::default();
+            DiagnosticsSubsystem::define_configuration(
+                &context,
+                &DiagnosticsSubsystemConfig {
+                    diagnostics: &DiagnosticsConfig {
+                        storage_stall_watchdog_enabled: product_enabled,
+                        ..Default::default()
+                    },
+                    storage: &Default::default(),
+                },
+                &mut builder,
+            )
+            .expect("defined config");
+            let config = builder.build();
+            assert_eq!(
+                config.configuration_capabilities["fuchsia.diagnostics.StorageStallWatchdogEnabled"]
+                    .value(),
+                Value::Bool(expected),
+                "{build_type:?}, product_enabled={product_enabled}"
+            );
+        }
     }
 }
