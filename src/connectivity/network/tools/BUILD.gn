@@ -5,7 +5,7 @@
 group("tools") {
   testonly = true
   deps = [
-    "sockscripter",
+    "sockscripter:host($host_toolchain)",
     "//src/lib/testing/expectation/tool:list_test_expectations",
   ]
 }

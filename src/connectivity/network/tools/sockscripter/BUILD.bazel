@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "src",
+    srcs = [
+        "addr.cc",
+        "sockscripter.cc",
+        "util.cc",
+    ],
+    hdrs = [
+        "addr.h",
+        "api_abstraction.h",
+        "log.h",
+        "packet.h",
+        "sockscripter.h",
+        "util.h",
+    ],
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    deps = ["//src/lib/fxl"],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "bin",
+    srcs = ["main.cc"],
+    deps = [":src"] + select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
+)
+
+fx_packaged_binary(
+    name = "sockscripter_bin",
+    binary = ":bin",
+    binary_name = "sockscripter",
+)
+
+fx_package(
+    name = "package",
+    package_name = "sockscripter",
+    resources = [":sockscripter_bin"],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+fx_cc_binary(
+    name = "sockscripter_test",
+    testonly = True,
+    srcs = [
+        "addr_test.cc",
+        "sockscripter_test.cc",
+        "testutil.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":src",
+        "//src/lib/fxl/test:gtest_main",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+host_test(
+    name = "sockscripter_host_test",
+    binary = ":sockscripter_test",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+fx_unittest_package(
+    name = "sockscripter-unittest",
+    unit_tests = [":sockscripter_test"],
+)

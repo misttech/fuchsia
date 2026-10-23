@@ -2126,7 +2126,7 @@ assembly_input_bundle(
         "eng",
     ],
     base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/network/tools/sockscripter:package",
+        "//src/connectivity/network/tools/sockscripter:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/mdns/util:mdns-util",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/net-cli",
         "//bundles/assembly/bazel_inputs/third_party/iperf:iperf3_pkg",

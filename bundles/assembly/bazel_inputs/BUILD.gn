@@ -756,7 +756,6 @@ group("development_support_tools_connectivity_networking") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/connectivity/network/mdns/util:mdns-util",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/net-cli",
-    "//bundles/assembly/bazel_inputs/src/connectivity/network/tools/sockscripter:package",
     "//bundles/assembly/bazel_inputs/third_party/iperf:iperf3_pkg",
     "//bundles/assembly/bazel_inputs/third_party/tcpdump",
   ]
