@@ -36,6 +36,7 @@ fi
 
 export FUCHSIA_DIR
 export FUCHSIA_OUT_DIR="${FUCHSIA_OUT_DIR:-${FUCHSIA_DIR}/out}"
+export PYTHONPATH="${FUCHSIA_DIR}"
 
 # For all fx commands, we recommend pointing Python's cache dir outside of
 # the source tree, so that it is possible to mount the source tree read-only.
