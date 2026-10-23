@@ -5,6 +5,7 @@
 
 import json
 import logging
+import math
 import subprocess
 import time
 from pathlib import Path
@@ -31,7 +32,7 @@ _FFX_CMDS: dict[str, list[str]] = {
         "--no-probe",  # do not connect to targets
     ],
     "TARGET_LIST": ["target", "list"],
-    "TARGET_WAIT": ["target", "wait", "--timeout", "0"],
+    "TARGET_WAIT": ["target", "wait", "--timeout"],
     "TARGET_WAIT_DOWN": ["target", "wait", "--down", "--timeout", "0"],
     "TEST_RUN": ["test", "run"],
     "TARGET_SSH": ["target", "ssh"],
@@ -57,6 +58,10 @@ _TARGET_STATUS_TIMEOUT_SECS: float = 30.0
 # Since notifying ffx monitor is best-effort (ffx monitor may not even be running),
 # cap the command execution time so it cannot hang the test workflow.
 _NOTIFY_INTENTIONAL_DISCONNECT_TIMEOUT_SECS: float = 15.0
+
+# Extra host-side time allowed for `ffx target wait --timeout N` to exit on
+# its own before the process is killed.
+_TARGET_WAIT_HOST_SLACK_SEC: float = 10.0
 
 
 class FFX:
@@ -119,14 +124,18 @@ class FFX:
         target_info = self.get_target_info_from_target_show()
         return target_info.device.serial_number
 
-    def check_connection(self) -> None:
+    def check_connection(self, timeout: float | None = None) -> None:
         """Checks the FFX connection from host to Fuchsia device.
+
+        Args:
+            timeout: Maximum time in seconds to wait for the connection. If
+                None (default), waits indefinitely.
 
         Raises:
             FfxConnectionError
         """
         try:
-            self.wait_for_rcs_connection()
+            self.wait_for_rcs_connection(timeout=timeout)
         except errors.HoneydewError as err:
             raise ffx_errors.FfxConnectionError(
                 f"FFX connection check failed for {self._target_name} with err: {err}"
@@ -591,18 +600,30 @@ class FFX:
         )
 
     def wait_for_rcs_connection(
-        self, include_target_name: bool = False
+        self,
+        include_target_name: bool = False,
+        timeout: float | None = None,
     ) -> None:
         """Wait until FFX is able to establish a RCS connection to the target.
 
         Args:
             include_target_name: If set to True, target will be specified by query.
                 Otherwise, target will be specified by address.
+            timeout: Maximum time in seconds to wait for the RCS connection.
+                If None (default), waits indefinitely.
         Raises:
-            DeviceNotConnectedError: If FFX fails to reach target.
+            DeviceNotConnectedError: If FFX fails to reach target within the
+                timeout.
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info("Waiting for %s to connect to host...", self._target_name)
+        deadline: float | None = (
+            time.monotonic() + timeout if timeout is not None else None
+        )
+
+        def _timed_out() -> bool:
+            return deadline is not None and time.monotonic() >= deadline
+
         if include_target_name:
             # In strict mode, we cannot use nodename with `-t` for `target wait`.
             # Instead, poll `target list` until RCS is connected.
@@ -630,10 +651,27 @@ class FFX:
                     json.JSONDecodeError,
                 ) as e:
                     _LOGGER.debug("Error polling target list: %s", e)
+                if _timed_out():
+                    raise errors.DeviceNotConnectedError(
+                        f"{self._target_name} did not connect to host within "
+                        f"{timeout} seconds."
+                    )
                 time.sleep(2)
         else:
+            # Let ffx enforce the timeout itself, and bound the host-side
+            # process slightly beyond it in case ffx stalls. A value of "0"
+            # tells ffx target wait not to time out.
+            cmd = _FFX_CMDS["TARGET_WAIT"] + [
+                "0" if timeout is None else str(math.ceil(timeout))
+            ]
+            host_timeout: float | None = (
+                None
+                if timeout is None
+                else timeout + _TARGET_WAIT_HOST_SLACK_SEC
+            )
             self.run(
-                cmd=_FFX_CMDS["TARGET_WAIT"],
+                cmd=cmd,
+                timeout=host_timeout,
                 disable_controlmaster=True,
             )
 

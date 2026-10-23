@@ -5,6 +5,7 @@
 
 import json
 import logging
+import time
 from dataclasses import asdict
 from typing import Any
 
@@ -67,8 +68,12 @@ class FFXWithMonitor(ffx.FFX):
             device_ip_change=device_ip_change,
         )
 
-    def check_connection(self) -> None:
+    def check_connection(self, timeout: float | None = None) -> None:
         """Checks the FFX connection from host to Fuchsia device.
+
+        Args:
+            timeout: Maximum time in seconds to wait for the connection. If
+                None (default), waits indefinitely.
 
         Raises:
             FfxMonitorNotRunningError: If no running monitor is detected.
@@ -78,7 +83,7 @@ class FFXWithMonitor(ffx.FFX):
             raise ffx_errors.FfxMonitorNotRunningError(
                 "No running monitor detected."
             )
-        super().check_connection()
+        super().check_connection(timeout=timeout)
 
     def get_target_info_from_target_list(self) -> dict[str, Any]:
         """Executed and returns the target status from `ffx monitor status`.
@@ -160,23 +165,36 @@ class FFXWithMonitor(ffx.FFX):
         return target.target_type.split(".", maxsplit=1)[0]
 
     def wait_for_rcs_connection(
-        self, include_target_name: bool = False
+        self,
+        include_target_name: bool = False,
+        timeout: float | None = None,
     ) -> None:
         """Wait until FFX is able to establish a RCS connection to the target.
 
         Args:
             include_target_name: Unused in FFXWithMonitor (monitor always queries by target name).
+            timeout: Maximum time in seconds to wait for the RCS connection.
+                If None (default), waits indefinitely.
 
         Raises:
-            DeviceNotConnectedError: If FFX fails to reach target.
+            DeviceNotConnectedError: If FFX fails to reach target within the
+                timeout.
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info("Waiting for %s to connect to host...", self._target_name)
+        deadline: float | None = (
+            time.monotonic() + timeout if timeout is not None else None
+        )
         while True:
             target = self._get_target_status()
             if target.target_state == "Product" and target.rcs_state == "Y":
                 _LOGGER.info("%s is connected to host", self._target_name)
                 return
+            if deadline is not None and time.monotonic() >= deadline:
+                raise errors.DeviceNotConnectedError(
+                    f"{self._target_name} did not connect to host within "
+                    f"{timeout} seconds."
+                )
 
     def _get_target_status(self) -> MonitorTargetInfo:
         """Gets the status information of the target node from 'ffx monitor status'.

@@ -241,6 +241,23 @@ class FfxWithMonitorTests(unittest.TestCase):
         mock_get_target_status.assert_called_once()
 
     @mock.patch.object(
+        ffx_with_monitor.FFXWithMonitor,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(),
+        autospec=True,
+    )
+    @mock.patch.object(ffx_with_monitor, "time", autospec=True)
+    def test_wait_for_rcs_connection_with_timeout_raises(
+        self, mock_time: mock.Mock, mock_get_target_status: mock.Mock
+    ) -> None:
+        """Test case for wait_for_rcs_connection() giving up once the timeout
+        expires while the target is not connected."""
+        mock_time.monotonic.side_effect = [0.0, 5.0, 10.0]
+        with self.assertRaises(errors.DeviceNotConnectedError):
+            self.ffx_monitor_obj.wait_for_rcs_connection(timeout=10)
+        self.assertEqual(mock_get_target_status.call_count, 2)
+
+    @mock.patch.object(
         host_shell, "run", return_value='{"targets": []}', autospec=True
     )
     def test_get_target_status_includes_shared_data(

@@ -44,6 +44,11 @@ HEALTH_CHECK_FAILURE_MESSAGE = (
 )
 # LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
 
+# How long to wait for FFX to reach a device before considering it unreachable
+# in teardown_class. A reachable device responds well within a second; this
+# bound only matters for devices that are actually powered off or wedged.
+_DEVICE_REACHABLE_TIMEOUT_SEC: int = 10
+
 
 class SnapshotOn(enum.StrEnum):
     """How often we need to collect the snapshot"""
@@ -283,8 +288,10 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             * Stops, terminates and downloads the trace data for all devices and stores
               it under "<log_path>/teardown_class<_on_fail>" directory if `tracing_on`
               test param is set to "teardown_class" or "teardown_class_on_fail".
-            * Powers on any configured power switch outlets and USB power hub ports
-              for all Fuchsia devices.
+            * Powers on the configured power switch outlet and USB power hub
+              port of any Fuchsia device that is no longer reachable, so that
+              a test which leaves a device powered off does not poison the
+              rest of the shard.
         """
         for device in self.fuchsia_devices:
             if (
@@ -318,26 +325,61 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             )
 
         for device in self.fuchsia_devices:
-            switch, outlet = self._lookup_power_switch(device)
-            if switch is not None:
-                try:
-                    switch.power_on(outlet=outlet)
-                except Exception as err:
-                    _LOGGER.warning(
-                        "Failed to power on power switch for %s with error: %s",
-                        device.device_name,
-                        err,
-                    )
-            usb_power_hub, port = self._lookup_usb_power_hub(device)
-            if usb_power_hub is not None:
-                try:
-                    usb_power_hub.power_on(port=port)
-                except Exception as err:
-                    _LOGGER.warning(
-                        "Failed to power on USB power hub for %s with error: %s",
-                        device.device_name,
-                        err,
-                    )
+            await self._power_on_aux_devices_if_unreachable(device)
+
+    async def _power_on_aux_devices_if_unreachable(
+        self, device: fuchsia_device.FuchsiaDevice
+    ) -> None:
+        """Power on the device's power switch outlet and USB power hub port
+        if, and only if, the device is not reachable from the host.
+
+        Power commands are deliberately skipped for reachable devices: the
+        lab PDUs are single threaded and shared across host controllers, so
+        every redundant `power_on()` adds contention that makes concurrent
+        power commands from other tests fail with "load is not in idle state"
+        (see b/576068519).
+
+        Args:
+            device: FuchsiaDevice object.
+        """
+        switch, outlet = self._lookup_power_switch(device)
+        usb_power_hub, port = self._lookup_usb_power_hub(device)
+        if switch is None and usb_power_hub is None:
+            return
+
+        # Host-side check only; does not touch any auxiliary device.
+        try:
+            device.ffx.check_connection(timeout=_DEVICE_REACHABLE_TIMEOUT_SEC)
+            _LOGGER.debug(
+                "%s is reachable, skipping power on of auxiliary devices.",
+                device.device_name,
+            )
+            return
+        except errors.HoneydewError as err:
+            _LOGGER.warning(
+                "%s is not reachable (%s), powering on its auxiliary devices...",
+                device.device_name,
+                err,
+            )
+
+        if switch is not None:
+            try:
+                switch.power_on(outlet=outlet)
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to power on power switch for %s with error: %s",
+                    device.device_name,
+                    err,
+                )
+        if usb_power_hub is not None:
+            try:
+                usb_power_hub.power_on(port=port)
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to power on USB power hub for %s with error: %s",
+                    device.device_name,
+                    err,
+                )
 
     async def on_fail(self, record: TestResultRecord) -> None:
         """on_fail is called once when a test case fails.

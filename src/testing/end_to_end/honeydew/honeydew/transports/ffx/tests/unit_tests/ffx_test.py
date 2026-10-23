@@ -839,7 +839,71 @@ class FfxTests(unittest.TestCase):
     def test_wait_for_rcs_connection(self, mock_ffx_run: mock.Mock) -> None:
         """Test case for ffx.wait_for_rcs_connection()"""
         self.ffx_obj_with_ip.wait_for_rcs_connection()
+        mock_ffx_run.assert_called_once()
+        _, kwargs = mock_ffx_run.call_args
+        self.assertEqual(kwargs["cmd"], ["target", "wait", "--timeout", "0"])
+        self.assertIsNone(kwargs["timeout"])
+
+    @mock.patch.object(ffx.FFX, "run", return_value="", autospec=True)
+    def test_wait_for_rcs_connection_with_timeout(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Test case for ffx.wait_for_rcs_connection() with a timeout passes
+        the timeout to `ffx target wait` and bounds the host-side process."""
+        self.ffx_obj_with_ip.wait_for_rcs_connection(timeout=10)
+
+        mock_ffx_run.assert_called_once()
+        _, kwargs = mock_ffx_run.call_args
+        self.assertEqual(kwargs["cmd"], ["target", "wait", "--timeout", "10"])
+        self.assertGreater(kwargs["timeout"], 10)
+
+    @mock.patch.object(ffx.FFX, "wait_for_rcs_connection", autospec=True)
+    def test_check_connection_with_timeout(
+        self, mock_wait_for_rcs_connection: mock.Mock
+    ) -> None:
+        """Test case for check_connection() forwarding the timeout to
+        wait_for_rcs_connection()."""
+        self.ffx_obj_with_ip.check_connection(timeout=10)
+        mock_wait_for_rcs_connection.assert_called_once_with(
+            self.ffx_obj_with_ip, timeout=10
+        )
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        side_effect=errors.DeviceNotConnectedError(ffx._DEVICE_NOT_CONNECTED),
+        autospec=True,
+    )
+    def test_wait_for_rcs_connection_with_timeout_raises(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Test case for ffx.wait_for_rcs_connection() with a timeout
+        propagating the error when the target is not reachable."""
+        with self.assertRaises(errors.DeviceNotConnectedError):
+            self.ffx_obj_with_ip.wait_for_rcs_connection(timeout=10)
+        mock_ffx_run.assert_called_once()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=json.dumps(
+            [dict(_FFX_TARGET_INFO, rcs_state="N")],
+        ),
+        autospec=True,
+    )
+    @mock.patch.object(ffx, "time", autospec=True)
+    def test_wait_for_rcs_connection_target_name_with_timeout_raises(
+        self, mock_time: mock.Mock, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Test case for ffx.wait_for_rcs_connection(include_target_name=True)
+        giving up once the timeout expires while RCS is not connected."""
+        mock_time.monotonic.side_effect = [0.0, 0.0, 5.0, 10.0]
+        with self.assertRaises(errors.DeviceNotConnectedError):
+            self.ffx_obj_wo_ip.wait_for_rcs_connection(
+                include_target_name=True, timeout=10
+            )
         mock_ffx_run.assert_called()
+        mock_time.sleep.assert_called()
 
     @mock.patch.object(
         ffx.FFX,
