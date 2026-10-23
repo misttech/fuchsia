@@ -1,0 +1,67 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "stream_processor_test_lib",
+    testonly = True,
+    srcs = [
+        "src/buffer_collection_constraints.rs",
+        "src/buffer_set.rs",
+        "src/elementary_stream.rs",
+        "src/input_packet_stream.rs",
+        "src/lib.rs",
+        "src/output_validator.rs",
+        "src/stream.rs",
+        "src/stream_runner.rs",
+        "src/test_spec.rs",
+    ],
+    crate_name = "stream_processor_test",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/lib/fuchsia-audio-codec:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl_table_validation",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/mundane",
+        "//src/media/stream_processors/fuchsia-stream-processors",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "stream_processor_test_lib_test",
+    crate = ":stream_processor_test_lib",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "stream_processor_lib_test",
+    unit_tests = [":stream_processor_test_lib_test"],
+    visibility = ["//src/media:__pkg__"],
+)

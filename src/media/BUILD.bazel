@@ -13,5 +13,6 @@ test_suite(
         "//src/media/codec/codecs/test:timestamp_extrapolator_tests",
         "//src/media/lib/blocking_mpsc_queue:blocking_mpsc_queue_unittests",
         "//src/media/lib/extend_bits/unit_tests:extend-bits-tests",
+        "//src/media/stream_processors/test:stream_processor_lib_test",
     ],
 )
