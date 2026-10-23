@@ -18,8 +18,5 @@ group("tools") {
 group("tests") {
   testonly = true
 
-  deps = [
-    "//tools/debug/breakpad:breakpad_tests",
-    "//tools/debug/covargs:tests",
-  ]
+  deps = [ "//tools/debug/covargs:tests" ]
 }

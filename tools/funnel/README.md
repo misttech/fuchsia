@@ -27,8 +27,7 @@ Options:
 
 ## Notes
 
-This binary is intended to replace the existing `fssh tunnel` command
-([source](/tools/sdk-tools/fssh/tunnel/)).
+This binary replaces the former `fssh tunnel` command.
 
 ## TODO
 
