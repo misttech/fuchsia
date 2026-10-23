@@ -808,4 +808,36 @@ TEST(PipeTest, SpliceNonblockSocketEndpoint) {
   EXPECT_EQ(fcntl(sock_rd.get(), F_GETFL) & O_NONBLOCK, 0);
 }
 
+TEST(PipeTest, SpliceFromSocketReaderClosesMidFlight) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    signal(SIGPIPE, SIG_IGN);
+
+    int sock_fds[2];
+    SAFE_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds));
+    fbl::unique_fd sock_rd(sock_fds[0]);
+    fbl::unique_fd sock_wr(sock_fds[1]);
+
+    test_helper::ScopedPipe pipe;
+
+    const int page_size = getpagesize();
+    SAFE_SYSCALL(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, page_size));
+    std::vector<char> fill(page_size, 'A');
+    ASSERT_EQ(write(pipe.WriteSide().get(), fill.data(), fill.size()), page_size);
+
+    const char payload[] = "data";
+    ASSERT_EQ(write(sock_wr.get(), payload, 4), 4);
+
+    std::thread closer([&pipe]() {
+      usleep(20000);
+      pipe.ReadSide().reset();
+    });
+
+    EXPECT_THAT(splice(sock_rd.get(), nullptr, pipe.WriteSide().get(), nullptr, 4, 0),
+                SyscallFailsWithErrno(EPIPE));
+    closer.join();
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace

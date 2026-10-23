@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::{
-    MemoryAccessorExt, NumberOfElementsRead, PAGE_SIZE, TaskMemoryAccessor, read_to_vec,
-};
+use crate::mm::{MemoryAccessorExt, PAGE_SIZE, TaskMemoryAccessor};
 use crate::security;
 use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::buffers::{
     Buffer, InputBuffer, InputBufferCallback, InputBufferExt, MessageData, MessageQueue,
     OutputBuffer, OutputBufferCallback, PeekBufferSegmentsCallback, PipeMessageData,
-    UserBuffersOutputBuffer,
+    UserBuffersOutputBuffer, VecInputBuffer, VecOutputBuffer,
 };
 use crate::vfs::fs_registry::FsRegistry;
 use crate::vfs::{
@@ -24,7 +22,7 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::CAP_SYS_RESOURCE;
-use starnix_uapi::errors::{EPIPE, Errno};
+use starnix_uapi::errors::{EAGAIN, EPIPE, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::fs_type::FileSystemTypeFlags;
 use starnix_uapi::open_flags::OpenFlags;
@@ -42,6 +40,12 @@ const ATOMIC_IO_BYTES: u16 = 4096;
 
 /// The maximum size of a pipe, independent of task capabilities and sysctl limits.
 const PIPE_MAX_SIZE: usize = 1 << 31;
+
+/// Wait-queue key notified when an in-progress splice read (`SpliceReadGuard`) completes.
+const SPLICE_READ_WAIT_KEY: u64 = 0;
+
+/// Wait-queue key notified when an in-progress splice write (`SpliceWriteGuard`) completes.
+const SPLICE_WRITE_WAIT_KEY: u64 = 1;
 
 /// Wait-queue key notified whenever buffer space increases, even if available space remains below
 /// `PIPE_BUF`.
@@ -68,6 +72,15 @@ pub struct Pipe {
 
     /// Whether the pipe has ever had a writer.
     had_writer: bool,
+
+    /// Whether an in-flight splice read is currently consuming messages from this pipe.
+    splice_read_in_progress: bool,
+
+    /// Number of bytes at the front of the queue reserved by an in-progress splice read.
+    splice_read_reserved_bytes: usize,
+
+    /// Whether an in-flight splice write is currently producing messages into this pipe.
+    splice_write_in_progress: bool,
 }
 
 pub type PipeHandle = Arc<Mutex<Pipe>>;
@@ -82,6 +95,9 @@ impl Pipe {
                 had_reader: false,
                 writer_count: 0,
                 had_writer: false,
+                splice_read_in_progress: false,
+                splice_read_reserved_bytes: 0,
+                splice_write_in_progress: false,
             }
             .into(),
         )
@@ -173,6 +189,9 @@ impl Pipe {
     /// reader or writer.
     pub fn on_close(&mut self) {
         if self.reader_count == 0 && self.writer_count == 0 {
+            debug_assert!(!self.splice_read_in_progress);
+            debug_assert!(!self.splice_write_in_progress);
+            debug_assert_eq!(self.splice_read_reserved_bytes, 0);
             self.had_reader = false;
             self.had_writer = false;
             self.messages = MessageQueue::new(self.messages.capacity());
@@ -181,11 +200,11 @@ impl Pipe {
     }
 
     fn is_empty(&self) -> bool {
-        self.messages.is_empty()
+        self.readable_len() == 0
     }
 
     fn readable_len(&self) -> usize {
-        self.messages.len()
+        self.messages.len().saturating_sub(self.splice_read_reserved_bytes)
     }
 
     fn capacity(&self) -> usize {
@@ -232,14 +251,23 @@ impl Pipe {
                 || (available_capacity > 0 && data_size > uapi::PIPE_BUF as usize))
     }
 
+    /// Minimum free capacity required for non-merging operations (`splice`, `vmsplice`, `tee`).
+    ///
+    /// A single-page pipe (`capacity <= PAGE_SIZE`) has only one page slot; when non-empty, its
+    /// sole slot is already occupied and cannot accept non-merging splice writes until drained.
+    fn min_splice_write_bytes(&self) -> usize {
+        let page_size = *PAGE_SIZE as usize;
+        if self.messages.capacity() <= page_size { page_size } else { 1 }
+    }
+
     pub fn read(&mut self, data: &mut dyn OutputBuffer) -> Result<usize, Errno> {
+        debug_assert!(!self.splice_read_in_progress);
         if data.available() == 0 {
             return Ok(0);
         }
 
         // Return EAGAIN if the pipe is empty and still has at least one open writer so the caller
         // blocks; otherwise fall through and return 0 to indicate EOF.
-
         if !self.is_readable() {
             return error!(EAGAIN);
         }
@@ -248,6 +276,7 @@ impl Pipe {
     }
 
     pub fn write(&mut self, data: &mut dyn InputBuffer) -> Result<usize, Errno> {
+        debug_assert!(!self.splice_write_in_progress);
         if data.available() == 0 {
             return Ok(0);
         }
@@ -325,25 +354,6 @@ impl Pipe {
         }
     }
 
-    fn ioctl(
-        &self,
-        _file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        let user_addr = UserAddress::from(arg);
-        match request {
-            FIONREAD => {
-                let addr = UserRef::<i32>::new(user_addr);
-                let value: i32 = self.readable_len().try_into().map_err(|_| errno!(EINVAL))?;
-                current_task.write_object(addr, &value)?;
-                Ok(SUCCESS)
-            }
-            _ => error!(ENOTTY),
-        }
-    }
-
     fn notify_fd_events(&self, events: FdEvents) {
         self.waiters.notify_fd_events(events);
     }
@@ -355,6 +365,25 @@ impl Pipe {
             } else if self.is_writable(1) {
                 self.waiters.notify_value(PIPE_WRITE_SPACE_WAIT_KEY);
             }
+        }
+    }
+
+    /// Consumes `bytes_read` bytes from the front of the pipe queue and wakes blocked writers if
+    /// buffer space becomes available.
+    fn consume(&mut self, bytes_read: usize) {
+        let was_writable = self.is_writable(uapi::PIPE_BUF as usize);
+        let mut consumed = bytes_read;
+        while consumed > 0 {
+            let mut message =
+                self.messages.read_message().expect("pipe messages shrunk during splice read");
+            if let Some(remaining) = MessageData::split_off(&mut message.data, consumed) {
+                self.messages.write_front(remaining.into());
+                break;
+            }
+            consumed -= message.len();
+        }
+        if bytes_read > 0 {
+            self.notify_write_space(was_writable);
         }
     }
 
@@ -398,7 +427,7 @@ impl Pipe {
         if len == 0 {
             return Ok(0);
         }
-        let to_was_empty = to.is_empty();
+        let to_was_empty = to.readable_len() == 0;
         let mut bytes_transferred = 0;
         for message in from.messages.peek_queue().iter() {
             let limit = std::cmp::min(len - bytes_transferred, to.messages.available_capacity());
@@ -524,7 +553,7 @@ impl FileOps for PipeFileObject {
     ) -> Result<usize, Errno> {
         debug_assert!(offset == 0);
         file.blocking_op(current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, || {
-            let mut pipe = self.pipe.lock();
+            let mut pipe = self.lock_pipe_without_splice(current_task)?;
             let was_writable = pipe.is_writable(uapi::PIPE_BUF as usize);
             let actual = pipe.read(data)?;
             if actual > 0 {
@@ -546,7 +575,7 @@ impl FileOps for PipeFileObject {
 
         let result =
             file.blocking_op(current_task, FdEvents::POLLOUT | FdEvents::POLLERR, None, || {
-                let mut pipe = self.pipe.lock();
+                let mut pipe = self.lock_pipe_without_splice(current_task)?;
                 let offset_before = data.bytes_read();
                 let bytes_written = match pipe.write(data) {
                     Err(e) => {
@@ -622,170 +651,228 @@ impl FileOps for PipeFileObject {
         cmd: u32,
         arg: u64,
     ) -> Result<SyscallResult, Errno> {
-        self.pipe.lock().fcntl(file, current_task, cmd, arg)
+        self.lock_pipe_without_splice(current_task)?.fcntl(file, current_task, cmd, arg)
     }
 
     fn ioctl(
         &self,
-        file: &FileObject,
+        _file: &FileObject,
         current_task: &CurrentTask,
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        self.pipe.lock().ioctl(file, current_task, request, arg)
+        let user_addr = UserAddress::from(arg);
+        match request {
+            FIONREAD => {
+                let pipe = self.lock_pipe_without_splice(current_task)?;
+                let value: i32 = pipe.readable_len().try_into().map_err(|_| errno!(EINVAL))?;
+                std::mem::drop(pipe);
+                let addr = UserRef::<i32>::new(user_addr);
+                current_task.write_object(addr, &value)?;
+                Ok(SUCCESS)
+            }
+            _ => error!(ENOTTY),
+        }
+    }
+}
+
+/// Guard that marks a pipe as having an in-progress splice read while the pipe lock is not held.
+struct SpliceReadGuard<'a> {
+    pipe: Option<&'a PipeHandle>,
+}
+
+impl<'a> SpliceReadGuard<'a> {
+    /// Marks `pipe` as having a splice read in progress and drops the pipe lock.
+    fn new(
+        pipe_handle: &'a PipeHandle,
+        mut pipe: MutexGuard<'a, Pipe>,
+        reserved_bytes: usize,
+    ) -> Self {
+        assert!(!pipe.splice_read_in_progress);
+        pipe.splice_read_in_progress = true;
+        pipe.splice_read_reserved_bytes = reserved_bytes;
+        Self { pipe: Some(pipe_handle) }
+    }
+
+    /// Consumes `bytes_read` bytes from the front of the pipe, clears the in-progress splice read
+    /// state, and wakes any waiting readers.
+    fn consume(mut self, bytes_read: usize) {
+        if let Some(pipe_handle) = self.pipe.take() {
+            let mut pipe = pipe_handle.lock();
+            pipe.consume(bytes_read);
+            Self::clear(&mut pipe);
+        }
+    }
+
+    /// Clears the in-progress splice read state on `pipe` and wakes any waiting readers.
+    fn clear(pipe: &mut Pipe) {
+        assert!(pipe.splice_read_in_progress);
+        pipe.splice_read_in_progress = false;
+        pipe.splice_read_reserved_bytes = 0;
+        pipe.waiters.notify_value(SPLICE_READ_WAIT_KEY);
+        if !pipe.is_empty() {
+            pipe.notify_fd_events(FdEvents::POLLIN);
+        }
+    }
+}
+
+impl Drop for SpliceReadGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(pipe_handle) = self.pipe.take() {
+            Self::clear(&mut pipe_handle.lock());
+        }
+    }
+}
+
+/// Guard that marks a pipe as having an in-progress splice write while the pipe lock is not held.
+struct SpliceWriteGuard<'a> {
+    pipe: Option<&'a PipeHandle>,
+}
+
+impl<'a> SpliceWriteGuard<'a> {
+    /// Marks `pipe` as having a splice write in progress and drops the pipe lock.
+    fn new(pipe_handle: &'a PipeHandle, mut pipe: MutexGuard<'a, Pipe>) -> Self {
+        assert!(!pipe.splice_write_in_progress);
+        pipe.splice_write_in_progress = true;
+        Self { pipe: Some(pipe_handle) }
+    }
+
+    /// Enqueues `bytes` into the back of the pipe, clears the in-progress splice write state, and
+    /// wakes any waiting readers or writers.
+    fn enqueue(mut self, bytes: Vec<u8>) -> Result<(), Errno> {
+        if let Some(pipe_handle) = self.pipe.take() {
+            let mut pipe = pipe_handle.lock();
+            if pipe.reader_count == 0 {
+                Self::clear(&mut pipe);
+                return error!(EPIPE);
+            }
+            if !bytes.is_empty() {
+                for chunk in bytes.chunks(*PAGE_SIZE as usize) {
+                    pipe.messages.write_message(PipeMessageData::from(chunk.to_vec()).into());
+                }
+                pipe.notify_fd_events(FdEvents::POLLIN);
+            }
+            Self::clear(&mut pipe);
+        }
+        Ok(())
+    }
+
+    /// Clears the in-progress splice write state on `pipe` and wakes any waiting writers.
+    fn clear(pipe: &mut Pipe) {
+        assert!(pipe.splice_write_in_progress);
+        pipe.splice_write_in_progress = false;
+        pipe.waiters.notify_value(SPLICE_WRITE_WAIT_KEY);
+        if pipe.reader_count == 0 {
+            pipe.notify_fd_events(FdEvents::POLLOUT | FdEvents::POLLERR);
+        } else {
+            pipe.notify_write_space(false);
+        }
+    }
+}
+
+impl Drop for SpliceWriteGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(pipe_handle) = self.pipe.take() {
+            Self::clear(&mut pipe_handle.lock());
+        }
+    }
+}
+
+impl std::fmt::Debug for SpliceReadGuard<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpliceReadGuard").finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for SpliceWriteGuard<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpliceWriteGuard").finish_non_exhaustive()
     }
 }
 
 /// An OutputBuffer that will write the data to `pipe`.
 #[derive(Debug)]
 pub struct SpliceOutputBuffer<'a> {
-    pipe: &'a mut Pipe,
-    len: usize,
-    available: usize,
+    guard: SpliceWriteGuard<'a>,
+    buffer: VecOutputBuffer,
 }
 
 impl<'a> Buffer for SpliceOutputBuffer<'a> {
     fn segments_count(&self) -> Result<usize, Errno> {
-        error!(ENOTSUP)
-    }
-
-    fn peek_each_segment(
-        &mut self,
-        _callback: &mut PeekBufferSegmentsCallback<'_>,
-    ) -> Result<(), Errno> {
-        error!(ENOTSUP)
-    }
-}
-
-impl<'a> OutputBuffer for SpliceOutputBuffer<'a> {
-    fn write_each(&mut self, callback: &mut OutputBufferCallback<'_>) -> Result<usize, Errno> {
-        // SAFETY: `callback` returns the number of bytes read on success.
-        let bytes = unsafe {
-            read_to_vec::<u8, _>(self.available, |buf| callback(buf).map(NumberOfElementsRead))
-        }?;
-        let bytes_len = bytes.len();
-        if bytes_len > 0 {
-            let was_empty = self.pipe.is_empty();
-            self.pipe.messages.write_message(PipeMessageData::from(bytes).into());
-            if was_empty {
-                self.pipe.notify_fd_events(FdEvents::POLLIN);
-            }
-            self.available -= bytes_len;
-        }
-        Ok(bytes_len)
-    }
-
-    fn available(&self) -> usize {
-        self.available
-    }
-
-    fn bytes_written(&self) -> usize {
-        self.len - self.available
-    }
-
-    fn zero(&mut self) -> Result<usize, Errno> {
-        let bytes = vec![0; self.available];
-        let len = bytes.len();
-        if len > 0 {
-            let was_empty = self.pipe.is_empty();
-            self.pipe.messages.write_message(PipeMessageData::from(bytes).into());
-            if was_empty {
-                self.pipe.notify_fd_events(FdEvents::POLLIN);
-            }
-            self.available -= len;
-        }
-        Ok(len)
-    }
-
-    unsafe fn advance(&mut self, _length: usize) -> Result<(), Errno> {
-        error!(ENOTSUP)
-    }
-}
-
-/// An InputBuffer that will read the data from `pipe`.
-#[derive(Debug)]
-pub struct SpliceInputBuffer<'a> {
-    pipe: &'a mut Pipe,
-    len: usize,
-    available: usize,
-}
-
-impl<'a> Buffer for SpliceInputBuffer<'a> {
-    fn segments_count(&self) -> Result<usize, Errno> {
-        Ok(self.pipe.messages.len())
+        self.buffer.segments_count()
     }
 
     fn peek_each_segment(
         &mut self,
         callback: &mut PeekBufferSegmentsCallback<'_>,
     ) -> Result<(), Errno> {
-        let mut available = self.available;
-        for message in self.pipe.messages.messages() {
-            let to_read = std::cmp::min(available, message.len());
-            callback(&UserBuffer {
-                address: UserAddress::from(message.data.ptr()? as u64),
-                length: to_read,
-            });
-            available -= to_read;
-        }
-        Ok(())
+        self.buffer.peek_each_segment(callback)
+    }
+}
+
+impl<'a> OutputBuffer for SpliceOutputBuffer<'a> {
+    fn write_each(&mut self, callback: &mut OutputBufferCallback<'_>) -> Result<usize, Errno> {
+        self.buffer.write_each(callback)
+    }
+
+    fn available(&self) -> usize {
+        self.buffer.available()
+    }
+
+    fn bytes_written(&self) -> usize {
+        self.buffer.bytes_written()
+    }
+
+    fn zero(&mut self) -> Result<usize, Errno> {
+        self.buffer.zero()
+    }
+
+    unsafe fn advance(&mut self, length: usize) -> Result<(), Errno> {
+        // SAFETY: Delegated directly to the inner `VecOutputBuffer` under the same safety
+        // contract.
+        unsafe { self.buffer.advance(length) }
+    }
+}
+
+/// An InputBuffer that will read the data from `pipe`.
+#[derive(Debug)]
+pub struct SpliceInputBuffer<'a> {
+    guard: SpliceReadGuard<'a>,
+    buffer: VecInputBuffer,
+}
+
+impl<'a> Buffer for SpliceInputBuffer<'a> {
+    fn segments_count(&self) -> Result<usize, Errno> {
+        self.buffer.segments_count()
+    }
+
+    fn peek_each_segment(
+        &mut self,
+        callback: &mut PeekBufferSegmentsCallback<'_>,
+    ) -> Result<(), Errno> {
+        self.buffer.peek_each_segment(callback)
     }
 }
 
 impl<'a> InputBuffer for SpliceInputBuffer<'a> {
     fn peek_each(&mut self, callback: &mut InputBufferCallback<'_>) -> Result<usize, Errno> {
-        let mut read = 0;
-        let mut available = self.available;
-        for message in self.pipe.messages.messages() {
-            let to_read = std::cmp::min(available, message.len());
-            let result = message.data.with_bytes(|bytes| callback(&bytes[0..to_read]))?;
-            if result > to_read {
-                return error!(EINVAL);
-            }
-            read += result;
-            available -= result;
-            if result != to_read {
-                break;
-            }
-        }
-        Ok(read)
+        self.buffer.peek_each(callback)
     }
 
     fn available(&self) -> usize {
-        self.available
+        self.buffer.available()
     }
 
     fn bytes_read(&self) -> usize {
-        self.len - self.available
+        self.buffer.bytes_read()
     }
 
     fn drain(&mut self) -> usize {
-        let result = self.available;
-        self.available = 0;
-        result
+        self.buffer.drain()
     }
 
-    fn advance(&mut self, mut length: usize) -> Result<(), Errno> {
-        if length == 0 {
-            return Ok(());
-        }
-        if length > self.available {
-            return error!(EINVAL);
-        }
-        let was_writable = self.pipe.is_writable(uapi::PIPE_BUF as usize);
-        self.available -= length;
-        while let Some(mut message) = self.pipe.messages.read_message() {
-            if let Some(data) = MessageData::split_off(&mut message.data, length) {
-                // Some data is left in the message. Push it back.
-                self.pipe.messages.write_front(data.into());
-            }
-            length -= message.len();
-            if length == 0 {
-                self.pipe.notify_write_space(was_writable);
-                return Ok(());
-            }
-        }
-        panic!();
+    fn advance(&mut self, length: usize) -> Result<(), Errno> {
+        self.buffer.advance(length)
     }
 }
 
@@ -817,6 +904,58 @@ impl PipeFileObject {
             pipe.waiters.notify_fd_events(events);
         }
         pipe.on_close();
+    }
+
+    /// Acquires the pipe lock once neither a splice read nor a splice write is in progress.
+    fn lock_pipe_without_splice<'a>(
+        &'a self,
+        current_task: &CurrentTask,
+    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+        loop {
+            let pipe = self.pipe.lock();
+            if !pipe.splice_read_in_progress && !pipe.splice_write_in_progress {
+                return Ok(pipe);
+            }
+            let waiter = Waiter::new();
+            if pipe.splice_read_in_progress {
+                pipe.waiters.wait_async_value(&waiter, SPLICE_READ_WAIT_KEY);
+            }
+            if pipe.splice_write_in_progress {
+                pipe.waiters.wait_async_value(&waiter, SPLICE_WRITE_WAIT_KEY);
+            }
+            std::mem::drop(pipe);
+            waiter.wait(current_task)?;
+        }
+    }
+
+    /// Locks the pipe for reading if it is readable, waiting for any active splice to finish.
+    fn try_lock_pipe_for_reading<'a>(
+        &'a self,
+        current_task: &CurrentTask,
+        _non_blocking: bool,
+    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+        let pipe = self.lock_pipe_without_splice(current_task)?;
+        if pipe.is_readable() { Ok(pipe) } else { error!(EAGAIN) }
+    }
+
+    /// Locks the pipe for writing if it can accept part of `len` bytes without blocking, waiting
+    /// for any active splice to finish.
+    fn try_lock_pipe_for_writing<'a>(
+        &'a self,
+        current_task: &CurrentTask,
+        _non_blocking: bool,
+        len: usize,
+    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+        let pipe = self.lock_pipe_without_splice(current_task)?;
+        if pipe.had_reader && pipe.reader_count == 0 {
+            std::mem::drop(pipe);
+            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+            return error!(EPIPE);
+        }
+        if !pipe.is_writable(std::cmp::max(len, pipe.min_splice_write_bytes())) {
+            return error!(EAGAIN);
+        }
+        Ok(pipe)
     }
 
     /// Returns the result of `pregen` and a lock on pipe, once `condition` returns true, ensuring
@@ -878,7 +1017,27 @@ impl PipeFileObject {
         file: &FileHandle,
         non_blocking: bool,
     ) -> Result<MutexGuard<'a, Pipe>, Errno> {
-        self.lock_pipe_for_reading_with(current_task, file, || Ok(()), non_blocking).map(|(_, l)| l)
+        if non_blocking {
+            return self.try_lock_pipe_for_reading(current_task, true);
+        }
+        match self.try_lock_pipe_for_reading(current_task, false) {
+            Err(errno) if errno == EAGAIN => {}
+            result => return result,
+        }
+        let waiter = Waiter::new();
+        loop {
+            file.wait_async(
+                current_task,
+                &waiter,
+                FdEvents::POLLIN | FdEvents::POLLHUP,
+                WaitCallback::none(),
+            );
+            match self.try_lock_pipe_for_reading(current_task, false) {
+                Err(e) if e == EAGAIN => {}
+                result => return result,
+            }
+            waiter.wait(current_task)?;
+        }
     }
 
     /// Lock the pipe for writing, after having run `pregen`.
@@ -896,7 +1055,7 @@ impl PipeFileObject {
         let (other, pipe) = if non_blocking {
             let other = pregen()?;
             let pipe = self.pipe.lock();
-            if !pipe.is_writable(len) {
+            if !pipe.is_writable(std::cmp::max(len, pipe.min_splice_write_bytes())) {
                 return error!(EAGAIN);
             }
             (other, pipe)
@@ -904,7 +1063,7 @@ impl PipeFileObject {
             self.wait_for_condition(
                 current_task,
                 file,
-                |pipe| pipe.is_writable(len),
+                |pipe| pipe.is_writable(std::cmp::max(len, pipe.min_splice_write_bytes())),
                 pregen,
                 FdEvents::POLLOUT | FdEvents::POLLERR,
             )?
@@ -924,14 +1083,32 @@ impl PipeFileObject {
         non_blocking: bool,
         len: usize,
     ) -> Result<MutexGuard<'a, Pipe>, Errno> {
-        self.lock_pipe_for_writing_with(current_task, file, || Ok(()), non_blocking, len)
-            .map(|(_, l)| l)
+        if non_blocking {
+            return self.try_lock_pipe_for_writing(current_task, true, len);
+        }
+        match self.try_lock_pipe_for_writing(current_task, false, len) {
+            Err(errno) if errno == EAGAIN => {}
+            result => return result,
+        }
+        let waiter = Waiter::new();
+        loop {
+            file.wait_async(
+                current_task,
+                &waiter,
+                FdEvents::POLLOUT | FdEvents::POLLERR,
+                WaitCallback::none(),
+            );
+            match self.try_lock_pipe_for_writing(current_task, false, len) {
+                Err(e) if e == EAGAIN => {}
+                result => return result,
+            }
+            waiter.wait(current_task)?;
+        }
     }
 
     /// Splice from the given file handle to this pipe.
     ///
-    /// The given file handle must not be a pipe. If you wish to splice between two pipes, use
-    /// `lock_pipes` and `Pipe::splice`.
+    /// The given file handle must not be a pipe; for two pipes use `PipeFileObject::splice_pipes`.
     pub fn splice_from(
         &self,
         current_task: &CurrentTask,
@@ -941,27 +1118,39 @@ impl PipeFileObject {
         len: usize,
         non_blocking: bool,
     ) -> Result<usize, Errno> {
-        // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
+        // For pipe-to-pipe transfers, callers must use `PipeFileObject::splice_pipes`.
         assert!(from.downcast_file::<PipeFileObject>().is_none());
 
         let non_blocking = non_blocking || self_file.is_non_blocking();
-        let mut pipe = self.lock_pipe_for_writing(current_task, self_file, non_blocking, len)?;
-        let len = std::cmp::min(len, pipe.messages.available_capacity());
-        let mut buffer = SpliceOutputBuffer { pipe: &mut pipe, len, available: len };
-        let result = from.splice_read(current_task, maybe_offset, &mut buffer, non_blocking);
-        std::mem::drop(pipe);
-        if let Err(err) = &result
-            && *err == EPIPE
-        {
-            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+        let mut buffer = {
+            let pipe = self.lock_pipe_for_writing(current_task, self_file, non_blocking, 1)?;
+            let len = std::cmp::min(len, pipe.messages.available_capacity());
+            SpliceOutputBuffer {
+                guard: SpliceWriteGuard::new(&self.pipe, pipe),
+                buffer: VecOutputBuffer::new(len),
+            }
+        };
+
+        let bytes_read = from
+            .splice_read(current_task, maybe_offset, &mut buffer, non_blocking)
+            .inspect_err(|err| {
+                if *err == EPIPE {
+                    send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                }
+            })?;
+        if bytes_read > 0 {
+            buffer.guard.enqueue(Vec::from(buffer.buffer)).inspect_err(|err| {
+                if *err == EPIPE {
+                    send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                }
+            })?;
         }
-        result
+        Ok(bytes_read)
     }
 
     /// Splice from this pipe to the given file handle.
     ///
-    /// The given file handle must not be a pipe. If you wish to splice between two pipes, use
-    /// `lock_pipes` and `Pipe::splice`.
+    /// The given file handle must not be a pipe; for two pipes use `PipeFileObject::splice_pipes`.
     pub fn splice_to(
         &self,
         current_task: &CurrentTask,
@@ -971,15 +1160,32 @@ impl PipeFileObject {
         len: usize,
         non_blocking: bool,
     ) -> Result<usize, Errno> {
-        // If both ends are pipes, use `lock_pipes` and `Pipe::splice`.
+        // For pipe-to-pipe transfers, callers must use `PipeFileObject::splice_pipes`.
         assert!(to.downcast_file::<PipeFileObject>().is_none());
 
-        let non_blocking = non_blocking || self_file.is_non_blocking() || to.is_non_blocking();
-        let mut pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
-        let mut len = std::cmp::min(len, pipe.messages.len());
-        if len == 0 {
-            return Ok(0);
-        }
+        let non_blocking = non_blocking || self_file.is_non_blocking();
+        let (read_guard, mut data) = {
+            let pipe = self.lock_pipe_for_reading(current_task, self_file, non_blocking)?;
+            let limit = std::cmp::min(len, pipe.messages.len());
+            let mut data = Vec::with_capacity(limit);
+            for message in pipe.messages.peek_queue() {
+                let remaining = limit - data.len();
+                if remaining == 0 {
+                    break;
+                }
+                message.data.with_bytes(|bytes| {
+                    let count = std::cmp::min(bytes.len(), remaining);
+                    data.extend_from_slice(&bytes[..count]);
+                    Ok(())
+                })?;
+            }
+            if data.is_empty() {
+                return Ok(0);
+            }
+            let reserved_bytes = data.len();
+            let guard = SpliceReadGuard::new(&self.pipe, pipe, reserved_bytes);
+            (guard, data)
+        };
         let mut clamped_by_fsize = false;
         if to.node().is_reg() {
             let fsize_limit = current_task.thread_group().get_rlimit(Resource::FSIZE);
@@ -989,23 +1195,25 @@ impl PipeFileObject {
                     None => to.offset.read().max(0) as u64,
                 };
                 if out_offset >= fsize_limit {
-                    std::mem::drop(pipe);
                     send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
                     return error!(EFBIG);
                 }
                 let allowed = usize::try_from(fsize_limit - out_offset).unwrap_or(usize::MAX);
-                if len > allowed {
-                    len = allowed;
+                if data.len() > allowed {
+                    data.truncate(allowed);
                     clamped_by_fsize = true;
                 }
             }
         }
-        let mut buffer = SpliceInputBuffer { pipe: &mut pipe, len, available: len };
+        let mut buffer =
+            SpliceInputBuffer { guard: read_guard, buffer: VecInputBuffer::from(data) };
         let bytes_written =
             to.splice_write(current_task, maybe_offset, &mut buffer, non_blocking)?;
-        std::mem::drop(pipe);
-        if bytes_written > 0 && clamped_by_fsize {
-            send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
+        if bytes_written > 0 {
+            if clamped_by_fsize {
+                send_standard_signal(current_task, SignalInfo::kernel(SIGXFSZ));
+            }
+            buffer.guard.consume(bytes_written);
         }
         Ok(bytes_written)
     }
@@ -1076,7 +1284,7 @@ impl PipeFileObject {
         current_task: &CurrentTask,
         file_in: &'a FileHandle,
         file_out: &'b FileHandle,
-        len: usize,
+        _len: usize,
         non_blocking: bool,
     ) -> Result<PipeOperands<'a, 'b>, Errno> {
         let pipe_in = file_in.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
@@ -1091,7 +1299,7 @@ impl PipeFileObject {
                 let (write, read) = pipe_in.lock_pipe_for_reading_with(
                     current_task,
                     file_in,
-                    || pipe_out.lock_pipe_for_writing(current_task, file_out, non_blocking, len),
+                    || pipe_out.lock_pipe_for_writing(current_task, file_out, non_blocking, 1),
                     non_blocking,
                 )?;
                 Ok(PipeOperands { read, write })
@@ -1102,7 +1310,7 @@ impl PipeFileObject {
                     file_out,
                     || pipe_in.lock_pipe_for_reading(current_task, file_in, non_blocking),
                     non_blocking,
-                    len,
+                    1,
                 )?;
                 Ok(PipeOperands { read, write })
             }
@@ -1121,10 +1329,91 @@ mod tests {
     use crate::mm::ProtectionFlags;
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::{anon_test_file, fill_page, map_memory, spawn_kernel_and_run};
-    use crate::vfs::buffers::{UserBuffersInputBuffer, VecInputBuffer, VecOutputBuffer};
+    use crate::vfs::buffers::UserBuffersInputBuffer;
     use crate::vfs::new_memfd;
     use smallvec::smallvec;
     use starnix_uapi::seal_flags::SealFlags;
+    use std::sync::mpsc;
+
+    struct BoundedSinkFile {
+        max_write: usize,
+        written: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl FileOps for BoundedSinkFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(ENOTSUP)
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            let mut remaining = self.max_write;
+            data.read_each(&mut |slice| {
+                let count = std::cmp::min(slice.len(), remaining);
+                self.written.lock().extend_from_slice(&slice[..count]);
+                remaining -= count;
+                Ok(count)
+            })
+        }
+    }
+
+    struct BarrierSinkFile {
+        entered_tx: Mutex<Option<mpsc::Sender<()>>>,
+        resume_rx: Mutex<Option<mpsc::Receiver<()>>>,
+        max_write: usize,
+        written: Mutex<Vec<u8>>,
+    }
+
+    impl FileOps for BarrierSinkFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(ENOTSUP)
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            if let Some(tx) = self.entered_tx.lock().take() {
+                tx.send(()).expect("notify entered write");
+            }
+            if let Some(rx) = self.resume_rx.lock().take() {
+                rx.recv().expect("wait to resume write");
+            }
+            let mut remaining = self.max_write;
+            data.read_each(&mut |slice| {
+                let count = std::cmp::min(slice.len(), remaining);
+                self.written.lock().extend_from_slice(&slice[..count]);
+                remaining -= count;
+                Ok(count)
+            })
+        }
+    }
 
     struct StaticSourceFile {
         payload: &'static [u8],
@@ -1155,6 +1444,270 @@ mod tests {
         }
     }
 
+    struct BarrierSourceFile {
+        entered_tx: Mutex<Option<mpsc::Sender<()>>>,
+        resume_rx: Mutex<Option<mpsc::Receiver<()>>>,
+        payload: &'static [u8],
+    }
+
+    impl FileOps for BarrierSourceFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            if let Some(tx) = self.entered_tx.lock().take() {
+                tx.send(()).expect("notify entered read");
+            }
+            if let Some(rx) = self.resume_rx.lock().take() {
+                rx.recv().expect("wait to resume read");
+            }
+            data.write(self.payload)
+        }
+
+        fn write(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            error!(ENOTSUP)
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_to_partial_write_preserves_fifo_order() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // Part 1: Single-thread partial write across `[MsgA("AAAA"), MsgB("BBBB")]`.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"BBBB")).unwrap(), 4);
+
+            let sink_written = Arc::new(Mutex::new(Vec::new()));
+            let sink_file = anon_test_file(
+                &current_task,
+                Box::new(BoundedSinkFile { max_write: 2, written: Arc::clone(&sink_written) }),
+                OpenFlags::WRONLY,
+            );
+            let spliced = pipe_out
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_to(&current_task, &pipe_out, &sink_file, None, 6, true)
+                .unwrap();
+            assert_eq!(spliced, 2);
+            assert_eq!(*sink_written.lock(), b"AA");
+
+            let mut remaining = Vec::new();
+            loop {
+                let mut out = VecOutputBuffer::new(16);
+                match pipe_out.read(&current_task, &mut out) {
+                    Ok(n) if n > 0 => {
+                        remaining.extend_from_slice(&out.data()[..n]);
+                        if remaining.len() == 6 {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            assert_eq!(remaining, b"AABBBB");
+
+            // Part 2: Concurrent reader + blocked partial `splice_to` on `[MsgA("AAAA"), MsgB("BBBB")]`.
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAA")).unwrap(), 4);
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"BBBB")).unwrap(), 4);
+
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_sink = anon_test_file(
+                &current_task,
+                Box::new(BarrierSinkFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    max_write: 2,
+                    written: Mutex::new(Vec::new()),
+                }),
+                OpenFlags::WRONLY,
+            );
+
+            let (reader_ready_tx, reader_ready_rx) = mpsc::channel();
+            let pipe_out_unblock = pipe_out.clone();
+            let (unblock_join, unblock_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    reader_ready_rx.recv().expect("wait until non-blocking reader starts");
+                    while pipe_out_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx.send(()).expect("allow splice_to write to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req);
+
+            let pipe_out_clone = pipe_out.clone();
+            let (reader_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_to enters write");
+                    {
+                        let pipe =
+                            pipe_out_clone.downcast_file::<PipeFileObject>().unwrap().pipe.lock();
+                        assert!(pipe.splice_read_in_progress);
+                        assert_eq!(pipe.messages.len(), 8);
+                    }
+                    reader_ready_tx.send(()).expect("signal unblocker");
+                    // A non-blocking read waits for the active splice read to finish and then reads
+                    // the remaining bytes in FIFO order.
+                    let mut pipe = pipe_out_clone
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .lock_pipe_for_reading(worker_task, &pipe_out_clone, true)
+                        .expect("non-blocking read lock succeeds once splice_to finishes");
+                    let mut buf = VecOutputBuffer::new(4);
+                    let n = pipe.read(&mut buf).unwrap();
+                    buf.data()[..n].to_vec()
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let spliced = pipe_out
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_to(&current_task, &pipe_out, &barrier_sink, None, 8, true)
+                .unwrap();
+            assert_eq!(spliced, 2);
+            unblock_join().unwrap();
+
+            // Concurrent 4-byte stream read receives `"AA"` (from `MsgA`) followed by `"BB"` (from `MsgB`).
+            let concurrent_bytes = reader_join().unwrap();
+            assert_eq!(concurrent_bytes, b"AABB");
+
+            // The remaining `"BB"` tail of `MsgB` follows in FIFO order.
+            let mut tail_buf = VecOutputBuffer::new(4);
+            let tail_len = pipe_out.read(&current_task, &mut tail_buf).unwrap();
+            assert_eq!(&tail_buf.data()[..tail_len], b"BB");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_from_serializes_concurrent_writers() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let capacity =
+                pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+            let prefix = vec![b'P'; capacity - 8];
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(&prefix)).unwrap(),
+                capacity - 8
+            );
+
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_source = anon_test_file(
+                &current_task,
+                Box::new(BarrierSourceFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    payload: b"SSSS",
+                }),
+                OpenFlags::RDONLY,
+            );
+
+            let (writer_ready_tx, writer_ready_rx) = mpsc::channel();
+            let pipe_in_unblock = pipe_in.clone();
+            let (unblock_join, unblock_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    writer_ready_rx.recv().expect("wait until non-blocking writer starts");
+                    while pipe_in_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx.send(()).expect("allow splice_from read to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req);
+
+            let pipe_in_clone = pipe_in.clone();
+            let (writer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_from enters read");
+                    {
+                        let pipe =
+                            pipe_in_clone.downcast_file::<PipeFileObject>().unwrap().pipe.lock();
+                        assert!(pipe.splice_write_in_progress);
+                        assert_eq!(pipe.messages.available_capacity(), 8);
+                    }
+                    writer_ready_tx.send(()).expect("signal unblocker");
+                    // A non-blocking write waits for the active splice write to finish and then
+                    // writes into the remaining 4 bytes of capacity in FIFO order after `SSSS`.
+                    let mut pipe = pipe_in_clone
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .lock_pipe_for_writing(worker_task, &pipe_in_clone, true, 4)
+                        .expect("non-blocking write lock succeeds once splice_from finishes");
+                    assert_eq!(pipe.write(&mut VecInputBuffer::new(b"WWWW")).unwrap(), 4);
+                    std::mem::drop(pipe);
+
+                    std::mem::drop(
+                        pipe_in_clone
+                            .downcast_file::<PipeFileObject>()
+                            .unwrap()
+                            .lock_pipe_without_splice(worker_task)
+                            .unwrap(),
+                    );
+                    // Once both 4-byte writes finish, the pipe is full (`EAGAIN`).
+                    pipe_in_clone
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .lock_pipe_for_writing(worker_task, &pipe_in_clone, true, 4)
+                        .err()
+                        .expect("pipe should be full once splice_from and concurrent write finish")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let spliced = pipe_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_from(&current_task, &pipe_in, &barrier_source, None, 4, true)
+                .unwrap();
+            assert_eq!(spliced, 4);
+            unblock_join().unwrap();
+            assert_eq!(writer_join().unwrap(), errno!(EAGAIN));
+
+            let mut pre_buf = VecOutputBuffer::new(capacity - 8);
+            assert_eq!(pipe_out.read(&current_task, &mut pre_buf).unwrap(), capacity - 8);
+            let mut spliced_buf = VecOutputBuffer::new(8);
+            assert_eq!(pipe_out.read(&current_task, &mut spliced_buf).unwrap(), 8);
+            assert_eq!(spliced_buf.data(), b"SSSSWWWW");
+        })
+        .await;
+    }
+
     #[::fuchsia::test]
     async fn test_splice_from_closed_reader_returns_epipe_and_queues_sigpipe() {
         spawn_kernel_and_run(async |current_task| {
@@ -1177,6 +1730,51 @@ mod tests {
                 .unwrap_err();
             assert_eq!(err, errno!(EPIPE));
             assert!(current_task.write().signals_mut().has_queued(SIGPIPE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_from_reader_closes_during_read_returns_epipe() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_source = anon_test_file(
+                &current_task,
+                Box::new(BarrierSourceFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    payload: b"DATA",
+                }),
+                OpenFlags::RDONLY,
+            );
+
+            let (closer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_from enters read");
+                    std::mem::drop(pipe_out);
+                    worker_task.trigger_delayed_releaser();
+                    resume_tx.send(()).expect("allow splice_from read to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let err = pipe_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_from(&current_task, &pipe_in, &barrier_source, None, 4, true)
+                .unwrap_err();
+            closer_join().unwrap();
+            assert_eq!(err, errno!(EPIPE));
+            assert!(current_task.write().signals_mut().has_queued(SIGPIPE));
+            assert_eq!(
+                pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().messages.len(),
+                0
+            );
         })
         .await;
     }
@@ -1218,6 +1816,370 @@ mod tests {
             assert_eq!(partial.data(), &fill[..page_size]);
 
             assert_eq!(writer_join().unwrap(), 4);
+        })
+        .await;
+    }
+
+    struct WouldBlockEndpointFile;
+
+    impl FileOps for WouldBlockEndpointFile {
+        fileops_impl_nonseekable!();
+        fileops_impl_noop_sync!();
+
+        fn read(
+            &self,
+            file: &FileObject,
+            current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn OutputBuffer,
+        ) -> Result<usize, Errno> {
+            file.blocking_op(current_task, FdEvents::POLLIN, None, || error!(EAGAIN))
+        }
+
+        fn write(
+            &self,
+            file: &FileObject,
+            current_task: &CurrentTask,
+            _offset: usize,
+            _data: &mut dyn InputBuffer,
+        ) -> Result<usize, Errno> {
+            file.blocking_op(current_task, FdEvents::POLLOUT, None, || error!(EAGAIN))
+        }
+
+        fn wait_async(
+            &self,
+            _file: &FileObject,
+            _current_task: &CurrentTask,
+            _waiter: &Waiter,
+            _events: FdEvents,
+            _handler: EventHandler,
+        ) -> Option<WaitCanceler> {
+            Some(WaitCanceler::new_noop())
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_non_blocking_unix_stream_and_pipe_flags() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let (unix_sock, unix_peer) = crate::vfs::socket::UnixSocket::new_pair(
+                &current_task,
+                crate::vfs::socket::SocketDomain::Unix,
+                crate::vfs::socket::SocketType::Stream,
+                OpenFlags::RDWR,
+            )
+            .unwrap();
+            let blocking_sink =
+                anon_test_file(&current_task, Box::new(WouldBlockEndpointFile), OpenFlags::WRONLY);
+
+            // SPLICE_F_NONBLOCK (`non_blocking = true`) makes `splice_from` on an empty blocking
+            // AF_UNIX stream socket return EAGAIN without marking the socket itself non-blocking.
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, true)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!unix_sock.is_non_blocking());
+
+            // Setting O_NONBLOCK on the pipe write end also makes `splice_from` on an empty
+            // blocking AF_UNIX stream socket return EAGAIN even when `non_blocking = false`.
+            pipe_in.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!unix_sock.is_non_blocking());
+
+            // Data written to the peer splices into the pipe and subsequent empty splice_from
+            // still returns EAGAIN without mutating the socket's O_NONBLOCK flag.
+            assert_eq!(
+                unix_peer.write(&current_task, &mut VecInputBuffer::new(b"ABCD")).unwrap(),
+                4
+            );
+            assert_eq!(
+                pipe_in
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
+                    .unwrap(),
+                4
+            );
+            let mut read_buf = VecOutputBuffer::new(4);
+            assert_eq!(pipe_out.read(&current_task, &mut read_buf).unwrap(), 4);
+            assert_eq!(read_buf.data(), b"ABCD");
+            assert!(!unix_sock.is_non_blocking());
+
+            // Setting O_NONBLOCK on the pipe read end makes `splice_to` on an empty pipe return
+            // EAGAIN even when `non_blocking = false`.
+            pipe_out.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+            assert_eq!(
+                pipe_out
+                    .downcast_file::<PipeFileObject>()
+                    .unwrap()
+                    .splice_to(&current_task, &pipe_out, &blocking_sink, None, 4, false)
+                    .unwrap_err(),
+                errno!(EAGAIN)
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_fcntl_getpipe_sz_and_setpipe_sz_during_active_splice() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"DATA")).unwrap(), 4);
+            let initial_capacity =
+                pipe_out.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+
+            // 1. Both F_GETPIPE_SZ and F_SETPIPE_SZ serialize behind an active `splice_to`.
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_sink = anon_test_file(
+                &current_task,
+                Box::new(BarrierSinkFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    max_write: 4,
+                    written: Mutex::new(Vec::new()),
+                }),
+                OpenFlags::WRONLY,
+            );
+
+            let (ready_tx, ready_rx) = mpsc::channel();
+            let pipe_out_unblock = pipe_out.clone();
+            let (unblock_join, unblock_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    ready_rx.recv().expect("wait until F_GETPIPE_SZ starts");
+                    while pipe_out_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx.send(()).expect("allow splice_to write to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req);
+
+            let pipe_out_clone = pipe_out.clone();
+            let (fcntl_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_to enters write");
+                    ready_tx.send(()).expect("signal unblocker");
+                    // F_GETPIPE_SZ waits for the active splice read to finish.
+                    let got_sz =
+                        pipe_out_clone.fcntl(worker_task, F_GETPIPE_SZ, 0).expect("F_GETPIPE_SZ");
+                    assert_eq!(got_sz, initial_capacity.into());
+
+                    let new_sz = (*PAGE_SIZE as u64) * 2;
+                    pipe_out_clone
+                        .fcntl(worker_task, F_SETPIPE_SZ, new_sz)
+                        .expect("F_SETPIPE_SZ after splice_to")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let spliced = pipe_out
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_to(&current_task, &pipe_out, &barrier_sink, None, 4, true)
+                .unwrap();
+            assert_eq!(spliced, 4);
+            unblock_join().unwrap();
+            assert_eq!(fcntl_join().unwrap(), ((*PAGE_SIZE as usize) * 2).into());
+
+            // 2. Both F_SETPIPE_SZ and F_GETPIPE_SZ serialize behind an active `splice_from`.
+            let (entered_tx2, entered_rx2) = mpsc::channel();
+            let (resume_tx2, resume_rx2) = mpsc::channel();
+            let barrier_source = anon_test_file(
+                &current_task,
+                Box::new(BarrierSourceFile {
+                    entered_tx: Mutex::new(Some(entered_tx2)),
+                    resume_rx: Mutex::new(Some(resume_rx2)),
+                    payload: b"DATA",
+                }),
+                OpenFlags::RDONLY,
+            );
+
+            let (ready_tx2, ready_rx2) = mpsc::channel();
+            let pipe_in_unblock = pipe_in.clone();
+            let (unblock_join2, unblock_req2) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    ready_rx2.recv().expect("wait until F_SETPIPE_SZ starts");
+                    while pipe_in_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx2.send(()).expect("allow splice_from read to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req2);
+
+            let pipe_in_clone = pipe_in.clone();
+            let (fcntl_join2, req2) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx2.recv().expect("wait until splice_from enters read");
+                    ready_tx2.send(()).expect("signal unblocker");
+                    let new_sz = (*PAGE_SIZE as u64) * 4;
+                    let set_sz = pipe_in_clone
+                        .fcntl(worker_task, F_SETPIPE_SZ, new_sz)
+                        .expect("F_SETPIPE_SZ after splice_from");
+                    assert_eq!(set_sz, ((*PAGE_SIZE as usize) * 4).into());
+                    pipe_in_clone.fcntl(worker_task, F_GETPIPE_SZ, 0).expect("F_GETPIPE_SZ")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req2);
+
+            let spliced2 = pipe_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_from(&current_task, &pipe_in, &barrier_source, None, 4, true)
+                .unwrap();
+            assert_eq!(spliced2, 4);
+            unblock_join2().unwrap();
+            assert_eq!(fcntl_join2().unwrap(), ((*PAGE_SIZE as usize) * 4).into());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_short_transfer_when_available_capacity_below_pipe_buf() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            let capacity =
+                pipe_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+            let fill = vec![b'P'; capacity - 4];
+            assert_eq!(
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                capacity - 4
+            );
+
+            // Requesting 8 bytes (`< PIPE_BUF`) via `splice_from` when 4 bytes of space remain
+            // succeeds with a 4-byte transfer instead of failing with `EAGAIN`.
+            let source_file = anon_test_file(
+                &current_task,
+                Box::new(StaticSourceFile { payload: b"12345678" }),
+                OpenFlags::RDONLY,
+            );
+            let spliced = pipe_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_from(&current_task, &pipe_in, &source_file, None, 8, true)
+                .unwrap();
+            assert_eq!(spliced, 4);
+            let _ = pipe_out;
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_splice_to_eof_pipe_does_not_invoke_destination_write() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            std::mem::drop(pipe_in);
+            current_task.trigger_delayed_releaser();
+
+            let endpoint =
+                anon_test_file(&current_task, Box::new(WouldBlockEndpointFile), OpenFlags::WRONLY);
+            let pipe_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+
+            // `WouldBlockEndpointFile::write` would block (or return `EAGAIN` if non-blocking),
+            // so returning `Ok(0)` proves `to.write` was skipped on source pipe EOF.
+            assert_eq!(
+                pipe_ops.splice_to(&current_task, &pipe_out, &endpoint, None, 16, true).unwrap(),
+                0
+            );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_pipe_readiness_and_fionread_during_eof_and_active_splice() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AB")).unwrap(), 2);
+
+            // Register an async waiter for POLLIN while the pipe is already non-empty, then write
+            // 2 more bytes; the write must still notify POLLIN.
+            let waiter = Waiter::new();
+            pipe_out.wait_async(&current_task, &waiter, FdEvents::POLLIN, WaitCallback::none());
+            assert_eq!(pipe_in.write(&current_task, &mut VecInputBuffer::new(b"CD")).unwrap(), 2);
+            waiter.wait(&current_task).expect("write to non-empty pipe must notify POLLIN");
+
+            // Reserve all 4 queued bytes in an active splice read.
+            let pipe_ops = pipe_out.downcast_file::<PipeFileObject>().unwrap();
+            let guard = SpliceReadGuard::new(&pipe_ops.pipe, pipe_ops.pipe.lock(), 4);
+            assert_eq!(pipe_out.query_events(&current_task).unwrap(), FdEvents::empty());
+            assert_eq!(pipe_ops.pipe.lock().readable_len(), 0);
+            assert!(!pipe_ops.pipe.lock().is_readable());
+
+            // A concurrent write serializes behind the active splice read (`lock_pipe_without_splice`)
+            // and notifies POLLIN once the splice read completes.
+            let pipe_in_clone = pipe_in.clone();
+            let (writer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    pipe_in_clone
+                        .write(worker_task, &mut VecInputBuffer::new(b"EF"))
+                        .expect("write after active splice read")
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+            while pipe_ops.pipe.lock().waiters.is_empty() {
+                std::thread::yield_now();
+            }
+
+            let waiter2 = Waiter::new();
+            pipe_out.wait_async(&current_task, &waiter2, FdEvents::POLLIN, WaitCallback::none());
+            guard.consume(4);
+            assert_eq!(writer_join().unwrap(), 2);
+            assert_eq!(
+                pipe_out.query_events(&current_task).unwrap(),
+                FdEvents::POLLIN | FdEvents::POLLRDNORM
+            );
+            assert_eq!(pipe_ops.pipe.lock().readable_len(), 2);
+            waiter2.wait(&current_task).expect("write after splice read must notify POLLIN");
+
+            let mut remaining = VecOutputBuffer::new(2);
+            assert_eq!(pipe_out.read(&current_task, &mut remaining).unwrap(), 2);
+            assert_eq!(remaining.data(), b"EF");
+
+            // Close the writer when empty: query_events must report POLLHUP without POLLIN.
+            std::mem::drop(pipe_in);
+            current_task.trigger_delayed_releaser();
+            assert_eq!(pipe_out.query_events(&current_task).unwrap(), FdEvents::POLLHUP);
         })
         .await;
     }
@@ -1597,117 +2559,150 @@ mod tests {
         })
         .await;
     }
-
-    struct WouldBlockEndpointFile;
-
-    impl FileOps for WouldBlockEndpointFile {
-        fileops_impl_nonseekable!();
-        fileops_impl_noop_sync!();
-
-        fn read(
-            &self,
-            file: &FileObject,
-            current_task: &CurrentTask,
-            _offset: usize,
-            _data: &mut dyn OutputBuffer,
-        ) -> Result<usize, Errno> {
-            file.blocking_op(current_task, FdEvents::POLLIN, None, || error!(EAGAIN))
-        }
-
-        fn write(
-            &self,
-            file: &FileObject,
-            current_task: &CurrentTask,
-            _offset: usize,
-            _data: &mut dyn InputBuffer,
-        ) -> Result<usize, Errno> {
-            file.blocking_op(current_task, FdEvents::POLLOUT, None, || error!(EAGAIN))
-        }
-
-        fn wait_async(
-            &self,
-            _file: &FileObject,
-            _current_task: &CurrentTask,
-            _waiter: &Waiter,
-            _events: FdEvents,
-            _handler: EventHandler,
-        ) -> Option<WaitCanceler> {
-            Some(WaitCanceler::new_noop())
-        }
-    }
-
     #[::fuchsia::test]
-    async fn test_splice_non_blocking_unix_stream_and_pipe_flags() {
+    async fn test_poll_and_nonblocking_read_during_inflight_splice_to() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
 
             let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
-            let (unix_sock, unix_peer) = crate::vfs::socket::UnixSocket::new_pair(
-                &current_task,
-                crate::vfs::socket::SocketDomain::Unix,
-                crate::vfs::socket::SocketType::Stream,
-                OpenFlags::RDWR,
-            )
-            .unwrap();
-            let blocking_sink =
-                anon_test_file(&current_task, Box::new(WouldBlockEndpointFile), OpenFlags::WRONLY);
-
-            // SPLICE_F_NONBLOCK (`non_blocking = true`) makes `splice_from` on an empty blocking
-            // AF_UNIX stream socket return EAGAIN without marking the socket itself non-blocking.
             assert_eq!(
-                pipe_in
-                    .downcast_file::<PipeFileObject>()
-                    .unwrap()
-                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, true)
-                    .unwrap_err(),
-                errno!(EAGAIN)
+                pipe_in.write(&current_task, &mut VecInputBuffer::new(b"AAAABBBB")).unwrap(),
+                8
             );
-            assert!(!unix_sock.is_non_blocking());
-
-            // Setting O_NONBLOCK on the pipe write end also makes `splice_from` on an empty
-            // blocking AF_UNIX stream socket return EAGAIN even when `non_blocking = false`.
-            pipe_in.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
-            assert_eq!(
-                pipe_in
-                    .downcast_file::<PipeFileObject>()
-                    .unwrap()
-                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
-                    .unwrap_err(),
-                errno!(EAGAIN)
-            );
-            assert!(!unix_sock.is_non_blocking());
-
-            // Data written to the peer splices into the pipe and subsequent empty splice_from
-            // still returns EAGAIN without mutating the socket's O_NONBLOCK flag.
-            assert_eq!(
-                unix_peer.write(&current_task, &mut VecInputBuffer::new(b"ABCD")).unwrap(),
-                4
-            );
-            assert_eq!(
-                pipe_in
-                    .downcast_file::<PipeFileObject>()
-                    .unwrap()
-                    .splice_from(&current_task, &pipe_in, &unix_sock, None, 4, false)
-                    .unwrap(),
-                4
-            );
-            let mut read_buf = VecOutputBuffer::new(4);
-            assert_eq!(pipe_out.read(&current_task, &mut read_buf).unwrap(), 4);
-            assert_eq!(read_buf.data(), b"ABCD");
-            assert!(!unix_sock.is_non_blocking());
-
-            // Setting O_NONBLOCK on the pipe read end makes `splice_to` on an empty pipe return
-            // EAGAIN even when `non_blocking = false`.
             pipe_out.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
-            assert_eq!(
-                pipe_out
-                    .downcast_file::<PipeFileObject>()
-                    .unwrap()
-                    .splice_to(&current_task, &pipe_out, &blocking_sink, None, 4, false)
-                    .unwrap_err(),
-                errno!(EAGAIN)
+
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_sink = anon_test_file(
+                &current_task,
+                Box::new(BarrierSinkFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    max_write: 4,
+                    written: Mutex::new(Vec::new()),
+                }),
+                OpenFlags::WRONLY,
             );
+
+            let (ready_tx, ready_rx) = mpsc::channel();
+            let pipe_out_unblock = pipe_out.clone();
+            let (unblock_join, unblock_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    ready_rx.recv().expect("wait until non-blocking read starts");
+                    while pipe_out_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx.send(()).expect("allow splice_to write to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req);
+
+            let pipe_out_clone = pipe_out.clone();
+            let (reader_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_to enters write");
+                    // 4 unreserved bytes remain, so query_events reports POLLIN.
+                    assert_eq!(
+                        pipe_out_clone.query_events(worker_task).unwrap(),
+                        FdEvents::POLLIN | FdEvents::POLLRDNORM
+                    );
+                    ready_tx.send(()).expect("signal unblocker");
+                    let mut out = VecOutputBuffer::new(4);
+                    let n = pipe_out_clone
+                        .read(worker_task, &mut out)
+                        .expect("O_NONBLOCK read waits for in-flight splice_to and succeeds");
+                    out.data()[..n].to_vec()
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let spliced = pipe_out
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_to(&current_task, &pipe_out, &barrier_sink, None, 4, true)
+                .unwrap();
+            assert_eq!(spliced, 4);
+            unblock_join().unwrap();
+            assert_eq!(reader_join().unwrap(), b"BBBB");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_nonblocking_write_to_readerless_pipe_during_inflight_splice_returns_epipe() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_out, pipe_in) = new_pipe(&current_task).unwrap();
+            pipe_in.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (resume_tx, resume_rx) = mpsc::channel();
+            let barrier_source = anon_test_file(
+                &current_task,
+                Box::new(BarrierSourceFile {
+                    entered_tx: Mutex::new(Some(entered_tx)),
+                    resume_rx: Mutex::new(Some(resume_rx)),
+                    payload: b"AAAA",
+                }),
+                OpenFlags::RDONLY,
+            );
+
+            let (ready_tx, ready_rx) = mpsc::channel();
+            let pipe_in_unblock = pipe_in.clone();
+            let (unblock_join, unblock_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |_worker_task: &CurrentTask| {
+                    ready_rx.recv().expect("wait until non-blocking write starts");
+                    while pipe_in_unblock
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    resume_tx.send(()).expect("allow splice_from read to complete");
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(unblock_req);
+
+            let pipe_in_clone = pipe_in.clone();
+            let (writer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    entered_rx.recv().expect("wait until splice_from enters read");
+                    std::mem::drop(pipe_out);
+                    worker_task.trigger_delayed_releaser();
+                    ready_tx.send(()).expect("signal unblocker");
+                    let err = pipe_in_clone
+                        .write(worker_task, &mut VecInputBuffer::new(b"BBBB"))
+                        .unwrap_err();
+                    let has_sigpipe = worker_task.write().signals_mut().has_queued(SIGPIPE);
+                    (err, has_sigpipe)
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let splice_err = pipe_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .splice_from(&current_task, &pipe_in, &barrier_source, None, 4, true)
+                .unwrap_err();
+            assert_eq!(splice_err, errno!(EPIPE));
+            unblock_join().unwrap();
+            let (write_err, has_sigpipe) = writer_join().unwrap();
+            assert_eq!(write_err, errno!(EPIPE));
+            assert!(has_sigpipe);
         })
         .await;
     }

@@ -11,6 +11,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <thread>
 
 #include <fbl/unique_fd.h>
 #include <gmock/gmock.h>
@@ -589,6 +590,32 @@ TEST(VmspliceTest, ZeroLengthVmsplice) {
   // Close the read end; zero-length vmsplice into a broken pipe returns 0 without EPIPE or SIGPIPE.
   pipe_rd.reset();
   EXPECT_EQ(vmsplice(pipe_wr.get(), &empty_iov, 1, SPLICE_F_NONBLOCK), 0);
+}
+
+TEST(VmspliceTest, VmspliceIgnoresPipeNonblockWithoutFlag) {
+  test_helper::ScopedPipe pipe(O_NONBLOCK);
+
+  char read_buf[4] = {};
+  iovec read_iov = {
+      .iov_base = read_buf,
+      .iov_len = sizeof(read_buf),
+  };
+
+  // With SPLICE_F_NONBLOCK, vmsplice from an empty pipe returns EAGAIN immediately.
+  EXPECT_EQ(vmsplice(pipe.ReadSide().get(), &read_iov, 1, SPLICE_F_NONBLOCK), -1);
+  EXPECT_EQ(errno, EAGAIN);
+
+  // Without SPLICE_F_NONBLOCK, vmsplice ignores O_NONBLOCK on the pipe fd and blocks until data
+  // arrives.
+  std::thread writer([&pipe]() {
+    usleep(20000);
+    const char payload[] = "ABCD";
+    EXPECT_EQ(write(pipe.WriteSide().get(), payload, 4), 4);
+  });
+
+  ASSERT_EQ(vmsplice(pipe.ReadSide().get(), &read_iov, 1, 0), 4) << strerror(errno);
+  writer.join();
+  EXPECT_EQ(std::string(read_buf, 4), "ABCD");
 }
 
 }  // namespace
