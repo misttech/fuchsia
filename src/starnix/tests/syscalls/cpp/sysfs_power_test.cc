@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 
+#include <fbl/unique_fd.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -657,22 +658,33 @@ TEST_F(SysfsPowerTest, CpuIdleDirectoryContainsExpectedContents) {
       EXPECT_EQ(0444u, st.st_mode & 0777u);
       EXPECT_EQ(0u, st.st_uid);
       EXPECT_EQ(0u, st.st_gid);
-
-      VerifyReadOutOfBound(attr_path);
     }
 
-    std::string content;
-    EXPECT_TRUE(files::ReadFileToString(std::format("{}/name", state_dir), &content));
-    EXPECT_TRUE(std::regex_match(content, std::regex("^.+\n$")));
+    for (const char* attr : {"name", "desc"}) {
+      std::string attr_path = std::format("{}/{}", state_dir, attr);
+      VerifyReadOutOfBound(attr_path);
+      std::string content;
+      EXPECT_TRUE(files::ReadFileToString(attr_path, &content));
+      EXPECT_TRUE(std::regex_match(content, std::regex("^.+\n$")));
+    }
 
-    EXPECT_TRUE(files::ReadFileToString(std::format("{}/desc", state_dir), &content));
-    EXPECT_TRUE(std::regex_match(content, std::regex("^.+\n$")));
-
-    EXPECT_TRUE(files::ReadFileToString(std::format("{}/time", state_dir), &content));
-    EXPECT_TRUE(std::regex_match(content, std::regex("^[0-9]+\n$")));
-
-    EXPECT_TRUE(files::ReadFileToString(std::format("{}/usage", state_dir), &content));
-    EXPECT_TRUE(std::regex_match(content, std::regex("^[0-9]+\n$")));
+    for (const char* attr : {"time", "usage"}) {
+      std::string attr_path = std::format("{}/{}", state_dir, attr);
+      fbl::unique_fd fd(open(attr_path.c_str(), O_RDONLY));
+      ASSERT_TRUE(fd.is_valid()) << attr_path;
+      char buf[64];
+      ssize_t n = read(fd.get(), buf, sizeof(buf));
+      if (n >= 0) {
+        VerifyReadOutOfBound(attr_path);
+        std::string content(buf, static_cast<size_t>(n));
+        EXPECT_TRUE(std::regex_match(content, std::regex("^[0-9]+\n$")));
+      } else {
+        // Deep idle states (e.g. state1 / C2) fail with ENODEV when the platform does not report
+        // firmware C2 residency.
+        EXPECT_NE("state0", entry);
+        EXPECT_THAT(n, SyscallFailsWithErrno(ENODEV));
+      }
+    }
   }
   EXPECT_TRUE(found_state);
 }

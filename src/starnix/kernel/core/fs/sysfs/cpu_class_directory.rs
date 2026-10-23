@@ -1224,7 +1224,7 @@ enum ProviderState {
     /// and fail with `EIO` until the service recovers, avoiding non-monotonic `0` counter drops.
     Disconnected,
     /// No `fuchsia.hardware.power.stats.Service` instance in `/svc` reported `"cpu_c2"` during
-    /// initial discovery, so C2 residency is unsupported on this platform and reads report `0`.
+    /// initial discovery, so C2 residency is unsupported on this platform.
     Unavailable,
 }
 
@@ -1240,7 +1240,7 @@ enum ProviderState {
 /// - If an instance reporting the `"cpu_c2"` entity is found, its proxy is cached in
 ///   [`ProviderState::Connected`].
 /// - If no such instance exists during initial discovery, [`ProviderState::Unavailable`] is cached
-///   so subsequent reads return `Ok(None)` (`0` residency) without repeatedly scanning `/svc`.
+///   so subsequent reads return `Ok(None)` without repeatedly scanning `/svc`.
 /// - If a `GetStats` call fails after a connection was established, the state transitions to
 ///   [`ProviderState::Disconnected`] and the read fails with `EIO` so userspace does not observe
 ///   monotonic counters dropping to `0`. Subsequent reads attempt to reconnect without permanently
@@ -1369,20 +1369,26 @@ pub fn sample_cpu_c2_residency(kernel: &Kernel) {
 
 /// Backing [`BytesFileOps`] implementation for `/sys/devices/system/cpu/cpuN/cpuidle/state1/time`
 /// and `state1/usage`, reporting per-core C2 residency (in microseconds) and entry count from
-/// [`CpuC2Provider`], or `0` when C2 residency is unsupported on the platform.
+/// [`CpuC2Provider`], or `ENODEV` when C2 residency is unavailable for the core.
 struct CpuIdleC2StatFile {
     core_id: u64,
     stat_type: CpuIdleStatType,
     provider: Arc<CpuC2Provider>,
 }
 
+impl CpuIdleC2StatFile {
+    fn read_value(&self) -> Result<u64, Errno> {
+        let state = self.provider.residency(self.core_id)?.ok_or_else(|| errno!(ENODEV))?;
+        Ok(match self.stat_type {
+            CpuIdleStatType::Time => u64::try_from(state.total_time.into_micros()).unwrap_or(0),
+            CpuIdleStatType::Usage => state.entry_count,
+        })
+    }
+}
+
 impl BytesFileOps for CpuIdleC2StatFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let value =
-            self.provider.residency(self.core_id)?.map_or(0, |state| match self.stat_type {
-                CpuIdleStatType::Time => u64::try_from(state.total_time.into_micros()).unwrap_or(0),
-                CpuIdleStatType::Usage => state.entry_count,
-            });
+        let value = self.read_value()?;
         Ok(format!("{value}\n").into_bytes().into())
     }
 }
@@ -1453,10 +1459,17 @@ mod tests {
         assert!(matches!(*provider.state.lock(), ProviderState::Disconnected));
 
         // When no service is present on initial discovery, the provider transitions from
-        // Unconnected to Unavailable and returns Ok(None).
-        let unconfigured = CpuC2Provider::default();
+        // Unconnected to Unavailable and returns Ok(None), while CpuIdleC2StatFile fails with
+        // ENODEV rather than reporting 0.
+        let unconfigured = Arc::new(CpuC2Provider::default());
         assert_eq!(unconfigured.residency(/* core_id = */ 0), Ok(None));
         assert!(matches!(*unconfigured.state.lock(), ProviderState::Unavailable));
+        let c2_file = CpuIdleC2StatFile {
+            core_id: 0,
+            stat_type: CpuIdleStatType::Time,
+            provider: unconfigured,
+        };
+        assert_eq!(c2_file.read_value(), error!(ENODEV));
     }
 
     fn c2_residency(id: i32, total_time_ms: u64) -> fpowerstats::StateResidency {
