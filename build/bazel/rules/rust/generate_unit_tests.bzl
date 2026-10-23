@@ -101,7 +101,6 @@ _ALLOWED_PACKAGES = {
     "src/lib/assembly/cli_args": True,
     "src/lib/assembly/component_id_index": True,
     "src/lib/assembly/component_manager_config": True,
-    "src/lib/assembly/components": True,
     "src/lib/assembly/config_capabilities": True,
     "src/lib/assembly/config_data": True,
     "src/lib/assembly/domain_config": True,

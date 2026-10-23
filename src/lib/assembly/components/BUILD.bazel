@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "components",
+    srcs = [
+        "src/components.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "assembly_components",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    version = "0.1.0",
+    visibility = [
+        "//src/developer/ffx/plugins/assembly:__pkg__",
+        "//src/lib/assembly/image_assembly_config_builder:__pkg__",
+    ],
+    deps = [
+        "//src/lib/assembly/tool",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+    ],
+)
+
+host_rustc_test(
+    name = "components_test",
+    crate = ":components",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
