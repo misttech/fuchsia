@@ -2674,11 +2674,11 @@ if (current_os == "fuchsia") {
 }
 
 group("unicode-segmentation") {
-  public_deps = [ ":unicode-segmentation-v1_13_2" ]
+  public_deps = [ ":unicode-segmentation-v1_13_3" ]
 }
 
-group("unicode-segmentation-1.13.2") {
-  public_deps = [ ":unicode-segmentation-v1_13_2" ]
+group("unicode-segmentation-1.13.3") {
+  public_deps = [ ":unicode-segmentation-v1_13_3" ]
 }
 
 group("unicode-width") {
@@ -11212,7 +11212,7 @@ rustc_library("heck-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":unicode-segmentation-v1_13_2" ]
+  deps += [ ":unicode-segmentation-v1_13_3" ]
 
   rustenv = []
 
@@ -20104,7 +20104,7 @@ rustc_library("rustyline-v18_0_1") {
   deps += [ ":home-v0_5_12" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":radix_trie-v0_3_0" ]
-  deps += [ ":unicode-segmentation-v1_13_2" ]
+  deps += [ ":unicode-segmentation-v1_13_3" ]
   deps += [ ":unicode-width-v0_2_2" ]
   if (true) {
     deps += [ ":nix-v0_31_3" ]
@@ -25561,16 +25561,16 @@ rustc_library("unicode-normalization-v0_1_25") {
   applicable_licenses = [ ":unicode-normalization-v0_1_25.license" ]
 }
 
-license("unicode-segmentation-v1_13_2.license") {
+license("unicode-segmentation-v1_13_3.license") {
   public_package_name = "unicode_segmentation"
-  license_files = [ "//third_party/rust_crates/vendor/unicode-segmentation-1.13.2/LICENSE-APACHE" ]
+  license_files = [ "//third_party/rust_crates/vendor/unicode-segmentation-1.13.3/LICENSE-APACHE" ]
 }
 
-rustc_library("unicode-segmentation-v1_13_2") {
+rustc_library("unicode-segmentation-v1_13_3") {
   crate_name = "unicode_segmentation"
   source_root =
-      "//third_party/rust_crates/vendor/unicode-segmentation-1.13.2/src/lib.rs"
-  output_name = "unicode_segmentation-b324ad89ec6f59bc"
+      "//third_party/rust_crates/vendor/unicode-segmentation-1.13.3/src/lib.rs"
+  output_name = "unicode_segmentation-26e8e40337890578"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -25582,13 +25582,13 @@ rustc_library("unicode-segmentation-v1_13_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b324ad89ec6f59bc",
-    "-Cextra-filename=-b324ad89ec6f59bc",
+    "-Cmetadata=26e8e40337890578",
+    "-Cextra-filename=-26e8e40337890578",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-segmentation-v1_13_2.license" ]
+  applicable_licenses = [ ":unicode-segmentation-v1_13_3.license" ]
 }
 
 license("unicode-width-v0_1_14.license") {
