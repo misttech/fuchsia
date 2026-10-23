@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "rust",
+    srcs = ["src/lib.rs"],
+    crate_name = "fdf",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//build/rust:__pkg__",
+        "//examples/drivers:__subpackages__",
+        "//sdk/lib/async/rust/fidl:__pkg__",
+        "//sdk/lib/driver/component/rust:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/lib/dso/rust:__pkg__",
+        "//src/lib/fidl/rust/fidl_driver:__pkg__",
+        "//src/sys:__subpackages__",
+        "//src/ui:__subpackages__",
+        "//tools/create:__subpackages__",
+        "//tools/fidl:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust",
+        "//sdk/lib/driver/runtime/rust/channel",
+        "//sdk/lib/driver/runtime/rust/core",
+    ],
+)
+
+rustc_test(
+    name = "rust_test",
+    crate = ":rust",
+    crate_name = "fdf_lib_test",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+)
+
+fx_unittest_package(
+    name = "fdf_rust_tests",
+    unit_tests = [":rust_test"],
+)
