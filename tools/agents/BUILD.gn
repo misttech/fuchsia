@@ -48,6 +48,7 @@ if (is_host) {
     sources = [
       "__init__.py",
       "base.py",
+      "runner.py",
       "workspace.py",
     ]
   }
@@ -173,6 +174,15 @@ if (is_host) {
       ":agents_testing",
     ]
   }
+
+  python_host_test("agents_e2e_permissions_test") {
+    main_source = "tests/e2e_permissions_test.py"
+    main_callable = "parallel_main"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
 }
 
 group("tests") {
@@ -182,6 +192,7 @@ group("tests") {
     ":agents_agent_hooks_policy_test($host_toolchain)",
     ":agents_config_test($host_toolchain)",
     ":agents_e2e_githooks_test($host_toolchain)",
+    ":agents_e2e_permissions_test($host_toolchain)",
     ":agents_git_staging_test($host_toolchain)",
     ":agents_githooks_adapters_test($host_toolchain)",
     ":agents_githooks_installer_test($host_toolchain)",
