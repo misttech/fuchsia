@@ -5,6 +5,7 @@
 """Bazel macros for Zither."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
@@ -31,6 +32,12 @@ _RUSTFMT = None
 #     "script": ["//prebuilt/third_party/rust/linux-x64/bin:rustfmt"],
 #     "inputs": ["//:rustfmt.toml"],
 #     "args": ["--config-path=" + paths.join("rustfmt.toml")],
+# }
+
+_GOFMT = None
+# TODO(https://fxbug.dev/454449781): Determine the correct path and uncomment.
+# _GOFMT = {
+#     "script": ["//prebuilt/third_party/go/linux-x64/bin:gofmt"],
 # }
 
 _COMMON_ATTRS = {
@@ -249,6 +256,50 @@ def _zither_c_family_library_impl(
         visibility = visibility,
     )
 
+def _zither_go_library_impl(
+        name,
+        source_names,
+        output_dir,
+        output_namespace,
+        fidl_ir_json,
+        formatter,
+        output_namespace_override,
+        testonly,
+        visibility):
+    """Implementation of the _zither_go_library() macro."""
+    zither_target = name + ".gen"
+
+    # Work around Bazel symbolic macro naming limitations. See _zither_c_family_library_impl().
+    output_dir = paths.join(zither_target + ".out", output_dir)
+
+    pkg_name_file = paths.join(output_dir, output_namespace, "pkg_name.txt")
+    go_files = [paths.join(output_dir, output_namespace, name + ".go") for name in source_names]
+    generated_files = [pkg_name_file] + go_files
+
+    _zither(
+        name = zither_target,
+        backend = "go",
+        fidl_ir_json = fidl_ir_json,
+        output_dir = output_dir,
+        generated_files = generated_files,
+        formatter = formatter,
+        output_namespace_override = output_namespace if output_namespace_override else None,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    go_library(
+        name = name,
+        srcs = go_files,
+        # `pkg_name.txt` is not a Go source file, so cannot be listed in `srcs`.
+        data = [pkg_name_file],
+        importpath = output_namespace,
+        # TODO(https://fxbug.dev/454449781): Figure out how to make this target depend on the check target.
+        # deps = [":" + zither_target + ".check"],
+        testonly = testonly,
+        visibility = visibility,
+    )
+
 def _zither_rust_library_impl(
         name,
         source_names,
@@ -454,6 +505,16 @@ _zither_c_family_library = macro(
     } | _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR | _SUBBACKEND_ATTR | _SOURCE_NAMES_ATTR,
 )
 
+_zither_go_library = macro(
+    doc = "Internal Go library helper macro.",
+    implementation = _zither_go_library_impl,
+    attrs = {
+        "output_namespace_override": attr.bool(
+            default = False,
+        ),
+    } | _COMMON_BACKEND_ATTRS | _FORMATTER_ATTR | _OUTPUT_NAMESPACE_ATTR | _SOURCE_NAMES_ATTR,
+)
+
 _zither_rust_library = macro(
     doc = "Internal Rust library helper macro.",
     implementation = _zither_rust_library_impl,
@@ -572,6 +633,16 @@ _SUPPORTED_ZITHER_BACKEND_INFO = {
         "formatter": _CLANG_FORMAT,
         "_library_template": _zither_c_family_library,
     },
+    # Go data layout bindings.
+    "go": {
+        "output_namespace": {
+            "prefix_parts": [],
+            "library_name_separator": "/",
+            "supports_override": True,
+        },
+        "formatter": _GOFMT,
+        "_library_template": _zither_go_library,
+    },
     # Syscall text ABI bindings.
     "zircon_ifs": {
         "output_namespace": {},
@@ -675,13 +746,13 @@ def _zither_library_impl(
 
         if backend not in ["syscall_docs", "zircon_ifs"]:
             kwargs["formatter"] = info.get("formatter")
-        if backend in ["c", "asm", "rust", "rust_syscall"]:
+        if backend in ["c", "asm", "go", "rust", "rust_syscall"]:
             kwargs["source_names"] = source_names
-        if backend in ["c", "asm", "kernel", "legacy_syscall_cdecl", "rust", "rust_syscall"]:
+        if backend in ["c", "asm", "go", "kernel", "legacy_syscall_cdecl", "rust", "rust_syscall"]:
             kwargs["output_namespace"] = output_namespace
         if backend in ["c", "asm", "rust", "rust_syscall"]:
             kwargs["backend"] = backend
-        if backend in ["c", "asm"]:
+        if backend in ["c", "asm", "go"]:
             kwargs["output_namespace_override"] = output_namespace_info.get("supports_override", False)
 
         info["_library_template"](**kwargs)

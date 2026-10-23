@@ -451,6 +451,14 @@ zither_golden_test("bits") {
 zither_golden_test("structs") {
   sources = [ "structs.test.fidl" ]
 
+  backend_parameters = {
+    go = {
+      # Keep the `zither/` prefix so that the package does not collide with
+      # the Go standard library's `structs` package (Go 1.27+).
+      output_namespace = "zither/structs"
+    }
+  }
+
   cases = [
     {
       backend = "c"
@@ -540,6 +548,9 @@ zither_golden_test("output_namespace_override") {
     asm = {
       output_namespace = "my/custom/asm/header/guard"
     }
+    go = {
+      output_namespace = "my/custom/go/pkg"
+    }
   }
 
   cases = [
@@ -553,6 +564,13 @@ zither_golden_test("output_namespace_override") {
     {
       backend = "asm"
       files = [ "output_namespace_override.h" ]
+    },
+    {
+      backend = "go"
+      files = [
+        "output_namespace_override.go",
+        "pkg_name.txt",
+      ]
     },
   ]
 }

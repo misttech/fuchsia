@@ -22,11 +22,14 @@ var templates embed.FS
 // Generator provides go data layout bindings.
 type Generator struct {
 	fidlgen.Generator
+	outputNamespaceOverride string
 }
 
-func NewGenerator(formatter fidlgen.Formatter) *Generator {
+func NewGenerator(formatter fidlgen.Formatter, outputNamespaceOverride string) *Generator {
 	gen := fidlgen.NewGenerator("GoTemplates", templates, formatter, template.FuncMap{
-		"PackageBasename":          PackageBasename,
+		"PackageBasename": func(lib fidlgen.LibraryName) string {
+			return PackageBasename(lib, outputNamespaceOverride)
+		},
 		"PackageImports":           PackageImports,
 		"Name":                     zither.UpperCamelCase,
 		"ConstMemberName":          ConstMemberName,
@@ -35,7 +38,7 @@ func NewGenerator(formatter fidlgen.Formatter) *Generator {
 		"DescribeType":             DescribeType,
 		"LowerCaseWithUnderscores": zither.LowerCaseWithUnderscores,
 	})
-	return &Generator{*gen}
+	return &Generator{*gen, outputNamespaceOverride}
 }
 
 func (gen Generator) DeclOrder() zither.DeclOrder {
@@ -46,13 +49,8 @@ func (gen Generator) DeclOrder() zither.DeclOrder {
 func (gen Generator) DeclCallback(zither.Decl) {}
 
 func (gen *Generator) Generate(summary zither.LibrarySummary, outputDir string) ([]string, error) {
-	parts := summary.Library.Parts()
-	if len(parts) > 1 && parts[0] == "zither" {
-		parts = parts[1:]
-	}
-	pkgParts := parts
-	pkgPath := path.Join(pkgParts...) // path.Join() over filepath.Join(), as package names always use '/'
-	outputDir = filepath.Join(outputDir, filepath.Join(pkgParts...))
+	pkgPath := PackagePath(summary.Library, gen.outputNamespaceOverride)
+	outputDir = filepath.Join(outputDir, filepath.FromSlash(pkgPath))
 
 	var outputs []string
 	// Generate a file containing the package's name
@@ -89,9 +87,25 @@ func PrimitiveTypeName(typ fidlgen.PrimitiveSubtype) string {
 	}
 }
 
-func PackageBasename(lib fidlgen.LibraryName) string {
+// PackagePath gives the Go package path (i.e., import path) of the generated
+// bindings. If `outputNamespaceOverride` is non-empty, it is used as the
+// package path; otherwise, the path is derived from the library name, with
+// any leading "zither" part stripped.
+func PackagePath(lib fidlgen.LibraryName, outputNamespaceOverride string) string {
+	if outputNamespaceOverride != "" {
+		return path.Clean(filepath.ToSlash(outputNamespaceOverride))
+	}
 	parts := lib.Parts()
-	return parts[len(parts)-1]
+	if len(parts) > 1 && parts[0] == "zither" {
+		parts = parts[1:]
+	}
+	return path.Join(parts...) // path.Join() over filepath.Join(), as package names always use '/'
+}
+
+// PackageBasename gives the Go package name of the generated bindings, which
+// is the last element of the package path.
+func PackageBasename(lib fidlgen.LibraryName, outputNamespaceOverride string) string {
+	return path.Base(PackagePath(lib, outputNamespaceOverride))
 }
 
 func PackageImports(summary zither.FileSummary) []string {

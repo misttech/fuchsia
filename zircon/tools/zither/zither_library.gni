@@ -134,6 +134,7 @@ supported_zither_backend_info = {
   go = {
     output_namespace = {
       library_name_separator = "/"
+      supports_override = true
     }
     formatter = _gofmt
 
@@ -439,6 +440,10 @@ template("_zither_go_library") {
                              "formatter",
                            ])
     backend = "go"
+    if (defined(invoker.output_namespace_override) &&
+        invoker.output_namespace_override) {
+      output_namespace_override = output_namespace
+    }
   }
 
   go_library(main_target) {

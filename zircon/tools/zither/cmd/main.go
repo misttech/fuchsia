@@ -136,8 +136,7 @@ func main() {
 	case asmBackend:
 		gen = asm.NewGenerator(f, flags.outputNamespace)
 	case goBackend:
-		assertNoNamespace()
-		gen = golang.NewGenerator(f)
+		gen = golang.NewGenerator(f, flags.outputNamespace)
 	case rustBackend:
 		assertNoNamespace()
 		gen = rust.NewGenerator(f)
