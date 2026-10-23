@@ -2,20 +2,56 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/components.gni")
+import("//build/test.gni")
+
+source_set("diagnostics-text") {
+  sources = [
+    "diagnostics_text.cc",
+    "diagnostics_text.h",
+  ]
+  deps = [ "//third_party/rapidjson" ]
+}
+
 source_set("storage-watchdog") {
   sources = [
+    "archivist_snapshot.cc",
+    "archivist_snapshot.h",
     "storage_watchdog.cc",
     "storage_watchdog.h",
     "wedge_dump.cc",
     "wedge_dump.h",
   ]
   deps = [
+    ":diagnostics-text",
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_cpp",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/debug:backtrace-request",
     "//src/lib/elf-search",
     "//zircon/system/ulib/task-utils",
     "//zircon/system/ulib/zx",
+  ]
+}
+
+test("storage-watchdog-unittests-bin") {
+  output_name = "storage-watchdog-unittests"
+  sources = [ "diagnostics_text_unittest.cc" ]
+  deps = [
+    ":diagnostics-text",
+    "//src/lib/fxl/test:gtest_main",
+  ]
+}
+
+fuchsia_unittest_package("storage-watchdog-unittests") {
+  deps = [ ":storage-watchdog-unittests-bin" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":storage-watchdog-unittests",
+    ":storage-watchdog-unittests-bin($host_toolchain)",
   ]
 }

@@ -30,6 +30,11 @@
             availability: "optional",
         },
         {
+            // The storage stall watchdog's dump includes the log tail and storage Inspect data.
+            protocol: "fuchsia.diagnostics.ArchiveAccessor",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.diagnostics.ExceptionHandlerAvailable",
             key: "exception_handler_available",
             type: "bool",

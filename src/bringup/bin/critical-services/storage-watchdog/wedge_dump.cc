@@ -33,6 +33,9 @@
 
 #include <task-utils/walker.h>
 
+#include "src/bringup/bin/critical-services/storage-watchdog/archivist_snapshot.h"
+#include "src/bringup/bin/critical-services/storage-watchdog/diagnostics_text.h"
+
 // Zircon C headers define ZX_RIGHT_*, ZX_INFO_*, ZX_VM_*, and ZX_THREAD_* with signed (1 << N).
 // NOLINTBEGIN(bugprone-signed-bitwise)
 namespace storage_watchdog {
@@ -45,10 +48,13 @@ constexpr zx::duration kModuleTimeout = zx::sec(2);
 constexpr size_t kMaxFrames = 48;
 constexpr size_t kMaxStarnixThreads = 64;
 // stdout goes to the debuglog, one record (40 byte header + text) per line. The crashlog keeps
-// only the newest 128 KiB of the debuglog, so stop adding stacks before the dump's start would
-// be overwritten.
-constexpr size_t kMaxDebuglogBytes = 80ULL * 1024;
-constexpr size_t kDebuglogRecordHeader = 40;
+// only the newest 128 KiB of the debuglog, so the dump must stay well below that, or its end
+// would evict its start. Stacks come first and stop at kMaxStackDebuglogBytes. Logs and Inspect
+// get what's left of kMaxDebuglogBytes, which leaves room for what the kernel and other
+// processes log until the reboot.
+constexpr size_t kMaxStackDebuglogBytes = 80ULL * 1024;
+constexpr size_t kMaxDebuglogBytes = 112ULL * 1024;
+constexpr zx::duration kArchivistTimeout = zx::sec(10);
 
 size_t debuglog_used = 0;
 
@@ -459,11 +465,31 @@ void DumpWedgeDiagnosticsAndReboot(std::string_view reason, zx::job root_job) {
 
   bool pager_stuck = false;
   for (size_t i = 0; i < processes.size(); i++) {
-    if (debuglog_used > kMaxDebuglogBytes) {
+    if (debuglog_used > kMaxStackDebuglogBytes) {
       std::println("{}: out of debuglog space, skipped {} processes", kTag, processes.size() - i);
       break;
     }
     pager_stuck |= !DumpProcess(processes[i], pager_stuck);
+  }
+
+  // Then the log tail and storage Inspect data, as much as fits. Inspect is small, so it gets
+  // room first, and the log tail drops its oldest lines to fit in the rest.
+  ArchivistSnapshots snapshots = TakeArchivistSnapshots(zx::deadline_after(kArchivistTimeout));
+  constexpr size_t kSummaryLines = 2 * (kMaxLineLength + kDebuglogRecordHeader);
+  size_t room = kMaxDebuglogBytes - std::min(kMaxDebuglogBytes, debuglog_used + kSummaryLines);
+  std::span<const std::string> inspect = snapshots.inspect.lines;
+  while (DebuglogCost(inspect) > room) {
+    inspect = inspect.first(inspect.size() - 1);
+  }
+  room -= DebuglogCost(inspect);
+  std::span<const std::string> logs = NewestWithinBudget(snapshots.logs.lines, room);
+  for (auto [snapshot, lines] : {std::pair{&snapshots.logs, logs}, {&snapshots.inspect, inspect}}) {
+    std::string text = std::string(kTag) + ": " + snapshot->summary + ", printing " +
+                       std::to_string(lines.size()) + "\n";
+    for (const std::string& line : lines) {
+      text += line + "\n";
+    }
+    Print(text);
   }
 
   char why[64];

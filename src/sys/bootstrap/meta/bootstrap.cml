@@ -105,6 +105,13 @@
             to: "#critical-services",
         },
         {
+            // Weak, so that Archivist's shutdown doesn't wait for critical-services.
+            protocol: "fuchsia.diagnostics.ArchiveAccessor",
+            from: "#archivist/diagnostics-accessors",
+            to: "#critical-services",
+            dependency: "weak",
+        },
+        {
             directory: "dev-class",
             from: "#devfs-with-pkg",
             as: "input",
