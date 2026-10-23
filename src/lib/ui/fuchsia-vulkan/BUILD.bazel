@@ -1,0 +1,98 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_build_info//:args.bzl", "target_cpu")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+cc_import(
+    name = "libvulkan",
+    interface_library = "@fuchsia_in_tree_idk//arch/" + target_cpu + ":lib/libvulkan.so",
+    shared_library = "@fuchsia_in_tree_idk//arch/" + target_cpu + ":debug/libvulkan.so",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+rustc_library(
+    name = "fuchsia-vulkan",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    link_deps = [
+        ":libvulkan",  # @bazel2gn:path_overwrite://src/lib/vulkan
+    ],
+    proc_macro_deps = ["//third_party/rust_crates/vendor:derivative"],
+    deps = [
+        "//sdk/rust/zx",
+        "//third_party/rust_crates/vendor:vk-sys",
+    ],
+)
+
+# meta/fuchsia_vulkan_tests.cml expects bin/fuchsia_vulkan_lib_test.
+# @bazel2gn:raw_attribute:output_name = "fuchsia_vulkan_lib_test"
+rustc_test(
+    name = "fuchsia-vulkan_test",
+    crate = ":fuchsia-vulkan",
+    # Explicit link_deps puts libvulkan.so in default_runfiles for
+    # fx_packaged_binary; skip in bazel2gn since `crate` already supplies it.
+    # @bazel2gn:skip
+    link_deps = [":libvulkan"],
+)
+
+fx_packaged_binary(
+    name = "fuchsia-vulkan_test_packaged_bin",
+    testonly = True,
+    binary = ":fuchsia-vulkan_test",
+    binary_name = "fuchsia_vulkan_lib_test",
+)
+
+fx_component_manifest(
+    name = "fuchsia_vulkan_tests-manifest",
+    testonly = True,
+    component_name = "fuchsia_vulkan_tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/vulkan:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia_vulkan_tests.cml",
+)
+
+fx_test_component(
+    name = "fuchsia_vulkan_tests-component",
+    compiled_manifest = ":fuchsia_vulkan_tests-manifest",
+    component_name = "fuchsia_vulkan_tests",
+    deps = [":fuchsia-vulkan_test_packaged_bin"],
+)
+
+fx_package(
+    name = "fuchsia_vulkan_tests-package",
+    package_name = "fuchsia_vulkan_tests",
+    test_components = [":fuchsia_vulkan_tests-component"],
+)
+
+fx_test(
+    name = "fuchsia_vulkan_tests",
+    environments = [
+        "//build/testing/environments:aemu_env",
+        "//build/testing/environments:astro_env",
+        "//build/testing/environments:nelson_env",
+        "//build/testing/environments:nuc11_env",
+        "//build/testing/environments:sherlock_env",
+        "//build/testing/environments:sorrel_env",
+        "//build/testing/environments:vim3_env",
+    ],
+    package = ":fuchsia_vulkan_tests-package",
+    test_type = "vulkan",
+)

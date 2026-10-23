@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+
+package(default_applicable_licenses = ["//:license"])
+
+cml_shard(
+    name = "client.shard",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard.cml",
+    ],
+    shard = "client.shard.cml",
+    visibility = ["//src/lib/ui/fuchsia-vulkan:__pkg__"],
+)
