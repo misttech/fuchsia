@@ -26,7 +26,6 @@ FXFS_LIBS_VISIBILITY = [
 # LINT.IfChange
 fxfs_deps = [
   ":fxfs_macros",
-  "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/rust/zx-status",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/fuchsia-async",
@@ -151,6 +150,7 @@ fxfs_sources = [
 
 if (is_fuchsia) {
   fxfs_deps += [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
     "//src/lib/debug/rust",
     "//third_party/rust_crates:scopeguard",
@@ -159,6 +159,8 @@ if (is_fuchsia) {
     "//src/storage/blobfs/bin:blobfs-component",
     "//third_party/zstd",
   ]
+} else {
+  fxfs_deps += [ "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common" ]
 }
 
 # LINT.ThenChange(BUILD.bazel)
@@ -563,7 +565,6 @@ rustc_library("lib") {
   ]
   deps = []
   deps += [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
@@ -604,8 +605,11 @@ rustc_library("lib") {
   ]
   if (is_fuchsia) {
     deps += [
+      "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
       "//sdk/rust/zx",
       "//src/lib/debug/rust",
     ]
+  } else {
+    deps += [ "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common" ]
   }
 }

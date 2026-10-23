@@ -14,6 +14,9 @@
 // to unblock the toolchain.
 #![recursion_limit = "256"]
 
+#[cfg(not(target_os = "fuchsia"))]
+extern crate fidl_fuchsia_io_common as fidl_fuchsia_io;
+
 pub mod checksum;
 pub mod drop_event;
 

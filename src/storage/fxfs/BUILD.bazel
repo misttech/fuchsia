@@ -112,7 +112,6 @@ rustc_library(
         "//vendor/google/storage:__subpackages__",
     ],
     deps = [
-        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//sdk/rust/zx-status",
         "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
         "//src/lib/fuchsia-async",
@@ -152,10 +151,13 @@ rustc_library(
         "//third_party/rust_crates/vendor:zerocopy",
     ] + select({
         "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
             "//sdk/rust/zx",
             "//src/lib/debug/rust",
         ],
-        "//conditions:default": [],
+        "//conditions:default": [
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
+        ],
     }),
 )
 # LINT.ThenChange(BUILD.gn)
