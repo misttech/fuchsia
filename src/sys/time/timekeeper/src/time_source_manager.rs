@@ -411,7 +411,7 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PullSourceManager<D, M> {
                         }
                         self.sample_error_logged_count =
                             self.sample_error_logged_count.wrapping_add(1);
-                        self.record_time_source_failure(TimeSourceError::LaunchFailed);
+                        self.record_time_source_failure(err.into());
                         if self.delays_enabled {
                             let delay = if self.received_sample {
                                 RESTART_DELAY
@@ -816,6 +816,33 @@ mod test {
             role: TEST_ROLE,
             error: TSE::LaunchFailed,
         }]);
+    }
+
+    #[fuchsia::test]
+    async fn restart_on_call_failure_pull_source() {
+        let time_source = FakePullTimeSource::failing_call().into();
+        let diagnostics = Arc::new(FakeDiagnostics::new());
+        let mut manager = TimeSourceManager::new(
+            UtcInstant::ZERO,
+            TEST_ROLE,
+            time_source,
+            Arc::clone(&diagnostics),
+        );
+
+        // Calling next sample on this manager with the restart delay enabled should lead to
+        // failed call and then a few minute cooldown period before relaunch. We test for this by
+        // verifying a short timeout triggered.
+        assert_eq!(
+            manager
+                .next_sample()
+                .map(|_| true)
+                .on_timeout(zx::BootInstant::after(zx::BootDuration::from_millis(50)), || false)
+                .await,
+            false
+        );
+
+        diagnostics
+            .assert_events(&[Event::TimeSourceFailed { role: TEST_ROLE, error: TSE::CallFailed }]);
     }
 
     #[fuchsia::test]

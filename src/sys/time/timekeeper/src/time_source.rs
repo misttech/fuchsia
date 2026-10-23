@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::enums::TimeSourceError;
 use anyhow::{Context as _, Error, Result, anyhow, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_component::{
@@ -20,9 +21,10 @@ use fuchsia_sync::Mutex;
 use futures::stream::Stream;
 use futures::{FutureExt, TryFutureExt};
 use inspect_runtime::EscrowToken;
-use log::debug;
+use log::{debug, warn};
 use std::fmt::Debug;
 use std::sync::Arc;
+use thiserror::Error;
 use time_pretty::{format_common, format_duration, format_timer};
 
 const TIMESOURCE_COLLECTION_NAME: &str = "timesource";
@@ -123,13 +125,40 @@ pub trait PushSource: Send + Sync + Debug {
     async fn watch(&self) -> Result<BoxedPushSourceEventStream, Error>;
 }
 
+/// The reasons a pull time source failed to obtain a sample.
+#[derive(Error, Debug)]
+pub enum PullSourceError {
+    #[error("Failed to launch pull time source: {0}")]
+    LaunchFailed(#[source] anyhow::Error),
+    #[error("Failed to obtain sample from pull time source: {0}")]
+    CallFailed(#[source] anyhow::Error),
+}
+
+impl From<PullSourceError> for TimeSourceError {
+    fn from(error: PullSourceError) -> Self {
+        match error {
+            PullSourceError::LaunchFailed(_) => TimeSourceError::LaunchFailed,
+            PullSourceError::CallFailed(_) => TimeSourceError::CallFailed,
+        }
+    }
+}
+
+impl From<&PullSourceError> for TimeSourceError {
+    fn from(error: &PullSourceError) -> Self {
+        match error {
+            PullSourceError::LaunchFailed(_) => TimeSourceError::LaunchFailed,
+            PullSourceError::CallFailed(_) => TimeSourceError::CallFailed,
+        }
+    }
+}
+
 /// Provides abstraction over `fuchsia.time.external.PullSource`.
 /// https://fuchsia.dev/fuchsia-src/concepts/kernel/time/utc/architecture?hl=en#timekeeper
 #[async_trait]
 pub trait PullSource: Send + Sync + Debug {
     /// Attempts to start the timesource component and request a time sample. Component is
     /// unloaded after sample is returned in order to free system resources.
-    async fn sample(&self, _urgency: &Urgency) -> Result<Sample, Error>;
+    async fn sample(&self, _urgency: &Urgency) -> Result<Sample, PullSourceError>;
 }
 
 /// Starts the component that provides one of timesouce FIDL APIs.
@@ -377,11 +406,14 @@ impl PullSourceImpl {
 impl PullSource for PullSourceImpl {
     /// Attempts to start the timesource component and request a time sample. Component is
     /// unloaded after sample is returned in order to free system resources.
-    async fn sample(&self, urgency: &Urgency) -> Result<Sample, Error> {
+    async fn sample(&self, urgency: &Urgency) -> Result<Sample, PullSourceError> {
         // Drop current token if we have one, so Archivist can clean up old data.
         let _ = self.tokens.lock().take();
 
-        let directory = self.launcher.launch().await?;
+        let directory = self.launcher.launch().await.map_err(|e| {
+            warn!("Failed to launch pull time source: {:?}", e);
+            PullSourceError::LaunchFailed(e)
+        })?;
         // Don't check for errors here to ensure `destroy()` is called.
         let sample = self.sample_from_dir(&directory, urgency).await;
 
@@ -390,12 +422,18 @@ impl PullSource for PullSourceImpl {
                 *self.tokens.lock() = Some(token);
             }
             Err(e) => {
-                log::warn!("Failed to shutdown and escrow: {:?}", e);
+                warn!("Failed to shutdown and escrow: {:?}", e);
             }
         }
 
-        self.launcher.destroy().await?;
-        sample
+        self.launcher.destroy().await.map_err(|e| {
+            warn!("Failed to destroy pull time source: {:?}", e);
+            PullSourceError::CallFailed(e)
+        })?;
+        sample.map_err(|e| {
+            warn!("Failed to obtain sample from pull time source: {:?}", e);
+            PullSourceError::CallFailed(e)
+        })
     }
 }
 
@@ -481,6 +519,13 @@ impl PushSource for FakePushTimeSource {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FakePullFailureMode {
+    Launch,
+    Call,
+}
+
 /// A time source that upon request produces an event from the collection supplied at construction.
 /// The time source may be launched multiple times and will return an event from the collection
 /// on each launch. It will return error after the last event. The time source will return an error
@@ -489,7 +534,8 @@ impl PushSource for FakePushTimeSource {
 pub struct FakePullTimeSource {
     /// The collection of events to return. The TimeSource will return error after the last
     /// event in the collection.
-    collection: Mutex<Vec<(Urgency, Result<Sample, Error>)>>,
+    collection: Mutex<Vec<(Urgency, Result<Sample, PullSourceError>)>>,
+    failure_mode: FakePullFailureMode,
 }
 
 #[cfg(test)]
@@ -513,37 +559,59 @@ impl FakePullTimeSource {
     pub fn samples(events: Vec<(Urgency, Sample)>) -> Self {
         FakePullTimeSource {
             collection: Mutex::new(events.into_iter().map(|(u, s)| (u, Ok(s))).collect()),
+            failure_mode: FakePullFailureMode::Launch,
         }
     }
 
     /// Creates a new `FakePullTimeSource` that produces the supplied collection of results.
-    pub fn results(results: Vec<(Urgency, Result<Sample, Error>)>) -> Self {
-        FakePullTimeSource { collection: Mutex::new(results) }
+    pub fn results(results: Vec<(Urgency, Result<Sample, PullSourceError>)>) -> Self {
+        FakePullTimeSource {
+            collection: Mutex::new(results),
+            failure_mode: FakePullFailureMode::Launch,
+        }
     }
 
     /// Creates a new `FakePullTimeSource` that always fails to launch.
     pub fn failing() -> Self {
-        FakePullTimeSource { collection: Mutex::new(Vec::new()) }
+        FakePullTimeSource {
+            collection: Mutex::new(Vec::new()),
+            failure_mode: FakePullFailureMode::Launch,
+        }
+    }
+
+    /// Creates a new `FakePullTimeSource` that always fails to obtain a sample.
+    pub fn failing_call() -> Self {
+        FakePullTimeSource {
+            collection: Mutex::new(Vec::new()),
+            failure_mode: FakePullFailureMode::Call,
+        }
     }
 }
 
 #[cfg(test)]
 #[async_trait]
 impl PullSource for FakePullTimeSource {
-    async fn sample(&self, urgency: &Urgency) -> Result<Sample, Error> {
+    async fn sample(&self, urgency: &Urgency) -> Result<Sample, PullSourceError> {
         let mut events = self.collection.lock();
         if events.is_empty() {
-            return Err(anyhow!("FakePullTimeSource sent all supplied events."));
+            return match self.failure_mode {
+                FakePullFailureMode::Launch => Err(PullSourceError::LaunchFailed(anyhow!(
+                    "FakePullTimeSource sent all supplied events."
+                ))),
+                FakePullFailureMode::Call => {
+                    Err(PullSourceError::CallFailed(anyhow!("FakePullTimeSource call failure.")))
+                }
+            };
         }
         let (expected_urgency, sample) = events.remove(0);
         if urgency == &expected_urgency {
             sample
         } else {
-            Err(anyhow!(
+            Err(PullSourceError::CallFailed(anyhow!(
                 "Wrong urgency provided: expected {:?}, got {:?}.",
                 expected_urgency,
                 urgency
-            ))
+            )))
         }
     }
 }
@@ -716,7 +784,7 @@ mod test {
     #[fuchsia::test(allow_stalls = false)]
     async fn fake_pull_results() -> Result<(), Error> {
         let fake = FakePullTimeSource::results(vec![
-            (Urgency::Low, Err(anyhow!("test error"))),
+            (Urgency::Low, Err(PullSourceError::CallFailed(anyhow!("test error")))),
             (Urgency::Low, Ok(*SAMPLE_1)),
         ]);
         assert!(fake.sample(&Urgency::Low).await.is_err());
@@ -742,7 +810,23 @@ mod test {
     #[fuchsia::test(allow_stalls = false)]
     async fn fake_pull_failing() -> Result<(), Error> {
         let fake = FakePullTimeSource::failing();
-        assert!(fake.sample(&Urgency::Low).await.is_err());
+        assert!(matches!(fake.sample(&Urgency::Low).await, Err(PullSourceError::LaunchFailed(_))));
         Ok(())
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn fake_pull_failing_call() -> Result<(), Error> {
+        let fake = FakePullTimeSource::failing_call();
+        assert!(matches!(fake.sample(&Urgency::Low).await, Err(PullSourceError::CallFailed(_))));
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn pull_source_error_conversions() {
+        let launch_err = PullSourceError::LaunchFailed(anyhow!("launch error"));
+        assert_eq!(TimeSourceError::from(launch_err), TimeSourceError::LaunchFailed);
+
+        let call_err = PullSourceError::CallFailed(anyhow!("call error"));
+        assert_eq!(TimeSourceError::from(call_err), TimeSourceError::CallFailed);
     }
 }
