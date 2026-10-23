@@ -17,7 +17,7 @@ use crate::vfs::{
     FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::{Mutex, MutexGuard, ordered_lock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
@@ -33,7 +33,6 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     F_GETPIPE_SZ, F_SETPIPE_SZ, FIONREAD, PIPEFS_MAGIC, errno, error, statfs, uapi,
 };
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 const ATOMIC_IO_BYTES: u16 = 4096;
@@ -385,63 +384,6 @@ impl Pipe {
         if bytes_read > 0 {
             self.notify_write_space(was_writable);
         }
-    }
-
-    /// Splice from the `from` pipe to the `to` pipe.
-    pub fn splice(from: &mut Pipe, to: &mut Pipe, len: usize) -> Result<usize, Errno> {
-        if len == 0 {
-            return Ok(0);
-        }
-        let from_was_writable = from.is_writable(uapi::PIPE_BUF as usize);
-        let to_was_empty = to.is_empty();
-        let mut bytes_transferred = 0;
-        loop {
-            let limit = std::cmp::min(len - bytes_transferred, to.messages.available_capacity());
-            if limit == 0 {
-                // We no longer want to transfer any bytes.
-                break;
-            }
-            let Some(mut message) = from.messages.read_message() else {
-                // The `from` pipe is empty.
-                break;
-            };
-            if let Some(data) = MessageData::split_off(&mut message.data, limit) {
-                // Some data is left in the message. Push it back.
-                assert!(data.len() > 0);
-                from.messages.write_front(data.into());
-            }
-            bytes_transferred += message.len();
-            to.messages.write_message(message);
-        }
-        if bytes_transferred > 0 {
-            from.notify_write_space(from_was_writable);
-            if to_was_empty {
-                to.notify_fd_events(FdEvents::POLLIN);
-            }
-        }
-        return Ok(bytes_transferred);
-    }
-
-    /// Tee from the `from` pipe to the `to` pipe.
-    pub fn tee(from: &mut Pipe, to: &mut Pipe, len: usize) -> Result<usize, Errno> {
-        if len == 0 {
-            return Ok(0);
-        }
-        let to_was_empty = to.readable_len() == 0;
-        let mut bytes_transferred = 0;
-        for message in from.messages.peek_queue().iter() {
-            let limit = std::cmp::min(len - bytes_transferred, to.messages.available_capacity());
-            if limit == 0 {
-                break;
-            }
-            let message = message.clone_at_most(limit);
-            bytes_transferred += message.len();
-            to.messages.write_message(message);
-        }
-        if bytes_transferred > 0 && to_was_empty {
-            to.notify_fd_events(FdEvents::POLLIN);
-        }
-        return Ok(bytes_transferred);
     }
 }
 
@@ -958,59 +900,6 @@ impl PipeFileObject {
         Ok(pipe)
     }
 
-    /// Returns the result of `pregen` and a lock on pipe, once `condition` returns true, ensuring
-    /// `pregen` is run before the pipe is locked.
-    ///
-    /// This will wait on `events` if the file is opened in blocking mode. If the file is opened in
-    /// not blocking mode and `condition` is not realized, this will return EAGAIN.
-    fn wait_for_condition<'a, F, G, V>(
-        &'a self,
-        current_task: &CurrentTask,
-        file: &FileHandle,
-        condition: F,
-        pregen: G,
-        events: FdEvents,
-    ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
-    where
-        F: Fn(&Pipe) -> bool,
-        G: Fn() -> Result<V, Errno>,
-    {
-        file.blocking_op(current_task, events, None, || {
-            let other = pregen()?;
-            let pipe = self.pipe.lock();
-            if condition(&pipe) { Ok((other, pipe)) } else { error!(EAGAIN) }
-        })
-    }
-
-    /// Lock the pipe for reading, after having run `pregen`.
-    fn lock_pipe_for_reading_with<'a, G, V>(
-        &'a self,
-        current_task: &CurrentTask,
-        file: &FileHandle,
-        pregen: G,
-        non_blocking: bool,
-    ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
-    where
-        G: Fn() -> Result<V, Errno>,
-    {
-        if non_blocking {
-            let other = pregen()?;
-            let pipe = self.pipe.lock();
-            if !pipe.is_readable() {
-                return error!(EAGAIN);
-            }
-            Ok((other, pipe))
-        } else {
-            self.wait_for_condition(
-                current_task,
-                file,
-                |pipe| pipe.is_readable(),
-                pregen,
-                FdEvents::POLLIN | FdEvents::POLLHUP,
-            )
-        }
-    }
-
     fn lock_pipe_for_reading<'a>(
         &'a self,
         current_task: &CurrentTask,
@@ -1038,42 +927,6 @@ impl PipeFileObject {
             }
             waiter.wait(current_task)?;
         }
-    }
-
-    /// Lock the pipe for writing, after having run `pregen`.
-    fn lock_pipe_for_writing_with<'a, G, V>(
-        &'a self,
-        current_task: &CurrentTask,
-        file: &FileHandle,
-        pregen: G,
-        non_blocking: bool,
-        len: usize,
-    ) -> Result<(V, MutexGuard<'a, Pipe>), Errno>
-    where
-        G: Fn() -> Result<V, Errno>,
-    {
-        let (other, pipe) = if non_blocking {
-            let other = pregen()?;
-            let pipe = self.pipe.lock();
-            if !pipe.is_writable(std::cmp::max(len, pipe.min_splice_write_bytes())) {
-                return error!(EAGAIN);
-            }
-            (other, pipe)
-        } else {
-            self.wait_for_condition(
-                current_task,
-                file,
-                |pipe| pipe.is_writable(std::cmp::max(len, pipe.min_splice_write_bytes())),
-                pregen,
-                FdEvents::POLLOUT | FdEvents::POLLERR,
-            )?
-        };
-        if pipe.reader_count == 0 {
-            std::mem::drop((other, pipe));
-            send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
-            return error!(EPIPE);
-        }
-        Ok((other, pipe))
     }
 
     fn lock_pipe_for_writing<'a>(
@@ -1275,58 +1128,211 @@ impl PipeFileObject {
         Ok(actual)
     }
 
-    /// Obtain the pipe objects from the given file handles, if they are both pipes.
-    ///
-    /// Returns EINVAL if one (or both) of the given file handles is not a pipe.
-    ///
-    /// Obtains the locks on the pipes in the correct order to avoid deadlocks.
-    pub fn lock_pipes<'a, 'b>(
+    /// Copies or moves messages from `pipe_in` to `pipe_out`, locking both pipes in memory-address
+    /// order via `starnix_sync::ordered_lock`.
+    fn copy_pipes(
         current_task: &CurrentTask,
-        file_in: &'a FileHandle,
-        file_out: &'b FileHandle,
-        _len: usize,
+        file_in: &FileHandle,
+        pipe_in: &PipeFileObject,
+        file_out: &FileHandle,
+        pipe_out: &PipeFileObject,
+        len: usize,
         non_blocking: bool,
-    ) -> Result<PipeOperands<'a, 'b>, Errno> {
-        let pipe_in = file_in.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
-        let pipe_out = file_out.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
+        consume_source: bool,
+    ) -> Result<usize, Errno> {
+        // Reject splicing/teeing a pipe to itself before calling ordered_lock,
+        // because ordered_lock on identical LockDepMutex instances deadlocks.
+        if Arc::ptr_eq(&pipe_in.pipe, &pipe_out.pipe) {
+            return error!(EINVAL);
+        }
+        if len == 0 {
+            return Ok(0);
+        }
 
-        let node_cmp =
-            Arc::as_ptr(&file_in.name.entry.node).cmp(&Arc::as_ptr(&file_out.name.entry.node));
+        let non_blocking = non_blocking || file_in.is_non_blocking() || file_out.is_non_blocking();
+        let mut waiting_on_out = false;
 
-        match node_cmp {
-            Ordering::Equal => error!(EINVAL),
-            Ordering::Less => {
-                let (write, read) = pipe_in.lock_pipe_for_reading_with(
-                    current_task,
-                    file_in,
-                    || pipe_out.lock_pipe_for_writing(current_task, file_out, non_blocking, 1),
-                    non_blocking,
-                )?;
-                Ok(PipeOperands { read, write })
+        let (mut from, mut to) = loop {
+            let (pipe_in_guard, pipe_out_guard) = ordered_lock(&*pipe_in.pipe, &*pipe_out.pipe);
+
+            if pipe_in_guard.splice_read_in_progress || pipe_in_guard.splice_write_in_progress {
+                let waiter = Waiter::new();
+                let key = if pipe_in_guard.splice_read_in_progress {
+                    SPLICE_READ_WAIT_KEY
+                } else {
+                    SPLICE_WRITE_WAIT_KEY
+                };
+                pipe_in_guard.waiters.wait_async_value(&waiter, key);
+                std::mem::drop(pipe_in_guard);
+                std::mem::drop(pipe_out_guard);
+                waiter.wait(current_task)?;
+                continue;
             }
-            Ordering::Greater => {
-                let (read, write) = pipe_out.lock_pipe_for_writing_with(
-                    current_task,
-                    file_out,
-                    || pipe_in.lock_pipe_for_reading(current_task, file_in, non_blocking),
-                    non_blocking,
-                    1,
-                )?;
-                Ok(PipeOperands { read, write })
+
+            if !waiting_on_out && !pipe_in_guard.is_readable() {
+                if non_blocking {
+                    return error!(EAGAIN);
+                }
+                let waiter = Waiter::new();
+                pipe_in_guard.waiters.wait_async_fd_events(
+                    &waiter,
+                    FdEvents::POLLIN | FdEvents::POLLHUP,
+                    WaitCallback::none(),
+                );
+                std::mem::drop(pipe_in_guard);
+                std::mem::drop(pipe_out_guard);
+                waiter.wait(current_task)?;
+                continue;
+            }
+
+            if pipe_out_guard.splice_read_in_progress || pipe_out_guard.splice_write_in_progress {
+                let waiter = Waiter::new();
+                let key = if pipe_out_guard.splice_read_in_progress {
+                    SPLICE_READ_WAIT_KEY
+                } else {
+                    SPLICE_WRITE_WAIT_KEY
+                };
+                pipe_out_guard.waiters.wait_async_value(&waiter, key);
+                std::mem::drop(pipe_in_guard);
+                std::mem::drop(pipe_out_guard);
+                waiter.wait(current_task)?;
+                continue;
+            }
+
+            if pipe_out_guard.reader_count == 0 {
+                std::mem::drop(pipe_in_guard);
+                std::mem::drop(pipe_out_guard);
+                send_standard_signal(current_task, SignalInfo::kernel(SIGPIPE));
+                return error!(EPIPE);
+            }
+
+            if !pipe_out_guard.is_writable(pipe_out_guard.min_splice_write_bytes()) {
+                if non_blocking {
+                    return error!(EAGAIN);
+                }
+                waiting_on_out = true;
+                let waiter = Waiter::new();
+                pipe_out_guard.waiters.wait_async_fd_events(
+                    &waiter,
+                    FdEvents::POLLOUT | FdEvents::POLLERR,
+                    WaitCallback::none(),
+                );
+                pipe_out_guard.waiters.wait_async_value(&waiter, PIPE_WRITE_SPACE_WAIT_KEY);
+                std::mem::drop(pipe_in_guard);
+                std::mem::drop(pipe_out_guard);
+                waiter.wait(current_task)?;
+                continue;
+            }
+
+            if waiting_on_out && pipe_in_guard.is_empty() {
+                if pipe_in_guard.is_readable() || !consume_source {
+                    return Ok(0);
+                }
+                waiting_on_out = false;
+                continue;
+            }
+
+            if pipe_in_guard.is_empty() {
+                return Ok(0);
+            }
+
+            break (pipe_in_guard, pipe_out_guard);
+        };
+
+        let mut bytes_transferred = 0;
+        if consume_source {
+            let was_writable = from.is_writable(uapi::PIPE_BUF as usize);
+            while bytes_transferred < len && to.messages.available_capacity() > 0 {
+                let Some(mut message) = from.messages.read_message() else {
+                    break;
+                };
+                let limit =
+                    std::cmp::min(len - bytes_transferred, to.messages.available_capacity());
+                if let Some(remaining) = message.split_off(limit) {
+                    from.messages.write_front(remaining);
+                }
+                bytes_transferred += message.len();
+                to.messages.write_message(message);
+            }
+            if bytes_transferred > 0 {
+                from.notify_write_space(was_writable);
+                to.notify_fd_events(FdEvents::POLLIN);
+            }
+        } else {
+            let mut cloned_messages = Vec::new();
+            for message in from.messages.peek_queue() {
+                let limit = std::cmp::min(
+                    len - bytes_transferred,
+                    to.messages.available_capacity() - bytes_transferred,
+                );
+                if limit == 0 {
+                    break;
+                }
+                let cloned = message.clone_at_most(limit);
+                bytes_transferred += cloned.len();
+                cloned_messages.push(cloned);
+            }
+            for message in cloned_messages {
+                to.messages.write_message(message);
+            }
+            if bytes_transferred > 0 {
+                to.notify_fd_events(FdEvents::POLLIN);
             }
         }
-    }
-}
 
-pub struct PipeOperands<'a, 'b> {
-    pub read: MutexGuard<'a, Pipe>,
-    pub write: MutexGuard<'b, Pipe>,
+        Ok(bytes_transferred)
+    }
+
+    /// Splice messages from `pipe_in` to `pipe_out`.
+    pub fn splice_pipes(
+        current_task: &CurrentTask,
+        file_in: &FileHandle,
+        pipe_in: &PipeFileObject,
+        file_out: &FileHandle,
+        pipe_out: &PipeFileObject,
+        len: usize,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        Self::copy_pipes(
+            current_task,
+            file_in,
+            pipe_in,
+            file_out,
+            pipe_out,
+            len,
+            non_blocking,
+            true,
+        )
+    }
+
+    /// Tee messages from `file_in` to `file_out`.
+    pub fn tee(
+        current_task: &CurrentTask,
+        file_in: &FileHandle,
+        file_out: &FileHandle,
+        len: usize,
+        non_blocking: bool,
+    ) -> Result<usize, Errno> {
+        let pipe_in = file_in.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
+        let pipe_out = file_out.downcast_file::<PipeFileObject>().ok_or_else(|| errno!(EINVAL))?;
+        Self::copy_pipes(
+            current_task,
+            file_in,
+            &pipe_in,
+            file_out,
+            &pipe_out,
+            len,
+            non_blocking,
+            false,
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::ProtectionFlags;
+    use crate::mm::memory::MemoryObject;
+    use crate::mm::{ProtectionFlags, VmsplicePayload, VmsplicePayloadSegment};
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::{anon_test_file, fill_page, map_memory, spawn_kernel_and_run};
     use crate::vfs::buffers::UserBuffersInputBuffer;
@@ -1735,6 +1741,60 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    async fn test_copy_pipes_with_vmspliced_payload() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+
+            let mm = current_task.mm().unwrap();
+            let page_size = *PAGE_SIZE as usize;
+            let memory = Arc::new(MemoryObject::from(zx::Vmo::create(page_size as u64).unwrap()));
+            memory.write(b"VMSPLICED_DATA", 0).unwrap();
+            let payload = VmsplicePayload::new(
+                Arc::downgrade(&mm),
+                VmsplicePayloadSegment {
+                    addr_offset: UserAddress::NULL,
+                    length: 14,
+                    memory,
+                    memory_offset: 0,
+                    should_snapshot_on_unmap: true,
+                },
+            );
+            pipe_a_in
+                .downcast_file::<PipeFileObject>()
+                .unwrap()
+                .pipe
+                .lock()
+                .messages
+                .write_message(PipeMessageData::Vmspliced(payload).into());
+
+            let copied = PipeFileObject::copy_pipes(
+                &current_task,
+                &pipe_a_out,
+                &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                &pipe_b_in,
+                &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                10,
+                false,
+                false,
+            )
+            .unwrap();
+            assert_eq!(copied, 10);
+
+            let mut buf_b = VecOutputBuffer::new(10);
+            assert_eq!(pipe_b_out.read(&current_task, &mut buf_b).unwrap(), 10);
+            assert_eq!(buf_b.data(), b"VMSPLICED_");
+
+            let mut buf_a = VecOutputBuffer::new(14);
+            assert_eq!(pipe_a_out.read(&current_task, &mut buf_a).unwrap(), 14);
+            assert_eq!(buf_a.data(), b"VMSPLICED_DATA");
+        })
+        .await;
+    }
+    #[::fuchsia::test]
     async fn test_splice_from_reader_closes_during_read_returns_epipe() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
@@ -2094,7 +2154,171 @@ mod tests {
                 .splice_from(&current_task, &pipe_in, &source_file, None, 8, true)
                 .unwrap();
             assert_eq!(spliced, 4);
-            let _ = pipe_out;
+
+            // Likewise for `copy_pipes` into a pipe with 4 bytes of remaining space.
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(
+                pipe_b_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                capacity - 4
+            );
+            let copied = PipeFileObject::copy_pipes(
+                &current_task,
+                &pipe_out,
+                &pipe_out.downcast_file::<PipeFileObject>().unwrap(),
+                &pipe_b_in,
+                &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                8,
+                true,
+                true,
+            )
+            .unwrap();
+            assert_eq!(copied, 4);
+            let _ = pipe_b_out;
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_copy_pipes_honors_nonblock_and_eof_and_epipe() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // 1. O_NONBLOCK on `file_out` causes `copy_pipes` on an empty `pipe_in` to return EAGAIN.
+            let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+            pipe_b_in.update_file_flags(OpenFlags::NONBLOCK, OpenFlags::NONBLOCK);
+            assert_eq!(
+                PipeFileObject::copy_pipes(
+                    &current_task,
+                    &pipe_a_out,
+                    &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                    &pipe_b_in,
+                    &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                    4,
+                    false,
+                    false,
+                )
+                .unwrap_err(),
+                errno!(EAGAIN)
+            );
+
+            // 2. When `pipe_in` is at EOF and `pipe_out` is writable, `copy_pipes` returns `Ok(0)`;
+            // when `pipe_out` is full (with an open reader) and non-blocking, `copy_pipes` returns
+            // `EAGAIN`.
+            std::mem::drop(pipe_a_in);
+            current_task.trigger_delayed_releaser();
+            assert_eq!(
+                PipeFileObject::copy_pipes(
+                    &current_task,
+                    &pipe_a_out,
+                    &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                    &pipe_b_in,
+                    &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                    4,
+                    true,
+                    false,
+                )
+                .unwrap(),
+                0
+            );
+            let capacity =
+                pipe_b_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+            let fill = vec![b'F'; capacity];
+            assert_eq!(
+                pipe_b_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                capacity
+            );
+            assert_eq!(
+                PipeFileObject::copy_pipes(
+                    &current_task,
+                    &pipe_a_out,
+                    &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                    &pipe_b_in,
+                    &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                    4,
+                    true,
+                    false,
+                )
+                .unwrap_err(),
+                errno!(EAGAIN)
+            );
+
+            // 3. When `pipe_out` has no readers, `copy_pipes` returns `EPIPE` and queues `SIGPIPE`.
+            std::mem::drop(pipe_b_out);
+            current_task.trigger_delayed_releaser();
+            assert_eq!(
+                PipeFileObject::copy_pipes(
+                    &current_task,
+                    &pipe_a_out,
+                    &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                    &pipe_b_in,
+                    &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                    4,
+                    true,
+                    false,
+                )
+                .unwrap_err(),
+                errno!(EPIPE)
+            );
+            assert!(current_task.write().signals_mut().has_queued(SIGPIPE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_copy_pipes_wakes_with_epipe_when_destination_reader_closes() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+            assert_eq!(
+                pipe_a_in.write(&current_task, &mut VecInputBuffer::new(b"DATA")).unwrap(),
+                4
+            );
+            let capacity =
+                pipe_b_in.downcast_file::<PipeFileObject>().unwrap().pipe.lock().capacity();
+            let fill = vec![b'F'; capacity];
+            assert_eq!(
+                pipe_b_in.write(&current_task, &mut VecInputBuffer::new(&fill)).unwrap(),
+                capacity
+            );
+
+            let pipe_b_in_clone = pipe_b_in.clone();
+            let (closer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    while pipe_b_in_clone
+                        .downcast_file::<PipeFileObject>()
+                        .unwrap()
+                        .pipe
+                        .lock()
+                        .waiters
+                        .is_empty()
+                    {
+                        std::thread::yield_now();
+                    }
+                    std::mem::drop(pipe_b_out);
+                    worker_task.trigger_delayed_releaser();
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let err = PipeFileObject::copy_pipes(
+                &current_task,
+                &pipe_a_out,
+                &pipe_a_out.downcast_file::<PipeFileObject>().unwrap(),
+                &pipe_b_in,
+                &pipe_b_in.downcast_file::<PipeFileObject>().unwrap(),
+                4,
+                false,
+                true,
+            )
+            .unwrap_err();
+            closer_join().unwrap();
+            assert_eq!(err, errno!(EPIPE));
+            assert!(current_task.write().signals_mut().has_queued(SIGPIPE));
         })
         .await;
     }
@@ -2703,6 +2927,241 @@ mod tests {
             let (write_err, has_sigpipe) = writer_join().unwrap();
             assert_eq!(write_err, errno!(EPIPE));
             assert!(has_sigpipe);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_tee_concurrent_with_reader_preserves_fifo_without_duplicates() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // 1. Concurrent `splice_pipes` (`consume_source = true`) and `read` on `pipe_a` must
+            // partition messages across `pipe_a` and `pipe_b` in FIFO order without duplicates.
+            let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+            const NUM_MSGS: usize = 64;
+            for i in 0..NUM_MSGS {
+                let msg = format!("M{:03}", i);
+                assert_eq!(
+                    pipe_a_in
+                        .write(&current_task, &mut VecInputBuffer::new(msg.as_bytes()))
+                        .unwrap(),
+                    4
+                );
+            }
+            std::mem::drop(pipe_a_in);
+            current_task.trigger_delayed_releaser();
+
+            let pipe_a_out_clone = pipe_a_out.clone();
+            let pipe_b_in_clone = pipe_b_in.clone();
+            let (splicer_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    let pipe_a_ops = pipe_a_out_clone.downcast_file::<PipeFileObject>().unwrap();
+                    let pipe_b_ops = pipe_b_in_clone.downcast_file::<PipeFileObject>().unwrap();
+                    loop {
+                        let n = PipeFileObject::splice_pipes(
+                            worker_task,
+                            &pipe_a_out_clone,
+                            &pipe_a_ops,
+                            &pipe_b_in_clone,
+                            &pipe_b_ops,
+                            4,
+                            false,
+                        )
+                        .unwrap();
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            let mut read_msgs = Vec::new();
+            loop {
+                let mut buf = VecOutputBuffer::new(4);
+                let n = pipe_a_out.read(&current_task, &mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                assert_eq!(n, 4);
+                read_msgs.push(String::from_utf8(buf.data().to_vec()).unwrap());
+            }
+            splicer_join().unwrap();
+            std::mem::drop(pipe_b_in);
+            current_task.trigger_delayed_releaser();
+
+            let mut spliced_msgs = Vec::new();
+            loop {
+                let mut buf = VecOutputBuffer::new(4);
+                let n = pipe_b_out.read(&current_task, &mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                assert_eq!(n, 4);
+                spliced_msgs.push(String::from_utf8(buf.data().to_vec()).unwrap());
+            }
+
+            // Both streams must be strictly increasing, and their disjoint union must be M000..M063.
+            assert!(read_msgs.windows(2).all(|w| w[0] < w[1]));
+            assert!(spliced_msgs.windows(2).all(|w| w[0] < w[1]));
+            let mut combined = [read_msgs, spliced_msgs].concat();
+            combined.sort();
+            let expected: Vec<String> = (0..NUM_MSGS).map(|i| format!("M{:03}", i)).collect();
+            assert_eq!(combined, expected);
+
+            // 2. Concurrent `tee` (`consume_source = false`) and `read` on `pipe_c` must never
+            // reorder messages into `pipe_d`.
+            let (pipe_c_out, pipe_c_in) = new_pipe(&current_task).unwrap();
+            let (pipe_d_out, pipe_d_in) = new_pipe(&current_task).unwrap();
+            for i in 0..NUM_MSGS {
+                let msg = format!("T{:03}", i);
+                assert_eq!(
+                    pipe_c_in
+                        .write(&current_task, &mut VecInputBuffer::new(msg.as_bytes()))
+                        .unwrap(),
+                    4
+                );
+            }
+            std::mem::drop(pipe_c_in);
+            current_task.trigger_delayed_releaser();
+
+            let pipe_c_out_clone = pipe_c_out.clone();
+            let pipe_d_in_clone = pipe_d_in.clone();
+            let (tee_join, tee_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    loop {
+                        let n = PipeFileObject::tee(
+                            worker_task,
+                            &pipe_c_out_clone,
+                            &pipe_d_in_clone,
+                            4,
+                            false,
+                        )
+                        .unwrap();
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(tee_req);
+
+            loop {
+                let mut buf = VecOutputBuffer::new(4);
+                if pipe_c_out.read(&current_task, &mut buf).unwrap() == 0 {
+                    break;
+                }
+            }
+            tee_join().unwrap();
+            std::mem::drop(pipe_d_in);
+            current_task.trigger_delayed_releaser();
+
+            let mut teed_msgs = Vec::new();
+            loop {
+                let mut buf = VecOutputBuffer::new(4);
+                let n = pipe_d_out.read(&current_task, &mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                assert_eq!(n, 4);
+                teed_msgs.push(String::from_utf8(buf.data().to_vec()).unwrap());
+            }
+            assert!(teed_msgs.windows(2).all(|w| w[0] <= w[1]));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_copy_pipes_empty_input_and_readerless_output_matches_linux_ipipe_prep_order() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // 1. When `pipe_in` is empty (with open writers) and `pipe_out` has no readers,
+            // non-blocking `splice_pipes` and `tee` return `EAGAIN` without `SIGPIPE`.
+            let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
+            let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
+            std::mem::drop(pipe_b_out);
+            current_task.trigger_delayed_releaser();
+
+            let pipe_a_ops = pipe_a_out.downcast_file::<PipeFileObject>().unwrap();
+            let pipe_b_ops = pipe_b_in.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                PipeFileObject::splice_pipes(
+                    &current_task,
+                    &pipe_a_out,
+                    &pipe_a_ops,
+                    &pipe_b_in,
+                    &pipe_b_ops,
+                    4,
+                    true,
+                )
+                .unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!current_task.write().signals_mut().has_queued(SIGPIPE));
+            assert_eq!(
+                PipeFileObject::tee(&current_task, &pipe_a_out, &pipe_b_in, 4, true).unwrap_err(),
+                errno!(EAGAIN)
+            );
+            assert!(!current_task.write().signals_mut().has_queued(SIGPIPE));
+
+            // 2. Blocking `splice_pipes` on empty `pipe_in` + readerless `pipe_out` blocks on
+            // `pipe_in` first, then returns `EPIPE` + `SIGPIPE` once `pipe_in` becomes readable.
+            let pipe_a_out_clone = pipe_a_out.clone();
+            let pipe_b_in_clone = pipe_b_in.clone();
+            let (splice_join, req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    let a_ops = pipe_a_out_clone.downcast_file::<PipeFileObject>().unwrap();
+                    let b_ops = pipe_b_in_clone.downcast_file::<PipeFileObject>().unwrap();
+                    let err = PipeFileObject::splice_pipes(
+                        worker_task,
+                        &pipe_a_out_clone,
+                        &a_ops,
+                        &pipe_b_in_clone,
+                        &b_ops,
+                        4,
+                        false,
+                    )
+                    .unwrap_err();
+                    let has_sigpipe = worker_task.write().signals_mut().has_queued(SIGPIPE);
+                    (err, has_sigpipe)
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+
+            while pipe_a_ops.pipe.lock().waiters.is_empty() {
+                std::thread::yield_now();
+            }
+            assert_eq!(
+                pipe_a_in.write(&current_task, &mut VecInputBuffer::new(b"DATA")).unwrap(),
+                4
+            );
+            let (err, has_sigpipe) = splice_join().unwrap();
+            assert_eq!(err, errno!(EPIPE));
+            assert!(has_sigpipe);
+            std::mem::drop(pipe_a_in);
+
+            // 3. Same-pipe `copy_pipes` returns `EINVAL` without deadlocking `ordered_lock`.
+            let (same_out, same_in) = new_pipe(&current_task).unwrap();
+            let same_out_ops = same_out.downcast_file::<PipeFileObject>().unwrap();
+            let same_in_ops = same_in.downcast_file::<PipeFileObject>().unwrap();
+            assert_eq!(
+                PipeFileObject::splice_pipes(
+                    &current_task,
+                    &same_out,
+                    &same_out_ops,
+                    &same_in,
+                    &same_in_ops,
+                    4,
+                    true,
+                )
+                .unwrap_err(),
+                errno!(EINVAL)
+            );
         })
         .await;
     }

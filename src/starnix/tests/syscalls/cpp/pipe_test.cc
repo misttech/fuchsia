@@ -840,4 +840,51 @@ TEST(PipeTest, SpliceFromSocketReaderClosesMidFlight) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+TEST(PipeTest, TeeAndSplicePipeToPipeEdgeCases) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    signal(SIGPIPE, SIG_IGN);
+
+    test_helper::ScopedPipe pipe_a;
+    test_helper::ScopedPipe pipe_b(O_NONBLOCK);
+
+    // O_NONBLOCK on pipe_b causes tee on empty pipe_a to return EAGAIN immediately.
+    EXPECT_THAT(tee(pipe_a.ReadSide().get(), pipe_b.WriteSide().get(), 16, 0),
+                SyscallFailsWithErrno(EAGAIN));
+
+    // Close pipe_a writer (EOF on pipe_a).
+    pipe_a.WriteSide().reset();
+
+    // tee from an EOF pipe into a writable pipe returns 0 immediately.
+    EXPECT_EQ(tee(pipe_a.ReadSide().get(), pipe_b.WriteSide().get(), 16, 0), 0);
+
+    // Fill pipe_b completely; tee from an EOF pipe into a full non-blocking pipe returns EAGAIN.
+    const int page_size = getpagesize();
+    SAFE_SYSCALL(fcntl(pipe_b.WriteSide().get(), F_SETPIPE_SZ, page_size));
+    std::vector<char> fill(page_size, 'B');
+    ASSERT_EQ(write(pipe_b.WriteSide().get(), fill.data(), fill.size()), page_size);
+    EXPECT_THAT(tee(pipe_a.ReadSide().get(), pipe_b.WriteSide().get(), 16, 0),
+                SyscallFailsWithErrno(EAGAIN));
+
+    // Closing the destination reader causes tee to return EPIPE even when the source is at EOF.
+    pipe_b.ReadSide().reset();
+    EXPECT_THAT(tee(pipe_a.ReadSide().get(), pipe_b.WriteSide().get(), 16, 0),
+                SyscallFailsWithErrno(EPIPE));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(PipeTest, SpliceEofPipeToClosedSocket) {
+  test_helper::ScopedPipe pipe;
+  pipe.WriteSide().reset();
+
+  int sock_fds[2];
+  SAFE_SYSCALL(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds));
+  close(sock_fds[0]);
+  fbl::unique_fd sock_wr(sock_fds[1]);
+
+  // Splicing from an empty pipe with no writers (EOF) returns 0 immediately without invoking
+  // write() on the closed destination socket.
+  EXPECT_EQ(splice(pipe.ReadSide().get(), nullptr, sock_wr.get(), nullptr, 16, 0), 0);
+}
 }  // namespace

@@ -5,7 +5,7 @@
 use crate::mm::{IOVecPtr, MemoryAccessorExt, PAGE_SIZE, TaskMemoryAccessor};
 use crate::task::CurrentTask;
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
-use crate::vfs::pipe::{Pipe, PipeFileObject, PipeOperands};
+use crate::vfs::pipe::PipeFileObject;
 use crate::vfs::syscalls::OffsetPtr;
 use crate::vfs::{FdNumber, FileHandle};
 use starnix_logging::track_stub;
@@ -246,12 +246,16 @@ pub fn splice(
     let spliced = match (pipe_in, pipe_out) {
         // Splice can only be used when one of the files is a pipe.
         (None, None) => return error!(EINVAL),
-        // If both ends are pipes, use the symmetric `Pipe::splice` function.
-        (Some(_), Some(_)) => {
-            let PipeOperands { mut read, mut write } =
-                PipeFileObject::lock_pipes(current_task, &file_in, &file_out, len, non_blocking)?;
-            Pipe::splice(&mut read, &mut write, len)?
-        }
+        // If both ends are pipes, use the symmetric `PipeFileObject::splice_pipes` function.
+        (Some(pipe_in), Some(pipe_out)) => PipeFileObject::splice_pipes(
+            current_task,
+            &file_in,
+            &pipe_in,
+            &file_out,
+            &pipe_out,
+            len,
+            non_blocking,
+        )?,
         (None, Some(pipe_out)) => {
             let maybe_offset_in = resolve_offset(&file_in, raw_offset_in)?;
             let spliced = pipe_out.splice_from(
@@ -412,7 +416,5 @@ pub fn tee(
     }
 
     // tee requires that both files are pipes.
-    let PipeOperands { mut read, mut write } =
-        PipeFileObject::lock_pipes(current_task, &file_in, &file_out, len, non_blocking)?;
-    Pipe::tee(&mut read, &mut write, len)
+    PipeFileObject::tee(current_task, &file_in, &file_out, len, non_blocking)
 }
