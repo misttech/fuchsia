@@ -214,6 +214,8 @@ class Dwc2Test : public testing::Test {
 
   void SetConnectedState(Dwc2& driver, bool connected) { driver.connected_.store(connected); }
 
+  void SetConfiguredState(Dwc2& driver, bool configured) { driver.configured_ = configured; }
+
   bool IsConnected(const Dwc2& driver) const { return driver.connected_.load(); }
 
   // Inspects whether Dwc2.lock_ is locked.
@@ -507,6 +509,95 @@ TEST_F(Dwc2Test, Ep0TimeoutRecovery_DoesNotDeadlockWithCancelAll) {
     EXPECT_FALSE(ep->pending_zlp);
     EXPECT_FALSE(IsConnected(driver));
   });
+}
+
+namespace {
+
+class EndpointEventHandler
+    : public fidl::AsyncEventHandler<fuchsia_hardware_usb_endpoint::Endpoint> {
+ public:
+  void OnCompletion(
+      fidl::Event<fuchsia_hardware_usb_endpoint::Endpoint::OnCompletion>& event) override {
+    auto signal = fit::defer([this] { completion_.Signal(); });
+    ASSERT_FALSE(event.completion().empty());
+    ASSERT_TRUE(event.completion()[0].status().has_value());
+    last_status_.store(*event.completion()[0].status());
+  }
+
+  zx_status_t WaitForStatus() {
+    completion_.Wait();
+    completion_.Reset();
+    return last_status_.load();
+  }
+
+ private:
+  std::atomic<zx_status_t> last_status_{ZX_OK};
+  libsync::Completion completion_;
+};
+
+}  // namespace
+
+TEST_F(Dwc2Test, QueueRequestOnDisabledOrUnconfiguredEndpointReturnsIoNotPresent) {
+  fdf::UnownedSynchronizedDispatcher ep_dispatcher = dut_.runtime().StartBackgroundDispatcher();
+  auto cleanup_dispatcher = fit::defer([&] {
+    libsync::Completion shutdown_complete;
+    dut_.runtime().ShutdownBackgroundDispatcher(ep_dispatcher->get(),
+                                                [&] { shutdown_complete.Signal(); });
+    shutdown_complete.Wait();
+  });
+
+  zx::result dci_client_end = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_client_end.is_ok());
+  fidl::SyncClient dci_client(std::move(*dci_client_end));
+
+  auto ep_endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+  ASSERT_TRUE(ep_endpoints.is_ok());
+
+  constexpr uint8_t kEpAddr = 0x81;  // EP 1 IN
+  auto connect_result = dci_client->ConnectToEndpoint({kEpAddr, std::move(ep_endpoints->server)});
+  ASSERT_TRUE(connect_result.is_ok());
+
+  EndpointEventHandler event_handler;
+  fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint> ep_client(
+      std::move(ep_endpoints->client), ep_dispatcher->async_dispatcher(), &event_handler);
+
+  // Case 1: Endpoint is disabled while device is configured.
+  dut_.RunInDriverContext([&](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(kEpAddr);
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(nullptr, ep);
+
+    {
+      std::lock_guard<std::mutex> lock(ep->lock);
+      ep->max_packet_size = 64;
+      ep->enabled = false;
+    }
+    SetConfiguredState(driver, true);
+
+    usb::FidlRequest req(usb::EndpointType::BULK);
+    req->defer_completion(false);
+    ep->QueueRequest(std::move(req));
+  });
+  EXPECT_EQ(event_handler.WaitForStatus(), ZX_ERR_IO_NOT_PRESENT);
+
+  // Case 2: Endpoint is enabled while device is not configured.
+  dut_.RunInDriverContext([&](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(kEpAddr);
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(nullptr, ep);
+
+    {
+      std::lock_guard<std::mutex> lock(ep->lock);
+      ep->max_packet_size = 64;
+      ep->enabled = true;
+    }
+    SetConfiguredState(driver, false);
+
+    usb::FidlRequest req(usb::EndpointType::BULK);
+    req->defer_completion(false);
+    ep->QueueRequest(std::move(req));
+  });
+  EXPECT_EQ(event_handler.WaitForStatus(), ZX_ERR_IO_NOT_PRESENT);
 }
 
 }  // namespace dwc2

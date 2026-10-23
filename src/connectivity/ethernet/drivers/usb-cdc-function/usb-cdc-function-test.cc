@@ -2753,5 +2753,34 @@ TEST_F(UsbCdcTest, SuspendDrainInspectAndEventHistory) {
   }
 }
 
+// Validates that an RX completion with ZX_ERR_IO_NOT_PRESENT while still online and configured
+// (e.g., queued while the DCI endpoint is disabled during a bus reset before SetConfigured(false)
+// arrives) returns the request to the free pool instead of re-queuing it in a tight loop.
+TEST_F(UsbCdcTest, RxCompletionIoNotPresentDoesNotRequeueInTightLoop) {
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0);
+  });
+
+  size_t in_flight = 0;
+  size_t pending = 0;
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+          in_flight = UsbCdcTestHelper::GetBulkOutInFlightCount(driver);
+        });
+        driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+          pending = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).pending_request_count();
+        });
+        return in_flight == UsbCdcFunction::kRxDepth - 1 || pending == UsbCdcFunction::kRxDepth;
+      },
+      zx::duration::infinite()));
+
+  EXPECT_EQ(in_flight, UsbCdcFunction::kRxDepth - 1);
+  EXPECT_EQ(pending, UsbCdcFunction::kRxDepth - 1);
+}
+
 }  // namespace
 }  // namespace usb_cdc_function

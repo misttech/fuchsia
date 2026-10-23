@@ -1605,14 +1605,14 @@ void Dwc2::Endpoint::QueueRequest(usb::FidlRequest request) {
   std::lock_guard<std::mutex> _(lock);
 
   if (!enabled) {
-    fdf::error("dwc_ep_queue ep not enabled!");
-    RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
+    fdf::debug("dwc_ep_queue ep not enabled!");
+    RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
   }
 
   if (!dwc2_->configured_) {
-    fdf::error("dwc_ep_queue not configured!");
-    RequestComplete(ZX_ERR_BAD_STATE, 0, std::move(request));
+    fdf::debug("dwc_ep_queue not configured!");
+    RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
   }
 
