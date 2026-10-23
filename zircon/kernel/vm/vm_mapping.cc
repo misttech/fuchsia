@@ -1377,6 +1377,10 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
     // If it fails we can still abort with a fairly minor roll-back procedure.
     if (MergeProtectionRangesLocked(*right_candidate) != ZX_OK) {
       new_mapping->object_locked()->RemoveMappingLocked(new_mapping.get());
+      // On failure roll back any protection ranges that might have been inserted. Erase cannot
+      // fail.
+      ClearProtectionRangeTransitionsLocked(base() + size(),
+                                            base() + size() + right_candidate->size());
       return true;
     }
 
@@ -1404,9 +1408,6 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
     return false;
   }();
   if (failure) {
-    // On failure roll back any protection ranges that might have been inserted. Erase cannot fail.
-    ClearProtectionRangeTransitionsLocked(base() + size(),
-                                          base() + size() + right_candidate->size());
     return nullptr;
   }
 
