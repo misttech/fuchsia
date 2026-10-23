@@ -29,7 +29,8 @@ use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_shareable_state,
     cpp_process_dispatcher_start, cpp_process_dispatcher_state, cpp_process_dispatcher_suspend,
-    cpp_process_dispatcher_vdso_base_address, cpp_shareable_process_state_aspace,
+    cpp_process_dispatcher_vdso_base_address, cpp_process_remove_thread,
+    cpp_shareable_process_state_aspace,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -678,6 +679,22 @@ impl ProcessDispatcher {
             )
         };
         Status::ok(status)
+    }
+
+    /// Removes `thread` from the thread list of this process. If `thread` was the last thread,
+    /// the process transitions to the dead state.
+    ///
+    /// This is called within `thread`'s context when it is exiting.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must currently be linked into this process's thread list (i.e. it was added by
+    /// [`Self::add_initialized_thread`] and has not been removed since); unlinking a thread that
+    /// is not in the list corrupts it.
+    pub(crate) unsafe fn remove_thread(&self, thread: &ThreadDispatcher) {
+        // SAFETY: `self` and `thread` are valid references, and the caller guarantees that
+        // `thread` is currently in this process's thread list.
+        unsafe { cpp_process_remove_thread(self.as_ffi_mut(), thread as *const _ as *mut _) }
     }
 
     /// Returns the process's normal `Exceptionate`.

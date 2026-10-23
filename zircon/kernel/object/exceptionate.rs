@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::channel_dispatcher::ChannelDispatcher;
-use super::exceptionate_ffi::cpp_exceptionate_set_channel;
+use super::exceptionate_ffi::{cpp_exceptionate_set_channel, cpp_exceptionate_shutdown};
 use super::handle::KernelHandle;
 use zr::OpaqueFacade;
 use zx_status::Status;
@@ -43,5 +43,13 @@ impl Exceptionate {
                 process_rights,
             )
         })
+    }
+
+    /// Shuts down the exceptionate.
+    pub fn shutdown(&self) {
+        // SAFETY: `self` is a valid `Exceptionate`.
+        unsafe {
+            cpp_exceptionate_shutdown(self as *const Self as *mut Self);
+        }
     }
 }

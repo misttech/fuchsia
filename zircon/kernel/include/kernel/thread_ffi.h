@@ -67,6 +67,19 @@ FFI_ALWAYS_INLINE void cpp_thread_get_backtrace(Thread* thread, Backtrace* out_b
 FFI_ALWAYS_INLINE void cpp_thread_dump(const Thread* thread, bool full);
 FFI_ALWAYS_INLINE zx_duration_mono_t cpp_thread_runtime(const Thread* thread);
 FFI_ALWAYS_INLINE zx_status_t cpp_thread_detach_and_resume(Thread* thread);
+FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_set_soft_cpu_affinity(Thread* thread, cpu_mask_t affinity);
+FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_get_soft_cpu_affinity(const Thread* thread);
+FFI_ALWAYS_INLINE cpu_num_t cpp_thread_last_cpu(const Thread* thread);
+
+// Accessors for a ThreadRuntimeStats held in Rust-owned opaque storage (ThreadDispatcherState).
+FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_init(void* storage);
+FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_update(void* storage, thread_state new_state);
+FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_add_page_fault_ticks(
+    void* storage, zx_duration_mono_ticks_t ticks);
+FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_add_lock_contention_ticks(
+    void* storage, zx_duration_mono_ticks_t ticks);
+FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_get_compensated(
+    void* storage, ffi::Uninitialized<zx_info_task_runtime_t>* out_stats);
 
 __END_CDECLS
 

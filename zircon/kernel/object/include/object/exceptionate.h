@@ -86,6 +86,7 @@ extern "C" {
 zx_status_t cpp_exceptionate_set_channel(Exceptionate* exceptionate,
                                          KernelHandle<ChannelDispatcher>* channel,
                                          zx_rights_t thread_rights, zx_rights_t process_rights);
+void cpp_exceptionate_shutdown(Exceptionate* exceptionate);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EXCEPTIONATE_H_

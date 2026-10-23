@@ -39,6 +39,22 @@ static_assert(static_cast<uint32_t>(ThreadState::Exception::TRY_NEXT) == 2);
 static_assert(static_cast<uint32_t>(ThreadState::Exception::RESUME) == 3);
 // LINT.ThenChange(//zircon/kernel/object/thread_state.rs:Exception)
 
+// The blocked reason crosses the FFI as a raw uint32_t in both directions (SetBlockedReason and
+// rust_thread_dispatcher_set_blocked_reason), and the mapping to zx_thread_state_t lives on the
+// Rust side, so the C++ enum is held to the Rust numbering here.
+// LINT.IfChange(thread_blocked)
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::NONE) == 0);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::EXCEPTION) == 1);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::SLEEPING) == 2);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::FUTEX) == 3);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::PORT) == 4);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::CHANNEL) == 5);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::WAIT_ONE) == 6);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::WAIT_MANY) == 7);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::INTERRUPT) == 8);
+static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::PAGER) == 9);
+// LINT.ThenChange(//zircon/kernel/object/thread_dispatcher.rs:Blocked)
+
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -156,39 +172,6 @@ zx_status_t cpp_thread_dispatcher_write_state(ThreadDispatcher* thread, uint32_t
                             make_user_in_ptr(buffer), buffer_size);
 }
 
-zx_status_t cpp_thread_dispatcher_set_base_profile(ThreadDispatcher* thread,
-                                                   const SchedulerState::BaseProfile* profile) {
-  static_assert(sizeof(SchedulerState::BaseProfile) == kSchedulerStateBaseProfileSize,
-                "SchedulerState::BaseProfile size mismatch");
-  static_assert(alignof(SchedulerState::BaseProfile) == kSchedulerStateBaseProfileAlign,
-                "SchedulerState::BaseProfile align mismatch");
-  return thread->SetBaseProfile(*profile);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_set_soft_affinity(ThreadDispatcher* thread,
-                                                                      cpu_mask_t mask) {
-  return thread->SetSoftAffinity(mask);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_get_info_for_userspace(
-    const ThreadDispatcher* thread, ffi::Uninitialized<zx_info_thread_t>* out_info) {
-  out_info->Initialize(thread->GetInfoForUserspace());
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_stats_for_userspace(
-    ThreadDispatcher* thread, ffi::Uninitialized<zx_info_thread_stats_t>* out_info) {
-  return thread->GetStatsForUserspace(out_info->GetAddressUnchecked());
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_dispatcher_get_runtime_stats(
-    const ThreadDispatcher* thread, ffi::Uninitialized<zx_info_task_runtime_t>* out_info) {
-  out_info->Initialize(thread->GetRuntimeStats());
-}
-
 zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
                                            const zx_exception_context_t* user_context) {
   if (options != ZX_EXCEPTION_TARGET_JOB_DEBUGGER || type != ZX_EXCP_USER || !user_context) {
@@ -215,12 +198,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_sys_thread_legacy_yield(uint32_t options) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE ThreadDispatcher::Blocked cpp_thread_dispatcher_set_blocked_reason(
-    ThreadDispatcher::Blocked reason) {
-  return ThreadDispatcher::SetBlockedReason(reason);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_exception_report(
     const ThreadDispatcher* thread, ffi::Uninitialized<zx_exception_report_t>* out_report) {
   return const_cast<ThreadDispatcher*>(thread)->GetExceptionReport(
@@ -238,4 +215,33 @@ FFI_ALWAYS_INLINE Exceptionate* cpp_thread_dispatcher_exceptionate(ThreadDispatc
   return thread->exceptionate();
 }
 
+// TRANSITIONAL: while `exceptionate_` remains a C++ field.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_handle_single_shot_exiting(ProcessDispatcher* process,
+                                                             ThreadDispatcher* thread) {
+  arch_exception_context_t context{};
+  thread->HandleSingleShotException(process->debug_exceptionate(), ZX_EXCP_THREAD_EXITING, context);
+}
+
+// TRANSITIONAL: while `core_thread_` and `core_thread_lock_` remain C++ fields.
+// TA_NO_THREAD_SAFETY_ANALYSIS: ResetCoreThread() requires get_lock(), which is the Rust-side
+// `ThreadDispatcherState::lock`; the Rust caller (ThreadDispatcher::exiting_current) holds it via
+// its `guard` across this call. The `core_thread_lock_` capability is acquired here so Clang
+// still verifies it.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_reset_core_thread(ThreadDispatcher* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  Guard<SpinLock, IrqSave> core_thread_guard{&thread->core_thread_lock_};
+  thread->ResetCoreThread();
+}
+
+// TRANSITIONAL: while `exceptionate_type_` remains a C++ field.
+// TA_NO_THREAD_SAFETY_ANALYSIS: `exceptionate_type_` is TA_GUARDED(get_lock()), which is the
+// Rust-side `ThreadDispatcherState::lock`; the Rust caller
+// (ThreadDispatcher::get_info_for_userspace) holds it via its `guard` across this call.
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_thread_dispatcher_get_exceptionate_type_locked(
+    const ThreadDispatcher* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return static_cast<uint32_t>(const_cast<ThreadDispatcher*>(thread)->exceptionate_type_);
+}
 }  // extern "C"

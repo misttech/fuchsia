@@ -105,6 +105,7 @@ zx_status_t cpp_process_attach_aspace_to_thread(ProcessDispatcher* process, Thre
 zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, ThreadDispatcher* thread,
                                                bool ensure_initial_thread,
                                                const UserEntryState* entry);
+void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
 Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process);
 Exceptionate* cpp_process_dispatcher_debug_exceptionate(ProcessDispatcher* process);
 ThreadDispatcher* cpp_process_dispatcher_lookup_thread_by_id(ProcessDispatcher* process,
@@ -397,12 +398,13 @@ class ProcessDispatcher final
 
   // Thread lifecycle support.
   friend class ThreadDispatcher;
-  // The FFI shim below is the entry point used by the Rust ThreadDispatcher for the same
-  // thread lifecycle operation, so it needs the same access ThreadDispatcher has.
+  // The FFI shims below are the entry points used by the Rust ThreadDispatcher for the same
+  // thread lifecycle operations, so they need the same access ThreadDispatcher has.
   friend zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process,
                                                         ThreadDispatcher* thread,
                                                         bool ensure_initial_thread,
                                                         const UserEntryState* entry);
+  friend void cpp_process_remove_thread(ProcessDispatcher* process, ThreadDispatcher* thread);
   friend const ShareableProcessState* cpp_process_dispatcher_shareable_state(
       const ProcessDispatcher* process);
   // Takes the given ThreadDispatcher and transitions it from the INITIALIZED state to a runnable

@@ -133,4 +133,9 @@ FFI_ALWAYS_INLINE zx_status_t cpp_exceptionate_set_channel(Exceptionate* excepti
   return exceptionate->SetChannel(ktl::move(*channel), thread_rights, process_rights);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_exceptionate_shutdown(Exceptionate* exceptionate) {
+  exceptionate->Shutdown();
+}
+
 }  // extern "C"

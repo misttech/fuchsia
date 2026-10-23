@@ -7,16 +7,19 @@
 use super::channel_dispatcher::MessageWaiter;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
-use super::thread_dispatcher::{CoreThreadObservation, ThreadDispatcher, ThreadDispatcherState};
-use super::thread_state::{Exception, Lifecycle};
+use super::thread_dispatcher::{
+    Blocked, CoreThreadObservation, ThreadDispatcher, ThreadDispatcherState,
+};
+use super::thread_state::Exception;
 use crate::arch_rs::UserEntryState;
+use crate::kernel::scheduler_state::ThreadStateKind;
 use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use ksync::LockToken;
 use zx_status::Status;
 use zx_types::{
-    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
-    zx_info_thread_t, zx_koid_t, zx_rights_t, zx_status_t,
+    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_koid_t, zx_rights_t,
+    zx_status_t,
 };
 
 unsafe extern "C" {
@@ -126,6 +129,81 @@ unsafe extern "C" {
     /// `thread` must point to a valid `ThreadDispatcher`.
     pub(crate) fn cpp_thread_start_routine_entry(thread: *mut core::ffi::c_void) -> i32;
 
+    /// Returns the thread's exceptionate type.
+    ///
+    /// TRANSITIONAL: while `exceptionate_type_` remains a C++ field.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`, and the caller must hold the
+    /// dispatcher's state lock (`ThreadDispatcherState::lock`).
+    pub(crate) fn cpp_thread_dispatcher_get_exceptionate_type_locked(
+        thread: *const ThreadDispatcher,
+    ) -> u32;
+    /// Sends the `ZX_EXCP_THREAD_EXITING` single-shot exception to the process debugger.
+    ///
+    /// TRANSITIONAL: while `exceptionate_` remains a C++ field.
+    ///
+    /// # Safety
+    ///
+    /// `process` and `thread` must be valid `ProcessDispatcher` and `ThreadDispatcher` pointers.
+    pub(crate) fn cpp_thread_handle_single_shot_exiting(
+        process: *mut ProcessDispatcher,
+        thread: *mut ThreadDispatcher,
+    );
+    /// Takes `core_thread_lock_` and clears the linked core thread.
+    ///
+    /// TRANSITIONAL: while `core_thread_` and `core_thread_lock_` remain C++ fields.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must be a valid `ThreadDispatcher` pointer, and the caller must hold the
+    /// dispatcher's state lock (`ThreadDispatcherState::lock`).
+    pub(crate) fn cpp_thread_dispatcher_reset_core_thread(thread: *mut ThreadDispatcher);
+    /// Initializes the given opaque runtime stats storage.
+    ///
+    /// # Safety
+    ///
+    /// `storage` must be suitably aligned and sized.
+    pub(crate) fn cpp_thread_runtime_stats_init(storage: *mut core::ffi::c_void);
+    /// Updates the thread runtime stats.
+    ///
+    /// # Safety
+    ///
+    /// `storage` must point to initialized ThreadRuntimeStats, and interrupts must be disabled.
+    pub(crate) fn cpp_thread_runtime_stats_update(
+        storage: *mut core::ffi::c_void,
+        new_state: ThreadStateKind,
+    );
+    /// Adds page fault ticks to runtime stats.
+    ///
+    /// # Safety
+    ///
+    /// `storage` must point to initialized ThreadRuntimeStats.
+    pub(crate) fn cpp_thread_runtime_stats_add_page_fault_ticks(
+        storage: *mut core::ffi::c_void,
+        ticks: i64,
+    );
+    /// Adds lock contention ticks to runtime stats.
+    ///
+    /// # Safety
+    ///
+    /// `storage` must point to initialized ThreadRuntimeStats.
+    pub(crate) fn cpp_thread_runtime_stats_add_lock_contention_ticks(
+        storage: *mut core::ffi::c_void,
+        ticks: i64,
+    );
+    /// Gets compensated runtime stats.
+    ///
+    /// # Safety
+    ///
+    /// `storage` must point to initialized ThreadRuntimeStats. `out_stats` must point to
+    /// valid uninitialized memory for `zx_info_task_runtime_t`.
+    pub(crate) fn cpp_thread_runtime_stats_get_compensated(
+        storage: *mut core::ffi::c_void,
+        out_stats: *mut core::mem::MaybeUninit<zx_info_task_runtime_t>,
+    );
+
     /// Reads thread architectural state.
     ///
     /// # Safety
@@ -152,60 +230,6 @@ unsafe extern "C" {
         buffer_size: usize,
     ) -> zx_status_t;
 
-    /// Calls into C++ implementation to set the base profile of a thread.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    /// `profile` must point to a valid `SchedulerStateBaseProfile`.
-    pub(crate) fn cpp_thread_dispatcher_set_base_profile(
-        thread: *mut ThreadDispatcher,
-        profile: *const crate::kernel::scheduler_state::SchedulerStateBaseProfile,
-    ) -> zx_status_t;
-
-    /// Calls into C++ implementation to set the soft affinity of a thread.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    pub(crate) fn cpp_thread_dispatcher_set_soft_affinity(
-        thread: *mut ThreadDispatcher,
-        mask: crate::kernel::types::cpu_mask_t,
-    ) -> zx_status_t;
-
-    /// Gets info struct for userspace.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    /// `out_info` must point to valid uninitialized memory for `zx_info_thread_t`.
-    pub(crate) fn cpp_thread_dispatcher_get_info_for_userspace(
-        thread: *const ThreadDispatcher,
-        out_info: *mut zx_info_thread_t,
-    );
-
-    /// Gets stats struct for userspace.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    /// `out_info` must point to valid uninitialized memory for `zx_info_thread_stats_t`.
-    pub(crate) fn cpp_thread_dispatcher_get_stats_for_userspace(
-        thread: *mut ThreadDispatcher,
-        out_info: *mut zx_info_thread_stats_t,
-    ) -> zx_status_t;
-
-    /// Gets runtime stats struct.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    /// `out_info` must point to valid uninitialized memory for `zx_info_task_runtime_t`.
-    pub(crate) fn cpp_thread_dispatcher_get_runtime_stats(
-        thread: *const ThreadDispatcher,
-        out_info: *mut zx_info_task_runtime_t,
-    );
-
     /// Raises an exception for job debugger.
     ///
     /// # Safety
@@ -223,10 +247,6 @@ unsafe extern "C" {
     ///
     /// Yields execution of the current thread to the scheduler.
     pub(crate) fn cpp_sys_thread_legacy_yield(options: u32) -> zx_status_t;
-    /// Sets the thread blocked reason and returns the previous blocked reason.
-    pub(crate) fn cpp_thread_dispatcher_set_blocked_reason(
-        reason: super::thread_dispatcher::Blocked,
-    ) -> super::thread_dispatcher::Blocked;
 
     /// Retrieves exception report from thread.
     ///
@@ -437,10 +457,9 @@ pub unsafe extern "C" fn rust_thread_dispatcher_has_started_locked(
 /// Returns the thread's current lifecycle as a raw discriminant.
 ///
 /// TRANSITIONAL. This exists only for the `ThreadDispatcher` methods that still read the
-/// lifecycle from C++: `~ThreadDispatcher()`, `SuspendedOrInExceptionLocked()`,
-/// `GetInfoForUserspace()`, `SetBaseProfile()` and `SetSoftAffinity()`. It is removed once
-/// those move to Rust; do not add callers. `SuspendedOrInExceptionLocked()` also reads
-/// `exception_`, so this is expected to outlive `rust_thread_dispatcher_set_state_locked`.
+/// lifecycle from C++: `~ThreadDispatcher()` and `SuspendedOrInExceptionLocked()`. It is removed
+/// once those move to Rust; do not add callers. `SuspendedOrInExceptionLocked()` also reads
+/// `exception_`, so this goes when exception handling moves.
 ///
 /// `Lifecycle` is `#[repr(u32)]` with discriminants matching `ThreadState::Lifecycle`; the
 /// `static_assert`s in `thread_dispatcher_ffi.cc` pin the two enumerations together.
@@ -457,31 +476,6 @@ pub unsafe extern "C" fn rust_thread_dispatcher_lifecycle_locked(thread: &Thread
     // being the last reference. See this function's `# Safety` section.
     let token = unsafe { LockToken::new() };
     thread.lifecycle_locked(&token) as u32
-}
-
-/// Transitions the thread's lifecycle, taking the target as a raw discriminant.
-///
-/// TRANSITIONAL. This is the write-side counterpart of
-/// `rust_thread_dispatcher_lifecycle_locked`, and `ThreadDispatcher::ExitingCurrent()` is its
-/// only remaining caller. `ExitingCurrent()` cannot move to Rust until `runtime_stats_` does,
-/// so this is expected to be removed alongside that field. Do not add callers.
-///
-/// # Safety
-///
-/// The caller must hold the thread's state lock, which C++ does through
-/// `Guard<CriticalMutex>{get_lock()}`. That is the only obligation: `lifecycle` is a raw
-/// discriminant crossing in from C++, so it is validated by `Lifecycle::from_raw` and an
-/// out-of-range value panics unconditionally rather than being converted into an invalid
-/// `Lifecycle` variant.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_thread_dispatcher_set_state_locked(
-    thread: &ThreadDispatcher,
-    lifecycle: u32,
-) {
-    let lifecycle = Lifecycle::from_raw(lifecycle).expect("invalid ThreadState::Lifecycle");
-    // SAFETY: The caller guarantees the state lock is held for the duration of this call.
-    let mut token = unsafe { LockToken::new() };
-    thread.set_state_locked(&mut token, lifecycle);
 }
 
 /// Transitions the thread's exception state, taking the target as a raw discriminant.
@@ -506,4 +500,44 @@ pub unsafe extern "C" fn rust_thread_dispatcher_set_exception_state_locked(
     // SAFETY: The caller guarantees the state lock is held for the duration of this call.
     let mut token = unsafe { LockToken::new() };
     thread.set_exception_locked(&mut token, exception);
+}
+
+/// Returns a pointer to the thread's runtime stats storage.
+///
+/// TRANSITIONAL: while `ThreadRuntimeStats` remains a C++ type, the `ThreadDispatcher` C++
+/// inlines (`UpdateRuntimeStats`, `AddPageFaultTicks`, `AddLockContentionTicks`,
+/// `GetCompensatedTaskRuntimeStats`) resolve the object through this entry and call its methods
+/// directly. The canary check the C++ methods performed lives here.
+///
+/// # Safety
+///
+/// `thread` must be a valid reference.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_dispatcher_get_runtime_stats(
+    thread: &ThreadDispatcher,
+) -> *mut core::ffi::c_void {
+    thread.assert_canary();
+    thread.state().runtime_stats.as_void_ptr()
+}
+
+/// Called when the current thread is exiting.
+///
+/// # Safety
+///
+/// Must only be called on the current running thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_dispatcher_exiting_current(thread: &ThreadDispatcher) {
+    thread.exiting_current();
+}
+
+/// Sets the blocked reason of the current thread and returns the previous one.
+///
+/// # Safety
+///
+/// The calling thread must be a user thread, so that `Thread::Current::Get()->user_thread()` is
+/// its live `ThreadDispatcher`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_dispatcher_set_blocked_reason(reason: u32) -> u32 {
+    let reason = Blocked::from_raw(reason).expect("invalid ThreadDispatcher::Blocked");
+    ThreadDispatcher::set_blocked_reason(reason).0
 }

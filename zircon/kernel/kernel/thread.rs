@@ -136,6 +136,9 @@ unsafe extern "C" {
     fn cpp_thread_set_memory_stall_state(thread: *mut Thread, value: ThreadStallState);
     fn cpp_thread_get_cpu_affinity(thread: *const Thread) -> cpu_mask_t;
     fn cpp_thread_set_cpu_affinity(thread: *mut Thread, affinity: cpu_mask_t) -> cpu_mask_t;
+    fn cpp_thread_get_soft_cpu_affinity(thread: *const Thread) -> cpu_mask_t;
+    fn cpp_thread_set_soft_cpu_affinity(thread: *mut Thread, affinity: cpu_mask_t) -> cpu_mask_t;
+    fn cpp_thread_last_cpu(thread: *const Thread) -> cpu_num_t;
     fn cpp_thread_current_migrate_to_cpu(target_cpu: cpu_num_t);
     fn cpp_thread_user_thread(thread: *mut Thread) -> *mut crate::object::ThreadDispatcher;
     fn cpp_thread_tid(thread: *const Thread) -> zx_types::zx_koid_t;
@@ -1364,6 +1367,51 @@ impl ThreadPtr {
     pub unsafe fn set_cpu_affinity(self, affinity: cpu_mask_t) -> cpu_mask_t {
         // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
         unsafe { cpp_thread_set_cpu_affinity(self.as_raw(), affinity) }
+    }
+
+    /// Returns the current soft CPU affinity mask of the thread (`GetSoftCpuAffinity`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn get_soft_cpu_affinity(self) -> cpu_mask_t {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_get_soft_cpu_affinity(self.as_ptr()) }
+    }
+
+    /// Sets the soft CPU affinity mask of the thread and returns its previous soft affinity mask
+    /// (`SetSoftCpuAffinity`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn set_soft_cpu_affinity(self, affinity: cpu_mask_t) -> cpu_mask_t {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_set_soft_cpu_affinity(self.as_raw(), affinity) }
+    }
+
+    /// Returns the total time the thread has spent running on a CPU (`Runtime`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn runtime(self) -> DurationMono {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_runtime(self.as_ptr()) }
+    }
+
+    /// Returns the CPU the thread was last scheduled on (`LastCpu`).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the thread pointer is still valid and the
+    /// underlying thread has not been destroyed.
+    pub unsafe fn last_cpu(self) -> cpu_num_t {
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { cpp_thread_last_cpu(self.as_ptr()) }
     }
 
     /// Returns a reference to this thread's [`ChainLock`].

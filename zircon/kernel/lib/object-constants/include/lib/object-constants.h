@@ -219,14 +219,19 @@ constexpr size_t kFutexContextStorageAlign = 8;
 // opaque_storage_; it shrinks as those fields migrate into the Rust state.
 //
 // It is also configuration dependent, unlike every other dispatcher here, whose state sits
-// immediately after the Dispatcher base. Three lockdep-instrumented locks live in the C++
-// fields that precede opaque_storage_ - runtime_stats_'s SeqLock, exceptionate_'s mutex, and
-// core_thread_lock_ - and each grows by one lock class id when lockdep is enabled, moving
-// opaque_storage_ later by 3 * kLockClassIdSize bytes. The base offset is taken from the
-// compiler, not computed by hand.
-constexpr size_t kThreadDispatcherStateSize = 64;
+// immediately after the Dispatcher base. Two lockdep-instrumented locks live in the C++ fields
+// that precede opaque_storage_ - exceptionate_'s mutex and core_thread_lock_ - and each grows by
+// one lock class id when lockdep is enabled, moving opaque_storage_ later by
+// 2 * kLockClassIdSize bytes. The Rust state itself holds two more - its own mutex and the
+// SeqLock inside runtime_stats - so its size grows by the same amount. The base values are
+// taken from the compiler, not computed by hand.
+constexpr size_t kThreadDispatcherStateSize = 120 + (2 * kLockClassIdSize);
 constexpr size_t kThreadDispatcherStateAlign = 8;
-constexpr size_t kThreadDispatcherStateOffset = 416 + (3 * kLockClassIdSize);
+constexpr size_t kThreadDispatcherStateOffset = 352 + (2 * kLockClassIdSize);
+
+// Size and alignment for ThreadRuntimeStatsStorage (ThreadRuntimeStats).
+constexpr size_t kThreadRuntimeStatsStorageSize = 56 + kLockClassIdSize;
+constexpr size_t kThreadRuntimeStatsStorageAlign = 8;
 
 // Size and alignment for Backtrace.
 constexpr size_t kBacktraceSize = 272;

@@ -377,6 +377,17 @@ unsafe extern "C" {
         entry: *const UserEntryState,
     ) -> zx_status_t;
 
+    /// Removes `thread` from the C++ thread list of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher` and `thread` must point to a valid
+    /// `ThreadDispatcher` that is in the thread list of `process`.
+    pub(crate) fn cpp_process_remove_thread(
+        process: *mut ProcessDispatcher,
+        thread: *mut ThreadDispatcher,
+    );
+
     /// Returns a pointer to the process's normal `Exceptionate`.
     ///
     /// # Safety

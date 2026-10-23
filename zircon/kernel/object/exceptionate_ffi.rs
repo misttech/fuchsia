@@ -23,4 +23,11 @@ unsafe extern "C" {
         thread_rights: zx_rights_t,
         process_rights: zx_rights_t,
     ) -> zx_status_t;
+
+    /// Shuts down the exceptionate.
+    ///
+    /// # Safety
+    ///
+    /// `exceptionate` must point to a valid `Exceptionate`.
+    pub(crate) fn cpp_exceptionate_shutdown(exceptionate: *mut Exceptionate);
 }

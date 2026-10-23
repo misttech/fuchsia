@@ -119,65 +119,6 @@ zx_status_t ThreadDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const 
   return ZX_OK;
 }
 
-void ThreadDispatcher::ExitingCurrent() {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  // Set ourselves in the DYING state before calling the Debugger.
-  {
-    Guard<CriticalMutex> guard{get_lock()};
-    SetStateLocked(ThreadState::Lifecycle::DYING);
-  }
-
-  // Notify a debugger if attached. Do this before marking the thread as
-  // dead: the debugger expects to see the thread in the DYING state, it may
-  // try to read thread registers. The debugger still has to handle the case
-  // where the process is also dying (and thus the thread could transition
-  // DYING->DEAD from underneath it), but that's life (or death :-)).
-  //
-  // Thread exit exceptions don't currently provide an iframe.
-  arch_exception_context_t context{};
-  HandleSingleShotException(process()->debug_exceptionate(), ZX_EXCP_THREAD_EXITING, context);
-
-  // Mark the thread as dead. Do this before removing the thread from the
-  // process because if this is the last thread then the process will be
-  // marked dead, and we don't want to have a state where the process is
-  // dead but one thread is not.
-  {
-    // Mark the thread as dead in the thread stats.  The thread is technically
-    // still running, but from a perspective of user-mode observable thread
-    // stats, it is now dead.  It is important to do this now, before we remove
-    // ourselves from our process's collection.  If we are the last thread to
-    // leave the collection, user-mode will be signaled and will expect the
-    // process to be dead (implying that its thread stats should no longer be
-    // increasing).  If we have not declared this thread to be dead yet, users
-    // could continue to see the thread stats change even though they now
-    // consider the process to be dead.
-    {
-      InterruptDisableGuard interrupt_disable;
-      UpdateRuntimeStats(thread_state::THREAD_DEATH);
-    }
-
-    // put ourselves into the dead state
-    Guard<CriticalMutex> guard{get_lock()};
-    SetStateLocked(ThreadState::Lifecycle::DEAD);
-
-    // Then obtain the core thread lock and reset our core thread pointer.
-    Guard<SpinLock, IrqSave> core_thread_guard{&core_thread_lock_};
-    ResetCoreThread();
-  }
-
-  // Drop our exception channel endpoint so any userspace listener
-  // gets the PEER_CLOSED signal.
-  exceptionate_.Shutdown();
-
-  // remove ourselves from our parent process's view
-  process()->RemoveThread(this);
-
-  LTRACE_EXIT_OBJ;
-}
-
 // low level LK entry point for the thread
 int ThreadDispatcher::StartRoutine(void* arg) {
   LTRACE_ENTRY;
@@ -235,118 +176,6 @@ bool ThreadDispatcher::SuspendedOrInExceptionLocked() {
   return lifecycle_locked() == ThreadState::Lifecycle::SUSPENDED || InExceptionLocked();
 }
 
-static zx_thread_state_t ThreadLifecycleToState(ThreadState::Lifecycle lifecycle,
-                                                ThreadDispatcher::Blocked blocked_reason) {
-  switch (lifecycle) {
-    case ThreadState::Lifecycle::INITIAL:
-    case ThreadState::Lifecycle::INITIALIZED:
-      return ZX_THREAD_STATE_NEW;
-    case ThreadState::Lifecycle::RUNNING:
-      // The thread may be "running" but be blocked in a syscall or
-      // exception handler.
-      switch (blocked_reason) {
-        case ThreadDispatcher::Blocked::NONE:
-          return ZX_THREAD_STATE_RUNNING;
-        case ThreadDispatcher::Blocked::EXCEPTION:
-          return ZX_THREAD_STATE_BLOCKED_EXCEPTION;
-        case ThreadDispatcher::Blocked::SLEEPING:
-          return ZX_THREAD_STATE_BLOCKED_SLEEPING;
-        case ThreadDispatcher::Blocked::FUTEX:
-          return ZX_THREAD_STATE_BLOCKED_FUTEX;
-        case ThreadDispatcher::Blocked::PORT:
-          return ZX_THREAD_STATE_BLOCKED_PORT;
-        case ThreadDispatcher::Blocked::CHANNEL:
-          return ZX_THREAD_STATE_BLOCKED_CHANNEL;
-        case ThreadDispatcher::Blocked::WAIT_ONE:
-          return ZX_THREAD_STATE_BLOCKED_WAIT_ONE;
-        case ThreadDispatcher::Blocked::WAIT_MANY:
-          return ZX_THREAD_STATE_BLOCKED_WAIT_MANY;
-        case ThreadDispatcher::Blocked::INTERRUPT:
-          return ZX_THREAD_STATE_BLOCKED_INTERRUPT;
-        case ThreadDispatcher::Blocked::PAGER:
-          return ZX_THREAD_STATE_BLOCKED_PAGER;
-        default:
-          DEBUG_ASSERT_MSG(false, "unexpected blocked reason: %d",
-                           static_cast<int>(blocked_reason));
-          return ZX_THREAD_STATE_BLOCKED;
-      }
-    case ThreadState::Lifecycle::SUSPENDED:
-      return ZX_THREAD_STATE_SUSPENDED;
-    case ThreadState::Lifecycle::DYING:
-      return ZX_THREAD_STATE_DYING;
-    case ThreadState::Lifecycle::DEAD:
-      return ZX_THREAD_STATE_DEAD;
-    default:
-      DEBUG_ASSERT_MSG(false, "unexpected run state: %d", static_cast<int>(lifecycle));
-      return ZX_THREAD_RUNNING;
-  }
-}
-
-zx_info_thread_t ThreadDispatcher::GetInfoForUserspace() const {
-  AssertCanary();
-
-  zx_info_thread_t info = {};
-
-  Guard<CriticalMutex> guard{get_lock()};
-  info.state =
-      ThreadLifecycleToState(lifecycle_locked(), blocked_reason_.load(ktl::memory_order_acquire));
-  info.wait_exception_channel_type = exceptionate_type_;
-
-  // If we've exited then return with the lifecycle and exception type, and keep
-  // the cpu_affinity_mask at 0.
-  if (core_thread_ == nullptr) {
-    return info;
-  }
-
-  // Get CPU affinity.
-  //
-  // We assume that we can fit the entire mask in the first word of
-  // cpu_affinity_mask.
-  static_assert(SMP_MAX_CPUS <= sizeof(info.cpu_affinity_mask.mask[0]) * 8);
-  info.cpu_affinity_mask.mask[0] = core_thread_->GetSoftCpuAffinity();
-
-  return info;
-}
-
-zx_status_t ThreadDispatcher::GetStatsForUserspace(zx_info_thread_stats_t* info) {
-  AssertCanary();
-
-  LTRACE_ENTRY_OBJ;
-
-  *info = {};
-
-  Guard<CriticalMutex> guard{get_lock()};
-
-  if (core_thread_ == nullptr) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  info->total_runtime = core_thread_->Runtime();
-  info->last_scheduled_cpu = core_thread_->LastCpu();
-  return ZX_OK;
-}
-
-TaskRuntimeStats ThreadDispatcher::GetCompensatedTaskRuntimeStats() const {
-  AssertCanary();
-  return runtime_stats_.GetCompensatedTaskRuntimeStats();
-}
-
-void ThreadDispatcher::UpdateRuntimeStats(thread_state new_state) {
-  AssertCanary();
-  DEBUG_ASSERT(arch_ints_disabled());
-  runtime_stats_.Update(new_state, ThreadRuntimeStats::NoIrqSave);
-}
-
-void ThreadDispatcher::AddPageFaultTicks(zx_duration_mono_ticks_t ticks) {
-  AssertCanary();
-  runtime_stats_.AddPageFaultTicks(ticks);
-}
-
-void ThreadDispatcher::AddLockContentionTicks(zx_duration_mono_ticks_t ticks) {
-  AssertCanary();
-  runtime_stats_.AddLockContentionTicks(ticks);
-}
-
 zx_status_t ThreadDispatcher::GetExceptionReport(zx_exception_report_t* report) {
   AssertCanary();
 
@@ -394,7 +223,7 @@ zx_status_t ThreadDispatcher::HandleException(Exceptionate* exceptionate,
     }
     *sent = true;
 
-    // This state is needed by GetInfoForUserspace().
+    // This state is needed by ThreadDispatcher::get_info_for_userspace() in thread_dispatcher.rs.
     exception_ = exception;
     exceptionate_type_ = exceptionate->type();
     SetExceptionStateLocked(ThreadState::Exception::UNPROCESSED);
@@ -607,31 +436,6 @@ zx_status_t ThreadDispatcher::WriteState(zx_thread_state_topic_t state_kind,
     default:
       return ZX_ERR_INVALID_ARGS;
   }
-}
-
-zx_status_t ThreadDispatcher::SetBaseProfile(const SchedulerState::BaseProfile& profile) {
-  Guard<CriticalMutex> guard{get_lock()};
-  if ((lifecycle_locked() == ThreadState::Lifecycle::INITIAL) ||
-      (lifecycle_locked() == ThreadState::Lifecycle::DYING) ||
-      (lifecycle_locked() == ThreadState::Lifecycle::DEAD)) {
-    return ZX_ERR_BAD_STATE;
-  }
-
-  // The profile was already validated by the Profile dispatcher.
-  core_thread_->SetBaseProfile(profile);
-  return ZX_OK;
-}
-
-zx_status_t ThreadDispatcher::SetSoftAffinity(cpu_mask_t mask) {
-  Guard<CriticalMutex> guard{get_lock()};
-  if ((lifecycle_locked() == ThreadState::Lifecycle::INITIAL) ||
-      (lifecycle_locked() == ThreadState::Lifecycle::DYING) ||
-      (lifecycle_locked() == ThreadState::Lifecycle::DEAD)) {
-    return ZX_ERR_BAD_STATE;
-  }
-  // The mask was already validated by the Profile dispatcher.
-  core_thread_->SetSoftCpuAffinity(mask);
-  return ZX_OK;
 }
 
 // TRANSITIONAL. Duplicates lifecycle_to_string() in thread_state.rs. Two callers remain, both

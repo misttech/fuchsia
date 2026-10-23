@@ -70,6 +70,7 @@ source_set("kernel") {
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/mmu_rcu",
+    "//zircon/kernel/lib/object-constants:headers",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/power-management",
     "//zircon/kernel/lib/sched",
