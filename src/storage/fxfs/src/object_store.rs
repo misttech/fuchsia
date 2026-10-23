@@ -33,7 +33,9 @@ pub use object_record::{
     ChildValue, DirType, FscryptDirInfo, FscryptPolicyFlags, LEGACY_FSCRYPT_FLAGS,
     ObjectDescriptor, PosixAttributes, Timestamp,
 };
-pub use store_object_handle::{MAX_INLINE_XATTR_SIZE, SetExtendedAttributeMode, StoreObjectHandle};
+pub use store_object_handle::{
+    MAX_INLINE_XATTR_SIZE, SetExtendedAttributeMode, StoreObjectHandle, enable_watchdog_backtrace,
+};
 
 use crate::errors::FxfsError;
 use crate::filesystem::{

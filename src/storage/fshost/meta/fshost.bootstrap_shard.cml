@@ -121,6 +121,12 @@
             availability: "optional",
         },
         {
+            config: "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            from: "parent",
+            to: "#fshost",
+            availability: "transitional",
+        },
+        {
             protocol: [
                 "fuchsia.security.keymint.Admin",
                 "fuchsia.security.keymint.SealingKeys",

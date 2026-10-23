@@ -56,6 +56,13 @@
         // Use this otherwise unimplemented service to create an edge in the dependency graph, so
         // the fxfs component is shut down before the crypt service.
         { service: "fuchsia.fxfs.CryptService" },
+        {
+            config: "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            key: "storage_stall_watchdog_enabled",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
     ],
     expose: [
         {

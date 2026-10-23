@@ -314,6 +314,14 @@ impl<S: HandleOwner> ObjectHandle for StoreObjectHandle<S> {
     }
 }
 
+static WATCHDOG_BACKTRACE_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Enables triggering a `fxfs-watchdog:<op>-300s` backtrace request when an I/O request in
+/// `StoreObjectHandle` has been blocked for 5 minutes.
+pub fn enable_watchdog_backtrace(enabled: bool) {
+    WATCHDOG_BACKTRACE_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
 struct Watchdog {
     _task: fasync::Task<()>,
 }
@@ -341,6 +349,22 @@ impl Watchdog {
                 .trace(trace_future_args!("StoreObjectHandle::Watchdog")),
             ),
         }
+    }
+
+    /// Warns every 10 seconds while an I/O request of kind `op` is blocked. If
+    /// `WATCHDOG_BACKTRACE_ENABLED` is set, also requests a backtrace after 5 minutes from a
+    /// short-lived thread named after the request (e.g. "fxfs-watchdog:Write-300s"), so that none
+    /// of the executor's threads stop.
+    fn io(op: &'static str) -> Self {
+        Self::new(10, move |count| {
+            warn!("{op} I/O request blocked for {} seconds", count * 10);
+            #[cfg(all(target_os = "fuchsia", not(doc)))]
+            if count == 30 && WATCHDOG_BACKTRACE_ENABLED.load(Ordering::Relaxed) {
+                let _ = std::thread::Builder::new()
+                    .name(format!("fxfs-watchdog:{op}-{}s", count * 10))
+                    .spawn(::debug::backtrace_request_all_threads);
+            }
+        })
     }
 }
 
@@ -505,9 +529,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         }
         let store = self.store();
         store.device_write_ops.fetch_add(1, Ordering::Relaxed);
-        let _watchdog = Watchdog::new(10, |count| {
-            warn!("Write I/O request blocked for {} seconds", count * 10);
-        });
+        let _watchdog = Watchdog::io("Write");
 
         let (opts, compute_checksums) = match crypt_ctx {
             Some((dun, slot)) => {
@@ -541,6 +563,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
     /// Flushes the underlying device.  This is expensive and should be used sparingly.
     pub async fn flush_device(&self) -> Result<(), Error> {
+        let _watchdog = Watchdog::io("Flush");
         self.store().device().flush().await
     }
 
@@ -737,9 +760,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let store = self.store();
         store.device_read_ops.fetch_add(1, Ordering::Relaxed);
 
-        let _watchdog = Watchdog::new(10, |count| {
-            warn!("Read I/O request blocked for {} seconds", count * 10);
-        });
+        let _watchdog = Watchdog::io("Read");
 
         let (_key_id, key) = self.get_key(Some(key_id)).await?;
         if let Some(key) = key {
@@ -1248,9 +1269,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 } else {
                     let store = self.store();
                     store.device_read_ops.fetch_add(1, Ordering::Relaxed);
-                    let _watchdog = Watchdog::new(10, |count| {
-                        warn!("Read I/O request blocked for {} seconds", count * 10);
-                    });
+                    let _watchdog = Watchdog::io("Read");
                     store.device.read(device_offset, to_read.reborrow()).await?;
                 }
                 if let Some(bitmap) = maybe_bitmap {

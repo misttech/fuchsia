@@ -103,6 +103,12 @@
             from: "#fxfs-crypt",
             to: "#fxfs",
         },
+        {
+            config: "fuchsia.diagnostics.StorageStallWatchdogEnabled",
+            from: "parent",
+            to: "#fxfs",
+            availability: "optional",
+        },
     ],
     expose: [
         {

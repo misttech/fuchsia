@@ -152,11 +152,9 @@ fxfs_sources = [
 if (is_fuchsia) {
   fxfs_deps += [
     "//sdk/rust/zx",
+    "//src/lib/debug/rust",
     "//third_party/rust_crates:scopeguard",
   ]
-  if (rust_debug_assertions) {
-    fxfs_deps += [ "//src/lib/debug/rust" ]
-  }
   fxfs_test_deps += [
     "//src/storage/blobfs/bin:blobfs-component",
     "//third_party/zstd",
@@ -241,6 +239,7 @@ fuchsia_test_package("fxfs-tests") {
 rustc_binary("fxfs") {
   edition = "2024"
   deps = [
+    ":fxfs_config",
     ":lib",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
@@ -270,10 +269,18 @@ rustc_binary("fxfs") {
   assert_no_deps = [ "//src/storage/lib/vfs/rust:vfs" ]
 }
 
-fuchsia_component("fxfs_component") {
+fuchsia_component_manifest("fxfs_manifest") {
   component_name = "fxfs"
-  deps = [ ":fxfs" ]
   manifest = "meta/fxfs.cml"
+}
+
+fuchsia_structured_config_rust_lib("fxfs_config") {
+  cm_label = ":fxfs_manifest"
+}
+
+fuchsia_component("fxfs_component") {
+  cm_label = ":fxfs_manifest"
+  deps = [ ":fxfs" ]
 }
 
 fuchsia_package("package") {
@@ -596,11 +603,9 @@ rustc_library("lib") {
     "//third_party/rust_crates:zerocopy",
   ]
   if (is_fuchsia) {
-    deps += [ "//sdk/rust/zx" ]
-  }
-  if (rust_debug_assertions) {
-    if (is_fuchsia) {
-      deps += [ "//src/lib/debug/rust" ]
-    }
+    deps += [
+      "//sdk/rust/zx",
+      "//src/lib/debug/rust",
+    ]
   }
 }

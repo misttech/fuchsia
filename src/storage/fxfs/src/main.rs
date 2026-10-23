@@ -26,6 +26,9 @@ async fn main() -> Result<(), Error> {
 
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
+    let config = fxfs_config::Config::take_from_startup_handle();
+    fxfs::object_store::enable_watchdog_backtrace(config.storage_stall_watchdog_enabled);
+
     info!(version:% = LATEST_VERSION; "Started");
 
     Component::new()

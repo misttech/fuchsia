@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_build_info//:args.bzl", "rust_debug_assertions")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_proc_macro.bzl", "rustc_proc_macro")
@@ -152,11 +151,11 @@ rustc_library(
         "//third_party/rust_crates/vendor:uuid",
         "//third_party/rust_crates/vendor:zerocopy",
     ] + select({
-        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "@platforms//os:fuchsia": [
+            "//sdk/rust/zx",
+            "//src/lib/debug/rust",
+        ],
         "//conditions:default": [],
-    }) + (select({
-        "@platforms//os:fuchsia": ["//src/lib/debug/rust"],
-        "//conditions:default": [],
-    }) if rust_debug_assertions else []),
+    }),
 )
 # LINT.ThenChange(BUILD.gn)
