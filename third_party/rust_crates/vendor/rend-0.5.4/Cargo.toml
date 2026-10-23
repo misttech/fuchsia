@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "rend"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["David Koloski <djkoloski@gmail.com>"]
 build = false
 autolib = false

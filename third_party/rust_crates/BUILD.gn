@@ -18949,15 +18949,15 @@ rustc_macro("remain-v0_2_16") {
   applicable_licenses = [ ":remain-v0_2_16.license" ]
 }
 
-license("rend-v0_5_3.license") {
+license("rend-v0_5_4.license") {
   public_package_name = "rend"
-  license_files = [ "//third_party/rust_crates/vendor/rend-0.5.3/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/rend-0.5.4/LICENSE" ]
 }
 
-rustc_library("rend-v0_5_3") {
+rustc_library("rend-v0_5_4") {
   crate_name = "rend"
-  source_root = "//third_party/rust_crates/vendor/rend-0.5.3/src/lib.rs"
-  output_name = "rend-368d027af69aa0a1"
+  source_root = "//third_party/rust_crates/vendor/rend-0.5.4/src/lib.rs"
+  output_name = "rend-83072838e14ecfcd"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18970,14 +18970,14 @@ rustc_library("rend-v0_5_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=368d027af69aa0a1",
-    "-Cextra-filename=-368d027af69aa0a1",
+    "-Cmetadata=83072838e14ecfcd",
+    "-Cextra-filename=-83072838e14ecfcd",
     "--cfg=feature=\"bytecheck\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rend-v0_5_3.license" ]
+  applicable_licenses = [ ":rend-v0_5_4.license" ]
 }
 
 license("rfc6979-v0_3_1.license") {
@@ -19220,7 +19220,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":munge-v0_4_7" ]
   deps += [ ":ptr_meta-v0_3_1" ]
   deps += [ ":rancor-v0_1_1" ]
-  deps += [ ":rend-v0_5_3" ]
+  deps += [ ":rend-v0_5_4" ]
   deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]
   deps += [ ":tinyvec-v1_13_3" ]
   deps += [ ":uuid-v1_23_3" ]
