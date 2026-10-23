@@ -106,7 +106,7 @@ pub async fn suspend_container(
     // These handles need to kept alive until the end of the block, as they will
     // resume the kernel when dropped.
     log::info!("Suspending all container processes.");
-    let _suspend_handles = match suspend_job(&container_job).await {
+    let _suspend_handles = match suspend_job(&container_job) {
         Ok(handles) => handles,
         Err(e) => {
             warn!("error suspending container {:?}", e);
@@ -229,118 +229,341 @@ pub async fn suspend_container(
     }))
 }
 
+/// The signals that indicate that a thread will not run again until it is resumed.
+const THREAD_STOPPED_SIGNALS: zx::Signals =
+    zx::Signals::THREAD_SUSPENDED.union(zx::Signals::THREAD_TERMINATED);
+
+/// The suspend tokens of the processes of a suspended container.
+///
+/// The processes are resumed when this is dropped, which closes the suspend tokens.
+struct SuspendedProcesses(Vec<zx::NullableHandle>);
+
+impl SuspendedProcesses {
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 /// Suspends the provided `zx::Job` by suspending each process in the job individually.
 ///
-/// Returns the suspend handles for all the suspended processes.
+/// Returns a `SuspendedProcesses` guard holding the suspend tokens of all the suspended processes,
+/// which resumes them when dropped.
 ///
-/// Returns an error if any individual suspend failed. Any suspend handles will be dropped before
-/// the error is returned.
-async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Error> {
-    let mut handles = std::collections::HashMap::<zx::Koid, zx::NullableHandle>::new();
+/// Returns an error if any individual suspend failed, in which case the processes that were
+/// suspended are resumed before the error is returned.
+fn suspend_job(kernel_job: &zx::Job) -> Result<SuspendedProcesses, Error> {
+    // The processes that were already handled, whether they were suspended or not.
+    let mut known_process_koids = std::collections::HashSet::<zx::Koid>::new();
+    // Resumes the suspended processes if an error is returned.
+    let mut suspended_processes = SuspendedProcesses(vec![]);
     loop {
-        let process_koids = kernel_job.processes().expect("failed to get processes");
-        let mut found_new_process = false;
-        let mut processes = vec![];
+        // Processes that could not be suspended because they no longer exist or are dying are not
+        // retried: a dying process can remain in the job for an arbitrarily long time, but none of
+        // its threads will run user code again.
+        let new_process_koids: Vec<zx::Koid> = kernel_job
+            .processes()?
+            .into_iter()
+            .filter(|process_koid| known_process_koids.insert(*process_koid))
+            .collect();
 
-        for process_koid in process_koids {
-            if handles.get(&process_koid).is_some() {
-                continue;
-            }
+        // Processes can be created by threads that were not suspended yet. Once every thread of
+        // every known process is suspended, no new processes can appear, so we are done.
+        if new_process_koids.is_empty() {
+            break;
+        }
 
-            found_new_process = true;
-
-            if let Ok(process_handle) = kernel_job.get_child(&process_koid, zx::Rights::SAME_RIGHTS)
-            {
-                let process = zx::Process::from(process_handle);
-                match process.suspend() {
-                    Ok(suspend_handle) => {
-                        handles.insert(process_koid, suspend_handle);
-                    }
-                    Err(zx::Status::BAD_STATE) => {
-                        // The process was already dead or dying, and thus can't be suspended.
-                        continue;
-                    }
-                    Err(e) => {
-                        log::warn!("Failed process suspension: {:?}", e);
-                        return Err(e.into());
-                    }
-                };
+        // Request the suspension of all the processes before waiting for any of their threads,
+        // so that the kernel suspends the threads of all the processes concurrently.
+        let mut processes = Vec::with_capacity(new_process_koids.len());
+        for process_koid in new_process_koids {
+            if let Some((process, suspend_handle)) = suspend_process(kernel_job, process_koid)? {
+                suspended_processes.0.push(suspend_handle);
                 processes.push(process);
             }
         }
 
-        for process in processes {
-            let threads = process.threads().expect("failed to get threads");
-            for thread_koid in &threads {
-                fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
-                if let Ok(thread_handle) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS)
-                {
-                    let thread_obj = zx::Thread::from(thread_handle);
-                    let mut watchdog_count = 0;
-                    loop {
-                        if let Ok(info) = thread_obj.info() {
-                            if let zx::ThreadState::Blocked(zx::ThreadBlockType::Exception(_)) =
-                                info.state
-                            {
-                                let thread_name = thread_obj
-                                    .get_name()
-                                    .map(|n| n.to_string())
-                                    .unwrap_or_else(|_| "unknown".to_string());
-                                log::warn!(
-                                    "Thread {} (Koid: {:?}) is blocked on exception, skipping suspend wait.",
-                                    thread_name,
-                                    thread_koid
-                                );
-                                break;
-                            }
-                        }
-
-                        match thread_obj
-                            .wait_one(
-                                zx::Signals::THREAD_SUSPENDED | zx::Signals::THREAD_TERMINATED,
-                                zx::MonotonicInstant::after(zx::Duration::from_millis(100)),
-                            )
-                            .to_result()
-                        {
-                            Err(zx::Status::TIMED_OUT) => {
-                                watchdog_count += 1;
-                                if watchdog_count == 100 || watchdog_count % 600 == 0 {
-                                    let process_name = process
-                                        .get_name()
-                                        .map(|n| n.to_string())
-                                        .unwrap_or_else(|_| "unknown".to_string());
-                                    let thread_name = thread_obj
-                                        .get_name()
-                                        .map(|n| n.to_string())
-                                        .unwrap_or_else(|_| "unknown".to_string());
-                                    let thread_state = thread_obj
-                                        .info()
-                                        .map(|info| format!("{:?}", info.state))
-                                        .unwrap_or_else(|_| "unknown".to_string());
-                                    log::warn!(
-                                        "[SUSPEND_WATCHDOG] Timeout waiting for task suspension. Thread Koid: {:?} Name: '{}', Process: '{}', State: {}, continuing to wait...",
-                                        thread_koid,
-                                        thread_name,
-                                        process_name,
-                                        thread_state
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!("Error waiting for task suspension: {:?}", e);
-                                return Err(e.into());
-                            }
-                            _ => break,
-                        }
-                    }
-                }
-            }
-        }
-
-        if !found_new_process {
-            break;
+        for process in &processes {
+            wait_for_process_suspended(process)?;
         }
     }
 
-    Ok(handles.into_values().collect())
+    Ok(suspended_processes)
+}
+
+/// Requests the suspension of the process identified by `process_koid` in `kernel_job`.
+///
+/// Returns the process and its suspend handle, or `None` if the process no longer exists or is
+/// dying, in which case it does not need to be suspended. Returns any other error.
+fn suspend_process(
+    kernel_job: &zx::Job,
+    process_koid: zx::Koid,
+) -> Result<Option<(zx::Process, zx::NullableHandle)>, zx::Status> {
+    let process_handle = match kernel_job.get_child(&process_koid, zx::Rights::SAME_RIGHTS) {
+        Ok(process_handle) => process_handle,
+        Err(zx::Status::NOT_FOUND) => {
+            // The process exited after the job was enumerated.
+            return Ok(None);
+        }
+        Err(e) => {
+            log::warn!("Failed to get container process {process_koid:?}: {e:?}");
+            return Err(e);
+        }
+    };
+    let process = zx::Process::from(process_handle);
+    match process.suspend() {
+        Ok(suspend_handle) => Ok(Some((process, suspend_handle))),
+        Err(zx::Status::BAD_STATE) => {
+            // The process was already dead or dying, and thus can't be suspended.
+            Ok(None)
+        }
+        Err(e) => {
+            log::warn!("Failed process suspension: {:?}", e);
+            Err(e)
+        }
+    }
+}
+
+/// Waits until every thread of `process`, which must have been suspended, is suspended or
+/// terminated.
+///
+/// Threads that are blocked on an exception are skipped, as they will not be suspended until the
+/// exception is handled.
+fn wait_for_process_suspended(process: &zx::Process) -> Result<(), zx::Status> {
+    let threads = process.threads()?;
+    for thread_koid in &threads {
+        fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
+        let thread_obj = match process.get_child(thread_koid, zx::Rights::SAME_RIGHTS) {
+            Ok(thread_obj) => thread_obj,
+            Err(zx::Status::NOT_FOUND) => {
+                // The thread exited after the process was enumerated.
+                continue;
+            }
+            Err(e) => {
+                log::warn!("Failed to get container thread {thread_koid:?}: {e:?}");
+                return Err(e);
+            }
+        };
+
+        // Most threads are already suspended by the time they are checked, so first check without
+        // blocking to avoid querying the state of each thread.
+        if thread_obj
+            .wait_one(THREAD_STOPPED_SIGNALS, zx::MonotonicInstant::ZERO)
+            .to_result()
+            .is_ok()
+        {
+            continue;
+        }
+
+        let mut watchdog_count = 0;
+        loop {
+            if let Ok(info) = thread_obj.info() {
+                if let zx::ThreadState::Blocked(zx::ThreadBlockType::Exception(_)) = info.state {
+                    let thread_name = thread_obj
+                        .get_name()
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|_| "unknown".to_string());
+                    log::warn!(
+                        "Thread {} (Koid: {:?}) is blocked on exception, skipping suspend wait.",
+                        thread_name,
+                        thread_koid
+                    );
+                    break;
+                }
+            }
+
+            match thread_obj
+                .wait_one(
+                    THREAD_STOPPED_SIGNALS,
+                    zx::MonotonicInstant::after(zx::Duration::from_millis(100)),
+                )
+                .to_result()
+            {
+                Err(zx::Status::TIMED_OUT) => {
+                    watchdog_count += 1;
+                    if watchdog_count == 100 || watchdog_count % 600 == 0 {
+                        let process_name = process
+                            .get_name()
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|_| "unknown".to_string());
+                        let thread_name = thread_obj
+                            .get_name()
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|_| "unknown".to_string());
+                        let thread_state = thread_obj
+                            .info()
+                            .map(|info| format!("{:?}", info.state))
+                            .unwrap_or_else(|_| "unknown".to_string());
+                        log::warn!(
+                            "[SUSPEND_WATCHDOG] Timeout waiting for task suspension. Thread Koid: {:?} Name: '{}', Process: '{}', State: {}, continuing to wait...",
+                            thread_koid,
+                            thread_name,
+                            process_name,
+                            thread_state
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Error waiting for task suspension: {:?}", e);
+                    return Err(e);
+                }
+                _ => break,
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Creates a process in `job` with `num_threads` started threads, which are kept suspended by
+    /// the returned suspend handles so that they never execute any code.
+    fn create_process_with_suspended_threads(
+        job: &zx::Job,
+        num_threads: usize,
+    ) -> (zx::Process, Vec<zx::Thread>, Vec<zx::NullableHandle>) {
+        let (process, root_vmar) =
+            job.create_child_process(zx::ProcessOptions::empty(), b"test-process").unwrap();
+        let addr = root_vmar.info().unwrap().base;
+        let mut threads = vec![];
+        let mut thread_suspend_handles = vec![];
+        for i in 0..num_threads {
+            let thread = process.create_thread(b"test-thread").unwrap();
+            thread_suspend_handles.push(thread.suspend().unwrap());
+            if i == 0 {
+                process.start(&thread, addr, addr, zx::NullableHandle::invalid(), 0).unwrap();
+            } else {
+                thread.start(addr, addr, 0, 0).unwrap();
+            }
+            threads.push(thread);
+        }
+        for thread in &threads {
+            thread
+                .wait_one(zx::Signals::THREAD_SUSPENDED, zx::MonotonicInstant::INFINITE)
+                .to_result()
+                .unwrap();
+        }
+        (process, threads, thread_suspend_handles)
+    }
+
+    fn is_suspended(thread: &zx::Thread) -> bool {
+        thread
+            .wait_one(zx::Signals::THREAD_SUSPENDED, zx::MonotonicInstant::ZERO)
+            .to_result()
+            .is_ok()
+    }
+
+    /// A child job for a test, which is killed (and waited on) when dropped, so that the test
+    /// processes are killed before their suspend tokens are released. Exceptions in the job are
+    /// left unhandled in its exception channel, so they never escape the job.
+    struct TestJob {
+        job: zx::Job,
+        _exception_channel: zx::Channel,
+    }
+
+    impl TestJob {
+        fn new() -> Self {
+            let job = fuchsia_runtime::job_default().create_child_job().unwrap();
+            let _exception_channel = job.create_exception_channel().unwrap();
+            Self { job, _exception_channel }
+        }
+    }
+
+    impl std::ops::Deref for TestJob {
+        type Target = zx::Job;
+
+        fn deref(&self) -> &zx::Job {
+            &self.job
+        }
+    }
+
+    impl Drop for TestJob {
+        fn drop(&mut self) {
+            if let Err(e) = self.job.kill() {
+                log::warn!("Failed to kill test job: {e:?}");
+                return;
+            }
+            let _ = self.job.wait_one(zx::Signals::TASK_TERMINATED, zx::MonotonicInstant::INFINITE);
+        }
+    }
+
+    // Note: These tests can't cover waiting for threads that are running when `suspend_job` is
+    // called (the 100 ms wait loop), as the test can't create threads that execute code: there is
+    // no executable code mapped in the test processes. The test threads are thus either already
+    // suspended or blocked on an exception when `suspend_job` checks them.
+
+    #[fuchsia::test]
+    fn suspend_empty_job() {
+        let job = TestJob::new();
+        assert_eq!(suspend_job(&job).unwrap().len(), 0);
+    }
+
+    #[fuchsia::test]
+    fn suspend_job_suspends_all_processes() {
+        const NUM_PROCESSES: usize = 16;
+        const NUM_THREADS: usize = 4;
+
+        let job = TestJob::new();
+        let mut processes = vec![];
+        let mut threads = vec![];
+        let mut thread_suspend_handles = vec![];
+        for _ in 0..NUM_PROCESSES {
+            let (process, mut process_threads, mut process_thread_suspend_handles) =
+                create_process_with_suspended_threads(&job, NUM_THREADS);
+            processes.push(process);
+            threads.append(&mut process_threads);
+            thread_suspend_handles.append(&mut process_thread_suspend_handles);
+        }
+
+        let suspend_handles = suspend_job(&job).unwrap();
+        assert_eq!(suspend_handles.len(), NUM_PROCESSES);
+
+        // The threads must stay suspended once only the handles returned by `suspend_job` remain.
+        drop(thread_suspend_handles);
+        for thread in &threads {
+            assert!(is_suspended(thread));
+        }
+
+        // Kill the processes before resuming them, as their threads can't execute any code.
+        drop(job);
+        drop(suspend_handles);
+    }
+
+    #[fuchsia::test]
+    fn suspend_job_skips_threads_blocked_in_exception() {
+        // The test job leaves exceptions unhandled, so the faulting thread stays blocked on the
+        // exception.
+        let job = TestJob::new();
+
+        // A process with a thread that faults immediately, since nothing is mapped in the process.
+        let (faulting_process, root_vmar) =
+            job.create_child_process(zx::ProcessOptions::empty(), b"faulting-process").unwrap();
+        let addr = root_vmar.info().unwrap().base;
+        let faulting_thread = faulting_process.create_thread(b"faulting-thread").unwrap();
+        faulting_process
+            .start(&faulting_thread, addr, addr, zx::NullableHandle::invalid(), 0)
+            .unwrap();
+        while !matches!(
+            faulting_thread.info().unwrap().state,
+            zx::ThreadState::Blocked(zx::ThreadBlockType::Exception(_))
+        ) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        let (_process, threads, thread_suspend_handles) =
+            create_process_with_suspended_threads(&job, 2);
+
+        let suspend_handles = suspend_job(&job).unwrap();
+        assert_eq!(suspend_handles.len(), 2);
+        assert!(!is_suspended(&faulting_thread));
+        drop(thread_suspend_handles);
+        for thread in &threads {
+            assert!(is_suspended(thread));
+        }
+
+        drop(job);
+        drop(suspend_handles);
+    }
 }
