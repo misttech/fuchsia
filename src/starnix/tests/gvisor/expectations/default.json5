@@ -1306,11 +1306,6 @@
                 "ProcSysNetIpv4IpForward.CanReadAndWrite",
                 "ProcSysNetPortRange.CanReadAndWrite",
 
-                // TODO(https://fxbug.dev/366204314) deflake
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackAddr/1",
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackNic/0",
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackAddr/0",
-
                 // TODO(https://fxbug.dev/379127911): Investigate and re-enable
                 "TimerTest.RlimitCpuInheritedAcrossFork",
 
