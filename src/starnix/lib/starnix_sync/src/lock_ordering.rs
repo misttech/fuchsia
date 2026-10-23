@@ -343,6 +343,7 @@ lock_ordering! {
     Terminal(MagmaSemaphoresLock),
     Terminal(MapInfoCacheBufLock),
     Terminal(MemoryManagerCachedStatsLock),
+    Terminal(MountsLock),
     Terminal(NamespaceFlagsLock),
     Terminal(NanohubContentsLock),
     Terminal(NanohubServiceLock),

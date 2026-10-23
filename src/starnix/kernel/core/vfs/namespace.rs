@@ -23,7 +23,7 @@ use crate::vfs::{
 use fuchsia_rcu::{RcuArc, RcuBox, RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use starnix_logging::log_warn;
-use starnix_sync::{LockDepMutex, MountSubmountsLock, Mutex, NamespaceFlagsLock};
+use starnix_sync::{LockDepMutex, MountSubmountsLock, MountsLock, NamespaceFlagsLock};
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -2324,12 +2324,12 @@ impl Drop for FileMapping {
 
 /// Tracks all mounts, keyed by mount point.
 pub struct Mounts {
-    mounts: Mutex<HashMap<PtrKey<DirEntry>, Vec<Weak<Mount>>>>,
+    mounts: LockDepMutex<HashMap<PtrKey<DirEntry>, Vec<Weak<Mount>>>, MountsLock>,
 }
 
 impl Mounts {
     pub fn new() -> Self {
-        Mounts { mounts: Mutex::default() }
+        Mounts { mounts: LockDepMutex::default() }
     }
 
     /// Registers the mount in the global mounts map.
