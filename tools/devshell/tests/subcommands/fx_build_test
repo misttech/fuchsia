@@ -771,4 +771,16 @@ TEST_fx-build-resultstore-option-invalid() {
     BT_EXPECT_FILE_CONTAINS_SUBSTRING stderr.txt "Invalid --resultstore value:"
 }
 
+TEST_fx-build-propagates-build-api-client-failure() {
+    setup_build_test
+    echo "ERROR: Unknown Ninja path: //src:bad" > "${build_api_client}.mock_stderr.1"
+    echo "3" > "${build_api_client}.mock_status.1"
+    export FX_BUILD_DRY_RUN=1
+    local status=0
+    "${fx}" build //src:bad > stdout.txt 2> stderr.txt || status=$?
+    BT_EXPECT_EQ "${status}" 3
+    BT_EXPECT_FILE_CONTAINS_SUBSTRING stderr.txt "ERROR: Unknown Ninja path: //src:bad"
+    BT_EXPECT_FILE_DOES_NOT_EXIST "${build_api_client}.mock_state.2"
+}
+
 BT_RUN_TESTS "$@"

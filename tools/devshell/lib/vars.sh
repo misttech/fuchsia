@@ -150,9 +150,10 @@ readonly jq="$PREBUILT_JQ"
 # $1: variable name
 # $2+: command arguments.
 function fx-command-stdout-to-array {
-  local varname="$1"
-  shift
-  readarray -t "${varname}" <<< "$("$@")"
+  local __fx_stdout_to_array_out __fx_stdout_to_array_status=0
+  __fx_stdout_to_array_out="$("${@:2}")" || __fx_stdout_to_array_status=$?
+  readarray -t "$1" <<< "${__fx_stdout_to_array_out}"
+  return "${__fx_stdout_to_array_status}"
 }
 
 readonly BUILD_LOGS_DIR=_build_logs

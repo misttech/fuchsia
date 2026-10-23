@@ -762,4 +762,26 @@ TEST_fx-wait-ignoring-signals_trap_restoration() {
   trap - INT
 }
 
+TEST_fx-command-stdout-to-array_success() {
+  BT_ASSERT_FUNCTION_EXISTS fx-command-stdout-to-array
+  local -a arr=()
+  local status=0
+  fx-command-stdout-to-array arr printf '%s\n' "alpha" "beta gamma" || status=$?
+  BT_EXPECT_EQ "${status}" 0
+  BT_EXPECT_EQ "${#arr[@]}" 2
+  BT_EXPECT_EQ "${arr[0]}" "alpha"
+  BT_EXPECT_EQ "${arr[1]}" "beta gamma"
+}
+
+TEST_fx-command-stdout-to-array_propagates_exit_status() {
+  BT_ASSERT_FUNCTION_EXISTS fx-command-stdout-to-array
+  local -a arr=()
+  local status=0
+  fx-command-stdout-to-array arr bash -c 'printf "first\nsecond line\n"; exit 3' || status=$?
+  BT_EXPECT_EQ "${status}" 3
+  BT_EXPECT_EQ "${#arr[@]}" 2
+  BT_EXPECT_EQ "${arr[0]}" "first"
+  BT_EXPECT_EQ "${arr[1]}" "second line"
+}
+
 BT_RUN_TESTS "$@"

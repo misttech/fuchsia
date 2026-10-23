@@ -791,11 +791,11 @@ function main {
   else
     if [[ "${#gn_targets[@]}" -gt 0 ]]; then
       local -a gn_labels  # define variable to quiet shellcheck
-      fx-command-stdout-to-array gn_labels fx-build-api-client fx_build_args_to_labels --allow-targets --args "${gn_targets[@]}"
+      fx-command-stdout-to-array gn_labels fx-build-api-client fx_build_args_to_labels --allow-targets --args "${gn_targets[@]}" || return "$?"
 
       # Convert GN labels to Ninja targets now.
       local -a ninja_targets  # define variable to quiet shellcheck
-      fx-command-stdout-to-array ninja_targets fx-build-api-client gn_label_to_ninja_paths --allow-unknown "${gn_labels[@]}"
+      fx-command-stdout-to-array ninja_targets fx-build-api-client gn_label_to_ninja_paths --allow-unknown "${gn_labels[@]}" || return "$?"
 
       # For invalid labels, the above command will print errors to stderr directly and not list them in the result.
       # If ninja_targets is empty, we can stop here.
