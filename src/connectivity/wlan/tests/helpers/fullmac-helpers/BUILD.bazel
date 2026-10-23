@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fullmac-helpers",
+    testonly = True,
+    srcs = [
+        "src/config.rs",
+        "src/fake_ap.rs",
+        "src/lib.rs",
+        "src/recorded_request_stream.rs",
+    ],
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//src/connectivity/wlan/tests/drivers-only/fullmac-tests:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_rust",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+        "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/eapol",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/rsn:wlan-rsn",
+        "//src/connectivity/wlan/tests/helpers/test-realm-helpers",
+        "//src/connectivity/wlan/tests/helpers/testcontroller-driver/fidl:test.wlan.testcontroller_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
