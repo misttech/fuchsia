@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `simplest-app-flatland` and `simplest-app-flatland-session` remain in
+# BUILD.gn above the sentinel because the GN `fuchsia_package`
+# `//src/ui/examples:flatland-examples` depends on those GN `fuchsia_component`
+# targets and `bazel2gn` does not sync `fx_component` to GN.
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/internal_message.rs",
+        "src/keyboard.rs",
+        "src/main.rs",
+        "src/mouse.rs",
+        "src/touch.rs",
+    ],
+    binary_name = "simplest-app-flatland",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+        "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+        "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//src/lib/ui/fuchsia-scenic",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
