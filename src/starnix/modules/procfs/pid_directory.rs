@@ -1483,9 +1483,14 @@ impl DynamicFileSource for StatusFile {
             writeln!(sink, "SigPnd:\t{:016x}", task_state.task_specific_pending_signals().0)?;
             writeln!(
                 sink,
-                "ShdPnd:\t{:x}",
+                "ShdPnd:\t{:016x}",
                 task.thread_group().pending_signals.lock().pending().0
             )?;
+
+            let (sigign, sigcgt) = task.thread_group().signal_actions.ignored_and_caught();
+            writeln!(sink, "SigIgn:\t{:016x}", sigign.0)?;
+            writeln!(sink, "SigCgt:\t{:016x}", sigcgt.0)?;
+
             writeln!(sink, "NoNewPrivs:\t{}", task_state.no_new_privs() as u8)?;
         }
 

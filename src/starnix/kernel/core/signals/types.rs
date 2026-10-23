@@ -14,7 +14,7 @@ use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal
 use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress};
 use starnix_uapi::{
-    SI_KERNEL, SI_MAX_SIZE, SI_TKILL, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD,
+    SI_KERNEL, SI_MAX_SIZE, SI_TKILL, SIG_DFL, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD,
     SIGEV_THREAD_ID, c_int, c_uint, errno, error, sigaction_t, sigaltstack, sigevent, sigval_t,
     tid_t, uaddr, uapi, uid_t,
 };
@@ -84,6 +84,27 @@ impl SignalActions {
         let old_action = actions[signal.number() as usize];
         actions[signal.number() as usize] = new_action;
         old_action
+    }
+
+    /// Returns the sets of signals that are ignored (`SIG_IGN`) and caught (a user handler,
+    /// i.e. neither `SIG_IGN` nor `SIG_DFL`), reading the action table once under a single
+    /// read lock. These back the `SigIgn` and `SigCgt` lines of `/proc/[pid]/status`.
+    pub fn ignored_and_caught(&self) -> (SigSet, SigSet) {
+        let actions = self.actions.read();
+        let mut ignored = SigSet::default();
+        let mut caught = SigSet::default();
+        for (number, action) in actions.iter().enumerate() {
+            // Index 0 is unused and does not map to a valid signal, so it is skipped here.
+            let Ok(signal) = Signal::try_from(UncheckedSignal::new(number as u64)) else {
+                continue;
+            };
+            if action.sa_handler == SIG_IGN {
+                ignored = ignored | signal.into();
+            } else if action.sa_handler != SIG_DFL {
+                caught = caught | signal.into();
+            }
+        }
+        (ignored, caught)
     }
 
     pub fn fork(&self) -> Arc<SignalActions> {
@@ -945,7 +966,7 @@ mod test {
     use super::*;
     use crate::task::PidEntry;
     use starnix_uapi::CLD_EXITED;
-    use starnix_uapi::signals::{SIGCHLD, SIGPWR};
+    use starnix_uapi::signals::{SIGCHLD, SIGPWR, SIGUSR1};
 
     #[test]
     fn test_signal_event_value_conversion() {
@@ -973,6 +994,28 @@ mod test {
             format!("{}", Signal::try_from(UncheckedSignal::from(uapi::SIGRTMIN + 10)).unwrap()),
             "SIGRTMIN+10(42)"
         );
+    }
+
+    #[::fuchsia::test]
+    fn test_ignored_and_caught() {
+        let actions = SignalActions::default();
+        assert_eq!(actions.ignored_and_caught(), (SigSet::default(), SigSet::default()));
+
+        // The highest signal number checks the top bit of the mask.
+        let last_signal = Signal::try_from(UncheckedSignal::from(Signal::NUM_SIGNALS)).unwrap();
+        actions.set(SIGPWR, sigaction_t { sa_handler: SIG_IGN, ..sigaction_t::default() });
+        actions.set(last_signal, sigaction_t { sa_handler: SIG_IGN, ..sigaction_t::default() });
+        actions.set(
+            SIGCHLD,
+            sigaction_t { sa_handler: uaddr { addr: 0xDEADBEEF }, ..sigaction_t::default() },
+        );
+        // An explicit `SIG_DFL` action is neither ignored nor caught.
+        actions.set(SIGUSR1, sigaction_t { sa_handler: SIG_DFL, ..sigaction_t::default() });
+
+        let (ignored, caught) = actions.ignored_and_caught();
+        // Signal N maps to bit N - 1, as in the `SigIgn` and `SigCgt` lines of Linux procfs.
+        assert_eq!(ignored, SigSet((1 << (SIGPWR.number() - 1)) | (1 << 63)));
+        assert_eq!(caught, SigSet(1 << (SIGCHLD.number() - 1)));
     }
 
     #[::fuchsia::test]

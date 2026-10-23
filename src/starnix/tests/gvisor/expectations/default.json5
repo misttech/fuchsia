@@ -1362,9 +1362,6 @@
                 "AffinityTest.SetAffinityOtherUidRequiresCapSysNice",
                 "SetpriorityTest.OtherUidRequiresCapSysNice",
 
-                // TODO(https://fxbug.dev/566839951): Format ShdPnd as 16-digit hex and emit SigIgn/SigCgt in /proc/[pid]/status.
-                "ProcPidStatusTest.SignalMasks",
-
                 // TODO(https://fxbug.dev/566839792): Implement /proc/sys/user/max_user_namespaces and CLONE_NEWUSER.
                 "ProcSysUserMaxUserNamespaces.HasNumericValue",
                 "ProcSysUserMaxUserNamespaces.WriteUpdatesValue",
