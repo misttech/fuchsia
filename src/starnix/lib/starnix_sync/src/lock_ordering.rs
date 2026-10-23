@@ -306,6 +306,7 @@ lock_ordering! {
     Terminal(ComponentControllerLock),
     Terminal(CoreDumpListLock),
     Terminal(CpuC2ProxyCacheLock),
+    Terminal(CpuC2SuspendAccountingLock),
     Terminal(CpuFreqProxyCacheLock),
     Terminal(DynamicThreadSpawnerLock),
     Terminal(EventFdInnerLock),

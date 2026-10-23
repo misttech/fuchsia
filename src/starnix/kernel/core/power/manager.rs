@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::fs::sysfs::sample_cpu_c2_residency;
 use crate::power::{SuspendState, SuspendStats};
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, Kernel};
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -580,7 +581,7 @@ impl SuspendResumeManager {
         HashSet::from([SuspendState::Idle])
     }
 
-    pub fn suspend(&self, suspend_state: SuspendState) -> Result<(), Errno> {
+    pub fn suspend(&self, kernel: &Kernel, suspend_state: SuspendState) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
         let mut state = self.lock();
         state.add_suspend_event(SuspendEvent::Attempt {
@@ -629,14 +630,21 @@ impl SuspendResumeManager {
         let wake_lock_event = Some(self.duplicate_lock_event());
 
         log_info!("Requesting container suspension.");
-        match manager.suspend_container(
+
+        // Bracket the container suspension with C2 residency samples so per-core C2 residency
+        // accrued while suspended is excluded from awake C2 residency.
+        sample_cpu_c2_residency(kernel);
+        let suspend_result = manager.suspend_container(
             frunner::ManagerSuspendContainerRequest {
                 container_job,
                 wake_locks: wake_lock_event,
                 ..Default::default()
             },
             zx::Instant::INFINITE,
-        ) {
+        );
+        sample_cpu_c2_residency(kernel);
+
+        match suspend_result {
             Ok(Ok(res)) => {
                 self.report_container_resumed(suspend_start_time, res);
             }

@@ -17,13 +17,16 @@ use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
-use starnix_sync::{CpuC2ProxyCacheLock, CpuFreqProxyCacheLock, LockDepMutex};
+use starnix_sync::{
+    CpuC2ProxyCacheLock, CpuC2SuspendAccountingLock, CpuFreqProxyCacheLock, LockDepMutex,
+};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::{errno, error, from_status_like_fdio};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use zx;
 
 #[derive(Clone)]
@@ -58,7 +61,7 @@ pub fn register_cpu_devices(kernel: &Kernel) {
         });
 
     let cpu_bus = registry.objects.get_or_create_bus("cpu".into());
-    let c2_provider = Arc::new(CpuC2Provider::default());
+    let c2_provider = kernel.expando.get::<CpuC2Provider>();
     for (core_id, domain) in &core_to_domain_map {
         let name: FsString = format!("cpu{}", core_id).into();
         let c2_provider = c2_provider.clone();
@@ -293,20 +296,12 @@ fn build_cpuidle_directory(
         dir.entry("desc", BytesFile::new_node(b"idle\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry(
             "time",
-            BytesFile::new_node(CpuIdleStatFile {
-                core_id,
-                stat_type: CpuIdleStatType::Time,
-                c2_provider: state0_c2_provider.clone(),
-            }),
+            BytesFile::new_node(CpuIdleStatFile::new_time(core_id, state0_c2_provider)),
             mode!(IFREG, 0o444),
         );
         dir.entry(
             "usage",
-            BytesFile::new_node(CpuIdleStatFile {
-                core_id,
-                stat_type: CpuIdleStatType::Usage,
-                c2_provider: state0_c2_provider,
-            }),
+            BytesFile::new_node(CpuIdleStatFile::new_usage(core_id)),
             mode!(IFREG, 0o444),
         );
     });
@@ -1027,21 +1022,158 @@ enum CpuIdleStatType {
     Usage,
 }
 
-/// Computes C1 residency in microseconds from Zircon's aggregate `idle_time` (in nanoseconds)
-/// by subtracting C2 residency (reported in milliseconds) when available.
-fn c1_time_us(zircon_idle_ns: i64, c2_residency: Option<&fpowerstats::StateResidency>) -> u64 {
-    let total_idle_us = u64::try_from(zircon_idle_ns).unwrap_or(0) / 1000;
-    let c2_time_us = c2_residency.map_or(0, |state| state.total_time_ms.saturating_mul(1000));
-    total_idle_us.saturating_sub(c2_time_us)
+/// Returns the total time the system has spent suspended since boot.
+///
+/// The monotonic clock pauses while the system is suspended, whereas the boot clock keeps
+/// advancing, so the difference between the two is the accumulated suspended time. Reading the
+/// monotonic clock before the boot clock ensures that any execution delay or suspend between the
+/// two reads inflates (rather than reduces) `boot_ns - mono_ns`.
+fn suspended_time() -> zx::BootDuration {
+    let mono_ns = zx::MonotonicInstant::get().into_nanos();
+    let boot_ns = zx::BootInstant::get().into_nanos();
+    zx::BootDuration::from_nanos(boot_ns.saturating_sub(mono_ns))
+}
+
+/// Per-core firmware C2 residency, annotated with the portion accrued while the system was
+/// awake.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct CoreC2Residency {
+    /// Core identifier matching the firmware C2 state id.
+    id: i32,
+    /// Total C2 residency reported by firmware.
+    total_time: zx::BootDuration,
+    /// Number of C2 entries reported by firmware.
+    entry_count: u64,
+    /// Portion of `total_time` accrued while the system was awake.
+    awake_time: zx::MonotonicDuration,
+}
+
+/// Computes C1 residency from Zircon's per-CPU `total_idle` duration by subtracting the C2
+/// residency accrued while the system was awake.
+///
+/// Zircon's `idle_time` is measured on the monotonic timeline and therefore excludes time spent in
+/// system suspend, whereas firmware may or may not count system suspend as C2 residency (and this
+/// may differ between cores and between suspends). Only C2 residency accrued while awake overlaps
+/// with `total_idle`.
+///
+/// When `c2_residency` is `None` (because C2 residency reporting is unsupported on the platform or
+/// not reported for the core), all of `total_idle` is reported as C1 residency.
+fn compute_c1_residency(
+    total_idle: zx::MonotonicDuration,
+    c2_residency: Option<CoreC2Residency>,
+) -> zx::MonotonicDuration {
+    let awake_c2 = c2_residency.map_or(zx::MonotonicDuration::ZERO, |c2| c2.awake_time);
+    (total_idle - awake_c2).max(zx::MonotonicDuration::ZERO)
+}
+
+/// Per-core accounting state for [`C2SuspendAccounting`].
+#[derive(Clone, Copy, Default)]
+struct CoreC2Accounting {
+    /// Accumulated suspended time at the previous sample for this core.
+    last_suspended: zx::BootDuration,
+    /// Firmware C2 residency at the previous sample for this core.
+    last_c2: zx::BootDuration,
+    /// Accumulated C2 residency accrued while the system was awake.
+    awake_c2: zx::MonotonicDuration,
+}
+
+/// Tracks per-core firmware C2 residency accrued while the system was awake, excluding C2
+/// residency accrued during system suspend.
+///
+/// Between two samples for a core, C2 growth up to the suspended time that elapsed between those
+/// samples is attributed to suspend; any excess growth (`c2_delta - suspended_delta`) was accrued
+/// while awake. Cores whose firmware counts suspend as C2 thus have the suspend excluded from
+/// `awake_c2`, whereas cores whose firmware does not count it retain their awake C2 growth outside
+/// the suspend window.
+///
+/// Sampling immediately before and after container suspension (see
+/// [`sample_cpu_c2_residency`]) keeps the window around each suspend tight, so little awake C2
+/// time is lost on cores that do not count suspend as C2.
+#[derive(Default)]
+struct C2SuspendAccounting {
+    /// Per-core accounting keyed by the firmware C2 state id.
+    cores: HashMap<i32, CoreC2Accounting>,
+}
+
+impl C2SuspendAccounting {
+    fn boot_duration_from_ms(ms: u64) -> zx::BootDuration {
+        zx::BootDuration::from_millis(i64::try_from(ms).unwrap_or(i64::MAX))
+    }
+
+    /// Records a sample of accumulated suspended time and per-core C2 residencies.
+    ///
+    /// Samples older than a previously recorded one contribute no additional awake residency.
+    fn record(&mut self, suspended: zx::BootDuration, residencies: &[fpowerstats::StateResidency]) {
+        // Quantize suspended time to milliseconds to match firmware C2 residency granularity.
+        let suspended = zx::BootDuration::from_millis(suspended.into_millis().max(0));
+        for residency in residencies {
+            let total_c2 = Self::boot_duration_from_ms(residency.total_time_ms);
+            let core = self.cores.entry(residency.id).or_default();
+            let suspended_delta = (suspended - core.last_suspended).max(zx::BootDuration::ZERO);
+            let c2_delta = (total_c2 - core.last_c2).max(zx::BootDuration::ZERO);
+            let awake_delta =
+                zx::MonotonicDuration::from_nanos((c2_delta - suspended_delta).into_nanos().max(0));
+            core.awake_c2 += awake_delta;
+            core.last_suspended = core.last_suspended.max(suspended);
+            core.last_c2 = core.last_c2.max(total_c2);
+        }
+    }
+
+    /// Returns the C2 residency accrued while awake for `core_id`.
+    fn awake_c2(&self, core_id: i32) -> zx::MonotonicDuration {
+        self.cores.get(&core_id).map_or(zx::MonotonicDuration::ZERO, |core| core.awake_c2)
+    }
+
+    /// Pairs raw firmware residencies with the current per-core awake C2 accounting.
+    fn snapshot(&self, residencies: Vec<fpowerstats::StateResidency>) -> Vec<CoreC2Residency> {
+        residencies
+            .into_iter()
+            .map(|state| CoreC2Residency {
+                id: state.id,
+                total_time: Self::boot_duration_from_ms(state.total_time_ms),
+                entry_count: u64::from(state.entry_count),
+                awake_time: self.awake_c2(state.id),
+            })
+            .collect()
+    }
+}
+
+/// Statistic type and state for a `/sys/devices/system/cpu/cpuN/cpuidle/state0/{time,usage}` node.
+enum CpuIdleC1Stat {
+    Time {
+        c2_provider: Arc<CpuC2Provider>,
+        /// Highest C1 residency (in microseconds) reported so far.
+        ///
+        /// Zircon idle time and firmware C2 residency are sampled at slightly different instants
+        /// (and C2 at millisecond granularity), so the computed C1 residency may transiently
+        /// regress. Userspace treats `time` as a monotonic counter, so reads never report a value
+        /// lower than a previously reported one.
+        last_time_us: AtomicU64,
+    },
+    Usage,
 }
 
 /// Backing [`BytesFileOps`] implementation for `/sys/devices/system/cpu/cpuN/cpuidle/state0/time`
 /// and `state0/usage`, reporting per-core C1 residency (in microseconds) and reschedule count
-/// from Zircon's `PerCpuStats`, subtracting C2 residency when available.
+/// from Zircon's `PerCpuStats`, subtracting awake C2 residency when available.
 struct CpuIdleStatFile {
     core_id: u64,
-    stat_type: CpuIdleStatType,
-    c2_provider: Arc<CpuC2Provider>,
+    stat: CpuIdleC1Stat,
+}
+
+impl CpuIdleStatFile {
+    fn new_time(core_id: u64, c2_provider: Arc<CpuC2Provider>) -> Self {
+        Self { core_id, stat: CpuIdleC1Stat::Time { c2_provider, last_time_us: AtomicU64::new(0) } }
+    }
+
+    fn new_usage(core_id: u64) -> Self {
+        Self { core_id, stat: CpuIdleC1Stat::Usage }
+    }
+
+    fn clamp_c1_residency_us(last_time_us: &AtomicU64, c1: zx::MonotonicDuration) -> u64 {
+        let c1_us = u64::try_from(c1.into_micros()).unwrap_or(0);
+        last_time_us.fetch_max(c1_us, Ordering::Relaxed).max(c1_us)
+    }
 }
 
 impl BytesFileOps for CpuIdleStatFile {
@@ -1054,13 +1186,16 @@ impl BytesFileOps for CpuIdleStatFile {
             .map_err(|_| errno!(EINVAL))?;
         let per_cpu_stats = cpu_stats.per_cpu_stats.ok_or_else(|| errno!(EINVAL))?;
         let per_cpu = per_cpu_stats.get(self.core_id as usize).ok_or_else(|| errno!(EINVAL))?;
-        let value = match self.stat_type {
-            CpuIdleStatType::Time => {
-                let idle_ns = per_cpu.idle_time.ok_or_else(|| errno!(EINVAL))?;
-                let c2 = self.c2_provider.residency(self.core_id)?;
-                c1_time_us(idle_ns, c2.as_ref())
+        let value = match &self.stat {
+            CpuIdleC1Stat::Time { c2_provider, last_time_us } => {
+                let total_idle = zx::MonotonicDuration::from_nanos(
+                    per_cpu.idle_time.ok_or_else(|| errno!(EINVAL))?,
+                );
+                let c2 = c2_provider.residency(self.core_id)?;
+                let c1 = compute_c1_residency(total_idle, c2);
+                Self::clamp_c1_residency_us(last_time_us, c1)
             }
-            CpuIdleStatType::Usage => per_cpu.reschedules.ok_or_else(|| errno!(EINVAL))?,
+            CpuIdleC1Stat::Usage => per_cpu.reschedules.ok_or_else(|| errno!(EINVAL))?,
         };
         Ok(format!("{value}\n").into_bytes().into())
     }
@@ -1071,6 +1206,10 @@ const CPU_C2_ENTITY_NAME: &str = "cpu_c2";
 
 /// Maximum time to wait for a synchronous `fuchsia.hardware.power.stats.Device` call.
 const POWER_STATS_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+
+/// Maximum difference between back-to-back [`suspended_time`] reads attributed to non-atomic
+/// reading of the boot and monotonic clocks rather than an intervening system suspend.
+const CLOCK_READ_JITTER_TOLERANCE: zx::BootDuration = zx::BootDuration::from_millis(1);
 
 /// Connection state of [`CpuC2Provider`] to the `fuchsia.hardware.power.stats.Service` instance
 /// that reports `"cpu_c2"`.
@@ -1097,7 +1236,7 @@ enum ProviderState {
 ///
 /// # Caching and Recovery
 /// Connection discovery in `/svc/fuchsia.hardware.power.stats.Service` is performed lazily on
-/// the first read:
+/// the first read or suspend sample:
 /// - If an instance reporting the `"cpu_c2"` entity is found, its proxy is cached in
 ///   [`ProviderState::Connected`].
 /// - If no such instance exists during initial discovery, [`ProviderState::Unavailable`] is cached
@@ -1111,9 +1250,12 @@ enum ProviderState {
 /// `state` is locked only briefly to inspect or update [`ProviderState`] and clone the `Arc`
 /// wrapping the synchronous proxy. The lock is released before scanning `/svc` or issuing FIDL
 /// calls so concurrent sysfs reads across CPU cores do not serialize behind the mutex.
+/// `suspend_accounting` is likewise locked only to record a sample and snapshot the accounting;
+/// the two locks are never held at the same time.
 #[derive(Default)]
 struct CpuC2Provider {
     state: LockDepMutex<ProviderState, CpuC2ProxyCacheLock>,
+    suspend_accounting: LockDepMutex<C2SuspendAccounting, CpuC2SuspendAccountingLock>,
 }
 
 impl CpuC2Provider {
@@ -1152,11 +1294,31 @@ impl CpuC2Provider {
         }
     }
 
-    fn residency(&self, core_id: u64) -> Result<Option<fpowerstats::StateResidency>, Errno> {
-        let core_id = i32::try_from(core_id).map_err(|_| errno!(EINVAL))?;
-        let Some(proxy) = self.proxy()? else {
-            return Ok(None);
-        };
+    /// Updates `suspend_accounting` if the sample did not race a system suspend, and returns a
+    /// consistent [`CoreC2Residency`] snapshot while holding the accounting lock.
+    fn record_sample(
+        &self,
+        suspended_before: zx::BootDuration,
+        suspended_after: zx::BootDuration,
+        residencies: Vec<fpowerstats::StateResidency>,
+    ) -> Vec<CoreC2Residency> {
+        let mut accounting = self.suspend_accounting.lock();
+        // If the system suspended while the stats were being read, it is unknown whether the
+        // residencies include that suspend, so do not use them for attribution. The tolerance
+        // absorbs jitter from reading the boot and monotonic clocks non-atomically.
+        if suspended_after - suspended_before <= CLOCK_READ_JITTER_TOLERANCE {
+            accounting.record(suspended_after, &residencies);
+        }
+        accounting.snapshot(residencies)
+    }
+
+    /// Reads the per-core C2 residencies from `proxy`, updates `suspend_accounting`, and returns
+    /// the resulting [`CoreC2Residency`] snapshot.
+    fn sample(
+        &self,
+        proxy: &Arc<fpowerstats::DeviceSynchronousProxy>,
+    ) -> Result<Vec<CoreC2Residency>, Errno> {
+        let suspended_before = suspended_time();
         let deadline = zx::MonotonicInstant::after(POWER_STATS_FIDL_TIMEOUT);
         let reports = match proxy.get_stats(deadline) {
             Ok(reports) => reports,
@@ -1165,18 +1327,44 @@ impl CpuC2Provider {
                 let mut state = self.state.lock();
                 if matches!(
                     &*state,
-                    ProviderState::Connected(current) if Arc::ptr_eq(current, &proxy)
+                    ProviderState::Connected(current) if Arc::ptr_eq(current, proxy)
                 ) {
                     *state = ProviderState::Disconnected;
                 }
                 return error!(EIO);
             }
         };
-        Ok(reports
+        let suspended_after = suspended_time();
+        let residencies = reports
             .into_iter()
             .find(|stats| stats.entity == CPU_C2_ENTITY_NAME)
-            .and_then(|stats| stats.state_residency_data.into_iter().find(|s| s.id == core_id)))
+            .map_or_else(Vec::new, |stats| stats.state_residency_data);
+        Ok(self.record_sample(suspended_before, suspended_after, residencies))
     }
+
+    /// Connects if needed and records a C2 residency sample when C2 reporting is available.
+    fn sample_all(&self) {
+        if let Ok(Some(proxy)) = self.proxy() {
+            let _ = self.sample(&proxy);
+        }
+    }
+
+    fn residency(&self, core_id: u64) -> Result<Option<CoreC2Residency>, Errno> {
+        let core_id = i32::try_from(core_id).map_err(|_| errno!(EINVAL))?;
+        let Some(proxy) = self.proxy()? else {
+            return Ok(None);
+        };
+        Ok(self.sample(&proxy)?.into_iter().find(|s| s.id == core_id))
+    }
+}
+
+/// Samples per-core CPU C2 residency so that C2 residency accrued during system suspend is
+/// excluded from awake C2 residency rather than subtracted from C1 idle time.
+///
+/// Call immediately before and after suspending the container so the sampling window tightly
+/// brackets each suspend.
+pub fn sample_cpu_c2_residency(kernel: &Kernel) {
+    kernel.expando.get::<CpuC2Provider>().sample_all();
 }
 
 /// Backing [`BytesFileOps`] implementation for `/sys/devices/system/cpu/cpuN/cpuidle/state1/time`
@@ -1192,8 +1380,8 @@ impl BytesFileOps for CpuIdleC2StatFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let value =
             self.provider.residency(self.core_id)?.map_or(0, |state| match self.stat_type {
-                CpuIdleStatType::Time => state.total_time_ms.saturating_mul(1000),
-                CpuIdleStatType::Usage => u64::from(state.entry_count),
+                CpuIdleStatType::Time => u64::try_from(state.total_time.into_micros()).unwrap_or(0),
+                CpuIdleStatType::Usage => state.entry_count,
             });
         Ok(format!("{value}\n").into_bytes().into())
     }
@@ -1245,13 +1433,14 @@ mod tests {
             state: LockDepMutex::new(ProviderState::Connected(Arc::new(
                 fpowerstats::DeviceSynchronousProxy::new(client),
             ))),
+            suspend_accounting: Default::default(),
         };
         let core1 = provider
             .residency(/* core_id = */ 1)
             .expect("residency call must succeed")
             .expect("core 1 residency must be present");
         assert_eq!(core1.entry_count, 56);
-        assert_eq!(core1.total_time_ms, 78);
+        assert_eq!(core1.total_time, zx::BootDuration::from_millis(78));
 
         server_thread.join().expect("server thread panicked");
 
@@ -1270,24 +1459,183 @@ mod tests {
         assert!(matches!(*unconfigured.state.lock(), ProviderState::Unavailable));
     }
 
-    #[::fuchsia::test]
-    fn c1_time_subtracts_c2_residency_and_saturates_at_zero() {
-        let c2 = fpowerstats::StateResidency {
-            id: 0,
-            name: "C2_CPU0".to_string(),
-            total_time_ms: 1_899,
+    fn c2_residency(id: i32, total_time_ms: u64) -> fpowerstats::StateResidency {
+        fpowerstats::StateResidency {
+            id,
+            name: format!("C2_CPU{id}"),
+            total_time_ms,
             entry_count: 1,
             last_entry_timestamp_ms: 0,
+        }
+    }
+
+    #[::fuchsia::test]
+    fn c1_time_subtracts_awake_c2_residency_and_saturates_at_zero() {
+        let c2 = CoreC2Residency {
+            id: 0,
+            total_time: zx::BootDuration::from_millis(1_899),
+            entry_count: 1,
+            awake_time: zx::MonotonicDuration::from_millis(1_899),
         };
 
-        // 5,000,000 us total idle - 1,899,000 us C2 = 3,101,000 us C1.
-        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 5_000_000_000, Some(&c2)), 3_101_000);
+        // 5,000,000 us idle - 1,899,000 us awake C2 = 3,101,000 us C1.
+        assert_eq!(
+            compute_c1_residency(zx::MonotonicDuration::from_seconds(5), Some(c2)),
+            zx::MonotonicDuration::from_micros(3_101_000)
+        );
 
-        // When C2 residency is unavailable, report aggregate idle time.
-        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 5_000_000_000, None), 5_000_000);
+        // When C2 residency is unavailable, report all of total_idle as C1.
+        assert_eq!(
+            compute_c1_residency(zx::MonotonicDuration::from_seconds(5), None),
+            zx::MonotonicDuration::from_seconds(5)
+        );
 
-        // Saturate at 0 if C2 residency exceeds aggregate idle time due to sampling skew.
-        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 1_000_000_000, Some(&c2)), 0);
+        // Saturate at 0 if awake C2 residency exceeds idle time due to sampling skew.
+        assert_eq!(
+            compute_c1_residency(zx::MonotonicDuration::from_seconds(1), Some(c2)),
+            zx::MonotonicDuration::ZERO
+        );
+
+        // C2 residency accrued during suspend (excluded from awake_time) is not subtracted.
+        let c2 = CoreC2Residency {
+            id: 0,
+            total_time: zx::BootDuration::from_millis(154_160),
+            entry_count: 2,
+            awake_time: zx::MonotonicDuration::from_millis(1_860),
+        };
+        assert_eq!(
+            compute_c1_residency(zx::MonotonicDuration::from_millis(252_370), Some(c2)),
+            zx::MonotonicDuration::from_micros(250_510_000)
+        );
+    }
+
+    #[::fuchsia::test]
+    fn c2_suspend_accounting_attributes_suspend_per_core() {
+        let mut accounting = C2SuspendAccounting::default();
+
+        // Before suspend: core 0 accrued 10 s of awake C2, core 1 accrued 2 s.
+        accounting.record(
+            zx::BootDuration::from_millis(0),
+            &[c2_residency(0, 10_000), c2_residency(1, 2_000)],
+        );
+        assert_eq!(accounting.awake_c2(0), zx::MonotonicDuration::from_millis(10_000));
+        assert_eq!(accounting.awake_c2(1), zx::MonotonicDuration::from_millis(2_000));
+
+        // A 152 s suspend. Firmware counts it as C2 on core 1 (plus 0.5 s of awake C2 within the
+        // sampling window) but not on core 0, which only accrued 0.2 s of awake C2.
+        accounting.record(
+            zx::BootDuration::from_millis(152_000),
+            &[c2_residency(0, 10_200), c2_residency(1, 154_500)],
+        );
+        assert_eq!(accounting.awake_c2(0), zx::MonotonicDuration::from_millis(10_000));
+        assert_eq!(accounting.awake_c2(1), zx::MonotonicDuration::from_millis(2_500));
+
+        // Awake C2 accrued without further suspend is added in full. Core 2 appears for the first
+        // time after the 152 s suspend with 153 s of total C2; its per-core last_suspended starts
+        // at 0 so the 152 s suspend is still deducted.
+        accounting.record(
+            zx::BootDuration::from_millis(152_000),
+            &[c2_residency(0, 70_000), c2_residency(1, 160_000), c2_residency(2, 153_000)],
+        );
+        assert_eq!(accounting.awake_c2(0), zx::MonotonicDuration::from_millis(69_800));
+        assert_eq!(accounting.awake_c2(1), zx::MonotonicDuration::from_millis(8_000));
+        assert_eq!(accounting.awake_c2(2), zx::MonotonicDuration::from_millis(1_000));
+
+        // A stale sample (older suspended time and residencies) adds no awake residency.
+        accounting.record(
+            zx::BootDuration::from_millis(100_000),
+            &[c2_residency(0, 10_000), c2_residency(1, 100_000)],
+        );
+        assert_eq!(accounting.awake_c2(0), zx::MonotonicDuration::from_millis(69_800));
+        assert_eq!(accounting.awake_c2(1), zx::MonotonicDuration::from_millis(8_000));
+
+        // Unknown cores have no awake C2 residency.
+        assert_eq!(accounting.awake_c2(7), zx::MonotonicDuration::ZERO);
+    }
+
+    #[::fuchsia::test]
+    fn record_sample_discards_sample_that_raced_suspend() {
+        let provider = CpuC2Provider::default();
+
+        // Initial sample while awake is recorded.
+        let snapshot = provider.record_sample(
+            zx::BootDuration::from_millis(0),
+            zx::BootDuration::from_millis(0),
+            vec![c2_residency(0, 10_000)],
+        );
+        assert_eq!(
+            snapshot,
+            vec![CoreC2Residency {
+                id: 0,
+                total_time: zx::BootDuration::from_millis(10_000),
+                entry_count: 1,
+                awake_time: zx::MonotonicDuration::from_millis(10_000),
+            }]
+        );
+
+        // A sample across a 50 s suspend exceeds CLOCK_READ_JITTER_TOLERANCE: accounting is not
+        // updated, and the snapshot preserves the previously recorded awake_time rather than
+        // misattributing the ambiguous sample.
+        let raced = provider.record_sample(
+            zx::BootDuration::from_millis(0),
+            zx::BootDuration::from_millis(50_000),
+            vec![c2_residency(0, 60_000)],
+        );
+        assert_eq!(
+            raced,
+            vec![CoreC2Residency {
+                id: 0,
+                total_time: zx::BootDuration::from_millis(60_000),
+                entry_count: 1,
+                awake_time: zx::MonotonicDuration::from_millis(10_000),
+            }]
+        );
+
+        // The next un-raced sample (with 1 ms of clock-read jitter within
+        // CLOCK_READ_JITTER_TOLERANCE) attributes the 50 s suspend and records the 500 ms of
+        // awake C2 accrued since the initial sample.
+        let after = provider.record_sample(
+            zx::BootDuration::from_millis(49_999),
+            zx::BootDuration::from_millis(50_000),
+            vec![c2_residency(0, 60_500)],
+        );
+        assert_eq!(
+            after,
+            vec![CoreC2Residency {
+                id: 0,
+                total_time: zx::BootDuration::from_millis(60_500),
+                entry_count: 1,
+                awake_time: zx::MonotonicDuration::from_millis(10_500),
+            }]
+        );
+    }
+
+    #[::fuchsia::test]
+    fn c1_residency_clamps_to_high_water_mark() {
+        let last_time_us = AtomicU64::new(0);
+        assert_eq!(
+            CpuIdleStatFile::clamp_c1_residency_us(
+                &last_time_us,
+                zx::MonotonicDuration::from_micros(3_101_000),
+            ),
+            3_101_000
+        );
+        // Transient regression from sampling skew is clamped to the previous high-water mark.
+        assert_eq!(
+            CpuIdleStatFile::clamp_c1_residency_us(
+                &last_time_us,
+                zx::MonotonicDuration::from_micros(3_100_500),
+            ),
+            3_101_000
+        );
+        // Subsequent growth advances the high-water mark.
+        assert_eq!(
+            CpuIdleStatFile::clamp_c1_residency_us(
+                &last_time_us,
+                zx::MonotonicDuration::from_micros(3_200_000),
+            ),
+            3_200_000
+        );
     }
 
     #[::fuchsia::test]
