@@ -184,6 +184,15 @@ pub async fn driver(
                 .await
                 .context("Composite subcommand failed")?;
         }
+        DriverSubCommand::HealthCheck(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::health_check::health_check(*subcmd.0, writer, driver_development_proxy)
+                .await
+                .context("HealthCheck subcommand failed")?;
+        }
         #[cfg(not(target_os = "fuchsia"))]
         DriverSubCommand::StaticChecks(subcmd) => {
             static_checks_lib::static_checks(*subcmd.0, writer)

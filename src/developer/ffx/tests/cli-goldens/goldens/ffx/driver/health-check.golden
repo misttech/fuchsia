@@ -1,0 +1,50 @@
+{
+  "name": "health-check",
+  "description": "Run an active health check on a bound driver or all bound drivers.",
+  "examples": [
+    "To run a fast health check on the display driver:\n\n    $ driver health-check dev/sys/platform/display --level fast"
+  ],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "level"
+        }
+      },
+      "optionality": "optional",
+      "long": "--level",
+      "short": "l",
+      "description": "health check depth level: ping, fast (default), or deep.",
+      "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--all",
+      "short": "a",
+      "description": "run health checks across all bound driver nodes.",
+      "hidden": false
+    }
+  ],
+  "notes": [
+    "Condition ages (for example, last observed 1.5s ago) are only computed when the tool runs on the target; from a host ffx the raw boot-timeline nanoseconds are printed instead."
+  ],
+  "commands": [],
+  "positionals": [
+    {
+      "name": "moniker",
+      "description": "exact component moniker or topological path of the target node.",
+      "optionality": "optional",
+      "hidden": false
+    }
+  ],
+  "error_codes": []
+}

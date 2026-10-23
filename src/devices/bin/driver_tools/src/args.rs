@@ -7,6 +7,7 @@ use super::subcommands::disable::args::DisableCommand;
 use super::subcommands::doctor::args::DoctorCommand;
 use super::subcommands::dump::args::DumpCommand;
 use super::subcommands::enable::args::EnableCommand;
+use super::subcommands::health_check::args::HealthCheckCommand;
 use super::subcommands::host::args::HostCommand;
 use super::subcommands::list::args::ListCommand;
 use super::subcommands::list_composite_node_specs::args::ListCompositeNodeSpecsCommand;
@@ -64,6 +65,7 @@ pub type BoxedTestNodeCommand = Boxed<TestNodeCommand>;
 pub type BoxedNodeCommand = Boxed<NodeCommand>;
 pub type BoxedHostCommand = Boxed<HostCommand>;
 pub type BoxedCompositeCommand = Boxed<CompositeCommand>;
+pub type BoxedHealthCheckCommand = Boxed<HealthCheckCommand>;
 #[cfg(not(target_os = "fuchsia"))]
 pub type BoxedStaticChecksCommand = Boxed<StaticChecksCommand>;
 
@@ -99,6 +101,7 @@ pub enum DriverSubCommand {
     Node(BoxedNodeCommand),
     Host(BoxedHostCommand),
     Composite(BoxedCompositeCommand),
+    HealthCheck(BoxedHealthCheckCommand),
 }
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -123,4 +126,5 @@ pub enum DriverSubCommand {
     Node(BoxedNodeCommand),
     Host(BoxedHostCommand),
     Composite(BoxedCompositeCommand),
+    HealthCheck(BoxedHealthCheckCommand),
 }

@@ -6,6 +6,7 @@ ffx/driver/disable.golden
 ffx/driver/doctor.golden
 ffx/driver/dump.golden
 ffx/driver/enable.golden
+ffx/driver/health-check.golden
 ffx/driver/host.golden
 ffx/driver/host/list.golden
 ffx/driver/host/show.golden

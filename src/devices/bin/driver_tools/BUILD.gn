@@ -73,6 +73,8 @@ template("driver_tools_lib") {
       "src/subcommands/dump/mod.rs",
       "src/subcommands/enable/args.rs",
       "src/subcommands/enable/mod.rs",
+      "src/subcommands/health_check/args.rs",
+      "src/subcommands/health_check/mod.rs",
       "src/subcommands/host/args.rs",
       "src/subcommands/host/mod.rs",
       "src/subcommands/host/subcommands/list/args.rs",
