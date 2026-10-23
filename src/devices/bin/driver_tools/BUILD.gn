@@ -44,10 +44,14 @@ template("driver_tools_lib") {
     if (is_host) {
       deps += [ "//src/devices/lib/driver-static-checks:lib" ]
     }
+    if (is_fuchsia) {
+      deps += [ "//sdk/rust/zx" ]
+    }
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
     test_deps = [
+      "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia",
       "//src/lib/fuchsia-async",
     ]
