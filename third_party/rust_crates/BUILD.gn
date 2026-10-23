@@ -2521,11 +2521,11 @@ if (current_os == "fuchsia") {
 }
 
 group("tokio-rustls") {
-  public_deps = [ ":tokio-rustls-v0_26_4" ]
+  public_deps = [ ":tokio-rustls-v0_26_6" ]
 }
 
-group("tokio-rustls-0.26.4") {
-  public_deps = [ ":tokio-rustls-v0_26_4" ]
+group("tokio-rustls-0.26.6") {
+  public_deps = [ ":tokio-rustls-v0_26_6" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -12027,7 +12027,7 @@ rustc_library("hyper-rustls-v0_27_9") {
   deps += [ ":hyper-v1_11_1" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
   deps += [ ":rustls-v0_23_46" ]
-  deps += [ ":tokio-rustls-v0_26_4" ]
+  deps += [ ":tokio-rustls-v0_26_6" ]
   deps += [ ":tower-service-v0_3_3" ]
 
   rustenv = []
@@ -24094,19 +24094,19 @@ rustc_macro("tokio-macros-v2_7_2") {
   applicable_licenses = [ ":tokio-macros-v2_7_2.license" ]
 }
 
-license("tokio-rustls-v0_26_4.license") {
+license("tokio-rustls-v0_26_6.license") {
   public_package_name = "tokio_rustls"
   license_files = [
-    "//third_party/rust_crates/vendor/tokio-rustls-0.26.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/tokio-rustls-0.26.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/tokio-rustls-0.26.6/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/tokio-rustls-0.26.6/LICENSE-MIT",
   ]
 }
 
-rustc_library("tokio-rustls-v0_26_4") {
+rustc_library("tokio-rustls-v0_26_6") {
   crate_name = "tokio_rustls"
   source_root =
-      "//third_party/rust_crates/vendor/tokio-rustls-0.26.4/src/lib.rs"
-  output_name = "tokio_rustls-a94ca5350de011c7"
+      "//third_party/rust_crates/vendor/tokio-rustls-0.26.6/src/lib.rs"
+  output_name = "tokio_rustls-ba7e9d146e6e843e"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -24120,8 +24120,8 @@ rustc_library("tokio-rustls-v0_26_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a94ca5350de011c7",
-    "-Cextra-filename=-a94ca5350de011c7",
+    "-Cmetadata=ba7e9d146e6e843e",
+    "-Cextra-filename=-ba7e9d146e6e843e",
     "--cfg=feature=\"logging\"",
     "--cfg=feature=\"ring\"",
     "--cfg=feature=\"tls12\"",
@@ -24129,7 +24129,7 @@ rustc_library("tokio-rustls-v0_26_4") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tokio-rustls-v0_26_4.license" ]
+  applicable_licenses = [ ":tokio-rustls-v0_26_6.license" ]
 }
 
 license("tokio-stream-v0_1_19.license") {

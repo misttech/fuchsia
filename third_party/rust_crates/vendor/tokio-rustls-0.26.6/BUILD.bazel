@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "tokio-rustls",
     package_url = "https://github.com/rustls/tokio-rustls",
-    package_version = "0.26.4",
+    package_version = "0.26.6",
 )
 
 license(
@@ -77,7 +77,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.26.4",
+    version = "0.26.6",
     deps = [
         "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/rustls-0.23.46:rustls",

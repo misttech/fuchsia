@@ -3242,14 +3242,14 @@ alias(
 )
 
 alias(
-    name = "tokio-rustls-0.26.4",
-    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.4:tokio_rustls",
+    name = "tokio-rustls-0.26.6",
+    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.6:tokio_rustls",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio-rustls",
-    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.4:tokio_rustls",
+    actual = "//third_party/rust_crates/vendor/tokio-rustls-0.26.6:tokio_rustls",
     tags = ["manual"],
 )
 
