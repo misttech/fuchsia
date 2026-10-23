@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "pseudo_fs",
+    srcs = [
+        "src/lazy_pseudo_directory.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/storage/fshost:__pkg__",
+        "//src/sys/lib/elf_runner:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_library(
+    name = "pseudo_fs_static",
+    srcs = [
+        "src/lazy_pseudo_directory.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "pseudo_fs",
+    edition = "2024",
+    visibility = ["//src/storage/fxfs/platform:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/vfs/rust:vfs_static",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_test(
+    name = "pseudo_fs_test",
+    crate = ":pseudo_fs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+    ],
+)
+
+fx_unittest_package(
+    name = "pseudo_fs_tests",
+    unit_tests = [":pseudo_fs_test"],
+)
