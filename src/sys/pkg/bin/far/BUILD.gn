@@ -2,10 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/components.gni")
 import("//build/sdk/sdk_host_tool.gni")
 
 if (is_host) {
+  bazel_host_tool("bin") {
+    bazel_target = ":host"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/host"
+    output_name = "far"
+    install_host_tool = true
+  }
+
   sdk_host_tool("bin_sdk") {
     category = "partner"
     output_name = "far"
@@ -42,28 +50,17 @@ if (is_host) {
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
-executable("bin") {
-  sources = [ "main.cc" ]
-  visibility = [
-    ":*",
-    "//build/packages:*",
-    "//sdk:*",
-    "//src/sys/pkg/tests/far:*",
-  ]
-  deps = [
-    "//src/lib/fxl:fxl_cli",
-    "//src/sys/pkg/lib/far/cpp:far",
-  ]
-  output_name = "far"
-}
-if (is_host) {
-  install_host_tools("host") {
-    deps = [ ":bin" ]
-    outputs = [ "far" ]
+if (is_fuchsia) {
+  executable("bin") {
+    sources = [ "main.cc" ]
     visibility = [
       ":*",
-      "//bundles/tools:*",
-      "//sdk/bundles:*",
+      "//src/sys/pkg/tests/far:*",
     ]
+    deps = [
+      "//src/lib/fxl:fxl_cli",
+      "//src/sys/pkg/lib/far/cpp:far",
+    ]
+    output_name = "far"
   }
 }

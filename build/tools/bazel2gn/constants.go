@@ -120,7 +120,6 @@ var bazelRuleToGNTemplate = map[string]string{
 	"ffx_tool":            "ffx_tool",
 	"ffx_plugin":          "ffx_plugin",
 	"go_binary_host_tool": "go_binary",
-	"install_host_tools":  "install_host_tools",
 
 	// IDK
 	"idk_cc_shared_library":      "sdk_shared_library",
@@ -393,12 +392,6 @@ var zxInIDKAttrMap = map[string]string{
 	"category": "sdk_publishable",
 }
 
-// installHostToolAttrMap maps from attribute name in Bazel install host tool rules to GN parameter names.
-var installHostToolAttrMap = map[string]string{
-	"implementation_deps": "deps",
-	"tool_output_names":   "outputs",
-}
-
 // genruleAttrMap maps from attribute name in Bazel genrule to GN parameter names.
 var genruleAttrMap = map[string]string{
 	"outs": "outputs",
@@ -500,9 +493,8 @@ var attrMapsByRules = map[string]map[string]string{
 	"fx_component":                       fxComponentAttrMap,
 
 	// Tools
-	"ffx_tool":           rustBinAttrMap,
-	"ffx_plugin":         ffxPluginAttrMap,
-	"install_host_tools": installHostToolAttrMap,
+	"ffx_tool":   rustBinAttrMap,
+	"ffx_plugin": ffxPluginAttrMap,
 
 	// Others
 	"compiled_action": compiledActionAttrMap,

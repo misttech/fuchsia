@@ -71,9 +71,6 @@ motivation, and comment annotations.
 -   [`third_party_target_map.json`](./third_party_target_map.json): Embedded
     JSON table mapping external Bazel repo labels (`@...`) to
     `//third_party/...` GN labels.
--   [`bazel_rules/defs.bzl`](./bazel_rules/defs.bzl): Bazel rule stubs (such as
-    the no-op `install_host_tools` macro) that exist so `bazel2gn` can sync them
-    to GN.
 -   [`cmd/main.go`](./cmd/main.go): CLI host binary (`--gn_bin`,
     `--buildifier_bin`, `--fuchsia_dir`, `--directory_list`, `--check_only`,
     `--workers`) that discovers or reads target directories, formats

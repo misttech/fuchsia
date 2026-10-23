@@ -28,7 +28,7 @@ group("host_tools") {
   testonly = true
   public_deps = [
     "//src/performance/trace2json($host_toolchain)",
-    "//src/sys/pkg/bin/far:host($host_toolchain)",
+    "//src/sys/pkg/bin/far:bin($host_toolchain)",
     "//tools/check-licenses($host_toolchain)",
     "//tools/fidl/fidlmerge($host_toolchain)",
     "//tools/fidl/gidl:host",

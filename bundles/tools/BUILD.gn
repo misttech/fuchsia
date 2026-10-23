@@ -49,7 +49,7 @@ _host_tools = [
   "//src/performance/fxtdump",
   "//src/performance/trace2json",
   "//src/storage:host_tools",
-  "//src/sys/pkg/bin/far:host",
+  "//src/sys/pkg/bin/far:bin",
   "//tools",
   "//tools/check-licenses",
   "//tools/whereiscl",

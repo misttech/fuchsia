@@ -3,8 +3,7 @@
 # found in the LICENSE file.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,24 +11,20 @@ package(default_applicable_licenses = ["//:license"])
 cc_binary(
     name = "bin",
     srcs = ["main.cc"],
-    visibility = [
-        "//build/packages:__pkg__",
-        "//sdk:__pkg__",
-        "//src/sys/pkg/tests/far:__pkg__",
-    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/sys/pkg/tests/far:__pkg__"],
     deps = [
         "//src/lib/fxl:fxl_cli",
         "//src/sys/pkg/lib/far/cpp:far",
     ],
 )
 
-install_host_tools(
+# @bazel2gn:skip
+cc_binary_host_tool(
     name = "host",
-    implementation_deps = [":bin"],
-    target_compatible_with = HOST_OS_CONSTRAINTS,
-    tool_output_names = ["far"],
-    visibility = [
-        "//bundles/tools:__pkg__",
-        "//sdk/bundles:__pkg__",
+    srcs = ["main.cc"],
+    deps = [
+        "//src/lib/fxl:fxl_cli",
+        "//src/sys/pkg/lib/far/cpp:far",
     ],
 )
