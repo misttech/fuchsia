@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -81,6 +83,11 @@ def main() -> int:
         )
 
     failures = []
+    test_env = os.environ.copy()
+    # Explicitly set PYTHONPATH strictly to _FUCHSIA_DIR to purge any ambient host
+    # packages from the caller's environment, maintaining build hermeticity.
+    test_env["PYTHONPATH"] = str(_FUCHSIA_DIR)
+
     for test_file in test_files:
         if not args.quiet:
             print(f"Running {test_file}", file=sys.stderr)
@@ -88,6 +95,7 @@ def main() -> int:
             [sys.executable, "-S", test_file],
             text=True,
             capture_output=True,
+            env=test_env,
         )
         if ret.returncode != 0:
             print(
