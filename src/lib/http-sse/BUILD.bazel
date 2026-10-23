@@ -2,8 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -22,24 +21,11 @@ rustc_library(
     proc_macro_deps = [
         "//third_party/rust_crates/vendor:derivative",
     ],
-    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
-    test_deps = [
-        "//third_party/rust_crates/vendor:assert_matches",
-        "//third_party/rust_crates/vendor:proptest",
-        "//third_party/rust_crates/vendor:test-case",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//sdk/rust/zx",
-            "//src/lib/fuchsia-component",
-        ],
-        "//conditions:default": [],
-    }),
     visibility = [
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg-testing:__pkg__",
         "//src/sys/pkg/lib/fuchsia-repo:__pkg__",
     ],
-    with_unit_tests = False,  # @bazel2gn:raw_overwrite:true
     deps = [
         "//src/lib/fuchsia-hyper",
         "//third_party/rust_crates/vendor:anyhow",

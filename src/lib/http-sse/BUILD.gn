@@ -3,6 +3,48 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/rust/rustc_test.gni")
+
+# The library is defined in BUILD.bazel. Its unit tests stay in GN because
+# rust-http-sse-tests packages //src/connectivity/network/dns:component,
+# //src/connectivity/network/netstack3:component-for-tests,
+# //src/connectivity/policy/http-client:component, and
+# //src/sys/pkg/testing:fake-ssl-certs.
+rustc_test("http_sse_test") {
+  output_name = "http_sse_lib_test"
+  edition = "2024"
+  sources = [
+    "src/client.rs",
+    "src/client_server_tests.rs",
+    "src/event.rs",
+    "src/lib.rs",
+    "src/linealyzer.rs",
+    "src/server.rs",
+    "src/source.rs",
+  ]
+  deps = [
+    "//src/lib/fuchsia-hyper",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:derivative",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:http-body-util",
+    "//third_party/rust_crates:hyper",
+    "//third_party/rust_crates:hyper-util",
+    "//third_party/rust_crates:proptest",
+    "//third_party/rust_crates:test-case",
+    "//third_party/rust_crates:thiserror",
+  ]
+  if (is_fuchsia) {
+    deps += [
+      "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+      "//sdk/rust/zx",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fuchsia-async",
+      "//src/lib/fuchsia-component",
+    ]
+  }
+}
 
 fuchsia_unittest_package("rust-http-sse-tests") {
   manifest = "meta/http-sse-lib-test.cml"
@@ -58,25 +100,12 @@ rustc_library("http_sse") {
   ]
   edition = "2024"
   proc_macro_deps = [ "//third_party/rust_crates:derivative" ]
-  test_deps = []
-  test_deps += [
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:proptest",
-    "//third_party/rust_crates:test-case",
-  ]
-  if (is_fuchsia) {
-    test_deps += [
-      "//sdk/rust/zx",
-      "//src/lib/fuchsia-component",
-    ]
-  }
   visibility = [
     ":*",
     "//src/sys/pkg/bin/pkg-resolver:*",
     "//src/sys/pkg/lib/fuchsia-pkg-testing:*",
     "//src/sys/pkg/lib/fuchsia-repo:*",
   ]
-  with_unit_tests = true
   deps = []
   deps += [
     "//src/lib/fuchsia-hyper",

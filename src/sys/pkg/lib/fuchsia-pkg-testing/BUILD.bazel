@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:fuchsia-pkg-testing_test` and `:fuchsia-pkg-testing-tests`)
+# stay in BUILD.gn because `:fuchsia-pkg-testing-tests` packages
+# `//src/connectivity/network/dns:component`,
+# `//src/connectivity/network/netstack3:component-for-tests`, and
+# `//src/storage/tools/blobfs-compression`, which remain in GN.
+rustc_library(
+    name = "fuchsia-pkg-testing",
+    testonly = True,
+    srcs = [
+        "src/blobfs.rs",
+        "src/inspect.rs",
+        "src/lib.rs",
+        "src/package.rs",
+        "src/repo.rs",
+        "src/serve.rs",
+        "src/serve/responder.rs",
+        "src/system_image.rs",
+        "src/update_package.rs",
+    ],
+    compile_data = [
+        "//src/sys/pkg/lib/fuchsia-pkg-testing/certs:test.fuchsia.com.certchain",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing/certs:test.fuchsia.com.rsa",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing/certs:wildcard.fuchsia-updates.googleusercontent.com.certchain",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing/certs:wildcard.fuchsia-updates.googleusercontent.com.rsa",
+    ],
+    # In GN, `testonly = true` targets omit `clippy_warn_production` (which
+    # enables `clippy::needless_collect`), whereas Bazel `clippy_warn_all`
+    # unconditionally bakes `_CLIPPY_WARN_PRODUCTION` in and trips
+    # `needless_collect` on `src/package.rs:315`.
+    disable_clippy = True,  # @bazel2gn:skip
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/recovery/system:__pkg__",
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/sys/component_manager:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",  # @bazel2gn:path_overwrite://src/lib/diagnostics/hierarchy/rust
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/fuchsia-url",
+        "//src/lib/http-sse:http_sse",
+        "//src/lib/versioning/version-history/rust",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/delivery_blob",
+        "//src/sys/lib/fidl-fuchsia-pkg-ext",
+        "//src/sys/pkg/lib/blobfs",
+        "//src/sys/pkg/lib/epoch",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-hash",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//src/sys/pkg/lib/fuchsia-repo",
+        "//src/sys/pkg/lib/system-image",
+        "//src/sys/pkg/lib/update-package",
+        "//src/sys/pkg/testing/blobfs-ramdisk",
+        "//third_party/rust_crates/forks/tuf-0.3.0-beta14:tuf",  # @bazel2gn:path_overwrite://third_party/rust_crates:tuf
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:maybe-owned",
+        "//third_party/rust_crates/vendor:rustls",
+        "//third_party/rust_crates/vendor:rustls-pemfile",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:sha2",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:tokio",
+        "//third_party/rust_crates/vendor:tokio-rustls",
+        "//third_party/rust_crates/vendor:walkdir",
+    ],
+)

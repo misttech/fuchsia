@@ -80,6 +80,7 @@ rustc_library(
     }),
     version = "0.3.0-beta14",
     visibility = [
+        "//src/sys/pkg/lib/fuchsia-pkg-testing:__pkg__",
         "//src/sys/pkg/lib/fuchsia-repo:__pkg__",
         "//src/sys/pkg/lib/tuf:__pkg__",
     ],
