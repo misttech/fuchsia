@@ -550,3 +550,19 @@ fn test_grow_failure() {
     assert_eq!(bitmap.grow(128), Err(Status::NO_RESOURCES));
     assert_eq!(bitmap.grow(128 + 1), Err(Status::NO_RESOURCES));
 }
+
+#[test]
+fn test_init_fixed() {
+    pin_init::stack_pin_init!(let bitmap = RawBitmapGeneric::<FixedStorage<2>>::init_fixed(128));
+    assert_eq!(bitmap.size(), 128);
+    assert!(!bitmap.get_one(0));
+    assert!(!bitmap.get_one(127));
+    assert_eq!(bitmap.set_one(42), Ok(()));
+    assert!(bitmap.get_one(42));
+}
+
+#[test]
+#[should_panic]
+fn test_init_fixed_oversize() {
+    pin_init::stack_pin_init!(let _bitmap = RawBitmapGeneric::<FixedStorage<2>>::init_fixed(129));
+}

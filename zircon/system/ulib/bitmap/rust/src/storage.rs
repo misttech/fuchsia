@@ -69,7 +69,7 @@ impl Storage for DefaultStorage {
 /// A fixed-size static bitmap storage.
 ///
 /// `N` is the number of `usize` elements in the array.
-#[derive(Debug)]
+#[derive(Debug, pin_init::Zeroable)]
 pub struct FixedStorage<const N: usize> {
     storage: [usize; N],
 }

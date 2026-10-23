@@ -207,6 +207,22 @@ impl<S: Storage> RawBitmapGeneric<S> {
     }
 }
 
+impl<const N: usize> RawBitmapGeneric<crate::storage::FixedStorage<N>> {
+    /// Initializes a fixed-storage bitmap in place with all `size` bits cleared, avoiding placing
+    /// the `[usize; N]` backing array on the caller's stack.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` exceeds `N * usize::BITS`.
+    pub fn init_fixed(size: usize) -> impl pin_init::Init<Self> {
+        assert!(size <= N.saturating_mul(BITS_PER_WORD));
+        pin_init::init!(Self {
+            bits <- pin_init::init_zeroed::<crate::storage::FixedStorage<N>>(),
+            size,
+        })
+    }
+}
+
 impl<S: Storage> Bitmap<usize> for RawBitmapGeneric<S> {
     fn find(
         &self,

@@ -126,14 +126,20 @@ impl<T, Class> KCell<T, Class> {
         unsafe { self.map_unchecked_mut(|s| s.get_inner_mut()) }
     }
 
+    /// Initializes a `KCell` in place with an `Init` initializer for its inner value.
+    pub fn init<I, E>(init: I) -> impl pin_init::Init<Self, E>
+    where
+        I: pin_init::Init<T, E>,
+    {
+        kcell_init(init)
+    }
+
     /// Initializes a `KCell` with a `PinInit` initializer for its inner value.
-    pub fn pin_init<E>(init: impl pin_init::PinInit<T, E>) -> impl pin_init::PinInit<Self, E> {
-        // SAFETY: KCell<T, Class> has identical memory layout and alignment as T.
-        unsafe {
-            pin_init::pin_init_from_closure(move |slot: *mut Self| {
-                init.__pinned_init(slot.cast::<T>())
-            })
-        }
+    pub fn pin_init<I, E>(init: I) -> impl pin_init::PinInit<Self, E>
+    where
+        I: pin_init::PinInit<T, E>,
+    {
+        kcell_init(init)
     }
 
     /// Unwraps the cell, returning the inner value.
@@ -173,7 +179,8 @@ impl<T, Class> core::fmt::Debug for KCell<T, Class> {
     }
 }
 
-/// Creates a `PinInit` wrapper for initializing a `KCell` with an inner initializer.
+/// Creates an initializer wrapper for initializing a `KCell` with an inner `Init` or `PinInit`
+/// initializer.
 #[inline]
 pub fn kcell_init<I, Class>(init: I) -> KCellInit<I, Class> {
     KCellInit(init, PhantomData)
@@ -192,6 +199,18 @@ where
         // SAFETY: The caller guarantees slot is valid. KCell is repr(transparent)
         // so slot has the same address and layout as T.
         unsafe { self.0.__pinned_init(slot as *mut T) }
+    }
+}
+
+// SAFETY: KCell is repr(transparent) and contains T at the same address and layout.
+unsafe impl<T, Class, I, E> pin_init::Init<KCell<T, Class>, E> for KCellInit<I, Class>
+where
+    I: pin_init::Init<T, E>,
+{
+    unsafe fn __init(self, slot: *mut KCell<T, Class>) -> Result<(), E> {
+        // SAFETY: The caller guarantees slot is valid. KCell is repr(transparent)
+        // so slot has the same address and layout as T.
+        unsafe { self.0.__init(slot as *mut T) }
     }
 }
 
@@ -267,6 +286,20 @@ mod tests {
             let token = LockToken::<MyClass>::new();
             let val = cell.as_ref().get_ref().get(&token);
             assert_eq!(*val, 42);
+        }
+
+        #[pin_init::pin_data]
+        struct UnpinnedHolder {
+            cell: KCell<[usize; 4], MyClass>,
+        }
+
+        pin_init::stack_pin_init!(let holder = pin_init::pin_init!(UnpinnedHolder {
+            cell <- KCell::<[usize; 4], MyClass>::init(pin_init::init_zeroed::<[usize; 4]>()),
+        }));
+        // SAFETY: Single-threaded test with exclusive access to `holder.cell`.
+        unsafe {
+            let token = LockToken::<MyClass>::new();
+            assert_eq!(*holder.as_ref().get_ref().cell.get(&token), [0usize; 4]);
         }
     }
 

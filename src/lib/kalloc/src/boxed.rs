@@ -335,6 +335,55 @@ impl<T, A: Allocator> Box<[MaybeUninit<T>], A> {
     }
 }
 
+/// Maps a [`PinInit<T, E>`] error type `E` and heap allocation failure ([`AllocError`]) into a
+/// unified error type returned by [`Box::try_pin_init`] and [`Box::try_pin_init_in`].
+pub trait PinInitError {
+    /// Combined error type returned when either heap allocation or in-place initialization fails.
+    type Error;
+
+    /// Converts a heap allocation failure into `Self::Error`.
+    fn from_alloc_error(err: AllocError) -> Self::Error;
+
+    /// Converts an in-place initialization failure into `Self::Error`.
+    fn into_error(self) -> Self::Error;
+}
+
+impl PinInitError for core::convert::Infallible {
+    type Error = AllocError;
+
+    fn from_alloc_error(err: AllocError) -> Self::Error {
+        err
+    }
+
+    fn into_error(self) -> Self::Error {
+        match self {}
+    }
+}
+
+impl PinInitError for AllocError {
+    type Error = AllocError;
+
+    fn from_alloc_error(err: AllocError) -> Self::Error {
+        err
+    }
+
+    fn into_error(self) -> Self::Error {
+        self
+    }
+}
+
+impl PinInitError for zx_status::Status {
+    type Error = zx_status::Status;
+
+    fn from_alloc_error(err: AllocError) -> Self::Error {
+        err.into()
+    }
+
+    fn into_error(self) -> Self::Error {
+        self
+    }
+}
+
 impl<T, A: Allocator> Box<T, A> {
     /// Constructs a box for a Zero Sized Type (ZST).
     ///
@@ -355,11 +404,15 @@ impl<T, A: Allocator> Box<T, A> {
     }
 
     /// Tries to allocate a new instance of `T` and pin-initialize it in place.
-    pub fn try_pin_init_in(init: impl PinInit<T>, allocator: A) -> Result<Pin<Self>, AllocError> {
-        let mut b = Self::try_new_uninit_in(allocator)?;
+    pub fn try_pin_init_in<E: PinInitError>(
+        init: impl PinInit<T, E>,
+        allocator: A,
+    ) -> Result<Pin<Self>, E::Error> {
+        let mut b = Self::try_new_uninit_in(allocator).map_err(E::from_alloc_error)?;
         // SAFETY: `b.as_mut_ptr()` points to valid, aligned, uninitialized storage for `T`, which
-        // is never moved out of the box as the box is pinned below.
-        let Ok(()) = unsafe { init.__pinned_init(b.as_mut_ptr()) };
+        // is never moved out of the box as the box is pinned below (or is deallocated without
+        // running `T`'s destructor if `__pinned_init` returns `Err`).
+        unsafe { init.__pinned_init(b.as_mut_ptr()).map_err(E::into_error)? };
         // SAFETY: `b` was fully initialized in place above.
         let b = unsafe { b.assume_init() };
         // SAFETY: The allocation owned by `b` is never moved out of the box.
@@ -394,7 +447,7 @@ impl<T> Box<T, DefaultAllocator> {
         Self::try_new_in(value, DefaultAllocator)
     }
 
-    pub fn try_pin_init(init: impl PinInit<T>) -> Result<Pin<Self>, AllocError> {
+    pub fn try_pin_init<E: PinInitError>(init: impl PinInit<T, E>) -> Result<Pin<Self>, E::Error> {
         Self::try_pin_init_in(init, DefaultAllocator)
     }
 
@@ -861,6 +914,20 @@ mod tests {
                 _pin: core::marker::PhantomPinned,
             })
         }
+
+        fn new_fallible(
+            dropped: &'a core::cell::Cell<bool>,
+            status: Result<(), zx_status::Status>,
+        ) -> impl PinInit<Self, zx_status::Status> {
+            pin_init::pin_init!(&this in Self {
+                self_ptr: {
+                    status?;
+                    this.as_ptr()
+                },
+                dropped,
+                _pin: core::marker::PhantomPinned,
+            } ? zx_status::Status)
+        }
     }
 
     #[test]
@@ -882,6 +949,22 @@ mod tests {
             AlwaysFailingAllocator,
         );
         assert!(b.is_err());
+        assert!(!dropped.get());
+
+        let alloc = TrackingAllocator::new();
+        let b_init_err = Box::<PinnedTest<'_>, TrackingAllocator>::try_pin_init_in(
+            PinnedTest::new_fallible(&dropped, Err(zx_status::Status::INVALID_ARGS)),
+            alloc.clone(),
+        );
+        assert_eq!(b_init_err.err(), Some(zx_status::Status::INVALID_ARGS));
+        assert!(!dropped.get());
+        assert!(alloc.allocated.borrow().is_empty());
+
+        let b_alloc_err = Box::<PinnedTest<'_>, AlwaysFailingAllocator>::try_pin_init_in(
+            PinnedTest::new_fallible(&dropped, Ok(())),
+            AlwaysFailingAllocator,
+        );
+        assert_eq!(b_alloc_err.err(), Some(zx_status::Status::NO_MEMORY));
         assert!(!dropped.get());
     }
 }

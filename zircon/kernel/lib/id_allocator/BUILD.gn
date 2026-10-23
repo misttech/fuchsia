@@ -51,7 +51,10 @@ fuchsia_unittest_package("id-allocator-rust-test-pkg") {
 
 group("tests") {
   testonly = true
-  deps = [ ":id-allocator-rust-test-pkg" ]
+  deps = [
+    ":id-allocator-rs_test($host_toolchain)",
+    ":id-allocator-rust-test-pkg",
+  ]
 }
 
 group("phys-tests") {

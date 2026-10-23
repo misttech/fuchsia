@@ -60,13 +60,7 @@ impl<
         let () = Self::_STATIC_ASSERT;
         pin_init!(Self {
             mutex <- KMutex::init(),
-            next: MIN_ID.into(),
-            bitmap: {
-                let mut bitmap = RawBitmapGeneric::default();
-                bitmap.reset(MAX_ID)?;
-                bitmap
-            }.into(),
-            _: {
+            next: {
                 // Runtime check that every allocatable id fits in T.  MAX_ID is an
                 // exclusive bound, so the largest id ever handed out is MAX_ID - 1;
                 // requiring MAX_ID itself to fit would reject a full-width range
@@ -74,7 +68,9 @@ impl<
                 if T::try_from(MAX_ID - 1).is_err() {
                     return Err(Status::OUT_OF_RANGE);
                 }
-            }
+                MIN_ID.into()
+            },
+            bitmap <- ksync::KCell::init(RawBitmapGeneric::init_fixed(MAX_ID)),
         }? Status)
     }
 
@@ -84,15 +80,20 @@ impl<
             return Err(Status::OUT_OF_RANGE);
         }
         lock!(let mut guard = self.lock_mutex());
-        guard.as_mut().bitmap_mut().reset(max_id_usize)
+        let fields = guard.as_mut().fields_mut();
+        fields.bitmap.reset(max_id_usize)?;
+        // Reset the search hint back to the start of the active range after clearing the bitmap.
+        *fields.next = MIN_ID;
+        Ok(())
     }
 
     pub fn try_alloc(&self) -> Result<T, Status> {
         lock!(let mut guard = self.lock_mutex());
         let fields = guard.as_mut().fields_mut();
         let next_usize = *fields.next;
+        let max_id = fields.bitmap.size();
 
-        let mut get_result = fields.bitmap.get(next_usize, MAX_ID);
+        let mut get_result = fields.bitmap.get(next_usize, max_id);
         if get_result.all_set {
             get_result = fields.bitmap.get(MIN_ID, next_usize);
             if get_result.all_set {
@@ -108,7 +109,7 @@ impl<
         let val = T::try_from(first_unset).map_err(|_| Status::OUT_OF_RANGE)?;
 
         // Update next
-        let next_val_usize = (first_unset + 1) % MAX_ID;
+        let next_val_usize = (first_unset + 1) % max_id;
         *fields.next = if next_val_usize == 0 { MIN_ID } else { next_val_usize };
 
         Ok(val)
@@ -159,5 +160,42 @@ mod tests {
 
         // Free an invalid ID.
         assert_eq!(allocator.free((K_MAX_ID + 1) as u8), Err(Status::INVALID_ARGS));
+    }
+
+    #[test]
+    fn test_id_allocator_reset_wraparound() {
+        const K_MIN_ID: usize = 2;
+        const K_SHRUNK_MAX: usize = 8;
+
+        stack_try_pin_init!(let allocator = IdAllocator::<u16, 65536, K_MIN_ID, 1024>::init());
+        let allocator = allocator.unwrap();
+
+        // Advance `next` past `K_SHRUNK_MAX` before shrinking via `reset`.
+        for expected in 2u16..12u16 {
+            assert_eq!(allocator.try_alloc(), Ok(expected));
+        }
+
+        // Shrink active range to `[2, 8)` via `reset`.
+        assert_eq!(allocator.reset(K_SHRUNK_MAX as u16), Ok(()));
+
+        // Exhaust `[2, 8)` cleanly without leaking into `[8, 65536)`.
+        for expected in 2u16..8u16 {
+            assert_eq!(allocator.try_alloc(), Ok(expected));
+        }
+        assert_eq!(allocator.try_alloc(), Err(Status::NO_RESOURCES));
+
+        // Free ID 5 (advancing hint to 6 on re-allocation), then free IDs 2 and 7 to exercise
+        // circular wraparound across `max_id` (`6..8` then wrapping to `2..6`).
+        assert_eq!(allocator.free(5), Ok(()));
+        assert_eq!(allocator.try_alloc(), Ok(5));
+        assert_eq!(allocator.try_alloc(), Err(Status::NO_RESOURCES));
+
+        assert_eq!(allocator.free(2), Ok(()));
+        assert_eq!(allocator.free(7), Ok(()));
+        // Search starts at hint = 6, finds 7 first, wraps around `max_id = 8` to `MIN_ID = 2`,
+        // and never hands out ID 8 or higher.
+        assert_eq!(allocator.try_alloc(), Ok(7));
+        assert_eq!(allocator.try_alloc(), Ok(2));
+        assert_eq!(allocator.try_alloc(), Err(Status::NO_RESOURCES));
     }
 }

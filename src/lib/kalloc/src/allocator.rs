@@ -25,6 +25,12 @@ impl From<core::convert::Infallible> for AllocError {
     }
 }
 
+impl From<AllocError> for zx_status::Status {
+    fn from(_: AllocError) -> Self {
+        Self::NO_MEMORY
+    }
+}
+
 /// Trait for allocators used by Box and other collections.
 ///
 /// This trait mirrors the `core::alloc::Allocator` trait,
