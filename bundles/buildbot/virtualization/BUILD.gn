@@ -16,11 +16,6 @@ import("//build/testing/environments.gni")
 group("virtualization") {
   testonly = true
   deps = [
-    # TODO(https://fxbug.dev/562452324): Remove netemul guest support.
-    # Connectivity's netemul framework supports a "guest" setup where one of
-    # the nodes in the network is a virtualized guest.
-    "//src/connectivity/network/testing/netemul:tests-involving-guests",
-
     # f2fs compatibility tests use a Linux guest to test that Fuchsia and Linux
     # can successfully interoperate bidirectionally with f2fs disk images.
     "//src/storage/f2fs:tests-involving-guests",

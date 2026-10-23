@@ -106,7 +106,6 @@ hlcpp_visibility = [
   "//src/connectivity/network/lib/net_interfaces/cpp:*",
   "//src/connectivity/network/mdns/service:*",
   "//src/connectivity/network/mdns/util:*",
-  "//src/connectivity/network/testing/netemul/guest:*",
   "//src/connectivity/network/testing/netemul/network-context/fidl:*",
   "//src/connectivity/network/testing/netemul/network-context/lib:*",
   "//src/connectivity/network/testing/netemul/sync-manager/fidl:*",

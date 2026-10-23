@@ -276,14 +276,6 @@ once it’s bound, and the client
 [waits for the server](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/connectivity/network/testing/netemul/configurable-netstack/tests/src/client.rs;l=28;drc=1013f1e00fb6f80b32affff6867fc079b5b36035)
 to join before starting connection attempts.
 
-#### Netemul guest tests
-
-The Netemul Runner previously supported running a virtualized guest as part of
-an integration test. One use case for this was to verify interoperability
-between Fuchsia’s networking stack and that of other operating systems. This is
-not currently supported, but there is a proposed design to support it (without
-using the runner itself) if we have a need for it: https://fxbug.dev/42168724.
-
 [realm]: https://fuchsia.dev/fuchsia-src/concepts/components/v2/realms
 [test runner]: https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#test-runners
 [component manifest]: https://fuchsia.dev/fuchsia-src/concepts/components/v2/component_manifests

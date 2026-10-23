@@ -47,10 +47,7 @@ source_set("backtrace_watchdog") {
 }
 
 source_set("socket_logger") {
-  visibility = [
-    "//src/connectivity/network/testing/netemul/*",
-    "//src/virtualization/*",
-  ]
+  visibility = [ "//src/virtualization/*" ]
   sources = [
     "socket_logger.cc",
     "socket_logger.h",
@@ -65,10 +62,7 @@ source_set("socket_logger") {
 }
 
 source_set("guest_console") {
-  visibility = [
-    "//src/connectivity/network/testing/netemul/*",
-    "//src/virtualization/*",
-  ]
+  visibility = [ "//src/virtualization/*" ]
   sources = [
     "guest_console.cc",
     "guest_console.h",
@@ -87,19 +81,13 @@ source_set("guest_console") {
 }
 
 source_set("guest_constants") {
-  visibility = [
-    "//src/connectivity/network/testing/netemul/*",
-    "//src/virtualization/*",
-  ]
+  visibility = [ "//src/virtualization/*" ]
   public = [ "guest_constants.h" ]
 }
 
 source_set("fake_netstack") {
   testonly = true
-  visibility = [
-    "//src/connectivity/network/testing/netemul/*",
-    "//src/virtualization/*",
-  ]
+  visibility = [ "//src/virtualization/*" ]
   public = [ "fake_netstack.h" ]
   sources = [ "fake_netstack.cc" ]
   deps = [
