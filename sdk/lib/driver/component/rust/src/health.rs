@@ -4,17 +4,23 @@
 
 //! Support for running a driver's [`crate::Driver::health_check`] on behalf of the lifecycle
 //! server (the per-level deadlines and the root dispatcher liveness check that precedes every
-//! check) and the opt-in [`HealthCheckInspect`] helper that mirrors results into Inspect.
+//! check), the [`HealthAlertReporter`] through which a driver proactively reports faults, and the
+//! opt-in [`HealthCheckInspect`] helper that mirrors results into Inspect.
+
+use std::sync::Arc;
 
 use fdf::{AsAsyncDispatcherRef, DriverDispatcherRef};
+use fidl_next::Server;
 use fidl_next_fuchsia_driver_framework::{
-    HealthCheckError, HealthCheckRequest, HealthCheckResponse, HealthDiagnosticItem,
-    HealthDiagnosticValue, HealthStatus,
+    Driver as DriverProtocol, HealthAlert, HealthCheckError, HealthCheckRequest,
+    HealthCheckResponse, HealthDiagnosticItem, HealthDiagnosticValue, HealthStatus,
 };
 use fuchsia_sync::Mutex;
-use futures::channel::oneshot;
+use futures::channel::{mpsc, oneshot};
+use log::{debug, warn};
 
 use crate::Driver;
+use crate::server::Transport;
 
 /// The result of a single health check.
 pub type HealthCheckResult = Result<HealthCheckResponse, HealthCheckError>;
@@ -78,8 +84,104 @@ pub(crate) async fn run_health_check<D: Driver>(
     fuchsia_async::TimeoutExt::on_timeout(check, timeout, || Err(HealthCheckError::Timeout)).await
 }
 
-/// Name of the Inspect node that holds the most recent health check result. Matches the C++
-/// driver SDK (`root/driver_health_check`).
+/// The maximum number of health alerts that can be queued in a standalone test receiver created by
+/// [`HealthAlertReporter::new_for_testing`].
+const HEALTH_ALERT_QUEUE_CAPACITY: usize = 64;
+
+enum HealthAlertSink {
+    /// Production sink: writes `OnHealthAlert` events synchronously into the `Driver` channel.
+    Server(Server<DriverProtocol, Transport>),
+    /// Standalone unit-test queue created by [`HealthAlertReporter::new_for_testing`].
+    TestQueue { tx: mpsc::Sender<HealthAlert>, dropped: u64 },
+    /// Disconnected sink (`Default::default` or after the driver has been asked to stop).
+    Closed,
+}
+
+/// Lets a driver proactively report faults to the driver framework as `OnHealthAlert` events.
+///
+/// Obtained from [`crate::DriverContext::health_alert_reporter`] while the driver is starting.
+/// Unlike the rest of the driver's lifecycle, alerts are driver-initiated and may come from any
+/// task or thread, so the reporter is cheap to clone and drivers typically keep one in their own
+/// state.
+#[derive(Clone)]
+pub struct HealthAlertReporter {
+    sink: Arc<Mutex<HealthAlertSink>>,
+}
+
+impl HealthAlertReporter {
+    /// Creates a reporter backed by the lifecycle server's `Driver` FIDL channel.
+    pub(crate) fn new(server: Server<DriverProtocol, Transport>) -> Self {
+        Self { sink: Arc::new(Mutex::new(HealthAlertSink::Server(server))) }
+    }
+
+    /// Disconnects the reporter so subsequent alerts are dropped.
+    pub(crate) fn close(&self) {
+        *self.sink.lock() = HealthAlertSink::Closed;
+    }
+
+    /// Creates a reporter and alert receiver pair for unit tests that construct a driver directly
+    /// without a lifecycle server.
+    pub fn new_for_testing() -> (Self, mpsc::Receiver<HealthAlert>) {
+        // A futures mpsc channel holds `buffer + number of senders` messages. All clones share a
+        // single sender, so this bounds the queue at exactly `HEALTH_ALERT_QUEUE_CAPACITY`.
+        let (tx, rx) = mpsc::channel(HEALTH_ALERT_QUEUE_CAPACITY - 1);
+        (Self { sink: Arc::new(Mutex::new(HealthAlertSink::TestQueue { tx, dropped: 0 })) }, rx)
+    }
+
+    /// Emits an `OnHealthAlert` event over the `Driver` channel to the driver framework.
+    ///
+    /// This never blocks: on a running driver the event is written synchronously to the underlying
+    /// [`fdf_fidl::DriverChannel`] via [`fidl_next::SendFuture::send_immediately`]; alerts
+    /// reported after the driver has been asked to stop are dropped.
+    ///
+    /// Alerts are not mirrored into Inspect automatically; a driver that records its health there
+    /// can pass `SelfFault` alerts to [`HealthCheckInspect::record_alert`] as well.
+    pub fn report_health_alert(&self, alert: HealthAlert) {
+        let mut sink = self.sink.lock();
+        match &mut *sink {
+            HealthAlertSink::Server(server) => {
+                let server = server.clone();
+                drop(sink);
+                if let Err(e) = server.on_health_alert(alert).send_immediately() {
+                    debug!("Dropping health alert on closed or failed driver channel: {e}");
+                }
+            }
+            HealthAlertSink::TestQueue { tx, dropped } => {
+                let Err(e) = tx.try_send(alert) else {
+                    return;
+                };
+                if e.is_full() {
+                    *dropped += 1;
+                    let total_dropped = *dropped;
+                    drop(sink);
+                    if total_dropped.is_power_of_two() {
+                        warn!("Health alert queue is full; dropped {total_dropped} alerts so far");
+                    }
+                } else {
+                    drop(sink);
+                    debug!("Dropping health alert because the receiver was dropped");
+                }
+            }
+            HealthAlertSink::Closed => {
+                drop(sink);
+                debug!("Dropping health alert because the driver server has shut down");
+            }
+        }
+    }
+}
+
+impl Default for HealthAlertReporter {
+    /// Returns a disconnected reporter: every alert reported through it is dropped (logged at
+    /// debug). Intended only for tests or placeholders; use
+    /// [`crate::DriverContext::health_alert_reporter`] in a running driver or
+    /// [`HealthAlertReporter::new_for_testing`] to observe alerts in a test.
+    fn default() -> Self {
+        Self { sink: Arc::new(Mutex::new(HealthAlertSink::Closed)) }
+    }
+}
+
+/// Name of the Inspect node that holds the most recent health check result or self-reported
+/// fault. Matches the C++ driver SDK (`root/driver_health_check`).
 pub const HEALTH_INSPECT_NODE_NAME: &str = "driver_health_check";
 
 /// Mirrors a driver's most recent health check result into its own Inspect hierarchy.
@@ -133,6 +235,16 @@ impl HealthCheckInspect {
     /// check.
     pub fn record(&self, level: HealthCheckRequest, result: &HealthCheckResult) {
         self.replace(Some(level), result.as_ref().map_err(|e| *e));
+    }
+
+    /// Records the details of a [`HealthAlert::SelfFault`] the driver is reporting through its
+    /// [`HealthAlertReporter`], replacing the previous record, so Inspect also reflects faults
+    /// the driver notices between health checks. Neighbour faults describe other drivers and are
+    /// ignored.
+    pub fn record_alert(&self, alert: &HealthAlert) {
+        if let HealthAlert::SelfFault(details) = alert {
+            self.replace(None, Ok(details));
+        }
     }
 
     fn replace(
@@ -241,9 +353,9 @@ fn record_health_diagnostics(parent: &fuchsia_inspect::Node, diagnostics: &[Heal
 /// `parent` and returns it. Dropping the returned node removes the record again.
 ///
 /// `level` is the requested level of the check, or `None` when the record does not come from a
-/// health check request. Errors are recorded as `status = "ERROR"` with an `error` property. The
-/// `diagnostics` and `conditions` children are only created when non-empty, matching the C++
-/// driver SDK mirror.
+/// health check request (i.e. a self-reported fault). Errors are recorded as `status = "ERROR"`
+/// with an `error` property. The `diagnostics` and `conditions` children are only created when
+/// non-empty, matching the C++ driver SDK mirror.
 ///
 /// Drivers that publish Inspect on demand (for example via
 /// [`crate::DriverContext::inspect_content_publisher`]) can call this directly when populating
@@ -305,6 +417,7 @@ mod tests {
     use super::*;
     use diagnostics_assertions::assert_data_tree;
     use fidl_next_fuchsia_driver_framework::HealthCondition;
+    use futures::StreamExt;
 
     #[fuchsia::test]
     async fn record_health_check_to_inspect_mirrors_full_response() {
@@ -395,7 +508,8 @@ mod tests {
             driver_health_check: { level: "PING", status: "ERROR", error: "NOT_SUPPORTED" },
         });
 
-        // Dropping the node removes the record; records without a level omit the level property.
+        // Dropping the node removes the record; records without a level (self-reported alerts)
+        // omit the level property.
         drop(node);
         let _node =
             record_health_check_to_inspect(inspector.root(), None, Err(HealthCheckError::Timeout));
@@ -486,5 +600,57 @@ mod tests {
         // Dropping the recorder removes the record.
         drop(health_inspect);
         assert_data_tree!(inspector, root: {});
+    }
+
+    #[fuchsia::test]
+    async fn self_fault_alert_replaces_inspect_node() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let health_inspect = HealthCheckInspect::new(inspector.root());
+
+        health_inspect.record_alert(&HealthAlert::SelfFault(HealthCheckResponse {
+            conditions: Some(vec![HealthCondition {
+                status: Some(HealthStatus::Unhealthy),
+                reason_code: Some("DMA_STALLED".to_string()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }));
+        assert_data_tree!(inspector, root: {
+            driver_health_check: {
+                status: "UNHEALTHY",
+                conditions: { DMA_STALLED: { status: "UNHEALTHY" } },
+            },
+        });
+
+        // Neighbour faults are not this driver's own state, so they do not touch the record.
+        health_inspect
+            .record_alert(&HealthAlert::UpstreamNeighborFault(HealthCheckResponse::default()));
+        assert_data_tree!(inspector, root: {
+            driver_health_check: {
+                status: "UNHEALTHY",
+                conditions: { DMA_STALLED: { status: "UNHEALTHY" } },
+            },
+        });
+
+        // Recovery is reported with empty conditions and replaces the record with OK.
+        health_inspect.record_alert(&HealthAlert::SelfFault(HealthCheckResponse::default()));
+        assert_data_tree!(inspector, root: { driver_health_check: { status: "OK" } });
+    }
+
+    #[fuchsia::test]
+    async fn alerts_are_dropped_when_queue_is_full() {
+        let (reporter, alerts) = HealthAlertReporter::new_for_testing();
+        // Report through clones to check that they all share one bounded queue.
+        for _ in 0..(HEALTH_ALERT_QUEUE_CAPACITY + 5) {
+            reporter.clone().report_health_alert(HealthAlert::SelfFault(Default::default()));
+        }
+        match &*reporter.sink.lock() {
+            HealthAlertSink::TestQueue { dropped, .. } => assert_eq!(*dropped, 5),
+            _ => panic!("expected TestQueue"),
+        }
+        // Dropping the last reporter closes the queue, so `collect` drains what was accepted.
+        drop(reporter);
+        let received: Vec<_> = alerts.collect().await;
+        assert_eq!(received.len(), HEALTH_ALERT_QUEUE_CAPACITY);
     }
 }

@@ -21,15 +21,17 @@ pub mod testing;
 pub use context::*;
 pub use error::DriverError;
 pub use health::{
-    HEALTH_INSPECT_NODE_NAME, HealthCheckInspect, HealthCheckResult, record_health_check_to_inspect,
+    HEALTH_INSPECT_NODE_NAME, HealthAlertReporter, HealthCheckInspect, HealthCheckResult,
+    record_health_check_to_inspect,
 };
 pub use incoming::*;
 pub use node::*;
 
-/// The `fuchsia.driver.framework` health check types used by [`Driver::health_check`], re-exported
-/// so drivers do not need a direct dependency on the `fidl_next` bindings to implement it.
+/// The `fuchsia.driver.framework` health check types used by [`Driver::health_check`] and
+/// [`HealthAlertReporter`], re-exported so drivers do not need a direct dependency on the
+/// `fidl_next` bindings to use them.
 pub use fidl_next_fuchsia_driver_framework::{
-    HealthCheckError, HealthCheckRequest, HealthCheckResponse, HealthCondition,
+    HealthAlert, HealthCheckError, HealthCheckRequest, HealthCheckResponse, HealthCondition,
     HealthDiagnosticItem, HealthDiagnosticValue, HealthStatus,
 };
 

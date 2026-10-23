@@ -473,9 +473,9 @@ mod convert {
 mod tests {
     use super::*;
     use crate::{
-        DriverError, HealthCheckError, HealthCheckInspect, HealthCheckRequest, HealthCheckResponse,
-        HealthCheckResult, HealthCondition, HealthStatus, Node, NodeBuilder, ServiceInstance,
-        ServiceOffer,
+        DriverError, HealthAlert, HealthAlertReporter, HealthCheckError, HealthCheckInspect,
+        HealthCheckRequest, HealthCheckResponse, HealthCheckResult, HealthCondition, HealthStatus,
+        Node, NodeBuilder, ServiceInstance, ServiceOffer,
     };
     use diagnostics_assertions::assert_data_tree;
     use fidl_next::{Request, Responder};
@@ -838,6 +838,54 @@ mod tests {
                 conditions: { CUSTOM_OK: { status: "OK" } },
             },
         });
+
+        started_driver.stop_driver().await;
+    }
+
+    fn alert_with_reason(reason_code: &str) -> HealthCheckResponse {
+        HealthCheckResponse {
+            conditions: Some(vec![HealthCondition {
+                status: Some(HealthStatus::Unhealthy),
+                reason_code: Some(reason_code.to_string()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }
+    }
+
+    /// Reports one alert during `start` and keeps its reporter to report more later.
+    struct AlertDriver {
+        reporter: HealthAlertReporter,
+    }
+    impl Driver for AlertDriver {
+        const NAME: &str = "alert_driver";
+        async fn start(context: crate::DriverContext) -> Result<Self, crate::DriverError> {
+            context.report_health_alert(HealthAlert::SelfFault(alert_with_reason("IN_START")));
+            Ok(Self { reporter: context.health_alert_reporter() })
+        }
+        async fn stop(&self) {}
+    }
+
+    #[fuchsia::test]
+    async fn test_dut_health_alert() {
+        let mut harness = TestHarness::<AlertDriver>::new();
+        let mut started_driver = harness.start_driver().await.expect("success");
+
+        let Some(HealthAlert::SelfFault(details)) = started_driver.next_health_alert().await else {
+            panic!("expected SelfFault");
+        };
+        assert_eq!(details.conditions.unwrap()[0].reason_code.as_deref(), Some("IN_START"));
+
+        let driver = started_driver.get_driver().expect("failed to get driver");
+        driver
+            .reporter
+            .report_health_alert(HealthAlert::DownstreamNeighborFault(alert_with_reason("LATER")));
+        let Some(HealthAlert::DownstreamNeighborFault(details)) =
+            started_driver.next_health_alert().await
+        else {
+            panic!("expected DownstreamNeighborFault");
+        };
+        assert_eq!(details.conditions.unwrap()[0].reason_code.as_deref(), Some("LATER"));
 
         started_driver.stop_driver().await;
     }

@@ -12,8 +12,8 @@ use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
 use fidl_next_fuchsia_driver_framework::{
-    Driver as NextDriver, DriverStartArgs, HealthCheckError, HealthCheckRequest,
-    HealthCheckResponse,
+    Driver as NextDriver, DriverClientHandler, DriverStartArgs, HealthAlert, HealthCheckError,
+    HealthCheckRequest, HealthCheckResponse, driver,
 };
 use fuchsia_async as fasync;
 use futures::channel::oneshot;
@@ -29,11 +29,28 @@ pub struct DriverUnderTest<'a, D> {
     registration: DriverRegistration,
     token: usize,
     client: NextClient<NextDriver, DriverChannel>,
+    alert_rx: futures::channel::mpsc::Receiver<HealthAlert>,
     client_exit_rx: Option<mpsc::Receiver<()>>,
     started: bool,
     harness: &'a mut TestHarness<D>,
     node_id: usize,
     _d: PhantomData<D>,
+}
+
+/// Collects the `OnHealthAlert` events the driver under test emits.
+#[derive(Debug)]
+struct DutClientHandler {
+    alert_tx: futures::channel::mpsc::Sender<HealthAlert>,
+}
+
+impl DriverClientHandler for DutClientHandler {
+    async fn on_health_alert(
+        &mut self,
+        request: fidl_next::Request<driver::OnHealthAlert, DriverChannel>,
+    ) {
+        // Tests that never read alerts must not stall the driver; drop on overflow.
+        let _ = self.alert_tx.try_send(request.payload().alert);
+    }
 }
 
 impl<D> Drop for DriverUnderTest<'_, D> {
@@ -95,6 +112,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
         let (server_chan, client_chan) = fdf::Channel::<[fidl_next::Chunk]>::create();
         let channel_handle = server_chan.into_driver_handle().into_raw().get();
         let (client_exit_tx, client_exit_rx) = mpsc::channel();
+        let (alert_tx, alert_rx) = futures::channel::mpsc::channel(64);
         let (token_tx, token_rx) = oneshot::channel();
         let initialize_fn = registration.v1.initialize.unwrap();
         dispatcher
@@ -115,7 +133,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
             // At that point the driver has closed its server which signifies it has
             // completed its stop or has failed to start.
-            client_dispatcher.run_client().await.unwrap_err();
+            client_dispatcher.run(DutClientHandler { alert_tx }).await.unwrap_err();
             client_exit_tx.send(()).unwrap();
         });
 
@@ -126,6 +144,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             registration,
             token,
             client,
+            alert_rx,
             client_exit_rx: Some(client_exit_rx),
             started: false,
             harness,
@@ -176,6 +195,12 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
         request: HealthCheckRequest,
     ) -> Result<HealthCheckResponse, HealthCheckError> {
         self.client.health_check(request).await.expect("health_check FIDL call success")
+    }
+
+    /// Waits for the next `OnHealthAlert` event emitted by the driver under test. Returns `None`
+    /// once the driver has closed its channel.
+    pub async fn next_health_alert(&mut self) -> Option<HealthAlert> {
+        futures::StreamExt::next(&mut self.alert_rx).await
     }
 
     /// Stop the driver.

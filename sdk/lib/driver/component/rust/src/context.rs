@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Incoming, Node, ParentProperty, PropertyValue};
+use crate::{HealthAlertReporter, Incoming, Node, ParentProperty, PropertyValue};
 use fuchsia_async::ScopeHandle;
 use fuchsia_component::server::{ServiceFs, ServiceObjTrait};
 use fuchsia_component_config::Config;
@@ -13,7 +13,7 @@ use namespace::Namespace;
 use zx::Status;
 
 use fdf::AsyncDispatcher;
-use fidl_next_fuchsia_driver_framework::DriverStartArgs;
+use fidl_next_fuchsia_driver_framework::{DriverStartArgs, HealthAlert};
 
 pub use fuchsia_inspect_contrib::content_publisher as inspect_publisher;
 
@@ -28,9 +28,24 @@ pub struct DriverContext {
     /// The incoming namespace constructed from [`DriverStartArgs::incoming`]. Since producing this
     /// consumes the incoming namespace from [`Self::start_args`], that will always be [`None`].
     pub incoming: Incoming,
+    health_alert_reporter: HealthAlertReporter,
 }
 
 impl DriverContext {
+    /// Returns a reporter through which the driver can proactively emit
+    /// `fuchsia.driver.framework/Driver.OnHealthAlert` events after [`crate::Driver::start`] has
+    /// consumed this context. The reporter is cheap to clone and may be used from any thread.
+    pub fn health_alert_reporter(&self) -> HealthAlertReporter {
+        self.health_alert_reporter.clone()
+    }
+
+    /// Reports `alert` to the driver framework. Equivalent to
+    /// `self.health_alert_reporter().report_health_alert(alert)`; see
+    /// [`HealthAlertReporter::report_health_alert`].
+    pub fn report_health_alert(&self, alert: HealthAlert) {
+        self.health_alert_reporter.report_health_alert(alert);
+    }
+
     /// Binds the node proxy client end from the start args into a [`NodeProxy`] that can be used
     /// to add child nodes. Dropping this proxy will result in the node being removed and the
     /// driver starting shutdown, so it should be bound and stored in your driver object in its
@@ -170,6 +185,7 @@ impl DriverContext {
     pub(crate) fn new(
         root_dispatcher: AsyncDispatcher,
         mut start_args: DriverStartArgs,
+        health_alert_reporter: HealthAlertReporter,
     ) -> Result<Self, Status> {
         let mut incoming_namespace = Namespace::new();
         for entry in start_args.incoming.take().unwrap_or_default() {
@@ -182,7 +198,7 @@ impl DriverContext {
             incoming_namespace.add(&path, directory).map_err(|_| Status::INVALID_ARGS)?;
         }
         let incoming = Incoming::from(incoming_namespace);
-        Ok(DriverContext { root_dispatcher, start_args, incoming })
+        Ok(DriverContext { root_dispatcher, start_args, incoming, health_alert_reporter })
     }
 
     pub(crate) fn start_logging(&self, driver_name: &str) -> Result<(), Status> {

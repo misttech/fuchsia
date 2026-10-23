@@ -20,7 +20,7 @@ use fidl_next_fuchsia_driver_framework::{
     Driver as DriverProtocol, DriverLocalServerHandler, DriverStartArgs, HealthCheckError, driver,
 };
 
-use crate::health::run_health_check;
+use crate::health::{HealthAlertReporter, run_health_check};
 use crate::{Driver, DriverContext, DriverError};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;
 use fuchsia_async::LocalExecutorBuilder;
@@ -28,7 +28,7 @@ use fuchsia_async::LocalExecutorBuilder;
 /// The driver transport the lifecycle server reads on. Reads are registered against the root
 /// dispatcher's always-on interface so that requests (notably `Resume`) keep being delivered
 /// while the driver's dispatchers are suspended.
-type Transport = DriverChannel<AsyncDispatcher>;
+pub(crate) type Transport = DriverChannel<AsyncDispatcher>;
 
 /// Implements the lifecycle management of a rust driver, including starting and stopping it
 /// and setting up the rust async dispatcher and logging for the driver to use, and running a
@@ -158,9 +158,11 @@ impl<T: Driver> DriverServer<T> {
             DriverChannel::new_with_dispatcher(AsyncDispatcher::new(&dispatcher), server_handle),
         );
         let server = ServerDispatcher::new(server_end);
+        let fidl_server = server.server();
         let handler = LifecycleHandler {
             server: Some(self),
-            fidl_server: server.server(),
+            health_alert_reporter: HealthAlertReporter::new(fidl_server.clone()),
+            fidl_server,
             health_tasks: Some(fuchsia_async::Scope::new_with_name("driver-health")),
         };
         match server.run_local(handler).await {
@@ -184,8 +186,16 @@ impl<T: Driver> DriverServer<T> {
     ///
     /// This method panics if the start message has already been received.
     /// [`LifecycleHandler::start`] rejects a second start before reaching this method.
-    async fn handle_start(&self, start_args: DriverStartArgs) -> Result<(), Status> {
-        let context = DriverContext::new(AsyncDispatcher::new(&self.root_dispatcher), start_args)?;
+    async fn handle_start(
+        &self,
+        start_args: DriverStartArgs,
+        health_alert_reporter: HealthAlertReporter,
+    ) -> Result<(), Status> {
+        let context = DriverContext::new(
+            AsyncDispatcher::new(&self.root_dispatcher),
+            start_args,
+            health_alert_reporter,
+        )?;
         context.start_logging(T::NAME)?;
 
         log::debug!("driver starting");
@@ -232,6 +242,8 @@ struct LifecycleHandler<'a, T> {
     /// touched: the driver host is free to destroy it as soon as the channel closes.
     server: Option<&'a mut DriverServer<T>>,
     fidl_server: Server<DriverProtocol, Transport>,
+    /// The reporter handed to the driver through its [`DriverContext`].
+    health_alert_reporter: HealthAlertReporter,
     /// Owns the in-flight health checks. Cancelled before the driver stops, so health checks
     /// never run concurrently with [`Driver::stop`] or outlive the driver. `None` afterwards.
     health_tasks: Option<fuchsia_async::Scope>,
@@ -249,6 +261,7 @@ impl<T: Driver> LifecycleHandler<'_, T> {
     /// with the server: the driver host treats the channel closing as the signal that the driver
     /// is fully stopped.
     async fn finish(&mut self) {
+        self.health_alert_reporter.close();
         self.cancel_health_tasks().await;
         if let Some(server) = self.server.take() {
             // The driver is dropped here, on the fuchsia-async thread and inside its executor,
@@ -281,7 +294,9 @@ impl<T: Driver> DriverLocalServerHandler<Transport> for LifecycleHandler<'_, T> 
             log_reply("Start", responder.respond_err(Status::BAD_STATE).await);
             return;
         }
-        let res = server.handle_start(request.payload().start_args).await;
+        let res = server
+            .handle_start(request.payload().start_args, self.health_alert_reporter.clone())
+            .await;
         let reply = match res {
             Ok(()) => responder.respond(()).await,
             Err(status) => responder.respond_err(status).await,
@@ -296,8 +311,9 @@ impl<T: Driver> DriverLocalServerHandler<Transport> for LifecycleHandler<'_, T> 
     }
 
     async fn stop(&mut self) {
-        // Health checks still in flight are abandoned rather than run against a stopping
-        // driver; the driver host has given up on them by now in any case.
+        // Stop accepting health alerts and abandon any health checks still in flight before
+        // calling `Driver::stop`.
+        self.health_alert_reporter.close();
         self.cancel_health_tasks().await;
         if let Some(server) = self.server.as_deref_mut() {
             server.handle_stop().await;
@@ -371,14 +387,16 @@ impl<T: Driver> DriverLocalServerHandler<Transport> for LifecycleHandler<'_, T> 
 mod tests {
     use super::*;
     use crate::{
-        DriverError, HealthCheckRequest, HealthCheckResponse, HealthCheckResult, HealthCondition,
-        HealthDiagnosticItem, HealthDiagnosticValue, HealthStatus,
+        DriverError, HealthAlert, HealthAlertReporter, HealthCheckRequest, HealthCheckResponse,
+        HealthCheckResult, HealthCondition, HealthDiagnosticItem, HealthDiagnosticValue,
+        HealthStatus,
     };
 
     use fdf::{CurrentDispatcher, OnDispatcher};
     use fdf_env::test::spawn_in_driver;
     use fidl_next_fuchsia_driver_framework::DriverClientHandler;
-    use futures::channel::oneshot;
+    use futures::StreamExt;
+    use futures::channel::{mpsc, oneshot};
     use zx::Status;
 
     use fdf::Channel;
@@ -620,14 +638,29 @@ mod tests {
     }
 
     type TestClient = fidl_next::Client<DriverProtocol, DriverChannel>;
+    type AlertReceiver = mpsc::UnboundedReceiver<HealthAlert>;
+
+    /// Collects `OnHealthAlert` events sent by the server.
+    #[derive(Debug)]
+    struct AlertCollector(mpsc::UnboundedSender<HealthAlert>);
+
+    impl DriverClientHandler for AlertCollector {
+        async fn on_health_alert(
+            &mut self,
+            request: Request<driver::OnHealthAlert, DriverChannel>,
+        ) {
+            let _ = self.0.unbounded_send(request.payload().alert);
+        }
+    }
 
     /// Initializes a `DriverServer` for `D` over a fresh driver channel, runs `body` against a
     /// client of it, then waits for the server to release the channel and destroys it. `body` is
-    /// responsible for stopping the driver if it started it.
+    /// responsible for stopping the driver if it started it. `body` also receives the stream of
+    /// `OnHealthAlert` events the server sends.
     fn with_driver_server<D, F, Fut>(name: &str, body: F)
     where
         D: Driver,
-        F: FnOnce(TestClient) -> Fut + Send + 'static,
+        F: FnOnce(TestClient, AlertReceiver) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = ()> + Send,
     {
         let registration = crate::macros::make_driver_registration::<D>();
@@ -643,11 +676,12 @@ mod tests {
             // Dropping the last `Client` stops the client dispatcher, so keep one alive until the
             // server has closed the channel regardless of what `body` does with its copy.
             let keepalive = client.clone();
+            let (alert_tx, alert_rx) = mpsc::unbounded();
 
             let client_task = CurrentDispatcher.spawn(async move {
                 // The dispatcher exits with `PeerClosed` once the server releases its end of the
                 // channel, which is when the driver has finished stopping (or failed to start).
-                dispatcher.run(DriverClient).await.unwrap_err();
+                dispatcher.run(AlertCollector(alert_tx)).await.unwrap_err();
             });
 
             let channel_handle = server_chan.into_driver_handle().into_raw().get();
@@ -656,7 +690,7 @@ mod tests {
             let driver_server = unsafe { initialize_func(channel_handle) } as usize;
             assert_ne!(driver_server, 0);
 
-            body(client).await;
+            body(client, alert_rx).await;
 
             client_task.await.unwrap();
             drop(keepalive);
@@ -670,7 +704,7 @@ mod tests {
 
     #[test]
     fn test_stop_before_start() {
-        with_driver_server::<TestDriver, _, _>("stop before start", |client| async move {
+        with_driver_server::<TestDriver, _, _>("stop before start", |client, _alerts| async move {
             client.stop().await.unwrap();
         });
     }
@@ -679,7 +713,7 @@ mod tests {
     fn test_requests_queued_behind_start() {
         with_driver_server::<TestDriver, _, _>(
             "requests queued behind start",
-            |client| async move {
+            |client, _alerts| async move {
                 let start = client.start(DriverStartArgs::default());
                 let suspend = client.suspend();
                 let resume = client.resume(None::<zx::EventPair>);
@@ -695,33 +729,39 @@ mod tests {
 
     #[test]
     fn test_health_check_before_start_is_rejected() {
-        with_driver_server::<TestDriver, _, _>("health check before start", |client| async move {
-            assert_eq!(
-                client.health_check(HealthCheckRequest::Ping).await.unwrap(),
-                Err(HealthCheckError::InvalidState)
-            );
-            client.start(DriverStartArgs::default()).await.unwrap().unwrap();
-            client.stop().await.unwrap();
-        });
+        with_driver_server::<TestDriver, _, _>(
+            "health check before start",
+            |client, _alerts| async move {
+                assert_eq!(
+                    client.health_check(HealthCheckRequest::Ping).await.unwrap(),
+                    Err(HealthCheckError::InvalidState)
+                );
+                client.start(DriverStartArgs::default()).await.unwrap().unwrap();
+                client.stop().await.unwrap();
+            },
+        );
     }
 
     #[test]
     fn test_health_check_default() {
-        with_driver_server::<TestDriver, _, _>("health check default", |client| async move {
-            client.start(DriverStartArgs::default()).await.unwrap().unwrap();
+        with_driver_server::<TestDriver, _, _>(
+            "health check default",
+            |client, _alerts| async move {
+                client.start(DriverStartArgs::default()).await.unwrap().unwrap();
 
-            // With the default `health_check`, PING answers OK (an empty response) after the
-            // root dispatcher liveness check, and deeper levels are not supported. None of them
-            // disturb the lifecycle requests that follow.
-            let ping = client.health_check(HealthCheckRequest::Ping).await.unwrap();
-            assert_eq!(ping, Ok(HealthCheckResponse::default()));
-            for level in [HealthCheckRequest::Fast, HealthCheckRequest::Deep] {
-                let res = client.health_check(level).await.unwrap();
-                assert_eq!(res, Err(HealthCheckError::NotSupported));
-            }
-            client.suspend().await.unwrap().unwrap();
-            client.stop().await.unwrap();
-        });
+                // With the default `health_check`, PING answers OK (an empty response) after the
+                // root dispatcher liveness check, and deeper levels are not supported. None of them
+                // disturb the lifecycle requests that follow.
+                let ping = client.health_check(HealthCheckRequest::Ping).await.unwrap();
+                assert_eq!(ping, Ok(HealthCheckResponse::default()));
+                for level in [HealthCheckRequest::Fast, HealthCheckRequest::Deep] {
+                    let res = client.health_check(level).await.unwrap();
+                    assert_eq!(res, Err(HealthCheckError::NotSupported));
+                }
+                client.suspend().await.unwrap().unwrap();
+                client.stop().await.unwrap();
+            },
+        );
     }
 
     /// Overrides `health_check` to answer with structured diagnostics.
@@ -758,7 +798,7 @@ mod tests {
     fn test_health_check_custom() {
         with_driver_server::<CustomHealthCheckDriver, _, _>(
             "health check custom",
-            |client| async move {
+            |client, _alerts| async move {
                 client.start(DriverStartArgs::default()).await.unwrap().unwrap();
 
                 let res = client.health_check(HealthCheckRequest::Fast).await.unwrap().unwrap();
@@ -808,7 +848,7 @@ mod tests {
     fn test_stop_with_hung_health_check() {
         with_driver_server::<SignallingHungHealthCheckDriver, _, _>(
             "stop with hung health check",
-            |client| async move {
+            |client, _alerts| async move {
                 client.start(DriverStartArgs::default()).await.unwrap().unwrap();
 
                 let (started_tx, started_rx) = oneshot::channel();
@@ -846,13 +886,67 @@ mod tests {
     fn test_health_check_times_out() {
         with_driver_server::<HungHealthCheckDriver, _, _>(
             "health check times out",
-            |client| async move {
+            |client, _alerts| async move {
                 client.start(DriverStartArgs::default()).await.unwrap().unwrap();
 
                 // The driver never answers, so the server's own PING deadline (real time,
                 // ~350ms) must produce the reply.
                 let res = client.health_check(HealthCheckRequest::Ping).await.unwrap();
                 assert_eq!(res, Err(HealthCheckError::Timeout));
+
+                client.stop().await.unwrap();
+            },
+        );
+    }
+
+    /// Lets `test_forwards_health_alerts` report an alert from outside the driver after it has
+    /// started, the way a driver's own background task would.
+    static ALERTING_DRIVER_REPORTER: std::sync::Mutex<Option<HealthAlertReporter>> =
+        std::sync::Mutex::new(None);
+
+    /// Reports an alert from inside `start` and publishes its reporter for the test to report
+    /// another later.
+    struct AlertingDriver;
+
+    impl Driver for AlertingDriver {
+        const NAME: &str = "alerting_driver";
+
+        async fn start(context: DriverContext) -> Result<Self, DriverError> {
+            context.report_health_alert(HealthAlert::UpstreamNeighborFault(
+                HealthCheckResponse::default(),
+            ));
+            *ALERTING_DRIVER_REPORTER.lock().unwrap() = Some(context.health_alert_reporter());
+            Ok(Self)
+        }
+        async fn stop(&self) {}
+    }
+
+    #[test]
+    fn test_forwards_health_alerts() {
+        with_driver_server::<AlertingDriver, _, _>(
+            "forwards health alerts",
+            |client, mut alerts| async move {
+                client.start(DriverStartArgs::default()).await.unwrap().unwrap();
+                // The alert reported during `start` is sent over the `Driver` channel.
+                assert!(matches!(alerts.next().await, Some(HealthAlert::UpstreamNeighborFault(_))));
+
+                let reporter =
+                    ALERTING_DRIVER_REPORTER.lock().unwrap().take().expect("driver started");
+                reporter.report_health_alert(HealthAlert::SelfFault(HealthCheckResponse {
+                    conditions: Some(vec![HealthCondition {
+                        status: Some(HealthStatus::Unhealthy),
+                        reason_code: Some("DMA_STALLED".to_string()),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }));
+                let Some(HealthAlert::SelfFault(details)) = alerts.next().await else {
+                    panic!("expected SelfFault");
+                };
+                assert_eq!(
+                    details.conditions.unwrap()[0].reason_code.as_deref(),
+                    Some("DMA_STALLED")
+                );
 
                 client.stop().await.unwrap();
             },
