@@ -5,10 +5,11 @@
 #![cfg(feature = "serde")]
 
 use crate::DictionaryValue;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_io_common as fio;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 /// Reflect fidl_fuchsia_sys2::StorageId for serialization/deserialization.
 #[derive(Serialize, Deserialize)]
@@ -182,7 +183,7 @@ mod tests {
         deserialize_fio_operations, deserialize_opt_fio_operations, serialize_fio_operations,
         serialize_opt_fio_operations,
     };
-    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_io_common as fio;
     use serde_json::{Deserializer, Serializer};
     use std::str::from_utf8;
 

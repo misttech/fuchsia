@@ -5,11 +5,10 @@
 use cm_rust_derive::{ExposeDeclCommon, ExposeDeclCommonAlwaysRequired, FidlDecl, ToGenericRef};
 use cm_types::{AllowedOffers, BorrowedSeparatedPath, LongName, Name, Path, RelativePath, Url};
 use directed_graph::DirectedGraph;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_data as fdata;
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_process as fprocess;
-use fidl_fuchsia_sys2 as fsys;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_data_common as fdata;
+use fidl_fuchsia_io_common as fio;
+use fidl_fuchsia_sys2_common as fsys;
 use from_enum::FromEnum;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
@@ -765,7 +764,6 @@ fidl_translations_identical!(fio::Operations);
 fidl_translations_identical!(fio::Flags);
 fidl_translations_identical!(fdecl::EnvironmentExtends);
 fidl_translations_identical!(fdecl::StorageId);
-fidl_translations_identical!(Vec<fprocess::HandleInfo>);
 fidl_translations_identical!(fsys::ServiceInstance);
 fidl_translations_from_into!(cm_types::AllowedOffers, fdecl::AllowedOffers);
 
@@ -1415,7 +1413,7 @@ pub fn append_box<T>(container: &mut Box<[T]>, other: &mut Vec<T>) {
 mod tests {
     use super::*;
     use difference::Changeset;
-    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_component_decl_common as fdecl;
 
     fn offer_source_static_child(name: &str) -> OfferSource {
         OfferSource::Child(ChildRef { name: name.parse().unwrap(), collection: None })

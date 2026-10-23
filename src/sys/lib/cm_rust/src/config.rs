@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use cm_rust_derive::FidlDecl;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use flyweights::FlyStr;
 use from_enum::FromEnum;
 use std::fmt;

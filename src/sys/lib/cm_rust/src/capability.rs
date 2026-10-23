@@ -4,8 +4,8 @@
 
 use cm_rust_derive::FidlDecl;
 use cm_types::{Name, Path, RelativePath};
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_io_common as fio;
 use from_enum::FromEnum;
 
 use crate::{

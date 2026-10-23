@@ -4,8 +4,8 @@
 
 use cm_rust_derive::{FidlDecl, OfferDeclCommon, OfferDeclCommonNoAvailability};
 use cm_types::{BorrowedSeparatedPath, Name, RelativePath};
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_io_common as fio;
 use from_enum::FromEnum;
 use std::fmt;
 use std::hash::Hash;
