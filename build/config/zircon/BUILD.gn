@@ -178,6 +178,7 @@ compiler_config("compiler") {
   }
 }
 
+# LINT.IfChange(nolibc)
 compiler_config("nolibc") {
   ldflags = [
     "-nostartfiles",
@@ -203,6 +204,8 @@ compiler_config("nolibc") {
   rustflags += [ "-Lnative=" + rebase_path("libc-stub", root_build_dir) ]
   rust_linker_flags = [ "-L" + rebase_path("libc-stub", root_build_dir) ]
 }
+
+# LINT.ThenChange(BUILD.bazel:nolibc)
 
 config("data_sections") {
   cflags = [ "-fdata-sections" ]
@@ -253,11 +256,14 @@ config("no_threadsafe_statics") {
   cflags_objcc = cflags_cc
 }
 
+# LINT.IfChange(no_fuzzer)
 config("no_fuzzer") {
   if (!is_gcc) {
     cflags = [ "-fno-sanitize=fuzzer" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:no_fuzzer)
 
 # TODO(https://fxbug.dev/42101776) Remove this once the warning with fit::variant is addressed.
 config("no_maybe_uninitialized") {
@@ -295,6 +301,7 @@ variant("user-link") {
   }
 }
 
+# LINT.IfChange(user-executable)
 variant("user-executable") {
   configs = [
     ":no-dynamic-linker",
@@ -307,12 +314,17 @@ variant("user-executable") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:user-executable)
+
+# LINT.IfChange(no-dynamic-linker)
 # This prevents the default dynamic linker from being embedded.  Other deps
 # can still set PT_INTERP either via link inputs with a `.interp` section, or
 # ldflags that come later with an explicit `-Wl,-dynamic-linker=...`.
 compiler_config("no-dynamic-linker") {
   linker_flags = [ "--no-dynamic-linker" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:no-dynamic-linker)
 
 config("integer-paranoia") {
   cflags = [
@@ -377,7 +389,8 @@ variant("tiny") {
   ldflags = cflags
 }
 
-# Statically linked posititon independent executable.
+# LINT.IfChange(static-pie)
+# Statically linked position independent executable.
 #
 # These have to be variant() rather than config() to be used in the toolchain
 # configs list.
@@ -400,6 +413,8 @@ compiler_config("link-no-pie") {
   linker_flags = [ "--no-pie" ]
 }
 
+# LINT.ThenChange(BUILD.bazel:static-pie)
+
 # Disallow C++ static initializers in functions that require runtime init.
 config("forbid-guard-variables") {
   if (!is_gcc) {
@@ -410,6 +425,7 @@ config("forbid-guard-variables") {
   }
 }
 
+# LINT.IfChange(hermetic-code-blob)
 # This is used by hermetic_code_blob() in hermetic_code_blob.gni.
 compiler_config("hermetic-code-blob") {
   inputs = [ "hermetic-code-blob.ld" ]
@@ -456,6 +472,8 @@ compiler_config("no-synthetic-sections") {
     "--no-dynamic-linker",  # Don't generate .interp section.
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel:hermetic-code-blob)
 
 # This is used by the basic_executable() for an hermetic partial link step.
 compiler_config("hermetic_source_set.config") {

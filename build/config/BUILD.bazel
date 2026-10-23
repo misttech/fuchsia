@@ -290,3 +290,27 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(BUILD.gn:default_debuginfo)
+
+# LINT.IfChange(standalone)
+# This should be used by executables that avoid the normal libc dependencies.
+# These must also omit toolchain-provided instrumentation runtimes that will
+# themselves depend on libc.
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "standalone",
+    ldflags = [
+        # The sanitizer runtimes need libc ABIs that aren't provided here.
+        "-fno-sanitize-link-runtime",
+
+        # The standard profiling runtime can't be used in standalone contexts.  The
+        # instrumentation works fine to collect data, and //src/lib/llvm-profdata
+        # can be used to wire up a custom runtime if possible in context.
+        "-noprofilelib",
+
+        # Make sure the unwinder isn't implicitly brought in for any reason.
+        "-unwindlib=none",
+    ],
+    subflags = ["//build/config/zircon:nolibc"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:standalone)

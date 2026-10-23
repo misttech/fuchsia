@@ -1632,6 +1632,7 @@ config("crel") {
   }
 }
 
+# LINT.IfChange(standalone)
 # This should be used by executables that avoid the normal libc dependencies.
 # These must also omit toolchain-provided instrumentation runtimes that will
 # themselves depend on libc.
@@ -1654,6 +1655,8 @@ config("standalone") {
     ldflags += [ "-unwindlib=none" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:standalone)
 
 # Enable LLD's balanced partitioning for ordering function sections.
 compiler_config("bp-compression-sort") {

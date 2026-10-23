@@ -1,0 +1,160 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange(nolibc)
+extra_linker_flags(
+    name = "nolibc.link_inputs",
+    link_inputs = [
+        "libc-stub/libc.so",
+        "libc-stub/libfdio.so",
+        "libc-stub/libg.a",
+        "libc-stub/libm.so",
+        "libc-stub/libstdc++.a",
+        "libc-stub/libstdc++.so",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+compiler_build_flags(
+    name = "nolibc",
+    ldflags = [
+        "-nostartfiles",
+        "-nolibc",
+        # Don't use -nostdlib, because the builtins (or libgcc) are what we want
+        # and are otherwise annoying to find and specify.  It's just the -lc that
+        # we really want to defeat, and that's handled by giving a -L that will
+        # find exactly nothing but a stub libc.so.  Clang has -nolibc to kill
+        # the -lc, but for C++ it still uses -lm under -nolibc.  So this is still
+        # needed to make -lm into a stub.
+        # This doesn't use lib_dirs because that propagates across linking targets to
+        # e.g. affect an executable() linked with a shared_library() that uses this
+        # config. Since ldflags does not propagate that way, this uses explicitly the
+        # -L switch that lib_dirs would expand to.
+        "-Lbuild/config/zircon/libc-stub",
+    ],
+    # In the case of the Rust driver, -Lnative=... affects any searching it might
+    # do itself like -L... affects the C++ compiler driver; but the Rust driver
+    # doesn't translate that to also passing -L... to the _linker_ as C++ does.
+    rust_linker_flags = ["-Lbuild/config/zircon/libc-stub"],
+    rustflags = [
+        "-Cdefault-linker-libraries=no",
+        "-Lnative=build/config/zircon/libc-stub",
+    ],
+    subflags = [":nolibc.link_inputs"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:nolibc)
+
+# LINT.IfChange(no_fuzzer)
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "no_fuzzer",
+    cflags = ["-fno-sanitize=fuzzer"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:no_fuzzer)
+
+# LINT.IfChange(user-executable)
+# NOTE: This assumes is_gcc=false in Bazel.
+build_flags(
+    name = "user-executable",
+    subflags = [
+        ":no-dynamic-linker",
+        ":nolibc",
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:user-executable)
+
+# LINT.IfChange(no-dynamic-linker)
+# This prevents the default dynamic linker from being embedded.  Other deps
+# can still set PT_INTERP either via link inputs with a `.interp` section, or
+# ldflags that come later with an explicit `-Wl,-dynamic-linker=...`.
+compiler_build_flags(
+    name = "no-dynamic-linker",
+    linker_flags = ["--no-dynamic-linker"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:no-dynamic-linker)
+
+# LINT.IfChange(static-pie)
+# Statically linked position independent executable.
+build_flags(
+    name = "static-pie-compile",
+    cflags = ["-fPIE"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "static-pie-link",
+    subflags = [
+        ":link-pie",
+        ":no-dynamic-linker",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+compiler_build_flags(
+    name = "link-pie",
+    linker_flags = ["--pie"],
+    visibility = ["//visibility:public"],
+)
+
+compiler_build_flags(
+    name = "link-no-pie",
+    linker_flags = ["--no-pie"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:static-pie)
+
+# LINT.IfChange(hermetic-code-blob)
+extra_linker_flags(
+    name = "hermetic-code-blob.link_inputs",
+    link_inputs = ["hermetic-code-blob.ld"],
+    visibility = ["//visibility:private"],
+)
+
+# This is used by hermetic_code_blob() in hermetic_code_blob.gni.
+# NOTE: This assumes is_gcc=false && is_kernel=false in Bazel.
+compiler_build_flags(
+    name = "hermetic-code-blob",
+    ldflags = [
+        "-static",
+        "-nostartfiles",
+        # Note this can still link in builtins, which is generally OK for user
+        # code (even the basic machine ABI), but not for kernel code that has its
+        # own ABI requirements.
+        "-nolibc",
+        "-nostdlib++",
+        "-unwindlib=none",
+    ],
+    # Use a custom linker script rather than the default PIE layout.
+    linker_flags = ["-Tbuild/config/zircon/hermetic-code-blob.ld"],
+    rustflags = ["-Cdefault-linker-libraries=no"],
+    subflags = [
+        ":no-synthetic-sections",
+        ":link-no-pie",
+        ":hermetic-code-blob.link_inputs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+compiler_build_flags(
+    name = "no-synthetic-sections",
+    # These may be necessary to override earlier explicit switches passed by
+    # //build/config:compiler and its dependencies, e.g. when using -r.
+    linker_flags = [
+        "--build-id=none",  # Don't generate .note.gnu.build-id section.
+        "--no-eh-frame-hdr",  # Don't generate .eh_frame_hdr section.
+        "--no-dynamic-linker",  # Don't generate .interp section.
+    ],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:hermetic-code-blob)
