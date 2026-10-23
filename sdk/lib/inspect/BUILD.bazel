@@ -29,6 +29,7 @@ exports_files(
 cml_shard(
     name = "offer.shard",
     shard = "offer.shard.cml",
+    visibility = ["//src/lib/fuchsia-hyper:__pkg__"],
 )
 
 # @bazel2gn:skip
@@ -46,6 +47,7 @@ cml_shard(
     ],
     shard = "client.shard.cml",
     visibility = [
+        "//src/connectivity/policy/http-client:__pkg__",
         "//src/power/shutdown-shim:__subpackages__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
     ],

@@ -2,11 +2,31 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load(
+    "//build/bazel/rules/host_tests:host_rustc_test.bzl",
+    "wrap_host_rust_test",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
+package(default_applicable_licenses = ["//:license"])
+
+cml_shard(
+    name = "hyper.shard",
+    shard = "hyper.shard.cml",
+    visibility = ["//src/connectivity/policy/http-client:__pkg__"],
 )
 
 rustc_library(
@@ -23,20 +43,25 @@ rustc_library(
         ],
     }),
     edition = "2024",
-    test_deps = [
-        "//third_party/rust_crates/vendor:assert_matches",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//src/lib/fidl/rust/fidl",
-            "//src/lib/fuchsia-sync",
-            "//third_party/rust_crates/vendor:test-case",
-        ],
-        "//conditions:default": [
-            "//third_party/rust_crates/vendor:anyhow",
-        ],
-    }),
-    version = "0.1.0",
-    with_host_unit_tests = True,
+    visibility = [
+        "//build/bazel/update-rustc-third-party:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/lib/analytics/rust:__pkg__",
+        "//src/lib/assembly/product_bundle:__pkg__",
+        "//src/lib/gcs:__subpackages__",
+        "//src/lib/http-sse:__pkg__",
+        "//src/lib/testing/fuchsia-hyper-test-support:__pkg__",
+        "//src/recovery:__subpackages__",
+        "//src/security:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//src/testing/sl4f:__subpackages__",
+        "//src/testing/system-validation/web/file_server:__pkg__",
+        "//third_party/rust_crates:__pkg__",
+        "//third_party/rust_crates/vendor/mock-omaha-server-0.5.0:__pkg__",
+        "//tools/doc_checker:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = [
         "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:futures",
@@ -69,4 +94,71 @@ rustc_library(
             "//third_party/rust_crates/vendor:rustls-native-certs",
         ],
     }),
+)
+
+# @bazel2gn:raw_attribute:output_name = "fuchsia_hyper_lib_test"
+rustc_test(
+    name = "fuchsia-hyper_test",
+    crate = ":fuchsia-hyper",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/lib/fuchsia-sync",
+            "//third_party/rust_crates/vendor:test-case",
+        ],
+        "//conditions:default": [
+            "//third_party/rust_crates/vendor:anyhow",
+        ],
+    }),
+)
+
+wrap_host_rust_test(
+    name = "fuchsia-hyper_host_test",
+    binary_name = "fuchsia-hyper_test",
+)
+
+fx_packaged_binary(
+    name = "fuchsia-hyper_test_packaged_bin",
+    testonly = True,
+    binary = ":fuchsia-hyper_test",
+    binary_name = "fuchsia_hyper_lib_test",
+)
+
+fx_component_manifest(
+    name = "fuchsia-hyper-lib-test-manifest",
+    testonly = True,
+    component_name = "fuchsia-hyper-lib-test",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fuchsia_hyper_lib_test.cml",
+)
+
+fx_test_component(
+    name = "fuchsia-hyper-lib-test",
+    compiled_manifest = ":fuchsia-hyper-lib-test-manifest",
+    component_name = "fuchsia-hyper-lib-test",
+    test_type = "system",
+    deps = [":fuchsia-hyper_test_packaged_bin"],
+)
+
+fx_package(
+    name = "fuchsia-hyper-tests-pkg",
+    package_name = "fuchsia-hyper-tests",
+    testonly = True,
+    test_components = [":fuchsia-hyper-lib-test"],
+)
+
+# `build_only = True` until
+# `//src/connectivity/network/netstack3:component-for-tests` is migrated to
+# Bazel; the test runs via the GN `fuchsia_test_package("fuchsia-hyper-tests")`
+# target in `BUILD.gn`.
+fx_test(
+    name = "fuchsia-hyper-tests",
+    build_only = True,
+    package = ":fuchsia-hyper-tests-pkg",
 )

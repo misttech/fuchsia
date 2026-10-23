@@ -1,0 +1,161 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "http_client",
+    srcs = [
+        "src/main.rs",
+        "src/pkg.rs",
+        "src/resuming_get.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    deps = [
+        ":http_client_config",
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//sdk/fidl/fuchsia.pkg.http:fuchsia.pkg.http_rust",
+        "//sdk/rust/zx",
+        "//src/lib/detect-stall",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/lib/blob_writer:blob-writer",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/pkg/lib/async-generator",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# `http-client-test` is kept in GN because it packages
+# `//src/connectivity/network/dns:component` and
+# `//src/connectivity/network/netstack3:component-for-tests`, which have no
+# Bazel build yet.
+# @bazel2gn:raw_attribute:output_name = "http_client_bin_test"
+rustc_test(
+    name = "http_client_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":http_client",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+# fuchsia_hyper::new_https_client fails if there isn't a file at
+# /config/ssl/cert.pem, but the unit tests don't actually make https connections
+# and so don't need any certs, so we can just give them an empty file instead of
+# making them a system test and giving them the system certs.
+# @bazel2gn:skip
+resource(
+    name = "fake-ssl-certs",
+    testonly = True,
+    src = "fake_cert_for_test.pem",
+    dest = "fake-ssl-certs/cert.pem",
+)
+
+# `build_only = True` until `//src/connectivity/network/dns:component` and
+# `//src/connectivity/network/netstack3:component-for-tests` are migrated to
+# Bazel; the test runs via the GN `fuchsia_unittest_package("http-client-test")`
+# target in `BUILD.gn`.
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "http-client-test",
+    build_only = True,
+    resources = [":fake-ssl-certs"],
+    unit_tests = [":http_client_test"],
+)
+
+fx_packaged_binary(
+    name = "http_client_packaged_bin",
+    binary = ":http_client",
+    binary_name = "http_client",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "http-client",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard.cml",
+        "//src/lib/fuchsia-hyper:hyper.shard",
+    ],
+    manifest = "meta/http_client.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "http-client",
+    # `//src/connectivity/policy/http-client/integration` depends on
+    # `../:component` in GN.
+    # @bazel2gn:skip
+    visibility = [
+        "//src/lib/http-sse:__pkg__",
+        "//src/security/tests/pkg_test/tests/access_ota_blob_as_executable:__pkg__",
+        "//src/security/tests/pkg_test/tests/bad_signature_update:__pkg__",
+        "//src/sys/pkg:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [":http_client_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "google_manifest",
+    component_name = "google-http-client",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard.cml",
+        "//src/lib/fuchsia-hyper:hyper.shard",
+    ],
+    manifest = "meta/google_http_client.cml",
+)
+
+fx_component(
+    name = "google_component",
+    compiled_manifest = ":google_manifest",
+    component_name = "google-http-client",
+    deps = [":http_client_packaged_bin"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "http_client_config",
+    cm_label = ":manifest",
+)

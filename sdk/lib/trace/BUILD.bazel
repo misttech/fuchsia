@@ -13,5 +13,6 @@ exports_files(
     visibility = [
         "//bundles/assembly:__subpackages__",
         "//sdk/lib/vulkan:__pkg__",
+        "//src/connectivity/policy/http-client:__pkg__",
     ],
 )
