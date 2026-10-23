@@ -12,6 +12,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <thread>
 
 #include <fbl/unique_fd.h>
@@ -518,6 +519,62 @@ TEST(PipeTest, SubPipeBufReadAndPartialSpliceWakeBlockedWriter) {
     EXPECT_THAT(write(pipe_a.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
     splicer.join();
   }
+}
+
+TEST(PipeTest, SetPipeSizeRoundingAndWakeBlockedWriter) {
+  const int page_size = getpagesize();
+  test_helper::ScopedPipe pipe;
+
+  // 1. Negative F_SETPIPE_SZ arguments must be rejected with EINVAL.
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, -1), SyscallFailsWithErrno(EINVAL));
+
+  // 2. Non-power-of-two sizes above page_size must round up to the next power of two.
+  // Before fixing F_SETPIPE_SZ rounding, Starnix rounded 3 * page_size to 3 * page_size instead
+  // of 4 * page_size.
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 3 * page_size),
+              SyscallSucceedsWithValue(4 * page_size));
+  EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_GETPIPE_SZ), SyscallSucceedsWithValue(4 * page_size));
+
+  // 3. Growing a full pipe via F_SETPIPE_SZ must wake a blocked writer and assert POLLOUT.
+  std::vector<char> fill(4 * page_size, 'F');
+  ASSERT_EQ(write(pipe.WriteSide().get(), fill.data(), fill.size()), 4 * page_size);
+
+  pollfd pfd = {
+      .fd = pipe.WriteSide().get(),
+      .events = POLLOUT,
+      .revents = 0,
+  };
+  EXPECT_EQ(poll(&pfd, 1, 0), 0);
+
+  std::atomic<bool> writer_done{false};
+  std::thread resizer([&pipe, page_size, &writer_done]() {
+    usleep(20000);
+    EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 8 * page_size),
+                SyscallSucceedsWithValue(8 * page_size));
+    // Linux kernels prior to 6.6.15 (CVE-2023-52672, "pipe: wakeup wr_wait after setting
+    // max_usage") wake `pipe->wr_wait` inside `pipe_resize_ring()` before updating
+    // `pipe->max_usage` in `pipe_set_size()`. If the blocked writer evaluates `pipe_writable()`
+    // before `pipe->max_usage` is updated, it goes back to sleep with `pipe->max_usage` already
+    // set to the new capacity. Re-issuing `F_SETPIPE_SZ` with the same capacity is a wakeup no-op
+    // on Starnix (`requested_capacity == old_capacity`) but triggers `pipe_resize_ring()` on
+    // unpatched Linux kernels to wake `pipe->wr_wait` once `pipe->max_usage` reflects 8 pages.
+    while (!writer_done.load(std::memory_order_acquire)) {
+      usleep(10000);
+      if (!writer_done.load(std::memory_order_acquire)) {
+        EXPECT_THAT(fcntl(pipe.WriteSide().get(), F_SETPIPE_SZ, 8 * page_size),
+                    SyscallSucceedsWithValue(8 * page_size));
+      }
+    }
+  });
+
+  const char payload[] = "GROW";
+  EXPECT_THAT(write(pipe.WriteSide().get(), payload, 4), SyscallSucceedsWithValue(4));
+  writer_done.store(true, std::memory_order_release);
+  resizer.join();
+
+  pfd.revents = 0;
+  EXPECT_EQ(poll(&pfd, 1, 0), 1);
+  EXPECT_EQ(pfd.revents, POLLOUT);
 }
 
 TEST(PipeTest, SpliceValidationAndRlimitFsize) {
