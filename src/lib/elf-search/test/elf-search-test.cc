@@ -408,4 +408,69 @@ TEST(ElfSearchTest, ForEachModule) {
   EXPECT_EQ(moduleCount, std::size(mods), "Unexpected number of modules found.");
 }
 
+TEST(ElfSearchTest, MissingBuildIdDoesNotSkipModules) {
+  const size_t page_size = zx_system_get_page_size();
+
+  const char* file = "bin/elf-search-test-helper";
+  const char* root_dir = getenv("TEST_ROOT_DIR");
+  if (!root_dir) {
+    root_dir = "/pkg";
+  }
+  std::string helper = std::string(root_dir) + "/" + file;
+  const char* argv[] = {helper.c_str()};
+  springboard_t* sb = tu_launch_init(ZX_HANDLE_INVALID, "mod-poison-test", 1, argv, 0, nullptr, 0,
+                                     nullptr, nullptr);
+  auto delete_sb = fit::defer([=] { tu_launch_abort(sb); });
+  zx::unowned_vmar vmar{springboard_get_root_vmar_handle(sb)};
+
+  zx_info_vmar_t vmar_info;
+  ASSERT_OK(vmar->get_info(ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info), nullptr, nullptr));
+
+  // Map a single read-only page at the bottom of the root VMAR containing an ELF header and a
+  // PT_LOAD segment whose p_memsz spans the entire VMAR, but without a PT_NOTE build ID.
+  const Elf64_Phdr poison_phdrs[] = {
+      Elf64_Phdr{
+          .p_type = PT_LOAD,
+          .p_flags = PF_R,
+          .p_offset = 0,
+          .p_vaddr = 0,
+          .p_paddr = 0,
+          .p_filesz = page_size,
+          .p_memsz = vmar_info.len,
+          .p_align = page_size,
+      },
+  };
+  zx::vmo poison_vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &poison_vmo));
+  ASSERT_NO_FATAL_FAILURE((WriteHeaders<Elf64_Ehdr, Elf64_Phdr>(poison_phdrs, poison_vmo)));
+
+  zx_vaddr_t poison_addr = 0;
+  ASSERT_OK(vmar->map(ZX_VM_SPECIFIC | ZX_VM_PERM_READ, 0, poison_vmo, 0, page_size, &poison_addr));
+
+  constexpr Elf64_Phdr mod_phdrs[] = {
+      MakePhdr(PT_LOAD, 0x2000, 0, 0, PF_R, 0x1000),
+      MakePhdr(PT_NOTE, 20, 0x1000, 0x1000, PF_R, 4),
+  };
+  constexpr uint8_t mod_build_id[] = {0xde, 0xad, 0xbe, 0xef};
+  Module<Elf64_Phdr> mod{.name = "mod0", .phdrs = mod_phdrs, .build_id = mod_build_id, .vmo = {}};
+  ASSERT_NO_FATAL_FAILURE(MakeELF(&mod));
+  uintptr_t base = 0, entry = 0;
+  ASSERT_OK(LoadElf(*vmar, mod.vmo, base, entry));
+  EXPECT_GT(base, poison_addr);
+
+  zx::unowned_process process{springboard_get_process_handle(sb)};
+  EXPECT_TRUE(process->is_valid());
+  auto cleanup = fit::defer([&]() { process->kill(); });
+
+  bool found_mod = false;
+  zx_status_t status = elf_search::ForEachModule(*process, [&](const elf_search::ModuleInfo& info) {
+    if (info.build_id.size() == sizeof(mod_build_id) &&
+        std::equal(std::begin(mod_build_id), std::end(mod_build_id), info.build_id.begin())) {
+      found_mod = true;
+    }
+  });
+  EXPECT_OK(status);
+  EXPECT_TRUE(found_mod);
+}
+
 }  // namespace

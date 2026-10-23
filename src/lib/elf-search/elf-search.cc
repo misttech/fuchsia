@@ -309,6 +309,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
   size_t dynamic_count = 0;
   uintptr_t vaddr_start = -1ul;
   size_t next_map_index = 0;
+  zx_vaddr_t current_module_end = 0;
   const size_t page_size = zx_system_get_page_size();
   const size_t size_of_dyn = is_64bit ? sizeof(Elf64_Dyn) : sizeof(Elf32_Dyn);
   for (size_t i = 0; i < phdrs.size(); i++) {
@@ -318,7 +319,7 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
       dynamic_count = phdr.p_filesz / size_of_dyn;
       break;
     }
-    // Update end_of_last_module.
+    // Update current_module_end.
     if (phdr.p_type == PT_LOAD) {
       if (vaddr_start == -1ul) {
         // The first p_vaddr may not be 0.
@@ -347,16 +348,16 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
       // Notice how blob-7736e79f has an interleaved module, namely blob-814b69fa. We want to make
       // sure the end_of_last_module stops at 0xdfe6e000 in this example, rather than purely looking
       // at phdrs to see the actual end of this module at 0xdfe83000.
-      if (i > 0 && end_of_last_module != 0 && next_map_index < next_maps.size()) {
+      if (i > 0 && current_module_end != 0 && next_map_index < next_maps.size()) {
         const auto& next_map = next_maps[next_map_index++];
         if (next_map.base != phdr_start) {
           break;
         }
       }
 
-      end_of_last_module = current_map.base - vaddr_start + phdr.p_vaddr + phdr.p_memsz;
+      current_module_end = current_map.base - vaddr_start + phdr.p_vaddr + phdr.p_memsz;
       // Round up to pages.
-      end_of_last_module = (end_of_last_module + page_size - 1) & -page_size;
+      current_module_end = (current_module_end + page_size - 1) & -page_size;
     }
   }
 
@@ -439,6 +440,10 @@ void DoActionForModule(ProcessMemReader& reader, const zx_info_maps_t& current_m
   } else {
     snprintf(name, sizeof(name), "<VMO#%" PRIu64 ">", current_map.u.mapping.vmo_koid);
   }
+
+  // Only update |end_of_last_module| after all validation checks have passed so an invalid or
+  // incomplete ELF header cannot poison the skip cursor.
+  end_of_last_module = current_module_end;
 
   // All checks have passed so we can give the user a module.
   action(ModuleInfo{
