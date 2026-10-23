@@ -256,11 +256,12 @@ impl CurrentTask {
         // on the exiting thread, where no locks are held. `proc_pid_directory_cache` only holds an
         // `FsNodeHandle`, whose release is already deferred to the delayed releaser.
 
-        if let Some(running_state) = self.running_state.take() {
+        if let Some(ref running_state) = self.running_state {
             *running_state.files.lock() = None;
             running_state.mm.update(None);
-            running_state.fs.update(None);
+            running_state.fs.update(&self, None);
         }
+        self.running_state = None;
 
         *self.files.borrow_mut() = None;
         self.mm = None;
@@ -348,16 +349,15 @@ impl CurrentTask {
         self.running_state().fs().expect("CurrentTask must have FsContext")
     }
 
+    /// Returns whether another running task shares this task's [`FsContext`].
     pub fn has_shared_fs(&self) -> bool {
-        let fs = self.fs();
-        // This check is incorrect because someone else could be holding a temporary Arc to the
-        // FsContext and therefore increasing the strong count.
-        Arc::strong_count(&fs) > 2usize
+        self.fs().is_shared()
     }
 
+    /// Replaces this task's [`FsContext`] with an unshared copy.
     pub fn unshare_fs(&self) {
         let new_fs = self.fs().fork();
-        self.running_state().fs.update(new_fs);
+        self.running_state().fs.update(self, new_fs);
     }
 
     /// Returns the current subjective credentials of the task.
@@ -2330,6 +2330,7 @@ mod tests {
     use super::*;
     use crate::ptrace::{PtraceAttachType, ptrace_attach};
     use crate::testing::{create_task, spawn_kernel_and_run};
+    use starnix_uapi::CLONE_FS;
     use starnix_uapi::auth::{Credentials, PTRACE_MODE_READ_FSCREDS};
     use std::sync::Arc;
 
@@ -2359,6 +2360,47 @@ mod tests {
 
             assert!(running_state.fs().is_err());
             assert!(fs.upgrade().is_none(), "FsContext should be dropped by exit()");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_has_shared_fs_ignores_transient_refs() {
+        spawn_kernel_and_run(async move |current_task| {
+            assert!(!current_task.has_shared_fs());
+
+            let transient_fs = current_task.fs();
+            assert!(!current_task.has_shared_fs());
+            std::mem::drop(transient_fs);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_has_shared_fs_clone_and_unshare() {
+        spawn_kernel_and_run(async move |current_task| {
+            let child = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
+            assert!(current_task.has_shared_fs());
+            assert!(child.has_shared_fs());
+
+            child.unshare_fs();
+            assert!(!current_task.has_shared_fs());
+            assert!(!child.has_shared_fs());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_has_shared_fs_cleared_on_peer_exit() {
+        spawn_kernel_and_run(async move |current_task| {
+            let child = current_task.clone_task_for_test(CLONE_FS as u64, Some(SIGCHLD));
+            let child_running_state =
+                child.task.running_state().expect("child task should be running");
+            assert!(current_task.has_shared_fs());
+
+            std::mem::drop(child);
+            assert!(!current_task.has_shared_fs());
+            std::mem::drop(child_running_state);
         })
         .await;
     }

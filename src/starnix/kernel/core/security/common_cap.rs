@@ -541,9 +541,10 @@ pub(super) fn bprm_creds_from_file(
     //
     // Observed:
     //
-    //   Unlike `MS_NOSUID` (which ignores `file_caps`), `no_new_privs` and
-    //   unprivileged `ptrace` intersect `P'(permitted)` with `P(permitted)` and
-    //   suppress `EPERM`, retaining file capabilities already held by the caller.
+    //   Unlike `MS_NOSUID` (which ignores `file_caps`), `no_new_privs`,
+    //   unprivileged `ptrace`, and shared filesystem context (`CLONE_FS`)
+    //   intersect `P'(permitted)` with `P(permitted)` and suppress `EPERM`,
+    //   retaining file capabilities already held by the caller.
     if mask_caps {
         resolved_program.creds.cap_permitted &= pre_exec_creds.cap_permitted;
     }

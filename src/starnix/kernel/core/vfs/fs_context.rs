@@ -5,6 +5,7 @@
 use crate::security;
 use crate::task::{CurrentTask, MountsWriteToken};
 use crate::vfs::{AccessCheck, ActiveNamespaceNode, Namespace, NamespaceNode};
+use fuchsia_rcu::RcuArc;
 use starnix_logging::log_trace;
 use starnix_sync::LockDepRwLock;
 use starnix_uapi::auth::CAP_SYS_CHROOT;
@@ -12,6 +13,7 @@ use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The mutable state for an FsContext.
 ///
@@ -64,6 +66,55 @@ impl FsContextState {
 #[derive(Debug)]
 pub struct FsContext {
     state: LockDepRwLock<FsContextState, starnix_sync::FsContextStateLock>,
+
+    /// Number of running tasks that have this `FsContext` as their active filesystem context.
+    ///
+    /// Tracked separately from `Arc::strong_count` so that transient `Arc<FsContext>` references
+    /// do not cause a task to appear to share its filesystem context.
+    share_count: AtomicUsize,
+}
+
+/// Wrapper around [`RcuArc<FsContext>`] that maintains the [`FsContext`] share count.
+#[derive(Debug)]
+pub struct SharedFsContext(RcuArc<FsContext>);
+
+impl SharedFsContext {
+    /// Creates a [`SharedFsContext`] holding `fs` and increments its share count.
+    pub fn new(fs: Arc<FsContext>) -> Self {
+        fs.share_count.fetch_add(1, Ordering::Relaxed);
+        Self(RcuArc::new(Some(fs)))
+    }
+
+    /// Returns a strong reference to the underlying [`FsContext`], or `None` if cleared on exit.
+    pub fn upgrade(&self) -> Option<Arc<FsContext>> {
+        self.0.upgrade()
+    }
+
+    /// Replaces the held [`FsContext`] for `current_task` and updates the old and new share counts.
+    pub fn update(&self, current_task: &CurrentTask, fs: impl Into<Option<Arc<FsContext>>>) {
+        // Requiring `&CurrentTask` (`!Sync`) and verifying that `self` belongs to `current_task`
+        // serializes updates so `self.set()` cannot race with another writer on `self`.
+        debug_assert!(std::ptr::eq(&current_task.running_state().fs, self));
+        self.set(fs.into());
+    }
+
+    fn set(&self, fs: Option<Arc<FsContext>>) {
+        if let Some(ref fs) = fs {
+            fs.share_count.fetch_add(1, Ordering::Relaxed);
+        }
+        let old_fs = self.0.upgrade();
+        self.0.update(fs);
+        if let Some(old_fs) = old_fs {
+            let previous = old_fs.share_count.fetch_sub(1, Ordering::AcqRel);
+            debug_assert!(previous >= 1);
+        }
+    }
+}
+
+impl Drop for SharedFsContext {
+    fn drop(&mut self) {
+        self.set(None);
+    }
 }
 
 impl FsContext {
@@ -81,6 +132,7 @@ impl FsContext {
                 umask: FileMode::DEFAULT_UMASK,
             }
             .into(),
+            share_count: AtomicUsize::new(0),
         })
     }
 
@@ -90,7 +142,15 @@ impl FsContext {
         //
         // See <https://man7.org/linux/man-pages/man2/umask.2.html>
 
-        Arc::new(FsContext { state: self.state.read().clone().into() })
+        Arc::new(FsContext {
+            state: self.state.read().clone().into(),
+            share_count: AtomicUsize::new(0),
+        })
+    }
+
+    /// Returns whether more than one running task shares this filesystem context.
+    pub fn is_shared(&self) -> bool {
+        self.share_count.load(Ordering::Acquire) > 1
     }
 
     /// Returns a reference to the current working directory.

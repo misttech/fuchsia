@@ -1591,7 +1591,7 @@ mod tests {
             let (remote_controller_client, remote_controller_server) =
                 create_endpoints::<fbinder::RemoteControllerMarker>();
             REMOTE_CONTROLLER_CLIENT.lock().insert(service_name.clone(), remote_controller_client);
-            let fs = init_task.fs().clone();
+            let fs = init_task.fs().fork();
             let kernel = init_task.kernel().clone();
             let memory_manager = init_task.mm().ok().cloned();
             let init_thread_group = init_task.thread_group().clone();

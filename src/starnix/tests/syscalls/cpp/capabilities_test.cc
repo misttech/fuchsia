@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <lib/fit/defer.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mount.h>
@@ -329,6 +330,27 @@ class CapsExecTest : public ::testing::Test {
 
     ready.poker = test_helper::Poker();
     ready.holder.hold();
+  }
+
+  static void ShareFsWithPeerProcess() {
+    int pipe_fds[2];
+    ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+    fbl::unique_fd read_end(pipe_fds[0]);
+    fbl::unique_fd write_end(pipe_fds[1]);
+    ASSERT_THAT(fcntl(write_end.get(), F_SETFD, FD_CLOEXEC), SyscallSucceeds());
+
+    test_helper::CloneHelper clone_helper;
+    clone_helper.runInClonedChild(CLONE_FS | SIGCHLD, [&]() {
+      write_end.reset();
+      char c;
+      EXPECT_THAT(HANDLE_EINTR(read(read_end.get(), &c, 1)), SyscallSucceedsWithValue(0));
+    });
+
+    read_end.reset();
+    // Keep write_end open until execve(2) closes FD_CLOEXEC descriptors (after
+    // bprm_creds_from_file) so the peer process shares the filesystem context
+    // during credential calculation.
+    std::ignore = write_end.release();
   }
 
   test_helper::ScopedTempDir temp_dir_;
@@ -1766,6 +1788,150 @@ TEST_F(CapsExecTest, PrivilegedPtraceHonorsFileCapabilities) {
       },
       capabilities));
 
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].permitted, 1);
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].effective, 1);
+}
+
+// Observed:
+//
+//   When a task shares its filesystem context (CLONE_FS) with another task,
+//   execve(2) intersects P'(permitted) with P(permitted) and suppresses EPERM,
+//   retaining file capabilities already held by the caller while masking out
+//   unheld file capabilities.
+TEST_F(CapsExecTest, CloneFsMasksFileCapabilities) {
+  uint64_t caps = (1ULL << CAP_NET_ADMIN) | (1ULL << CAP_NET_RAW);
+
+  auto share_fs_with_partial_caps = []() {
+    SwitchToUser1(/*keep_caps=*/true);
+    // Hold CAP_NET_ADMIN in permitted/effective, but not CAP_NET_RAW.
+    test_helper::UnsetCapabilityEffective(CAP_NET_RAW);
+    test_helper::UnsetCapabilityPermitted(CAP_NET_RAW);
+    test_helper::SetCapabilityPermitted(CAP_NET_ADMIN);
+    test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+    ShareFsWithPeerProcess();
+  };
+
+  // Case 1: F(effective) = false -> held capability (CAP_NET_ADMIN) is preserved in
+  // permitted, while unheld capability (CAP_NET_RAW) is masked out.
+  ASSERT_THAT(SetFileCapabilitiesV2(print_helper_, caps, /*inheritable=*/0, /*effective=*/false),
+              SyscallSucceeds());
+
+  std::vector<capability_t> capabilities;
+  ASSERT_TRUE(RunPrintCapabilities(share_fs_with_partial_caps, capabilities));
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].permitted, 1);
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].effective, 0);
+  EXPECT_EQ(capabilities[CAP_NET_RAW].permitted, 0);
+  EXPECT_EQ(capabilities[CAP_NET_RAW].effective, 0);
+
+  // Case 2: F(effective) = true -> execve(2) succeeds without EPERM; held capability
+  // (CAP_NET_ADMIN) is preserved in permitted and effective, while unheld capability
+  // (CAP_NET_RAW) is masked out.
+  ASSERT_THAT(SetFileCapabilitiesV2(print_helper_, caps, /*inheritable=*/0, /*effective=*/true),
+              SyscallSucceeds());
+
+  ASSERT_TRUE(RunPrintCapabilities(share_fs_with_partial_caps, capabilities));
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].permitted, 1);
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].effective, 1);
+  EXPECT_EQ(capabilities[CAP_NET_RAW].permitted, 0);
+  EXPECT_EQ(capabilities[CAP_NET_RAW].effective, 0);
+}
+
+// Observed:
+//
+//   When a task shares its filesystem context (CLONE_FS) with another task and
+//   holds CAP_SETUID, executing a set-user-ID-root binary honors the UID
+//   transition while intersecting P'(permitted) with P(permitted).
+TEST_F(CapsExecTest, CloneFsWithCapSetuidHonorsSuidButMasksCapabilities) {
+  ASSERT_THAT(chown(print_helper_.c_str(), kRootUid, kRootGid), SyscallSucceeds());
+  ASSERT_THAT(chmod(print_helper_.c_str(), S_ISUID | S_IRWXU | S_IXGRP | S_IXOTH),
+              SyscallSucceeds());
+
+  auto share_fs_with_cap_setuid = []() {
+    SwitchToUser1(/*keep_caps=*/true);
+    test_helper::UnsetCapabilityEffective(CAP_CHOWN);
+    test_helper::UnsetCapabilityPermitted(CAP_CHOWN);
+    test_helper::SetCapabilityPermitted(CAP_SETUID);
+    test_helper::SetCapabilityEffective(CAP_SETUID);
+    ShareFsWithPeerProcess();
+  };
+
+  uid_t ruid = 999, euid = 999, suid = 999;
+  ASSERT_TRUE(RunPrintUids(share_fs_with_cap_setuid, &ruid, &euid, &suid));
+  EXPECT_EQ(ruid, kUser1Uid);
+  EXPECT_EQ(euid, kRootUid);
+  EXPECT_EQ(suid, kRootUid);
+
+  std::vector<capability_t> capabilities;
+  ASSERT_TRUE(RunPrintCapabilities(share_fs_with_cap_setuid, capabilities));
+  EXPECT_EQ(capabilities[CAP_SETUID].permitted, 1);
+  EXPECT_EQ(capabilities[CAP_SETUID].effective, 1);
+  EXPECT_EQ(capabilities[CAP_CHOWN].permitted, 0);
+  EXPECT_EQ(capabilities[CAP_CHOWN].effective, 0);
+}
+
+// Verifies that unsharing the filesystem context via unshare(CLONE_FS) or
+// having the CLONE_FS peer process exit prior to execve(2) restores set-user-ID
+// and file-capability transitions.
+TEST_F(CapsExecTest, UnshareFsRestoresSuidAndFileCapabilities) {
+  // 1. Set-user-ID-root binary: restored by unshare(CLONE_FS) or peer exit.
+  ASSERT_THAT(chown(print_helper_.c_str(), kRootUid, kRootGid), SyscallSucceeds());
+  ASSERT_THAT(chmod(print_helper_.c_str(), S_ISUID | S_IRWXU | S_IXGRP | S_IXOTH),
+              SyscallSucceeds());
+
+  uid_t ruid = 999, euid = 999, suid = 999;
+  ASSERT_TRUE(RunPrintUids(
+      []() {
+        SwitchToUser1();
+        ShareFsWithPeerProcess();
+        ASSERT_THAT(unshare(CLONE_FS), SyscallSucceeds());
+      },
+      &ruid, &euid, &suid));
+  EXPECT_EQ(ruid, kUser1Uid);
+  EXPECT_EQ(euid, kRootUid);
+  EXPECT_EQ(suid, kRootUid);
+
+  ruid = 999, euid = 999, suid = 999;
+  ASSERT_TRUE(RunPrintUids(
+      []() {
+        SwitchToUser1();
+        test_helper::CloneHelper clone_helper;
+        int child_pid = clone_helper.runInClonedChild(CLONE_FS | SIGCHLD, []() {});
+        int status = 0;
+        ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+        ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+      },
+      &ruid, &euid, &suid));
+  EXPECT_EQ(ruid, kUser1Uid);
+  EXPECT_EQ(euid, kRootUid);
+  EXPECT_EQ(suid, kRootUid);
+
+  // 2. File capabilities: restored by unshare(CLONE_FS) or peer exit.
+  ASSERT_THAT(chmod(print_helper_.c_str(), S_IRWXU | S_IXGRP | S_IXOTH), SyscallSucceeds());
+  uint64_t caps = (1ULL << CAP_NET_ADMIN);
+  ASSERT_THAT(SetFileCapabilitiesV2(print_helper_, caps, /*inheritable=*/0, /*effective=*/true),
+              SyscallSucceeds());
+
+  std::vector<capability_t> capabilities;
+  ASSERT_TRUE(RunPrintCapabilities(
+      []() {
+        SwitchToUser1();
+        ShareFsWithPeerProcess();
+        ASSERT_THAT(unshare(CLONE_FS), SyscallSucceeds());
+      },
+      capabilities));
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].permitted, 1);
+  EXPECT_EQ(capabilities[CAP_NET_ADMIN].effective, 1);
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      []() {
+        SwitchToUser1();
+        test_helper::CloneHelper clone_helper;
+        int child_pid = clone_helper.runInClonedChild(CLONE_FS | SIGCHLD, []() {});
+        int status = 0;
+        ASSERT_THAT(waitpid(child_pid, &status, 0), SyscallSucceedsWithValue(child_pid));
+        ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+      },
+      capabilities));
   EXPECT_EQ(capabilities[CAP_NET_ADMIN].permitted, 1);
   EXPECT_EQ(capabilities[CAP_NET_ADMIN].effective, 1);
 }

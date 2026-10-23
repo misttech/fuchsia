@@ -4,6 +4,8 @@
 
 #include <fcntl.h>
 #include <grp.h>
+#include <lib/fit/defer.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mount.h>
@@ -131,6 +133,79 @@ TEST_P(SuidTest, SuidBinaryBecomesRoot) {
   }
 
   fclose(fp);
+}
+
+TEST_P(SuidTest, CloneFsSuppressesSuidAndSgid) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  std::string creds_binary = GetCredsBinaryPath();
+
+  test_helper::ScopedTempDir temp_dir;
+  auto mounted = ASSERT_RESULT_SUCCESS_AND_RETURN(
+      test_helper::ScopedMount::Mount("", temp_dir.path(), "tmpfs", mount_flags(), nullptr));
+
+  constexpr int kDirPerms = S_IRWXU | S_IXGRP | S_IXOTH;
+  ASSERT_THAT(chmod(temp_dir.path().c_str(), kDirPerms), SyscallSucceeds());
+
+  std::string suid_binary_path = files::JoinPath(temp_dir.path(), "suid_sgid_binary");
+  std::filesystem::copy_file(creds_binary, suid_binary_path);
+
+  constexpr int kBinaryPerms = S_ISUID | S_ISGID | S_IXGRP | S_IXOTH;
+  ASSERT_THAT(chown(suid_binary_path.c_str(), kRootUid, kRootGid), SyscallSucceeds());
+  ASSERT_THAT(chmod(suid_binary_path.c_str(), kBinaryPerms), SyscallSucceeds());
+
+  fbl::unique_fd fd(SAFE_SYSCALL(test_helper::MemFdCreate("creds", O_RDWR)));
+  ASSERT_TRUE(fd.is_valid());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&]() {
+    EXPECT_THAT(fcntl(kOutputFd, F_GETFD), SyscallFailsWithErrno(EBADF));
+    ASSERT_THAT(dup2(fd.get(), kOutputFd), SyscallSucceeds());
+
+    ASSERT_THAT(setgroups(0, nullptr), SyscallSucceeds());
+    ASSERT_TRUE(change_ids(kUser1Uid, kUser1Gid));
+
+    int pipe_fds[2];
+    ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+    fbl::unique_fd read_end(pipe_fds[0]);
+    fbl::unique_fd write_end(pipe_fds[1]);
+    ASSERT_THAT(fcntl(write_end.get(), F_SETFD, FD_CLOEXEC), SyscallSucceeds());
+
+    test_helper::CloneHelper clone_helper;
+    clone_helper.runInClonedChild(CLONE_FS | SIGCHLD, [&]() {
+      write_end.reset();
+      char c;
+      EXPECT_THAT(HANDLE_EINTR(read(read_end.get(), &c, 1)), SyscallSucceedsWithValue(0));
+    });
+
+    read_end.reset();
+    // Keep write_end open until execve(2) closes FD_CLOEXEC descriptors (after
+    // bprm_creds_from_file) so the peer process shares the filesystem context
+    // during credential calculation.
+    std::ignore = write_end.release();
+
+    char *const argv[] = {const_cast<char *>(suid_binary_path.c_str()), nullptr};
+    ASSERT_THAT(execve(suid_binary_path.c_str(), argv, nullptr), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  FILE *fp = fdopen(fd.release(), "r");
+  ASSERT_NE(fp, nullptr);
+  auto cleanup = fit::defer([fp]() { fclose(fp); });
+
+  uid_t ruid = 0, euid = 0, suid = 0;
+  EXPECT_EQ(fscanf(fp, "ruid: %u euid: %u suid: %u\n", &ruid, &euid, &suid), 3);
+  EXPECT_EQ(ruid, kUser1Uid);
+  EXPECT_EQ(euid, kUser1Uid);
+  EXPECT_EQ(suid, kUser1Uid);
+
+  gid_t rgid = 0, egid = 0, sgid = 0;
+  EXPECT_EQ(fscanf(fp, "rgid: %u egid: %u sgid: %u\n", &rgid, &egid, &sgid), 3);
+  EXPECT_EQ(rgid, kUser1Gid);
+  EXPECT_EQ(egid, kUser1Gid);
+  EXPECT_EQ(sgid, kUser1Gid);
 }
 
 TEST_P(SuidTest, FileModificationsRemoveSuid) {

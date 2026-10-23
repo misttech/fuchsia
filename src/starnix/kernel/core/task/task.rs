@@ -17,7 +17,7 @@ use crate::task::{
     SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
     ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess, ZombieState,
 };
-use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
+use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable, SharedFsContext};
 use atomic_bitflags::atomic_bitflags;
 use fuchsia_rcu::{RcuArc, RcuDroppable, RcuDroppableArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
@@ -1152,7 +1152,7 @@ impl Task {
                     thread: Default::default(),
                     files: Some(files).into(),
                     mm: RcuArc::new(mm),
-                    fs: RcuArc::new(Some(fs)),
+                    fs: SharedFsContext::new(fs),
                     abstract_socket_namespace,
                     abstract_vsock_namespace,
                     proc_pid_directory_cache: Default::default(),

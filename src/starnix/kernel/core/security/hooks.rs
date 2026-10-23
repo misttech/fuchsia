@@ -64,7 +64,7 @@ use linux_uapi::{
 use selinux::{FileSystemMountOptions, InitialSid, SecurityPermission, SecurityServer, TaskAttrs};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug};
 use starnix_uapi::arc_key::WeakKey;
-use starnix_uapi::auth::{Credentials, PtraceAccessMode};
+use starnix_uapi::auth::{CAP_SETUID, Credentials, PtraceAccessMode};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode};
@@ -1626,12 +1626,20 @@ pub fn bprm_creds_from_file(
     resolved_program: &mut ResolvedProgram,
 ) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.bprm_creds_from_file");
-    let mask_caps = {
+    let (no_new_privs, is_ptraced_without_cap_sys_ptrace) = {
         let state = current_task.read();
-        state.no_new_privs() || state.is_ptraced_without_cap_sys_ptrace()
+        (state.no_new_privs(), state.is_ptraced_without_cap_sys_ptrace())
     };
+    let is_unsafe_share_or_ptrace =
+        is_ptraced_without_cap_sys_ptrace || current_task.has_shared_fs();
+    let mask_caps = no_new_privs || is_unsafe_share_or_ptrace;
 
-    let enable_suid = current_task.kernel().features.enable_suid && !mask_caps;
+    // When sharing filesystem context (`CLONE_FS`) or traced by an unprivileged
+    // tracer, set-user-ID and set-group-ID transitions are both gated on
+    // `CAP_SETUID` (Linux does not check `CAP_SETGID` here).
+    let enable_suid = current_task.kernel().features.enable_suid
+        && !no_new_privs
+        && (!is_unsafe_share_or_ptrace || is_task_capable_noaudit(current_task, CAP_SETUID));
     if enable_suid {
         resolved_program.file.name().apply_suid_and_sgid(&mut resolved_program.creds);
     }

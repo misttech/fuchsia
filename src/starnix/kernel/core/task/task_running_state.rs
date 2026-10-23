@@ -4,7 +4,7 @@
 
 use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask};
-use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
+use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable, SharedFsContext};
 use fuchsia_rcu::RcuArc;
 use starnix_sync::{LockDepMutex, TaskFilesLock};
 use starnix_uapi::errno;
@@ -33,12 +33,13 @@ pub struct TaskRunningState {
     /// The memory manager for this task.  This is `None` only for system tasks.
     pub mm: RcuArc<MemoryManager>,
 
-    /// The file system for this task.
+    /// The file system context for this task.
     ///
-    /// This is always `Some` while the task is running. It becomes `None` upon exit, so that the
-    /// `FsContext` (and possibly the whole mount namespace) is released on the exiting thread rather
-    /// than by whichever thread happens to drop the last reference to this `TaskRunningState`.
-    pub fs: RcuArc<FsContext>,
+    /// Holds a reference to the task's [`FsContext`] while the task is running, and is cleared upon
+    /// exit so that the [`FsContext`] (and possibly the whole mount namespace) is released on the
+    /// exiting thread rather than by whichever thread happens to drop the last reference to this
+    /// [`TaskRunningState`].
+    pub(crate) fs: SharedFsContext,
 
     /// The namespace for abstract AF_UNIX sockets for this task.
     pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
