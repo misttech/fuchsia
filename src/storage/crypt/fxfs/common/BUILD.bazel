@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_crypt_common",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/storage/crypt/fxfs:__pkg__",
+        "//src/storage/fxfs:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust_common",
+        "//src/storage/lib/fscrypt",
+        "//third_party/rust_crates/vendor:aes-gcm-siv",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "fxfs_crypt_common_lib_test"
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_component(
+    name = "fxfs_crypt_common_lib_test",
+    binary = ":lib_test",
+)
+
+fx_package(
+    name = "fxfs_crypt_common_lib_tests_package",
+    package_name = "fxfs_crypt_common_lib_tests",
+    test_components = [":fxfs_crypt_common_lib_test"],
+)
+
+fx_test(
+    name = "fxfs_crypt_common_lib_tests",
+    package = ":fxfs_crypt_common_lib_tests_package",
+)
