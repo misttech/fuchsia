@@ -328,25 +328,30 @@ async fn serve_wifi_sta_iface<I: IfaceManager, P: PowerManager>(
     state: Arc<Mutex<WifiState>>,
     reqs: fidl_wlanix::WifiStaIfaceRequestStream,
 ) {
-    reqs.for_each_concurrent(None, |req| async {
-        match req {
-            Ok(req) => {
-                if let Err(e) = handle_wifi_sta_iface_request(
-                    req,
-                    Arc::clone(&iface_manager),
-                    Arc::clone(&power_manager),
-                    Arc::clone(&state),
-                )
-                .await
-                {
-                    warn!("Failed to handle WifiStaIfaceRequest for iface {}: {}", iface_id, e);
+    let (abort_handle, abort_registration) = future::AbortHandle::new_pair();
+    state.lock().sta_iface_abort_handles.push(abort_handle);
+    let _ = future::Abortable::new(
+        reqs.for_each_concurrent(None, |req| async {
+            match req {
+                Ok(req) => {
+                    if let Err(e) = handle_wifi_sta_iface_request(
+                        req,
+                        Arc::clone(&iface_manager),
+                        Arc::clone(&power_manager),
+                        Arc::clone(&state),
+                    )
+                    .await
+                    {
+                        warn!("Failed to handle WifiStaIfaceRequest for iface {}: {}", iface_id, e);
+                    }
+                }
+                Err(e) => {
+                    error!("Wifi sta iface {} request stream failed: {}", iface_id, e);
                 }
             }
-            Err(e) => {
-                error!("Wifi sta iface {} request stream failed: {}", iface_id, e);
-            }
-        }
-    })
+        }),
+        abort_registration,
+    )
     .await;
 }
 
@@ -881,6 +886,7 @@ struct WifiState {
     started: bool,
     callback: Option<fidl_wlanix::WifiEventCallbackProxy>,
     sta_iface_callback: Option<fidl_wlanix::WifiStaIfaceEventCallbackProxy>,
+    sta_iface_abort_handles: Vec<future::AbortHandle>,
     rssi_monitor_cmd_id: Option<i32>,
     scan_multicast_proxies: ScanMulticastProxySet,
     mlme_multicast_proxies: MlmeMulticastProxySet,
@@ -896,6 +902,9 @@ impl WifiState {
     fn on_sta_iface_removed(&mut self) {
         self.sta_iface_callback = None;
         self.rssi_monitor_cmd_id = None;
+        for abort_handle in self.sta_iface_abort_handles.drain(..) {
+            abort_handle.abort();
+        }
     }
 
     fn on_wifi_stopped(&mut self) {
@@ -4100,8 +4109,16 @@ mod tests {
         assert_eq!(response.is_started, Some(false));
         assert!(test_helper.wifi_state.lock().rssi_monitor_cmd_id.is_none());
         assert!(test_helper.wifi_state.lock().sta_iface_callback.is_none());
+        assert!(test_helper.wifi_state.lock().sta_iface_abort_handles.is_empty());
         assert!(test_helper.wifi_state.lock().power_dependency_leases.is_empty());
         assert!(test_helper.power_manager.is_lease_dropped("wlanix-phy-1-dependency"));
+
+        let get_name_fut = test_helper.wifi_sta_iface_proxy.get_name();
+        let mut get_name_fut = pin!(get_name_fut);
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_name_fut),
+            Poll::Ready(Err(fidl::Error::ClientChannelClosed { .. }))
+        );
 
         let power_manager_calls = test_helper.power_manager.calls.lock();
         assert!(power_manager_calls.contains(&"wlanix-power-down".to_string()));
@@ -4618,6 +4635,14 @@ mod tests {
         assert_eq!(test_helper.wifi_state.lock().power_dependency_leases.len(), 1);
         assert!(test_helper.wifi_state.lock().rssi_monitor_cmd_id.is_none());
         assert!(test_helper.wifi_state.lock().sta_iface_callback.is_none());
+        assert!(test_helper.wifi_state.lock().sta_iface_abort_handles.is_empty());
+
+        let get_name_fut = test_helper.wifi_sta_iface_proxy.get_name();
+        let mut get_name_fut = pin!(get_name_fut);
+        assert_matches!(
+            test_helper.exec.run_until_stalled(&mut get_name_fut),
+            Poll::Ready(Err(fidl::Error::ClientChannelClosed { .. }))
+        );
 
         let power_manager_calls = test_helper.power_manager.calls.lock();
         assert_eq!(power_manager_calls.len(), 2);

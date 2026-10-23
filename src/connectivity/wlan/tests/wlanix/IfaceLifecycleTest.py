@@ -8,7 +8,7 @@ Battery of tests of the lifecycle of ifaces managed by wlanix.
 import fuchsia_wlan_base_test
 import wlanix_testing
 from mobly import test_runner
-from mobly.asserts import assert_equal
+from mobly.asserts import assert_equal, assert_raises
 
 
 class IfaceLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -59,10 +59,8 @@ class IfaceLifecycleTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             "WifiChip should no longer contain the iface just removed",
         )
 
-        # TODO(https://fxbug.dev/365110075): Uncomment this check once wlanix supports
-        # stopping a WifiStaIface after its iface is removed via WifiChip.RemoveStaIface
-        # with assertRaises(Exception):
-        #     (await iface.wifi_sta_iface.get_name()).unwrap()
+        with assert_raises(Exception):
+            (await iface.wifi_sta_iface.get_name()).unwrap()
 
 
 if __name__ == "__main__":
