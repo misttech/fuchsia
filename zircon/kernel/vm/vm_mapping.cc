@@ -130,8 +130,8 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
 VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
                      uint32_t vmar_flags, fbl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
                      arch_mmu_flags_t arch_mmu_flags, Mergeable mergeable)
-    : VmMapping(parent, private_clone, base, size, vmar_flags, vmo, vmo_offset, arch_mmu_flags,
-                btree::BTree<vaddr_t, arch_mmu_flags_t>(), mergeable) {}
+    : VmMapping(parent, private_clone, base, size, vmar_flags, ktl::move(vmo), vmo_offset,
+                arch_mmu_flags, btree::BTree<vaddr_t, arch_mmu_flags_t>(), mergeable) {}
 
 VmMapping::~VmMapping() { rust_vm_mapping_destruct(this); }
 
