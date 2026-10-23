@@ -52,17 +52,14 @@ rustc_library(
 
 # The GN build uses `group("rust")` above the bazel2gn sentinel in BUILD.gn so
 # that GN dependents also get `//sdk/lib/inspect:client_includes`.
+# `visibility = ["//:__subpackages__"]` matches `find_rdeps.sh`
+# `per_target_recommended_visibility` for a globally-used library (107 callers
+# across 21 areas) while satisfying `visibility_audit` (which forbids
+# `"//visibility:public"` outside `//build/bazel_sdk` and top-level area
+# wildcards).
 # @bazel2gn:skip
 alias(
     name = "rust",
     actual = ":lib",
-    visibility = [
-        "//src/sys/pkg/bin/omaha-client:__pkg__",
-        "//src/sys/pkg/bin/system-update-checker:__pkg__",
-        "//src/sys/pkg/bin/system-update-committer:__pkg__",
-        "//src/sys/pkg/bin/system-updater:__pkg__",
-        "//src/sys/stash:__pkg__",
-        "//src/sys/time/lib/pull-source:__pkg__",
-        "//src/sys/time/testing/fake-hrtimer:__pkg__",
-    ],
+    visibility = ["//:__subpackages__"],
 )

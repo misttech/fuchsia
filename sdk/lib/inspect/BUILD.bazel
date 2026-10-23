@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -21,4 +23,24 @@ exports_files(
         "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
         "//src/sys/pkg/tests/pkg-resolver:__pkg__",
     ],
+)
+
+cml_shard(
+    name = "offer.shard",
+    shard = "offer.shard.cml",
+)
+
+cml_shard(
+    name = "use.shard",
+    shard = "use.shard.cml",
+)
+
+cml_shard(
+    name = "client.shard",
+    includes = [
+        ":offer.shard",
+        ":use.shard",
+    ],
+    shard = "client.shard.cml",
+    visibility = ["//src/power/shutdown-shim:__subpackages__"],
 )

@@ -94,7 +94,6 @@ group("embeddable") {
     "//bundles/assembly/bazel_inputs/src/bringup/bin/critical-services:package",
     "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/platform:package",
     "//bundles/assembly/bazel_inputs/src/diagnostics/archivist:package",
-    "//bundles/assembly/bazel_inputs/src/power/shutdown-shim:package",
   ]
 }
 

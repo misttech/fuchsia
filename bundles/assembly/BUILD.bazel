@@ -121,7 +121,7 @@ assembly_input_bundle(
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/critical-services:package",
         "//bundles/assembly/bazel_inputs/src/diagnostics/archivist:package",
-        "//bundles/assembly/bazel_inputs/src/power/shutdown-shim:package",
+        "//src/power/shutdown-shim:package",
     ],
     root_shards = [
         "//src/sys/root:root.cml",

@@ -1,0 +1,132 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    ["meta/shutdown-shim.base.cml"],
+    visibility = ["//src/power/shutdown-shim/tests:__pkg__"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "shutdown-shim",
+    includes = [
+        "meta/shutdown-shim.base.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/shutdown-shim.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "shutdown-shim-config",
+    cm_label = ":manifest",
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/collaborative_reboot.rs",
+        "src/lib.rs",
+        "src/reboot_reasons.rs",
+        "src/shutdown_watcher.rs",
+    ],
+    crate_name = "shutdown_shim",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+    deps = [
+        ":shutdown-shim-config",
+        "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.power:fuchsia.power_rust",
+        "//sdk/fidl/fuchsia.power.internal:fuchsia.power.internal_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/trace/rust:trace",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "shutdown-shim-unittests",
+    unit_tests = [":lib_test"],
+)
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    binary_name = "shutdown-shim",
+    build_flags = ["//build/config/rust:bootfs"],
+    edition = "2024",
+    visibility = ["//src/power/shutdown-shim/tests:__pkg__"],
+    deps = [
+        ":lib",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+# shutdown-shim uses the boot log.
+# The includes checker wants the syslog shard because console gets the
+# injected dep on the legacy syslog backend.
+# @bazel2gn:skip
+fx_component(
+    name = "component",
+    check_includes = False,
+    compiled_manifest = ":manifest",
+    component_name = "shutdown-shim",
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "package",
+    package_name = "shutdown-shim",
+    components = [":component"],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

@@ -5,6 +5,17 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
+# NOTE: `shutdown_shim_integration_test_bin`,
+# `shutdown_shim_integration_test_component`, and
+# `shutdown-shim-integration-tests` remain in BUILD.gn because
+# `shutdown_shim_integration_test_bin` depends on
+# `//src/lib/fuchsia-component-test`, which bundles the unmigrated GN-only
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`.
+# `shutdown_shim_component` also remains in BUILD.gn because it is depended on
+# by `:shutdown-shim-integration-tests` as well as GN-only test packages in
+# `//src/sys/component_manager/tests/reboot_on_terminate`,
+# `//src/sys/pkg/bin/omaha-client`, and
+# `//src/sys/pkg/lib/omaha-client-fuchsia`.
 rustc_test("shutdown_shim_integration_test_bin") {
   edition = "2024"
   source_root = "src/main.rs"
@@ -46,6 +57,7 @@ fuchsia_component("shutdown_shim_integration_test_component") {
   testonly = true
 }
 
+# LINT.IfChange
 # The shutdown shim runs from the ZBI in prod, so there isn't a
 # fuchsia_component target that exists yet that we can depend on. Let's define
 # one here so we can put the shim in our test package.
@@ -55,6 +67,8 @@ fuchsia_component("shutdown_shim_component") {
   deps = [ "..:bin" ]
   testonly = true
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 fuchsia_test_package("shutdown-shim-integration-tests") {
   deps = [

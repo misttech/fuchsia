@@ -1,0 +1,61 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `shutdown_shim_integration_test_bin`,
+# `shutdown_shim_integration_test_component`, and
+# `shutdown-shim-integration-tests` remain in BUILD.gn because
+# `shutdown_shim_integration_test_bin` depends on
+# `//src/lib/fuchsia-component-test`, which bundles the unmigrated GN-only
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`.
+# `shutdown_shim_component` is duplicated in BUILD.gn for
+# `:shutdown-shim-integration-tests` and GN-only test packages in
+# `//src/sys/component_manager/tests/reboot_on_terminate`,
+# `//src/sys/pkg/bin/omaha-client`, and
+# `//src/sys/pkg/lib/omaha-client-fuchsia`.
+# LINT.IfChange
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "shutdown_shim_packaged_bin",
+    testonly = True,
+    binary = "//src/power/shutdown-shim:bin",
+    binary_name = "shutdown-shim",
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "shutdown_shim_manifest",
+    testonly = True,
+    component_name = "shutdown-shim",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/power/shutdown-shim:meta/shutdown-shim.base.cml",
+    ],
+    manifest = "meta/shutdown-shim.cml",
+)
+
+# The shutdown shim runs from the ZBI in prod, so there isn't a
+# fuchsia_component target that exists yet that we can depend on. Let's define
+# one here so we can put the shim in our test package.
+# @bazel2gn:skip
+fx_component(
+    name = "shutdown_shim_component",
+    testonly = True,
+    compiled_manifest = ":shutdown_shim_manifest",
+    component_name = "shutdown-shim",
+    deps = [":shutdown_shim_packaged_bin"],
+)
+# LINT.ThenChange(BUILD.gn)
