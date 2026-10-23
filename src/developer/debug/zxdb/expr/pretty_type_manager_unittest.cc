@@ -229,18 +229,17 @@ TEST_F(PrettyTypeManagerTest, RustStringObject) {
   auto vec_type = MakeCollectionType(
       DwarfTag::kStructureType, "Vec<*>",
       {
-          {"buf",
-           MakeCollectionType(
-               DwarfTag::kStructureType, "RawVec",
-               {{"inner", MakeCollectionType(
-                              DwarfTag::kStructureType, "RawVecInner",
-                              {{"ptr", MakeCollectionType(
-                                           DwarfTag::kStructureType, "Pointer",
-                                           {{"pointer",
-                                             MakeCollectionType(
-                                                 DwarfTag::kStructureType, "core::ptr::Unique<u8>",
-                                                 {{"pointer", MakeRustCharPointerType()}})}})},
-                               {"cap", MakeUint64Type()}})}})},
+          {"buf", MakeCollectionType(
+                      DwarfTag::kStructureType, "RawVec",
+                      {{"inner",
+                        MakeCollectionType(
+                            DwarfTag::kStructureType, "RawVecInner",
+                            {{"ptr", MakeCollectionType(DwarfTag::kStructureType,
+                                                        "core::ptr::non_null::NonNull<u8>",
+                                                        {{"pointer", MakeRustCharPointerType()}})},
+                             {"cap", MakeCollectionType(DwarfTag::kStructureType,
+                                                        "core::num::niche_types::UsizeNoHighBit",
+                                                        {{"__0", MakeUint64Type()}})}})}})},
           {"len", MakeUint64Type()},
       });
   SymbolTestParentSetter vec_type_parent(vec_type, vec_namespace);

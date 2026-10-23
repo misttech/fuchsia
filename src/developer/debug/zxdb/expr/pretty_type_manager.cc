@@ -402,21 +402,20 @@ void PrettyTypeManager::AddDefaultRustPrettyTypes() {
   // Owned version of String, OsString and Vec.
   rust_.emplace_back(InternalGlob("alloc::string::String"),
                      std::make_unique<PrettyHeapString>(
-                         "vec.buf.inner.ptr.pointer.pointer as *u8", "vec.len",
-                         GetterList{{"as_ptr", "vec.buf.ptr.pointer.pointer as *u8"},
-                                    {"as_mut_ptr", "vec.buf.ptr.pointer.pointer as *u8"},
+                         "vec.buf.inner.ptr.pointer as *u8", "vec.len",
+                         GetterList{{"as_ptr", "vec.buf.inner.ptr.pointer as *u8"},
+                                    {"as_mut_ptr", "vec.buf.inner.ptr.pointer as *u8"},
                                     {"len", "vec.len"},
-                                    {"capacity", "vec.buf.inner.cap"},
+                                    {"capacity", "vec.buf.inner.cap.__0"},
                                     {"is_empty", "vec.len == 0"}}));
-  rust_.emplace_back(
-      InternalGlob("std::ffi::os_str::OsString"),
-      std::make_unique<PrettyHeapString>(
-          "inner.inner.inner.buf.ptr.pointer.pointer as *u8", "inner.inner.inner.len",
-          GetterList{{"as_ptr", "inner.inner.buf.ptr.pointer.pointer as *u8"},
-                     {"as_mut_ptr", "inner.inner.buf.ptr.pointer.pointer as *u8"},
-                     {"len", "inner.inner.len"},
-                     {"capacity", "inner.inner.buf.cap"},
-                     {"is_empty", "inner.inner.len == 0"}}));
+  rust_.emplace_back(InternalGlob("std::ffi::os_str::OsString"),
+                     std::make_unique<PrettyHeapString>(
+                         "inner.inner.buf.inner.ptr.pointer as *u8", "inner.inner.len",
+                         GetterList{{"as_ptr", "inner.inner.buf.inner.ptr.pointer as *u8"},
+                                    {"as_mut_ptr", "inner.inner.buf.inner.ptr.pointer as *u8"},
+                                    {"len", "inner.inner.len"},
+                                    {"capacity", "inner.inner.buf.inner.cap.__0"},
+                                    {"is_empty", "inner.inner.len == 0"}}));
   // The RawVec implementation only stores a pointer to a u8 which contains the data and only upon
   // use does it convert those bytes to the correct type. The original type is kept in a PhantomData
   // marker member, so we have to use that to correctly calculate the size of the array when doing
@@ -432,25 +431,25 @@ void PrettyTypeManager::AddDefaultRustPrettyTypes() {
   // only has one template parameter.
   rust_.emplace_back(
       InternalGlob("alloc::vec::Vec<*>"),
-      std::make_unique<PrettyArray>("buf.inner.ptr.pointer.pointer", "len", "buf._marker",
-                                    GetterList{{"as_ptr", "buf.inner.ptr.pointer.pointer"},
-                                               {"as_mut_ptr", "buf.inner.ptr.pointer.pointer"},
+      std::make_unique<PrettyArray>("buf.inner.ptr.pointer", "len", "buf._marker",
+                                    GetterList{{"as_ptr", "buf.inner.ptr.pointer"},
+                                               {"as_mut_ptr", "buf.inner.ptr.pointer"},
                                                {"len", "len"},
-                                               {"capacity", "buf.cap"},
+                                               {"capacity", "buf.inner.cap.__0"},
                                                {"is_empty", "len == 0"}}));
   // RawVec is in the inside of a Vec (used for some other containers so we have this pretty-printer
   // to show the user). The RawVec holds only the capacity and doesn't know its length so typically
   // contains some uninitialized memory. To avoid misleading data, only show the capacity.
   rust_.emplace_back(InternalGlob("alloc::raw_vec::RawVec<*>"),
-                     std::make_unique<PrettyStruct>(GetterList{{"capacity", "cap"}}));
+                     std::make_unique<PrettyStruct>(GetterList{{"capacity", "inner.cap.__0"}}));
 
   // A BinaryHeap is a wrapper around a "Vec" named "data".
   rust_.emplace_back(
       InternalGlob("alloc::collections::binary_heap::BinaryHeap<*>"),
-      std::make_unique<PrettyArray>(
-          "data.buf.inner.ptr.pointer.pointer", "data.len", "data.buf._marker",
-          GetterList{
-              {"len", "data.len"}, {"capacity", "data.buf.cap"}, {"is_empty", "data.len == 0"}}));
+      std::make_unique<PrettyArray>("data.buf.inner.ptr.pointer", "data.len", "data.buf._marker",
+                                    GetterList{{"len", "data.len"},
+                                               {"capacity", "data.buf.inner.cap.__0"},
+                                               {"is_empty", "data.len == 0"}}));
 
   // Smart pointers.
   rust_.emplace_back(

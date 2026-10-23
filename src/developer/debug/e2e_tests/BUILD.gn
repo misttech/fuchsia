@@ -136,9 +136,8 @@ if (is_host && has_board) {
         "scripts/cpp_fn_return_values.script",
         "scripts/inlined_frames.script",
         "scripts/pretty_types.script",
-
-        # "scripts/pretty_types_rust.script",
-        # "scripts/rust_fn_arguments.script",
+        "scripts/pretty_types_rust.script",
+        "scripts/rust_fn_arguments.script",
         "scripts/rust_fn_call.script",
         "scripts/rust_fn_return_values.script",
         "scripts/rust_pretty_stack.script",
