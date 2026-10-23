@@ -63,6 +63,8 @@ class DhcpController:
         return logs
 
     def reset_dhcp_config(self) -> None:
-        """Resets DHCP configuration to system defaults."""
-        self.ssh.run("cp /rom/etc/config/dhcp /etc/config/dhcp")
-        self.ssh.run("/etc/init.d/dnsmasq restart")
+        """Resets DHCP configuration to system defaults if modified or stopped."""
+        self.ssh.run(
+            "cmp -s /rom/etc/config/dhcp /etc/config/dhcp && pidof dnsmasq >/dev/null "
+            "|| (cp /rom/etc/config/dhcp /etc/config/dhcp && /etc/init.d/dnsmasq restart)"
+        )
