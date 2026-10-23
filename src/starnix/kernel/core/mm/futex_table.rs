@@ -18,11 +18,17 @@ use std::cell::Cell;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomPinned;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 
 /// Number of hash buckets in the kernel-wide [`FutexTable`]. Must be a power of two.
 const NUM_BUCKETS: usize = 1024;
+
+/// Number of 64-bit words in [`FutexTable::rt_mutex_bucket_mask`].
+const RT_MUTEX_MASK_WORDS: usize = NUM_BUCKETS / 64;
+
+/// Maximum depth when walking transitive RT-Mutex priority-inheritance chains.
+const MAX_RT_MUTEX_CHAIN_DEPTH: usize = 16;
 
 /// Compact 16-byte key identifying either a private (`FUTEX_PRIVATE_FLAG`) or shared futex.
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd)]
@@ -65,6 +71,8 @@ impl FutexKeyValue {
 /// eliminating per-process table allocations and per-wait heap allocations.
 pub struct FutexTable {
     buckets: Box<[LockDepMutex<FutexBucket, FutexTableStateLock>; NUM_BUCKETS]>,
+    active_rt_mutex_waiters: AtomicUsize,
+    rt_mutex_bucket_mask: [AtomicU64; RT_MUTEX_MASK_WORDS],
 }
 
 impl Default for FutexTable {
@@ -73,11 +81,46 @@ impl Default for FutexTable {
             std::iter::repeat_with(|| LockDepMutex::new(FutexBucket::default()))
                 .take(NUM_BUCKETS)
                 .collect();
-        Self { buckets: buckets.into_boxed_slice().try_into().unwrap_or_else(|_| unreachable!()) }
+        Self {
+            buckets: buckets.into_boxed_slice().try_into().unwrap_or_else(|_| unreachable!()),
+            active_rt_mutex_waiters: AtomicUsize::new(0),
+            rt_mutex_bucket_mask: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
     }
 }
 
 impl FutexTable {
+    #[inline]
+    fn set_rt_mutex_bucket_active(&self, b: usize) {
+        self.rt_mutex_bucket_mask[b / 64].fetch_or(1u64 << (b % 64), Ordering::Relaxed);
+    }
+
+    #[inline]
+    fn clear_rt_mutex_bucket_active(&self, b: usize) {
+        self.rt_mutex_bucket_mask[b / 64].fetch_and(!(1u64 << (b % 64)), Ordering::Relaxed);
+    }
+
+    #[inline]
+    fn on_rt_mutex_waiter_removed(&self, b: usize, bucket: &FutexBucket) {
+        if bucket.rt_mutex_waiters.head.is_none() {
+            self.clear_rt_mutex_bucket_active(b);
+        }
+        self.active_rt_mutex_waiters.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn pop_rt_mutex_waiter(
+        &self,
+        b: usize,
+        bucket: &mut FutexBucket,
+        key: &FutexKeyValue,
+    ) -> Option<UnattachedWaiter> {
+        let popped = bucket.pop_rt_mutex_waiter(key);
+        if popped.is_some() {
+            self.on_rt_mutex_waiter_removed(b, bucket);
+        }
+        popped
+    }
+
     #[inline]
     fn bucket_index(key: &FutexKeyValue) -> usize {
         let mut hasher = FxHasher::default();
@@ -280,6 +323,78 @@ impl FutexTable {
         }
     }
 
+    /// Returns the highest priority (lowest numerical `task_prio` value) among waiters blocked on
+    /// any RT-Mutex currently owned by `owner_tid`, including transitive priority boosts.
+    pub fn get_rt_mutex_priority_boost(&self, owner_tid: u32) -> Option<i64> {
+        let mut visited = [0u32; MAX_RT_MUTEX_CHAIN_DEPTH];
+        self.get_rt_mutex_priority_boost_inner(owner_tid, 0, &mut visited)
+    }
+
+    fn get_rt_mutex_priority_boost_inner(
+        &self,
+        owner_tid: u32,
+        depth: usize,
+        visited: &mut [u32; MAX_RT_MUTEX_CHAIN_DEPTH],
+    ) -> Option<i64> {
+        if depth >= MAX_RT_MUTEX_CHAIN_DEPTH
+            || self.active_rt_mutex_waiters.load(Ordering::Acquire) == 0
+        {
+            return None;
+        }
+        visited[depth] = owner_tid;
+        let mut min_prio: Option<i64> = None;
+        for (word_idx, mask_word) in self.rt_mutex_bucket_mask.iter().enumerate() {
+            let mut mask = mask_word.load(Ordering::Relaxed);
+            while mask != 0 {
+                let bit = mask.trailing_zeros() as usize;
+                mask &= mask - 1;
+                let b = word_idx * 64 + bit;
+                if let Some(bucket_top) = self.get_rt_mutex_top_waiter(b, owner_tid, depth, visited)
+                {
+                    min_prio =
+                        Some(min_prio.map_or(bucket_top, |cur| std::cmp::min(cur, bucket_top)));
+                }
+            }
+        }
+        min_prio
+    }
+
+    /// Evaluates the top waiter for each RT-Mutex in bucket `b` owned by `owner_tid` (including
+    /// transitive priority boosts) and returns the highest priority (lowest numerical `task_prio`
+    /// value) across those mutexes.
+    fn get_rt_mutex_top_waiter(
+        &self,
+        b: usize,
+        owner_tid: u32,
+        depth: usize,
+        visited: &mut [u32; MAX_RT_MUTEX_CHAIN_DEPTH],
+    ) -> Option<i64> {
+        let waiters = self.buckets[b].lock().get_rt_mutex_waiters(owner_tid);
+        if waiters.is_empty() {
+            return None;
+        }
+        let mut top_per_key: Vec<(FutexKeyValue, (i64, i64))> = Vec::new();
+        for (key, mut task_prio, waiter_tid) in waiters {
+            if visited[..=depth].contains(&waiter_tid) {
+                continue;
+            }
+            if let Some(transitive_boost) =
+                self.get_rt_mutex_priority_boost_inner(waiter_tid, depth + 1, visited)
+            {
+                task_prio = std::cmp::min(task_prio, transitive_boost);
+            }
+            let waiter_prio = rt_mutex_waiter_prio_from_task_prio(task_prio);
+            if let Some((_, cur)) = top_per_key.iter_mut().find(|(k, _)| *k == key) {
+                if waiter_prio < cur.0 {
+                    *cur = (waiter_prio, task_prio);
+                }
+            } else {
+                top_per_key.push((key, (waiter_prio, task_prio)));
+            }
+        }
+        top_per_key.into_iter().map(|(_, (_, task_prio))| task_prio).min()
+    }
+
     /// Lock the futex at the given address.
     ///
     /// See FUTEX_LOCK_PI.
@@ -291,18 +406,31 @@ impl FutexTable {
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let mm = current_task.mm()?;
-        // Perform a placeholder CAS to pre-fault the page with write permissions (e.g. for COW
-        // pages) before acquiring the bucket lock to make page faults or memory reclamation under
-        // the lock highly unlikely.
+        let tid = current_task.get_tid() as u32;
+        // Check for self-deadlock or uncontended acquisition before reading scheduler state or
+        // acquiring the bucket lock. For contended futexes, perform a placeholder CAS to pre-fault
+        // writable permissions (e.g. for COW pages) before locking the bucket.
         // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
         // supported by Zircon.
         if let Ok(current) = mm.atomic_load_u32_relaxed(addr) {
-            let _ = mm.atomic_compare_exchange_u32_acq_rel(addr, current, current);
+            if current & FUTEX_TID_MASK == tid {
+                return error!(EDEADLOCK);
+            }
+            if current == 0 {
+                if matches!(
+                    mm.atomic_compare_exchange_u32_acq_rel(addr, 0, tid),
+                    CompareExchangeResult::Success
+                ) {
+                    return Ok(());
+                }
+            } else {
+                let _ = mm.atomic_compare_exchange_u32_acq_rel(addr, current, current);
+            }
         }
-        let tid = current_task.get_tid() as u32;
+        let priority = current_task.scheduler_state.lock().task_priority();
         let key = Key::get(&mm, addr)?;
         let b = Self::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, tid, b as u16);
+        let node = WaiterNode::new_stack_rt_mutex(key, tid, priority, b as u16);
         let event_guard = node.event().begin_wait();
 
         let mut bucket = self.buckets[b].lock();
@@ -351,6 +479,7 @@ impl FutexTable {
             break new_owner_tid;
         };
 
+        node.owner_tid.set(new_owner_tid);
         let queued_guard = StackWaiterGuard::insert_rt_mutex(self, &mut bucket, &node);
         std::mem::drop(bucket);
 
@@ -408,20 +537,14 @@ impl FutexTable {
             return error!(EPERM);
         }
 
-        let maybe_node = bucket.pop_rt_mutex_waiter(&key);
-        let target_value = maybe_node.as_ref().map_or(0, |w| w.tid());
+        let target_value = bucket.peek_rt_mutex_target_value(&key);
 
         // Use acq/rel ordering to synchronize with acquire ordering on userspace lock ops and
         // with the release ordering on userspace unlock ops.
         let handoff = mm.atomic_compare_exchange_u32_acq_rel(addr, expected_value, target_value);
-        if let Err(e) = handoff_result(handoff) {
-            if let Some(node) = maybe_node {
-                bucket.unpop_rt_mutex_waiter(node);
-            }
-            return Err(e);
-        }
+        handoff_result(handoff)?;
 
-        if let Some(node) = maybe_node {
+        if let Some(node) = self.pop_rt_mutex_waiter(b, &mut bucket, &key) {
             // SAFETY: `node` was popped from `bucket` under the current lock acquisition.
             unsafe {
                 bucket.wake_and_mark_woken(node);
@@ -568,6 +691,13 @@ fn task_futex_priority(task: &Task) -> u8 {
     task.scheduler_state.lock().futex_priority()
 }
 
+/// Maps a Linux `task_prio` value to the priority key used to order RT-Mutex waiters
+/// (`__waiter_prio` in Linux `kernel/locking/rtmutex_common.h`).
+#[inline]
+fn rt_mutex_waiter_prio_from_task_prio(task_prio: i64) -> i64 {
+    if task_prio < 0 { task_prio } else { 20 }
+}
+
 enum WaiterKind {
     /// Stack-allocated `InterruptibleEvent` (used by `wait` and `lock_pi`).
     StackEvent(InterruptibleEvent),
@@ -590,6 +720,11 @@ struct WaiterNode {
     /// Scheduling priority used to order `waiters` (`FUTEX_WAIT`); unused (`0`) for
     /// `rt_mutex_waiters` (`FUTEX_LOCK_PI`).
     prio: u8,
+    /// The waiter's effective task priority (`task_prio` value; lower values mean higher priority)
+    /// for `rt_mutex_waiters` (`FUTEX_LOCK_PI`).
+    task_prio: i64,
+    /// The tid of the current owner of the RT-Mutex this waiter is blocked on.
+    owner_tid: Cell<u32>,
     attached: Cell<bool>,
     woken: AtomicBool,
     bucket_idx: AtomicU16,
@@ -607,6 +742,26 @@ impl WaiterNode {
             key: Cell::new(key),
             mask,
             prio,
+            task_prio: 20,
+            owner_tid: Cell::new(0),
+            attached: Cell::new(false),
+            woken: AtomicBool::new(false),
+            bucket_idx: AtomicU16::new(bucket_idx),
+            tid: Cell::new(tid),
+            kind: WaiterKind::StackEvent(InterruptibleEvent::default()),
+            _pin: PhantomPinned,
+        }
+    }
+
+    fn new_stack_rt_mutex(key: FutexKeyValue, tid: u32, task_prio: i64, bucket_idx: u16) -> Self {
+        Self {
+            prev: Cell::new(None),
+            next: Cell::new(None),
+            key: Cell::new(key),
+            mask: u32::MAX,
+            prio: 0,
+            task_prio,
+            owner_tid: Cell::new(0),
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -623,6 +778,8 @@ impl WaiterNode {
             key: Cell::new(key),
             mask,
             prio,
+            task_prio: 20,
+            owner_tid: Cell::new(0),
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -645,6 +802,8 @@ impl WaiterNode {
             key: Cell::new(key),
             mask,
             prio: NormalPriority::default().raw_priority(),
+            task_prio: 20,
+            owner_tid: Cell::new(0),
             attached: Cell::new(false),
             woken: AtomicBool::new(false),
             bucket_idx: AtomicU16::new(bucket_idx),
@@ -652,6 +811,14 @@ impl WaiterNode {
             kind: WaiterKind::External { token, sender },
             _pin: PhantomPinned,
         }
+    }
+
+    /// Returns the priority used for RT-Mutex waiter queue ordering (`__waiter_prio` in Linux
+    /// `kernel/locking/rtmutex_common.h`). Real-time tasks (`task_prio < 0`) are ordered by their
+    /// real-time priority, while non-real-time tasks all share `DEFAULT_PRIO` (`20`, nice 0) and
+    /// are queued FIFO relative to one another.
+    fn rt_mutex_waiter_prio(&self) -> i64 {
+        rt_mutex_waiter_prio_from_task_prio(self.task_prio)
     }
 
     fn event(&self) -> &InterruptibleEvent {
@@ -885,6 +1052,42 @@ impl WaiterList {
         self.push_front(waiter);
     }
 
+    /// Inserts an RT-Mutex `waiter` in ascending [`WaiterNode::rt_mutex_waiter_prio`] order
+    /// (lower numerical values mean higher priority), preserving FIFO order among waiters of
+    /// equal priority.
+    fn insert_rt_mutex_by_prio(&mut self, waiter: UnattachedWaiter) {
+        let node_ptr = waiter.0;
+        // SAFETY: `waiter` is an `UnattachedWaiter`, all nodes in `self` are valid, and `&mut self`
+        // proves the enclosing bucket lock is held.
+        unsafe {
+            let node = node_ptr.as_ref();
+            let waiter_prio = node.rt_mutex_waiter_prio();
+            let mut cur = self.tail;
+            while let Some(c) = cur {
+                if c.as_ref().rt_mutex_waiter_prio() <= waiter_prio {
+                    // Insert right after `c`.
+                    let _ = waiter.into_raw();
+                    let was_attached = node.attached.replace(true);
+                    debug_assert!(!was_attached);
+                    let next = c.as_ref().next.get();
+                    node.prev.set(Some(c));
+                    node.next.set(next);
+                    c.as_ref().next.set(Some(node_ptr));
+                    if let Some(n) = next {
+                        n.as_ref().prev.set(Some(node_ptr));
+                    } else {
+                        self.tail = Some(node_ptr);
+                    }
+                    return;
+                }
+                cur = c.as_ref().prev.get();
+            }
+        }
+        // `waiter_prio` is strictly higher priority (lower value) than all existing nodes (or the
+        // list is empty).
+        self.push_front(waiter);
+    }
+
     /// Unlinks `node_ptr` from `self` and returns it as an [`UnattachedWaiter`].
     ///
     /// # Safety
@@ -1088,11 +1291,34 @@ impl FutexBucket {
         }
     }
 
-    /// Pop the next RT-Mutex for the given address.
+    /// Returns the futex word value to write when unlocking `key`: `0` if no waiters are queued
+    /// for `key`, the next waiter's TID if exactly one waiter is queued for `key`, or the next
+    /// waiter's TID with `FUTEX_WAITERS` set if more than one waiter is queued for `key`.
+    fn peek_rt_mutex_target_value(&self, key: &FutexKeyValue) -> u32 {
+        let mut cur = self.rt_mutex_waiters.head;
+        let mut first_tid = None;
+        while let Some(node_ptr) = cur {
+            // SAFETY: `node_ptr` is linked in `self.rt_mutex_waiters` under the bucket lock.
+            let matched_tid = unsafe {
+                let node = node_ptr.as_ref();
+                cur = node.next.get();
+                (node.key.get() == *key).then(|| node.tid.get() & FUTEX_TID_MASK)
+            };
+            if let Some(tid) = matched_tid {
+                if let Some(first) = first_tid {
+                    return first | FUTEX_WAITERS;
+                }
+                first_tid = Some(tid);
+            }
+        }
+        first_tid.unwrap_or(0)
+    }
+
+    /// Pop the next RT-Mutex waiter for `key` and update remaining waiters' `owner_tid`.
     fn pop_rt_mutex_waiter(&mut self, key: &FutexKeyValue) -> Option<UnattachedWaiter> {
         let mut cur = self.rt_mutex_waiters.head;
         let mut popped = None;
-        let mut has_more_for_key = false;
+        let mut second_match = None;
         while let Some(node_ptr) = cur {
             // SAFETY: `node_ptr` is linked in `self.rt_mutex_waiters` under the bucket lock.
             let matches = unsafe {
@@ -1105,29 +1331,47 @@ impl FutexBucket {
                     // SAFETY: `node_ptr` is currently linked in `self.rt_mutex_waiters`.
                     popped = Some(unsafe { self.rt_mutex_waiters.unlink(node_ptr) });
                 } else {
-                    has_more_for_key = true;
+                    second_match = Some(node_ptr);
                     break;
                 }
             }
         }
         if let Some(ref mut waiter) = popped {
-            if has_more_for_key {
-                let tid = waiter.tid();
-                waiter.set_tid(self, tid | FUTEX_WAITERS);
+            let new_owner_tid = waiter.tid() & FUTEX_TID_MASK;
+            if let Some(second_ptr) = second_match {
+                waiter.set_tid(self, new_owner_tid | FUTEX_WAITERS);
+                let mut cur = Some(second_ptr);
+                while let Some(node_ptr) = cur {
+                    // SAFETY: `node_ptr` is linked in `self.rt_mutex_waiters` under the bucket lock.
+                    unsafe {
+                        let node = node_ptr.as_ref();
+                        cur = node.next.get();
+                        if node.key.get() == *key {
+                            node.owner_tid.set(new_owner_tid);
+                        }
+                    }
+                }
             }
         }
         popped
     }
 
-    /// Puts a waiter popped for a handoff that did not happen back at the head of its queue.
-    ///
-    /// Clearing `FUTEX_WAITERS` undoes what `pop_rt_mutex_waiter` set, restoring the tid the
-    /// waiter was queued with. The waiter must go back, otherwise it would conclude from its
-    /// absence that it was made the new owner of a mutex it does not hold.
-    fn unpop_rt_mutex_waiter(&mut self, mut waiter: UnattachedWaiter) {
-        let tid = waiter.tid();
-        waiter.set_tid(self, tid & FUTEX_TID_MASK);
-        self.rt_mutex_waiters.push_front(waiter);
+    /// Returns `(key, task_prio, waiter_tid)` for all RT-Mutex waiters in this bucket currently
+    /// blocked on `owner_tid`, in queue order.
+    fn get_rt_mutex_waiters(&self, owner_tid: u32) -> Vec<(FutexKeyValue, i64, u32)> {
+        let mut waiters = Vec::new();
+        let mut cur = self.rt_mutex_waiters.head;
+        while let Some(node_ptr) = cur {
+            // SAFETY: `node_ptr` is linked in `self.rt_mutex_waiters` under the bucket lock.
+            unsafe {
+                let node = node_ptr.as_ref();
+                cur = node.next.get();
+                if node.owner_tid.get() == owner_tid {
+                    waiters.push((node.key.get(), node.task_prio, node.tid.get() & FUTEX_TID_MASK));
+                }
+            }
+        }
+        waiters
     }
 }
 
@@ -1159,10 +1403,16 @@ impl<'a> StackWaiterGuard<'a> {
         bucket: &mut FutexBucket,
         node: &'a WaiterNode,
     ) -> Self {
+        let b = node.bucket_idx.load(Ordering::Relaxed) as usize;
+        let was_empty = bucket.rt_mutex_waiters.head.is_none();
         // SAFETY: The returned `StackWaiterGuard` ensures `node` is unlinked or woken before `'a`
         // ends.
         let unattached = unsafe { UnattachedWaiter::from_stack(node) };
-        bucket.rt_mutex_waiters.push_back(unattached);
+        bucket.rt_mutex_waiters.insert_rt_mutex_by_prio(unattached);
+        if was_empty {
+            table.set_rt_mutex_bucket_active(b);
+        }
+        table.active_rt_mutex_waiters.fetch_add(1, Ordering::Release);
         Self { table, node, is_rt_mutex: true, active: true }
     }
 
@@ -1200,6 +1450,9 @@ impl<'a> StackWaiterGuard<'a> {
             // `self.node` is currently linked in `list`.
             let unattached = unsafe { list.unlink(NonNull::from(self.node)) };
             unattached.into_removed_stack_node();
+            if self.is_rt_mutex {
+                self.table.on_rt_mutex_waiter_removed(b, &bucket);
+            }
             return true;
         }
     }
@@ -1238,7 +1491,6 @@ impl Drop for StackWaiterGuard<'_> {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1392,7 +1644,7 @@ mod tests {
         let table = FutexTable::default();
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
-        let node = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
+        let node = WaiterNode::new_stack_rt_mutex(key, 1, 20, b as u16);
 
         let guard = StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node);
         assert_eq!(table.buckets[b].lock().rt_mutex_waiters.len(), 1);
@@ -1411,13 +1663,13 @@ mod tests {
         let key = test_key(0x1000);
         let b = FutexTable::bucket_index(&key);
 
-        let node1 = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
+        let node1 = WaiterNode::new_stack_rt_mutex(key, 1, 20, b as u16);
         let _eg1 = node1.event().begin_wait();
         let guard1 =
             StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node1);
         assert_eq!(guard1.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
 
-        let node2 = WaiterNode::new_stack_event(key, u32::MAX, 0, 1, b as u16);
+        let node2 = WaiterNode::new_stack_rt_mutex(key, 1, 20, b as u16);
         let _eg2 = node2.event().begin_wait();
         let guard2 =
             StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &node2);
@@ -1425,7 +1677,7 @@ mod tests {
         // The handoff performed by `unlock_pi` takes the waiter out of the queue.
         {
             let mut bucket = table.buckets[b].lock();
-            let popped = bucket.pop_rt_mutex_waiter(&key).unwrap();
+            let popped = table.pop_rt_mutex_waiter(b, &mut bucket, &key).unwrap();
             // SAFETY: `popped` was unlinked from `bucket` under the current lock acquisition.
             unsafe {
                 bucket.wake_and_mark_woken(popped);
@@ -1634,6 +1886,192 @@ mod tests {
         assert!(table.buckets[b].lock().waiters.is_empty());
     }
 
+    #[fuchsia::test]
+    fn test_rt_mutex_priority_boost_and_handoff() {
+        let table = FutexTable::default();
+        let key = test_key(0x1000);
+        let b = FutexTable::bucket_index(&key);
+
+        let n1 = WaiterNode::new_stack_rt_mutex(key, 20, 25, b as u16);
+        n1.owner_tid.set(10);
+        let _e1 = n1.event().begin_wait();
+
+        let n2 = WaiterNode::new_stack_rt_mutex(key, 30, 20, b as u16);
+        n2.owner_tid.set(10);
+        let _e2 = n2.event().begin_wait();
+
+        let n3 = WaiterNode::new_stack_rt_mutex(key, 40, -2, b as u16);
+        n3.owner_tid.set(10);
+        let _e3 = n3.event().begin_wait();
+
+        let (g1, g2) = {
+            let mut bucket = table.buckets[b].lock();
+            (
+                StackWaiterGuard::insert_rt_mutex(&table, &mut bucket, &n1),
+                StackWaiterGuard::insert_rt_mutex(&table, &mut bucket, &n2),
+            )
+        };
+
+        // Non-RT waiters share DEFAULT_PRIO (20) for queue ordering and are queued FIFO, so tid 20
+        // remains the top waiter and boosts owner 10 to priority 25.
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        // A real-time waiter (priority -2) queues ahead of normal waiters and becomes the top
+        // waiter.
+        let g3 = StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b].lock(), &n3);
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(-2));
+
+        // Popping hands off to real-time waiter tid 40 first and updates owner_tid to 40.
+        {
+            let mut bucket = table.buckets[b].lock();
+            let popped_rt = table.pop_rt_mutex_waiter(b, &mut bucket, &key).unwrap();
+            assert_eq!(popped_rt.tid(), 40 | FUTEX_WAITERS);
+            // SAFETY: `popped_rt` was unlinked from `bucket` under the current lock acquisition.
+            unsafe {
+                bucket.wake_and_mark_woken(popped_rt);
+            }
+        }
+        assert_eq!(g3.resolve(Ok(())), Ok(()));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), None);
+        assert_eq!(table.get_rt_mutex_priority_boost(40), Some(25));
+
+        // Next handoff goes to tid 20 (the first normal waiter in FIFO order), which now sees
+        // tid 30 (priority 20) as its top waiter.
+        {
+            let mut bucket = table.buckets[b].lock();
+            let popped1 = table.pop_rt_mutex_waiter(b, &mut bucket, &key).unwrap();
+            assert_eq!(popped1.tid(), 20 | FUTEX_WAITERS);
+            // SAFETY: `popped1` was unlinked from `bucket` under the current lock acquisition.
+            unsafe {
+                bucket.wake_and_mark_woken(popped1);
+            }
+        }
+        assert_eq!(g1.resolve(Ok(())), Ok(()));
+        assert_eq!(table.get_rt_mutex_priority_boost(40), None);
+        assert_eq!(table.get_rt_mutex_priority_boost(20), Some(20));
+
+        // Popping the last waiter clears the boost and active bucket mask immediately, even before
+        // the woken waiter runs `resolve`.
+        {
+            let mut bucket = table.buckets[b].lock();
+            let popped2 = table.pop_rt_mutex_waiter(b, &mut bucket, &key).unwrap();
+            assert_eq!(popped2.tid(), 30);
+            // SAFETY: `popped2` was unlinked from `bucket` under the current lock acquisition.
+            unsafe {
+                bucket.wake_and_mark_woken(popped2);
+            }
+        }
+        assert_eq!(table.active_rt_mutex_waiters.load(Ordering::Relaxed), 0);
+        assert_eq!(table.get_rt_mutex_priority_boost(20), None);
+        assert_eq!(g2.resolve(Ok(())), Ok(()));
+        assert_eq!(table.active_rt_mutex_waiters.load(Ordering::Relaxed), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_rt_mutex_transitive_priority_boost_expires_when_upstream_waiter_leaves() {
+        let table = FutexTable::default();
+        let key1 = test_key(0x1000);
+        let key2 = test_key(0x2000);
+        let b1 = FutexTable::bucket_index(&key1);
+        let b2 = FutexTable::bucket_index(&key2);
+
+        // Middle waiter tid 20 (base prio 25) is blocked on owner tid 10.
+        let mid_node = WaiterNode::new_stack_rt_mutex(key1, 20, 25, b1 as u16);
+        mid_node.owner_tid.set(10);
+        let _mid_eg = mid_node.event().begin_wait();
+        let mid_guard =
+            StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b1].lock(), &mid_node);
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        // Upstream waiter tid 30 (base prio 20) blocks on middle waiter tid 20, transitively
+        // boosting owner tid 10 to priority 20.
+        let up_node = WaiterNode::new_stack_rt_mutex(key2, 30, 20, b2 as u16);
+        up_node.owner_tid.set(20);
+        let _up_eg = up_node.event().begin_wait();
+        let up_guard =
+            StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b2].lock(), &up_node);
+        assert_eq!(table.get_rt_mutex_priority_boost(20), Some(20));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(20));
+
+        // When upstream waiter tid 30 times out while tid 20 is still blocked on tid 10, the
+        // transitive boost on tid 10 must revert to tid 20's base priority (25).
+        assert_eq!(up_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(table.get_rt_mutex_priority_boost(20), None);
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        // A second waiter on `key1` (tid 21, base prio 25) that receives a transitive real-time
+        // boost (-5) overtakes the earlier non-RT waiter on `key1`.
+        let second_waiter_node = WaiterNode::new_stack_rt_mutex(key1, 21, 25, b1 as u16);
+        second_waiter_node.owner_tid.set(10);
+        let _second_eg = second_waiter_node.event().begin_wait();
+        let second_guard = StackWaiterGuard::insert_rt_mutex(
+            &table,
+            &mut table.buckets[b1].lock(),
+            &second_waiter_node,
+        );
+        let rt_up_node = WaiterNode::new_stack_rt_mutex(key2, 31, -5, b2 as u16);
+        rt_up_node.owner_tid.set(21);
+        let _rt_up_eg = rt_up_node.event().begin_wait();
+        let rt_up_guard =
+            StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b2].lock(), &rt_up_node);
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(-5));
+        assert_eq!(rt_up_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(second_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        // When `owner_tid` holds multiple PI mutexes (in the same bucket or in a higher-indexed
+        // bucket), `get_rt_mutex_priority_boost` compares the top waiter's `task_prio` across all
+        // held mutexes rather than stopping at the first non-RT waiter in bucket/queue order.
+        let same_bucket_key = (3..4096)
+            .map(|i| test_key(i * 0x1000))
+            .find(|k| *k != key1 && FutexTable::bucket_index(k) == b1)
+            .unwrap();
+        let same_bucket_node = WaiterNode::new_stack_rt_mutex(same_bucket_key, 22, 20, b1 as u16);
+        same_bucket_node.owner_tid.set(10);
+        let _same_bucket_eg = same_bucket_node.event().begin_wait();
+        let same_bucket_guard = StackWaiterGuard::insert_rt_mutex(
+            &table,
+            &mut table.buckets[b1].lock(),
+            &same_bucket_node,
+        );
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(20));
+        assert_eq!(same_bucket_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        let higher_bucket_key = (3..4096)
+            .map(|i| test_key(i * 0x1000))
+            .find(|k| FutexTable::bucket_index(k) > b1)
+            .unwrap();
+        let b_high = FutexTable::bucket_index(&higher_bucket_key);
+        let higher_bucket_node =
+            WaiterNode::new_stack_rt_mutex(higher_bucket_key, 23, 20, b_high as u16);
+        higher_bucket_node.owner_tid.set(10);
+        let _higher_bucket_eg = higher_bucket_node.event().begin_wait();
+        let higher_bucket_guard = StackWaiterGuard::insert_rt_mutex(
+            &table,
+            &mut table.buckets[b_high].lock(),
+            &higher_bucket_node,
+        );
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(20));
+        assert_eq!(higher_bucket_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+
+        // A multi-node lock cycle (`20 -> 10 -> 20`) must stop at the revisited `owner_tid`
+        // rather than walking the cycle and feeding `20`'s own priority (25) back through `10`
+        // (30) into `20`.
+        let cycle_node = WaiterNode::new_stack_rt_mutex(key2, 10, 30, b2 as u16);
+        cycle_node.owner_tid.set(20);
+        let _cycle_eg = cycle_node.event().begin_wait();
+        let cycle_guard =
+            StackWaiterGuard::insert_rt_mutex(&table, &mut table.buckets[b2].lock(), &cycle_node);
+        assert_eq!(table.get_rt_mutex_priority_boost(20), Some(30));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), Some(25));
+        assert_eq!(cycle_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+
+        assert_eq!(mid_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+        assert_eq!(table.get_rt_mutex_priority_boost(10), None);
+    }
+
     /// Private futexes at the same virtual address in two different processes (`MemoryManager`s)
     /// must not collide.
     #[::fuchsia::test]
@@ -1743,8 +2181,8 @@ mod tests {
     }
 
     /// `unlock_pi` must hand the mutex to the next live waiter after an earlier waiter cancelled,
-    /// preserve `FUTEX_WAITERS` while further waiters remain, and restore the waiter via
-    /// `unpop_rt_mutex_waiter` if the futex word CAS fails.
+    /// preserve `FUTEX_WAITERS` while further waiters remain, and leave the waiter queue intact
+    /// if the futex word CAS fails.
     #[::fuchsia::test]
     async fn test_unlock_pi_hands_over_to_next_waiter_after_cancelled_one() {
         use crate::mm::memory::MemoryObject;
@@ -1776,19 +2214,30 @@ mod tests {
             const CANCELLED_TID: u32 = 0x111;
             const NEXT_OWNER_TID: u32 = 0x222;
             const THIRD_WAITER_TID: u32 = 0x333;
+            const OTHER_RT_WAITER_TID: u32 = 0x444;
             let futex_table = FutexTable::default();
             let key = PrivateFutexKey::get(&mm, futex_addr).unwrap();
             let b = FutexTable::bucket_index(&key);
+            let other_key = (1..4096)
+                .map(|i| test_key(i * 0x1000))
+                .find(|k| *k != key && FutexTable::bucket_index(k) == b)
+                .unwrap();
 
-            let next_node = WaiterNode::new_stack_event(key, u32::MAX, 0, NEXT_OWNER_TID, b as u16);
+            let next_node = WaiterNode::new_stack_rt_mutex(key, NEXT_OWNER_TID, 20, b as u16);
+            next_node.owner_tid.set(owner_tid);
             let _next_eg = next_node.event().begin_wait();
-            let third_node =
-                WaiterNode::new_stack_event(key, u32::MAX, 0, THIRD_WAITER_TID, b as u16);
+            let third_node = WaiterNode::new_stack_rt_mutex(key, THIRD_WAITER_TID, 25, b as u16);
+            third_node.owner_tid.set(owner_tid);
             let _third_eg = third_node.event().begin_wait();
+            let other_rt_node =
+                WaiterNode::new_stack_rt_mutex(other_key, OTHER_RT_WAITER_TID, -2, b as u16);
+            other_rt_node.owner_tid.set(owner_tid);
+            let _other_rt_eg = other_rt_node.event().begin_wait();
 
             {
                 let cancelled_node =
-                    WaiterNode::new_stack_event(key, u32::MAX, 0, CANCELLED_TID, b as u16);
+                    WaiterNode::new_stack_rt_mutex(key, CANCELLED_TID, 20, b as u16);
+                cancelled_node.owner_tid.set(owner_tid);
                 let _cancelled_guard = StackWaiterGuard::insert_rt_mutex(
                     &futex_table,
                     &mut futex_table.buckets[b].lock(),
@@ -1807,17 +2256,23 @@ mod tests {
                 &mut futex_table.buckets[b].lock(),
                 &third_node,
             );
+            let other_rt_guard = StackWaiterGuard::insert_rt_mutex(
+                &futex_table,
+                &mut futex_table.buckets[b].lock(),
+                &other_rt_node,
+            );
 
-            // Make the mapping read-only so `unlock_pi` can read `expected_value`, pop `next_node`,
-            // fail the handoff CAS with `EACCES`, and restore `next_node` via
-            // `unpop_rt_mutex_waiter` (clearing its `FUTEX_WAITERS` bit).
+            // Make the mapping read-only so `unlock_pi` can read `expected_value`, peek
+            // `target_value`, and fail the handoff CAS with `EACCES` without unlinking `next_node`
+            // or disturbing the real-time waiter at the head of `rt_mutex_waiters`.
             mm.protect(current_task, addr, *PAGE_SIZE as usize, ProtectionFlags::READ)
                 .expect("protect READ failed");
             assert_eq!(
                 futex_table.unlock_pi::<PrivateFutexKey>(current_task, addr),
                 error!(EACCES)
             );
-            assert_eq!(futex_table.buckets[b].lock().rt_mutex_waiters.len(), 2);
+            assert_eq!(futex_table.buckets[b].lock().rt_mutex_waiters.len(), 3);
+            assert_eq!(futex_table.get_rt_mutex_priority_boost(owner_tid), Some(-2));
 
             mm.protect(
                 current_task,
@@ -1833,8 +2288,10 @@ mod tests {
                 NEXT_OWNER_TID | FUTEX_WAITERS,
                 "the mutex should be handed to NEXT_OWNER_TID with FUTEX_WAITERS still set"
             );
+            assert_eq!(futex_table.get_rt_mutex_priority_boost(NEXT_OWNER_TID), Some(25));
             assert_eq!(next_guard.resolve(error!(ETIMEDOUT)), Ok(()));
             assert_eq!(third_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
+            assert_eq!(other_rt_guard.resolve(error!(ETIMEDOUT)), error!(ETIMEDOUT));
             assert!(futex_table.buckets[b].lock().rt_mutex_waiters.is_empty());
         })
         .await;

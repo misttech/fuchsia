@@ -73,7 +73,6 @@
                 "pthread.pthread_mutex_lock_null_32",
                 "pthread.pthread_mutex_owner_tid_limit",
                 "pthread.pthread_mutex_pi_count_limit",
-                "pthread.pthread_mutex_pi_wakeup",
                 "pthread.pthread_mutex_unlock_null_32",
                 "pthread.pthread_create_with_sme_off",
                 "pthread.pthread_create_with_sme_dormant_state",

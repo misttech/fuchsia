@@ -4,18 +4,24 @@
 
 #include <fcntl.h>
 #include <lib/fit/defer.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <barrier>
+#include <chrono>
 #include <ctime>
 #include <latch>
 #include <new>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1364,6 +1370,229 @@ TEST(FutexTest, UntimedFutexWaitReturnsEagainIfValueChangedDuringSignalHandler) 
     EXPECT_EQ(wait_result.load(), -1);
     EXPECT_EQ(wait_errno.load(), EAGAIN);
     EXPECT_EQ(g_signal_count.load(), 1);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+std::optional<long> GetThreadProcStatPriority(pid_t tid) {
+  std::string content;
+  if (!files::ReadFileToString("/proc/" + std::to_string(tid) + "/stat", &content)) {
+    return std::nullopt;
+  }
+  size_t rparen = content.rfind(')');
+  if (rparen == std::string::npos || rparen + 2 >= content.size()) {
+    return std::nullopt;
+  }
+  std::istringstream iss(content.substr(rparen + 2));
+  std::string token;
+  // Field 3 (state) is index 0 after ") "; field 18 (priority) is index 15.
+  for (int i = 0; i <= 15; ++i) {
+    if (!(iss >> token)) {
+      return std::nullopt;
+    }
+  }
+  char *end = nullptr;
+  long value = strtol(token.c_str(), &end, 10);
+  if (end == token.c_str() || *end != '\0') {
+    return std::nullopt;
+  }
+  return value;
+}
+
+// Polls field 18 of /proc/<tid>/stat until it equals `expected` or a deadline passes, and returns
+// the last value read. A thread that is merely sleeping is not proof that it is queued on a PI
+// futex, so tests wait on the boost itself.
+std::optional<long> WaitForThreadProcStatPriority(pid_t tid, long expected) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  std::optional<long> priority = GetThreadProcStatPriority(tid);
+  while (priority != expected && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    priority = GetThreadProcStatPriority(tid);
+  }
+  return priority;
+}
+
+// Polls a PI futex word until the kernel sets FUTEX_WAITERS, which it does only once another
+// thread is blocking in FUTEX_LOCK_PI on it. Returns false if a deadline passes first.
+bool WaitForFutexWaitersBit(const std::atomic<uint32_t> &futex_word) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+  while ((futex_word.load() & FUTEX_WAITERS) == 0) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+TEST(FutexTest, LockPiBoostsOwnerPriorityInProcStat) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    struct sigaction sa = {};
+    sa.sa_handler = CountingSignalHandler;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    const pid_t pid = getpid();
+    const pid_t high_tid = static_cast<pid_t>(syscall(SYS_gettid));
+    SAFE_SYSCALL(setpriority(PRIO_PROCESS, high_tid, 0));
+    ASSERT_EQ(GetThreadProcStatPriority(high_tid), 20);
+
+    std::atomic<uint32_t> futex_word{0};
+    std::atomic<pid_t> owner_tid_published{0};
+    std::atomic<pid_t> mid_tid_published{0};
+    std::latch owner_locked(1);
+    std::latch low_ready(1);
+    std::latch mid_queuing(1);
+    std::latch high_queuing(1);
+
+    std::thread owner([&] {
+      const pid_t owner_tid = static_cast<pid_t>(syscall(SYS_gettid));
+      owner_tid_published.store(owner_tid);
+      SAFE_SYSCALL(setpriority(PRIO_PROCESS, owner_tid, 10));
+      EXPECT_EQ(GetThreadProcStatPriority(owner_tid), 30);
+
+      SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      EXPECT_EQ(futex_word.load(), static_cast<uint32_t>(owner_tid));
+      owner_locked.count_down();
+
+      // Wait until `low_waiter`, `mid_waiter`, and `high_tid` are all queued on `futex_word`
+      // concurrently while `owner` holds the lock.
+      high_queuing.wait();
+      EXPECT_TRUE(test_helper::WaitForTaskState(
+          pid, high_tid, [](std::string_view state) { return state == "S"; }));
+      EXPECT_EQ(GetThreadProcStatPriority(owner_tid), 25);
+
+      SAFE_SYSCALL(
+          syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      EXPECT_EQ(GetThreadProcStatPriority(owner_tid), 30);
+    });
+
+    owner_locked.wait();
+    const pid_t owner_tid = owner_tid_published.load();
+    EXPECT_THAT(syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0),
+                SyscallFailsWithErrno(EPERM));
+
+    std::thread low_waiter([&] {
+      const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+      SAFE_SYSCALL(setpriority(PRIO_PROCESS, tid, 5));
+      EXPECT_EQ(GetThreadProcStatPriority(tid), 25);
+      low_ready.count_down();
+
+      SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      // `mid_waiter` and `high_tid` were already queued when `owner` unlocked, so `FUTEX_WAITERS`
+      // remains set and their `owner_tid` was transferred to `low_waiter`. Interrupt `mid_waiter`
+      // so `high_tid` (which was already queued during `owner`'s unlock) becomes the top waiter
+      // on `low_waiter`, boosting `low_waiter` from 25 to 20.
+      EXPECT_EQ(futex_word.load(), static_cast<uint32_t>(tid) | FUTEX_WAITERS);
+      EXPECT_EQ(GetThreadProcStatPriority(tid), 25);
+      SAFE_SYSCALL(syscall(SYS_tgkill, pid, mid_tid_published.load(), SIGUSR1));
+      EXPECT_EQ(WaitForThreadProcStatPriority(tid, 20), 20);
+
+      SAFE_SYSCALL(
+          syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      EXPECT_EQ(GetThreadProcStatPriority(tid), 25);
+    });
+
+    // Wait until `low_waiter` is queued on `futex_word` and boosting `owner` to 25.
+    low_ready.wait();
+    EXPECT_TRUE(WaitForFutexWaitersBit(futex_word));
+    EXPECT_EQ(WaitForThreadProcStatPriority(owner_tid, 25), 25);
+
+    std::thread mid_waiter([&] {
+      const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+      mid_tid_published.store(tid);
+      SAFE_SYSCALL(setpriority(PRIO_PROCESS, tid, 5));
+      mid_queuing.count_down();
+      long ret = syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0);
+      if (ret == 0) {
+        SAFE_SYSCALL(
+            syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      } else {
+        EXPECT_EQ(errno, EINTR);
+      }
+    });
+
+    mid_queuing.wait();
+    ASSERT_TRUE(test_helper::WaitForTaskState(pid, mid_tid_published.load(),
+                                              [](std::string_view state) { return state == "S"; }));
+
+    high_queuing.count_down();
+    SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+    EXPECT_EQ(futex_word.load() & FUTEX_TID_MASK, static_cast<uint32_t>(high_tid));
+    SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+
+    mid_waiter.join();
+    low_waiter.join();
+    owner.join();
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(FutexTest, LockPiRealtimeWaiterBoostsOwnerPriorityInProcStat) {
+  if (!test_helper::HasCapability(CAP_SYS_NICE)) {
+    GTEST_SKIP() << "Setting a real-time scheduling policy requires CAP_SYS_NICE.";
+  }
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    const pid_t owner_tid = static_cast<pid_t>(syscall(SYS_gettid));
+    SAFE_SYSCALL(setpriority(PRIO_PROCESS, owner_tid, 0));
+    ASSERT_EQ(GetThreadProcStatPriority(owner_tid), 20);
+
+    // Real-time tasks report -1 - rt_priority.
+    for (int rt_priority : {1, 99}) {
+      sched_param param = {.sched_priority = rt_priority};
+      SAFE_SYSCALL(sched_setscheduler(owner_tid, SCHED_FIFO, &param));
+      EXPECT_EQ(GetThreadProcStatPriority(owner_tid), -1 - rt_priority);
+    }
+    sched_param normal_param = {.sched_priority = 0};
+    SAFE_SYSCALL(sched_setscheduler(owner_tid, SCHED_OTHER, &normal_param));
+    ASSERT_EQ(GetThreadProcStatPriority(owner_tid), 20);
+
+    std::atomic<uint32_t> futex_word{0};
+    SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+    ASSERT_EQ(futex_word.load(), static_cast<uint32_t>(owner_tid));
+
+    std::atomic<int> acquire_order{0};
+    int normal_order = 0;
+    int rt_order = 0;
+
+    std::thread normal_waiter([&] {
+      const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+      SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      EXPECT_EQ(futex_word.load() & FUTEX_TID_MASK, static_cast<uint32_t>(tid));
+      normal_order = ++acquire_order;
+      SAFE_SYSCALL(
+          syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+    });
+
+    // Wait until `normal_waiter` is queued on `futex_word` before spawning `rt_waiter`.
+    ASSERT_TRUE(WaitForFutexWaitersBit(futex_word));
+
+    std::thread rt_waiter([&] {
+      const pid_t tid = static_cast<pid_t>(syscall(SYS_gettid));
+      sched_param param = {.sched_priority = 1};
+      SAFE_SYSCALL(sched_setscheduler(tid, SCHED_FIFO, &param));
+      EXPECT_EQ(GetThreadProcStatPriority(tid), -2);
+
+      SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_LOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+      EXPECT_EQ(futex_word.load(), static_cast<uint32_t>(tid) | FUTEX_WAITERS);
+      rt_order = ++acquire_order;
+      SAFE_SYSCALL(
+          syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+    });
+
+    // The SCHED_OTHER owner inherits the real-time waiter's priority while it is queued.
+    EXPECT_EQ(WaitForThreadProcStatPriority(owner_tid, -2), -2);
+
+    SAFE_SYSCALL(syscall(SYS_futex, &futex_word, FUTEX_UNLOCK_PI_PRIVATE, 0, nullptr, nullptr, 0));
+    EXPECT_EQ(GetThreadProcStatPriority(owner_tid), 20);
+
+    rt_waiter.join();
+    normal_waiter.join();
+    EXPECT_EQ(rt_order, 1);
+    EXPECT_EQ(normal_order, 2);
   });
   EXPECT_TRUE(helper.WaitForChildren());
 }

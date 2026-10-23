@@ -1265,7 +1265,7 @@ impl DynamicFileSource for StatFile {
         let stime: i64; // 15
         let cutime: i64;
         let cstime: i64;
-        let priority: i64;
+        let mut priority: i64;
         let nice: i64;
         let num_threads: i64; // 20
         let itrealvalue: i64 = 0;
@@ -1308,6 +1308,11 @@ impl DynamicFileSource for StatFile {
             let scheduler_state = task.scheduler_state.lock();
             priority = scheduler_state.task_priority();
             nice = scheduler_state.normal_priority().as_nice() as i64;
+        }
+        if let Some(boost) =
+            task.kernel().shared_futexes.get_rt_mutex_priority_boost(task.get_tid() as u32)
+        {
+            priority = std::cmp::min(priority, boost);
         }
 
         {
