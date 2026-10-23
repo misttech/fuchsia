@@ -796,8 +796,8 @@
     },
     {
         "package": "fuchsia/tools/rsclient/linux-amd64",
-        "version": "git_revision:c96ea2dd61ee21e10c489b3a6a4d58bc8056cb81",
-        "instance_id": "GiJRJiq3iLPgMHCuUy-dZsjT3bEz3htOC9E49D-WBCcC"
+        "version": "git_revision:8041874e494c2811b138971e542c74d1883beb6a",
+        "instance_id": "FCyim56JAHWMPJ5xbKBekYfAk5qS4W7-XoXXdJAQMcsC"
     },
     {
         "package": "fuchsia_internal/firmware/bluetooth/broadcom",
