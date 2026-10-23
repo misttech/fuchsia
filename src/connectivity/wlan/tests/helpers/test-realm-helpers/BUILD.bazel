@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "test-realm-helpers",
+    testonly = True,
+    srcs = [
+        "src/atomic_box.rs",
+        "src/constants.rs",
+        "src/lib.rs",
+        "src/trace_runner.rs",
+        "src/tracing.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/wlan/testing/hw-sim:__pkg__",
+        "//src/connectivity/wlan/tests:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_flex",
+        "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",
+        "//sdk/fidl/fuchsia.tracing:fuchsia.tracing_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/testing/realm_client/rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
