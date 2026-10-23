@@ -11388,7 +11388,7 @@ rustc_library("hickory-net-v0_26_3") {
   deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":thiserror-v2_0_21" ]
   deps += [ ":time-v0_3_55" ]
-  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tinyvec-v1_13_3" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ ":url-v2_5_8" ]
   if (false) {
@@ -11440,7 +11440,7 @@ rustc_library("hickory-proto-v0_26_3") {
   deps += [ ":rustls-pki-types-v1_15_1" ]
   deps += [ ":thiserror-v2_0_21" ]
   deps += [ ":time-v0_3_55" ]
-  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tinyvec-v1_13_3" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ ":url-v2_5_8" ]
   if (false) {
@@ -19219,7 +19219,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":rancor-v0_1_1" ]
   deps += [ ":rend-v0_5_3" ]
   deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]
-  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tinyvec-v1_13_3" ]
   deps += [ ":uuid-v1_23_3" ]
 
   rustenv = []
@@ -19240,7 +19240,7 @@ rustc_library("rkyv-v0_8_18") {
   aliased_deps = {
     bytes_1 = ":bytes-v1_12_1.actual"
     indexmap_2 = ":indexmap-v2_14_0.actual"
-    tinyvec_1 = ":tinyvec-v1_11_0.actual"
+    tinyvec_1 = ":tinyvec-v1_13_3.actual"
     uuid_1 = ":uuid-v1_23_3.actual"
   }
   visibility = [ ":*" ]
@@ -23859,76 +23859,39 @@ rustc_library("tinytemplate-v1_2_1") {
   applicable_licenses = [ ":tinytemplate-v1_2_1.license" ]
 }
 
-license("tinyvec-v1_11_0.license") {
+license("tinyvec-v1_13_3.license") {
   public_package_name = "tinyvec"
   license_files = [
-    "//third_party/rust_crates/vendor/tinyvec-1.11.0/LICENSE-APACHE.md",
-    "//third_party/rust_crates/vendor/tinyvec-1.11.0/LICENSE-MIT.md",
-    "//third_party/rust_crates/vendor/tinyvec-1.11.0/LICENSE-ZLIB.md",
+    "//third_party/rust_crates/vendor/tinyvec-1.13.3/LICENSE-APACHE.md",
+    "//third_party/rust_crates/vendor/tinyvec-1.13.3/LICENSE-MIT.md",
+    "//third_party/rust_crates/vendor/tinyvec-1.13.3/LICENSE-ZLIB.md",
   ]
 }
 
-rustc_library("tinyvec-v1_11_0") {
+rustc_library("tinyvec-v1_13_3") {
   crate_name = "tinyvec"
-  source_root = "//third_party/rust_crates/vendor/tinyvec-1.11.0/src/lib.rs"
-  output_name = "tinyvec-f3e776cd533f4a53"
+  source_root = "//third_party/rust_crates/vendor/tinyvec-1.13.3/src/lib.rs"
+  output_name = "tinyvec-3b6a5388446dd353"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tinyvec_macros-v0_1_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f3e776cd533f4a53",
-    "-Cextra-filename=-f3e776cd533f4a53",
+    "-Cmetadata=3b6a5388446dd353",
+    "-Cextra-filename=-3b6a5388446dd353",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
-    "--cfg=feature=\"tinyvec_macros\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tinyvec-v1_11_0.license" ]
-}
-
-license("tinyvec_macros-v0_1_1.license") {
-  public_package_name = "tinyvec_macros"
-  license_files = [
-    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE",
-    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-APACHE.md",
-    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-MIT.md",
-    "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/LICENSE-ZLIB.md",
-  ]
-}
-
-rustc_library("tinyvec_macros-v0_1_1") {
-  crate_name = "tinyvec_macros"
-  source_root =
-      "//third_party/rust_crates/vendor/tinyvec_macros-0.1.1/src/lib.rs"
-  output_name = "tinyvec_macros-7889fbc0d52f9cac"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=7889fbc0d52f9cac",
-    "-Cextra-filename=-7889fbc0d52f9cac",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":tinyvec_macros-v0_1_1.license" ]
+  applicable_licenses = [ ":tinyvec-v1_13_3.license" ]
 }
 
 license("tls_codec-v0_4_2.license") {
@@ -24774,7 +24737,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":thiserror-v1_0_69" ]
-  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tinyvec-v1_13_3" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ ":url-v2_5_8" ]
 
@@ -25578,7 +25541,7 @@ rustc_library("unicode-normalization-v0_1_25") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":tinyvec-v1_11_0" ]
+  deps += [ ":tinyvec-v1_13_3" ]
 
   rustenv = []
 

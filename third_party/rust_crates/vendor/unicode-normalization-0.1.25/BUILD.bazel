@@ -78,6 +78,6 @@ rust_library(
     }),
     version = "0.1.25",
     deps = [
-        "//third_party/rust_crates/vendor/tinyvec-1.11.0:tinyvec",
+        "//third_party/rust_crates/vendor/tinyvec-1.13.3:tinyvec",
     ],
 )

@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "tinyvec_macros",
-    package_url = "https://github.com/Soveu/tinyvec_macros",
-    package_version = "0.1.1",
+    package_name = "tinyvec",
+    package_url = "https://github.com/Lokathor/tinyvec",
+    package_version = "1.13.3",
 )
 
 license(
@@ -36,7 +36,7 @@ license(
 )
 
 rust_library(
-    name = "tinyvec_macros",
+    name = "tinyvec",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,6 +53,10 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "alloc",
+        "default",
+    ],
     crate_root = "src/lib.rs",
     edition = "2018",
     rustc_flags = [
@@ -60,7 +64,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=tinyvec_macros",
+        "crate-name=tinyvec",
         "manual",
         "noclippy",
         "norustfmt",
@@ -73,5 +77,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.1.1",
+    version = "1.13.3",
 )

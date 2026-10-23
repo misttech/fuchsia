@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.13.3
+
+* The `tinyvec_macros` crate is no longer depended on by this crate, but a cargo feature of the same name was added to avoid edge case breakage.
+
+## 1.13.2
+
+* Another bug having to do with macro expansion on `no_std` targets was fixed.
+
+## 1.13.1
+
+* fix bug where crate couldn't build for `alloc` without `std` too.
+
+## 1.13
+
+* Adds `TinyVec::with_initial_len`
+* fix the `Write` impl on `ArrayVec`.
+
+## 1.12
+
+* Add `schemars` support.
+
+## 1.11.1
+
+* Fix accidental OOM when deserializing hostile Borsh input.
+
 ## 1.11
 
 * switched from `serde` dep to `serde_core` dep, which should allow more
