@@ -64,6 +64,10 @@ constexpr size_t kVmAddressRegionStateAlign = 4;
 constexpr size_t kVmMappingStateSize = 32;
 constexpr size_t kVmMappingStateAlign = 8;
 
+// Size and alignment for VmMappingProtectionRangesCursor stored in Rust.
+constexpr size_t kVmMappingProtectionRangesCursorSize = 16;
+constexpr size_t kVmMappingProtectionRangesCursorAlign = 8;
+
 // Size and alignment for PageQueues state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP
 #if ZX_DEBUG_ASSERT_IMPLEMENTED

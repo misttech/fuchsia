@@ -7,10 +7,22 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <ktl/tuple.h>
+#include <ktl/type_traits.h>
 #include <ktl/utility.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_address_region_ffi.h>
 #include <vm/vm_object.h>
+
+static_assert(ktl::is_trivially_copy_constructible_v<VmMappingProtectionRangesCursor>);
+static_assert(ktl::is_trivially_move_constructible_v<VmMappingProtectionRangesCursor>);
+static_assert(ktl::is_trivially_copy_assignable_v<VmMappingProtectionRangesCursor>);
+static_assert(ktl::is_trivially_move_assignable_v<VmMappingProtectionRangesCursor>);
+static_assert(ktl::is_trivially_destructible_v<VmMappingProtectionRangesCursor>);
+static_assert(sizeof(ffi::Uninitialized<VmMappingProtectionRangesCursor>) ==
+              sizeof(VmMappingProtectionRangesCursor));
+static_assert(alignof(ffi::Uninitialized<VmMappingProtectionRangesCursor>) ==
+              alignof(VmMappingProtectionRangesCursor));
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
@@ -48,18 +60,41 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, v
                                                            arch_mmu_flags_t new_arch_mmu_flags) {
   return mapping->DebugProtect(base, size, new_arch_mmu_flags);
 }
-FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_enumerate_protection_ranges_locked(
-    const VmMapping* mapping, vaddr_t base, size_t size,
-    cpp_vm_mapping_enumerate_protection_ranges_cb cb, void* ctx) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return mapping->EnumerateProtectionRangesLocked(
-      base, size, [cb, ctx](vaddr_t base, size_t len, arch_mmu_flags_t flags) {
-        return cb(ctx, base, len, flags);
-      });
+FFI_ALWAYS_INLINE VmMappingProtectionRanges* cpp_vm_mapping_rest_protection_ranges(
+    VmMapping* mapping) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &mapping->rest_protection_ranges_;
 }
-FFI_ALWAYS_INLINE VmMapping::FlagsRange cpp_vm_mapping_arch_mmu_flags_range_locked(
-    const VmMapping* mapping, vaddr_t offset) {
-  AssertHeld(mapping->lock_ref());
-  return mapping->arch_mmu_flags_range_locked(offset);
+FFI_ALWAYS_INLINE const VmMappingProtectionRanges* cpp_vm_mapping_rest_protection_ranges_const(
+    const VmMapping* mapping) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &mapping->rest_protection_ranges_;
+}
+FFI_ALWAYS_INLINE bool cpp_vm_mapping_protection_ranges_is_empty(
+    const VmMappingProtectionRanges* ranges) {
+  return ranges->is_empty();
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_clear(VmMappingProtectionRanges* ranges) {
+  ranges->clear();
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_upper_bound(
+    const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(ranges->upper_bound(key));
+}
+FFI_ALWAYS_INLINE bool cpp_vm_mapping_protection_ranges_cursor_is_valid(
+    const VmMappingProtectionRangesCursor* cursor) {
+  return cursor->IsValid();
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_cursor_get(
+    const VmMappingProtectionRangesCursor* cursor, vaddr_t* out_key, arch_mmu_flags_t* out_flags) {
+  ktl::tie(*out_key, *out_flags) = **cursor;
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_cursor_next(
+    VmMappingProtectionRangesCursor* cursor) {
+  ++*cursor;
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_cursor_prev(
+    VmMappingProtectionRangesCursor* cursor) {
+  --*cursor;
 }
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
                                                             VmMapping** out_mapping) {
@@ -73,10 +108,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping,
 }
 FFI_ALWAYS_INLINE void cpp_vm_mapping_mark_mergeable(VmMapping* mapping) {
   VmMapping::MarkMergeable(fbl::ImportFromRawPtr(mapping));
-}
-FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_mapping_arch_mmu_flags_locked(
-    const VmMapping* mapping, vaddr_t offset) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return mapping->arch_mmu_flags_locked(offset);
 }
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_page_fault_locked(
     VmMapping* mapping, vaddr_t va, uint32_t pf_flags, size_t additional_pages,

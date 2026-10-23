@@ -203,6 +203,7 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kPhysicalPageProviderState.*",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
+    "kVmMappingProtectionRangesCursor.*",
   ]
 
   expect_lints = [ "non_upper_case_globals" ]
@@ -799,20 +800,24 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "cpp_vm_address_region_subregions_remove_region",
     "cpp_vm_address_region_subregions_size_slow",
     "cpp_vm_address_region_unmap",
-    "cpp_vm_mapping_arch_mmu_flags_locked",
-    "cpp_vm_mapping_arch_mmu_flags_range_locked",
     "cpp_vm_mapping_construct",
     "cpp_vm_mapping_construct_with_ranges",
     "cpp_vm_mapping_debug_protect",
     "cpp_vm_mapping_debug_unmap",
     "cpp_vm_mapping_destruct",
-    "cpp_vm_mapping_enumerate_protection_ranges_locked",
     "cpp_vm_mapping_force_writable",
     "cpp_vm_mapping_map_range",
     "cpp_vm_mapping_mark_mergeable",
     "cpp_vm_mapping_page_fault_locked",
-    "cpp_vm_mapping_rest_protection_ranges_clear",
-    "cpp_vm_mapping_rest_protection_ranges_is_empty",
+    "cpp_vm_mapping_protection_ranges_clear",
+    "cpp_vm_mapping_protection_ranges_cursor_get",
+    "cpp_vm_mapping_protection_ranges_cursor_is_valid",
+    "cpp_vm_mapping_protection_ranges_cursor_next",
+    "cpp_vm_mapping_protection_ranges_cursor_prev",
+    "cpp_vm_mapping_protection_ranges_is_empty",
+    "cpp_vm_mapping_protection_ranges_upper_bound",
+    "cpp_vm_mapping_rest_protection_ranges",
+    "cpp_vm_mapping_rest_protection_ranges_const",
     "cpp_vm_mapping_state",
   ]
   type_allowlist = [
@@ -820,7 +825,6 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "CppVmAddressRegionEnumerator",
     "DestroyRemoveFromParent",
     "DestroyUnmap",
-    "FlagsRange",
     "LifeCycleState",
     "MemoryPriority",
     "Mergeable",
@@ -832,9 +836,8 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VmAddressRegionOrMapping",
     "VmMapping",
     "VmMappingProtectionRanges",
-    "VmMapping_FlagsRange",
+    "VmMappingProtectionRangesCursor",
     "arch_mmu_flags_t",
-    "cpp_vm_mapping_enumerate_protection_ranges_cb",
     "uint",
   ]
   type_blocklist = [
@@ -856,6 +859,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
     "VmAddressRegionOrMapping",
     "VmMapping",
     "VmMappingProtectionRanges",
+    "VmMappingProtectionRangesCursor",
   ]
   rustified_enum = [
     "VmAddressRegionEnumeratorType",

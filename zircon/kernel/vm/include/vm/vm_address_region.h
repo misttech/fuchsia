@@ -750,8 +750,9 @@ VmAddressRegionOrMapping* cpp_vm_address_region_subregions_front(VmAddressRegion
 void cpp_vm_address_region_subregions_for_each(const VmAddressRegion* vmar,
                                                void (*cb)(VmAddressRegionOrMapping*, void*),
                                                void* ctx);
-bool cpp_vm_mapping_rest_protection_ranges_is_empty(const VmMapping* mapping);
-void cpp_vm_mapping_rest_protection_ranges_clear(VmMapping* mapping);
+VmMappingProtectionRanges* cpp_vm_mapping_rest_protection_ranges(VmMapping* mapping);
+const VmMappingProtectionRanges* cpp_vm_mapping_rest_protection_ranges_const(
+    const VmMapping* mapping);
 void cpp_vm_address_region_commit_high_memory_priority(VmAddressRegion* vmar);
 }
 
@@ -990,10 +991,6 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
     arch_mmu_flags_t mmu_flags;
     uint64_t region_top;
   };
-  FlagsRange arch_mmu_flags_range_locked(vaddr_t offset) const
-      TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return FlagsRangeAtAddrLocked(offset);
-  }
   uint64_t object_offset() const;
 
   Lock<CriticalMutex>* object_lock() const TA_RET_CAP(object_locked()->lock()) TA_REQ(lock()) {
@@ -1219,8 +1216,9 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
   ~VmMapping();
   friend void ::cpp_vm_mapping_destruct(VmMapping*);
   friend void* ::cpp_vm_mapping_state(VmMapping*);
-  friend bool ::cpp_vm_mapping_rest_protection_ranges_is_empty(const VmMapping*);
-  friend void ::cpp_vm_mapping_rest_protection_ranges_clear(VmMapping*);
+  friend VmMappingProtectionRanges* ::cpp_vm_mapping_rest_protection_ranges(VmMapping*);
+  friend const VmMappingProtectionRanges* ::cpp_vm_mapping_rest_protection_ranges_const(
+      const VmMapping*);
 
  private:
   friend class fbl::Recyclable<VmMapping>;
