@@ -676,12 +676,6 @@ TEST_F(SimpleCodecTest, InspectDefaultState) {
   ASSERT_NOT_NULL(child_dev);
   auto codec = child_dev->GetDeviceContext<TestCodec>();
 
-  zx::channel channel_remote, channel_local;
-  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
-  ASSERT_OK(codec->CodecConnect(std::move(channel_remote)));
-  audio_fidl::CodecSyncPtr codec_client;
-  codec_client.Bind(std::move(channel_local));
-
   // Check inspect state.
   ASSERT_NO_FATAL_FAILURE(ReadInspect(codec->inspect().DuplicateVmo()));
   auto* simple_codec = hierarchy().GetByPath({"simple_codec"});
@@ -709,12 +703,6 @@ TEST_F(SimpleCodecTest, InspectNoUniqueId) {
   auto* child_dev = fake_parent->GetLatestChild();
   ASSERT_NOT_NULL(child_dev);
   auto codec = child_dev->GetDeviceContext<TestCodec>();
-
-  zx::channel channel_remote, channel_local;
-  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
-  ASSERT_OK(codec->CodecConnect(std::move(channel_remote)));
-  audio_fidl::CodecSyncPtr codec_client;
-  codec_client.Bind(std::move(channel_local));
 
   // Check inspect state.
   ASSERT_NO_FATAL_FAILURE(ReadInspect(codec->inspect().DuplicateVmo()));
@@ -1028,6 +1016,30 @@ TEST_F(SimpleCodecTest, PendingConnectionClosedOnRelease) {
   zx_signals_t observed = 0;
   EXPECT_OK(channel_local.wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed));
   EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+}
+
+// Verifies a connection request that races with release does not crash or log errors and closes the
+// channel.
+TEST_F(SimpleCodecTest, CodecConnectRacedWithReleaseClosesChannel) {
+  for (size_t i = 0; i < 20; ++i) {
+    auto fake_parent = MockDevice::FakeRootParent();
+
+    ASSERT_OK(SimpleCodecServer::CreateAndAddToDdk<TestCodec>(fake_parent.get()));
+    auto* child_dev = fake_parent->GetLatestChild();
+    ASSERT_NOT_NULL(child_dev);
+    auto codec = child_dev->GetDeviceContext<TestCodec>();
+
+    zx::channel channel_remote, channel_local;
+    ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+    ASSERT_OK(codec->CodecConnect(std::move(channel_remote)));
+
+    // Immediately release the device while the connection bind task is pending or executing.
+    child_dev->ReleaseOp();
+
+    zx_signals_t observed = 0;
+    EXPECT_OK(channel_local.wait_one(ZX_CHANNEL_PEER_CLOSED, zx::time::infinite(), &observed));
+    EXPECT_TRUE(observed & ZX_CHANNEL_PEER_CLOSED);
+  }
 }
 
 }  // namespace

@@ -155,7 +155,9 @@ zx_status_t SimpleCodecServerInternal<T>::BindClient(zx::channel channel,
     }
     zx_status_t status = instance_ptr->Bind(std::move(channel), dispatcher);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to bind codec connection: %s", zx_status_get_string(status));
+      if (status != ZX_ERR_BAD_STATE && status != ZX_ERR_CANCELED) {
+        zxlogf(ERROR, "Failed to bind codec connection: %s", zx_status_get_string(status));
+      }
       fbl::AutoLock lock(&instances_lock_);
       instances_.erase(*instance_ptr);
     }
