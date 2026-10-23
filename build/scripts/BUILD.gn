@@ -15,6 +15,7 @@ if (is_host) {
       ":signal_utils_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
+      "//build/bazel/scripts:bazel_invocation",
       "//build/profile:procfs",
       "//build/rbe:build_summary",
       "//build/rbe:casfs",

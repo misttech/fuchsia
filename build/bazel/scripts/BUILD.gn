@@ -121,6 +121,15 @@ if (is_host) {
     deps = [ ":generate_invocation_bazelrc" ]
   }
 
+  python_library("bazel_invocation") {
+    sources = [ "bazel_invocation.py" ]
+  }
+
+  python_build_time_tests("bazel_invocation_test") {
+    tests = [ "bazel_invocation_test.py" ]
+    deps = [ ":bazel_invocation" ]
+  }
+
   python_library("remote_services_utils") {
     sources = [ "remote_services_utils.py" ]
     library_deps = [
@@ -316,6 +325,7 @@ group("tests") {
     ":bazel_build_events_test($host_toolchain)",
     ":bazel_build_flags_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
+    ":bazel_invocation_test($host_toolchain)",
     ":bazel_label_mapper_test($host_toolchain)",
     ":bazel_ninja_delayed_actions_test($host_toolchain)",
     ":bazel_repository_utils_test($host_toolchain)",

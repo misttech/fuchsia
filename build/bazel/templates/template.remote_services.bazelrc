@@ -7,6 +7,7 @@
 # Note: Many of the configuration definitions here may be amended
 # by the output of generate_invocation_bazelrc.py.
 
+# LINT.IfChange(bazel_remote_services_configs)
 # Enable gcert authentication, which will automatically refresh OAuth
 # tokens while gcert certificate (unrestricted) is still valid.
 # Use build/auth/select_auth_method.py to determine authentication type.
@@ -84,3 +85,4 @@ build:_resultstore --remote_instance_name={rs_instance}
 build:resultstore --config=_resultstore --config=_bes_user
 # This variant is suitable for infra.
 build:resultstore_infra --config=_resultstore --config=_bes_infra
+# LINT.ThenChange(//build/bazel/scripts/bazel_invocation.py:bazel_remote_services_configs)

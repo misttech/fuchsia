@@ -42,6 +42,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
+from build.bazel.scripts import bazel_invocation as bazel_inv
 from build.profile import procfs
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
@@ -873,26 +874,25 @@ class FuchsiaBuildContext(object):
 
         # Override the remote execution and resultstore proxy endpoints with
         # unix:// socket paths if explicit CLI sockets are passed.
-        # LINT.IfChange(bazel_socket_env_vars)
         if self.config.remote_proxy_socket:
             socket_str = str(self.config.remote_proxy_socket)
             # Override for reproxy, through build/rbe/fuchsia-reproxy-wrap.sh:
             env["RBE_service"] = f"unix://{socket_str}"
             # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
             env["RS_cas_service"] = f"unix://{socket_str}"
-            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel remote traffic
-            env["FX_INTERNAL_BAZEL_RBE_SOCKET_PATH"] = socket_str
 
         if self.config.resultstore_proxy_socket:
             socket_str = str(self.config.resultstore_proxy_socket)
             # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
             env["RS_rs_service"] = f"unix://{socket_str}"
-            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel resultstore traffic
-            env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
-        # LINT.ThenChange(
-        #   //build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars,
-        #   //build/bazel_sdk/tests/scripts/run_tests.py:bazel_socket_env_vars
-        # )
+
+        # Consumed by Bazel invocation generators to route Bazel remote/resultstore traffic:
+        env.update(
+            bazel_inv.socket_env_vars(
+                rbe_socket=self.config.remote_proxy_socket,
+                resultstore_socket=self.config.resultstore_proxy_socket,
+            )
+        )
 
         # Export instance configurations from active profiles (or CLI overrides),
         # which directly drive/influence the reproxy and rsproxy daemons.
@@ -977,18 +977,16 @@ class FuchsiaBuildContext(object):
         )
         # LINT.ThenChange(//build/resultstore/fuchsia-rsproxy-wrap.sh:resultstore_ninja_env_vars)
 
-        # LINT.IfChange(resultstore_bazel_env_vars)
-        resultstore_bazel = "0"
-        if resultstore in ("all", "bazel"):
-            if (
-                self.resultstore_auth_type == "loas"
-                and "BUILDBUCKET_ID" not in self.env
-            ):
-                resultstore_bazel = "resultstore"
-            else:
-                resultstore_bazel = "resultstore_infra"
-        env["FX_INTERNAL_RESULTSTORE_BAZEL"] = resultstore_bazel
-        # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:resultstore_bazel_env_vars)
+        # FX_INTERNAL_RESULTSTORE_BAZEL convention: "0" indicates disabled
+        # to downstream wrapper.bazel.sh and devshell test assertions.
+        env[bazel_inv.ENV_RESULTSTORE_BAZEL] = (
+            bazel_inv.resultstore_bazel_config(
+                resultstore_mode=resultstore,
+                resultstore_auth_type=self.resultstore_auth_type,
+                in_infra="BUILDBUCKET_ID" in self.env,
+            )
+            or "0"
+        )
 
         env[casfs.ENV_CASFS_VIRTUALIZE] = "1" if self.config.rbe_casfs else "0"
 
