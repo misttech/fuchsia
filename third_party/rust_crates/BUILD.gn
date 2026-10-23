@@ -3888,7 +3888,7 @@ rustc_library("askama_parser-v0_15_6") {
   deps += [ ":rustc-hash-v2_1_3" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
-  deps += [ ":unicode-ident-v1_0_19" ]
+  deps += [ ":unicode-ident-v1_0_26" ]
   deps += [ ":winnow-v1_0_4" ]
 
   rustenv = []
@@ -17433,7 +17433,7 @@ rustc_library("proc-macro2-v1_0_107") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":unicode-ident-v1_0_19" ]
+  deps += [ ":unicode-ident-v1_0_26" ]
 
   rustenv = []
 
@@ -22837,7 +22837,7 @@ rustc_library("syn-v1_0_109") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":unicode-ident-v1_0_19" ]
+  deps += [ ":unicode-ident-v1_0_26" ]
 
   rustenv = []
 
@@ -22921,7 +22921,7 @@ rustc_library("syn-v2_0_119") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":unicode-ident-v1_0_19" ]
+  deps += [ ":unicode-ident-v1_0_26" ]
 
   rustenv = []
 
@@ -22967,7 +22967,7 @@ rustc_library("syn-v3_0_6") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":unicode-ident-v1_0_19" ]
+  deps += [ ":unicode-ident-v1_0_26" ]
 
   rustenv = []
 
@@ -25494,21 +25494,21 @@ rustc_library("unicode-bidi-v0_3_18") {
   applicable_licenses = [ ":unicode-bidi-v0_3_18.license" ]
 }
 
-license("unicode-ident-v1_0_19.license") {
+license("unicode-ident-v1_0_26.license") {
   public_package_name = "unicode_ident"
   license_files = [
-    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/unicode-ident-1.0.19/LICENSE-UNICODE",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.26/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.26/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/unicode-ident-1.0.26/LICENSE-UNICODE",
   ]
 }
 
-rustc_library("unicode-ident-v1_0_19") {
+rustc_library("unicode-ident-v1_0_26") {
   crate_name = "unicode_ident"
   source_root =
-      "//third_party/rust_crates/vendor/unicode-ident-1.0.19/src/lib.rs"
-  output_name = "unicode_ident-6bbad14552e139a9"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/unicode-ident-1.0.26/src/lib.rs"
+  output_name = "unicode_ident-5106ba33acdcf14d"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -25519,13 +25519,13 @@ rustc_library("unicode-ident-v1_0_19") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6bbad14552e139a9",
-    "-Cextra-filename=-6bbad14552e139a9",
+    "-Cmetadata=5106ba33acdcf14d",
+    "-Cextra-filename=-5106ba33acdcf14d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-ident-v1_0_19.license" ]
+  applicable_licenses = [ ":unicode-ident-v1_0_26.license" ]
 }
 
 license("unicode-normalization-v0_1_25.license") {

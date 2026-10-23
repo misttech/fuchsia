@@ -88,6 +88,6 @@ rust_library(
     }),
     version = "1.0.107",
     deps = [
-        "//third_party/rust_crates/vendor/unicode-ident-1.0.19:unicode_ident",
+        "//third_party/rust_crates/vendor/unicode-ident-1.0.26:unicode_ident",
     ],
 )

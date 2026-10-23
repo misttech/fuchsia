@@ -13,7 +13,7 @@ Implementation of [Unicode Standard Annex #31][tr31] for determining which
 
 This crate is a better optimized implementation of the older `unicode-xid`
 crate. This crate uses less static storage, and is able to classify both ASCII
-and non-ASCII codepoints with better performance, 2&ndash;6&times; faster than
+and non-ASCII codepoints with better performance, 6&times; faster than
 `unicode-xid`.
 
 <br>
@@ -41,11 +41,11 @@ different ratios of ASCII to non-ASCII codepoints in the input data.
 
 | | static storage | 0% nonascii | 1% | 10% | 100% nonascii |
 |---|---|---|---|---|---|
-| **`unicode-ident`** | 10.5 K | 1.03 ns | 1.02 ns | 1.11 ns | 1.66 ns |
-| **`unicode-xid`** | 12.0 K | 2.57 ns | 2.74 ns | 3.20 ns | 9.35 ns |
-| **`ucd-trie`** | 10.4 K | 1.27 ns | 1.27 ns | 1.41 ns | 2.53 ns |
-| **`fst`** | 144 K | 49.3 ns | 49.1 ns | 47.1 ns | 27.9 ns |
-| **`roaring`** | 66.1 K | 4.10 ns | 4.05 ns | 4.02 ns | 5.12 ns |
+| **`unicode-ident`** | 10.3 K | 0.36 ns | 0.37 ns | 0.37 ns | 0.43 ns |
+| **`unicode-xid`** | 12.2 K | 1.63 ns | 1.70 ns | 1.82 ns | 4.56 ns |
+| **`ucd-trie`** | 10.8 K | 1.01 ns | 0.73 ns | 0.97 ns | 1.09 ns |
+| **`fst`** | 149 K | 22.0 ns | 21.9 ns | 20.9 ns | 10.5 ns |
+| **`roaring`** | 66.1 K | 1.91 ns | 1.90 ns | 1.94 ns | 2.67 ns |
 
 Source code for the benchmark is provided in the *bench* directory of this repo
 and may be repeated by running `cargo criterion`.
@@ -212,9 +212,8 @@ reasonable. However, as you can see there is a large degree of similarity
 between the two bitmaps and across the rows, which lends well to compression.
 
 This crate stores one 512-bit "row" of the above bitmaps in the leaf level of a
-trie, and a single additional level to index into the leafs. It turns out there
-are 124 unique 512-bit chunks across the two bitmaps so 7 bits are sufficient to
-index them.
+trie, and a single additional level to index into the leafs. There are 134
+unique 512-bit chunks across the two bitmaps.
 
 The chunk size of 512 bits is selected as the size that minimizes the total size
 of the data structure. A smaller chunk, like 256 or 128 bits, would achieve
@@ -222,12 +221,13 @@ better deduplication but require a larger index. A larger chunk would increase
 redundancy in the leaf bitmaps. 512 bit chunks are the optimum for total size of
 the index plus leaf bitmaps.
 
-In fact since there are only 124 unique chunks, we can use an 8-bit index with a
-spare bit to index at the half-chunk level. This achieves an additional 8.5%
-compression by eliminating redundancies between the second half of any chunk and
-the first half of any other chunk. Note that this is not the same as using
-chunks which are half the size, because it does not necessitate raising the size
-of the trie's first level.
+The chunk data is compressed using the Kuhn–Munkres algorithm for bipartite
+matching to eliminate redundancies between the second half of any chunk and the
+first half of any other chunk. This achieves an additional 9% compression of the
+leaf level, leaving 122 chunks that can be indexed at the half-chunk level using
+an 8-bit index. Note that this is not the same as using chunks which are half
+the size, because it does not necessitate raising the size of the trie's first
+level.
 
 In contrast to binary search or the `ucd-trie` crate, performing lookups in this
 data structure is straight-line code with no need for branching.
@@ -236,26 +236,18 @@ data structure is straight-line code with no need for branching.
 is_xid_start:
 	mov eax, edi
 	shr eax, 9
-	lea rcx, [rip + unicode_ident::tables::TRIE_START]
-	add rcx, rax
-	xor eax, eax
-	cmp edi, 201728
-	cmovb rax, rcx
-	test rax, rax
-	lea rcx, [rip + .L__unnamed_1]
-	cmovne rcx, rax
+	cmp edi, 261632
+	mov ecx, offset unicode_ident::tables::TRIE_START+17
+	lea rax, [rax + unicode_ident::tables::TRIE_START]
+	cmovb rcx, rax
 	movzx eax, byte ptr [rcx]
-	shl rax, 5
-	mov ecx, edi
-	shr ecx, 3
-	and ecx, 63
-	add rcx, rax
-	lea rax, [rip + unicode_ident::tables::LEAF]
-	mov al, byte ptr [rax + rcx]
-	and dil, 7
-	mov ecx, edi
-	shr al, cl
-	and al, 1
+	mov ecx, 1539
+	bextr ecx, edi, ecx
+	and edi, 7
+	shl eax, 5
+	movzx eax, byte ptr [rax + rcx + unicode_ident::tables::LEAF]
+	bt eax, edi
+	setb al
 	ret
 ```
 

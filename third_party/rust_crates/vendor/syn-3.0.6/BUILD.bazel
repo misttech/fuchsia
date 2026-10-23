@@ -98,6 +98,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.107:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.47:quote",
-        "//third_party/rust_crates/vendor/unicode-ident-1.0.19:unicode_ident",
+        "//third_party/rust_crates/vendor/unicode-ident-1.0.26:unicode_ident",
     ],
 )
