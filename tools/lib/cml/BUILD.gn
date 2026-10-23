@@ -69,9 +69,9 @@ rustc_library("cml") {
     "//vendor/google/*",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
+    "//sdk/fidl/fuchsia.data:fuchsia.data_rust_common",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
     "//src/lib/directed_graph",
     "//src/lib/fidl/rust/fidl",
     "//src/sys/lib/cm_fidl_validator",
@@ -116,9 +116,9 @@ if (is_host) {
     edition = "2024"
     proc_macro_deps = [ "//tools/lib/cml/macro" ]
     deps = [
-             "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-             "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
-             "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+             "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
+             "//sdk/fidl/fuchsia.data:fuchsia.data_rust_common",
+             "//sdk/fidl/fuchsia.io:fuchsia.io_rust_common",
              "//src/lib/directed_graph",
              "//src/lib/fidl/rust/fidl",
              "//src/sys/lib/cm_fidl_validator",

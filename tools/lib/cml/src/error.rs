@@ -4,7 +4,7 @@
 
 use cm_fidl_validator::error::ErrorList;
 use cm_types::ParseError;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use std::path::Path;
 use std::str::Utf8Error;
 use std::sync::Arc;

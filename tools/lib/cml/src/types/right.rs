@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_io_common as fio;
 
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
@@ -135,7 +135,7 @@ pub trait RightsClause {
 #[cfg(test)]
 mod tests {
     use crate::types::right::Right;
-    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_io_common as fio;
 
     macro_rules! test_parse_rights {
         (

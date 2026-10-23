@@ -31,9 +31,9 @@ use crate::{
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name, StartupMode};
 use directed_graph::DirectedGraph;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_data as fdata;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_component_decl_common as fdecl;
+use fidl_fuchsia_data_common as fdata;
+use fidl_fuchsia_io_common as fio;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::{Map, Value};
@@ -2439,9 +2439,9 @@ mod tests {
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};
     use cm_types::{self as cm, Name};
     use difference::Changeset;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_data as fdata;
-    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_component_decl_common as fdecl;
+    use fidl_fuchsia_data_common as fdata;
+    use fidl_fuchsia_io_common as fio;
     use serde_json::{Map, Value, json};
     use std::collections::BTreeSet;
     use std::convert::Into;
