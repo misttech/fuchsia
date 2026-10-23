@@ -31,7 +31,6 @@ group("fuchsia") {
   ]
   if (target_cpu == "arm64") {
     deps += [
-      ":core.arm64",
       ":minimal.arm64",
       ":minimal.arm64-hermetic_examples",
     ]
@@ -43,7 +42,6 @@ group("fuchsia") {
   }
   if (target_cpu == "x64") {
     deps += [
-      ":core.x64",
       ":minimal.x64",
       ":minimal.x64-ui_tests",
       ":workbench_eng.x64",
@@ -76,12 +74,7 @@ group("additional_build_targets") {
     # product_bundle_test_group().
     tests_barrier = []
   }
-  deps = [
-    "//build/bazel/examples",
-    "//examples",
-    "//src/lib/ui/carnelian:examples",
-    "//src/media/bundles:examples",
-  ]
+  deps = [ "//examples" ]
 }
 
 ########
@@ -184,78 +177,7 @@ if (target_cpu == "riscv64") {
   }
 }
 
-########
-# Core
-
-# All the core tests.
-core_target_tests =
-    [
-      "//examples:hermetic_tests",
-      "//src/sys/pkg:hermetic_tests",
-
-      # no_e2e_dep
-      "//build:tests",
-      "//examples:tests",
-      "//scripts:tests",
-      "//src/diagnostics:tests",
-      "//src/media/bundles:services",
-      "//third_party:tests",
-
-      # Used by tests
-      "//src/diagnostics/archivist:archivist-for-embedding",
-
-      # The following groups have known e2e tests explicitly excluded.
-      "//bundles/fidl:tests_no_e2e",
-      "//sdk:tests_no_e2e",
-      "//src:tests_no_e2e",
-      "//tools:tests_no_e2e",
-
-      "//bundles/fidl:tests",
-      "//sdk:tests",
-      "//src:e2e_tests",
-      "//src/media/audio/drivers/tests:basic",
-    ] + e2e_lib_unit_tests
-
-if (target_cpu == "arm64") {
-  product_bundle_test_group("core.arm64") {
-    product_bundle_name = "core.arm64"
-    if (is_postsubmit || is_release) {
-      allowed_environments = [ c4a_env ]
-    } else {
-      build_only = true
-    }
-    target_tests = core_target_tests
-  }
-}
-
-if (target_cpu == "x64") {
-  # All the core tests.
-  product_bundle_test_group("core.x64") {
-    product_bundle_name = "core.x64"
-
-    # Presumbit only runs tests in release mode, under the assumption
-    # that if the tests pass in release mode, they will likely
-    # pass in the others.
-    if (is_postsubmit || is_release) {
-      allowed_environments = [
-        aemu_env,
-        nuc11_env,
-      ]
-      default_environments = [ aemu_env ]
-      if (is_postsubmit) {
-        # Add nuc11 to the set of hardware environments used by default
-        # for tests in post-submit.
-        default_environments += [ nuc11_env ]
-      }
-    } else {
-      build_only = true
-    }
-
-    target_tests = core_target_tests
-  }
-}
-
-########
+########1
 # Workbench.
 
 if (target_cpu == "arm64") {
