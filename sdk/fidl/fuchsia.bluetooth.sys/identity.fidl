@@ -13,6 +13,7 @@ type SecurityProperties = struct {
 
 /// Represents a 128-bit secret key.
 type Key = struct {
+    @sensitive
     value array<uint8, 16>;
 };
 

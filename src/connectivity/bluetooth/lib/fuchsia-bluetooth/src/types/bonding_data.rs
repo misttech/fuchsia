@@ -769,6 +769,14 @@ mod tests {
             assert!(err_msg.contains(&format!("{:?}", Some(PeerId(42)))));
             assert!(!err_msg.contains("BondingData {"));
         }
+
+        #[test]
+        fn fidl_key_debug_wraps_value_with_sensitive_decorator() {
+            let key = sys::Key { value: [0xAB; 16] };
+            let expected_field = format!("value: SENSITIVE{{{:?}}}", key.value);
+            assert!(format!("{key:?}").contains(&expected_field));
+            assert!(format!("{key:#?}").contains(&expected_field));
+        }
     }
 
     // The test cases below use proptest to exercise round-trip conversions between FIDL and the
