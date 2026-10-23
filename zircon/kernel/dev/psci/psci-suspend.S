@@ -71,6 +71,21 @@
   mrs x4, PAN_SYSREG
 1:
   stp lr, x4, [\context_reg, (13 * 16)]
+
+  // When the kernel runs in EL2 (FEAT_VHE), the EL1 system registers saved
+  // above are redirected to their EL2 counterparts (HCR_EL2.E2H), and the rest
+  // of the EL2 state the kernel relies on is reinitialized by |ArmDropToEl1| on
+  // resume, or set by the hypervisor on each guest entry.  However, VTCR_EL2 is
+  // configured once per CPU (when the first guest is created) and is not
+  // preserved across a powerdown, so save it to be restored by
+  // |psci_do_resume|.
+  mov x4, xzr
+  mrs x5, CurrentEL
+  cmp x5, #(2 << 2)
+  b.ne 2f
+  mrs x4, vtcr_el2
+2:
+  stp x4, xzr, [\context_reg, (14 * 16)]
 .endm
 
 // int64_t psci_do_suspend(psci_call_proc psci_call_routine,
@@ -168,6 +183,15 @@
   b.eq 1f
   msr PAN_SYSREG, x2
 1:
+
+  // Restore VTCR_EL2 (if running in EL2).  See |save_resume_context|.
+  mrs x1, CurrentEL
+  cmp x1, #(2 << 2)
+  b.ne 2f
+  ldr x2, [x0, (14 * 16)]
+  msr vtcr_el2, x2
+  isb
+2:
 
   msr daif, x4
 

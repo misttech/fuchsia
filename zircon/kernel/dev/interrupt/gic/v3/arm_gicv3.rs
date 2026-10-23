@@ -101,6 +101,11 @@ static LPI_PEND_PA: [AtomicUsize; SMP_MAX_CPUS] = [const { AtomicUsize::new(0) }
 static ITS_CMDQ_VA: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 static ITS_CPU0_RDBASE: AtomicU64 = AtomicU64::new(0);
 
+/// Each CPU's SGI/PPI enable state (GICR_ISENABLER0), saved by `suspend_cpu` and restored by
+/// `resume_cpu`.
+static SAVED_SGI_PPI_ENABLES: [AtomicU32; SMP_MAX_CPUS] =
+    [const { AtomicU32::new(0) }; SMP_MAX_CPUS];
+
 ksync::declare_singleton_monitored_spinlock!(
     /// Serializes the ITS command queue and LPI configuration table updates.
     GicItsLock
@@ -1433,6 +1438,14 @@ impl InterruptControllerOps for Gicv3 {
     fn suspend_cpu(&self) -> Result<(), Status> {
         debug_assert!(ints_disabled());
 
+        // |resume_cpu| reinitializes this CPU's redistributor, which masks all SGIs and PPIs (see
+        // |gic_init_percpu_early|).  Save which ones are enabled so that |resume_cpu| can restore
+        // them.  Otherwise, per-CPU interrupts enabled outside of this driver (e.g. the
+        // hypervisor's maintenance interrupt) would be left masked after resuming.
+        let cpu = curr_cpu_num();
+        let enables = gicr_read32(cpu, regs::gicr_isenabler0());
+        SAVED_SGI_PPI_ENABLES[cpu as usize].store(enables, Ordering::Relaxed);
+
         gic_redistributor_sleep(true);
 
         Ok(())
@@ -1443,6 +1456,13 @@ impl InterruptControllerOps for Gicv3 {
         // `gic_init_percpu_early`).
         gic_init_percpu_early(PercpuInit::Resume);
         self.init_percpu();
+
+        // Restore the SGI/PPI enable state saved by |suspend_cpu|.  GICR_ISENABLER0 is
+        // write-1-to-set, so this only enables, and writing zero is a no-op.
+        let cpu = curr_cpu_num();
+        let saved = SAVED_SGI_PPI_ENABLES[cpu as usize].swap(0, Ordering::Relaxed);
+        gicr_write32(cpu, regs::gicr_isenabler0(), saved);
+
         Ok(())
     }
 
@@ -1770,7 +1790,8 @@ pub unsafe extern "C" fn rust_arm_gicv3_init_late(_config: &DcfgArmGicV3Driver) 
 #[unittest::suite(name = "gicv3")]
 mod tests {
     use crate::arch_rs::InterruptDisableGuard;
-    use unittest::{assert_true, expect_ok, expect_true};
+    use crate::pdev_interrupt::is_interrupt_registered;
+    use unittest::{assert_true, expect_eq, expect_ok, expect_true};
 
     /// Returns true if `vector` (an SGI or PPI) is pending on `cpu`.
     fn is_sgi_ppi_pending(cpu: cpu_num_t, vector: u32) -> bool {
@@ -1825,5 +1846,43 @@ mod tests {
             !is_sgi_ppi_pending(cpu, vector)
         });
         expect_true!(taken);
+    }
+
+    /// Verifies that suspend_cpu/resume_cpu preserve the calling CPU's PPI enable state.
+    #[test]
+    fn test_suspend_resume_preserves_ppi_enables() {
+        if GICR_BASE.load(Ordering::Relaxed).is_null() {
+            kprintln!("GICv3 is not in use, skipping test");
+            return true;
+        }
+
+        // Find a PPI (16-31) with no registered handler to enable for the duration of the test.
+        let Some(vector) = (16u32..32).rev().find(|&v| !is_interrupt_registered(v)) else {
+            kprintln!("no unused PPI, skipping test");
+            return true;
+        };
+        let mask = 1u32 << vector;
+
+        let _irqd = InterruptDisableGuard::new();
+        let cpu = curr_cpu_num();
+        if gicr_read32(cpu, regs::gicr_isenabler0()) & mask != 0 {
+            kprintln!("PPI {} is unexpectedly enabled, skipping test", vector);
+            return true;
+        }
+
+        gicr_write32(cpu, regs::gicr_isenabler0(), mask);
+        let before = gicr_read32(cpu, regs::gicr_isenabler0());
+
+        let suspend_result = GICV3_DRIVER.suspend_cpu();
+        let resume_result = GICV3_DRIVER.resume_cpu();
+        let after = gicr_read32(cpu, regs::gicr_isenabler0());
+
+        // Restore the PPI's original (disabled) state before checking the results.
+        gicr_write32(cpu, regs::gicr_icenabler0(), mask);
+        gicr_wait_for_rwp(cpu);
+
+        expect_ok!(suspend_result);
+        expect_ok!(resume_result);
+        expect_eq!(before, after);
     }
 }

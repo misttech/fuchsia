@@ -180,8 +180,18 @@ zx_status_t psci_system_suspend();
 //
 // Must be kept in sync with |psci_do_suspend|, |psci_do_system_suspend|, and
 // |psci_do_resume|.
+//
+// Layout (see save_resume_context in psci-suspend.S):
+//   regs[0..13]:  daif, sctlr_el1, tcr_el1, vbar_el1, mdscr_el1, cpacr_el1,
+//                 osdlr_el1, sp, sp_el0, contextidr_el1, tpidr_el1,
+//                 tpidrro_el0, tpidr_el0, zcr_el1
+//   regs[14..25]: x18-x29
+//   regs[26]:     lr
+//   regs[27]:     PSTATE.PAN
+//   regs[28]:     vtcr_el2 (when running in EL2)
+//   regs[29]:     unused (padding)
 struct psci_cpu_resume_context {
-  uint64_t regs[2 * 14]{};
+  uint64_t regs[2 * 15]{};
 };
 
 __BEGIN_CDECLS
