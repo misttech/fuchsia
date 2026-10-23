@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "clonable_error",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/fonts/manifest:__pkg__",
+        "//src/sys/component_manager:__pkg__",
+        "//src/sys/component_manager/lib:__subpackages__",
+        "//src/sys/lib/component_id_index:__pkg__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/sys/lib/routing:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "clonable_error_test",
+    crate = ":clonable_error",
+)
+
+fx_unittest_package(
+    name = "clonable_error_tests",
+    package_name = "clonable_error_tests",
+    unit_tests = [":clonable_error_test"],
+    visibility = ["//src/lib:__pkg__"],
+)

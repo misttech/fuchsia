@@ -31,6 +31,7 @@ test_suite(
         "//src/lib/backoff:backoff_tests",
         "//src/lib/callback:callback_tests",
         "//src/lib/cstringify:cstringify-test",
+        "//src/lib/error/clonable_error:clonable_error_tests",
         "//src/lib/fuchsia-image-format:fuchsia-image-format-tests",
         "//src/lib/inet:libinet_tests",
         "//src/lib/listnode:listnode-package",
