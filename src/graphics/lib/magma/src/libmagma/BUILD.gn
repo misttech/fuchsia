@@ -56,7 +56,6 @@ static_library("libmagma_static") {
     "//src/graphics/magma/lib/magma/platform:device_client",
     "//src/graphics/magma/lib/magma/platform:handle",
     "//src/graphics/magma/lib/magma/platform:logger_impl",
-    "//src/graphics/magma/lib/magma/platform:port",
     "//src/graphics/magma/lib/magma/platform:semaphore",
     "//src/graphics/magma/lib/magma/platform:thread",
     "//src/graphics/magma/lib/magma/platform:trace",

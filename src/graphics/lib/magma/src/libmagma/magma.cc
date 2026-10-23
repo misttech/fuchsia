@@ -12,7 +12,6 @@
 #include <lib/magma/platform/platform_logger.h>
 #include <lib/magma/platform/platform_logger_provider.h>
 #include <lib/magma/platform/platform_object.h>
-#include <lib/magma/platform/platform_port.h>
 #include <lib/magma/platform/platform_semaphore.h>
 #include <lib/magma/platform/platform_thread.h>
 #include <lib/magma/platform/platform_trace.h>
@@ -20,6 +19,9 @@
 #include <lib/magma/util/macros.h>
 #include <lib/magma/util/short_macros.h>
 #include <lib/magma/util/utils.h>
+#include <lib/zx/time.h>
+#include <zircon/syscalls.h>
+#include <zircon/types.h>
 #if defined(MAGMA_ENABLE_TRACING)
 #include <lib/trace-engine/instrumentation.h>
 #include <zircon/threads.h>
@@ -27,9 +29,9 @@
 #error MAGMA_ENABLE_TRACING required
 #endif
 
+#include <algorithm>
 #include <atomic>
-#include <chrono>
-#include <map>
+#include <memory>
 
 #include "enumerator.h"
 
@@ -417,100 +419,92 @@ void magma_semaphore_reset(magma_semaphore_t semaphore) {
 magma_status_t magma_poll(magma_poll_item_t* items, uint32_t count, uint64_t timeout_ns) {
   TRACE_DURATION("magma", "poll");
 
-  // Reset item results, and enable optimization for a single non-zero condition item.
-  uint32_t active_count = 0;
-  uint32_t active_index = 0;
-  for (uint32_t i = 0; i < count; i++) {
-    items[i].result = 0;
-    if (items[i].condition) {
-      active_count++;
-      active_index = i;
-    }
-  }
-  if (active_count == 1 && items[active_index].type == MAGMA_POLL_TYPE_SEMAPHORE &&
-      items[active_index].condition == MAGMA_POLL_CONDITION_SIGNALED) {
-    // TODO(https://fxbug.dev/42126035): change WaitNoReset to take ns
-    if (!reinterpret_cast<magma::PlatformSemaphore*>(items[active_index].semaphore)
-             ->WaitNoReset(magma::ns_to_ms(timeout_ns)))
-      return MAGMA_STATUS_TIMED_OUT;
+  zx_wait_item_t wait_items[ZX_WAIT_MANY_MAX_ITEMS];
+  uint32_t item_indices[ZX_WAIT_MANY_MAX_ITEMS];
+  uint32_t wait_count = 0;
 
-    items[active_index].result = items[active_index].condition;
-    return MAGMA_STATUS_OK;
-  }
+  for (uint32_t item_index = 0; item_index < count; item_index++) {
+    items[item_index].result = 0;
 
-  std::unique_ptr<magma::PlatformPort> port = magma::PlatformPort::Create();
-  if (!port)
-    return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "Failed to create port");
-
-  // Map of key to item index
-  std::map<uint64_t, uint32_t> map;
-
-  for (uint32_t i = 0; i < count; i++) {
-    if (!items[i].condition)
+    if (!items[item_index].condition)
       continue;
 
-    switch (items[i].type) {
+    if (wait_count == ZX_WAIT_MANY_MAX_ITEMS)
+      return DRET_MSG(MAGMA_STATUS_INVALID_ARGS,
+                      "Active item count exceeds ZX_WAIT_MANY_MAX_ITEMS");
+
+    switch (items[item_index].type) {
       case MAGMA_POLL_TYPE_SEMAPHORE: {
-        if (items[i].condition != MAGMA_POLL_CONDITION_SIGNALED)
+        if (items[item_index].condition != MAGMA_POLL_CONDITION_SIGNALED)
           return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Invalid condition for semaphore: 0x%x",
-                          items[i].condition);
-        auto semaphore = reinterpret_cast<magma::PlatformSemaphore*>(items[i].semaphore);
+                          items[item_index].condition);
 
-        uint64_t key = semaphore->global_id();
-        if (!semaphore->WaitAsync(port.get(), key))
-          return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "WaitAsync failed");
-
-        DASSERT(map.find(key) == map.end());
-        map[key] = i;
+        auto semaphore = reinterpret_cast<magma::PlatformSemaphore*>(items[item_index].semaphore);
+        wait_items[wait_count] = {
+            .handle = semaphore->zx_handle(),
+            .waitfor = semaphore->GetZxSignal(),
+            .pending = 0,
+        };
+        item_indices[wait_count++] = item_index;
         break;
       }
 
       case MAGMA_POLL_TYPE_HANDLE: {
-        if (items[i].condition != MAGMA_POLL_CONDITION_READABLE)
+        if (items[item_index].condition != MAGMA_POLL_CONDITION_READABLE)
           return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Invalid condition for handle: 0x%x",
-                          items[i].condition);
+                          items[item_index].condition);
 
-        auto platform_handle = magma::PlatformHandle::Create(items[i].handle);
-        if (!platform_handle)
-          return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "Failed to create platform handle");
-
-        uint64_t key = platform_handle->global_id();
-        bool result = platform_handle->WaitAsync(port.get(), key);
-        platform_handle->release();
-
-        if (!result)
-          return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "WaitAsync failed");
-
-        DASSERT(map.find(key) == map.end());
-        map[key] = i;
+        wait_items[wait_count] = {
+            .handle = items[item_index].handle,
+            .waitfor = ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED,
+            .pending = 0,
+        };
+        item_indices[wait_count++] = item_index;
         break;
       }
 
       default:
-        return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Invalid item type: %u", items[i].type);
+        return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Invalid item type: %u", items[item_index].type);
     }
   }
 
-  if (map.empty())
+  if (wait_count == 0)
     return DRET_MSG(MAGMA_STATUS_INVALID_ARGS, "Nothing to do");
 
-  // TODO(https://fxbug.dev/42126035): change PlatformPort::Wait to take ns
-  uint64_t key;
-  magma::Status status = port->Wait(&key, magma::ns_to_ms(timeout_ns));
-  if (!status)
-    return status.get();
+  zx::time deadline =
+      zx::deadline_after(zx::nsec(std::min<uint64_t>(timeout_ns, ZX_TIME_INFINITE)));
 
-  while (status) {
-    auto iter = map.find(key);
-    if (iter == map.end())
-      return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "Couldn't find key in map: 0x%lx", key);
+  zx_status_t zx_status = zx_object_wait_many(wait_items, wait_count, deadline.get());
+  if (zx_status == ZX_ERR_TIMED_OUT)
+    return MAGMA_STATUS_TIMED_OUT;
 
-    uint32_t index = iter->second;
-    DASSERT(index < count);
-    items[index].result = items[index].condition;
+  if (zx_status == ZX_ERR_CANCELED)
+    return DRET(MAGMA_STATUS_CONNECTION_LOST);
 
-    // Check for more events
-    status = port->Wait(&key, 0);
+  if (zx_status != ZX_OK)
+    return DRET_MSG(MAGMA_STATUS_INTERNAL_ERROR, "zx_object_wait_many failed: %d", zx_status);
+
+  for (uint32_t wait_index = 0; wait_index < wait_count; wait_index++) {
+    uint32_t item_index = item_indices[wait_index];
+
+    switch (items[item_index].type) {
+      case MAGMA_POLL_TYPE_HANDLE:
+        if (wait_items[wait_index].pending & ZX_CHANNEL_READABLE) {
+          items[item_index].result = items[item_index].condition;
+        } else if (wait_items[wait_index].pending & ZX_CHANNEL_PEER_CLOSED) {
+          return DRET(MAGMA_STATUS_CONNECTION_LOST);
+        }
+        break;
+      case MAGMA_POLL_TYPE_SEMAPHORE:
+        if (wait_items[wait_index].pending & wait_items[wait_index].waitfor) {
+          items[item_index].result = items[item_index].condition;
+        }
+        break;
+      default:
+        // Unreachable
+        MAGMA_DASSERT(false);
+        break;
+    }
   }
 
   return MAGMA_STATUS_OK;

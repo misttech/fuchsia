@@ -58,6 +58,8 @@ class ZirconPlatformSemaphore : public PlatformSemaphore {
 
   zx_signals_t GetZxSignal() const override { return ZX_EVENT_SIGNALED; }
 
+  zx_handle_t zx_handle() const override { return event_.get(); }
+
  private:
   zx::event event_;
   uint64_t koid_;

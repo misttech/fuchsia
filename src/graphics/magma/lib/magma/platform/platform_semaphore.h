@@ -54,6 +54,9 @@ class PlatformSemaphore : public PlatformObject {
 
 #if defined(__Fuchsia__)
   virtual zx_signals_t GetZxSignal() const = 0;
+
+  // Returns the underlying Zircon handle for multi-item waits.
+  virtual zx_handle_t zx_handle() const { return ZX_HANDLE_INVALID; }
 #endif
 
   std::unique_ptr<PlatformSemaphore> Clone() {

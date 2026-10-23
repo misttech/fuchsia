@@ -44,6 +44,8 @@ class ZirconCounterSemaphore : public PlatformSemaphore {
 
   zx_signals_t GetZxSignal() const override { return ZX_COUNTER_SIGNALED; }
 
+  zx_handle_t zx_handle() const override { return counter_.get(); }
+
   bool GetTimestamp(uint64_t* timestamp_ns_out) override;
 
  private:

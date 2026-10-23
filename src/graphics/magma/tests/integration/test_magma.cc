@@ -642,6 +642,10 @@ class TestConnection {
     magma_semaphore_signal(items.back().semaphore);
 
     EXPECT_EQ(MAGMA_STATUS_OK, magma_poll(items.data(), to_uint32(items.size()), 0));
+    for (size_t i = 0; i + 1 < items.size(); i++) {
+      EXPECT_EQ(0u, items[i].result);
+    }
+    EXPECT_EQ(items.back().condition, items.back().result);
 
     magma_semaphore_reset(items.back().semaphore);
 
@@ -829,8 +833,172 @@ class TestConnection {
                 magma_poll(items.data(), static_cast<uint32_t>(items.size()), kTimeoutNs));
     }
 
+    // When a channel is both readable and peer-closed, readable takes precedence.
+    zx::channel local2, remote2;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0 /* flags */, &local2, &remote2));
+    uint32_t dummy = 0;
+    ASSERT_EQ(ZX_OK, remote2.write(0 /* flags */, &dummy, sizeof(dummy), nullptr /* handles */,
+                                   0 /* num_handles */));
+    remote2.reset();
+
+    items[0].handle = local2.get();
+    items[0].result = 0;
+    EXPECT_EQ(MAGMA_STATUS_OK, magma_poll(items.data(), static_cast<uint32_t>(items.size()), 0));
+    EXPECT_EQ(MAGMA_POLL_CONDITION_READABLE, items[0].result);
+    EXPECT_EQ(0u, items[1].result);
+
     magma_connection_release_semaphore(connection_, semaphore);
 
+#else
+    GTEST_SKIP();
+#endif
+  }
+
+  void PollIgnoredCondition() {
+    ASSERT_TRUE(connection_);
+
+    std::vector<magma_semaphore_t> semaphores(3);
+    for (auto& semaphore : semaphores) {
+      magma_semaphore_id_t id;
+      ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_semaphore(connection_, &semaphore, &id));
+    }
+
+    // Signal both the ignored semaphore (index 0) and an active semaphore (index 2).
+    magma_semaphore_signal(semaphores[0]);
+    magma_semaphore_signal(semaphores[2]);
+
+    std::vector<magma_poll_item_t> items = {
+        {
+            .semaphore = semaphores[0],
+            .type = MAGMA_POLL_TYPE_SEMAPHORE,
+            .condition = 0,
+            .result = 0xff,
+        },
+        {
+            .semaphore = semaphores[1],
+            .type = MAGMA_POLL_TYPE_SEMAPHORE,
+            .condition = MAGMA_POLL_CONDITION_SIGNALED,
+            .result = 0xff,
+        },
+        {
+            .semaphore = semaphores[2],
+            .type = MAGMA_POLL_TYPE_SEMAPHORE,
+            .condition = MAGMA_POLL_CONDITION_SIGNALED,
+            .result = 0xff,
+        },
+    };
+
+    EXPECT_EQ(MAGMA_STATUS_OK, magma_poll(items.data(), to_uint32(items.size()), 0));
+    EXPECT_EQ(0u, items[0].result);
+    EXPECT_EQ(0u, items[1].result);
+    EXPECT_EQ(MAGMA_POLL_CONDITION_SIGNALED, items[2].result);
+
+    for (auto semaphore : semaphores) {
+      magma_connection_release_semaphore(connection_, semaphore);
+    }
+  }
+
+  void PollMaxItems() {
+#ifdef __Fuchsia__
+    ASSERT_TRUE(connection_);
+
+    constexpr uint32_t kMaxItems = ZX_WAIT_MANY_MAX_ITEMS;
+    std::vector<magma_semaphore_t> semaphores(kMaxItems + 1);
+    std::vector<magma_poll_item_t> items(kMaxItems + 1);
+
+    for (uint32_t i = 0; i < semaphores.size(); i++) {
+      magma_semaphore_id_t id;
+      ASSERT_EQ(MAGMA_STATUS_OK,
+                magma_connection_create_semaphore(connection_, &semaphores[i], &id));
+      items[i] = {
+          .semaphore = semaphores[i],
+          .type = MAGMA_POLL_TYPE_SEMAPHORE,
+          .condition = MAGMA_POLL_CONDITION_SIGNALED,
+          .result = 0xff,
+      };
+    }
+
+    // Exceeding ZX_WAIT_MANY_MAX_ITEMS active items fails.
+    EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS,
+              magma_poll(items.data(), to_uint32(items.size()), /*timeout_ns=*/0));
+
+    // Exactly ZX_WAIT_MANY_MAX_ITEMS active items (with 1 ignored item) succeeds.
+    items[0].condition = 0;
+    magma_semaphore_signal(semaphores.back());
+
+    EXPECT_EQ(MAGMA_STATUS_OK, magma_poll(items.data(), to_uint32(items.size()), /*timeout_ns=*/0));
+    for (size_t i = 0; i + 1 < items.size(); i++) {
+      EXPECT_EQ(0u, items[i].result);
+    }
+    EXPECT_EQ(MAGMA_POLL_CONDITION_SIGNALED, items.back().result);
+
+    for (auto semaphore : semaphores) {
+      magma_connection_release_semaphore(connection_, semaphore);
+    }
+#else
+    GTEST_SKIP();
+#endif
+  }
+
+  void PollInvalidArgs() {
+#ifdef __Fuchsia__
+    ASSERT_TRUE(connection_);
+
+    magma_semaphore_t semaphore;
+    magma_semaphore_id_t id;
+    ASSERT_EQ(MAGMA_STATUS_OK, magma_connection_create_semaphore(connection_, &semaphore, &id));
+
+    // Count == 0
+    {
+      magma_poll_item_t item = {
+          .semaphore = semaphore,
+          .type = MAGMA_POLL_TYPE_SEMAPHORE,
+          .condition = MAGMA_POLL_CONDITION_SIGNALED,
+      };
+      EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS, magma_poll(&item, 0, 0));
+    }
+
+    // All items have condition == 0
+    {
+      magma_poll_item_t item = {
+          .semaphore = semaphore,
+          .type = MAGMA_POLL_TYPE_SEMAPHORE,
+          .condition = 0,
+      };
+      EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS, magma_poll(&item, 1, 0));
+    }
+
+    // Invalid condition for semaphore
+    {
+      magma_poll_item_t item = {
+          .semaphore = semaphore,
+          .type = MAGMA_POLL_TYPE_SEMAPHORE,
+          .condition = MAGMA_POLL_CONDITION_READABLE,
+      };
+      EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS, magma_poll(&item, 1, 0));
+    }
+
+    // Invalid condition for handle
+    {
+      magma_poll_item_t item = {
+          .handle = magma_connection_get_notification_channel_handle(connection_),
+          .type = MAGMA_POLL_TYPE_HANDLE,
+          .condition = MAGMA_POLL_CONDITION_SIGNALED,
+      };
+      EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS, magma_poll(&item, 1, 0));
+    }
+
+    // Invalid item type
+    {
+      magma_poll_item_t item = {
+          .semaphore = semaphore,
+          .type = 999,
+          .condition = MAGMA_POLL_CONDITION_SIGNALED,
+      };
+      EXPECT_EQ(MAGMA_STATUS_INVALID_ARGS, magma_poll(&item, 1, 0));
+    }
+
+    magma_connection_release_semaphore(connection_, semaphore);
 #else
     GTEST_SKIP();
 #endif
@@ -1712,6 +1880,12 @@ INSTANTIATE_TEST_SUITE_P(MagmaPoll, MagmaPoll, ::testing::Values(0, 1, 2, 3));
 TEST_F(Magma, PollWithTestChannel) { TestConnection().PollWithTestChannel(); }
 
 TEST_F(Magma, PollChannelClosed) { TestConnection().PollChannelClosed(); }
+
+TEST_F(Magma, PollIgnoredCondition) { TestConnection().PollIgnoredCondition(); }
+
+TEST_F(Magma, PollMaxItems) { TestConnection().PollMaxItems(); }
+
+TEST_F(Magma, PollInvalidArgs) { TestConnection().PollInvalidArgs(); }
 
 TEST_F(Magma, PollLongDeadline) { TestConnection().PollLongDeadline(/*forever_deadline=*/false); }
 
