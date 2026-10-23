@@ -63,5 +63,6 @@ alias(
         "//src/sys/pkg/bin/system-updater:__pkg__",
         "//src/sys/stash:__pkg__",
         "//src/sys/time/lib/pull-source:__pkg__",
+        "//src/sys/time/testing/fake-hrtimer:__pkg__",
     ],
 )

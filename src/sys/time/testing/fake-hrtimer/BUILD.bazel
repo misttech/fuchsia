@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    binary_name = "fake-hrtimer-rust-bin",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer_rust",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:scopeguard",
+    ],
+)
