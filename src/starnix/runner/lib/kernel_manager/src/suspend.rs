@@ -8,8 +8,12 @@ use fidl::Peered;
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_inspect::{self as inspect, UintExponentialHistogramProperty, UintProperty};
 use log::warn;
-use starnix_sync::{LockDepMutex, WakeSourcesLock, WakeWatchersLock};
-use std::sync::Arc;
+use starnix_sync::{
+    CondVar, LockDepMutex, SuspendWorkerPoolStateLock, SuspendWorkerResultsLock,
+    SuspendWorkerRunLock, WakeSourcesLock, WakeWatchersLock,
+};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock};
 use zx::Task;
 
 /// The signal that the kernel raises to indicate that it's awake.
@@ -73,6 +77,8 @@ impl Default for SuspendContext {
         let suspend_attempts_count = node.create_uint("suspend_attempts_count", 0);
         let suspend_successes_count = node.create_uint("suspend_successes_count", 0);
         let suspend_failures_count = node.create_uint("suspend_failures_count", 0);
+        // Create the threads used to suspend containers ahead of the first suspend.
+        LazyLock::force(&SUSPEND_WORKER_POOL);
         Self {
             wake_sources: Default::default(),
             wake_watchers: Default::default(),
@@ -102,6 +108,7 @@ pub async fn suspend_container(
         );
         return Ok(Err(fstarnixrunner::SuspendError::SuspendFailure));
     };
+    let container_job = Arc::new(container_job);
 
     // These handles need to kept alive until the end of the block, as they will
     // resume the kernel when dropped.
@@ -229,6 +236,19 @@ pub async fn suspend_container(
     }))
 }
 
+/// The maximum number of threads (including the calling thread) used to suspend the processes of
+/// a container in parallel.
+///
+/// Suspending a container with thousands of threads is dominated by the cost of the
+/// `zx_task_suspend` calls (which have to interrupt every thread of the process) and by the
+/// per-thread syscalls needed to confirm that every thread is suspended. These are independent
+/// across processes, so spreading them over a few CPUs reduces the latency of container suspend.
+const MAX_SUSPEND_WORKERS: usize = 4;
+
+/// The number of items (processes) up to which the suspend work is done on the calling thread
+/// only, as waking up the helper threads would cost more than it saves.
+const PARALLEL_SUSPEND_THRESHOLD: usize = 8;
+
 /// The signals that indicate that a thread will not run again until it is resumed.
 const THREAD_STOPPED_SIGNALS: zx::Signals =
     zx::Signals::THREAD_SUSPENDED.union(zx::Signals::THREAD_TERMINATED);
@@ -252,7 +272,7 @@ impl SuspendedProcesses {
 ///
 /// Returns an error if any individual suspend failed, in which case the processes that were
 /// suspended are resumed before the error is returned.
-fn suspend_job(kernel_job: &zx::Job) -> Result<SuspendedProcesses, Error> {
+fn suspend_job(kernel_job: &Arc<zx::Job>) -> Result<SuspendedProcesses, Error> {
     // The processes that were already handled, whether they were suspended or not.
     let mut known_process_koids = std::collections::HashSet::<zx::Koid>::new();
     // Resumes the suspended processes if an error is returned.
@@ -275,17 +295,21 @@ fn suspend_job(kernel_job: &zx::Job) -> Result<SuspendedProcesses, Error> {
 
         // Request the suspension of all the processes before waiting for any of their threads,
         // so that the kernel suspends the threads of all the processes concurrently.
-        let mut processes = Vec::with_capacity(new_process_koids.len());
-        for process_koid in new_process_koids {
-            if let Some((process, suspend_handle)) = suspend_process(kernel_job, process_koid)? {
-                suspended_processes.0.push(suspend_handle);
-                processes.push(process);
-            }
+        let job = kernel_job.clone();
+        let new_suspended_processes =
+            parallel_try_filter_map(new_process_koids, move |process_koid, _cancelled| {
+                suspend_process(&job, *process_koid)
+            })?;
+
+        let mut processes = Vec::with_capacity(new_suspended_processes.len());
+        for (process, suspend_handle) in new_suspended_processes {
+            suspended_processes.0.push(suspend_handle);
+            processes.push(process);
         }
 
-        for process in &processes {
-            wait_for_process_suspended(process)?;
-        }
+        parallel_try_filter_map(processes, |process, cancelled| {
+            wait_for_process_suspended(process, cancelled).map(|()| None::<()>)
+        })?;
     }
 
     Ok(suspended_processes)
@@ -329,9 +353,18 @@ fn suspend_process(
 ///
 /// Threads that are blocked on an exception are skipped, as they will not be suspended until the
 /// exception is handled.
-fn wait_for_process_suspended(process: &zx::Process) -> Result<(), zx::Status> {
+///
+/// Gives up waiting without returning an error if `cancelled` becomes true.
+fn wait_for_process_suspended(
+    process: &zx::Process,
+    cancelled: &AtomicBool,
+) -> Result<(), zx::Status> {
     let threads = process.threads()?;
     for thread_koid in &threads {
+        if cancelled.load(Ordering::Relaxed) {
+            // Suspending another process failed, so the whole suspension is abandoned.
+            return Ok(());
+        }
         fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
         let thread_obj = match process.get_child(thread_koid, zx::Rights::SAME_RIGHTS) {
             Ok(thread_obj) => thread_obj,
@@ -380,6 +413,11 @@ fn wait_for_process_suspended(process: &zx::Process) -> Result<(), zx::Status> {
                 .to_result()
             {
                 Err(zx::Status::TIMED_OUT) => {
+                    if cancelled.load(Ordering::Relaxed) {
+                        // Suspending another process failed, so the whole suspension is
+                        // abandoned.
+                        return Ok(());
+                    }
                     watchdog_count += 1;
                     if watchdog_count == 100 || watchdog_count % 600 == 0 {
                         let process_name = process
@@ -412,6 +450,203 @@ fn wait_for_process_suspended(process: &zx::Process) -> Result<(), zx::Status> {
         }
     }
     Ok(())
+}
+
+/// Calls `f` on every item of `items`, spreading the calls over up to `MAX_SUSPEND_WORKERS`
+/// threads (the calling thread and helper threads of `SUSPEND_WORKER_POOL`) if there are more than
+/// `PARALLEL_SUSPEND_THRESHOLD` items, and returns the `Some` values returned by `f`, in no
+/// particular order.
+///
+/// If `f` fails for any item, no further items are processed, the `cancelled` flag passed to the
+/// calls of `f` that are still running is set, and the first error is returned once all the calls
+/// have returned. All the values returned by `f` are dropped in that case, mostly by the threads
+/// that returned them.
+fn parallel_try_filter_map<T, R, F>(items: Vec<T>, f: F) -> Result<Vec<R>, zx::Status>
+where
+    T: Send + Sync + 'static,
+    R: Send + 'static,
+    F: Fn(&T, &AtomicBool) -> Result<Option<R>, zx::Status> + Send + Sync + 'static,
+{
+    struct State<T, R, F> {
+        items: Vec<T>,
+        f: F,
+        next_index: AtomicUsize,
+        cancelled: AtomicBool,
+        first_error: OnceLock<zx::Status>,
+        results: LockDepMutex<Vec<R>, SuspendWorkerResultsLock>,
+    }
+
+    let num_items = items.len();
+    let state = Arc::new(State {
+        items,
+        f,
+        next_index: AtomicUsize::new(0),
+        cancelled: AtomicBool::new(false),
+        first_error: OnceLock::new(),
+        results: LockDepMutex::new(Vec::new()),
+    });
+    let worker_state = state.clone();
+    run_on_workers(num_items, move || {
+        let state = &*worker_state;
+        let mut results = Vec::new();
+        while !state.cancelled.load(Ordering::Relaxed) {
+            let Some(item) = state.items.get(state.next_index.fetch_add(1, Ordering::Relaxed))
+            else {
+                break;
+            };
+            match (state.f)(item, &state.cancelled) {
+                Ok(Some(result)) => results.push(result),
+                Ok(None) => {}
+                Err(e) => {
+                    let _ = state.first_error.set(e);
+                    state.cancelled.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+        // If the work was cancelled, drop the results here, so that the workers release them
+        // (e.g. close the suspend tokens) in parallel.
+        if !results.is_empty() && !state.cancelled.load(Ordering::Relaxed) {
+            state.results.lock().append(&mut results);
+        }
+    });
+
+    if let Some(e) = state.first_error.get() {
+        return Err(*e);
+    }
+    Ok(std::mem::take(&mut *state.results.lock()))
+}
+
+/// Runs `job` on the calling thread and, if `num_items` is more than `PARALLEL_SUSPEND_THRESHOLD`,
+/// on the helper threads of `SUSPEND_WORKER_POOL`, and returns once all of them have returned.
+///
+/// The threads running `job` are expected to share its work dynamically: a helper thread that
+/// doesn't start running `job` before the calling thread is done with it doesn't run it at all.
+fn run_on_workers(num_items: usize, job: impl Fn() + Send + Sync + 'static) {
+    if num_items <= PARALLEL_SUSPEND_THRESHOLD || SUSPEND_WORKER_POOL.num_helpers == 0 {
+        job();
+    } else {
+        SUSPEND_WORKER_POOL.run(Arc::new(job));
+    }
+}
+
+/// A job run by the threads of a `SuspendWorkerPool`.
+type SuspendWorkerJob = Arc<dyn Fn() + Send + Sync>;
+
+/// The pool of helper threads used to suspend the processes of a container in parallel.
+///
+/// The helper threads are created once and kept for the lifetime of the runner, so that no thread
+/// is created or destroyed while suspending a container. It is forced when the `SuspendContext` is
+/// created, so that its threads are not created during the first suspend.
+static SUSPEND_WORKER_POOL: LazyLock<SuspendWorkerPool> = LazyLock::new(SuspendWorkerPool::new);
+
+/// A pool of persistent helper threads which run jobs along with the calling thread.
+struct SuspendWorkerPool {
+    /// Serializes the jobs, as the helper threads run one job at a time.
+    run_lock: LockDepMutex<(), SuspendWorkerRunLock>,
+    shared: Arc<SuspendWorkerPoolShared>,
+    num_helpers: usize,
+}
+
+/// The state of a `SuspendWorkerPool` shared with its helper threads.
+struct SuspendWorkerPoolShared {
+    state: LockDepMutex<SuspendWorkerPoolState, SuspendWorkerPoolStateLock>,
+    /// Signaled when a job is available to the helper threads.
+    job_available: CondVar,
+    /// Signaled when the last helper thread running a job returns from it.
+    helpers_done: CondVar,
+}
+
+#[derive(Default)]
+struct SuspendWorkerPoolState {
+    /// The job currently being run.
+    job: Option<SuspendWorkerJob>,
+    /// The number of helper threads that can still start running `job`.
+    unclaimed: usize,
+    /// The number of helper threads running `job`.
+    running: usize,
+}
+
+impl SuspendWorkerPool {
+    fn new() -> Self {
+        let shared = Arc::new(SuspendWorkerPoolShared {
+            state: LockDepMutex::new(SuspendWorkerPoolState::default()),
+            job_available: CondVar::new(),
+            helpers_done: CondVar::new(),
+        });
+        let max_helpers = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(MAX_SUSPEND_WORKERS)
+            .saturating_sub(1);
+        let mut num_helpers = 0;
+        for _ in 0..max_helpers {
+            let shared = shared.clone();
+            match std::thread::Builder::new()
+                .name("suspend-worker".to_string())
+                .spawn(move || shared.run_helper())
+            {
+                Ok(_) => num_helpers += 1,
+                Err(e) => {
+                    // The calling thread also runs the jobs, so this only reduces the parallelism.
+                    log::warn!("Failed to spawn suspend worker: {e:?}");
+                    break;
+                }
+            }
+        }
+        Self { run_lock: LockDepMutex::new(()), shared, num_helpers }
+    }
+
+    /// Runs `job` on the calling thread and on up to `self.num_helpers` helper threads, and returns
+    /// once all of them have returned.
+    ///
+    /// Must not be called from within a job, as it would deadlock.
+    fn run(&self, job: SuspendWorkerJob) {
+        let _run_guard = self.run_lock.lock();
+        {
+            let mut state = self.shared.state.lock();
+            state.job = Some(job.clone());
+            state.unclaimed = self.num_helpers;
+        }
+        self.shared.job_available.notify_all();
+
+        job();
+
+        // The work is done or being finished by the helpers that started running the job, so the
+        // others no longer need to run it.
+        let mut state = self.shared.state.lock();
+        state.unclaimed = 0;
+        state.job = None;
+        while state.running > 0 {
+            self.shared.helpers_done.wait(&mut state);
+        }
+    }
+}
+
+impl SuspendWorkerPoolShared {
+    /// The body of the helper threads, which run the jobs as they become available.
+    fn run_helper(&self) {
+        let mut state = self.state.lock();
+        loop {
+            if state.unclaimed == 0 {
+                self.job_available.wait(&mut state);
+                continue;
+            }
+            state.unclaimed -= 1;
+            state.running += 1;
+            let job = state.job.clone().expect("a job is available");
+            drop(state);
+
+            job();
+            // Release the job before reporting that it returned, so that the caller of
+            // `SuspendWorkerPool::run` gets back sole ownership of what the job holds.
+            drop(job);
+
+            state = self.state.lock();
+            state.running -= 1;
+            if state.running == 0 {
+                self.helpers_done.notify_all();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -455,11 +690,17 @@ mod tests {
             .is_ok()
     }
 
+    /// Whether `parallel_try_filter_map` can run calls in parallel when given more than
+    /// `PARALLEL_SUSPEND_THRESHOLD` items.
+    fn can_run_in_parallel() -> bool {
+        SUSPEND_WORKER_POOL.num_helpers > 0
+    }
+
     /// A child job for a test, which is killed (and waited on) when dropped, so that the test
     /// processes are killed before their suspend tokens are released. Exceptions in the job are
     /// left unhandled in its exception channel, so they never escape the job.
     struct TestJob {
-        job: zx::Job,
+        job: Arc<zx::Job>,
         _exception_channel: zx::Channel,
     }
 
@@ -467,14 +708,14 @@ mod tests {
         fn new() -> Self {
             let job = fuchsia_runtime::job_default().create_child_job().unwrap();
             let _exception_channel = job.create_exception_channel().unwrap();
-            Self { job, _exception_channel }
+            Self { job: Arc::new(job), _exception_channel }
         }
     }
 
     impl std::ops::Deref for TestJob {
-        type Target = zx::Job;
+        type Target = Arc<zx::Job>;
 
-        fn deref(&self) -> &zx::Job {
+        fn deref(&self) -> &Arc<zx::Job> {
             &self.job
         }
     }
@@ -502,6 +743,7 @@ mod tests {
 
     #[fuchsia::test]
     fn suspend_job_suspends_all_processes() {
+        // More than `PARALLEL_SUSPEND_THRESHOLD`, so that the processes are suspended in parallel.
         const NUM_PROCESSES: usize = 16;
         const NUM_THREADS: usize = 4;
 
@@ -565,5 +807,122 @@ mod tests {
 
         drop(job);
         drop(suspend_handles);
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_runs_few_items_on_calling_thread() {
+        let items: Vec<usize> = (0..PARALLEL_SUSPEND_THRESHOLD).collect();
+        let calling_thread = std::thread::current().id();
+        let results = parallel_try_filter_map(items.clone(), move |item, _cancelled| {
+            assert_eq!(std::thread::current().id(), calling_thread);
+            Ok(Some(*item))
+        })
+        .unwrap();
+        // A single worker processes the items in order.
+        assert_eq!(results, items);
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_runs_many_items_on_helper_threads() {
+        if !can_run_in_parallel() {
+            return;
+        }
+        // Run the function twice, as the helper threads are reused across calls.
+        for _ in 0..2 {
+            // More than `PARALLEL_SUSPEND_THRESHOLD` items, so that the items are processed in
+            // parallel.
+            let items: Vec<usize> = (0..=PARALLEL_SUSPEND_THRESHOLD).collect();
+            let ran_on_helper = Arc::new(AtomicBool::new(false));
+            let ran_on_helper_clone = ran_on_helper.clone();
+            parallel_try_filter_map(items, move |item, _cancelled| {
+                if std::thread::current().name() == Some("suspend-worker") {
+                    ran_on_helper_clone.store(true, Ordering::Relaxed);
+                } else if *item == 0 {
+                    // If the calling thread picked up item 0, hold it until a helper thread runs
+                    // a call, which it does on one of the remaining items.
+                    while !ran_on_helper_clone.load(Ordering::Relaxed) {
+                        std::thread::yield_now();
+                    }
+                }
+                Ok(None::<()>)
+            })
+            .unwrap();
+            assert!(ran_on_helper.load(Ordering::Relaxed));
+        }
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_returns_all_values() {
+        let items: Vec<usize> = (0..100).collect();
+        let mut results = parallel_try_filter_map(items, |item, cancelled| {
+            assert!(!cancelled.load(Ordering::Relaxed));
+            Ok((item % 2 == 0).then_some(*item))
+        })
+        .unwrap();
+        results.sort();
+        assert_eq!(results, (0..100).step_by(2).collect::<Vec<_>>());
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_handles_no_items() {
+        let items: Vec<usize> = vec![];
+        let results = parallel_try_filter_map(items, |item, _cancelled| Ok(Some(*item))).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_returns_first_error() {
+        let items: Vec<usize> = (0..100).collect();
+        let result = parallel_try_filter_map(items, |item, _cancelled| {
+            if *item == 10 { Err(zx::Status::INTERNAL) } else { Ok(Some(*item)) }
+        });
+        assert_eq!(result, Err(zx::Status::INTERNAL));
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_stops_after_error() {
+        let items: Vec<usize> = (0..100).collect();
+        let processed = Arc::new(LockDepMutex::<_, SuspendWorkerResultsLock>::new(vec![]));
+        let processed_clone = processed.clone();
+        let result = parallel_try_filter_map(items, move |item, _cancelled| {
+            processed_clone.lock().push(*item);
+            // Fail every item, so that no worker can process more than one item.
+            Err::<Option<()>, _>(zx::Status::INTERNAL)
+        });
+        assert_eq!(result, Err(zx::Status::INTERNAL));
+        let processed = processed.lock();
+        assert!(!processed.is_empty());
+        assert!(processed.len() <= MAX_SUSPEND_WORKERS);
+    }
+
+    #[fuchsia::test]
+    fn parallel_try_filter_map_cancels_running_calls_on_error() {
+        if !can_run_in_parallel() {
+            return;
+        }
+        // Items are handed out in order, so the call for item 0 starts first. It only fails once
+        // the call for another item is running, which must then be cancelled. There are more than
+        // `PARALLEL_SUSPEND_THRESHOLD` items so that the items are processed in parallel.
+        let items: Vec<usize> = (0..=PARALLEL_SUSPEND_THRESHOLD).collect();
+        let other_call_started = Arc::new(AtomicBool::new(false));
+        let other_call_cancelled = Arc::new(AtomicBool::new(false));
+        let (started, cancelled_clone) = (other_call_started.clone(), other_call_cancelled.clone());
+        let result = parallel_try_filter_map(items, move |item, cancelled| {
+            if *item == 0 {
+                while !started.load(Ordering::Relaxed) {
+                    std::thread::yield_now();
+                }
+                return Err(zx::Status::INTERNAL);
+            }
+            started.store(true, Ordering::Relaxed);
+            // Wait until the failure of the call for item 0 cancels this call.
+            while !cancelled.load(Ordering::Relaxed) {
+                std::thread::yield_now();
+            }
+            cancelled_clone.store(true, Ordering::Relaxed);
+            Ok(Some(*item))
+        });
+        assert_eq!(result, Err(zx::Status::INTERNAL));
+        assert!(other_call_cancelled.load(Ordering::Relaxed));
     }
 }
