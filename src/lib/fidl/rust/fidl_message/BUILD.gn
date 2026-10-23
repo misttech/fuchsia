@@ -4,8 +4,6 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
-import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
-import("//tools/fidl/gidl/gidl.gni")
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #

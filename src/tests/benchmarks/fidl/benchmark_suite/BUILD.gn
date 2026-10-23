@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/fidl/fidl.gni")
-import("//tools/fidl/gidl/gidl.gni")
 import("benchmark_suite.gni")
 
 fidl("benchmark_suite_fidl") {
