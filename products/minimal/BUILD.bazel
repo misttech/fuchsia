@@ -42,6 +42,7 @@ fuchsia_product_configuration(
             "connectivity": {
                 "network": {
                     "netstack_multi_vmo": True,
+                    "netstack_tcp_gro_enabled": True,
                 },
             },
         },
