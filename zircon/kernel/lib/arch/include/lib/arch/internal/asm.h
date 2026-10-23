@@ -11,6 +11,55 @@
 
 #ifdef __ASSEMBLER__  // clang-format off
 
+// Generic: turn commas into newlines.
+.macro _.progn first, rest:vararg
+  \first
+  .ifnb \rest
+    _.progn \rest
+  .endif
+.endm
+
+// Start a named list for use with _.list.accum and _.list.use, below.
+.macro _.list.start name
+  .macro _.list.invoke.\name invoke, rest:vararg
+    \invoke \rest
+  .endm
+.endm
+
+// Append one or more arguments to the named list.
+.macro _.list.accum name, args:vararg
+  .macro _.list.accum.\name accum_args:vararg
+    .purgem _.list.invoke.\name
+    .ifnb \accum_args
+      .macro _.list.invoke.\name invoke, rest:vararg
+        .ifnb \rest
+          \invoke \accum_args, \args, \rest
+        .else
+          \invoke \accum_args, \args
+        .endif
+      .endm
+    .else
+      .macro _.list.invoke.\name invoke, rest:vararg
+        .ifnb \rest
+          \invoke \args, \rest
+        .else
+          \invoke \args
+        .endif
+      .endm
+    .endif
+  .endm
+  _.list.invoke.\name _.list.accum.\name
+  .purgem _.list.accum.\name
+.endm
+
+// After `_.list.start <name>`, `_.list.use <name>, <invoke>, <rest>...`
+// evaluates `<invoke> <accumulated>..., <rest>...` where <accumulated>... is
+// the concatenation of all the argument lists passed to `_.list.accum <name>`.
+.macro _.list.use name, invoke:vararg
+  _.list.invoke.\name \invoke
+  .purgem _.list.invoke.\name
+.endm
+
 // Set ELF symbol visibility and binding, which represent scope.
 .macro _.scope name, scope
   .ifnb \scope
@@ -58,7 +107,7 @@
 // via `_.entity.end`.  The \name, \scope, and \nosection arguments are
 // passed through from caller and validated here; the rest are provided by
 // each entity-defining macro.
-.macro _.entity name, scope, align, nosection, retain, entity, type, epilogue
+.macro _.entity name, scope, align, nosection, retain, entity, type, epilogue:vararg
   // First make sure that entity and `.end_*` pairs are matched (no nesting).
   _.entity.assert
   .purgem _.entity.assert
@@ -147,7 +196,7 @@
 .endm
 
 // Subroutine of `.end_\entity` macros defined by `_.entity`, above.
-.macro _.entity.end entity, name, nosection, epilogue
+.macro _.entity.end entity, name, nosection, epilogue:vararg
   // First, reset the assertion machinery.
   .purgem _.entity.assert
   .macro _.entity.assert
@@ -157,7 +206,7 @@
   _.entity.reset purge
 
   // Do the epilogue for the entity, e.g. .cfi_endproc.
-  \epilogue
+  _.progn \epilogue
 
 #ifdef __ELF__
   // Set the ELF symbol's `st_size`.
@@ -172,35 +221,106 @@
 
 // Subroutines of .function, start/end pairs for each `cfi` mode.
 
-.macro _.function.start.abi
+.macro _.function.cfi.start.abi
   .cfi_startproc
 #ifdef __arm__
   .fnstart
 #endif
 .endm
-.macro _.function.end.abi
+.macro _.function.cfi.end.abi
 #ifdef __arm__
   .fnend
 #endif
   .cfi_endproc
 .endm
 
-.macro _.function.start.custom
+.macro _.function.cfi.start.custom
   .cfi_startproc simple
 #ifdef __arm__
   .fnstart
 #endif
 .endm
-.macro _.function.end.custom
+.macro _.function.cfi.end.custom
 #ifdef __arm__
   .fnend
 #endif
   .cfi_endproc
 .endm
 
-.macro _.function.start.none
+.macro _.function.cfi.start.none
 .endm
-.macro _.function.end.none
+.macro _.function.cfi.end.none
+.endm
+
+.macro _.function.callgraph.start callgraph
+  .ifb \callgraph
+    .L._.llvm.callgraph = 0
+  .else
+    .L._.llvm.callgraph = 1
+#ifdef __ELF__
+    _.list.start llvm.callgraph.callee
+    _.list.start llvm.callgraph.indirect_callee_type
+    .ifc direct,\callgraph
+      .L._.llvm.callgraph.type_id = 0
+    .else
+      .L._.llvm.callgraph.type_id = \callgraph
+    .endif
+    .L._.llvm.callgraph.callee.count = 0
+    .L._.llvm.callgraph.indirect_callee_type.count = 0
+#endif
+  .endif
+.endm
+
+.macro _.llvm.callgraph.callee targets:vararg
+#ifdef __ELF__
+  .irp target,\targets
+    _.list.accum llvm.callgraph.callee, \target
+    .L._.llvm.callgraph.callee.count = .L._.llvm.callgraph.callee.count + 1
+  .endr
+#endif
+.endm
+
+.macro _.llvm.callgraph.indirect_callee_type types:vararg
+#ifdef __ELF__
+  .irp type,\types
+    _.list.accum llvm.callgraph.indirect_callee_type, \type
+    .L._.llvm.callgraph.indirect_callee_type.count = .L._.llvm.callgraph.indirect_callee_type.count + 1
+  .endr
+#endif
+.endm
+
+.macro _.function.callgraph.end
+#ifdef __ELF__
+  .ifne .L._.llvm.callgraph
+    // Emit https://llvm.org/docs/CallGraphSection.html format.  Clang's
+    // assembler will deduce the sh_type from the name (except that is broken
+    // as of https://fxbug.dev/503904133) and will also accept a symbolic name
+    // like %llvm_call_graph for it.  But GAS doesn't know this sh_type at all,
+    // so encode it explicitly.
+    .pushsection .llvm.callgraph, "?", %0x6fff4c0f // SHT_LLVM_CALL_GRAPH
+    .byte 0  // Format version.
+    .byte (((.L._.llvm.callgraph.type_id != 0) & 1) << 0) | \
+          (((.L._.llvm.callgraph.callee.count != 0) & 1) << 1) | \
+          (((.L._.llvm.callgraph.indirect_callee_type.count != 0) & 1) << 2)
+    .dc.a .L._.function.entry
+    .quad .L._.llvm.callgraph.type_id
+    .ifne .L._.llvm.callgraph.callee.count
+      .uleb128 .L._.llvm.callgraph.callee.count
+      _.list.use llvm.callgraph.callee, .dc.a
+    .else
+      // Just consume the empty list.
+      _.list.use llvm.callgraph.callee, _.progn
+    .endif
+    .ifne .L._.llvm.callgraph.indirect_callee_type.count
+      .uleb128 .L._.llvm.callgraph.indirect_callee_type.count
+      _.list.use llvm.callgraph.indirect_callee_type, .quad
+    .else
+      // Just consume the empty list.
+      _.list.use llvm.callgraph.indirect_callee_type, _.progn
+    .endif
+    .popsection
+  .endif
+#endif
 .endm
 
 // Catch stray `.end_*` before any entity-defining macros.
