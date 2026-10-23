@@ -1,0 +1,134 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = ["test"],
+    features = [
+        "fdomain",
+        "testutils",
+    ],
+)
+
+_COMMON_SRCS = [
+    "src/lib.rs",
+    "src/testutil.rs",
+]
+
+_COMMON_BUILD_FLAGS = [
+    ":check_cfg_flags",
+    "//build/config/rust/lints:deny_unused_results",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//sdk/rust/zx-types",
+    "//src/lib/async-utils",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl_table_validation",
+    "//src/lib/network/fidl_fuchsia_net_ext",
+    "//third_party/rust_crates/vendor:futures",
+    "//third_party/rust_crates/vendor:thiserror",
+]
+
+rustc_library(
+    name = "fidl_fuchsia_net_neighbor_ext",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/lib:__pkg__",
+        "//src/connectivity/network/net-cli:__pkg__",
+        "//src/connectivity/network/netlink:__pkg__",
+        "//src/connectivity/network/netstack3:__pkg__",
+        "//src/connectivity/policy/reachability/core:__pkg__",
+    ],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+        "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust_flex",
+        "//src/lib/fdomain/client:flex_fidl",
+    ],
+)
+
+rustc_library(
+    name = "fidl_fuchsia_net_neighbor_ext_testutils",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = ["testutils"],
+    crate_name = "fidl_fuchsia_net_neighbor_ext",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/network/netlink:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+        "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust_flex",
+        "//src/lib/fdomain/client:flex_fidl",
+    ],
+)
+
+rustc_library(
+    name = "fidl_fuchsia_net_neighbor_ext_fdomain",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = ["fdomain"],
+    edition = "2024",
+    visibility = ["//src/connectivity/network/net-cli:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain_flex",
+        "//sdk/fidl/fuchsia.net.neighbor:fuchsia.net.neighbor_rust_fdomain_flex",
+        "//src/lib/fdomain/client:flex_fdomain",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_neighbor_ext_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":fidl_fuchsia_net_neighbor_ext",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_neighbor_ext_fdomain_test",
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate = ":fidl_fuchsia_net_neighbor_ext_fdomain",
+    crate_features = ["fdomain"],
+    edition = "2024",
+    deps = [
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "fidl_fuchsia_net_neighbor_ext_fdomain_host_test",
+    binary_name = "fidl_fuchsia_net_neighbor_ext_fdomain_test",
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-neighbor-ext-test",
+    unit_tests = [":fidl_fuchsia_net_neighbor_ext_test"],
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-neighbor-ext-fdomain-test",
+    unit_tests = [":fidl_fuchsia_net_neighbor_ext_fdomain_test"],
+)
