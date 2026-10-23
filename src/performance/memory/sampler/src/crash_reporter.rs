@@ -170,6 +170,12 @@ impl PendingReport {
     }
 }
 
+/// Sanitize a process name for use in a `fuchsia.feedback/Attachment` key,
+/// which forbids spaces, forward slashes, and non-printable ASCII characters.
+fn sanitize_for_attachment_key(name: &str) -> String {
+    name.chars().map(|c| if c.is_ascii_graphic() && c != '/' { c } else { '_' }).collect()
+}
+
 /// File a crash report with the provided profiles attached to it.
 ///
 /// Warning: Care should be taken to not call this function too often,
@@ -178,9 +184,11 @@ impl PendingReport {
 ///
 /// Note: Attached final profiles, are grouped by process name, then
 /// numbered, and carry the `PROFILE_ATTACHMENT_EXTENSION` extension.
+/// Characters disallowed in `fuchsia.feedback/Attachment` keys (spaces,
+/// `'/'`, and non-printable ASCII) are replaced with `'_'`.
 /// E.g. if there are two final profiles for "process 1" and one profile
-/// for "process 2", then they will be named "process 1_final_0.pb.gz",
-/// "process 1_final_1.pb.gz" and "process 2_final_0.pb.gz". Partial
+/// for "process 2", then they will be named "process_1_final_0.pb.gz",
+/// "process_1_final_1.pb.gz" and "process_2_final_0.pb.gz". Partial
 /// profiles are numbered by their index; currently no further effort
 /// is done to distinguish partial profiles from different processes
 /// that share the same name.
@@ -197,20 +205,27 @@ async fn file_report(
     }
     let attachments: Result<Vec<Attachment>, Error> = profiles
         .into_iter()
-        .chunk_by(|p| p.process_name().to_string())
+        .chunk_by(|p| sanitize_for_attachment_key(p.process_name()))
         .into_iter()
         .flat_map(|(_, profiles)| profiles.enumerate())
         .map(|(i, profile_report)| {
             let (key, profile, size) = match profile_report {
                 ProfileReport::Final { process_name, profile, size, .. } => (
-                    format!("{}_final_{}{}", process_name, i, PROFILE_ATTACHMENT_EXTENSION),
+                    format!(
+                        "{}_final_{}{}",
+                        sanitize_for_attachment_key(&process_name),
+                        i,
+                        PROFILE_ATTACHMENT_EXTENSION
+                    ),
                     profile,
                     size,
                 ),
                 ProfileReport::Partial { process_name, profile, size, iteration, .. } => (
                     format!(
                         "{}_partial_{}{}",
-                        process_name, iteration, PROFILE_ATTACHMENT_EXTENSION
+                        sanitize_for_attachment_key(&process_name),
+                        iteration,
+                        PROFILE_ATTACHMENT_EXTENSION
                     ),
                     profile,
                     size,
@@ -328,9 +343,25 @@ mod test {
     use itertools::assert_equal;
     use std::task::Poll;
 
+    fn is_valid_feedback_attachment_key(key: &str) -> bool {
+        !key.is_empty()
+            && key != "."
+            && key != ".."
+            && key.chars().all(|c| c.is_ascii_graphic() && c != '/')
+    }
+
     fn handle_crash_reporter_request(request: CrashReporterRequest) -> CrashReport {
         match request {
             CrashReporterRequest::FileReport { report, responder } => {
+                if let Some(attachments) = &report.attachments {
+                    for attachment in attachments {
+                        assert!(
+                            is_valid_feedback_attachment_key(&attachment.key),
+                            "Invalid fuchsia.feedback attachment key: {:?}",
+                            attachment.key
+                        );
+                    }
+                }
                 let _ = responder.send(Ok(&Default::default()));
                 report
             }
@@ -840,5 +871,33 @@ mod test {
             profile: Vmo::create(64).unwrap(),
         };
         assert!(!pending.can_accept(&overflow_profile));
+    }
+
+    #[fuchsia::test]
+    async fn test_file_report_sanitizes_attachment_keys() {
+        let (client, mut request_stream) = create_proxy_and_stream::<CrashReporterMarker>();
+
+        let mut tainted_builder = ProfileBuilder::default();
+        tainted_builder.set_process_info(Some("tainted_proc".to_string()), std::iter::empty());
+        tainted_builder.set_lossy(true);
+        let tainted_final = tainted_builder.build().unwrap();
+
+        let mut slash_space_builder = ProfileBuilder::default();
+        slash_space_builder
+            .set_process_info(Some("/pkg/bin/my proc".to_string()), std::iter::empty());
+        let slash_space_partial = slash_space_builder.build_partial_profile(0).unwrap();
+
+        let (_, report) = try_join!(
+            file_report(vec![tainted_final, slash_space_partial], &client),
+            request_stream
+                .next()
+                .map(|item| Ok(handle_crash_reporter_request(item.unwrap().unwrap())))
+        )
+        .unwrap();
+
+        let attachments = report.attachments.unwrap();
+        assert_eq!(2, attachments.len());
+        assert_eq!("tainted_proc_[TAINTED:_BUFFER_OVERFLOW]_final_0.pb.gz", attachments[0].key);
+        assert_eq!("_pkg_bin_my_proc_partial_0.pb.gz", attachments[1].key);
     }
 }
