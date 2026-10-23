@@ -1,0 +1,98 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "event_unittests",
+    testonly = True,
+    srcs = ["event_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/async",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_cc_binary(
+    name = "rx_tests",
+    testonly = True,
+    srcs = ["rx_tests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_cc_binary(
+    name = "frame_ie_tests",
+    testonly = True,
+    srcs = ["frame_ie_tests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_cc_binary(
+    name = "location_tests",
+    testonly = True,
+    srcs = ["location_tests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_cc_binary(
+    name = "trans_time_tests",
+    testonly = True,
+    srcs = ["trans_time_tests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-sim-env-test",
+    unit_tests = [
+        ":event_unittests",
+        ":frame_ie_tests",
+        ":location_tests",
+        ":rx_tests",
+        ":trans_time_tests",
+    ],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)

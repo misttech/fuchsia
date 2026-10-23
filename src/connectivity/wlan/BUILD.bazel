@@ -8,6 +8,8 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env/test:wlan-sim-env-test",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap/test:wlan-sim-fake-ap-test",
         "//src/connectivity/wlan/lib/bitfield/wlan-bitfield-tests",
         "//src/connectivity/wlan/lib/common/cpp:mcs_rate_lookup_tests",
         "//src/connectivity/wlan/lib/common/cpp:wlan_cpp_bitfield_tests",

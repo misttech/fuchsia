@@ -1,0 +1,99 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "assoc_unittests",
+    testonly = True,
+    srcs = ["assoc_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_cc_binary(
+    name = "auth_unittests",
+    testonly = True,
+    srcs = ["auth_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_cc_binary(
+    name = "beacon_unittests",
+    testonly = True,
+    srcs = ["beacon_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_cc_binary(
+    name = "data_unittests",
+    testonly = True,
+    srcs = ["data_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_cc_binary(
+    name = "probe_unittests",
+    testonly = True,
+    srcs = ["probe_unittests.cc"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    tags = ["manual"],
+    deps = [
+        "//src/connectivity/wlan/drivers/lib/macaddr",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-env",
+        "//src/connectivity/wlan/drivers/testing/lib/sim-fake-ap",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_unittest_package(
+    name = "wlan-sim-fake-ap-test",
+    unit_tests = [
+        ":assoc_unittests",
+        ":auth_unittests",
+        ":beacon_unittests",
+        ":data_unittests",
+        ":probe_unittests",
+    ],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
