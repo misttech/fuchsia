@@ -435,7 +435,11 @@ impl InterruptDispatcherState {
         let fields = guard.as_mut().fields_mut();
 
         if let Some(port_dispatcher) = fields.port_dispatcher.as_ref() {
-            let packet_was_in_queue = port_dispatcher.remove_interrupt_packet(&self.port_packet);
+            // SAFETY: `self.lock_spinlock()` is held and `port_packet` is only ever queued on
+            // `fields.port_dispatcher` (by `send_packet_locked` under this same spinlock), so it
+            // is either unqueued or queued on exactly this port.
+            let packet_was_in_queue =
+                unsafe { port_dispatcher.remove_interrupt_packet(&self.port_packet) };
             if old_state == InterruptState::NeedAck && !packet_was_in_queue {
                 return Err(Status::NOT_FOUND);
             }
@@ -685,7 +689,13 @@ impl InterruptDispatcher {
     ) -> bool {
         let port_dispatcher =
             fields.port_dispatcher.as_ref().expect("port_dispatcher must be Some");
-        let status = port_dispatcher.queue_interrupt_packet(&state.port_packet, timestamp);
+        // SAFETY: `state.lock_spinlock()` is held (`fields` is its projection) and `port_packet`
+        // is embedded in the `InterruptDispatcher`, which outlives any queueing: it is only ever
+        // queued on `fields.port_dispatcher` under this same spinlock and is removed from that
+        // port (`remove_interrupt_packet`) before the binding is dropped or the dispatcher is
+        // destroyed, so it is either unqueued or queued on exactly this port.
+        let status =
+            unsafe { port_dispatcher.queue_interrupt_packet(&state.port_packet, timestamp) };
         if (state.flags & INTERRUPT_MASK_POSTWAIT) != 0 {
             state.kind().mask_interrupt();
         }
@@ -837,11 +847,12 @@ impl InterruptDispatcher {
             // Remove the packet for this interrupt from this port on an unbind before actually
             // doing the unbind. This protects against the case where the interrupt dispatcher
             // goes away between an unbind and a port_wait.
-            let removed_packet = fields
-                .port_dispatcher
-                .as_ref()
-                .unwrap()
-                .remove_interrupt_packet(&state.port_packet);
+            // SAFETY: `state.lock_spinlock()` is held and `port_packet` is only ever queued on
+            // `fields.port_dispatcher` (by `send_packet_locked` under this same spinlock), so it
+            // is either unqueued or queued on exactly this port.
+            let removed_packet = unsafe {
+                fields.port_dispatcher.as_ref().unwrap().remove_interrupt_packet(&state.port_packet)
+            };
             // SAFETY: `state.lock_spinlock()` is held and `remove_interrupt_packet` has guaranteed
             // `port_packet` is no longer queued in `port_dispatcher`.
             unsafe {

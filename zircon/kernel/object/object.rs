@@ -80,6 +80,7 @@ mod pinned_memory_token_dispatcher_ffi;
 mod pmt;
 #[allow(improper_ctypes)]
 mod port_dispatcher;
+mod port_dispatcher_ffi;
 mod process_dispatcher;
 #[allow(improper_ctypes)]
 pub(crate) mod process_dispatcher_ffi;

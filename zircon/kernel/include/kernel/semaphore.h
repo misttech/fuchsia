@@ -121,6 +121,7 @@ extern "C" {
 void cpp_semaphore_init(ffi::Uninitialized<Semaphore>* semaphore, int64_t initial_count);
 void cpp_semaphore_destroy(Semaphore* semaphore);
 void cpp_semaphore_post(Semaphore* semaphore);
+void cpp_semaphore_post_etc(Semaphore* semaphore, OwnedWaitQueue* queue_to_own);
 zx_status_t cpp_semaphore_wait_deadline(Semaphore* semaphore, const Deadline* deadline);
 }
 

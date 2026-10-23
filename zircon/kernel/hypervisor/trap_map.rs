@@ -245,9 +245,9 @@ impl PinnedDrop for Trap {
         let Some(port) = self.port.as_ref() else {
             return;
         };
-        // SAFETY: `self.port_allocator.as_handle_ptr()` is the allocator token used for ephemeral
-        // packets queued by this `Trap`.
-        let _ = unsafe { port.cancel_queued_handle(self.port_allocator.as_handle_ptr(), self.key) };
+        // `self.port_allocator.as_handle_ptr()` is the allocator token used for ephemeral packets
+        // queued by this `Trap`; the port only compares it, never dereferences it.
+        let _ = port.cancel_queued_handle(self.port_allocator.as_handle_ptr(), self.key);
     }
 }
 

@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <lib/object_cache.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
@@ -22,105 +23,13 @@
 #include <ktl/unique_ptr.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 #include <object/signal_observer.h>
 
-// PortObserver lifetime and locking notes.
-//
-// PortDispatcher is responsible for destroying PortObservers (MaybeReap
-// or on_zero_handles), however, their destruction may be initiated by
-// either Dispatcher or PortDispatcher.
-//
-// PortObservers can exist on up to two doubly linked lists:
-// - PortObserver::List on PortDispatcher
-// - DoublyLinkedList<SignalObserver*> on Dispatcher
-//
-// The diagrams below show the *relevant* pointers on different
-// states of the system. The pure header view is really the
-// union of all these pointer which can be confusing.
-//
-// rc = ref counted
-// p  = raw pointer
-// o =  owning pointer
-//
-// 1) Situation after object_wait_async(port, handle) is issued:
-//
-//
-//                                   list   +--------+
-//          +------p------+      +----p-----+  Port  |
-//          |             v      v          |        |
-//  +-------+--+        +-----------+       +-+------+
-//  | object   |        | Port      |         ^
-//  |          | <--p---+ Observer  |         |
-//  +----------+        |           +---rc----+
-//                      |           |
-//                      +-----------+
-//                      |  Port     |
-//                      |  Packet   |
-//                      +-----------+
-//
-//   State changes of the object are propagated from the object
-//   to the port via |p| --> observer --> |rc| calls.
-//
-// 2) Situation after the packet is queued on signal match or the wait
-//    is canceled through the Dispatcher.
-//
-//                                          +--------+
-//                                          |  Port  |
-//                                          |        |
-//  +----------+        +-----------+       +-+---+--+
-//  | object   |        | Port      |         ^   |
-//  |          |        | Observer  |         |   |
-//  +----------+        |           +---rc----+   |
-//                +---> |           |             |
-//                |     +-----------+             | list
-//                |     |  Port     |             |
-//                +-rc--|  Packet   | <-----o-----+
-//                      +-----------+
-//
-//   Note that the object no longer has a |p| to the observer
-//   but the observer still owns the port via |rc|.
-//
-//   The |o| pointer is used to destroy the port observer only
-//   when cancellation happens and the port still owns the packet.
-//
-//   The PortObserver's raw pointer to the Dispatcher is a weak reference
-//   guarded by the port's lock. It is cleared either in MaybeReap or
-//   in PortDispatcher::on_zero_handles.
-//
-// Cancelation ordering
-//
-// Observers can be canceled by way of the object or the port. Observers are
-// canceled by the object when the object's handle count reaches zero and when
-// waits are canceled by port_cancel. In this path the Dispatcher's lock is
-// acquired first and the observer is removed from the Dispatcher's observer
-// list, then the PortDispatcher lock is acquired and the observer is removed
-// from the PortDispatcher's observer list and may be cleaned up.
-//
-// When an observer is canceled through the port by way of port_cancel_key there
-// is a lock ordering issue. The PortDispatcher lock must be held to iterate
-// over pending observers but the locks for Dispatchers associated with these
-// observers cannot be acquired while holding the PortDispatcher lock. In this
-// case, the PortDispatcher first cancels each pending observer with the
-// PortDispatcher lock held by assigning the observer's packet's type to a
-// sentinel value and removing them from the PortDispatcher's list to a
-// temporary list. Then the PortDispatcher lock is released and the observers
-// are deregistered from their Dispatchers (acquiring the Dispatcher lock) one
-// at a time. If an observer fires in this state and attempts to queue a
-// packet PortDispatcher will check the type field and not queue the packet.
-//
-// Locking
-//
-// The PortDispatcher's lock guards PortDispatcher's list of observers, the
-// PortObserver's reference to its Dispatcher, and the packet type field on the
-// PortObserver's stored zx_port_packet_t in pending observers. The
-// PortDispatcher lock can be acquired while holding the Dispatcher's lock.
-//
-// The Dispatcher's lock guards the Dispatcher's list of observers and the
-// other fields on PortObserver, most notably the packet itself. The
-// dispatcher lock cannot be acquired while holding the PortDispatcher lock.
-//
-// Both the PortDispatcher and Dispatcher locks are held when delivering a
-// packet and when deciding whether to destroy it in MaybeReap.
+// PortObserver lifetime and locking notes: the canonical description of the
+// PortDispatcher / PortObserver / Dispatcher pointer graph, cancelation
+// ordering, and lock hierarchy lives in the module documentation at the top of
+// port_dispatcher.rs.
 
 class PortDispatcher;
 class PortObserver;
@@ -133,8 +42,8 @@ struct PortAllocator {
   virtual void Free(PortPacket* port_packet) = 0;
 };
 
-constexpr zx_packet_type_t kPortPacketTypeCanceled = 0xffffffff;
-
+// kPortPacketTypeCanceled (the sentinel written by Cancel()) is defined in
+// <lib/object-constants.h> so that the Rust PortDispatcher shares the same value.
 struct PortPacket final : public fbl::DoublyLinkedListable<PortPacket*> {
   using List = fbl::DoublyLinkedList<PortPacket*>;
   zx_port_packet_t packet;
@@ -151,11 +60,6 @@ struct PortPacket final : public fbl::DoublyLinkedListable<PortPacket*> {
   void Free() { allocator->Free(this); }
   void Cancel() { packet.type = kPortPacketTypeCanceled; }
   bool is_canceled() const { return packet.type == kPortPacketTypeCanceled; }
-};
-
-struct PortInterruptPacket final : public fbl::DoublyLinkedListable<PortInterruptPacket*> {
-  zx_instant_boot_t timestamp;
-  uint64_t key;
 };
 
 // Observers are weakly contained in Dispatchers.
@@ -221,6 +125,56 @@ class PortObserver final : public SignalObserver {
   Dispatcher* dispatcher_;
 };
 
+extern "C" {
+
+void rust_port_dispatcher_state_init(void* state, const void* disp, uint32_t options);
+void rust_port_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_port_dispatcher_state_get_lock(const void* state);
+void rust_port_dispatcher_on_zero_handles(const PortDispatcher* disp);
+zx_status_t rust_port_dispatcher_queue(const PortDispatcher* disp, PortPacket* port_packet);
+zx_status_t rust_port_dispatcher_queue_and_remove_observer(const PortDispatcher* disp,
+                                                           PortPacket* port_packet,
+                                                           zx_signals_t observed,
+                                                           PortObserver* observer,
+                                                           OwnedWaitQueue* queue_to_own);
+zx_status_t rust_port_dispatcher_queue_user(const PortDispatcher* disp,
+                                            const zx_port_packet_t* packet);
+zx_status_t rust_port_dispatcher_dequeue(const PortDispatcher* disp, const Deadline* deadline,
+                                         zx_port_packet_t* packet);
+void rust_port_dispatcher_maybe_reap(const PortDispatcher* disp, PortObserver* observer,
+                                     PortPacket* port_packet);
+zx_status_t rust_port_dispatcher_make_observer(const PortDispatcher* disp, uint32_t options,
+                                               const Handle* handle, uint64_t key,
+                                               zx_signals_t signals, PortObserver** out_observer);
+bool rust_port_dispatcher_cancel_queued_handle_key(const PortDispatcher* disp, const void* handle,
+                                                   uint64_t key);
+bool rust_port_dispatcher_cancel_queued_packet(const PortDispatcher* disp, PortPacket* port_packet);
+zx_status_t rust_port_dispatcher_cancel_key(const PortDispatcher* disp, uint64_t key);
+bool rust_port_dispatcher_can_bind_to_interrupt(const PortDispatcher* disp);
+
+zx_status_t cpp_port_dispatcher_create(uint32_t options,
+                                       ffi::Uninitialized<KernelHandle<PortDispatcher>>* handle_out,
+                                       ffi::Uninitialized<zx_rights_t>* rights_out);
+
+PortPacket* cpp_port_packet_alloc();
+void cpp_port_packet_free(PortPacket* packet);
+PortAllocator* cpp_port_default_allocator();
+void cpp_port_allocator_free(PortAllocator* allocator, PortPacket* packet);
+int64_t cpp_port_ephemeral_packet_freed_count();
+int64_t cpp_port_observer_freed_count();
+
+PortObserver* cpp_port_observer_alloc(uint32_t options, const Handle* handle, PortDispatcher* port,
+                                      uint64_t key, zx_signals_t signals);
+void cpp_port_observer_free(PortObserver* observer);
+void cpp_port_observer_cancel(PortObserver* observer);
+void cpp_port_observer_add_dispatcher_ref_locked(PortObserver* observer);
+Dispatcher* cpp_port_observer_unlink_dispatcher_locked(PortObserver* observer);
+bool cpp_port_observer_matches_key(PortObserver* observer, const PortDispatcher* port,
+                                   uint64_t key);
+bool cpp_port_observer_remove_from_dispatcher(PortObserver* observer, Dispatcher* dispatcher);
+
+}  // extern "C"
+
 // The PortDispatcher implements the port kernel object which is the cornerstone
 // for waiting on object changes in Zircon. The PortDispatcher handles 3 usage
 // cases:
@@ -238,35 +192,53 @@ class PortObserver final : public SignalObserver {
 // When a packet from any of the sources arrives to the port, one waiting
 // thread unblocks and gets the packet. In all cases |sema_| is used to signal
 // and manage the waiting threads.
-
-class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PORT_RIGHTS> {
+class PortDispatcher final : public Dispatcher {
  public:
-  static PortAllocator* DefaultPortAllocator();
+  static constexpr zx_rights_t default_rights() { return ZX_DEFAULT_PORT_RIGHTS; }
   static zx_status_t Create(uint32_t options, KernelHandle<PortDispatcher>* handle,
                             zx_rights_t* rights);
 
   ~PortDispatcher() final;
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PORT; }
 
-  bool can_bind_to_interrupt() const { return options_ & ZX_PORT_BIND_TO_INTERRUPT; }
-  void on_zero_handles() final;
+  bool can_bind_to_interrupt() const { return rust_port_dispatcher_can_bind_to_interrupt(this); }
+  void on_zero_handles() final { rust_port_dispatcher_on_zero_handles(this); }
+
+  bool is_waitable() const final { return default_rights() & ZX_RIGHT_WAIT; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
 
   // Queues a packet on the port.
-  zx_status_t Queue(PortPacket* port_packet);
+  zx_status_t Queue(PortPacket* port_packet) {
+    return rust_port_dispatcher_queue(this, port_packet);
+  }
 
   // Queues a packet based on a signal observation and deregisters the observer from the port.
   // If |observer| is non-null, also removes it from the observer list.
   zx_status_t QueueAndRemoveObserver(PortPacket* port_packet, zx_signals_t observed,
                                      PortObserver* observer = nullptr,
-                                     OwnedWaitQueue* queue_to_own = nullptr);
+                                     OwnedWaitQueue* queue_to_own = nullptr) {
+    return rust_port_dispatcher_queue_and_remove_observer(this, port_packet, observed, observer,
+                                                          queue_to_own);
+  }
 
   // Queues a user packet.
-  zx_status_t QueueUser(const zx_port_packet_t& packet);
+  zx_status_t QueueUser(const zx_port_packet_t& packet) {
+    return rust_port_dispatcher_queue_user(this, &packet);
+  }
 
-  // Queues an interrupt packet.
-  bool QueueInterruptPacket(PortInterruptPacket* port_packet, zx_instant_boot_t timestamp);
-  zx_status_t Dequeue(const Deadline& deadline, zx_port_packet_t* packet);
-  bool RemoveInterruptPacket(PortInterruptPacket* port_packet);
+  // Interrupt packets (case 3 above) are queued and removed by the Rust
+  // InterruptDispatcher via PortDispatcher::queue_interrupt_packet() and
+  // PortDispatcher::remove_interrupt_packet() in port_dispatcher.rs.
+  zx_status_t Dequeue(const Deadline& deadline, zx_port_packet_t* packet) {
+    return rust_port_dispatcher_dequeue(this, &deadline, packet);
+  }
 
   // This method determines the observer's fate. Upon return, one of the following will have
   // occurred:
@@ -277,27 +249,43 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // is destroyed (Queued or CancelQueued).
   //
   // 3. The observer is left for on_zero_handles to destroyed.
-  void MaybeReap(PortObserver* observer, PortPacket* port_packet);
+  void MaybeReap(PortObserver* observer, PortPacket* port_packet) {
+    rust_port_dispatcher_maybe_reap(this, observer, port_packet);
+  }
 
   // Creates an observer registered with this port.
   //
   // Requires that a read lock is held on the handle table containing |handle|.
   zx::result<SignalObserver*> MakeObserver(uint32_t options, const Handle* handle, uint64_t key,
-                                           zx_signals_t signals);
+                                           zx_signals_t signals) {
+    PortObserver* observer = nullptr;
+    zx_status_t status =
+        rust_port_dispatcher_make_observer(this, options, handle, key, signals, &observer);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    // Upcast on the C++ side so the SignalObserver base subobject is located by the compiler
+    // rather than by assuming it sits at offset 0.
+    return zx::ok(static_cast<SignalObserver*>(observer));
+  }
 
   // Returns true if at least one packet was removed from the queue.
   // Called under the handle table lock when |handle| is not null.
   // Any matching ephemeral PortPackets are removed from the queue and freed.
-  bool CancelQueued(const void* handle, uint64_t key);
+  bool CancelQueued(const void* handle, uint64_t key) {
+    return rust_port_dispatcher_cancel_queued_handle_key(this, handle, key);
+  }
 
   // Removes |port_packet| from this port's queue. Returns false if the packet was
   // not in this queue. It is undefined to call this with a packet queued in another port.
-  bool CancelQueued(PortPacket* port_packet);
+  bool CancelQueued(PortPacket* port_packet) {
+    return rust_port_dispatcher_cancel_queued_packet(this, port_packet);
+  }
 
   // Cancel all pending waits and packets registered with |key|.
   // Returns ZX_OK if any waits or packets were canceled and ZX_ERR_NOT_FOUND if
   // no matching waits or packets were found.
-  zx_status_t CancelKey(uint64_t key);
+  zx_status_t CancelKey(uint64_t key) { return rust_port_dispatcher_cancel_key(this, key); }
 
   // Init hook that sets up the cache allocators used by this dispatcher.
   static void InitializeCacheAllocators(uint32_t level);
@@ -305,64 +293,18 @@ class PortDispatcher final : public SoloDispatcher<PortDispatcher, ZX_DEFAULT_PO
   // Returns true if the dispatcher lock |get_lock()| is currently held.
   bool DispatcherLockIsHeld() const { return get_lock()->lock().IsHeld(); }
 
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
+
  private:
+  friend zx_status_t cpp_port_dispatcher_create(
+      uint32_t options, ffi::Uninitialized<KernelHandle<PortDispatcher>>* handle_out,
+      ffi::Uninitialized<zx_rights_t>* rights_out);
   explicit PortDispatcher(uint32_t options);
 
-  // Cancel all queued port packets matching |handle| (if not nullptr) and |key|.
-  // Any canceled ephemeral packets are moved to |free_list|; the caller must drain and Free()
-  // these with get_lock() released.
-  // Returns true if any packets were canceled.
-  bool CancelQueuedPacketsLocked(const void* handle, uint64_t key, PortPacket::List* free_list)
-      TA_REQ(get_lock());
-
-  zx_status_t QueuePacketLocked(PortPacket* port_packet, zx_signals_t observed) TA_REQ(get_lock());
-
-  // Unlinks an observer from its dispatcher and remove it from our observer
-  // list if it is not already removed. This may place the observer into
-  // |destroyer| for the caller to destroy after releasing get_lock().
-  void MaybeReapLocked(PortObserver* observer, PortPacket* port_packet,
-                       object_cache::UniquePtr<PortObserver>& destroyer) TA_REQ(get_lock());
-
-  const uint32_t options_;
-  Semaphore sema_;
-  bool zero_handles_ TA_GUARDED(get_lock());
-
-  // Next three members handle the object and manual notifications.
-  size_t num_ephemeral_packets_ TA_GUARDED(get_lock());
-  PortPacket::List packets_ TA_GUARDED(get_lock());
-  // Next two members handle the interrupt notifications.
-  DECLARE_SPINLOCK(PortDispatcher) spinlock_;
-  fbl::DoublyLinkedList<PortInterruptPacket*> interrupt_packets_ TA_GUARDED(spinlock_);
-
-  // Keeps track of outstanding observers so they can be removed from dispatchers once handle
-  // count drops to zero.
-  PortObserver::List observers_ TA_GUARDED(get_lock());
+  OpaqueStorage<kPortDispatcherStateSize, kPortDispatcherStateAlign> opaque_storage_;
 };
 
 inline bool PortObserver::DispatcherLockIsHeld() const { return port_->DispatcherLockIsHeld(); }
-
-extern "C" {
-zx_status_t cpp_port_dispatcher_create(uint32_t options,
-                                       ffi::Uninitialized<KernelHandle<PortDispatcher>>* handle_out,
-                                       zx_rights_t* rights_out);
-void cpp_port_dispatcher_packet_init(PortInterruptPacket* packet);
-void cpp_port_dispatcher_packet_destroy(PortInterruptPacket* packet);
-uint64_t cpp_port_dispatcher_packet_get_key(const PortInterruptPacket* packet);
-void cpp_port_dispatcher_packet_set_key(PortInterruptPacket* packet, uint64_t key);
-zx_instant_boot_t cpp_port_dispatcher_packet_get_timestamp(const PortInterruptPacket* packet);
-void cpp_port_dispatcher_packet_set_timestamp(PortInterruptPacket* packet,
-                                              zx_instant_boot_t timestamp);
-bool cpp_port_dispatcher_can_bind_to_interrupt(const PortDispatcher* port);
-bool cpp_port_dispatcher_queue_interrupt_packet(PortDispatcher* port, PortInterruptPacket* packet,
-                                                zx_instant_boot_t timestamp);
-bool cpp_port_dispatcher_remove_interrupt_packet(PortDispatcher* port, PortInterruptPacket* packet);
-zx_status_t cpp_port_dispatcher_queue_user(PortDispatcher* port, const zx_port_packet_t* packet);
-zx_status_t cpp_port_dispatcher_dequeue(PortDispatcher* port, const Deadline* deadline,
-                                        zx_port_packet_t* packet);
-bool cpp_port_dispatcher_cancel_queued(PortDispatcher* port, const void* handle, uint64_t key);
-zx_status_t cpp_port_dispatcher_cancel_key(PortDispatcher* port, uint64_t key);
-void cpp_port_packet_set_packet(PortPacket* port_packet, const zx_port_packet_t* packet);
-zx_status_t cpp_port_dispatcher_queue(PortDispatcher* port, PortPacket* packet);
-}
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PORT_DISPATCHER_H_

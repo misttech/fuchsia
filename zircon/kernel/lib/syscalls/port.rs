@@ -81,7 +81,9 @@ pub fn sys_port_wait(
     let slack_deadline = Deadline::new(InstantUnknown(deadline), up.get_timer_slack_policy());
 
     let mut pp = MaybeUninit::uninit();
-    let pp = port.dequeue(&slack_deadline, &mut pp)?;
+    port.dequeue(&slack_deadline, &mut pp)?;
+    // SAFETY: `dequeue` returned `Ok`, which guarantees it initialized `pp`.
+    let pp = unsafe { pp.assume_init_ref() };
 
     packet_out.reinterpret::<RawPortPacket>().copy_to_user(pp)?;
 

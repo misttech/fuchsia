@@ -27,6 +27,11 @@ FFI_ALWAYS_INLINE void cpp_semaphore_destroy(Semaphore* semaphore) { semaphore->
 FFI_ALWAYS_INLINE void cpp_semaphore_post(Semaphore* semaphore) { semaphore->Post(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_semaphore_post_etc(Semaphore* semaphore, OwnedWaitQueue* queue_to_own) {
+  semaphore->Post(queue_to_own);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_semaphore_wait_deadline(Semaphore* semaphore,
                                                           const Deadline* deadline) {
   return semaphore->Wait(*deadline);

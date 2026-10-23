@@ -205,6 +205,30 @@ constexpr size_t kInterruptDispatcherStateSize = 296 + (2 * kLockClassIdSize);
 constexpr size_t kInterruptDispatcherStateAlign = 8;
 constexpr size_t kInterruptDispatcherStateOffset = 56;
 
+// Size, alignment, and offset for PortDispatcherState.
+constexpr size_t kPortDispatcherStateSize = 176 + (2 * kLockClassIdSize);
+constexpr size_t kPortDispatcherStateAlign = 8;
+constexpr size_t kPortDispatcherStateOffset = 48;
+
+// Size, alignment, and list node offset for PortObserver.
+constexpr size_t kPortObserverSize = 160;
+constexpr size_t kPortObserverAlign = 8;
+constexpr size_t kPortObserverListNodeOffset = 136;
+
+// Size, alignment, and field offsets for PortPacket. Both C++ and Rust read and write every
+// field directly, so each offset is asserted on both sides.
+constexpr size_t kPortPacketSize = 88;
+constexpr size_t kPortPacketAlign = 8;
+constexpr size_t kPortPacketNodeOffset = 0;
+constexpr size_t kPortPacketPacketOffset = 16;
+constexpr size_t kPortPacketHandleOffset = 64;
+constexpr size_t kPortPacketObserverOffset = 72;
+constexpr size_t kPortPacketAllocatorOffset = 80;
+
+// Sentinel stored in PortPacket::packet.type by PortPacket::Cancel(). Shared by the C++
+// PortPacket helpers (is_canceled()) and the Rust PortDispatcher.
+constexpr uint32_t kPortPacketTypeCanceled = 0xffffffff;
+
 // Size and alignment for PortInterruptPacket.
 constexpr size_t kPortInterruptPacketSize = 32;
 constexpr size_t kPortInterruptPacketAlign = 8;
