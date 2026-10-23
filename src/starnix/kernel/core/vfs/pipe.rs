@@ -17,7 +17,7 @@ use crate::vfs::{
     FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr, SpecialNode, default_fcntl,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_sync::{Mutex, MutexGuard, ordered_lock};
+use starnix_sync::{LockDepGuard, LockDepMutex, PipeLock, ordered_lock};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_types::vfs::default_statfs;
@@ -82,7 +82,7 @@ pub struct Pipe {
     splice_write_in_progress: bool,
 }
 
-pub type PipeHandle = Arc<Mutex<Pipe>>;
+pub type PipeHandle = Arc<LockDepMutex<Pipe, PipeLock>>;
 
 impl Pipe {
     pub fn new(default_pipe_capacity: usize) -> PipeHandle {
@@ -627,7 +627,7 @@ impl<'a> SpliceReadGuard<'a> {
     /// Marks `pipe` as having a splice read in progress and drops the pipe lock.
     fn new(
         pipe_handle: &'a PipeHandle,
-        mut pipe: MutexGuard<'a, Pipe>,
+        mut pipe: LockDepGuard<'a, Pipe>,
         reserved_bytes: usize,
     ) -> Self {
         assert!(!pipe.splice_read_in_progress);
@@ -673,7 +673,7 @@ struct SpliceWriteGuard<'a> {
 
 impl<'a> SpliceWriteGuard<'a> {
     /// Marks `pipe` as having a splice write in progress and drops the pipe lock.
-    fn new(pipe_handle: &'a PipeHandle, mut pipe: MutexGuard<'a, Pipe>) -> Self {
+    fn new(pipe_handle: &'a PipeHandle, mut pipe: LockDepGuard<'a, Pipe>) -> Self {
         assert!(!pipe.splice_write_in_progress);
         pipe.splice_write_in_progress = true;
         Self { pipe: Some(pipe_handle) }
@@ -852,7 +852,7 @@ impl PipeFileObject {
     fn lock_pipe_without_splice<'a>(
         &'a self,
         current_task: &CurrentTask,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+    ) -> Result<LockDepGuard<'a, Pipe>, Errno> {
         loop {
             let pipe = self.pipe.lock();
             if !pipe.splice_read_in_progress && !pipe.splice_write_in_progress {
@@ -875,7 +875,7 @@ impl PipeFileObject {
         &'a self,
         current_task: &CurrentTask,
         _non_blocking: bool,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+    ) -> Result<LockDepGuard<'a, Pipe>, Errno> {
         let pipe = self.lock_pipe_without_splice(current_task)?;
         if pipe.is_readable() { Ok(pipe) } else { error!(EAGAIN) }
     }
@@ -887,7 +887,7 @@ impl PipeFileObject {
         current_task: &CurrentTask,
         _non_blocking: bool,
         len: usize,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+    ) -> Result<LockDepGuard<'a, Pipe>, Errno> {
         let pipe = self.lock_pipe_without_splice(current_task)?;
         if pipe.had_reader && pipe.reader_count == 0 {
             std::mem::drop(pipe);
@@ -905,7 +905,7 @@ impl PipeFileObject {
         current_task: &CurrentTask,
         file: &FileHandle,
         non_blocking: bool,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+    ) -> Result<LockDepGuard<'a, Pipe>, Errno> {
         if non_blocking {
             return self.try_lock_pipe_for_reading(current_task, true);
         }
@@ -935,7 +935,7 @@ impl PipeFileObject {
         file: &FileHandle,
         non_blocking: bool,
         len: usize,
-    ) -> Result<MutexGuard<'a, Pipe>, Errno> {
+    ) -> Result<LockDepGuard<'a, Pipe>, Errno> {
         if non_blocking {
             return self.try_lock_pipe_for_writing(current_task, true, len);
         }
@@ -1338,6 +1338,7 @@ mod tests {
     use crate::vfs::buffers::UserBuffersInputBuffer;
     use crate::vfs::new_memfd;
     use smallvec::smallvec;
+    use starnix_sync::Mutex;
     use starnix_uapi::seal_flags::SealFlags;
     use std::sync::mpsc;
 
@@ -3164,5 +3165,16 @@ mod tests {
             );
         })
         .await;
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "LockDep: Self-deadlock detected")]
+    fn test_unordered_nested_pipe_lock_panics_in_lockdep() {
+        let pipe1 = Pipe::new(*PAGE_SIZE as usize);
+        let pipe2 = Pipe::new(*PAGE_SIZE as usize);
+        let _guard1 = pipe1.lock();
+        // Attempting to acquire a second pipe lock while holding one must panic in LockDep.
+        let _guard2 = pipe2.lock();
     }
 }
