@@ -100,23 +100,36 @@ static ITS_CMDQ_VA: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 static ITS_CPU0_RDBASE: AtomicU64 = AtomicU64::new(0);
 
 ksync::declare_singleton_monitored_spinlock!(
-    /// Serializes the ITS command queue, LPI configuration table updates and the LPI handler table.
+    /// Serializes the ITS command queue and LPI configuration table updates.
     GicItsLock
 );
 
-/// The ITS command queue write offset, per-LPI mapped flags and LPI handler table, guarded by
-/// `GicItsLock`. `gic_init_its` takes the lock around each command it issues.
+/// The ITS command queue write offset and per-LPI mapped flags, guarded by `GicItsLock`.
+/// `gic_init_its` takes the lock around each command it issues.
 struct ItsState {
     cmdq_cwriter: u64,
     lpi_mapped: [bool; MAX_LPIS as usize],
-    lpi_handlers: [InterruptHandler; MAX_LPIS as usize],
 }
 
-static ITS_STATE: KCell<ItsState, GicItsLock> = KCell::new(ItsState {
-    cmdq_cwriter: 0,
-    lpi_mapped: [false; MAX_LPIS as usize],
-    lpi_handlers: [InterruptHandler::DEFAULT; MAX_LPIS as usize],
-});
+static ITS_STATE: KCell<ItsState, GicItsLock> =
+    KCell::new(ItsState { cmdq_cwriter: 0, lpi_mapped: [false; MAX_LPIS as usize] });
+
+ksync::declare_singleton_spinlock!(
+    /// Guards `LPI_HANDLERS`. The IRQ path holds it across the handler call, so replacing a
+    /// handler waits for any call of it in flight, as the pdev table does.
+    ///
+    /// Lock order: `GicLpiHandlerLock` before anything a handler takes (its dispatcher, the
+    /// `MsiAllocation`, and `GicItsLock` through `msi_mask_unmask`). It is never taken with
+    /// `GicItsLock` held.
+    ///
+    /// A handler must never call `msi_register_handler` or `msi_free_block`, directly or
+    /// indirectly: it would spin on this lock forever.
+    GicLpiHandlerLock
+);
+
+/// The handler for each LPI, indexed from `LPI_BASE`.
+static LPI_HANDLERS: KCell<[InterruptHandler; MAX_LPIS as usize], GicLpiHandlerLock> =
+    KCell::new([InterruptHandler::DEFAULT; MAX_LPIS as usize]);
 
 /// The LPI range allocator. Constructed in `rust_arm_gicv3_init_early`; `gic_init_its` sizes it
 /// with `init`.
@@ -1270,15 +1283,12 @@ impl InterruptControllerOps for Gicv3 {
         if vector >= LPI_BASE {
             let idx = vector - LPI_BASE;
             if idx < MAX_LPIS {
-                let handler = {
-                    ksync::lock!(
-                        let guard =
-                            GicItsLock::lock_policy::<ksync::NoIrqSavePolicy>(source_tag!())
-                    );
-                    // SAFETY: `guard` holds `GicItsLock`, the singleton lock that guards
-                    // `ITS_STATE`.
-                    unsafe { ITS_STATE.get(guard.token()) }.lpi_handlers[idx as usize]
-                };
+                ksync::lock!(
+                    let guard =
+                        GicLpiHandlerLock::lock_policy::<ksync::NoIrqSavePolicy>()
+                );
+                // SAFETY: `guard` holds `GicLpiHandlerLock`, which guards `LPI_HANDLERS`.
+                let handler = unsafe { LPI_HANDLERS.get(guard.token()) }[idx as usize];
                 if handler.present() {
                     handler.invoke();
                 }
@@ -1478,17 +1488,19 @@ impl InterruptControllerOps for Gicv3 {
         );
 
         let alloc_start = block.base_irq_id - LPI_BASE;
+        let range = alloc_start as usize..(alloc_start + block.num_irq) as usize;
         {
             ksync::lock!(let mut guard = GicItsLock::lock(source_tag!()));
             let token = guard.as_mut().token_mut();
-            for i in 0..block.num_irq {
-                let idx = alloc_start + i;
-                // SAFETY: `token` proves that `GicItsLock`, the singleton lock that guards
-                // `ITS_STATE`, is held.
-                unsafe { ITS_STATE.get_mut(token) }.lpi_handlers[idx as usize] =
-                    InterruptHandler::DEFAULT;
-                gic_lpi_set_enable_locked(token, idx, false);
+            for idx in range.clone() {
+                gic_lpi_set_enable_locked(token, idx as u32, false);
             }
+        }
+        {
+            ksync::lock!(let mut guard = GicLpiHandlerLock::lock());
+            // SAFETY: `guard` holds `GicLpiHandlerLock`, which guards `LPI_HANDLERS`.
+            let handlers = unsafe { LPI_HANDLERS.get_mut(guard.as_mut().token_mut()) };
+            handlers[range].fill(InterruptHandler::DEFAULT);
         }
 
         LPI_ALLOC.free_range(alloc_start, block.num_irq);
@@ -1502,12 +1514,23 @@ impl InterruptControllerOps for Gicv3 {
         debug_assert!((LPI_BASE..LPI_BASE + MAX_LPIS).contains(&lpi_id));
         let idx = lpi_id - LPI_BASE;
 
-        ksync::lock!(let mut guard = GicItsLock::lock(source_tag!()));
-        let token = guard.as_mut().token_mut();
-        // SAFETY: `token` proves that `GicItsLock`, the singleton lock that guards `ITS_STATE`, is
-        // held.
-        unsafe { ITS_STATE.get_mut(token) }.lpi_handlers[idx as usize] = handler;
-        gic_lpi_set_enable_locked(token, idx, handler.present());
+        // Replacing a handler waits for any call of the old one in flight. This doesn't rely on
+        // the enable state: `msi_alloc_block` enables the whole block, and the IRQ path only EOIs
+        // an LPI with no handler.
+        if !handler.present() {
+            ksync::lock!(let mut guard = GicItsLock::lock(source_tag!()));
+            gic_lpi_set_enable_locked(guard.as_mut().token_mut(), idx, false);
+        }
+        {
+            ksync::lock!(let mut guard = GicLpiHandlerLock::lock());
+            // SAFETY: `guard` holds `GicLpiHandlerLock`, which guards `LPI_HANDLERS`.
+            let handlers = unsafe { LPI_HANDLERS.get_mut(guard.as_mut().token_mut()) };
+            handlers[idx as usize] = handler;
+        }
+        if handler.present() {
+            ksync::lock!(let mut guard = GicItsLock::lock(source_tag!()));
+            gic_lpi_set_enable_locked(guard.as_mut().token_mut(), idx, true);
+        }
     }
 
     fn status(&self, vector: InterruptVector) -> Result<(bool, bool), Status> {
