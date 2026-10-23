@@ -17,6 +17,14 @@ zx_status_t Endpoint::Init(EventRing* event_ring, fdf::MmioBuffer* mmio) {
   return transfer_ring_.Init(zx_system_get_page_size(), kFakeBti, event_ring, false, mmio, hci_);
 }
 
+Endpoint::~Endpoint() = default;
+
+void Endpoint::Connect(async_dispatcher_t* dispatcher,
+                       fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end,
+                       fbl::RefPtr<DeviceState> state) {
+  usb::EndpointServer::Connect(dispatcher, std::move(server_end));
+}
+
 void Endpoint::QueueRequests(QueueRequestsRequest& request,
                              QueueRequestsCompleter::Sync& completer) {}
 

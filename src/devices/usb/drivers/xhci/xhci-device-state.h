@@ -90,8 +90,19 @@ class DeviceState : public fbl::RefCounted<DeviceState> {
     return transaction_lock_;
   }
 
-  // Used by xhci to break cyclic dependency during dtor.
-  void ResetHci() { hci_ = nullptr; }
+  // Used by xhci to break cyclic dependency during dtor or device disconnect.
+  void ResetHci() {
+    fbl::AutoLock l(&transaction_lock_);
+    hci_ = nullptr;
+    tr_.ResetHci();
+    tr_.transfer_ring().DeinitIfActive();
+    for (auto& ring : rings_) {
+      if (ring.has_value()) {
+        ring->ResetHci();
+        ring->transfer_ring().DeinitIfActive();
+      }
+    }
+  }
 
   void CreateInspectNode(inspect::Node node, uint16_t vendor_id, uint16_t product_id);
 

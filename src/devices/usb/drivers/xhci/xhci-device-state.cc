@@ -11,10 +11,10 @@ namespace usb_xhci {
 DeviceState::~DeviceState() {
   // Each DeviceState corresponds to one slot. When the device is removed, we should call
   // DisableSlotCommand on the corresponding slot.
-  if (hci_ && !disconnecting_) {
+  if (hci_ && hci_->Running() && !disconnecting_) {
     auto status =
         hci_->RunSynchronously(kPrimaryInterrupter, hci_->DisableSlotCommand(*this).box());
-    if (status != ZX_OK) {
+    if (status != ZX_OK && status != ZX_ERR_IO_NOT_PRESENT) {
       fdf::error("Could not DisableSlot for {} on DeviceState destruction {}", GetSlot(), status);
     }
   }

@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.hci/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -1172,6 +1173,601 @@ TEST_F(XhciMmioHarness, GetPortStateUsesOneBasedPortIndex) {
 
   EXPECT_EQ(driver_test().driver()->GetPortState(1).slot_id, 42);
   EXPECT_EQ(driver_test().driver()->GetPortState(2).slot_id, 84);
+}
+
+TEST_F(XhciMmioHarness, DeviceOfflineWithBoundFidlEndpointAndPendingRequest) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+  EnableEndpoint(0, 1, true);
+
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+  auto cr = crcr_next();
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::AddressDeviceCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+  cr = FakeTRB::get(cr->next);
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::ConfigureEndpointCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+
+  zx::result hci_client_end =
+      driver_test().Connect<fuchsia_hardware_usb_hci::UsbHciService::Device>();
+  ASSERT_OK(hci_client_end);
+  auto [ep_client_end, ep_server_end] =
+      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    fidl::WireSyncClient<fuchsia_hardware_usb_hci::UsbHci> hci_client(std::move(*hci_client_end));
+    auto connect_res = hci_client->ConnectToEndpoint(0, 1U | 0x80U, std::move(ep_server_end));
+    ASSERT_TRUE(connect_res.ok());
+    ASSERT_TRUE(connect_res->is_ok());
+  }));
+
+  fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> ep_client(std::move(ep_client_end));
+
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+    vmo_info.emplace_back(
+        fuchsia_hardware_usb_endpoint::VmoInfo().id(1).size(zx_system_get_page_size()));
+    auto reg_res = ep_client->RegisterVmos({std::move(vmo_info)});
+    ASSERT_TRUE(reg_res.is_ok());
+
+    std::vector<fuchsia_hardware_usb_request::Request> requests;
+    requests.emplace_back()
+        .defer_completion(false)
+        .information(fuchsia_hardware_usb_request::RequestInfo::WithBulk(
+            fuchsia_hardware_usb_request::BulkRequestInfo()))
+        .data()
+        .emplace()
+        .emplace_back()
+        .offset(0)
+        .size(zx_system_get_page_size())
+        .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(1));
+    auto queue_res = ep_client->QueueRequests(std::move(requests));
+    ASSERT_TRUE(queue_res.is_ok());
+  }));
+
+  bus_.reset_remove();
+  driver_test().driver()->ScheduleTask(0, driver_test().driver()->DeviceOffline(1));
+  driver_test().driver()->RunUntilIdle();
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([this] { bus_.wait_for_remove(); }));
+  EXPECT_FALSE(driver_test().driver()->GetDeviceState()[0]);
+
+  // Verify FIDL calls and channel unbind after DeviceOffline dropped device_state_[0] do not
+  // trigger a Use-After-Free or null pointer dereference.
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    auto cancel_res = ep_client->CancelAll();
+    ASSERT_TRUE(cancel_res.is_error());
+    ASSERT_TRUE(cancel_res.error_value().is_domain_error());
+    EXPECT_EQ(cancel_res.error_value().domain_error(), ZX_ERR_IO_NOT_PRESENT);
+    ep_client = {};
+  }));
+  driver_test().runtime().RunUntilIdle();
+}
+
+struct __PACKED TestFullConfigDescriptor {
+  usb_configuration_descriptor_t config;
+  usb_interface_descriptor_t interface;
+  usb_endpoint_descriptor_t ep_in;
+  usb_endpoint_descriptor_t ep_out;
+};
+
+constexpr TestFullConfigDescriptor kTestFullConfigDesc = {
+    .config =
+        {
+            .b_length = sizeof(usb_configuration_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration),
+            .w_total_length = htole16(sizeof(TestFullConfigDescriptor)),
+            .b_num_interfaces = 1,
+            .b_configuration_value = 1,
+            .i_configuration = 0,
+            .bm_attributes = 0xC0,
+            .b_max_power = 50,
+        },
+    .interface =
+        {
+            .b_length = sizeof(usb_interface_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
+            .b_interface_number = 0,
+            .b_alternate_setting = 0,
+            .b_num_endpoints = 2,
+            .b_interface_class = USB_CLASS_VENDOR,
+            .b_interface_sub_class = 0,
+            .b_interface_protocol = 0,
+            .i_interface = 0,
+        },
+    .ep_in =
+        {
+            .b_length = sizeof(usb_endpoint_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+            .b_endpoint_address = 0x81,
+            .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
+            .w_max_packet_size = htole16(512),
+            .b_interval = 0,
+        },
+    .ep_out =
+        {
+            .b_length = sizeof(usb_endpoint_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kEndpoint),
+            .b_endpoint_address = 0x02,
+            .bm_attributes = fidl::ToUnderlying(fdescriptor::EndpointType::kBulk),
+            .w_max_packet_size = htole16(512),
+            .b_interval = 0,
+        },
+};
+
+constexpr usb_device_descriptor_t kTestDeviceDesc = {
+    .b_length = sizeof(usb_device_descriptor_t),
+    .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice),
+    .bcd_usb = htole16(0x0200),
+    .b_device_class = 0,
+    .b_device_sub_class = 0,
+    .b_device_protocol = 0,
+    .b_max_packet_size0 = 64,
+    .id_vendor = htole16(0x18d1),
+    .id_product = htole16(0x5026),
+    .bcd_device = htole16(0x0100),
+    .i_manufacturer = 0,
+    .i_product = 0,
+    .i_serial_number = 0,
+    .b_num_configurations = 1,
+};
+
+const usb_hci_protocol_ops_t kTestXhciBanjoOps = {
+    .request_queue =
+        [](void* ctx, usb_request_t* usb_request,
+           const usb_request_complete_callback_t* complete_cb) {
+          static_cast<UsbXhci*>(ctx)->UsbHciRequestQueue(usb_request, complete_cb);
+        },
+    .set_bus_interface =
+        [](void* ctx, const usb_bus_interface_protocol_t* bus_intf) {
+          static_cast<UsbXhci*>(ctx)->UsbHciSetBusInterface(bus_intf);
+        },
+    .get_max_device_count =
+        [](void* ctx) { return static_cast<UsbXhci*>(ctx)->UsbHciGetMaxDeviceCount(); },
+    .enable_endpoint =
+        [](void* ctx, uint32_t device_id, const usb_endpoint_descriptor_t* ep_desc,
+           const usb_ss_ep_comp_descriptor_t* ss_com_desc, bool enable) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciEnableEndpoint(device_id, ep_desc, ss_com_desc,
+                                                                  enable);
+        },
+    .get_current_frame =
+        [](void* ctx) { return static_cast<UsbXhci*>(ctx)->UsbHciGetCurrentFrame(); },
+    .configure_hub =
+        [](void* ctx, uint32_t device_id, usb_speed_t speed, const usb_hub_descriptor_t* desc,
+           bool multi_tt) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciConfigureHub(device_id, speed, desc, multi_tt);
+        },
+    .hub_device_added =
+        [](void* ctx, uint32_t device_id, uint32_t port, usb_speed_t speed) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciHubDeviceAdded(device_id, port, speed);
+        },
+    .hub_device_removed =
+        [](void* ctx, uint32_t device_id, uint32_t port) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciHubDeviceRemoved(device_id, port);
+        },
+    .hub_device_reset =
+        [](void* ctx, uint32_t device_id, uint32_t port) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciHubDeviceReset(device_id, port);
+        },
+    .reset_endpoint =
+        [](void* ctx, uint32_t device_id, uint8_t ep_address) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciResetEndpoint(device_id, ep_address);
+        },
+    .reset_device =
+        [](void* ctx, uint32_t hub_address, uint32_t device_id) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciResetDevice(hub_address, device_id);
+        },
+    .get_max_transfer_size =
+        [](void* ctx, uint32_t device_id, uint8_t ep_address) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciGetMaxTransferSize(device_id, ep_address);
+        },
+    .cancel_all =
+        [](void* ctx, uint32_t device_id, uint8_t ep_address) {
+          return static_cast<UsbXhci*>(ctx)->UsbHciCancelAll(device_id, ep_address);
+        },
+    .get_request_size =
+        [](void* ctx) { return static_cast<UsbXhci*>(ctx)->UsbHciGetRequestSize(); },
+};
+
+// Implements the usb-bus UsbDevice role (EP0 control enumeration + fuchsia.hardware.usb.Usb server
+// forwarding EnableEndpoint via UsbHci Banjo and ConnectToEndpoint via UsbHci FIDL).
+class TestUsbBusDevice : public fidl::Server<fuchsia_hardware_usb::Usb> {
+ public:
+  TestUsbBusDevice(ddk::UsbHciProtocolClient hci_banjo,
+                   fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHci> hci_fidl, uint32_t device_id,
+                   usb_speed_t speed)
+      : hci_banjo_(hci_banjo),
+        hci_fidl_(std::move(hci_fidl)),
+        device_id_(device_id),
+        speed_(speed),
+        parent_req_size_(hci_banjo_.GetRequestSize()) {}
+
+  zx_status_t Init() {
+    size_t actual = 0;
+    zx_status_t status = Control(
+        kStandardDeviceIn, fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+        static_cast<uint16_t>(
+            static_cast<uint32_t>(fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice)) << 8u),
+        0, nullptr, 0, &device_desc_, sizeof(device_desc_), &actual);
+    if (status != ZX_OK || actual != sizeof(device_desc_)) {
+      return status != ZX_OK ? status : ZX_ERR_IO;
+    }
+
+    usb_configuration_descriptor_t cfg_hdr = {};
+    status = Control(
+        kStandardDeviceIn, fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+        static_cast<uint16_t>(
+            static_cast<uint32_t>(fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration))
+            << 8u),
+        0, nullptr, 0, &cfg_hdr, sizeof(cfg_hdr), &actual);
+    if (status != ZX_OK || actual != sizeof(cfg_hdr)) {
+      return status != ZX_OK ? status : ZX_ERR_IO;
+    }
+
+    config_desc_.resize(letoh16(cfg_hdr.w_total_length));
+    status = Control(
+        kStandardDeviceIn, fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor),
+        static_cast<uint16_t>(
+            static_cast<uint32_t>(fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration))
+            << 8u),
+        0, nullptr, 0, config_desc_.data(), config_desc_.size(), &actual);
+    if (status != ZX_OK || actual != config_desc_.size()) {
+      return status != ZX_OK ? status : ZX_ERR_IO;
+    }
+
+    return Control(kStandardDeviceOut,
+                   fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+                   cfg_hdr.b_configuration_value, 0, nullptr, 0, nullptr, 0, nullptr);
+  }
+
+  void Bind(async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_hardware_usb::Usb> server_end) {
+    bindings_.AddBinding(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
+  }
+
+  void ConnectToEndpoint(ConnectToEndpointRequest& request,
+                         ConnectToEndpointCompleter::Sync& completer) override {
+    auto res = hci_fidl_->ConnectToEndpoint(device_id_, request.ep_addr(), std::move(request.ep()));
+    if (!res.ok()) {
+      completer.Reply(fit::as_error(res.status()));
+      return;
+    }
+    if (res->is_error()) {
+      completer.Reply(fit::as_error(res->error_value()));
+      return;
+    }
+    completer.Reply(fit::ok());
+  }
+
+  void GetDeviceSpeed(GetDeviceSpeedCompleter::Sync& completer) override {
+    completer.Reply({{.speed = static_cast<fdescriptor::UsbSpeed>(speed_)}});
+  }
+  void GetDeviceId(GetDeviceIdCompleter::Sync& completer) override {
+    completer.Reply({{.device_id = device_id_}});
+  }
+  void GetDeviceDescriptor(GetDeviceDescriptorCompleter::Sync& completer) override {
+    fdescriptor::UsbDeviceDescriptor desc{{
+        .b_length = device_desc_.b_length,
+        .b_descriptor_type = device_desc_.b_descriptor_type,
+        .bcd_usb = le16toh(device_desc_.bcd_usb),
+        .b_device_class = device_desc_.b_device_class,
+        .b_device_sub_class = device_desc_.b_device_sub_class,
+        .b_device_protocol = device_desc_.b_device_protocol,
+        .b_max_packet_size0 = device_desc_.b_max_packet_size0,
+        .id_vendor = le16toh(device_desc_.id_vendor),
+        .id_product = le16toh(device_desc_.id_product),
+        .bcd_device = le16toh(device_desc_.bcd_device),
+        .i_manufacturer = device_desc_.i_manufacturer,
+        .i_product = device_desc_.i_product,
+        .i_serial_number = device_desc_.i_serial_number,
+        .b_num_configurations = device_desc_.b_num_configurations,
+    }};
+    completer.Reply({{.descriptor = desc}});
+  }
+  void GetConfigurationDescriptor(GetConfigurationDescriptorRequest& request,
+                                  GetConfigurationDescriptorCompleter::Sync& completer) override {
+    completer.Reply(fit::ok(
+        fuchsia_hardware_usb::UsbGetConfigurationDescriptorResponse{{.descriptor = config_desc_}}));
+  }
+  void GetConfiguration(GetConfigurationCompleter::Sync& completer) override {
+    completer.Reply({{.configuration = 1}});
+  }
+  void SetConfiguration(SetConfigurationRequest& request,
+                        SetConfigurationCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override {
+    completer.Reply(fit::ok());
+  }
+  void ControlTransfer(ControlTransferRequest& request,
+                       ControlTransferCompleter::Sync& completer) override {
+    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+  }
+  void EnableEndpoint(EnableEndpointRequest& request,
+                      EnableEndpointCompleter::Sync& completer) override {
+    const usb_endpoint_descriptor_t ep_desc = {
+        .b_length = request.ep_desc().b_length(),
+        .b_descriptor_type = request.ep_desc().b_descriptor_type(),
+        .b_endpoint_address = request.ep_desc().b_endpoint_address(),
+        .bm_attributes = request.ep_desc().bm_attributes(),
+        .w_max_packet_size = htole16(request.ep_desc().w_max_packet_size()),
+        .b_interval = request.ep_desc().b_interval(),
+    };
+    zx_status_t status = hci_banjo_.EnableEndpoint(device_id_, &ep_desc, nullptr, request.enable());
+    if (status != ZX_OK) {
+      completer.Reply(fit::as_error(status));
+      return;
+    }
+    completer.Reply(fit::ok());
+  }
+  void ResetEndpoint(ResetEndpointRequest& request,
+                     ResetEndpointCompleter::Sync& completer) override {
+    zx_status_t status = hci_banjo_.ResetEndpoint(device_id_, request.ep_address());
+    if (status != ZX_OK) {
+      completer.Reply(fit::as_error(status));
+      return;
+    }
+    completer.Reply(fit::ok());
+  }
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb::Usb> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+
+ private:
+  zx_status_t Control(uint8_t request_type, uint8_t request, uint16_t value, uint16_t index,
+                      const void* write_buf, size_t write_size, void* read_buf, size_t read_size,
+                      size_t* out_actual) {
+    const bool is_out = usb_request_is_out(request_type);
+    const size_t length = is_out ? write_size : read_size;
+    std::optional<usb::Request<void>> req;
+    zx_status_t status = usb::Request<void>::Alloc(&req, length, 0, parent_req_size_);
+    if (status != ZX_OK || !req.has_value()) {
+      return status != ZX_OK ? status : ZX_ERR_INTERNAL;
+    }
+    usb::Request<void>& req_val = *req;
+    req_val.request()->setup.bm_request_type = request_type;
+    req_val.request()->setup.b_request = request;
+    req_val.request()->setup.w_value = value;
+    req_val.request()->setup.w_index = index;
+    req_val.request()->setup.w_length = static_cast<uint16_t>(length);
+    req_val.request()->header.device_id = device_id_;
+    req_val.request()->header.ep_address = 0;
+    req_val.request()->header.length = length;
+    if (is_out && length > 0) {
+      ZX_ASSERT(req_val.CopyTo(write_buf, length, 0) == static_cast<ssize_t>(length));
+    }
+    sync_completion_t completion;
+    usb_request_complete_callback_t complete_cb = {
+        .callback =
+            [](void* ctx, usb_request_t*) {
+              sync_completion_signal(static_cast<sync_completion_t*>(ctx));
+            },
+        .ctx = &completion,
+    };
+    hci_banjo_.RequestQueue(req_val.request(), &complete_cb);
+    sync_completion_wait(&completion, ZX_TIME_INFINITE);
+    status = req_val.request()->response.status;
+    if (status == ZX_OK && !is_out) {
+      const size_t actual = req_val.request()->response.actual;
+      if (length > 0 && actual > 0) {
+        auto copy_res = req_val.CachedCopyFrom(read_buf, actual, 0);
+        ZX_ASSERT(copy_res.is_ok() && copy_res.value() == actual);
+      }
+      if (out_actual) {
+        *out_actual = actual;
+      }
+    }
+    req_val.Release();
+    return status;
+  }
+
+  ddk::UsbHciProtocolClient hci_banjo_;
+  fidl::WireSyncClient<fuchsia_hardware_usb_hci::UsbHci> hci_fidl_;
+  uint32_t device_id_;
+  usb_speed_t speed_;
+  size_t parent_req_size_;
+  usb_device_descriptor_t device_desc_ = {};
+  std::vector<uint8_t> config_desc_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb::Usb> bindings_;
+};
+
+// Multi-driver integration test covering UsbXhci <-> UsbBus/UsbDevice <-> FIDL Usb/Endpoint
+// across repeated M1/M4 attach and M2 unplug cycles with in-flight FIDL and Banjo transfers.
+TEST_F(XhciMmioHarness, UsbBusAndUsbDeviceMultiCycleHotplugWithInFlightFidlEndpoint) {
+  UsbXhci* xhci = driver_test().driver();
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+
+  SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
+    if (doorbell == 0) {
+      auto pending_cmds = xhci->GetCommandRing()->TakePendingTRBs();
+      for (auto& cmd : pending_cmds) {
+        if (cmd.completer.has_value()) {
+          cmd.completer->complete_ok(&success_event);
+        }
+      }
+      return;
+    }
+    // Auto-complete EP0 control requests queued during device enumeration (GET_DESCRIPTOR and
+    // SET_CONFIGURATION) so enumeration succeeds end-to-end.
+    if (target == 1) {
+      auto state = xhci->GetDeviceState()[doorbell - 1];
+      if (!state) {
+        return;
+      }
+      fbl::DoublyLinkedList<std::unique_ptr<TRBContext>> pending_trbs;
+      Endpoint* ep0 = nullptr;
+      {
+        fbl::AutoLock _(&state->transaction_lock());
+        ep0 = &state->GetEndpoint();
+        pending_trbs = ep0->transfer_ring().TakePendingTRBs();
+      }
+      for (auto& trb : pending_trbs) {
+        if (!trb.request.has_value()) {
+          continue;
+        }
+        size_t actual = 0;
+        if (std::holds_alternative<Request>(*trb.request)) {
+          auto& req = std::get<Request>(*trb.request);
+          const usb_setup_t& setup = req.request()->setup;
+          if (setup.b_request == fidl::ToUnderlying(fdescriptor::StandardRequest::kGetDescriptor)) {
+            const uint8_t desc_type =
+                static_cast<uint8_t>(static_cast<uint32_t>(setup.w_value) >> 8u);
+            if (desc_type == fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice)) {
+              actual = std::min<size_t>(setup.w_length, sizeof(kTestDeviceDesc));
+              EXPECT_EQ(static_cast<size_t>(req.CopyTo(&kTestDeviceDesc, actual, 0)), actual);
+            } else if (desc_type ==
+                       fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration)) {
+              actual = std::min<size_t>(setup.w_length, sizeof(kTestFullConfigDesc));
+              EXPECT_EQ(static_cast<size_t>(req.CopyTo(&kTestFullConfigDesc, actual, 0)), actual);
+            }
+          }
+        }
+        ep0->RequestComplete(ZX_OK, actual, std::move(*trb.request));
+      }
+    }
+  });
+
+  usb_hci_protocol_t hci_proto = {
+      .ops = &kTestXhciBanjoOps,
+      .ctx = xhci,
+  };
+  ddk::UsbHciProtocolClient hci_banjo_client(&hci_proto);
+
+  auto usb_bus_dispatcher = driver_test().runtime().StartBackgroundDispatcher();
+
+  for (size_t cycle = 0; cycle < 2; ++cycle) {
+    SCOPED_TRACE(::testing::Message() << "Hotplug cycle " << cycle);
+
+    // 1. Simulate physical USB device attach on port 1.
+    FakeUsbDevice fake_dev = ConnectDevice(1, USB_SPEED_HIGH);
+    const uint32_t device_id = fake_dev.device_id;
+    const uint8_t slot_id = static_cast<uint8_t>(device_id + 1);
+
+    zx::result hci_fidl_client =
+        driver_test().Connect<fuchsia_hardware_usb_hci::UsbHciService::Device>();
+    ASSERT_OK(hci_fidl_client);
+
+    // 2. Enumerate the attached device over EP0 and bind its fuchsia.hardware.usb.Usb server.
+    std::unique_ptr<TestUsbBusDevice> bus_device;
+    auto [usb_client_end, usb_server_end] = fidl::Endpoints<fuchsia_hardware_usb::Usb>::Create();
+    EXPECT_OK(fdf::RunOnDispatcherSync(usb_bus_dispatcher->async_dispatcher(), [&] {
+      bus_device = std::make_unique<TestUsbBusDevice>(hci_banjo_client, std::move(*hci_fidl_client),
+                                                      device_id, fake_dev.speed);
+      ASSERT_OK(bus_device->Init());
+      bus_device->Bind(usb_bus_dispatcher->async_dispatcher(), std::move(usb_server_end));
+    }));
+
+    // 3. Connect to Bulk IN endpoint 0x81 through the fuchsia.hardware.usb.Usb server (matching
+    // starnix/modules/usbfs), which enables the endpoint in UsbXhci and binds the FIDL Endpoint
+    // server in xhci-endpoint.cc.
+    auto [ep_client_end, ep_server_end] =
+        fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    fidl::SyncClient<fuchsia_hardware_usb::Usb> usb_client(std::move(usb_client_end));
+
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+      auto desc_res = usb_client->GetDeviceDescriptor();
+      ASSERT_TRUE(desc_res.is_ok());
+
+      fdescriptor::UsbEndpointDescriptor ep_in_desc{{
+          .b_length = sizeof(usb_endpoint_descriptor_t),
+          .b_descriptor_type = static_cast<uint8_t>(fdescriptor::DescriptorType::kEndpoint),
+          .b_endpoint_address = 0x81,
+          .bm_attributes = std::to_underlying(fdescriptor::EndpointType::kBulk),
+          .w_max_packet_size = 512,
+          .b_interval = 0,
+      }};
+      fdescriptor::UsbSsEpCompDescriptor ss_comp{};
+      auto enable_res = usb_client->EnableEndpoint(
+          {{.ep_desc = ep_in_desc, .ss_com_desc = ss_comp, .enable = true}});
+      ASSERT_TRUE(enable_res.is_ok());
+
+      auto connect_res =
+          usb_client->ConnectToEndpoint({{.ep_addr = 0x81, .ep = std::move(ep_server_end)}});
+      ASSERT_TRUE(connect_res.is_ok());
+    }));
+
+    fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> ep_client(std::move(ep_client_end));
+
+    // 4. Register VMOs and queue an in-flight FIDL bulk request on 0x81 (pins BTI PMT in xhci).
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+      std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+      vmo_info.emplace_back(
+          fuchsia_hardware_usb_endpoint::VmoInfo().id(1).size(zx_system_get_page_size()));
+      auto reg_res = ep_client->RegisterVmos({std::move(vmo_info)});
+      ASSERT_TRUE(reg_res.is_ok());
+
+      std::vector<fuchsia_hardware_usb_request::Request> requests;
+      requests.emplace_back()
+          .defer_completion(false)
+          .information(fuchsia_hardware_usb_request::RequestInfo::WithBulk(
+              fuchsia_hardware_usb_request::BulkRequestInfo()))
+          .data()
+          .emplace()
+          .emplace_back()
+          .offset(0)
+          .size(zx_system_get_page_size())
+          .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(1));
+      auto queue_res = ep_client->QueueRequests(std::move(requests));
+      ASSERT_TRUE(queue_res.is_ok());
+    }));
+
+    // 5. Also enable Bulk OUT endpoint 0x02 and queue an in-flight Banjo usb::Request with a VMO
+    // (which UsbXhci pins via PhysMap(hci_->bti())) so both FIDL and Banjo requests are pending on
+    // transfer rings when DeviceOffline runs.
+    EnableEndpoint(device_id, 2, false);
+    driver_test().driver()->RunUntilIdle();
+
+    libsync::Completion banjo_req_completed;
+    zx_status_t banjo_completion_status = ZX_OK;
+    std::optional<usb::Request<void>> banjo_req;
+    ASSERT_OK(usb::Request<void>::Alloc(&banjo_req, zx_system_get_page_size(), 0x02,
+                                        driver_test().driver()->UsbHciGetRequestSize()));
+    ASSERT_TRUE(banjo_req.has_value());
+    usb::Request<void>& banjo_req_val = *banjo_req;
+    banjo_req_val.request()->header.device_id = device_id;
+    banjo_req_val.request()->header.ep_address = 0x02;
+    banjo_req_val.request()->header.length = zx_system_get_page_size();
+    usb_request_complete_callback_t banjo_cb = {
+        .callback =
+            [](void* ctx, usb_request_t* req) {
+              auto* state_pair = static_cast<std::pair<zx_status_t*, libsync::Completion*>*>(ctx);
+              *state_pair->first = req->response.status;
+              usb::Request<void> owned_req(req, sizeof(usb_request_t));
+              state_pair->second->Signal();
+            },
+        .ctx = nullptr,
+    };
+    std::pair<zx_status_t*, libsync::Completion*> cb_ctx(&banjo_completion_status,
+                                                         &banjo_req_completed);
+    banjo_cb.ctx = &cb_ctx;
+    driver_test().driver()->UsbHciRequestQueue(banjo_req_val.take(), &banjo_cb);
+
+    // 6. Simulate physical cable unplug / role transition while both FIDL and Banjo transfers are
+    // in flight and the FIDL Endpoint channel is still bound.
+    bus_.reset_remove();
+    driver_test().driver()->ScheduleTask(0, driver_test().driver()->DeviceOffline(slot_id));
+    driver_test().driver()->RunUntilIdle();
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([this] { bus_.wait_for_remove(); }));
+    EXPECT_FALSE(driver_test().driver()->GetDeviceState()[device_id]);
+
+    // Both the in-flight Banjo request and the in-flight FIDL request must have been unmapped and
+    // completed with ZX_ERR_IO_NOT_PRESENT by UsbXhci::DeviceOffline.
+    EXPECT_OK(banjo_req_completed.Wait(zx::sec(5)));
+    EXPECT_EQ(banjo_completion_status, ZX_ERR_IO_NOT_PRESENT);
+
+    // 7. Tear down the bus device node and close the FIDL Endpoint channel AFTER
+    // device_state_[device_id] has already been dropped by UsbXhci::DeviceOffline.
+    EXPECT_OK(fdf::RunOnDispatcherSync(usb_bus_dispatcher->async_dispatcher(),
+                                       [&] { bus_device.reset(); }));
+
+    EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+      auto cancel_res = ep_client->CancelAll();
+      ASSERT_TRUE(cancel_res.is_error());
+      ASSERT_TRUE(cancel_res.error_value().is_domain_error());
+      EXPECT_EQ(cancel_res.error_value().domain_error(), ZX_ERR_IO_NOT_PRESENT);
+      ep_client = {};
+      usb_client = {};
+    }));
+    driver_test().runtime().RunUntilIdle();
+  }
 }
 
 TEST_F(XhciMmioHarness, HubDeviceRemovedWhenBusInvalidDoesNotAssert) {

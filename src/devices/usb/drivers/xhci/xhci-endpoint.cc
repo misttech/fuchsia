@@ -36,26 +36,67 @@ zx_status_t Endpoint::Init(EventRing* event_ring, fdf::MmioBuffer* mmio) {
                              hci_->Is32BitController(), mmio, hci_);
 }
 
+Endpoint::~Endpoint() { transfer_ring_.DeinitIfActive(); }
+
+void Endpoint::Connect(async_dispatcher_t* dispatcher,
+                       fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end,
+                       fbl::RefPtr<DeviceState> state) {
+  if (state) {
+    fbl::AutoLock _(&binding_lock_);
+    binding_refs_.push_back(std::move(state));
+  } else if (hci_ && hci_->GetDeviceState()) {
+    auto dev_state = hci_->GetDeviceState()[device_id_];
+    if (dev_state) {
+      fbl::AutoLock _(&binding_lock_);
+      binding_refs_.push_back(std::move(dev_state));
+    }
+  }
+  usb::EndpointServer::Connect(dispatcher, std::move(server_end));
+}
+
 void Endpoint::OnUnbound(fidl::UnbindInfo info,
                          fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) {
-  if (hci_->Running()) {
+  // Hold the DeviceState reference on the stack until OnUnbound finishes so that `this`
+  // (owned by DeviceState) remains valid for the entire teardown callback even if
+  // UsbXhci::DeviceOffline already dropped UsbXhci's reference in device_state_.
+  fbl::RefPtr<DeviceState> state_ref;
+  {
+    fbl::AutoLock _(&binding_lock_);
+    if (!binding_refs_.empty()) {
+      state_ref = std::move(binding_refs_.back());
+      binding_refs_.pop_back();
+    }
+  }
+
+  bool disconnecting = true;
+  if (state_ref) {
+    fbl::AutoLock _(&state_ref->transaction_lock());
+    disconnecting = state_ref->IsDisconnecting();
+  }
+
+  if (hci_ && hci_->Running() && !disconnecting) {
     auto status = hci_->UsbHciCancelAll(device_id_, ep_addr());
-    if (status != ZX_OK) {
+    if (status != ZX_OK && status != ZX_ERR_IO_NOT_PRESENT) {
       fdf::error("Could not cancel all {}", zx_status_get_string(status));
     }
 
     status = hci_->RunSynchronously(kPrimaryInterrupter,
                                     hci_->UsbHciDisableEndpoint(device_id_, ep_addr()));
-    if (status != ZX_OK) {
+    if (status != ZX_OK && status != ZX_ERR_IO_NOT_PRESENT) {
       fdf::error("Could not disable endpoint {}", zx_status_get_string(status));
     }
   }
 
   usb::EndpointServer::OnUnbound(info, std::move(server_end));
 }
-
 void Endpoint::QueueRequests(QueueRequestsRequest& request,
                              QueueRequestsCompleter::Sync& completer) {
+  if (!hci_ || !hci_->Running() || !hci_->GetDeviceState()) {
+    for (auto& req : request.req()) {
+      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)});
+    }
+    return;
+  }
   auto state = hci_->GetDeviceState()[device_id_];
   if (!state) {
     for (auto& req : request.req()) {
@@ -66,11 +107,30 @@ void Endpoint::QueueRequests(QueueRequestsRequest& request,
   for (auto& req : request.req()) {
     QueueRequest(usb::FidlRequest{std::move(req)});
   }
+  if (!hci_ || !hci_->Running() || !hci_->GetDeviceState()) {
+    return;
+  }
+  state = hci_->GetDeviceState()[device_id_];
+  if (!state) {
+    return;
+  }
+  uint8_t slot = 0;
+  {
+    fbl::AutoLock _(&state->transaction_lock());
+    if (state->IsDisconnecting() || !state->GetSlot()) {
+      return;
+    }
+    slot = state->GetSlot();
+  }
   uint8_t index = static_cast<uint8_t>(XhciEndpointIndex(ep_addr()) - 1);
-  hci_->RingDoorbell(state->GetSlot(), ep_addr() ? 2 + index : 1);
+  hci_->RingDoorbell(slot, ep_addr() ? 2 + index : 1);
 }
 
 void Endpoint::CancelAll(CancelAllCompleter::Sync& completer) {
+  if (!hci_ || !hci_->Running()) {
+    completer.Reply(fit::as_error(ZX_ERR_IO_NOT_PRESENT));
+    return;
+  }
   auto status = hci_->UsbHciCancelAll(device_id_, ep_addr());
   if (status != ZX_OK) {
     completer.Reply(fit::as_error(status));
@@ -80,7 +140,7 @@ void Endpoint::CancelAll(CancelAllCompleter::Sync& completer) {
 }
 
 void Endpoint::QueueRequest(usb::RequestVariant request) {
-  if (!hci_->Running()) {
+  if (!hci_ || !hci_->Running() || !hci_->GetDeviceState()) {
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
   }
@@ -90,8 +150,9 @@ void Endpoint::QueueRequest(usb::RequestVariant request) {
     return;
   }
   {
-    fbl::AutoLock _(&state->transaction_lock());
-    if (!state->GetSlot()) {
+    fbl::AutoLock transaction_lock(&state->transaction_lock());
+    if (!state->GetSlot() || state->IsDisconnecting()) {
+      transaction_lock.release();
       RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
       return;
     }
@@ -103,13 +164,16 @@ void Endpoint::QueueRequest(usb::RequestVariant request) {
 }
 
 void Endpoint::ControlRequestQueue(usb::RequestVariant request) {
-  auto state = hci_->GetDeviceState()[device_id_];
-  if (!state) {
+  auto device_state =
+      (hci_ && hci_->GetDeviceState()) ? hci_->GetDeviceState()[device_id_] : nullptr;
+  if (!device_state) {
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
   }
-  fbl::AutoLock transaction_lock(&state->transaction_lock());
-  if (state->IsDisconnecting()) {
+  fbl::AutoLock transaction_lock(&device_state->transaction_lock());
+  if (device_state->IsDisconnecting()) {
+    // Device is disconnecting. Release lock because we no longer will be using device_state,
+    // complete request, and return from function.
     transaction_lock.release();
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
@@ -339,13 +403,14 @@ void Endpoint::ControlRequestCommit(UsbRequestState* state) {
 void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
   UsbRequestState pending_transfer;
   uint8_t index = static_cast<uint8_t>(XhciEndpointIndex(ep_addr()) - 1);
-  auto dev_state = hci_->GetDeviceState()[device_id_];
-  if (!dev_state) {
+  auto device_state =
+      (hci_ && hci_->GetDeviceState()) ? hci_->GetDeviceState()[device_id_] : nullptr;
+  if (!device_state) {
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
   }
-  fbl::AutoLock transaction_lock(&dev_state->transaction_lock());
-  if (dev_state->IsDisconnecting()) {
+  fbl::AutoLock transaction_lock(&device_state->transaction_lock());
+  if (device_state->IsDisconnecting()) {
     transaction_lock.release();
     RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(request));
     return;
@@ -355,7 +420,7 @@ void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
     RequestComplete(ZX_ERR_IO_REFUSED, 0, std::move(request));
     return;
   }
-  auto* control = reinterpret_cast<uint32_t*>(dev_state->GetInputContext()->virt());
+  auto* control = reinterpret_cast<uint32_t*>(device_state->GetInputContext()->virt());
   auto* endpoint_context = reinterpret_cast<EndpointContext*>(
       reinterpret_cast<unsigned char*>(control) + (hci_->slot_size_bytes() * (2 + (index + 1))));
   if (!transfer_ring_.active()) {
@@ -385,7 +450,7 @@ void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
 
     // Release the lock while we're sleeping to avoid blocking
     // other operations.
-    dev_state->transaction_lock().Release();
+    device_state->transaction_lock().Release();
     auto status = WaitForIsochronousReady(
         std::holds_alternative<usb::FidlRequest>(*pending_transfer.context->request)
             ? *std::get<usb::FidlRequest>(*pending_transfer.context->request)
@@ -393,7 +458,7 @@ void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
                    ->isochronous()
                    ->frame_id()
             : std::get<Request>(*pending_transfer.context->request).request()->header.frame);
-    dev_state->transaction_lock().Acquire();
+    device_state->transaction_lock().Acquire();
     if (status != ZX_OK) {
       transaction_lock.release();
       RequestComplete(status, 0, std::move(*pending_transfer.context->request));
@@ -401,7 +466,7 @@ void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
     }
 
     // Check again since we've re-acquired lock
-    if (dev_state->IsDisconnecting()) {
+    if (!hci_ || !hci_->Running() || device_state->IsDisconnecting()) {
       transaction_lock.release();
       RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, std::move(*pending_transfer.context->request));
       return;
@@ -424,7 +489,7 @@ void Endpoint::NormalRequestQueue(usb::RequestVariant request) {
     transfer_ring_.Restore(pending_transfer.transaction);
   };
   auto status = StartNormalTransaction(&pending_transfer,
-                                       static_cast<uint8_t>(dev_state->GetInterrupterTarget()));
+                                       static_cast<uint8_t>(device_state->GetInterrupterTarget()));
   if (status != ZX_OK) {
     rollback_transaction();
     transaction_lock.release();

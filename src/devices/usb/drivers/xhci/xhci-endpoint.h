@@ -9,6 +9,10 @@
 #include <fuchsia/hardware/usb/request/c/banjo.h>
 #include <lib/sync/cpp/completion.h>
 
+#include <vector>
+
+#include <fbl/auto_lock.h>
+#include <fbl/mutex.h>
 #include <fbl/ref_ptr.h>
 
 #include "src/devices/usb/drivers/xhci/xhci-context.h"
@@ -42,10 +46,16 @@ class Endpoint : public usb::EndpointServer {
  public:
   Endpoint(UsbXhci* hci, uint32_t device_id, uint8_t address);
   // DeInits the transfer ring.
-  ~Endpoint() { transfer_ring_.DeinitIfActive(); }
+  ~Endpoint();
 
   // Initializes the transfer ring.
   zx_status_t Init(EventRing* event_ring, fdf::MmioBuffer* mmio);
+
+  void Connect(async_dispatcher_t* dispatcher,
+               fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end,
+               fbl::RefPtr<DeviceState> state = nullptr);
+
+  void ResetHci() { hci_ = nullptr; }
 
   // fuchsia_hardware_usb_new.Endpoint protocol implementation. RegisterVmos/UnregisterVmos are
   // defined by usb::EndpointServer.
@@ -161,6 +171,8 @@ class Endpoint : public usb::EndpointServer {
   uint32_t device_id_;
   TransferRing transfer_ring_;
   std::optional<fuchsia_hardware_usb_descriptor::EndpointType> ep_type_;
+  fbl::Mutex binding_lock_;
+  std::vector<fbl::RefPtr<DeviceState>> binding_refs_ __TA_GUARDED(binding_lock_);
 };
 
 }  // namespace usb_xhci

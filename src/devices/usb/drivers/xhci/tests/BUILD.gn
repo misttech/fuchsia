@@ -58,6 +58,7 @@ test("xhci-core-unittest-bin") {
   ]
   deps = [
     ":test-libs",
+    "//sdk/fidl/fuchsia.hardware.usb:fuchsia.hardware.usb_cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
   defines = [ "TEST_SKIP_INIT" ]

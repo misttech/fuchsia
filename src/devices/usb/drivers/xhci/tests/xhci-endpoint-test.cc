@@ -432,4 +432,48 @@ TEST_F(EndpointHarness, QueueRequestWithNullDeviceState) {
   ASSERT_NO_FATAL_FAILURE(ExpectOneCompletion(ZX_ERR_IO_NOT_PRESENT));
 }
 
+TEST_F(EndpointHarness, UnbindAfterDeviceStateDropped) {
+  async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
+  loop.StartThread("ep-unbind-thread");
+
+  auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  {
+    auto state = driver_test().driver()->GetDeviceState()[kDeviceId];
+    ASSERT_TRUE(state);
+    fbl::AutoLock _(&state->transaction_lock());
+    auto& ep = state->GetEndpoint(0);
+    ep.set_ep_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+    ASSERT_OK(ep.Init(nullptr, nullptr));
+    ep.Connect(loop.dispatcher(), std::move(endpoints.server));
+  }
+
+  fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> client(std::move(endpoints.client));
+  {
+    auto info = client->GetInfo();
+    ASSERT_TRUE(info.is_ok());
+  }
+
+  // Simulate UsbXhci::DeviceOffline disconnecting and dropping UsbXhci's DeviceState reference
+  // while the FIDL Endpoint client channel is still bound.
+  {
+    auto state = std::move(driver_test().driver()->GetDeviceState()[kDeviceId]);
+    ASSERT_TRUE(state);
+    {
+      fbl::AutoLock _(&state->transaction_lock());
+      state->Disconnect();
+    }
+    state->ResetHci();
+  }
+  ASSERT_FALSE(driver_test().driver()->GetDeviceState()[kDeviceId]);
+
+  auto cancel_res = client->CancelAll();
+  ASSERT_TRUE(cancel_res.is_error());
+  ASSERT_TRUE(cancel_res.error_value().is_domain_error());
+  EXPECT_EQ(cancel_res.error_value().domain_error(), ZX_ERR_IO_NOT_PRESENT);
+
+  // Closing the client triggers Endpoint::OnUnbound after UsbXhci dropped device_state_[kDeviceId].
+  client = {};
+  loop.Shutdown();
+}
+
 }  // namespace usb_xhci
