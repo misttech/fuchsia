@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:raw_attribute:deps += [ "//build/validate:non_production_tag" ]
+rustc_library(
+    name = "insecure",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_insecure_crypto",
+    edition = "2024",
+    visibility = ["//src/storage/fxfs:__subpackages__"],
+    with_unit_tests = False,
+    deps = [
+        "//src/storage/crypt/fxfs/common:lib",
+        "//src/storage/fxfs/crypto",
+    ],
+)
