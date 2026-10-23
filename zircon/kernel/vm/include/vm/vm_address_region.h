@@ -246,6 +246,7 @@ void rust_vm_address_region_or_mapping_state_init(void* storage, vaddr_t base, s
                                                   uint32_t flags, VmAspace* aspace,
                                                   VmAddressRegion* parent, bool is_mapping);
 void rust_vm_address_region_or_mapping_destruct(VmAddressRegionOrMapping* region_or_mapping);
+void rust_vm_address_region_or_mapping_recycle(VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t rust_vm_address_region_or_mapping_destroy(VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t rust_vm_address_region_or_mapping_destroy_locked(
     VmAddressRegionOrMapping* region_or_mapping);
@@ -731,8 +732,10 @@ class RegionList final {
   ChildList regions_;
 };
 
+using VmMappingProtectionRanges = btree::BTree<vaddr_t, arch_mmu_flags_t>;
+
 extern "C" {
-void cpp_vm_address_region_free(VmAddressRegion* vmar);
+void cpp_vm_address_region_destruct(VmAddressRegion* vmar);
 VmAddressRegionOrMapping* cpp_vm_address_region_subregions_find_region(const VmAddressRegion* vmar,
                                                                        vaddr_t addr);
 VmAddressRegionOrMapping* cpp_vm_address_region_subregions_include_or_higher(
@@ -753,7 +756,8 @@ void cpp_vm_address_region_commit_high_memory_priority(VmAddressRegion* vmar);
 }
 
 // A representation of a contiguous range of virtual address space
-class VmAddressRegion final : public VmAddressRegionOrMapping {
+class VmAddressRegion final : public VmAddressRegionOrMapping,
+                              public fbl::Recyclable<VmAddressRegion> {
  public:
   // Creates a root region.  This will span the entire aspace
   static zx_status_t CreateRootLocked(VmAspace& aspace, uint32_t vmar_flags,
@@ -858,8 +862,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   friend class VmAddressRegionEnumerator;
 
   ~VmAddressRegion();
-  friend fbl::RefPtr<VmAddressRegion>;
-  friend void ::cpp_vm_address_region_free(VmAddressRegion*);
+  friend void ::cpp_vm_address_region_destruct(VmAddressRegion*);
   friend void* ::cpp_vm_address_region_state(VmAddressRegion*);
   friend VmAddressRegionOrMapping* ::cpp_vm_address_region_subregions_find_region(
       const VmAddressRegion*, vaddr_t);
@@ -877,6 +880,9 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   friend void ::cpp_vm_address_region_commit_high_memory_priority(VmAddressRegion*);
 
  private:
+  friend class fbl::Recyclable<VmAddressRegion>;
+  void fbl_recycle();
+
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmAddressRegion);
 
   void AssertCanary() const;
@@ -945,6 +951,12 @@ void rust_vm_address_region_destruct(void* storage);
 const char* rust_vm_address_region_name(const VmAddressRegion* vmar);
 void rust_vm_address_region_assert_canary(const VmAddressRegion* vmar);
 bool rust_vm_address_region_has_parent(const VmAddressRegion* vmar);
+VmAddressRegion* rust_vm_address_region_create_root(VmAspace* aspace, vaddr_t base, size_t size,
+                                                    uint32_t vmar_flags);
+VmAddressRegion* rust_vm_address_region_create_child(VmAddressRegion* parent, vaddr_t base,
+                                                     size_t size, uint32_t vmar_flags,
+                                                     const char* name);
+void rust_vm_address_region_recycle(VmAddressRegion* vmar);
 VmAddressRegionOrMapping* rust_vm_address_region_find_region(const VmAddressRegion* vmar,
                                                              vaddr_t addr);
 VmMapping* rust_vm_address_region_find_mapping_locked(const VmAddressRegion* vmar, vaddr_t va);
@@ -955,12 +967,12 @@ inline void VmAddressRegion::AssertCanary() const { rust_vm_address_region_asser
 inline bool VmAddressRegion::has_parent() const { return rust_vm_address_region_has_parent(this); }
 
 extern "C" {
-void cpp_vm_mapping_free(VmMapping* mapping);
+void cpp_vm_mapping_destruct(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
 }
 
 // A representation of the mapping of a VMO into the address space
-class VmMapping final : public VmAddressRegionOrMapping {
+class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<VmMapping> {
  public:
   enum class Mergeable : bool { YES = true, NO = false };
 
@@ -1202,13 +1214,16 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
  protected:
   ~VmMapping();
-  friend fbl::RefPtr<VmMapping>;
-  friend void ::cpp_vm_mapping_free(VmMapping*);
+  friend void ::cpp_vm_mapping_destruct(VmMapping*);
   friend void* ::cpp_vm_mapping_state(VmMapping*);
   friend bool ::cpp_vm_mapping_rest_protection_ranges_is_empty(const VmMapping*);
   friend void ::cpp_vm_mapping_rest_protection_ranges_clear(VmMapping*);
 
  private:
+  friend class fbl::Recyclable<VmMapping>;
+  friend lazy_init::Access;
+  void fbl_recycle();
+
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmMapping);
 
   void AssertCanary() const;
@@ -1413,6 +1428,17 @@ void rust_vm_mapping_set_currently_faulting(VmMapping* mapping, void* faulting);
 arch_mmu_flags_t rust_vm_mapping_first_region_arch_mmu_flags(const VmMapping* mapping);
 void rust_vm_mapping_set_first_region_arch_mmu_flags(VmMapping* mapping, arch_mmu_flags_t flags);
 VmObject* rust_vm_mapping_vmo(const VmMapping* mapping);
+VmMapping* rust_vm_mapping_create(VmAddressRegion* parent, bool private_clone, vaddr_t base,
+                                  size_t size, uint32_t vmar_flags, VmObject* vmo,
+                                  uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+                                  VmMapping::Mergeable mergeable);
+VmMapping* rust_vm_mapping_create_with_ranges(VmAddressRegion* parent, bool private_clone,
+                                              vaddr_t base, size_t size, uint32_t vmar_flags,
+                                              VmObject* vmo, uint64_t vmo_offset,
+                                              arch_mmu_flags_t first_mmu_flags,
+                                              VmMappingProtectionRanges* ranges,
+                                              VmMapping::Mergeable mergeable);
+void rust_vm_mapping_recycle(VmMapping* mapping);
 zx_status_t rust_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
 bool rust_vm_mapping_object_range_to_vaddr_range(const VmMapping* mapping, uint64_t offset,
                                                  uint64_t len, vaddr_t* base,

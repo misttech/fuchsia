@@ -140,7 +140,7 @@ impl VmAspace {
         }
     }
 
-    fn as_ffi_ptr(&self) -> *mut bindings::VmAspace {
+    pub(super) fn as_ffi_ptr(&self) -> *mut bindings::VmAspace {
         ptr::from_ref(self).cast_mut().cast()
     }
 

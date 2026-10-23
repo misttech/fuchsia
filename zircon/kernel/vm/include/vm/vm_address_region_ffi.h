@@ -33,7 +33,13 @@ struct CppVmAddressRegionEnumerator {
 
 __BEGIN_CDECLS
 
-void cpp_vm_address_region_free(VmAddressRegion* vmar);
+void cpp_vm_address_region_construct_root(ffi::Uninitialized<VmAddressRegion>* slot,
+                                          VmAspace* aspace, vaddr_t base, size_t size,
+                                          uint32_t vmar_flags);
+void cpp_vm_address_region_construct_child(ffi::Uninitialized<VmAddressRegion>* slot,
+                                           VmAddressRegion* parent, vaddr_t base, size_t size,
+                                           uint32_t vmar_flags, const char* name);
+void cpp_vm_address_region_destruct(VmAddressRegion* vmar);
 void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
 bool cpp_vm_address_region_or_mapping_lock_is_held(
@@ -78,7 +84,16 @@ VmAddressRegionOrMapping* cpp_vm_address_region_enumerator_next(
 void cpp_vm_address_region_enumerator_pause(CppVmAddressRegionEnumerator* enumerator);
 void cpp_vm_address_region_enumerator_resume(CppVmAddressRegionEnumerator* enumerator);
 
-void cpp_vm_mapping_free(VmMapping* mapping);
+void cpp_vm_mapping_construct(ffi::Uninitialized<VmMapping>* slot, VmAddressRegion* parent,
+                              bool private_clone, vaddr_t base, size_t size, uint32_t vmar_flags,
+                              VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
+                              bool mergeable);
+void cpp_vm_mapping_construct_with_ranges(ffi::Uninitialized<VmMapping>* slot,
+                                          VmAddressRegion* parent, bool private_clone, vaddr_t base,
+                                          size_t size, uint32_t vmar_flags, VmObject* vmo,
+                                          uint64_t vmo_offset, arch_mmu_flags_t first_mmu_flags,
+                                          VmMappingProtectionRanges* ranges, bool mergeable);
+void cpp_vm_mapping_destruct(VmMapping* mapping);
 void* cpp_vm_mapping_state(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                      bool ignore_existing);

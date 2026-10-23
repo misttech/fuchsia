@@ -135,6 +135,8 @@ VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, 
 
 VmMapping::~VmMapping() { rust_vm_mapping_destruct(this); }
 
+void VmMapping::fbl_recycle() { rust_vm_mapping_recycle(this); }
+
 fbl::RefPtr<VmObject> VmMapping::vmo() const {
   return fbl::ImportFromRawPtr(rust_vm_mapping_vmo(this));
 }
@@ -430,14 +432,14 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   // an end or the middle.
   fbl::RefPtr<VmMapping> left, right;
   if (this->base() != base) {
+    fbl::RefPtr<VmObject> vmo = object_locked();
     // Insert empty protection ranges for now as we will transform the existing protection_ranges_
     // tree into the target.
-    fbl::AllocChecker ac;
-    left = fbl::AdoptRef(
-        new (&ac) VmMapping(*parent_locked(), private_clone(), this->base(), base - this->base(),
-                            flags(), object_locked(), object_offset(), 0,
-                            btree::BTree<vaddr_t, arch_mmu_flags_t>(), Mergeable::YES));
-    if (!ac.check()) {
+    btree::BTree<vaddr_t, arch_mmu_flags_t> left_prot_ranges;
+    left = fbl::ImportFromRawPtr(rust_vm_mapping_create_with_ranges(
+        parent_locked(), private_clone(), this->base(), base - this->base(), flags(),
+        fbl::ExportToRawPtr(&vmo), object_offset(), 0, &left_prot_ranges, Mergeable::YES));
+    if (!left) {
       return ZX_ERR_NO_MEMORY;
       AssertHeld(parent_locked()->region_lock_ref());
     }
@@ -456,12 +458,12 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
         return status;
       }
     }
-    fbl::AllocChecker ac;
-    right = fbl::AdoptRef(new (&ac) VmMapping(
-        *parent_locked(), private_clone(), this->base() + offset, this->size() - offset, flags(),
-        object_locked(), object_offset() + offset, right_first_mmu_flags,
-        ktl::move(right_prot_ranges), Mergeable::YES));
-    if (!ac.check()) {
+    fbl::RefPtr<VmObject> vmo = object_locked();
+    right = fbl::ImportFromRawPtr(rust_vm_mapping_create_with_ranges(
+        parent_locked(), private_clone(), this->base() + offset, this->size() - offset, flags(),
+        fbl::ExportToRawPtr(&vmo), object_offset() + offset, right_first_mmu_flags,
+        &right_prot_ranges, Mergeable::YES));
+    if (!right) {
       return ZX_ERR_NO_MEMORY;
     }
   }
@@ -1345,12 +1347,12 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
     return nullptr;
   }
 
-  fbl::AllocChecker ac;
-  fbl::RefPtr<VmMapping> new_mapping = fbl::AdoptRef(new (&ac) VmMapping(
-      *parent_locked(), private_clone(), base(), size() + right_candidate->size(), flags(),
-      object_locked(), object_offset(), 0, btree::BTree<vaddr_t, arch_mmu_flags_t>(),
-      Mergeable::YES));
-  if (!ac.check()) {
+  fbl::RefPtr<VmObject> vmo = object_locked();
+  btree::BTree<vaddr_t, arch_mmu_flags_t> prot_ranges;
+  fbl::RefPtr<VmMapping> new_mapping = fbl::ImportFromRawPtr(rust_vm_mapping_create_with_ranges(
+      parent_locked(), private_clone(), base(), size() + right_candidate->size(), flags(),
+      fbl::ExportToRawPtr(&vmo), object_offset(), 0, &prot_ranges, Mergeable::YES));
+  if (!new_mapping) {
     return nullptr;
   }
   AssertHeld(new_mapping->lock_ref());
@@ -1573,13 +1575,12 @@ zx::result<fbl::RefPtr<VmMapping>> VmMapping::ForceWritable() {
       }
     }
 
-    fbl::AllocChecker ac;
     // We created the clone starting at our object offset in the old object, so that makes the
     // equivalent start offset be 0 in the clone.
-    writable = fbl::AdoptRef(new (&ac) VmMapping(
-        *parent_locked(), true, base(), size(), flags(), ktl::move(clone), 0,
-        first_region_arch_mmu_flags_locked(), ktl::move(protection_ranges), mergeable_locked()));
-    if (!ac.check()) {
+    writable = fbl::ImportFromRawPtr(rust_vm_mapping_create_with_ranges(
+        parent_locked(), true, base(), size(), flags(), fbl::ExportToRawPtr(&clone), 0,
+        first_region_arch_mmu_flags_locked(), &protection_ranges, mergeable_locked()));
+    if (!writable) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
     // First transfer any memory priority from the current mapping to the new mapping.

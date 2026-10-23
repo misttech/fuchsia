@@ -28,9 +28,10 @@ use debug::ltracef;
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use kprint::kprint;
 use ksync::{KCell, KMutexGuard, LockToken, RawCriticalMutex};
+use pin_init::{PinInit, pin_data};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;
-use zr::Opaque;
+use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, zx_status_t};
 
@@ -253,7 +254,7 @@ impl HasRefCount for VmAddressRegionOrMapping {
 unsafe impl Recyclable for VmAddressRegionOrMapping {
     #[inline]
     unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: `ptr` is the last reference to an allocated region or mapping.
+        // SAFETY: `ptr` is the last reference to a region or mapping allocated with `kalloc::Box`.
         unsafe { Self::free(ptr) }
     }
 }
@@ -316,19 +317,21 @@ impl VmAddressRegionOrMapping {
     }
 
     fn into_downcast(this: RefPtr<Self>) -> OwnedRegionOrMapping {
-        let raw = RefPtr::into_raw(this);
-        // SAFETY: `raw` points to a live `VmAddressRegionOrMapping`.
-        match unsafe { &*raw }.downcast() {
-            RegionOrMapping::Mapping(mapping) => {
-                // SAFETY: `mapping` is the object `raw` points to, its reference is owned by the
-                // result, and it was allocated as a `VmMapping`.
-                OwnedRegionOrMapping::Mapping(unsafe { RefPtr::from_raw(ptr::from_ref(mapping)) })
-            }
-            RegionOrMapping::Region(region) => {
-                // SAFETY: `region` is the object `raw` points to, its reference is owned by the
-                // result, and it was allocated as a `VmAddressRegion`.
-                OwnedRegionOrMapping::Region(unsafe { RefPtr::from_raw(ptr::from_ref(region)) })
-            }
+        let is_mapping = this.is_mapping();
+        let raw = RefPtr::into_raw(this).cast_mut().cast::<bindings::VmAddressRegionOrMapping>();
+        if is_mapping {
+            // SAFETY: `raw` points to a live `VmMapping`.
+            let mapping = unsafe { bindings::cpp_vm_address_region_or_mapping_as_vm_mapping(raw) };
+            // SAFETY: `mapping` is the object `raw` points to, its reference is owned by the
+            // result, and it was allocated as a `VmMapping`.
+            OwnedRegionOrMapping::Mapping(unsafe { RefPtr::from_raw(mapping.cast()) })
+        } else {
+            // SAFETY: `raw` points to a live `VmAddressRegion`.
+            let region =
+                unsafe { bindings::cpp_vm_address_region_or_mapping_as_vm_address_region(raw) };
+            // SAFETY: `region` is the object `raw` points to, its reference is owned by the
+            // result, and it was allocated as a `VmAddressRegion`.
+            OwnedRegionOrMapping::Region(unsafe { RefPtr::from_raw(region.cast()) })
         }
     }
 
@@ -591,16 +594,25 @@ impl VmAddressRegionOrMapping {
 
     /// # Safety
     ///
-    /// `ptr` must point to a live region or mapping to which no reference remains.
+    /// `ptr` must point to a live region or mapping allocated with `kalloc::Box` to which no
+    /// reference remains.
     #[inline]
     unsafe fn free(ptr: NonNull<Self>) {
+        let raw = ptr.as_ptr().cast::<bindings::VmAddressRegionOrMapping>();
         // SAFETY: `ptr` points to a live region or mapping.
         if unsafe { ptr.as_ref() }.is_mapping() {
-            // SAFETY: `ptr` points to a live `VmMapping` to which no reference remains.
-            unsafe { bindings::cpp_vm_mapping_free(ptr.as_ptr().cast()) }
+            // SAFETY: `raw` points to a live `VmMapping`.
+            let mapping = unsafe { bindings::cpp_vm_address_region_or_mapping_as_vm_mapping(raw) };
+            // SAFETY: `mapping` is non-null and points to a live `VmMapping` allocated with
+            // `kalloc::Box` to which no reference remains.
+            unsafe { VmMapping::recycle(NonNull::new_unchecked(mapping.cast())) }
         } else {
-            // SAFETY: `ptr` points to a live `VmAddressRegion` to which no reference remains.
-            unsafe { bindings::cpp_vm_address_region_free(ptr.as_ptr().cast()) }
+            // SAFETY: `raw` points to a live `VmAddressRegion`.
+            let region =
+                unsafe { bindings::cpp_vm_address_region_or_mapping_as_vm_address_region(raw) };
+            // SAFETY: `region` is non-null and points to a live `VmAddressRegion` allocated with
+            // `kalloc::Box` to which no reference remains.
+            unsafe { VmAddressRegion::recycle(NonNull::new_unchecked(region.cast())) }
         }
     }
 }
@@ -616,10 +628,15 @@ enum OwnedRegionOrMapping {
 }
 
 /// A representation of a contiguous range of virtual address space
+#[derive(Recyclable)]
+#[pin_data(PinnedDrop)]
 #[repr(transparent)]
 pub struct VmAddressRegion {
+    #[pin]
     raw: Opaque<bindings::VmAddressRegion>,
 }
+
+unsafe_pinned_drop_ffi!(VmAddressRegion, bindings::cpp_vm_address_region_destruct);
 
 #[repr(C)]
 pub struct VmAddressRegionState {
@@ -646,15 +663,6 @@ impl HasRefCount for VmAddressRegion {
     }
 }
 
-// SAFETY: `recycle` releases the allocation exactly once when the last reference is dropped.
-unsafe impl Recyclable for VmAddressRegion {
-    #[inline]
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: `ptr` points to a live `VmAddressRegion` to which no reference remains.
-        unsafe { bindings::cpp_vm_address_region_free(ptr.as_ptr().cast()) }
-    }
-}
-
 impl Deref for VmAddressRegion {
     type Target = VmAddressRegionOrMapping;
 
@@ -671,6 +679,38 @@ unsafe impl Send for VmAddressRegion {}
 unsafe impl Sync for VmAddressRegion {}
 
 impl VmAddressRegion {
+    fn new_root(
+        aspace: &VmAspace,
+        base: usize,
+        size: usize,
+        vmar_flags: u32,
+    ) -> impl PinInit<Self> {
+        pin_init_ffi!(
+            bindings::cpp_vm_address_region_construct_root,
+            aspace.as_ffi_ptr().cast(),
+            base,
+            size,
+            vmar_flags
+        )
+    }
+
+    fn new_child(
+        parent: &VmAddressRegion,
+        base: usize,
+        size: usize,
+        vmar_flags: u32,
+        name: &CStr,
+    ) -> impl PinInit<Self> {
+        pin_init_ffi!(
+            bindings::cpp_vm_address_region_construct_child,
+            parent.as_ffi_ptr(),
+            base,
+            size,
+            vmar_flags,
+            name.as_ptr(),
+        )
+    }
+
     pub(super) fn as_ffi_ptr(&self) -> *mut bindings::VmAddressRegion {
         self.raw.get()
     }
@@ -1632,4 +1672,50 @@ pub extern "C" fn rust_vm_address_region_or_mapping_commit_high_memory_priority(
     this: &VmAddressRegionOrMapping,
 ) {
     this.commit_high_memory_priority();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_address_region_create_root(
+    aspace: &VmAspace,
+    base: usize,
+    size: usize,
+    vmar_flags: u32,
+) -> Option<RefPtr<VmAddressRegion>> {
+    RefPtr::pin_init(VmAddressRegion::new_root(aspace, base, size, vmar_flags)).ok()
+}
+
+/// # Safety
+///
+/// `name` points to a null-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_create_child(
+    parent: &VmAddressRegion,
+    base: usize,
+    size: usize,
+    vmar_flags: u32,
+    name: *const c_char,
+) -> Option<RefPtr<VmAddressRegion>> {
+    // SAFETY: `name` points to a null-terminated string.
+    let name = unsafe { CStr::from_ptr(name) };
+    RefPtr::pin_init(VmAddressRegion::new_child(parent, base, size, vmar_flags, name)).ok()
+}
+
+/// # Safety
+///
+/// `this` is the last reference to a region or mapping allocated with `kalloc::Box`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_or_mapping_recycle(
+    this: NonNull<VmAddressRegionOrMapping>,
+) {
+    // SAFETY: `this` is the last reference to a region or mapping allocated with `kalloc::Box`.
+    unsafe { VmAddressRegionOrMapping::recycle(this) }
+}
+
+/// # Safety
+///
+/// `this` is the last reference to a region allocated with `kalloc::Box`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_recycle(this: NonNull<VmAddressRegion>) {
+    // SAFETY: `this` is the last reference to a region allocated with `kalloc::Box`.
+    unsafe { VmAddressRegion::recycle(this) }
 }

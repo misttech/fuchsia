@@ -52,10 +52,4 @@ void VmAddressRegionOrMapping::CommitHighMemoryPriority() {
   rust_vm_address_region_or_mapping_commit_high_memory_priority(this);
 }
 
-void VmAddressRegionOrMapping::fbl_recycle() {
-  if (is_mapping()) {
-    delete static_cast<VmMapping*>(this);
-  } else {
-    delete static_cast<VmAddressRegion*>(this);
-  }
-}
+void VmAddressRegionOrMapping::fbl_recycle() { rust_vm_address_region_or_mapping_recycle(this); }

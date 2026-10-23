@@ -7,7 +7,7 @@
 use super::arch_vm_aspace::{ARCH_MMU_FLAG_CACHE_MASK, ArchMmuFlags};
 use super::page_source::MultiPageRequest;
 use super::vm_address_region::{
-    LifeCycleState, MemoryPriority, VmAddressRegionOrMapping, flag, region_list,
+    LifeCycleState, MemoryPriority, VmAddressRegion, VmAddressRegionOrMapping, flag, region_list,
 };
 use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
@@ -23,9 +23,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use debug::{ltracef, tracef};
 use fbl::{Canary, HasRefCount, Recyclable, RefCounted, RefPtr};
 use ksync::{KCell, LockToken};
+use pin_init::{PinInit, pin_data};
 use vm_address_region_bindings as bindings;
 use vm_constants_rs as constants;
-use zr::Opaque;
+use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 use zx_types::zx_status_t;
 
@@ -57,9 +58,27 @@ pub type DestroyRemoveFromParent = bindings::VmMapping_DestroyRemoveFromParent;
 pub type ActivateInsertRegions = bindings::VmMapping_ActivateInsertRegions;
 
 /// A representation of the mapping of a VMO into the address space
+#[derive(Recyclable)]
+#[pin_data(PinnedDrop)]
 #[repr(transparent)]
 pub struct VmMapping {
+    #[pin]
     raw: Opaque<bindings::VmMapping>,
+}
+
+unsafe_pinned_drop_ffi!(VmMapping, bindings::cpp_vm_mapping_destruct);
+
+/// A B-Tree that records any transitions in protection. Each entry consists of a `usize` key and
+/// an `ArchMmuFlags` value. A node (addr, flags) means that the range starting at `addr` has the
+/// protections `flags`, up until the address of the next node in the tree, or `base() + size()` if
+/// it is the last node.
+#[repr(transparent)]
+pub struct ProtectionRanges(Opaque<bindings::VmMappingProtectionRanges>);
+
+impl ProtectionRanges {
+    fn as_ffi_ptr(&self) -> *mut bindings::VmMappingProtectionRanges {
+        self.0.get()
+    }
 }
 
 #[repr(C)]
@@ -134,15 +153,6 @@ impl HasRefCount for VmMapping {
     }
 }
 
-// SAFETY: `recycle` releases the allocation exactly once when the last reference is dropped.
-unsafe impl Recyclable for VmMapping {
-    #[inline]
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: `ptr` points to a live `VmMapping` to which no reference remains.
-        unsafe { bindings::cpp_vm_mapping_free(ptr.as_ptr().cast()) }
-    }
-}
-
 impl Deref for VmMapping {
     type Target = VmAddressRegionOrMapping;
 
@@ -160,6 +170,62 @@ unsafe impl Send for VmMapping {}
 unsafe impl Sync for VmMapping {}
 
 impl VmMapping {
+    /// private constructor, use `VmAddressRegion::create...()` instead
+    #[expect(clippy::too_many_arguments)]
+    fn new(
+        parent: &VmAddressRegion,
+        private_clone: bool,
+        base: usize,
+        size: usize,
+        vmar_flags: u32,
+        vmo: RefPtr<VmObject>,
+        vmo_offset: u64,
+        arch_mmu_flags: ArchMmuFlags,
+        mergeable: Mergeable,
+    ) -> impl PinInit<Self> {
+        pin_init_ffi!(
+            bindings::cpp_vm_mapping_construct,
+            parent.as_ffi_ptr(),
+            private_clone,
+            base,
+            size,
+            vmar_flags,
+            RefPtr::into_raw(vmo).cast_mut().cast(),
+            vmo_offset,
+            arch_mmu_flags,
+            mergeable == Mergeable::Yes,
+        )
+    }
+
+    /// private constructor, use `VmAddressRegion::create...()` instead
+    #[expect(clippy::too_many_arguments)]
+    fn new_with_ranges(
+        parent: &VmAddressRegion,
+        private_clone: bool,
+        base: usize,
+        size: usize,
+        vmar_flags: u32,
+        vmo: RefPtr<VmObject>,
+        vmo_offset: u64,
+        first_mmu_flags: ArchMmuFlags,
+        ranges: Pin<&mut ProtectionRanges>,
+        mergeable: Mergeable,
+    ) -> impl PinInit<Self> {
+        pin_init_ffi!(
+            bindings::cpp_vm_mapping_construct_with_ranges,
+            parent.as_ffi_ptr(),
+            private_clone,
+            base,
+            size,
+            vmar_flags,
+            RefPtr::into_raw(vmo).cast_mut().cast(),
+            vmo_offset,
+            first_mmu_flags,
+            ranges.as_ffi_ptr(),
+            mergeable == Mergeable::Yes,
+        )
+    }
+
     fn as_ffi_ptr(&self) -> *mut bindings::VmMapping {
         self.raw.get()
     }
@@ -1282,4 +1348,67 @@ pub unsafe extern "C" fn rust_vm_mapping_destroy_locked_object(
         unmap,
         remove_region,
     ))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_create(
+    parent: &VmAddressRegion,
+    private_clone: bool,
+    base: usize,
+    size: usize,
+    vmar_flags: u32,
+    vmo: RefPtr<VmObject>,
+    vmo_offset: u64,
+    arch_mmu_flags: ArchMmuFlags,
+    mergeable: Mergeable,
+) -> Option<RefPtr<VmMapping>> {
+    let init = VmMapping::new(
+        parent,
+        private_clone,
+        base,
+        size,
+        vmar_flags,
+        vmo,
+        vmo_offset,
+        arch_mmu_flags,
+        mergeable,
+    );
+    RefPtr::pin_init(init).ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_vm_mapping_create_with_ranges(
+    parent: &VmAddressRegion,
+    private_clone: bool,
+    base: usize,
+    size: usize,
+    vmar_flags: u32,
+    vmo: RefPtr<VmObject>,
+    vmo_offset: u64,
+    first_mmu_flags: ArchMmuFlags,
+    ranges: Pin<&mut ProtectionRanges>,
+    mergeable: Mergeable,
+) -> Option<RefPtr<VmMapping>> {
+    let init = VmMapping::new_with_ranges(
+        parent,
+        private_clone,
+        base,
+        size,
+        vmar_flags,
+        vmo,
+        vmo_offset,
+        first_mmu_flags,
+        ranges,
+        mergeable,
+    );
+    RefPtr::pin_init(init).ok()
+}
+
+/// # Safety
+///
+/// `this` is the last reference to a mapping allocated with `kalloc::Box`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_recycle(this: NonNull<VmMapping>) {
+    // SAFETY: `this` is the last reference to a mapping allocated with `kalloc::Box`.
+    unsafe { VmMapping::recycle(this) }
 }

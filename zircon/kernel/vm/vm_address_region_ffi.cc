@@ -40,7 +40,19 @@ CppVmAddressRegionEnumerator::~CppVmAddressRegionEnumerator() {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
-FFI_ALWAYS_INLINE void cpp_vm_address_region_free(VmAddressRegion* vmar) { delete vmar; }
+FFI_ALWAYS_INLINE void cpp_vm_address_region_construct_root(
+    ffi::Uninitialized<VmAddressRegion>* slot, VmAspace* aspace, vaddr_t base, size_t size,
+    uint32_t vmar_flags) {
+  slot->Initialize(*aspace, base, size, vmar_flags);
+}
+FFI_ALWAYS_INLINE void cpp_vm_address_region_construct_child(
+    ffi::Uninitialized<VmAddressRegion>* slot, VmAddressRegion* parent, vaddr_t base, size_t size,
+    uint32_t vmar_flags, const char* name) {
+  slot->Initialize(*parent, base, size, vmar_flags, name);
+}
+FFI_ALWAYS_INLINE void cpp_vm_address_region_destruct(VmAddressRegion* vmar) {
+  vmar->~VmAddressRegion();
+}
 FFI_ALWAYS_INLINE void* cpp_vm_address_region_state(VmAddressRegion* vmar) {
   return &vmar->opaque_storage_;
 }
