@@ -9,6 +9,7 @@ import re
 from typing import Tuple
 
 import fuchsia_base_test
+from honeydew.transports.ffx import types as ffx_types
 from mobly import asserts, signals, test_runner
 
 # Required fastboot variables.
@@ -88,6 +89,7 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         """Initializes all DUT(s)"""
         await super().setup_class()
+        self._product_bundle_path = self.user_params["product_bundle_path"]
 
         # TODO(http://b/276740268#comment33): add support for rebooting into
         # fastboot here and leaving the device in fastboot mode for the entire
@@ -151,6 +153,37 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
             asserts.assert_in(
                 name, getvar_all_vars, "Missing variable in `getvar all`"
             )
+
+    async def _flash_and_boot_fuchsia(self) -> None:
+        """Flashes the product bundle in fastboot mode and waits for Fuchsia mode."""
+        self.dut.ffx.notify_intentional_disconnect()
+        self.dut.ffx.run(
+            cmd=[
+                "--target",
+                self.dut.fastboot.node_id,
+                "target",
+                "flash",
+                "--product-bundle",
+                self._product_bundle_path,
+            ],
+            include_target=False,
+            log_status_on_failure=False,
+            machine=ffx_types.MachineFormat.RAW,
+        )
+        self.dut.fastboot.wait_for_fuchsia_mode()
+        await self.dut.wait_for_online()
+        await self.dut.on_device_boot()
+
+    async def test_flash_bootloader(self) -> None:
+        """Tests flashing bootloader, rebooting, and flashing bootloader again."""
+        logging.info("Flashing product bundle (pass 1)")
+        await self._flash_and_boot_fuchsia()
+
+        logging.info(
+            "Rebooting into newly flashed bootloader and flashing again (pass 2)"
+        )
+        self.dut.fastboot.boot_to_fastboot_mode()
+        await self._flash_and_boot_fuchsia()
 
 
 if __name__ == "__main__":

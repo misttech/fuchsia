@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/images/paths.gni")
 import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 
@@ -9,6 +10,12 @@ assert(is_host, "Python E2E tests are host-only")
 
 python_mobly_test("lacewing") {
   main_source = "fastboot.py"
+  if (defined(files.product_bundle_dir)) {
+    params = {
+      product_bundle_path =
+          rebase_path(files.product_bundle_dir, root_build_dir)
+    }
+  }
   libraries = [
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
