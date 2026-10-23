@@ -10,6 +10,8 @@ from pydap.models import Response, StackTraceArguments, StackTraceResponse
 from zxdb_dap.models import (
     ZxdbAsyncBacktraceArguments,
     ZxdbAsyncBacktraceResponse,
+    ZxdbConsoleCommandArguments,
+    ZxdbConsoleCommandResponse,
     ZxdbPauseArguments,
     ZxdbThreadsResponse,
 )
@@ -154,3 +156,18 @@ class ZxdbDapMixin:
         """
         resp = await self._send_request("zxdb.AsyncBacktrace", args)
         return ZxdbAsyncBacktraceResponse.model_validate(resp)
+
+    async def zxdb_console_command(
+        self: SupportsSendRequest,
+        args: ZxdbConsoleCommandArguments,
+    ) -> ZxdbConsoleCommandResponse:
+        """Sends a custom zxdb consoleCommand request.
+
+        Args:
+            args: Arguments containing command and optional frameId.
+
+        Returns:
+            ZxdbConsoleCommandResponse: Response containing console output.
+        """
+        resp = await self._send_request("zxdb.ConsoleCommand", args)
+        return ZxdbConsoleCommandResponse.model_validate(resp)
