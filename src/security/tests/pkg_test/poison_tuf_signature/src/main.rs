@@ -51,13 +51,13 @@ fn main() -> anyhow::Result<()> {
         let mut in_file =
             input_zip.by_index(i).context("Failed to open file inside input zip archive")?;
 
-        let name = in_file.name();
+        let name = in_file.name().context("Failed to read file name in input zip archive")?;
 
         // Do not compress; we are producing test-only output here and size doesn't matter.
         let options = FileOptions::default().compression_method(CompressionMethod::Stored);
 
         output_zip
-            .start_file(name, options)
+            .start_file(name.as_ref(), options)
             .context("Failed to create file in output zip archive")?;
 
         if name.ends_with("targets.json") {

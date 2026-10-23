@@ -575,7 +575,7 @@ _NORMAL_DEPENDENCIES = {
             "tokio": Label("//third_party/rust_crates/vendor/tokio-1.53.1:tokio"),
             "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.19:tokio_stream"),
             "xattr": Label("//third_party/rust_crates/vendor/xattr-1.6.1:xattr"),
-            "zip": Label("//third_party/rust_crates/vendor/zip-8.6.0:zip"),
+            "zip": Label("//third_party/rust_crates/vendor/zip-9.0.5:zip"),
         },
         "cfg(target_os = \"fuchsia\")": {
             "coset": Label("//third_party/rust_crates/vendor/coset-0.4.2:coset"),
@@ -792,6 +792,7 @@ _CONDITIONS = {
     "cfg(any(target_os = \"haiku\", target_os = \"redox\", target_os = \"nto\", target_os = \"aix\"))": [],
     "cfg(any(target_os = \"ios\", target_os = \"visionos\", target_os = \"watchos\", target_os = \"tvos\"))": [],
     "cfg(any(target_os = \"linux\", target_os = \"android\"))": ["@rules_rust//rust/platform:aarch64-unknown-linux-gnu", "@rules_rust//rust/platform:x86_64-unknown-linux-gnu"],
+    "cfg(any(target_os = \"macos\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\", target_os = \"dragonfly\"))": [],
     "cfg(any(target_os = \"macos\", target_os = \"openbsd\", target_os = \"vita\", target_os = \"emscripten\"))": [],
     "cfg(any(target_pointer_width = \"8\", target_pointer_width = \"16\", target_pointer_width = \"32\"))": [],
     "cfg(any(unix, target_os = \"hermit\", target_os = \"wasi\"))": ["@rules_rust//rust/platform:aarch64-unknown-fuchsia", "@rules_rust//rust/platform:aarch64-unknown-linux-gnu", "@rules_rust//rust/platform:riscv64gc-unknown-fuchsia", "@rules_rust//rust/platform:x86_64-unknown-fuchsia", "@rules_rust//rust/platform:x86_64-unknown-linux-gnu"],

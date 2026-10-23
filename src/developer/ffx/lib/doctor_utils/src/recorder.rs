@@ -140,8 +140,10 @@ mod test {
         let path = rec.generate(root)?;
         let mut zip = ZipArchive::new(File::open(path)?)?;
 
-        let actual_names: HashSet<_> = zip.file_names().collect();
-        let expected_names: HashSet<_> = vec![DOCTOR_OUTPUT_NAME, FILE_NAME].into_iter().collect();
+        let actual_names: HashSet<String> =
+            zip.file_names().map(|name| name.map(|n| n.into_owned())).collect::<Result<_, _>>()?;
+        let expected_names: HashSet<String> =
+            [DOCTOR_OUTPUT_NAME.to_string(), FILE_NAME.to_string()].into();
         assert_eq!(actual_names, expected_names);
 
         {

@@ -120,7 +120,7 @@ impl FileResolver for ZipArchiveResolver {
 
         let mut outpath = PathBuf::new();
         outpath.push(self.temp_dir.path());
-        outpath.push(file.mangled_name());
+        outpath.push(file.mangled_name().map_err(FfxFastbootError::ZipArchiveRead)?);
         if let Some(p) = outpath.parent() {
             if !p.exists() {
                 create_dir_all(&p)?;

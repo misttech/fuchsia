@@ -69,9 +69,10 @@ impl ArchiveResolver {
 
         for i in 0..archive.len() {
             let mut archive_file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
-            let outpath = archive_file.mangled_name();
-            if (&*archive_file.name()).ends_with("flash.json")
-                || (&*archive_file.name()).ends_with("flash-manifest.manifest")
+            let outpath = archive_file.mangled_name().map_err(FfxFastbootError::ZipArchiveRead)?;
+            let archive_name = archive_file.name().map_err(FfxFastbootError::ZipArchiveRead)?;
+            if archive_name.ends_with("flash.json")
+                || archive_name.ends_with("flash-manifest.manifest")
             {
                 let mut internal_path = PathBuf::new();
                 internal_path.push(outpath.clone());
@@ -124,7 +125,7 @@ impl FileResolver for ArchiveResolver {
         };
         let mut outpath = PathBuf::new();
         outpath.push(self.temp_dir.path());
-        outpath.push(file.mangled_name());
+        outpath.push(file.mangled_name().map_err(FfxFastbootError::ZipArchiveRead)?);
         if let Some(p) = outpath.parent() {
             if !p.exists() {
                 create_dir_all(&p)?;

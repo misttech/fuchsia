@@ -162,7 +162,8 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
                 if file.is_file() {
-                    let ofile_path = tdir_path.join(file.mangled_name());
+                    let ofile_path = tdir_path
+                        .join(file.mangled_name().map_err(FfxFastbootError::ZipArchiveRead)?);
                     if let Some(parent) = ofile_path.parent() {
                         std::fs::create_dir_all(parent)?;
                     }

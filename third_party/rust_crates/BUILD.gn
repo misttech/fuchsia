@@ -2875,13 +2875,13 @@ group("zerotrie-0.2.5") {
 
 if (!(current_os == "fuchsia")) {
   group("zip") {
-    public_deps = [ ":zip-v8_6_0" ]
+    public_deps = [ ":zip-v9_0_5" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("zip-8.6.0") {
-    public_deps = [ ":zip-v8_6_0" ]
+  group("zip-9.0.5") {
+    public_deps = [ ":zip-v9_0_5" ]
   }
 }
 
@@ -27396,15 +27396,15 @@ rustc_macro("zerovec-derive-v0_11_6") {
   applicable_licenses = [ ":zerovec-derive-v0_11_6.license" ]
 }
 
-license("zip-v8_6_0.license") {
+license("zip-v9_0_5.license") {
   public_package_name = "zip"
-  license_files = [ "//third_party/rust_crates/vendor/zip-8.6.0/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/zip-9.0.5/LICENSE" ]
 }
 
-rustc_library("zip-v8_6_0") {
+rustc_library("zip-v9_0_5") {
   crate_name = "zip"
-  source_root = "//third_party/rust_crates/vendor/zip-8.6.0/src/lib.rs"
-  output_name = "zip-1d69b20bdca6db39"
+  source_root = "//third_party/rust_crates/vendor/zip-9.0.5/src/lib.rs"
+  output_name = "zip-27f3e4a8b4436682"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -27416,20 +27416,23 @@ rustc_library("zip-v8_6_0") {
   deps += [ ":flate2-v1_1_9" ]
   deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":typed-path-v0_12_3" ]
+  if (current_os == "mac" || false || false || false || false) {
+    deps += [ ":nix-v0_31_3" ]
+  }
 
-  rustenv = [ "CARGO_PKG_VERSION=8.6.0" ]
+  rustenv = [ "CARGO_PKG_VERSION=9.0.5" ]
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1d69b20bdca6db39",
-    "-Cextra-filename=-1d69b20bdca6db39",
+    "-Cmetadata=27f3e4a8b4436682",
+    "-Cextra-filename=-27f3e4a8b4436682",
     "--cfg=feature=\"_deflate-any\"",
     "--cfg=feature=\"deflate-flate2\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zip-v8_6_0.license" ]
+  applicable_licenses = [ ":zip-v9_0_5.license" ]
 }
 
 license("zmij-v1_0_21.license") {

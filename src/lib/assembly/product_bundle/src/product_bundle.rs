@@ -20,6 +20,20 @@ use std::ops::Deref;
 use std::process::Command;
 use zip::read::ZipArchive;
 
+/// Opens a `ZipArchive` assuming the archive starts at byte offset 0.
+///
+/// By default, `ZipArchive::new` uses `ArchiveOffset::Detect`, which scans forward from the start
+/// of the reader (offset 0) to detect self-extracting stubs or prepended data before the central
+/// directory. Product bundle `.zip` archives never contain prepended data, and scanning from
+/// offset 0 defeats sparse HTTP range reads in `GcsRangeReader` by fetching the start of multi-GB
+/// remote archives instead of only reading the central directory at the tail.
+pub(crate) fn open_zip<R: Read + Seek>(r: R) -> zip::result::ZipResult<ZipArchive<R>> {
+    ZipArchive::with_config(
+        zip::read::Config { archive_offset: zip::read::ArchiveOffset::Known(0) },
+        r,
+    )
+}
+
 /// Errors that can occur when loading a product bundle.
 #[derive(Debug, thiserror::Error)]
 pub enum ProductBundleLoadError {
@@ -165,7 +179,7 @@ impl ZipLoadedProductBundle {
         let path = product_bundle_zip_path.as_ref();
         let file = File::open(path)
             .map_err(|e| ProductBundleLoadError::OpenFile(path.to_path_buf(), e))?;
-        let zip = ZipArchive::new(file).map_err(ProductBundleLoadError::Zip)?;
+        let zip = open_zip(file).map_err(ProductBundleLoadError::Zip)?;
         Self::load_from(zip)
     }
 
@@ -175,9 +189,15 @@ impl ZipLoadedProductBundle {
     ) -> Result<Self, ProductBundleLoadError> {
         let product_bundle_manifest_name = zip
             .file_names()
-            .find(|x| x == &"product_bundle.json" || x.ends_with("/product_bundle.json"))
-            .ok_or(ProductBundleLoadError::NotFoundInZip)?
-            .to_owned();
+            .find_map(|x| match x {
+                Ok(name)
+                    if name == "product_bundle.json" || name.ends_with("/product_bundle.json") =>
+                {
+                    Some(name.into_owned())
+                }
+                _ => None,
+            })
+            .ok_or(ProductBundleLoadError::NotFoundInZip)?;
 
         let product_bundle_parent_path =
             product_bundle_manifest_name.strip_suffix("product_bundle.json").ok_or_else(|| {
@@ -354,7 +374,7 @@ impl ProductBundle {
         let loc = GcsLocation::parse(u)?;
         if loc.is_zip() {
             let rdr = GcsRangeReader::new(f, loc)?;
-            return ZipLoadedProductBundle::load_from(ZipArchive::new(rdr)?).map(Into::into);
+            return ZipLoadedProductBundle::load_from(open_zip(rdr)?).map(Into::into);
         }
         let (base, obj) = loc.directory_manifest();
         let Self::V2(mut d) = try_load_product_bundle(&*f.fetch(&loc.bucket, &obj, None)?.1)?;
@@ -724,7 +744,7 @@ fn load_vd_with(
         None if src.is_file() => Some(Box::new(File::open(src)?)),
         _ => None,
     };
-    let mut zip = reader.map(ZipArchive::new).transpose()?;
+    let mut zip = reader.map(open_zip).transpose()?;
     let base = gcs.as_ref().map(|loc| loc.directory_manifest().0).unwrap_or_else(|| src.into());
 
     let mut read_entry = |path: &Utf8Path| -> Result<Vec<u8>> {

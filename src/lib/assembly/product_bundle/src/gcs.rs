@@ -263,11 +263,12 @@ impl GcsFetcher for std::collections::HashMap<&str, Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::product_bundle::open_zip;
     use std::collections::HashMap;
     use std::io::{Cursor, Write};
     use std::net::TcpListener;
     use zip::write::SimpleFileOptions;
-    use zip::{CompressionMethod, ZipArchive, ZipWriter};
+    use zip::{CompressionMethod, ZipWriter};
 
     #[test]
     fn test_gcs_location_and_range_reader() {
@@ -291,7 +292,7 @@ mod tests {
         let f = HashMap::from([("pb.zip", cur.into_inner())]);
         let rdr = GcsRangeReader::new(&f, GcsLocation::parse("gs://b/pb.zip").unwrap()).unwrap();
         let mut s = String::new();
-        ZipArchive::new(rdr).unwrap().by_name("pb.json").unwrap().read_to_string(&mut s).unwrap();
+        open_zip(rdr).unwrap().by_name("pb.json").unwrap().read_to_string(&mut s).unwrap();
         assert_eq!(s, "xx");
     }
 

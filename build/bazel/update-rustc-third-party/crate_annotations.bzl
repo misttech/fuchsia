@@ -642,9 +642,9 @@ CRATE_ANNOTATIONS = {
     ],
     "zip": [
         crate.annotation(
-            version = "8.6.0",
+            version = "9.0.5",
             rustc_env = {
-                "CARGO_PKG_VERSION": "8.6.0",
+                "CARGO_PKG_VERSION": "9.0.5",
             },
         ),
     ],

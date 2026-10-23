@@ -27,7 +27,8 @@ fn unpack_artifacts(current_exe: &Path, dir: &TempDir) -> Result<(), Error> {
     let mut zip = ZipArchive::new(&current_exe_file).expect("Unable to read archive.");
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).expect("Unable to get file by index from archive.");
-        let outpath = file.mangled_name();
+        let outpath =
+            file.mangled_name().map_err(|e| Error::new(std::io::ErrorKind::InvalidData, e))?;
         let dest = dir.path().join(outpath);
         // Ensure the paths we extract do not escape the temp dir.
         // mangled_name() already removes `..`, but we want to explicitly ensure that this behavior does not regress.
