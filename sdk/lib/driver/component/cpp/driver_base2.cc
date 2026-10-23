@@ -225,26 +225,31 @@ zx::event DriverContext::take_node_token() {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
 std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>
 DriverContext::take_power_element_runner() {
-  if (!start_args_.power_element_args().has_value()) {
+  if (!start_args_.power_element_args().has_value() ||
+      !start_args_.power_element_args()->runner_server().has_value()) {
     return std::nullopt;
   }
 
-  return fidl::ServerEnd<fuchsia_power_broker::ElementRunner>(
-      start_args_.power_element_args()->runner_server()->TakeChannel());
+  std::optional result = std::move(start_args_.power_element_args()->runner_server());
+  start_args_.power_element_args()->runner_server().reset();
+  return result;
 }
 
 std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>>
 DriverContext::take_power_element_lessor() {
-  if (!start_args_.power_element_args().has_value()) {
+  if (!start_args_.power_element_args().has_value() ||
+      !start_args_.power_element_args()->lessor_client().has_value()) {
     return std::nullopt;
   }
 
-  return fidl::ClientEnd<fuchsia_power_broker::Lessor>(
-      std::move(start_args_.power_element_args()->lessor_client().value()));
+  std::optional result = std::move(start_args_.power_element_args()->lessor_client());
+  start_args_.power_element_args()->lessor_client().reset();
+  return result;
 }
 
 std::optional<fuchsia_power_broker::DependencyToken> DriverContext::power_element_token() {
-  if (!start_args_.power_element_args().has_value()) {
+  if (!start_args_.power_element_args().has_value() ||
+      !start_args_.power_element_args()->token().has_value()) {
     return std::nullopt;
   }
 

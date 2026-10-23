@@ -67,6 +67,109 @@ TEST(DriverBase2Test, ProvideResource) {
   driver_test.driver()->CreateResourceSync();
   ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
 }
+
+class TestPowerArgsDriver2 : public fdf::DriverBase2 {
+ public:
+  TestPowerArgsDriver2() : fdf::DriverBase2("test_power_args_driver2") {}
+
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(
+        fdf_internal::DriverServer2<TestPowerArgsDriver2>::initialize,
+        fdf_internal::DriverServer2<TestPowerArgsDriver2>::destroy);
+  }
+
+  zx::result<> Start(fdf::DriverContext context) override {
+    has_power_args_ = context.has_power_args();
+    runner_ = context.take_power_element_runner();
+    second_runner_ = context.take_power_element_runner();
+    lessor_ = context.take_power_element_lessor();
+    second_lessor_ = context.take_power_element_lessor();
+    token_ = context.power_element_token();
+    return zx::ok();
+  }
+
+  bool has_power_args() const { return has_power_args_; }
+  const std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>& runner() const {
+    return runner_;
+  }
+  const std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>& second_runner() const {
+    return second_runner_;
+  }
+  const std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>>& lessor() const {
+    return lessor_;
+  }
+  const std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>>& second_lessor() const {
+    return second_lessor_;
+  }
+  const std::optional<fuchsia_power_broker::DependencyToken>& token() const { return token_; }
+
+ private:
+  bool has_power_args_ = false;
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner_;
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> second_runner_;
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>> lessor_;
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Lessor>> second_lessor_;
+  std::optional<fuchsia_power_broker::DependencyToken> token_;
+};
+
+struct PowerArgsFixtureConfig final {
+  using DriverType = TestPowerArgsDriver2;
+  using EnvironmentType = fdf_testing::MinimalCompatEnvironment;
+};
+
+TEST(DriverBase2Test, PowerElementArgsAbsent) {
+  fdf_testing::ForegroundDriverTest<PowerArgsFixtureConfig> driver_test;
+  ASSERT_EQ(ZX_OK, driver_test.StartDriver().status_value());
+  EXPECT_FALSE(driver_test.driver()->has_power_args());
+  EXPECT_FALSE(driver_test.driver()->runner().has_value());
+  EXPECT_FALSE(driver_test.driver()->lessor().has_value());
+  EXPECT_FALSE(driver_test.driver()->token().has_value());
+  ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
+}
+
+TEST(DriverBase2Test, PowerElementArgsTokenOnly) {
+  fdf_testing::ForegroundDriverTest<PowerArgsFixtureConfig> driver_test;
+  ASSERT_EQ(ZX_OK, driver_test
+                       .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                         zx::event token;
+                         ASSERT_EQ(ZX_OK, zx::event::create(0, &token));
+                         fuchsia_driver_framework::PowerElementArgs power_args;
+                         power_args.token(std::move(token));
+                         args.power_element_args(std::move(power_args));
+                       })
+                       .status_value());
+  EXPECT_TRUE(driver_test.driver()->has_power_args());
+  EXPECT_FALSE(driver_test.driver()->runner().has_value());
+  EXPECT_FALSE(driver_test.driver()->lessor().has_value());
+  ASSERT_TRUE(driver_test.driver()->token().has_value());
+  EXPECT_TRUE(driver_test.driver()->token()->is_valid());
+  ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
+}
+
+TEST(DriverBase2Test, PowerElementArgsRunnerAndLessorOnly) {
+  fdf_testing::ForegroundDriverTest<PowerArgsFixtureConfig> driver_test;
+  ASSERT_EQ(ZX_OK, driver_test
+                       .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                         auto [runner_client, runner_server] =
+                             fidl::Endpoints<fuchsia_power_broker::ElementRunner>::Create();
+                         auto [lessor_client, lessor_server] =
+                             fidl::Endpoints<fuchsia_power_broker::Lessor>::Create();
+                         fuchsia_driver_framework::PowerElementArgs power_args;
+                         power_args.runner_server(std::move(runner_server));
+                         power_args.lessor_client(std::move(lessor_client));
+                         args.power_element_args(std::move(power_args));
+                       })
+                       .status_value());
+  EXPECT_TRUE(driver_test.driver()->has_power_args());
+  ASSERT_TRUE(driver_test.driver()->runner().has_value());
+  EXPECT_TRUE(driver_test.driver()->runner()->is_valid());
+  EXPECT_FALSE(driver_test.driver()->second_runner().has_value());
+  ASSERT_TRUE(driver_test.driver()->lessor().has_value());
+  EXPECT_TRUE(driver_test.driver()->lessor()->is_valid());
+  EXPECT_FALSE(driver_test.driver()->second_lessor().has_value());
+  EXPECT_FALSE(driver_test.driver()->token().has_value());
+  ASSERT_EQ(ZX_OK, driver_test.StopDriver().status_value());
+}
 #endif
 
 TEST(DriverBase2Test, DefaultHealthCheckRepliesByLevel) {
