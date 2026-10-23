@@ -137,27 +137,6 @@
                 // TODO(https://fxbug.dev/498681252)
                 "PipeTest.PolloutFragmentation",
 
-                // TODO(https://fxbug.dev/576961076)
-                "PipeTest.ODirectPacketMode",
-                "PipeTest.NonBlockingWriteAfterPartialPageReadFailsWithEagain",
-                "PipeTest.VmspliceSlotExhaustionMultiPagePipe",
-                "PipeTest.WriteCannotCrossPageSlotBoundaryWhenSlotsFull",
-                "PipeTest.NonBlockingLargeWriteTailMergeSemantics",
-                "PipeTest.SpliceAndTeePipeToPipeSlotSemantics",
-                "PipeTest.FcntlSetPipeSzShrinkChecksOccupiedSlotsNotBytes",
-                "PipeTest.FcntlSetPipeSzNearIntMaxDoesNotReturnIntMin",
-                "PipeTest.MergedWriteFaultOnReadReturnsEfault",
-                "PipeTest.SpliceFromTcpSocketHonorsSpliceFNonblock",
-                "PipeTest.Preadv2Pwritev2RwfNowaitAndEspipePrecedence",
-                "PipeTest.Pipe2FaultAndEmfileDoNotLeakFds",
-                "PipeTest.SendfileToFullNonBlockingPipeDoesNotAdvanceOffset",
-                "PipeTest.SpliceDoesNotTriggerSpuriousEpollEtWakeups",
-                "PipeTest.ConcurrentFcntlNonblockUnblocksPartialWrite",
-                "PipeTest.FifoLifecycleEofAndReopenSemantics",
-                "PipeTest.PollReadabilityDuringBlockedSpliceToFullSocket",
-                "PipeTest.SaRestartAppliesToReadvWritevSpliceVmspliceTee",
-                "PipeTest.PollOutOnFullPipeWithClosedReaderReturnsPollErrOnly",
-
                 // TODO(https://fxbug.dev/369889180): Remount rw to ro should fail with open files.
                 "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
