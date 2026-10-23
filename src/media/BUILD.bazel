@@ -10,6 +10,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/media/audio/lib/timeline:audio_lib_timeline_unittests",
         "//src/media/codec/codecs/test:timestamp_extrapolator_tests",
         "//src/media/lib/blocking_mpsc_queue:blocking_mpsc_queue_unittests",
         "//src/media/lib/extend_bits/unit_tests:extend-bits-tests",

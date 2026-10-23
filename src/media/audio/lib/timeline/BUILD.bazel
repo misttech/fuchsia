@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "timeline",
+    srcs = [
+        "timeline_function.cc",
+        "timeline_rate.cc",
+    ],
+    hdrs = [
+        "timeline_function.h",
+        "timeline_rate.h",
+    ],
+    implementation_deps = ["//sdk/lib/syslog/cpp"],
+    visibility = ["//src/media/audio:__subpackages__"],
+    deps = ["//zircon/system/ulib/zx"],
+    alwayslink = True,
+)
+
+# @bazel2gn:raw_attribute:output_name = "audio_lib_timeline_unittests"
+fx_cc_binary(
+    name = "unittest_bin",
+    testonly = True,
+    srcs = [
+        "timeline_function_unittest.cc",
+        "timeline_rate_unittest.cc",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":timeline",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "audio_lib_timeline_unittests",
+    unit_tests = [":unittest_bin"],
+    visibility = ["//src/media:__pkg__"],
+)
