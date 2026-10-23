@@ -54,6 +54,7 @@ rustc_library("rust") {
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_next",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:anyhow",
   ]

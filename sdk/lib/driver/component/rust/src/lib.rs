@@ -20,7 +20,9 @@ pub mod testing;
 
 pub use context::*;
 pub use error::DriverError;
-pub use health::HealthCheckResult;
+pub use health::{
+    HEALTH_INSPECT_NODE_NAME, HealthCheckInspect, HealthCheckResult, record_health_check_to_inspect,
+};
 pub use incoming::*;
 pub use node::*;
 
