@@ -375,6 +375,7 @@ static SBI_POWER_OPS: PdevPowerOps = PdevPowerOps {
     opp_set: None,
     opp_get: None,
     opp_get_domain_count: None,
+    system_resume: None,
 };
 
 /// Secondary initialization of SBI: dump specs and probed capabilities.

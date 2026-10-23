@@ -288,6 +288,18 @@ zx_status_t platform_suspend_system() {
 
   DEBUG_ASSERT(arch_ints_disabled());
 
+  // Firmware may have altered platform power state (e.g. CPU OPP registers) while the system was
+  // suspended. Restore the kernel's intended state before anything else runs on the resumed
+  // system. Do this regardless of suspend_status: if the suspend was aborted, re-applying the
+  // current state is harmless.
+  //
+  // TODO(https://fxbug.dev/576640818): Determine whether cluster power-down via
+  // platform_suspend_cpu() can also reset this state, in which case the restore must also happen
+  // when the first CPU in a domain resumes.
+  if (zx_status_t status = power_system_resume(); status != ZX_OK) {
+    dprintf(CRITICAL, "platform_suspend_system: power_system_resume failed: %d\n", status);
+  }
+
   zx_status_t status = resume_interrupts_curr_cpu();
   DEBUG_ASSERT_MSG(status == ZX_OK, "resume_interrupts_curr_cpu: %d", status);
   status = platform_resume_timer_curr_cpu();

@@ -20,6 +20,7 @@ void rust_power_shutdown();
 zx_status_t rust_power_cpu_off();
 zx_status_t rust_power_cpu_on(uint64_t hw_cpu_id, paddr_t entry, uint64_t context);
 zx_status_t rust_power_get_cpu_state(uint64_t hw_cpu_id, power_cpu_state* out_state);
+zx_status_t rust_power_system_resume();
 
 void rust_pdev_register_power(const pdev_power_ops* ops);
 const pdev_power_ops* rust_pdev_swap_power_for_test(const pdev_power_ops* ops);
@@ -34,6 +35,9 @@ FFI_ALWAYS_INLINE void power_shutdown() { rust_power_shutdown(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t power_cpu_off() { return rust_power_cpu_off(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t power_system_resume() { return rust_power_system_resume(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t power_cpu_on(uint64_t hw_cpu_id, paddr_t entry, uint64_t context) {

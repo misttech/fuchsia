@@ -51,4 +51,10 @@ zx_status_t power_cpu_off();
 zx_status_t power_cpu_on(uint64_t hw_cpu_id, paddr_t entry, uint64_t context);
 zx::result<power_cpu_state> power_get_cpu_state(uint64_t hw_cpu_id);
 
+// Restores platform power state that firmware may have altered while the system was suspended
+// (e.g. CPU OPP registers re-initialized by firmware on resume). Must be called on the boot CPU,
+// with interrupts disabled, immediately after returning from system suspend. Platforms without
+// such state treat this as a no-op and return ZX_OK.
+zx_status_t power_system_resume();
+
 #endif  // ZIRCON_KERNEL_INCLUDE_DEV_POWER_H_

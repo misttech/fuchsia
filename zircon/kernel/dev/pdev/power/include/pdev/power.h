@@ -23,9 +23,10 @@ struct pdev_power_ops {
   zx_status_t (*opp_set)(uint32_t domain_id, uint64_t opp);
   zx_status_t (*opp_get)(uint32_t domain_id, uint64_t* out_opp);
   zx_status_t (*opp_get_domain_count)(size_t* out_count);
+  zx_status_t (*system_resume)();
 };
 
-static_assert(sizeof(pdev_power_ops) == 64, "pdev_power_ops size mismatch");
+static_assert(sizeof(pdev_power_ops) == 72, "pdev_power_ops size mismatch");
 static_assert(alignof(pdev_power_ops) == 8, "pdev_power_ops align mismatch");
 
 void pdev_register_power(const pdev_power_ops* ops);

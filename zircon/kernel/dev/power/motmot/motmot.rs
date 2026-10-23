@@ -87,6 +87,7 @@ static MOTMOT_POWER_OPS: PdevPowerOps = PdevPowerOps {
     opp_set: None,
     opp_get: None,
     opp_get_domain_count: None,
+    system_resume: None,
 };
 
 /// Early initialization hook for Motmot power management.

@@ -72,13 +72,17 @@ pub struct PdevPowerOps {
     pub opp_get: Option<extern "C" fn(domain_id: u32, out_opp: *mut u64) -> Result<(), Status>>,
     /// Returns the number of supported OPP control domains.
     pub opp_get_domain_count: Option<extern "C" fn(out_count: *mut usize) -> Result<(), Status>>,
+    /// Restores platform power state that firmware may have altered while the system was
+    /// suspended. Called on the boot CPU, with interrupts disabled, immediately after returning
+    /// from system suspend.
+    pub system_resume: Option<extern "C" fn() -> Result<(), Status>>,
 }
 
 zr::static_assert!(core::mem::size_of::<PowerRebootFlags>() == 4);
 zr::static_assert!(core::mem::align_of::<PowerRebootFlags>() == 4);
 zr::static_assert!(core::mem::size_of::<PowerCpuState>() == 4);
 zr::static_assert!(core::mem::align_of::<PowerCpuState>() == 4);
-zr::static_assert!(core::mem::size_of::<PdevPowerOps>() == 64);
+zr::static_assert!(core::mem::size_of::<PdevPowerOps>() == 72);
 zr::static_assert!(core::mem::align_of::<PdevPowerOps>() == 8);
 
 /// Power level options flag: entity power level is independent of other CPUs in the domain.
@@ -177,6 +181,7 @@ static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
     opp_set: None,
     opp_get: None,
     opp_get_domain_count: None,
+    system_resume: None,
 };
 
 static POWER_OPS: AtomicConstPtr<PdevPowerOps> =
@@ -292,6 +297,16 @@ pub fn power_opp_get_domain_count() -> Result<usize, Status> {
     }
 }
 
+/// Restores platform power state after returning from system suspend, if supported.
+///
+/// Firmware may alter platform power state (e.g. CPU OPP registers) while the system is
+/// suspended. This gives the platform driver a chance to re-apply the kernel's intended state
+/// before the rest of the system resumes. Platforms without such state treat this as a no-op.
+pub fn power_system_resume() -> Result<(), Status> {
+    let ops = get_ops();
+    if let Some(system_resume_fn) = ops.system_resume { system_resume_fn() } else { Ok(()) }
+}
+
 /// In-kernel unit tests for the platform power subsystem.
 #[cfg(ktest)]
 #[unittest::suite(name = "pdev_power")]
@@ -301,7 +316,7 @@ mod tests {
         PdevPowerOps, PowerCpuState, PowerRebootFlags, pdev_swap_power_for_test, power_cpu_off,
         power_cpu_on, power_get_cpu_state, power_management_register_domains,
         power_management_set_rate_limits, power_opp_get, power_opp_get_domain_count, power_opp_set,
-        power_reboot, power_shutdown,
+        power_reboot, power_shutdown, power_system_resume,
     };
     use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
     use unittest::{assert_eq, assert_err, assert_ok};
@@ -313,6 +328,7 @@ mod tests {
     static TEST_CPU_ON_HW_ID: AtomicU64 = AtomicU64::new(0);
     static TEST_OPP_SET_DOMAIN: AtomicU32 = AtomicU32::new(0);
     static TEST_OPP_SET_VALUE: AtomicU64 = AtomicU64::new(0);
+    static TEST_SYSTEM_RESUME_CALLED: AtomicU32 = AtomicU32::new(0);
 
     extern "C" fn test_reboot(flags: PowerRebootFlags) -> Result<(), Status> {
         TEST_REBOOT_CALLED.store(flags as u32 + 1, Ordering::Relaxed);
@@ -377,6 +393,11 @@ mod tests {
         }
     }
 
+    extern "C" fn test_system_resume() -> Result<(), Status> {
+        TEST_SYSTEM_RESUME_CALLED.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    }
+
     static TEST_OPS: PdevPowerOps = PdevPowerOps {
         reboot: Some(test_reboot),
         shutdown: Some(test_shutdown),
@@ -386,6 +407,7 @@ mod tests {
         opp_set: Some(test_opp_set),
         opp_get: Some(test_opp_get),
         opp_get_domain_count: Some(test_opp_get_domain_count),
+        system_resume: Some(test_system_resume),
     };
 
     struct TestOpsGuard {
@@ -420,6 +442,7 @@ mod tests {
         assert_err!(power_opp_set(0, 1), Status::NOT_SUPPORTED);
         assert_err!(power_opp_get(0), Status::NOT_SUPPORTED);
         assert_err!(power_opp_get_domain_count(), Status::NOT_SUPPORTED);
+        assert_ok!(power_system_resume());
     }
 
     /// Tests that registered power ops are dispatched correctly.
@@ -463,6 +486,10 @@ mod tests {
         let domain_count = power_opp_get_domain_count();
         assert_ok!(domain_count.map(|_| ()));
         assert_eq!(domain_count.unwrap(), 2);
+
+        TEST_SYSTEM_RESUME_CALLED.store(0, Ordering::Relaxed);
+        assert_ok!(power_system_resume());
+        assert_eq!(TEST_SYSTEM_RESUME_CALLED.load(Ordering::Relaxed), 1);
     }
 
     /// Tests null pointer handling for FFI power operations.

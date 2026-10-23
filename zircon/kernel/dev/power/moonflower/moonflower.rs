@@ -195,6 +195,7 @@ static MOONFLOWER_POWER_OPS: PdevPowerOps = PdevPowerOps {
     opp_set: Some(moonflower_opp_set),
     opp_get: Some(moonflower_opp_get),
     opp_get_domain_count: Some(moonflower_opp_get_domain_count),
+    system_resume: None,
 };
 
 /// Early initialization hook for Moonflower power management and OPP register bank.

@@ -189,6 +189,7 @@ mod tests {
         opp_set: Some(mock_opp_set),
         opp_get: Some(mock_opp_get),
         opp_get_domain_count: Some(mock_opp_get_domain_count),
+        system_resume: None,
     };
 
     /// RAII guard that installs `MOCK_POWER_OPS` for the duration of a test.

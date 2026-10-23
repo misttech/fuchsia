@@ -280,6 +280,41 @@ extern "C" fn iris_opp_get_domain_count(out_count: *mut usize) -> Result<(), Sta
     Ok(())
 }
 
+/// Re-applies the kernel's last requested OPP to every domain after returning from system
+/// suspend.
+///
+/// Leaving S3 cold-boots SSWRP_CPU, and the CAP M0 firmware's `cpu_dvfs_init()` rewrites the
+/// PERF_STATE registers with its own initial OPPs. The kernel scheduler's power level bookkeeping
+/// still reflects the OPPs it requested before suspend and will not issue a new request until
+/// demand crosses a level boundary, so without this the domains would run at the firmware OPPs
+/// for an unbounded time. Rewriting the requested OPPs brings the hardware back in line with the
+/// scheduler's bookkeeping.
+///
+/// Domains that have never had an OPP requested are left alone.
+extern "C" fn iris_system_resume() -> Result<(), Status> {
+    let mut result = Ok(());
+    for (domain_index, requested) in REQUESTED_OPPS.iter().enumerate() {
+        let opp = requested.load(Ordering::Acquire);
+        if opp == NO_REQUESTED_OPP {
+            continue;
+        }
+        if let Err(status) = iris_opp_set(domain_index as u32, opp) {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to restore iris domain {} OPP {} on resume: {}\n",
+                domain_index,
+                opp,
+                status.into_raw()
+            );
+            // Keep going so the remaining domains are still restored; report the first error.
+            if result.is_ok() {
+                result = Err(status);
+            }
+        }
+    }
+    result
+}
+
 static IRIS_POWER_OPS: PdevPowerOps = PdevPowerOps {
     reboot: Some(iris_reboot),
     shutdown: Some(iris_shutdown),
@@ -289,6 +324,7 @@ static IRIS_POWER_OPS: PdevPowerOps = PdevPowerOps {
     opp_set: Some(iris_opp_set),
     opp_get: Some(iris_opp_get),
     opp_get_domain_count: Some(iris_opp_get_domain_count),
+    system_resume: Some(iris_system_resume),
 };
 
 /// Early initialization hook for Iris power management and OPP register bank.
@@ -630,6 +666,44 @@ mod tests {
 
         // Test Out of bounds opp
         assert_err!(super::iris_opp_set(0, 22), Status::INVALID_ARGS);
+
+        // Restore original base pointer and reset the requested OPPs.
+        OPP_REG_BASE.store(old_base, Ordering::SeqCst);
+        super::reset_requested_opps_for_test();
+    }
+
+    /// Tests that system_resume rewrites the last requested OPP for every domain that has one.
+    #[test]
+    fn test_iris_system_resume_restores_requested_opps() {
+        super::reset_requested_opps_for_test();
+        let mut mock_reg_bank = [0u32; 8];
+        let old_base = OPP_REG_BASE.swap(mock_reg_bank.as_mut_ptr(), Ordering::SeqCst);
+
+        // With nothing requested yet, resume is a no-op.
+        assert_ok!(super::iris_system_resume());
+        for reg in mock_reg_bank {
+            assert_eq!(reg, 0);
+        }
+
+        // Request OPPs on domains 0 and 3 only.
+        assert_ok!(super::iris_opp_set(0, 5)); // reg index 0 = 5 + 2
+        assert_ok!(super::iris_opp_set(3, 10)); // reg index 6 = 10 + 1
+        assert_eq!(mock_reg_bank[0], 7);
+        assert_eq!(mock_reg_bank[6], 11);
+
+        // Simulate firmware re-initializing the registers while suspended.
+        mock_reg_bank[0] = 0xa + 2;
+        mock_reg_bank[2] = 0xb; // domain 1, never requested
+        mock_reg_bank[4] = 0xb; // domain 2, never requested
+        mock_reg_bank[6] = 0xa + 1;
+
+        assert_ok!(super::iris_system_resume());
+
+        // Requested domains are restored; untouched domains keep the firmware value.
+        assert_eq!(mock_reg_bank[0], 7);
+        assert_eq!(mock_reg_bank[2], 0xb);
+        assert_eq!(mock_reg_bank[4], 0xb);
+        assert_eq!(mock_reg_bank[6], 11);
 
         // Restore original base pointer and reset the requested OPPs.
         OPP_REG_BASE.store(old_base, Ordering::SeqCst);

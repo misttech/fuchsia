@@ -11,7 +11,7 @@ use zx_status::Status;
 use super::{
     PdevPowerOps, PowerCpuState, PowerDomainConfigFfi, PowerRebootFlags, pdev_register_power,
     pdev_swap_power_for_test, power_cpu_off, power_cpu_on, power_get_cpu_state, power_reboot,
-    power_shutdown,
+    power_shutdown, power_system_resume,
 };
 
 unsafe extern "C" {
@@ -99,6 +99,12 @@ pub extern "C" fn rust_power_shutdown() {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_power_cpu_off() -> Result<(), Status> {
     power_cpu_off()
+}
+
+/// Restores platform power state after returning from system suspend.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_power_system_resume() -> Result<(), Status> {
+    power_system_resume()
 }
 
 /// Powers on the CPU with the specified hardware ID.
