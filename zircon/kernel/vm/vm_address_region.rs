@@ -694,7 +694,17 @@ impl VmAddressRegion {
         )
     }
 
-    fn new_child(
+    /// Constructor for use in creating the kernel aspace singleton.
+    ///
+    /// # Safety
+    ///
+    /// `kernel_aspace` is the kernel aspace, and this is its only root region.
+    pub(super) unsafe fn new_kernel_root(kernel_aspace: &VmAspace) -> impl PinInit<Self> {
+        let kernel_aspace = kernel_aspace.as_ffi_ptr().cast();
+        pin_init_ffi!(bindings::cpp_vm_address_region_construct_kernel_root, kernel_aspace)
+    }
+
+    pub(super) fn new_child(
         parent: &VmAddressRegion,
         base: usize,
         size: usize,

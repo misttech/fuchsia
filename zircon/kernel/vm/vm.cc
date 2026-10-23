@@ -15,7 +15,6 @@
 #include <lib/console.h>
 #include <lib/crypto/global_prng.h>
 #include <lib/instrumentation/asan.h>
-#include <lib/lazy_init/lazy_init.h>
 #include <lib/zircon-internal/macros.h>
 #include <string.h>
 #include <trace.h>
@@ -58,7 +57,7 @@ fbl::Vector<fbl::RefPtr<VmAddressRegion>> handoff_vmars;
 fbl::RefPtr<VmAddressRegion> temporary_handoff_vmar;
 
 // Declare storage for the kernel's heap VMAR. Maybe unused if virtual heap is disabled.
-lazy_init::LazyInit<VmAddressRegion> kernel_heap_vmar;
+VmAddressRegion* kernel_heap_vmar;
 // Whether the virtual heap is enabled. Set during vm_init_preheap() and never changed.
 bool using_virtual_heap = false;
 
@@ -160,10 +159,11 @@ void vm_init_preheap() {
     const size_t heap_bytes = gPhysHandoff->heap_vmar->size;
     // The heap has nothing to initialize later and we can create this from the beginning with only
     // read and write and no execute.
-    vmar = fbl::AdoptRef<VmAddressRegion>(&kernel_heap_vmar.Initialize(
-        *root_vmar, kernel_heap_base, heap_bytes,
+    kernel_heap_vmar = rust_vm_address_region_kernel_heap_init(
+        &*root_vmar, kernel_heap_base, heap_bytes,
         VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
-        "kernel heap"));
+        "kernel heap");
+    vmar = fbl::AdoptRef(kernel_heap_vmar);
     {
       Guard<CriticalMutex> region_guard(kernel_heap_vmar->region_lock());
       Guard<CriticalMutex> guard(kernel_heap_vmar->lock());

@@ -769,6 +769,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
   function_allowlist = [
     "cpp_vm_address_region_commit_high_memory_priority",
     "cpp_vm_address_region_construct_child",
+    "cpp_vm_address_region_construct_kernel_root",
     "cpp_vm_address_region_construct_root",
     "cpp_vm_address_region_create_sub_vmar",
     "cpp_vm_address_region_create_vm_mapping",

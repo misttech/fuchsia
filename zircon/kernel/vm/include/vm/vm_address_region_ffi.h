@@ -39,6 +39,8 @@ void cpp_vm_address_region_construct_root(ffi::Uninitialized<VmAddressRegion>* s
 void cpp_vm_address_region_construct_child(ffi::Uninitialized<VmAddressRegion>* slot,
                                            VmAddressRegion* parent, vaddr_t base, size_t size,
                                            uint32_t vmar_flags, const char* name);
+void cpp_vm_address_region_construct_kernel_root(ffi::Uninitialized<VmAddressRegion>* slot,
+                                                 VmAspace* kernel_aspace);
 void cpp_vm_address_region_destruct(VmAddressRegion* vmar);
 void* cpp_vm_address_region_state(VmAddressRegion* vmar);
 void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);

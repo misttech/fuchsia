@@ -50,6 +50,10 @@ FFI_ALWAYS_INLINE void cpp_vm_address_region_construct_child(
     uint32_t vmar_flags, const char* name) {
   slot->Initialize(*parent, base, size, vmar_flags, name);
 }
+FFI_ALWAYS_INLINE void cpp_vm_address_region_construct_kernel_root(
+    ffi::Uninitialized<VmAddressRegion>* slot, VmAspace* kernel_aspace) {
+  slot->Initialize(*kernel_aspace);
+}
 FFI_ALWAYS_INLINE void cpp_vm_address_region_destruct(VmAddressRegion* vmar) {
   vmar->~VmAddressRegion();
 }

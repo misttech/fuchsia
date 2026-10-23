@@ -65,8 +65,6 @@ KCOUNTER(vm_aspace_last_fault_miss, "vm.aspace.last_fault.miss")
 // the singleton kernel address space
 lazy_init::LazyInit<VmAspace, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
     g_kernel_aspace;
-lazy_init::LazyInit<VmAddressRegion, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
-    g_kernel_root_vmar;
 
 // simple test routines
 // Returns true if the base + size is valid for the given |type|.
@@ -117,8 +115,8 @@ void VmAspace::KernelAspaceInitPreHeap() TA_NO_THREAD_SAFETY_ANALYSIS {
 
   g_kernel_aspace->Adopt();
 
-  g_kernel_root_vmar.Initialize(g_kernel_aspace.Get());
-  g_kernel_aspace->root_vmar_ = fbl::AdoptRef(&g_kernel_root_vmar.Get());
+  g_kernel_aspace->root_vmar_ =
+      fbl::AdoptRef(rust_vm_address_region_kernel_root_init(&g_kernel_aspace.Get()));
 
   zx_status_t status = g_kernel_aspace->Init(ShareOpt::None);
   ASSERT(status == ZX_OK);

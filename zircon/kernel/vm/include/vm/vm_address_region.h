@@ -836,12 +836,6 @@ class VmAddressRegion final : public VmAddressRegionOrMapping,
   using AttributionCounts = VmObject::AttributionCounts;
   AttributionCounts GetAttributedMemory() const;
 
-  // Constructors are public as LazyInit cannot use them otherwise, even if friended, but
-  // otherwise should be considered private and Create...() should be used instead.
-  VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, uint32_t vmar_flags);
-  VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
-                  const char* name);
-
   // Traverses this vmar (and any sub-vmars) starting at this node, in depth-first pre-order. See
   // VmEnumerator for more details. If this vmar is not alive (in the LifeCycleState sense) or
   // otherwise not enumerable this returns ZX_ERR_BAD_STATE, otherwise the result of enumeration is
@@ -852,6 +846,11 @@ class VmAddressRegion final : public VmAddressRegionOrMapping,
   friend class VmAspace;
   friend lazy_init::Access;
   friend void vm_init_preheap();
+
+  // Should be considered private and Create...() should be used instead.
+  VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, uint32_t vmar_flags);
+  VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size, uint32_t vmar_flags,
+                  const char* name);
 
   // constructor for use in creating the kernel aspace singleton
   explicit VmAddressRegion(VmAspace& kernel_aspace);
@@ -957,6 +956,10 @@ VmAddressRegion* rust_vm_address_region_create_child(VmAddressRegion* parent, va
                                                      size_t size, uint32_t vmar_flags,
                                                      const char* name);
 void rust_vm_address_region_recycle(VmAddressRegion* vmar);
+VmAddressRegion* rust_vm_address_region_kernel_root_init(VmAspace* kernel_aspace);
+VmAddressRegion* rust_vm_address_region_kernel_heap_init(VmAddressRegion* parent, vaddr_t base,
+                                                         size_t size, uint32_t vmar_flags,
+                                                         const char* name);
 VmAddressRegionOrMapping* rust_vm_address_region_find_region(const VmAddressRegion* vmar,
                                                              vaddr_t addr);
 VmMapping* rust_vm_address_region_find_mapping_locked(const VmAddressRegion* vmar, vaddr_t va);

@@ -4,17 +4,21 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::vm_address_region::VmAddressRegion;
 use crate::kernel::types::PAddr;
+use core::ffi::{CStr, c_char, c_void};
+use core::pin::Pin;
+use lazy_init::{LazyInit, NoCheck};
 
 unsafe extern "C" {
-    fn cpp_vaddr_to_paddr(va: *const core::ffi::c_void) -> PAddr;
+    fn cpp_vaddr_to_paddr(va: *const c_void) -> PAddr;
 }
 
 // While this method is implemented using FFI clippy cannot observer that the pointer is not
 // de-referenced and so for now squash this lint.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 /// Converts a kernel virtual address to a physical address.
-pub fn vaddr_to_paddr(va: *const core::ffi::c_void) -> PAddr {
+pub fn vaddr_to_paddr(va: *const c_void) -> PAddr {
     unsafe { cpp_vaddr_to_paddr(va) }
 }
 
@@ -92,3 +96,28 @@ macro_rules! oom_ktrace_duration {
 }
 #[cfg(not(vm_tracing_level_at_least_1))]
 pub use oom_ktrace_duration;
+
+/// Declare storage for the kernel's heap VMAR. Maybe unused if virtual heap is disabled.
+static KERNEL_HEAP_VMAR: LazyInit<VmAddressRegion, NoCheck> = LazyInit::uninit();
+
+/// # Safety
+///
+/// Must be called at most once, before any other use of the kernel heap region. The last
+/// reference to the returned region must never be released. `name` points to a null-terminated
+/// string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_kernel_heap_init(
+    parent: &VmAddressRegion,
+    base: usize,
+    size: usize,
+    vmar_flags: u32,
+    name: *const c_char,
+) -> &'static VmAddressRegion {
+    // SAFETY: `name` points to a null-terminated string.
+    let name = unsafe { CStr::from_ptr(name) };
+    let init = VmAddressRegion::new_child(parent, base, size, vmar_flags, name);
+    // SAFETY: `KERNEL_HEAP_VMAR` is initialized at most once, before any other use.
+    let Ok(()) = unsafe { Pin::static_ref(&KERNEL_HEAP_VMAR).init_pin(init) };
+    // SAFETY: `KERNEL_HEAP_VMAR` is initialized.
+    unsafe { KERNEL_HEAP_VMAR.get_unchecked() }
+}

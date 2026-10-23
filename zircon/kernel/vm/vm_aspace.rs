@@ -14,9 +14,11 @@ use super::vm_object::VmObject;
 use crate::kernel::thread::ThreadPtr;
 use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_void};
+use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use fbl::RefPtr;
 use ksync::{KMutex, LockClass, LockToken, RawCriticalMutex};
+use lazy_init::{LazyInit, NoCheck};
 use vm_aspace_bindings as bindings;
 use zx_status::Status;
 
@@ -611,4 +613,22 @@ impl VmAspace {
         // SAFETY: `ptr` is null or points to a live `VmMapping` with an acquired refcount.
         unsafe { RefPtr::try_from_raw(ptr.cast()) }
     }
+}
+
+static KERNEL_ROOT_VMAR: LazyInit<VmAddressRegion, NoCheck> = LazyInit::uninit();
+
+/// # Safety
+///
+/// `kernel_aspace` is the kernel aspace. Must be called at most once, before any other use of
+/// the kernel root region. The last reference to the returned region must never be released.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_address_region_kernel_root_init(
+    kernel_aspace: &VmAspace,
+) -> &'static VmAddressRegion {
+    // SAFETY: `kernel_aspace` is the kernel aspace, and this is its only root region.
+    let init = unsafe { VmAddressRegion::new_kernel_root(kernel_aspace) };
+    // SAFETY: `KERNEL_ROOT_VMAR` is initialized at most once, before any other use.
+    let Ok(()) = unsafe { Pin::static_ref(&KERNEL_ROOT_VMAR).init_pin(init) };
+    // SAFETY: `KERNEL_ROOT_VMAR` is initialized.
+    unsafe { KERNEL_ROOT_VMAR.get_unchecked() }
 }
