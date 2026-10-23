@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "test_list",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/developer/ffx/plugins/test:__pkg__",
+        "//src/lib/testing:__pkg__",
+        "//src/sys/run_test_suite:__subpackages__",
+        "//tools/test_list_tool:__pkg__",
+    ],
+    deps = [
+        "//src/lib/diagnostics/log/types:types-serde",
+        "//third_party/rust_crates/vendor:serde",
+    ],
+)
