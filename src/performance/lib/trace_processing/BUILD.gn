@@ -26,6 +26,7 @@ python_library("trace_processing") {
     "metrics/odpm_power.py",
     "metrics/power.py",
     "metrics/scenic.py",
+    "metrics/scheduler.py",
     "metrics/suspend.py",
     "metrics/wakeup.py",
     "run_cpu_breakdown.py",

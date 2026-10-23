@@ -77,6 +77,11 @@ python_host_test("power_metrics_test") {
   libraries = [ "//src/performance/lib/trace_processing" ]
 }
 
+python_host_test("scheduler_test") {
+  main_source = "scheduler_test.py"
+  libraries = [ "//src/performance/lib/trace_processing" ]
+}
+
 python_host_test("wakeup_metrics_test") {
   main_source = "wakeup_metrics_test.py"
   libraries = [ "//src/performance/lib/trace_processing" ]
@@ -130,6 +135,7 @@ group("tests") {
     ":memory_test",
     ":odpm_power_metrics_test",
     ":power_metrics_test",
+    ":scheduler_test",
     ":trace_importing_fxt_test",
     ":trace_importing_test",
     ":trace_metrics_test",
