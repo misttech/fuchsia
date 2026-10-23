@@ -11,7 +11,7 @@ use ffx_config::EnvironmentContext;
 use ffx_config::keys::EMU_INSTANCE_ROOT_DIR;
 use ffx_emulator_config::ShowDetail;
 use ffx_emulator_engines::EngineBuilder;
-use fho::{FfxContext, Result, return_bug, return_user_error};
+use fho::{Deferred, FfxContext, Result, return_bug, return_user_error};
 use fuchsia_async as fasync;
 use futures::io::AsyncReadExt;
 use futures::stream::StreamExt;
@@ -30,7 +30,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, SshAddrHolder};
+use target_holders::{NodenameHolder, RemoteControlProxyHolder, SshAddrHolder};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::common::*;
@@ -83,13 +83,13 @@ impl StarnixAdbCommand {
         self,
         context: &EnvironmentContext,
         rcs_connector: &Connector<RemoteControlProxyHolder>,
-        socket_addr: SshAddrHolder,
-        nodename: Option<TermSafe>,
+        socket_addr: Deferred<SshAddrHolder>,
+        nodename: Deferred<NodenameHolder>,
     ) -> Result<AdbCommandOutput> {
         self.check_adb()?;
         match self.subcommand {
             AdbSubcommand::Connect(args) => args
-                .run_connect(context, self.adb, &socket_addr, nodename)
+                .run_connect(context, self.adb, &socket_addr.await?, nodename.await?.into_inner())
                 .await
                 .map(AdbCommandOutput::Connect),
             AdbSubcommand::Proxy(args) => {

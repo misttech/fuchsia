@@ -62,7 +62,7 @@ pub struct StarnixTool {
     #[command]
     cmd: StarnixCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
-    ssh_addr: Result<SshAddrHolder>,
+    ssh_addr: Deferred<SshAddrHolder>,
     nodename: Deferred<NodenameHolder>,
     context: EnvironmentContext,
 }
@@ -76,12 +76,7 @@ impl FfxMain for StarnixTool {
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let output = match self.cmd.subcommand {
             StarnixSubCommand::Adb(command) => command
-                .run(
-                    &self.context,
-                    &self.rcs_connector,
-                    self.ssh_addr?,
-                    self.nodename.await?.into_inner(),
-                )
+                .run(&self.context, &self.rcs_connector, self.ssh_addr, self.nodename)
                 .await
                 .map(StarnixToolOutput::Adb),
             StarnixSubCommand::Console(command) => {
