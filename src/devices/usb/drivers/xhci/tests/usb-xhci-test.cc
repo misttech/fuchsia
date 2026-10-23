@@ -4,6 +4,8 @@
 
 #include "src/devices/usb/drivers/xhci/usb-xhci.h"
 
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.hci/cpp/fidl.h>
 #include <lib/driver/fake-mmio-reg/cpp/fake-mmio-reg.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -1207,6 +1209,151 @@ TEST_F(XhciMmioHarness, IrqCountClampedToPDevDeviceInfo) {
   // Verify that UsbXhci clamps irq_count_ to the PDev IRQ count instead of allocating
   // excess interrupters beyond what the platform device provides.
   EXPECT_EQ(driver_test().driver()->irq_count(), 1u);
+}
+
+TEST_F(XhciMmioHarness, ConnectToEndpointBoundsCheck) {
+  zx::result hci_client_end =
+      driver_test().Connect<fuchsia_hardware_usb_hci::UsbHciService::Device>();
+  ASSERT_OK(hci_client_end);
+
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&] {
+    fidl::WireSyncClient<fuchsia_hardware_usb_hci::UsbHci> hci_client(std::move(*hci_client_end));
+
+    // 1. Invalid device_id (out of bounds).
+    {
+      auto [ep_client_end, ep_server_end] =
+          fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      auto res = hci_client->ConnectToEndpoint(1000, 1U | 0x80U, std::move(ep_server_end));
+      ASSERT_TRUE(res.ok());
+      ASSERT_TRUE(res->is_error());
+      EXPECT_EQ(res->error_value(), ZX_ERR_NOT_FOUND);
+    }
+
+    // 2. Invalid endpoint address: ep 0 (EP0 is control, not connected via ConnectToEndpoint).
+    {
+      auto [ep_client_end, ep_server_end] =
+          fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      auto res = hci_client->ConnectToEndpoint(0, 0, std::move(ep_server_end));
+      ASSERT_TRUE(res.ok());
+      ASSERT_TRUE(res->is_error());
+      EXPECT_EQ(res->error_value(), ZX_ERR_NOT_FOUND);
+    }
+
+    // 3. Invalid endpoint address: 0x80 (ep 0 IN).
+    {
+      auto [ep_client_end, ep_server_end] =
+          fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      auto res = hci_client->ConnectToEndpoint(0, 0x80, std::move(ep_server_end));
+      ASSERT_TRUE(res.ok());
+      ASSERT_TRUE(res->is_error());
+      EXPECT_EQ(res->error_value(), ZX_ERR_NOT_FOUND);
+    }
+
+    // 4. Invalid endpoint address: 0x10 (out of USB endpoint index range).
+    {
+      auto [ep_client_end, ep_server_end] =
+          fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      auto res = hci_client->ConnectToEndpoint(0, 0x10, std::move(ep_server_end));
+      ASSERT_TRUE(res.ok());
+      ASSERT_TRUE(res->is_error());
+      EXPECT_EQ(res->error_value(), ZX_ERR_NOT_FOUND);
+    }
+  }));
+}
+
+TEST_F(XhciMmioHarness, RequestQueueBoundsCheck) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+
+  // 1. Invalid device_id
+  {
+    bool invoked = false;
+    std::optional<TestRequest> request;
+    AllocateRequest(&request, 0, 64, 1, [&](TestRequest req) {
+      invoked = true;
+      EXPECT_EQ(req.request()->response.status, ZX_ERR_INVALID_ARGS);
+    });
+    request->request()->header.device_id = 1000;
+    RequestQueue(std::move(*request));
+    EXPECT_TRUE(invoked);
+  }
+
+  // 2. Invalid ep_address (0x80)
+  {
+    bool invoked = false;
+    std::optional<TestRequest> request;
+    AllocateRequest(&request, 0, 64, 0x80, [&](TestRequest req) {
+      invoked = true;
+      EXPECT_EQ(req.request()->response.status, ZX_ERR_INVALID_ARGS);
+    });
+    request->request()->header.device_id = 0;
+    RequestQueue(std::move(*request));
+    EXPECT_TRUE(invoked);
+  }
+
+  // 3. Invalid ep_address (0x10)
+  {
+    bool invoked = false;
+    std::optional<TestRequest> request;
+    AllocateRequest(&request, 0, 64, 0x10, [&](TestRequest req) {
+      invoked = true;
+      EXPECT_EQ(req.request()->response.status, ZX_ERR_INVALID_ARGS);
+    });
+    request->request()->header.device_id = 0;
+    RequestQueue(std::move(*request));
+    EXPECT_TRUE(invoked);
+  }
+}
+
+TEST_F(XhciMmioHarness, ResetEndpointBoundsCheck) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+  EXPECT_EQ(driver_test().driver()->UsbHciResetEndpoint(1000, 1), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(driver_test().driver()->UsbHciResetEndpoint(0, 0x80), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(driver_test().driver()->UsbHciResetEndpoint(0, 0x10), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(XhciMmioHarness, CancelAllBoundsAndEP0) {
+  ConnectDevice(1, USB_SPEED_HIGH);
+
+  // 1. Invalid device_id
+  EXPECT_EQ(driver_test().driver()->UsbHciCancelAll(1000, 1), ZX_ERR_INVALID_ARGS);
+
+  // 2. Invalid ep_address (0x80)
+  EXPECT_EQ(driver_test().driver()->UsbHciCancelAll(0, 0x80), ZX_ERR_INVALID_ARGS);
+
+  // 3. Invalid ep_address (0x10)
+  EXPECT_EQ(driver_test().driver()->UsbHciCancelAll(0, 0x10), ZX_ERR_INVALID_ARGS);
+
+  // 4. CancelAll on EP0 (ep_address == 0)
+  // Complete AddressDeviceCommand
+  CommandCompletionEvent success_event;
+  success_event.set_CompletionCode(CommandCompletionEvent::Success);
+  auto cr = crcr_next();
+  ASSERT_NE(cr, nullptr);
+  EXPECT_EQ(Control::FromTRB(cr).Type(), Control::AddressDeviceCommand);
+  EXPECT_OK(CompleteCommand(cr, &success_event));
+
+  // Now execute CancelAll on EP0 (ep_address == 0).
+  // This sends StopEndpoint for DCI 1 (ENDPOINT == 1).
+  bool got_stop_endpoint = false;
+  SetDoorbellListener([&](uint8_t doorbell, uint8_t target) {
+    if (doorbell == 0) {
+      cr = FakeTRB::get(cr->next);
+      Control control = Control::FromTRB(cr);
+      switch (control.Type()) {
+        case Control::StopEndpointCommand: {
+          auto stop = reinterpret_cast<StopEndpoint*>(cr);
+          EXPECT_EQ(stop->ENDPOINT(), 1u);
+          EXPECT_EQ(stop->SLOT(), 1u);
+          got_stop_endpoint = true;
+          EXPECT_OK(CompleteCommand(cr, &success_event));
+        } break;
+      }
+    }
+  });
+
+  zx_status_t status = driver_test().driver()->UsbHciCancelAll(0, 0);
+  EXPECT_TRUE(got_stop_endpoint);
+  EXPECT_OK(status);
 }
 
 }  // namespace

@@ -223,6 +223,28 @@ class UsbXhci : public fdf::DriverBase2,
 
   static uint8_t SlotIdToDeviceId(uint8_t slot_id) { return static_cast<uint8_t>(slot_id - 1); }
 
+  // Returns true if the device_id is within valid bounds for device_state_.
+  bool IsValidDeviceId(uint32_t device_id) const { return device_id < max_slots_; }
+
+  // Returns true if ep_address maps to a valid endpoint index.
+  // EP0 (ep_address == 0) maps to index 0 (DCI 1).
+  // Non-EP0 must map to an index in [1, 30] (DCI 2..31).
+  static bool IsValidEndpointAddress(uint8_t ep_address) {
+    if (ep_address == 0) {
+      return true;
+    }
+    // Ensure reserved bits are equal to zero.
+    if ((ep_address & 0x70) != 0) {
+      return false;
+    }
+    uint8_t ep_num = ep_address & 0x0F;
+    if (ep_num == 0) {
+      return false;
+    }
+    uint8_t index = XhciEndpointIndex(ep_address);
+    return index >= 1 && index <= 30;
+  }
+
   void SetDeviceInformation(uint8_t slot, uint8_t port, const std::optional<HubInfo>& hub);
 
   uint8_t GetPortCount() { return static_cast<uint8_t>(params_.MaxPorts()); }
