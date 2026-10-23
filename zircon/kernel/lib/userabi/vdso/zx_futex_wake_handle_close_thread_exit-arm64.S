@@ -10,6 +10,7 @@
 
 // (value_ptr: x0, wake_count: w1, new_value: w2, handle: w3)
 syscall_entry_begin zx_futex_wake_handle_close_thread_exit
+  .llvm.stack_size 0
 
   // Store the value into the futex, which should signal that the stack is no longer in use.
   // atomic_store_explicit(value_ptr, new_value, memory_order_release)

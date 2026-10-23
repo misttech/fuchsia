@@ -12,6 +12,7 @@
 
 // (value_ptr: %rdi, wake_count: %esi, new_value: %edx, handle: %ecx)
 syscall_entry_begin zx_futex_wake_handle_close_thread_exit
+  .llvm.stack_size 0
 
   // Store the value into the futex, which should signal that the stack is no
   // longer in use.

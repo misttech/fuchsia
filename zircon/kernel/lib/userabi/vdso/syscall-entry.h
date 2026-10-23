@@ -9,8 +9,10 @@
 #ifdef __ASSEMBLER__
 // clang-format off
 
+// The entry point is a leaf for the call graph: it only makes a system
+// call.
 .macro syscall_entry_begin name
-  .function SYSCALL_\name, global
+  .function SYSCALL_\name, global, callgraph=direct
 .endm
 
 .macro syscall_entry_end name, public=1

@@ -13,6 +13,7 @@
 
 .macro m_syscall name, num, nargs, public
 syscall_entry_begin \name
+    .llvm.stack_size 0
 .if \nargs > 8
 .error "maximum 8 syscall arguments"
 .endif

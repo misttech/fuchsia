@@ -10,6 +10,7 @@
 
 // (vmar_handle: %rdi, addr: %rsi, len: %rdx, handle: %ecx)
 syscall_entry_begin zx_vmar_unmap_handle_close_thread_exit
+  .llvm.stack_size 8
 
   // Save the handle argument in a callee-saves register (%rbx).
   // Callee-save that register so we can unwind in the error case.

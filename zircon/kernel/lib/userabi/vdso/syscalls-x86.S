@@ -29,13 +29,16 @@
     .cfi_same_value %r12
     .cfi_same_value %r13
     .if \nargs <= 3
+      .llvm.stack_size 0
       zircon_syscall \num, \name, \name
       ret
     .elseif \nargs <= 6
+      .llvm.stack_size 0
       mov %rcx, %r10  // Argument 4
       zircon_syscall \num, \name, \name
       ret
     .elseif \nargs == 7
+      .llvm.stack_size 8
       push.spill %r12
       mov      0x10(%rsp), %r12  // Argument 7
       mov      %rcx, %r10  // Argument 4
@@ -43,6 +46,7 @@
       pop.reload  %r12
       ret
     .elseif \nargs == 8
+      .llvm.stack_size 16
       push.spill %r12
       push.spill %r13
       mov      0x18(%rsp), %r12  // Argument 7
