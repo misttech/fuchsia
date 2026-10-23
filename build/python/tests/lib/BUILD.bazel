@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+        "lib.py",
+    ],
+    imports = [".."],
+    visibility = [
+        "//build/python:__subpackages__",
+        "//third_party/colorama/tests:__pkg__",
+        "//third_party/jellyfish/tests:__pkg__",
+    ],
+)

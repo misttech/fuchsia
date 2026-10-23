@@ -15,7 +15,7 @@ py_binary(
         "//bundles/assembly:__subpackages__",
     ],
     deps = [
-        "//build/python/modules:assembly",
+        "//build/python/modules/assembly",
         "//build/python/modules/depfile",
     ],
 )

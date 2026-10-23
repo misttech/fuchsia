@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The assembly python library, for use with `python_binary()` and
+# `python_host_test()` templates.
+py_library(
+    name = "assembly",
+    srcs = [
+        "__init__.py",
+        "assembly_input_bundle.py",
+        "common.py",
+        "image_assembly_config.py",
+        "package_copier.py",
+        "package_manifest.py",
+    ],
+    imports = [".."],
+    visibility = [
+        "//build/assembly:__subpackages__",
+        "//build/devicetree:__pkg__",
+        "//build/python:__subpackages__",
+        "//src/lib/vulkan/vulkan-validation-pkg:__pkg__",
+    ],
+    deps = [
+        "//build/python/modules/depfile",
+        "//build/python/modules/serialization",
+    ],
+)
