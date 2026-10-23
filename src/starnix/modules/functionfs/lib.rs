@@ -325,11 +325,12 @@ async fn handle_adb(
                     Err(err) => {
                         if err.is_closed() {
                             log_info!("Receive failed due to connection shutdown: {err}");
+                            error!(ESHUTDOWN)
                         } else {
                             log_warn!("Failed to call UsbAdbImpl.Receive: {err}");
                             stats.ep1_read_errors.fetch_add(1, Ordering::Relaxed);
+                            error!(EINVAL)
                         }
-                        error!(EINVAL)
                     }
                     Ok(Err(err)) => {
                         let status = zx::Status::err_from_raw(err);
@@ -338,13 +339,12 @@ async fn handle_adb(
                             zx::Status::BAD_STATE | zx::Status::CANCELED | zx::Status::PEER_CLOSED
                         ) {
                             log_info!("Receive failed due to connection shutdown: {status}");
+                            error!(ESHUTDOWN)
                         } else {
                             log_warn!("Failed to receive data from adb driver: {status}");
                             stats.ep1_read_errors.fetch_add(1, Ordering::Relaxed);
+                            error!(EINVAL)
                         }
-                        // TODO(b/536021189): Fix POSIX error mapping. We should return ESHUTDOWN
-                        // on endpoint disable.
-                        error!(EINVAL)
                     }
                     Ok(Ok(payload)) => {
                         stats
@@ -374,11 +374,12 @@ async fn handle_adb(
                     Err(err) => {
                         if err.is_closed() {
                             log_info!("QueueTx failed due to connection shutdown: {err}");
+                            error!(ESHUTDOWN)
                         } else {
                             log_warn!("Failed to call UsbAdbImpl.QueueTx: {err}");
                             stats.ep2_write_errors.fetch_add(1, Ordering::Relaxed);
+                            error!(EINVAL)
                         }
-                        error!(EINVAL)
                     }
                     Ok(Err(err)) => {
                         let status = zx::Status::err_from_raw(err);
@@ -387,11 +388,12 @@ async fn handle_adb(
                             zx::Status::BAD_STATE | zx::Status::CANCELED | zx::Status::PEER_CLOSED
                         ) {
                             log_info!("QueueTx failed due to connection shutdown: {status}");
+                            error!(ESHUTDOWN)
                         } else {
                             log_warn!("Failed to queue data to adb driver: {status}");
                             stats.ep2_write_errors.fetch_add(1, Ordering::Relaxed);
+                            error!(EINVAL)
                         }
-                        error!(EINVAL)
                     }
                     Ok(Ok(_)) => {
                         stats
@@ -1465,11 +1467,17 @@ mod tests {
                     other => panic!("Unexpected request: {other:?}"),
                 }
 
-                // 3. Expected shutdown errors on Receive -> must NOT increment read_errors.
+                // 3. Expected shutdown errors on Receive -> must return ESHUTDOWN and NOT
+                // increment read_errors.
+                let mut read_shutdown_errs = Vec::new();
                 for status in [zx::Status::BAD_STATE, zx::Status::CANCELED, zx::Status::PEER_CLOSED]
                 {
                     let pending = Arc::<PendingResult<Vec<u8>>>::default();
-                    read_sender.send(ReadCommand { pending }).await.expect("send read command");
+                    read_sender
+                        .send(ReadCommand { pending: pending.clone() })
+                        .await
+                        .expect("send read command");
+                    read_shutdown_errs.push(pending);
                     match stream.next().await.expect("stream item").expect("fidl request") {
                         fadb::UsbAdbImpl_Request::Receive { responder } => {
                             responder
@@ -1512,14 +1520,17 @@ mod tests {
                     other => panic!("Unexpected request: {other:?}"),
                 }
 
-                // 6. Expected shutdown errors on QueueTx -> must NOT increment write_errors.
+                // 6. Expected shutdown errors on QueueTx -> must return ESHUTDOWN and NOT
+                // increment write_errors.
+                let mut write_shutdown_errs = Vec::new();
                 for status in [zx::Status::BAD_STATE, zx::Status::CANCELED, zx::Status::PEER_CLOSED]
                 {
                     let pending = Arc::<PendingResult<usize>>::default();
                     write_sender
-                        .send(WriteCommand { data: vec![1], pending })
+                        .send(WriteCommand { data: vec![1], pending: pending.clone() })
                         .await
                         .expect("send write command");
+                    write_shutdown_errs.push(pending);
                     match stream.next().await.expect("stream item").expect("fidl request") {
                         fadb::UsbAdbImpl_Request::QueueTx { responder, .. } => {
                             responder
@@ -1539,7 +1550,8 @@ mod tests {
                 // Drop the FIDL request stream to close the server channel.
                 drop(stream);
 
-                // 7. Closed FIDL channel on Receive and QueueTx -> must NOT increment error counters.
+                // 7. Closed FIDL channel on Receive and QueueTx -> must return ESHUTDOWN and NOT
+                // increment error counters.
                 let read_closed = Arc::<PendingResult<Vec<u8>>>::default();
                 read_sender
                     .send(ReadCommand { pending: read_closed.clone() })
@@ -1554,18 +1566,44 @@ mod tests {
                 drop(read_sender);
                 drop(write_sender);
 
-                (read_ok, read_io_err, write_ok, write_io_err, read_closed, write_closed)
+                (
+                    read_ok,
+                    read_io_err,
+                    read_shutdown_errs,
+                    write_ok,
+                    write_io_err,
+                    write_shutdown_errs,
+                    read_closed,
+                    write_closed,
+                )
             };
 
-            let ((), (read_ok, read_io_err, write_ok, write_io_err, read_closed, write_closed)) =
-                futures::join!(adb_fut, driver_fut);
+            let (
+                (),
+                (
+                    read_ok,
+                    read_io_err,
+                    read_shutdown_errs,
+                    write_ok,
+                    write_io_err,
+                    write_shutdown_errs,
+                    read_closed,
+                    write_closed,
+                ),
+            ) = futures::join!(adb_fut, driver_fut);
 
             assert_eq!(read_ok.result.lock().take(), Some(Ok(vec![1, 2, 3, 4])));
             assert_eq!(read_io_err.result.lock().take(), Some(error!(EINVAL)));
+            for pending in read_shutdown_errs {
+                assert_eq!(pending.result.lock().take(), Some(error!(ESHUTDOWN)));
+            }
             assert_eq!(write_ok.result.lock().take(), Some(Ok(5)));
             assert_eq!(write_io_err.result.lock().take(), Some(error!(EINVAL)));
-            assert_eq!(read_closed.result.lock().take(), Some(error!(EINVAL)));
-            assert_eq!(write_closed.result.lock().take(), Some(error!(EINVAL)));
+            for pending in write_shutdown_errs {
+                assert_eq!(pending.result.lock().take(), Some(error!(ESHUTDOWN)));
+            }
+            assert_eq!(read_closed.result.lock().take(), Some(error!(ESHUTDOWN)));
+            assert_eq!(write_closed.result.lock().take(), Some(error!(ESHUTDOWN)));
 
             assert_data_tree!(inspector, root: {
                 "usb-functionfs": {
