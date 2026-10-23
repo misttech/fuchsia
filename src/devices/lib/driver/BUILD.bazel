@@ -1,0 +1,19 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:shared_library.bzl", "cc_link_stub_from_ifs_file")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+cc_link_stub_from_ifs_file(
+    name = "driver_runtime",
+    ifs_file = "//src/devices/bin/driver_runtime:libdriver_runtime.ifs",
+    system_provided = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//sdk/lib/driver/runtime/rust:__subpackages__",
+    ],
+)
+# LINT.ThenChange(BUILD.gn)

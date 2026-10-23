@@ -16,6 +16,7 @@ load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
 
 visibility([
     "//build/bazel/rules/idk/...",
+    "//src/devices/lib/driver/...",
     "//src/zircon/lib/zircon/...",
 ])
 

@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "channel",
+    srcs = [
+        "src/arena.rs",
+        "src/channel.rs",
+        "src/futures.rs",
+        "src/lib.rs",
+        "src/message.rs",
+        "src/test_utils.rs",
+    ],
+    crate_name = "fdf_channel",
+    edition = "2024",
+    link_deps = [
+        "//sdk/lib/async",
+        "//src/devices/lib/driver:driver_runtime",
+    ],
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//sdk/lib/driver:__subpackages__",
+        "//src/devices/bin/driver-host:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust/dispatcher",
+        "//sdk/lib/driver/runtime/rust/core",
+        "//sdk/lib/driver/runtime/rust/fdf_sys",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-sync",
+    ],
+)

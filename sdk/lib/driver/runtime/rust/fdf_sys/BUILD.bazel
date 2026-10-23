@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fdf_sys",
+    srcs = [
+        "src/bindings.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//sdk/lib/driver:__subpackages__",
+        "//src/devices/bin/driver-host:__subpackages__",
+        "//src/lib/dso/rust:__subpackages__",
+        "//src/sys/runners/dso:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust/sys",
+        "//sdk/rust/zx-types",
+    ],
+)
+
+rustc_test(
+    name = "fdf_sys_test",
+    crate = ":fdf_sys",
+)
+
+fx_unittest_package(
+    name = "fdf_sys_tests",
+    unit_tests = [":fdf_sys_test"],
+)

@@ -249,9 +249,12 @@ shared_library("driver") {
   ]
 }
 
+# LINT.IfChange
 ifs_shared_library("driver_runtime") {
   abi = "//src/devices/bin/driver_runtime/libdriver_runtime.ifs"
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 group("tests") {
   testonly = true
