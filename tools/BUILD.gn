@@ -121,7 +121,6 @@ group("tests_no_e2e") {
     "//tools/pretty_serial:tests",
     "//tools/qemu:tests($host_toolchain)",
     "//tools/rfc:tests",
-    "//tools/rust-unsafe-analyzer:tests",
     "//tools/shush:tests($host_toolchain)",
     "//tools/symbolizer:tests",
     "//tools/test_list_tool:test_list_tool_test($host_toolchain)",

@@ -23,7 +23,6 @@ group("tests") {
     "//tools/lib/osmisc:tests",
     "//tools/lib/reference_doc:tests",
     "//tools/lib/retry:tests",
-    "//tools/lib/serdedoc:tests",
     "//tools/lib/serial:tests",
     "//tools/lib/streams:tests",
     "//tools/lib/subprocess:tests",
