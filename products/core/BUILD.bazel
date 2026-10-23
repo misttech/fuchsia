@@ -81,19 +81,17 @@ CACHE_PACKAGES = [
     "//src/chromium:web_engine",
 ]
 
-PRODUCT_BASE = {
-    "build_info": DEFAULT_PRODUCT_BUILD_INFO | {
-        "name": "minimal",
-    },
-}
-
 fuchsia_product_configuration(
     name = "product_config",
     base_packages = BASE_PACKAGES,
     cache_packages = CACHE_PACKAGES,
     product_config_json = {
         "platform": PLATFORM_BASE,
-        "product": PRODUCT_BASE,
+        "product": {
+            "build_info": DEFAULT_PRODUCT_BUILD_INFO | {
+                "name": "core",
+            },
+        },
     },
     version = build_info_version,
 )
@@ -268,7 +266,11 @@ fuchsia_product_configuration(
                 },
             },
         },
-        "product": PRODUCT_BASE,
+        "product": {
+            "build_info": DEFAULT_PRODUCT_BUILD_INFO | {
+                "name": "core_with_f2fs",
+            },
+        },
     },
     version = build_info_version,
 )
@@ -351,7 +353,11 @@ fuchsia_product_configuration(
                 },
             },
         },
-        "product": PRODUCT_BASE,
+        "product": {
+            "build_info": DEFAULT_PRODUCT_BUILD_INFO | {
+                "name": "core_with_minfs",
+            },
+        },
     },
     version = build_info_version,
 )
