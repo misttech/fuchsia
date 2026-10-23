@@ -182,9 +182,6 @@ platform_aib_names = bringup_platform_aib_names + [
     "network_realm_packages",
     "network_tun",
     "thread_lowpan",
-    "networking_with_virtualization",
-    "networking_basic",
-    "networking_basic_packages",
     "mdns",
 
     # The minimal feature-set-level

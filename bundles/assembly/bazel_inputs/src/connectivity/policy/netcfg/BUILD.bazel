@@ -10,11 +10,6 @@ package(
 )
 
 prebuilt_package(
-    name = "package-advanced",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-advanced",
-)
-
-prebuilt_package(
     name = "package-basic",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
 )

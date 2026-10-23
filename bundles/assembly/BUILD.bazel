@@ -1533,64 +1533,8 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
-    ],
-)
-
-# networking_with_virtualization
-#
-# This AIB adds the networking capabilities that include virtualization support.
-# It is mutually-exclusive with networking_basic.
-#
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "networking_with_virtualization",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-advanced",
-    ],
-    compiled_packages = [
-        {
-            "name": "network",
-            "components": [
-                {
-                    "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/network-with-virtualization.shard.cml"],
-                },
-            ],
-        },
-    ],
-)
-
-# Basic networking.
-#
-# This AIB adds the basic networking capabilities. It is mutually-exclusive with
-# networking_with_virtualization.
-#
-# It must be used in conjunction with networking_basic_packages.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "networking_basic",
-    compiled_packages = [
-        {
-            "name": "network",
-            "components": [
-                {
-                    "component_name": "network",
-                    "shards": ["//src/connectivity/network:meta/network-basic.shard.cml"],
-                },
-            ],
-        },
-    ],
-)
-
-# Basic networking packages.
-#
-# This AIB provides packages for the networking_basic configuration.
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "networking_basic_packages",
-    base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
+        "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
     ],
 )
 

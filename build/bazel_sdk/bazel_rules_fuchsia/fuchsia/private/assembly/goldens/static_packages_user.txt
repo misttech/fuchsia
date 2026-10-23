@@ -54,7 +54,6 @@ forensics
 ?memory_monitor
 ?memory_pressure_signaler
 ?metrics-logger-standalone
-?netcfg-advanced
 ?netcfg-basic
 ?netcfg-config
 ?netdevice-migration

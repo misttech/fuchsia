@@ -65,7 +65,6 @@ mdns
 ?memory_sampler
 ?metrics-logger-standalone
 ?net-cli
-?netcfg-advanced
 ?netcfg-basic
 ?netcfg-config
 ?netdevice-migration

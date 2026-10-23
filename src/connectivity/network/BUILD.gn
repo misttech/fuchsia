@@ -4,20 +4,6 @@
 
 import("//build/components.gni")
 
-fuchsia_component("component") {
-  component_name = "network"
-  manifest = "meta/network-default.cml"
-}
-
-# TODO(https://fxbug.dev/42166351): use subassembly-based product assembly to
-# assemble the network realm from shards depending on the product, rather than
-# creating two separate component manifests and relying on include shards to
-# reduce duplication.
-fuchsia_component("component-basic") {
-  component_name = "network"
-  manifest = "meta/network-basic.cml"
-}
-
 fuchsia_package("netstack3") {
   package_name = "netstack3"
   deps = [

@@ -643,20 +643,9 @@ group("network_realm_packages") {
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
+    "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
     "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
   ]
-}
-
-group("networking_with_virtualization") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-advanced" ]
-}
-
-group("networking_basic") {
-  deps = []
-}
-
-group("networking_basic_packages") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic" ]
 }
 
 group("core_realm_eng") {

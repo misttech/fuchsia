@@ -34,6 +34,11 @@
             url: "fuchsia-pkg://fuchsia.com/google-http-client#meta/google-http-client.cm",
         },
         {
+            name: "netcfg",
+            url: "fuchsia-pkg://fuchsia.com/netcfg-basic#meta/netcfg-basic.cm",
+            startup: "eager",
+        },
+        {
             name: "reachability",
             url: "fuchsia-pkg://fuchsia.com/reachability#meta/reachability.cm",
             startup: "eager",
@@ -296,6 +301,11 @@
                 "fuchsia.net.name.DnsServerWatcher",
             ],
             from: "#netcfg",
+        },
+        {
+            protocol: "fuchsia.net.virtualization.Control",
+            from: "void",
+            availability: "optional",
         },
     ],
 }

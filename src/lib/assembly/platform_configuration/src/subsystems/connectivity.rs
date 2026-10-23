@@ -7,8 +7,8 @@ use crate::util;
 use anyhow::{bail, ensure};
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::connectivity_config::{
-    NetworkingConfig, PlatformConnectivityConfig, WlanPolicyLayer, WlanRecoveryProfile,
-    WlanRoamingMode, WlanRoamingPolicy, WlanRoamingProfile,
+    PlatformConnectivityConfig, WlanPolicyLayer, WlanRecoveryProfile, WlanRoamingMode,
+    WlanRoamingPolicy, WlanRoamingProfile,
 };
 use assembly_constants::{BoardFeature, FileEntry, PackageDestination, PackageSetDestination};
 
@@ -62,48 +62,35 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             })?;
         }
 
-        // The configuration of networking is dependent on all three of:
+        // Whether networking is enabled is dependent on all three of:
         // - the feature_set_level
         // - the build_type
-        // - the requested configuration type
-        let networking = match (
+        // - whether networking was requested by the product
+        let enable_networking = match (
             context.feature_set_level,
             context.build_type,
             &connectivity_config.network.networking,
         ) {
-            // bootstrap must not attempt to configure it, it's always None
+            // bootstrap must not attempt to configure it, it's always disabled
             (FeatureSetLevel::Bootstrap, _, Some(_)) => {
                 bail!("The configuration of networking is not an option for `bootstrap`")
             }
-            (FeatureSetLevel::Bootstrap, _, None) => None,
-            (FeatureSetLevel::Embeddable, _, _) => None,
+            (FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable, _, _) => false,
 
             // utility, in user mode, only gets networking if requested.
-            (FeatureSetLevel::Utility, BuildType::User, networking) => networking.as_ref(),
+            (FeatureSetLevel::Utility, BuildType::User, networking) => networking.is_some(),
 
-            // all other combinations get the network package that they request
-            (_, _, Some(networking)) => Some(networking),
-
-            // otherwise, the 'basic' networking package is used
-            (_, _, None) => Some(&NetworkingConfig::Basic),
+            // all other combinations enable networking (`Standard` and `Basic`
+            // both include the same bundles while `NetworkingConfig` is
+            // soft-transitioned).
+            (_, _, _) => true,
         };
-        if let Some(networking) = networking {
+        if enable_networking {
             // The 'core_realm_networking' and 'network_realm' bundles are
             // required if networking is enabled.
             builder.platform_bundle("core_realm_networking")?;
             builder.platform_bundle("network_realm")?;
             builder.platform_bundle("network_realm_packages")?;
-
-            // Which specific network package is selectable by the product.
-            match networking {
-                NetworkingConfig::Standard => {
-                    builder.platform_bundle("networking_with_virtualization")?;
-                }
-                NetworkingConfig::Basic => {
-                    builder.platform_bundle("networking_basic")?;
-                    builder.platform_bundle("networking_basic_packages")?;
-                }
-            }
 
             let config_src = connectivity_config
                 .network

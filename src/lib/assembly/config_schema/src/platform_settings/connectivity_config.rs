@@ -42,8 +42,8 @@ pub struct PlatformConnectivityConfig {
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
 #[serde(default, deny_unknown_fields)]
 pub struct PlatformNetworkConfig {
-    /// Only used to control networking for the `utility` and `minimal`
-    /// feature_set_levels.
+    /// Only used to enable networking on `utility` `user` builds; all other
+    /// build types and feature set levels determine networking automatically.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub networking: Option<NetworkingConfig>,
 
@@ -124,14 +124,19 @@ impl NetstackThreadCount {
     }
 }
 
-/// Which networking type to use (standard or basic).
+/// Networking configuration selection, retained for soft transition of
+/// out-of-tree product configurations. Both variants now configure the same
+/// networking bundles.
+// TODO(https://fxbug.dev/568493656): Replace with `Option<bool>` (or remove)
+// once out-of-tree product configurations stop setting `networking`.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum NetworkingConfig {
-    /// The standard network configuration
+    /// Deprecated alias for `Basic`, retained for soft transition of
+    /// out-of-tree product configurations.
     Standard,
 
-    /// A more-basic networking configuration for constrained devices
+    /// Basic networking configuration (`netcfg-basic`).
     #[default]
     Basic,
 }

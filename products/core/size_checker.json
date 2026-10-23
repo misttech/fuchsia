@@ -63,7 +63,6 @@
                 "dns-resolver",
                 "http-client",
                 "mdns",
-                "netcfg-advanced",
                 "netcfg-basic",
                 "netstack3",
                 "network",
