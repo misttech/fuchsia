@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/error.rs",
+        "src/lib.rs",
+        "src/port_forwarder.rs",
+        "src/socket_provider.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "ffx_target_net",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx:__subpackages__",
+        "//src/sys/pkg/lib/fuchsia-repo:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain",
+        "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust_fdomain",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust_fdomain",
+        "//src/developer/ffx/lib/netext:lib",
+        "//src/developer/ffx/lib/rcs:lib",
+        "//src/lib/fdomain/client",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:tokio",
+    ],
+)
+
+rustc_library(
+    name = "testutil",
+    testonly = True,
+    srcs = [
+        "testutil/fake_netstack.rs",
+        "testutil/hyper_connector.rs",
+        "testutil/lib.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "ffx_target_net_testutil",
+    crate_root = "testutil/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/developer/ffx:__subpackages__"],
+    deps = [
+        ":lib",
+        "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust_fdomain",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust_fdomain",
+        "//src/lib/fdomain/client",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-hyper",
+        "//src/lib/network/fidl_fuchsia_net_ext",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:scopeguard",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:tokio",
+        "//third_party/rust_crates/vendor:tower-service",
+    ],
+)
+
+host_rustc_test(
+    name = "testutil_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":testutil",
+    crate_name = "ffx_target_net_testutil_lib_test",
+    deps = [
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
