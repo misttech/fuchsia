@@ -84,19 +84,19 @@ rust_library(
         "//third_party/rust_crates/vendor/signal-hook-mio-0.2.5:signal_hook_mio",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(unix)
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(unix)
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:riscv64gc-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(unix)
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(unix)
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(unix)
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(unix)
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(unix)
         ],
         "//conditions:default": [],
     }),

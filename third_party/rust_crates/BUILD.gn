@@ -7164,7 +7164,7 @@ rustc_library("crossterm-v0_29_0") {
   deps += [ ":parking_lot-v0_12_5" ]
   if (true) {
     deps += [ ":mio-v1_2_1" ]
-    deps += [ ":rustix-v1_1_4" ]
+    deps += [ ":rustix-v1_1_5" ]
     deps += [ ":signal-hook-mio-v0_2_5" ]
     deps += [ ":signal-hook-v0_3_18" ]
   }
@@ -13835,11 +13835,11 @@ rustc_library("mesa3d_util-v0_1_75") {
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":remain-v0_2_16($host_toolchain)" ]
-  deps += [ ":rustix-v1_1_4" ]
+  deps += [ ":rustix-v1_1_5" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":zerocopy-v0_8_48" ]
   if (false || current_os == "linux") {
-    deps += [ ":rustix-v1_1_4" ]
+    deps += [ ":rustix-v1_1_5" ]
   }
 
   rustenv = []
@@ -19734,16 +19734,16 @@ rustc_library("rustfix-v0_9_7") {
   applicable_licenses = [ ":rustfix-v0_9_7.license" ]
 }
 
-license("rustix-v1_1_4.license") {
+license("rustix-v1_1_5.license") {
   public_package_name = "rustix"
   license_files =
-      [ "//third_party/rust_crates/vendor/rustix-1.1.4/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/rustix-1.1.5/LICENSE-APACHE" ]
 }
 
-rustc_library("rustix-v1_1_4") {
+rustc_library("rustix-v1_1_5") {
   crate_name = "rustix"
-  source_root = "//third_party/rust_crates/vendor/rustix-1.1.4/src/lib.rs"
-  output_name = "rustix-72d085604b025605"
+  source_root = "//third_party/rust_crates/vendor/rustix-1.1.5/src/lib.rs"
+  output_name = "rustix-b59ed38642e835e0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19797,8 +19797,8 @@ rustc_library("rustix-v1_1_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=72d085604b025605",
-    "-Cextra-filename=-72d085604b025605",
+    "-Cmetadata=b59ed38642e835e0",
+    "-Cextra-filename=-b59ed38642e835e0",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"event\"",
@@ -19841,7 +19841,7 @@ rustc_library("rustix-v1_1_4") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rustix-v1_1_4.license" ]
+  applicable_licenses = [ ":rustix-v1_1_5.license" ]
 }
 
 license("rustls-v0_23_46.license") {
@@ -23191,7 +23191,7 @@ rustc_library("tempfile-v3_27_0") {
   deps += [ ":fastrand-v2_3_0" ]
   deps += [ ":once_cell-v1_21_4" ]
   if (true || false) {
-    deps += [ ":rustix-v1_1_4" ]
+    deps += [ ":rustix-v1_1_5" ]
   }
   if (true || false || false) {
     deps += [ ":getrandom-v0_3_4" ]
@@ -26909,7 +26909,7 @@ rustc_library("xattr-v1_6_1") {
 
   deps = []
   if (false || current_os == "linux" || current_os == "mac" || false) {
-    deps += [ ":rustix-v1_1_4" ]
+    deps += [ ":rustix-v1_1_5" ]
   }
   if (false || false) {
     deps += [ ":libc-v0_2_190" ]

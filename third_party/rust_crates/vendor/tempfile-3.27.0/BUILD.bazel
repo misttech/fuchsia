@@ -83,19 +83,19 @@ rust_library(
         "//third_party/rust_crates/vendor/once_cell-1.21.4:once_cell",
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(any(unix, target_os = "wasi"))
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(any(unix, target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(any(unix, target_os = "wasi"))
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(any(unix, target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:riscv64gc-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(any(unix, target_os = "wasi"))
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(any(unix, target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(any(unix, target_os = "wasi"))
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(any(unix, target_os = "wasi"))
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "//third_party/rust_crates/vendor/rustix-1.1.4:rustix",  # cfg(any(unix, target_os = "wasi"))
+            "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",  # cfg(any(unix, target_os = "wasi"))
         ],
         "//conditions:default": [],
     }),
