@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use cm_types::ParseError;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use std::fmt;
 use std::fmt::Display;
 use thiserror::Error;

@@ -4,7 +4,7 @@
 
 use crate::error::*;
 use cm_types::{LongName, Name, ParseError, Path, RelativePath, Url, UrlScheme};
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq)]

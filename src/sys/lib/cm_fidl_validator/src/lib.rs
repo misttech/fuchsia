@@ -13,7 +13,7 @@ use crate::util::*;
 use cm_graph::DependencyNode;
 use cm_types::IterablePath;
 use directed_graph::DirectedGraph;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -2707,9 +2707,9 @@ impl<'a> ValidationContext<'a> {
 mod tests {
     use super::*;
     use cm_types::MAX_LONG_NAME_LENGTH;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_data as fdata;
-    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_component_decl_common as fdecl;
+    use fidl_fuchsia_data_common as fdata;
+    use fidl_fuchsia_io_common as fio;
     use test_case::test_case;
 
     macro_rules! test_validate {
