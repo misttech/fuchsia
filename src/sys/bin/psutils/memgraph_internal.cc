@@ -211,7 +211,9 @@ zx_status_t JsonTaskEnumerator::OnProcess(int depth, zx_handle_t process, zx_koi
     size_t count = 0;
     size_t avail = 0;
     s = get_vmos(process, &vmos, &count, &avail);
-    if (s != ZX_OK) {
+    if (s == ZX_ERR_BAD_STATE) {
+      // Process has exited, but has not been destroyed.
+    } else if (s != ZX_OK) {
       std::println(stderr, "WARNING: failed to read VMOs for process {}: {} ({})", koid,
                    zx_status_get_string(s), s);
       partial_failures_.push_back(s);

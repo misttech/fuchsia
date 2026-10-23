@@ -132,14 +132,20 @@ TEST(PsUtilsMemgraph, ExitedProcessDoesNotCausePartialFailure) {
   ASSERT_OK(process.kill());
   ASSERT_OK(process.wait_one(ZX_PROCESS_TERMINATED, zx::time::infinite(), nullptr));
 
-  // Confirm that the exited process is in ZX_ERR_BAD_STATE for task stats.
+  // Confirm that the exited process is in ZX_ERR_BAD_STATE for task stats and VMOs.
   zx_info_task_stats_t task_stats = {};
   ASSERT_EQ(process.get_info(ZX_INFO_TASK_STATS, &task_stats, sizeof(task_stats), nullptr, nullptr),
             ZX_ERR_BAD_STATE);
+  zx_info_vmo_t vmo_info = {};
+  size_t actual = 0;
+  size_t available = 0;
+  ASSERT_EQ(
+      process.get_info(ZX_INFO_PROCESS_VMOS, &vmo_info, sizeof(vmo_info), &actual, &available),
+      ZX_ERR_BAD_STATE);
 
   std::ostringstream out;
   JsonTaskEnumerator json_task_enumerator(/*self_koid=*/0, /*show_threads=*/true,
-                                          /*show_vmos=*/false, /*show_handle_stats=*/false, out);
+                                          /*show_vmos=*/true, /*show_handle_stats=*/true, out);
   EXPECT_OK(json_task_enumerator.OnProcess(/*depth=*/1, process.get(), basic_info.koid,
                                            basic_info.related_koid));
 
