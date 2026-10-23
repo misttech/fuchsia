@@ -10,44 +10,20 @@ use fidl_fuchsia_bluetooth_host::{
     PeerWatcherGetNextResponse, PeerWatcherMarker,
 };
 use fidl_fuchsia_bluetooth_sys as sys;
-use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::Inspectable;
 use fuchsia_bluetooth::types::{Address, BondingData, HostData, HostId, HostInfo, Peer, PeerId};
 use fuchsia_sync::RwLock;
 use futures::future::try_join_all;
 use futures::{Future, FutureExt, TryFutureExt};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info};
 use std::pin::pin;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 #[cfg(test)]
 use fidl_fuchsia_bluetooth_sys::TechnologyType;
 
 use crate::build_config;
 use crate::types::{self, Error, from_fidl_result};
-
-/// When the host dispatcher requests being discoverable on a host device, the host device enables
-/// discoverable and returns a HostDiscoverableSession. The discoverable state on the host device
-/// persists until this session is dropped.
-pub struct HostDiscoverableSession {
-    host: Weak<HostDeviceState>,
-}
-
-impl Drop for HostDiscoverableSession {
-    fn drop(&mut self) {
-        trace!("HostDiscoverableSession ended");
-        if let Some(host) = self.host.upgrade() {
-            let await_response = host.proxy.set_discoverable(false);
-            fasync::Task::spawn(async move {
-                if let Err(err) = await_response.await {
-                    // TODO(https://fxbug.dev/42121837) - we should close the host channel if an error is returned
-                    warn!("Unexpected error response when disabling discoverable: {:?}", err);
-                }
-            })
-            .detach();
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct HostDevice(Arc<HostDeviceState>);
@@ -215,15 +191,9 @@ impl HostDevice {
         self.0.proxy.set_connectable(value).map(from_fidl_result)
     }
 
-    pub fn establish_discoverable_session(
-        &self,
-    ) -> impl Future<Output = types::Result<HostDiscoverableSession>> + use<> {
-        let host = Arc::downgrade(&self.0);
-        self.0
-            .proxy
-            .set_discoverable(true)
-            .map(from_fidl_result)
-            .map_ok(move |_| HostDiscoverableSession { host })
+    /// Sets whether the host is discoverable to other devices.
+    pub fn set_discoverable(&self, value: bool) -> impl Future<Output = types::Result<()>> + use<> {
+        self.0.proxy.set_discoverable(value).map(from_fidl_result)
     }
 
     pub fn set_local_data(&self, data: HostData) -> types::Result<()> {

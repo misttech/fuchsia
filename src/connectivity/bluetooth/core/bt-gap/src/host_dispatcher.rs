@@ -36,7 +36,7 @@ use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
 use zx::{AsHandleRef, MonotonicDuration};
 
-use crate::host_device::{HostDevice, HostDiscoverableSession, HostListener};
+use crate::host_device::{HostDevice, HostListener};
 use crate::services::pairing::pairing_dispatcher::{PairingDispatcher, PairingDispatcherHandle};
 use crate::store::stash::Stash;
 use crate::watch_peers::PeerWatcher;
@@ -327,6 +327,134 @@ impl Drop for SuppressConnectionsSession {
     }
 }
 
+enum DiscoverableState {
+    NotDiscoverable,
+    Pending {
+        session: Weak<DiscoverableSession>,
+        // Additional client requests for discoverable made while discoverable is
+        // asynchronously starting.
+        session_receiver: Shared<oneshot::Receiver<Arc<DiscoverableSession>>>,
+        session_sender: oneshot::Sender<Arc<DiscoverableSession>>,
+        _start_discoverable_task: fasync::Task<()>,
+    },
+    Discoverable {
+        session: Weak<DiscoverableSession>,
+        host_id: HostId,
+    },
+}
+
+impl DiscoverableState {
+    // Idempotently end the discoverable session if no active references remain.
+    // Returns the HostId of the discoverable host if discoverable was ended.
+    fn stop_discoverable_session(&mut self) -> Option<HostId> {
+        if matches!(
+            self,
+            DiscoverableState::Discoverable { session, .. } if session.strong_count() == 0
+        ) {
+            if let DiscoverableState::Discoverable { host_id, .. } =
+                std::mem::replace(self, DiscoverableState::NotDiscoverable)
+            {
+                return Some(host_id);
+            }
+        }
+        None
+    }
+
+    fn clear_pending_if_matching(
+        &mut self,
+        target_session: &Arc<DiscoverableSession>,
+    ) -> Option<DiscoverableState> {
+        if matches!(
+            self,
+            DiscoverableState::Pending { session, .. }
+                if std::ptr::eq(session.as_ptr(), Arc::as_ptr(target_session))
+        ) {
+            Some(std::mem::replace(self, DiscoverableState::NotDiscoverable))
+        } else {
+            None
+        }
+    }
+
+    fn set_discoverable(
+        &mut self,
+        host_id: HostId,
+        target_session: &Arc<DiscoverableSession>,
+    ) -> Option<oneshot::Sender<Arc<DiscoverableSession>>> {
+        if matches!(
+            self,
+            DiscoverableState::Pending { session, .. }
+                if std::ptr::eq(session.as_ptr(), Arc::as_ptr(target_session))
+        ) {
+            if let DiscoverableState::Pending { session, session_sender, .. } =
+                std::mem::replace(self, DiscoverableState::NotDiscoverable)
+            {
+                *self = DiscoverableState::Discoverable { session, host_id };
+                return Some(session_sender);
+            }
+        }
+        None
+    }
+
+    fn active_session_future(
+        &self,
+    ) -> Option<BoxFuture<'static, Result<Arc<DiscoverableSession>, oneshot::Canceled>>> {
+        match self {
+            DiscoverableState::NotDiscoverable => None,
+            DiscoverableState::Pending { session_receiver, .. } => {
+                Some(session_receiver.clone().boxed())
+            }
+            DiscoverableState::Discoverable { session, .. } => {
+                session.upgrade().map(|s| future::ready(Ok(s)).boxed())
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for DiscoverableState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DiscoverableState::NotDiscoverable => {
+                write!(f, "DiscoverableState::NotDiscoverable")
+            }
+            DiscoverableState::Pending { .. } => {
+                write!(f, "DiscoverableState::Pending")
+            }
+            DiscoverableState::Discoverable { .. } => {
+                write!(f, "DiscoverableState::Discoverable")
+            }
+        }
+    }
+}
+
+/// A dispatcher discoverable session, which persists as long as at least one client
+/// holds an Arc<> to it.
+pub(crate) struct DiscoverableSession {
+    dispatcher_state: Arc<RwLock<HostDispatcherState>>,
+}
+
+impl std::fmt::Debug for DiscoverableSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiscoverableSession").finish_non_exhaustive()
+    }
+}
+
+impl Drop for DiscoverableSession {
+    fn drop(&mut self) {
+        let mut write = self.dispatcher_state.write();
+        if let Some(host_id) = write.discoverable.stop_discoverable_session() {
+            if let Some(host) = write.host_devices.get(&host_id).cloned() {
+                let fut = host.set_discoverable(false);
+                fasync::Task::spawn(async move {
+                    if let Err(e) = fut.await {
+                        warn!("Unexpected error response when disabling discoverable: {:?}", e);
+                    }
+                })
+                .detach();
+            }
+        }
+    }
+}
+
 static RECENTLY_REMOVED_PEERS_COUNT: usize = 15;
 static RECENT_DISCOVERY_SESSIONS_COUNT: usize = 5;
 
@@ -394,7 +522,7 @@ struct HostDispatcherState {
     name: Option<String>,
     appearance: Appearance,
     discovery: DiscoveryState,
-    discoverable: Option<Weak<HostDiscoverableSession>>,
+    discoverable: DiscoverableState,
     suppress_connections: SuppressConnectionsState,
     config_settings: build_config::Config,
     peers: HashMap<PeerId, Inspectable<Peer>>,
@@ -608,7 +736,7 @@ impl HostDispatcher {
             gas_channel_sender,
             stash,
             discovery: DiscoveryState::NotDiscovering,
-            discoverable: None,
+            discoverable: DiscoverableState::NotDiscoverable,
             suppress_connections: SuppressConnectionsState::NotSuppressed,
             pairing_dispatcher: None,
             watch_peers_publisher,
@@ -829,23 +957,72 @@ impl HostDispatcher {
             .map_err(|_| format_err!("Pending discovery client channel closed").into())
     }
 
-    // TODO(https://fxbug.dev/42139629) - This is susceptible to the same ToCtoToU race condition as
-    // start_discovery. We can fix with the same tri-state pattern as for discovery
-    pub async fn set_discoverable(&self) -> types::Result<Arc<HostDiscoverableSession>> {
-        let strong_current_token =
-            self.state.read().discoverable.as_ref().and_then(|token| token.upgrade());
-        if let Some(token) = strong_current_token {
-            return Ok(Arc::clone(&token));
-        }
+    fn make_set_discoverable_task(&self, session: Arc<DiscoverableSession>) -> fasync::Task<()> {
+        let hd = self.clone();
+        fasync::Task::spawn(async move {
+            debug!("set_discoverable_task: waiting for set_discoverable_on_active_host");
+            let Ok(host) = hd.set_discoverable_on_active_host().await else {
+                // On failure (host init timeout), revert state to NotDiscoverable if still in the
+                // Pending state for this session, and drop Pending state outside the write lock to
+                // notify Receivers.
+                let _old_state = hd.state.write().discoverable.clear_pending_if_matching(&session);
+                return;
+            };
+            debug!("set_discoverable_task: established discoverable session on host successfully");
 
+            if let Some(sender) =
+                hd.state.write().discoverable.set_discoverable(host.id(), &session)
+            {
+                let _ = sender.send(session);
+            }
+            trace!("set_discoverable_task: completed");
+        })
+    }
+
+    async fn set_discoverable_on_active_host(&self) -> types::Result<HostDevice> {
         match self.active_host().await {
             Some(host) => {
-                let token = Arc::new(host.establish_discoverable_session().await?);
-                self.state.write().discoverable = Some(Arc::downgrade(&token));
-                Ok(token)
+                host.set_discoverable(true).await?;
+                Ok(host)
             }
             None => Err(types::Error::no_host()),
         }
+    }
+
+    pub(crate) async fn set_discoverable(&self) -> types::Result<Arc<DiscoverableSession>> {
+        let session_fut = self.state.read().discoverable.active_session_future();
+        if let Some(session_fut) = session_fut {
+            debug!(
+                "set_discoverable: awaiting DiscoverableSession (state: {:?})",
+                self.state.read().discoverable
+            );
+            return session_fut
+                .await
+                .map_err(|_| format_err!("Pending discoverable client channel closed").into());
+        }
+
+        let session = Arc::new(DiscoverableSession { dispatcher_state: self.state.clone() });
+        let weak_session = Arc::downgrade(&session);
+        let (session_sender, session_receiver) = oneshot::channel();
+        let session_receiver = session_receiver.shared();
+        let start_discoverable_task = self.make_set_discoverable_task(session);
+
+        // Immediately mark the state as pending to indicate to other requests to wait on
+        // this discoverable session initialization
+        self.state.write().discoverable = DiscoverableState::Pending {
+            session: weak_session,
+            session_receiver: session_receiver.clone(),
+            session_sender,
+            _start_discoverable_task: start_discoverable_task,
+        };
+
+        debug!(
+            "set_discoverable: awaiting DiscoverableSession for first client (state: {:?})",
+            self.state.read().discoverable
+        );
+        session_receiver
+            .await
+            .map_err(|_| format_err!("Pending discoverable client channel closed").into())
     }
 
     fn make_suppress_connections_task(
@@ -1351,6 +1528,58 @@ impl HostDispatcher {
         }
     }
 
+    fn migrate_discoverable_to_active_host(&self) {
+        let old_state = std::mem::replace(
+            &mut self.state.write().discoverable,
+            DiscoverableState::NotDiscoverable,
+        );
+        match old_state {
+            DiscoverableState::NotDiscoverable => {}
+            DiscoverableState::Pending {
+                session,
+                session_receiver,
+                session_sender,
+                _start_discoverable_task,
+            } => {
+                info!("migrating Pending discoverable to new host");
+                // Stop the old discoverable task, and restart on the new host.
+                let session = session.upgrade().unwrap_or_else(|| {
+                    Arc::new(DiscoverableSession { dispatcher_state: self.state.clone() })
+                });
+                drop(_start_discoverable_task);
+                let weak_session = Arc::downgrade(&session);
+                let start_discoverable_task = self.make_set_discoverable_task(session);
+                self.state.write().discoverable = DiscoverableState::Pending {
+                    session: weak_session,
+                    session_receiver,
+                    session_sender,
+                    _start_discoverable_task: start_discoverable_task,
+                };
+            }
+            DiscoverableState::Discoverable { session, host_id } => {
+                let mut write = self.state.write();
+                if write.active_id == Some(host_id) {
+                    write.discoverable = DiscoverableState::Discoverable { session, host_id };
+                    return;
+                }
+                info!("migrating Discoverable state to new host");
+                let Some(strong_session) = session.upgrade() else {
+                    return;
+                };
+
+                let (session_sender, session_receiver) = oneshot::channel();
+                let session_receiver = session_receiver.shared();
+                let start_discoverable_task = self.make_set_discoverable_task(strong_session);
+                write.discoverable = DiscoverableState::Pending {
+                    session,
+                    session_receiver,
+                    session_sender,
+                    _start_discoverable_task: start_discoverable_task,
+                };
+            }
+        }
+    }
+
     fn migrate_suppress_connections_to_active_host(&self) {
         let mut write = self.state.write();
         let old_state = std::mem::replace(
@@ -1402,6 +1631,7 @@ impl HostDispatcher {
     /// Configure a newly active adapter with the correct behavior for an active adapter.
     async fn configure_newly_active_adapter(&self) -> types::Result<()> {
         self.migrate_discovery_to_active_host().await;
+        self.migrate_discoverable_to_active_host();
         self.migrate_suppress_connections_to_active_host();
         Ok(())
     }

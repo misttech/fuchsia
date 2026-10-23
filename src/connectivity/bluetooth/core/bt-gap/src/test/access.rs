@@ -614,3 +614,388 @@ async fn connection_policy_migrates_pending_suppression() {
     drop(client);
     assert_matches!(run_access_task.await, Ok(()));
 }
+
+#[fuchsia::test]
+async fn multiple_discoverable_clients() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(49), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client1, server1) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task1 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server1));
+    let (client2, server2) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task2 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server2));
+    let (client3, server3) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task3 = fuchsia_async::Task::spawn(access::run(dispatcher, server3));
+
+    let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut1 = client1.make_discoverable(server_token1);
+
+    // Host receives request to enable discoverable; hold responder so state stays Pending.
+    let responder = match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => responder,
+        x => panic!("Expected SetDiscoverable, got: {x:?}"),
+    };
+
+    // Second client requests discoverable while the first request is still Pending.
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let mut fut2 = std::pin::pin!(client2.make_discoverable(server_token2));
+    for _ in 0..5 {
+        fuchsia_async::yield_now().await;
+    }
+    assert!(futures::poll!(&mut fut2).is_pending());
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server while first discoverable request is Pending"
+    );
+
+    // Responding on host resolves both Pending clients.
+    responder.send(Ok(())).expect("valid response");
+    assert_matches!(fut1.await, Ok(Ok(_)));
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    // Third client requests discoverable while already in Discoverable state.
+    let (token3, server_token3) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut3 = client3.make_discoverable(server_token3);
+    // Third request resolves successfully without issuing another SetDiscoverable to host.
+    assert_matches!(fut3.await, Ok(Ok(_)));
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server after third client requested discoverable"
+    );
+
+    // Drop first and second clients' tokens and ensure their access tasks finish processing.
+    drop(token1);
+    drop(client1);
+    assert_matches!(run_access_task1.await, Ok(()));
+    drop(token2);
+    drop(client2);
+    assert_matches!(run_access_task2.await, Ok(()));
+
+    // Verify that dropping the first two tokens did NOT disable discoverable because third client
+    // is still active.
+    assert!(
+        host_server.next().now_or_never().is_none(),
+        "Unexpected message received on host_server while third client still holds token"
+    );
+
+    // Dropping third token should now cause discoverable to be disabled.
+    drop(token3);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable, got: {x:?}"),
+    }
+
+    drop(client3);
+    assert_matches!(run_access_task3.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_over_adapter_change() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    hd.set_active_host(HostId(1)).expect("can set active host");
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut = client.make_discoverable(server_token);
+
+    // Host 1 should receive SetDiscoverable(true)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Spawn task to remove Host 1 so Host 2 becomes active
+    let host_path_1 = host_1.path().to_string();
+    let hd_clone = hd.clone();
+    let rm_task = fuchsia_async::Task::spawn(async move {
+        hd_clone.rm_device(&host_path_1).await;
+    });
+
+    // Host 2 should receive SetDiscoverable(true) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    rm_task.await;
+
+    // Verify removed host 1 was NOT disabled when its discoverable session was migrated.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after adapter change"
+    );
+
+    // Dropping token should cause Host 2 to receive SetDiscoverable(false)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    // Host 1 should still have received no messages.
+    assert!(
+        host_server_1.next().now_or_never().is_none(),
+        "Unexpected message received on host 1 after token drop"
+    );
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_over_adapter_removal_and_late_addition() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut = client.make_discoverable(server_token);
+
+    // Host 1 should receive SetDiscoverable(true)
+    match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 1, got: {x:?}"),
+    }
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Remove Host 1 so 0 hosts remain.
+    let host_path_1 = host_1.path().to_string();
+    hd.rm_device(&host_path_1).await;
+
+    // Add Host 2 (0 -> 1 host transition).
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    // Host 2 should receive SetDiscoverable(true) during configure_newly_active_adapter
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    // Dropping token should cause Host 2 to receive SetDiscoverable(false)
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_host_error_does_not_deadlock_and_recovers() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server));
+
+    let (_token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut = client.make_discoverable(server_token);
+
+    // Host receives SetDiscoverable(true) and replies with an error.
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Err(sys::Error::Failed)).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(true), got: {x:?}"),
+    }
+
+    // The client request must fail without deadlocking the dispatcher.
+    assert_matches!(fut.await, Ok(Err(sys::Error::Failed)));
+
+    // A subsequent make_discoverable request should be able to try again and succeed.
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut2 = client.make_discoverable(server_token2);
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(true), got: {x:?}"),
+    }
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    drop(token2);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(false), got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_immediate_re_discoverable_maintains_ordering() {
+    let dispatcher = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server, _, _gatt_server, _bonding) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &dispatcher)
+            .await
+            .unwrap();
+
+    let (client1, server1) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task1 = fuchsia_async::Task::spawn(access::run(dispatcher.clone(), server1));
+    let (client2, server2) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task2 = fuchsia_async::Task::spawn(access::run(dispatcher, server2));
+
+    let (token1, server_token1) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut1 = client1.make_discoverable(server_token1);
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(true), got: {x:?}"),
+    }
+    assert_matches!(fut1.await, Ok(Ok(_)));
+
+    // Client 1 drops token and finishes processing before Client 2 immediately requests
+    // discoverable.
+    drop(token1);
+    drop(client1);
+    assert_matches!(run_access_task1.await, Ok(()));
+
+    let (token2, server_token2) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut2 = client2.make_discoverable(server_token2);
+
+    // Host should first receive SetDiscoverable(false) from the drop, followed by
+    // SetDiscoverable(true) from the new request, in strict FIFO order.
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(false), got: {x:?}"),
+    }
+
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(true), got: {x:?}"),
+    }
+    assert_matches!(fut2.await, Ok(Ok(_)));
+
+    drop(token2);
+    match host_server.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable(false), got: {x:?}"),
+    }
+
+    drop(client2);
+    assert_matches!(run_access_task2.await, Ok(()));
+}
+
+#[fuchsia::test]
+async fn discoverable_migrates_pending_discoverable() {
+    let hd = host_dispatcher::test::make_simple_test_dispatcher();
+
+    let (mut host_server_1, host_1, _gatt_server_1, _bonding_1) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(1), &hd)
+            .await
+            .unwrap();
+
+    hd.set_active_host(HostId(1)).expect("can set active host");
+
+    let (mut host_server_2, _host_2, _gatt_server_2, _bonding_2) =
+        host_dispatcher::test::create_and_add_test_host_to_dispatcher(HostId(2), &hd)
+            .await
+            .unwrap();
+
+    let (client, server) = endpoints::create_proxy_and_stream::<AccessMarker>();
+    let run_access_task = fuchsia_async::Task::spawn(access::run(hd.clone(), server));
+
+    let (token, server_token) = fidl::endpoints::create_sync_proxy::<ProcedureTokenMarker>();
+    let fut = client.make_discoverable(server_token);
+
+    // Host 1 receives SetDiscoverable(true), but does NOT respond yet (keeping state Pending).
+    let responder_1 = match host_server_1.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => responder,
+        x => panic!("Expected SetDiscoverable on host 1, got: {x:?}"),
+    };
+
+    // Remove Host 1 while discoverable is pending so Host 2 becomes active.
+    let host_path_1 = host_1.path().to_string();
+    let hd_clone = hd.clone();
+    let rm_task = fuchsia_async::Task::spawn(async move {
+        hd_clone.rm_device(&host_path_1).await;
+    });
+
+    // Host 2 should receive SetDiscoverable(true) as the pending task is migrated.
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: true, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    rm_task.await;
+
+    // Dropping or replying on the abandoned Host 1 responder should be harmless.
+    drop(responder_1);
+
+    // The client's original future should resolve successfully on Host 2!
+    assert_matches!(fut.await, Ok(Ok(_)));
+
+    // Dropping the token should cause Host 2 to receive SetDiscoverable(false).
+    drop(token);
+    match host_server_2.next().await.expect("valid request") {
+        Ok(HostRequest::SetDiscoverable { enabled: false, responder }) => {
+            responder.send(Ok(())).expect("valid response");
+        }
+        x => panic!("Expected SetDiscoverable on host 2, got: {x:?}"),
+    }
+
+    drop(client);
+    assert_matches!(run_access_task.await, Ok(()));
+}
