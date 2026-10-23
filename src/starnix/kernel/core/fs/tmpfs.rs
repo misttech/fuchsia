@@ -3,14 +3,13 @@
 // found in the LICENSE file.
 
 use crate::mm::PAGE_SIZE;
-use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::memory_directory::MemoryDirectoryFile;
 use crate::vfs::{
-    CacheMode, DirEntry, DirEntryHandle, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
-    MemoryRegularNode, MemoryXattrStorage, RenameContext, SymlinkNode, XattrStorage as _, fs_args,
-    fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
+    CacheMode, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryRegularNode, MemoryXattrStorage,
+    RenameContext, SymlinkNode, XattrStorage as _, fs_args, fs_node_impl_not_dir,
+    fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{log_warn, track_stub};
 use starnix_types::vfs::default_statfs;
@@ -21,7 +20,6 @@ use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::seal_flags::SealFlags;
 use starnix_uapi::{TMPFS_MAGIC, error, gid_t, statfs, uid_t};
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -212,80 +210,9 @@ impl TmpFs {
 
         Ok(fs)
     }
-
-    pub fn set_initial_content(kernel: &Kernel, fs: &FileSystemHandle, data: TmpFsData) {
-        fn create_dir_entry_from_data(
-            kernel: &Kernel,
-            fs: &FileSystemHandle,
-            data: TmpFsData,
-            this: Option<DirEntryHandle>,
-            name: FsString,
-        ) -> DirEntryHandle {
-            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
-            // that all the things are appropriately labeled.
-            let new_direntry = |node, parent, name| {
-                let dir_entry = DirEntry::new(node, parent, name);
-                security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
-                dir_entry
-            };
-
-            match data.node_type {
-                TmpFsNodeType::Link(target) => {
-                    assert!(this.is_none());
-                    let node = TmpFsDirectory::new_symlink(fs, target.as_ref(), data.owner);
-                    new_direntry(node, None, name)
-                }
-                TmpFsNodeType::Directory(children) => {
-                    let this = this.unwrap_or_else(|| {
-                        let info = FsNodeInfo::new(mode!(IFDIR, data.perm), data.owner);
-                        let node = fs.create_node_and_allocate_node_id(TmpFsDirectory::new(), info);
-                        new_direntry(node, None, name.clone())
-                    });
-                    // Each child subdirectory contributes an extra link to the parent for its ".." entry.
-                    let subdir_count = children
-                        .values()
-                        .filter(|child| matches!(child.node_type, TmpFsNodeType::Directory(_)))
-                        .count();
-                    if subdir_count > 0 {
-                        this.node.update_info(|info| {
-                            info.link_count += subdir_count;
-                        });
-                    }
-                    this.node
-                        .downcast_ops::<TmpFsDirectory>()
-                        .expect("directory must be from tmpfs")
-                        .child_count
-                        .fetch_add(children.len() as u32, Ordering::Release);
-                    let children = children
-                        .into_iter()
-                        .map(|(name, data)| {
-                            let child =
-                                create_dir_entry_from_data(kernel, fs, data, None, name.clone());
-                            (name, child)
-                        })
-                        .collect::<BTreeMap<_, _>>();
-                    this.set_children(children);
-                    this
-                }
-            }
-        }
-
-        create_dir_entry_from_data(kernel, fs, data, Some(Arc::clone(fs.root())), "".into());
-    }
 }
 
-pub enum TmpFsNodeType {
-    Link(FsString),
-    Directory(BTreeMap<FsString, TmpFsData>),
-}
-
-pub struct TmpFsData {
-    pub owner: FsCred,
-    pub perm: u32,
-    pub node_type: TmpFsNodeType,
-}
-
-pub struct TmpFsDirectory {
+struct TmpFsDirectory {
     xattrs: MemoryXattrStorage,
     /// Live entry count, used for non-blocking directory emptiness checks.
     ///
@@ -296,13 +223,8 @@ pub struct TmpFsDirectory {
 }
 
 impl TmpFsDirectory {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self { xattrs: MemoryXattrStorage::default(), child_count: AtomicU32::new(0) }
-    }
-
-    fn new_symlink(fs: &Arc<FileSystem>, target: &FsStr, owner: FsCred) -> FsNodeHandle {
-        let (link, info) = SymlinkNode::new(target, owner);
-        fs.create_node_and_allocate_node_id(link, info)
     }
 }
 
@@ -383,7 +305,8 @@ impl FsNodeOps for TmpFsDirectory {
         owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         self.child_count.fetch_add(1, Ordering::Release);
-        Ok(Self::new_symlink(&node.fs(), target, owner))
+        let (link, info) = SymlinkNode::new(target, owner);
+        Ok(node.fs().create_node_and_allocate_node_id(link, info))
     }
 
     fn create_tmpfile(
@@ -708,39 +631,6 @@ mod test {
             assert_eq!(info.mode, mode!(IFDIR, 0o123));
             assert_eq!(info.uid, 42);
             assert_eq!(info.gid, 84);
-        })
-        .await;
-    }
-
-    #[::fuchsia::test]
-    async fn test_set_initial_content_link_count() {
-        spawn_kernel_and_run(async |current_task| {
-            let kernel = current_task.kernel();
-            let fs = TmpFs::new_fs(&kernel);
-            let mut children = BTreeMap::new();
-            children.insert(
-                "dir1".into(),
-                TmpFsData {
-                    owner: FsCred::root(),
-                    perm: 0o755,
-                    node_type: TmpFsNodeType::Directory(BTreeMap::new()),
-                },
-            );
-            children.insert(
-                "link1".into(),
-                TmpFsData {
-                    owner: FsCred::root(),
-                    perm: 0o755,
-                    node_type: TmpFsNodeType::Link("target".into()),
-                },
-            );
-            let initial = TmpFsData {
-                owner: FsCred::root(),
-                perm: 0o755,
-                node_type: TmpFsNodeType::Directory(children),
-            };
-            TmpFs::set_initial_content(&kernel, &fs, initial);
-            assert_eq!(fs.root().node.info().link_count, 3);
         })
         .await;
     }

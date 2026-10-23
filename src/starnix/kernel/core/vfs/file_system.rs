@@ -322,17 +322,6 @@ impl FileSystem {
         self.create_node_with_flags(None, ops, info, FsNodeFlags::empty())
     }
 
-    /// Create a node for a directory that has no parent.
-    pub fn create_detached_node(
-        self: &Arc<Self>,
-        ino: ino_t,
-        ops: impl Into<Box<dyn FsNodeOps>>,
-        info: FsNodeInfo,
-    ) -> FsNodeHandle {
-        assert!(info.mode.is_dir());
-        self.create_node_with_flags(Some(ino), ops, info, FsNodeFlags::empty())
-    }
-
     /// Create a root node for the filesystem.
     ///
     /// This is a convenience function that creates a root node with the default
@@ -348,7 +337,8 @@ impl FileSystem {
         ops: impl Into<Box<dyn FsNodeOps>>,
         info: FsNodeInfo,
     ) {
-        let node = self.create_detached_node(ino, ops, info);
+        assert!(info.mode.is_dir());
+        let node = self.create_node(ino, ops, info);
         self.set_root(node);
     }
 

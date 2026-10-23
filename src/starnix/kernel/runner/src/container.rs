@@ -1057,7 +1057,7 @@ fn init_fs_context(
 
     let (mut root_fs, feature_mounts) = builder.build(kernel);
     if features.rootfs_rw {
-        root_fs = OverlayStack::wrap_fs_in_writable_layer(kernel, root_fs)?;
+        root_fs = OverlayStack::wrap_fs_in_writable_layer(system_task, root_fs)?;
     }
 
     system_task

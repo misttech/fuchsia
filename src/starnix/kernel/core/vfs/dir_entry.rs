@@ -229,17 +229,6 @@ impl DirEntry {
         FileObject::new(current_task, ops, NamespaceNode::new_anonymous(self.clone()), flags)
     }
 
-    /// Set the children of this DirEntry to the given `children`. This should only ever be called
-    /// when children is empty.
-    pub fn set_children(self: &DirEntryHandle, children: BTreeMap<FsString, DirEntryHandle>) {
-        let mut dir_entry_children = self.lock_children();
-        assert!(dir_entry_children.children.is_empty());
-        for (name, child) in children.into_iter() {
-            child.set_parent(self.clone());
-            dir_entry_children.children.insert(name.as_ref(), Arc::downgrade(&child));
-        }
-    }
-
     fn lock_children<'a>(self: &'a DirEntryHandle) -> DirEntryLockedChildren<'a> {
         DirEntryLockedChildren { entry: self, children: self.children.write() }
     }

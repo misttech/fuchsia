@@ -7,10 +7,10 @@
 use fuchsia_rcu::RcuReadScope;
 use once_cell::sync::OnceCell;
 use rand::RngExt as _;
-use starnix_core::fs::tmpfs::{TmpFs, TmpFsDirectory};
+use starnix_core::fs::tmpfs::TmpFs;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::security::{self, PermissionFlags};
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::CurrentTask;
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
@@ -1193,31 +1193,26 @@ impl OverlayStack {
 
     /// Given a filesystem, wraps it in a tmpfs-backed writable overlayfs.
     pub fn wrap_fs_in_writable_layer(
-        kernel: &Kernel,
+        current_task: &CurrentTask,
         rootfs: FileSystemHandle,
     ) -> Result<FileSystemHandle, Errno> {
+        let kernel = current_task.kernel();
         let lower = ActiveEntry { entry: rootfs.root().clone(), mount: MountInfo::detached() };
 
         // Create upper and work directories in an invisible tmpfs.
         let invisible_tmp = TmpFs::new_fs(kernel);
-
-        let create_directory = |fs: &FileSystemHandle| {
-            let ino = fs.allocate_ino();
-            let info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
-            let node = fs.create_detached_node(ino, TmpFsDirectory::new(), info);
-            let dir_entry = DirEntry::new(node, None, FsString::default());
-
-            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
-            // that all the things are appropriately labeled.
-            security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
-
-            dir_entry
+        let create_dir = |name: &FsStr| -> Result<ActiveEntry, Errno> {
+            let create_dir_node = |dir: &FsNodeHandle, mount: &MountInfo, name: &FsStr| {
+                let mode = mode!(IFDIR, 0o777);
+                dir.create_node(current_task, mount, name, mode, DeviceId::NONE, FsCred::root())
+            };
+            let mount = MountInfo::detached();
+            let root = invisible_tmp.root();
+            let entry = root.create_entry(current_task, &mount, name, create_dir_node)?;
+            Ok(ActiveEntry { entry, mount })
         };
-
-        let upper =
-            ActiveEntry { entry: create_directory(&invisible_tmp), mount: MountInfo::detached() };
-        let work =
-            ActiveEntry { entry: create_directory(&invisible_tmp), mount: MountInfo::detached() };
+        let upper = create_dir("upper".into())?;
+        let work = create_dir("work".into())?;
 
         let lower_fs = rootfs;
         let upper_fs = invisible_tmp;
