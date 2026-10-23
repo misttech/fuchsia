@@ -1198,6 +1198,7 @@ mod tests {
         );
         assert_eq!(flag_value(&flags, "-cpu"), "host,migratable=no,+invtsc");
         assert!(flags.args.contains(&"-enable-kvm".to_string()));
+        assert!(!flags.args.contains(&"-loadvm".to_string()));
     }
 
     #[fuchsia::test]
@@ -1216,6 +1217,8 @@ mod tests {
         );
         assert_eq!(flag_value(&flags, "-cpu"), "host");
         assert!(flags.args.contains(&"-enable-kvm".to_string()));
+        // Enabling snapshots doesn't load one.
+        assert!(!flags.args.contains(&"-loadvm".to_string()));
     }
 
     #[fuchsia::test]
@@ -1280,6 +1283,38 @@ mod tests {
             flag_value(&flags, "-drive"),
             "file=/path/to/fxfs.blk,format=qcow2,if=none,id=vdisk"
         );
+    }
+
+    #[fuchsia::test]
+    fn test_default_template_from_snapshot() {
+        let mut config = kvm_accelerated_x64_config();
+        config.runtime.snapshots_enabled = true;
+        config.runtime.from_snapshot = Some("booted".to_string());
+        config.runtime.addl_emu_args = vec!["-extra-arg".to_string()];
+
+        let flags = process_flag_template(&config).expect("ok processing");
+
+        assert_eq!(flag_value(&flags, "-loadvm"), "booted");
+        // Arguments which the user adds still come last, so that they take precedence.
+        assert_eq!(flags.args.last(), Some(&"-extra-arg".to_string()));
+
+        // The snapshot is only loaded when it is asked for.
+        config.runtime.from_snapshot = None;
+        let flags = process_flag_template(&config).expect("ok processing");
+        assert!(!flags.args.contains(&"-loadvm".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_json_injection_from_snapshot() {
+        let malicious_snapshot = r#"booted", "-fsdev", "local,path=/,id=hostfs"#;
+        let mut config = kvm_accelerated_x64_config();
+        config.runtime.snapshots_enabled = true;
+        config.runtime.from_snapshot = Some(malicious_snapshot.to_string());
+
+        let flags = process_flag_template(&config).expect("ok processing");
+        assert!(!flags.args.contains(&"-fsdev".to_string()));
+        assert!(!flags.args.contains(&"local,path=/,id=hostfs".to_string()));
+        assert_eq!(flag_value(&flags, "-loadvm"), malicious_snapshot);
     }
 
     #[test]

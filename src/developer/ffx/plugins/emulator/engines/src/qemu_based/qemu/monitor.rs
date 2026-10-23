@@ -218,19 +218,33 @@ fn check_output(output: &str) -> std::result::Result<(), String> {
 /// emulator has several disks, the output can also contain lists of the snapshots which are
 /// only present on some of them; those are left out because they cannot be loaded.
 fn parse_snapshot_list(output: &str) -> Result<Vec<SnapshotInfo>> {
-    const LOADABLE_SNAPSHOTS_HEADING: &str = "List of snapshots present on all disks:";
+    parse_snapshot_table(output, "List of snapshots present on all disks:")
+}
+
+/// Parses the table of snapshots which follows the line `heading` in `output`. QEMU prints the
+/// same table wherever it lists snapshots, which includes the `info snapshots` monitor command and
+/// `qemu-img snapshot -l`; the monitor shows "--" instead of the IDs of the snapshots:
+///
+/// ```text
+/// ID      TAG               VM_SIZE                DATE        VM_CLOCK     ICOUNT
+/// 1       booted            382 MiB 2026-09-30 22:30:24  0000:00:19.615         --
+/// ```
+///
+/// The table ends at the first empty line, or at the heading of another table. If `heading` is
+/// not found, there are no snapshots.
+pub(super) fn parse_snapshot_table(output: &str, heading: &str) -> Result<Vec<SnapshotInfo>> {
     const COLUMNS_HEADING: &str = "ID";
 
     let mut snapshots = vec![];
-    let loadable_snapshots = output
+    let rows = output
         .lines()
-        .skip_while(|line| line.trim() != LOADABLE_SNAPSHOTS_HEADING)
+        .skip_while(|line| line.trim() != heading)
         .skip(1)
         .take_while(|line| !line.trim().is_empty() && !line.trim_end().ends_with(':'));
-    for line in loadable_snapshots {
+    for line in rows {
         let fields: Vec<&str> = line.split_whitespace().collect();
-        // Skip the heading of the table, and the placeholder which is printed instead of the
-        // table when only some of the disks have snapshots.
+        // Skip the heading of the table, and the placeholder which the monitor prints instead of
+        // the table when only some of the disks have snapshots.
         if fields.first() == Some(&COLUMNS_HEADING) || fields == ["None"] {
             continue;
         }
@@ -238,10 +252,10 @@ fn parse_snapshot_list(output: &str) -> Result<Vec<SnapshotInfo>> {
         // located by counting back from the end of the line: the two parts of the size, the
         // date, the time, the clock and the instruction count.
         let [_id, name @ .., size, size_units, date, time, vm_clock, _icount] = &fields[..] else {
-            return_bug!("Unexpected snapshot description from the emulator's monitor: '{line}'");
+            return_bug!("Unexpected snapshot description from QEMU: '{line}'");
         };
         if name.is_empty() {
-            return_bug!("Unexpected snapshot description from the emulator's monitor: '{line}'");
+            return_bug!("Unexpected snapshot description from QEMU: '{line}'");
         }
         snapshots.push(SnapshotInfo {
             name: name.join(" "),
@@ -674,6 +688,36 @@ pub(crate) mod tests {
             ID      TAG               VM_SIZE                DATE        VM_CLOCK     ICOUNT\n\
             2       partial               0 B 2026-09-30 22:31:00  0000:00:25.000         --\n";
         assert_eq!(parse_snapshot_list(output).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn test_parse_snapshot_table() {
+        // This is how `qemu-img snapshot -l` lists the snapshots in an image.
+        let output = "Snapshot list:\n\
+            ID      TAG               VM_SIZE                DATE        VM_CLOCK     ICOUNT\n\
+            1       booted            382 MiB 2026-09-30 22:30:24  0000:00:19.615         --\n\
+            2       second           1.45 GiB 2026-10-01 08:15:00  0001:02:03.004         --\n";
+        let snapshots = parse_snapshot_table(output, "Snapshot list:").expect("parse snapshots");
+        assert_eq!(
+            snapshots,
+            vec![
+                SnapshotInfo {
+                    name: "booted".to_string(),
+                    vm_size: "382 MiB".to_string(),
+                    date: "2026-09-30 22:30:24".to_string(),
+                    vm_clock: "0000:00:19.615".to_string(),
+                },
+                SnapshotInfo {
+                    name: "second".to_string(),
+                    vm_size: "1.45 GiB".to_string(),
+                    date: "2026-10-01 08:15:00".to_string(),
+                    vm_clock: "0001:02:03.004".to_string(),
+                },
+            ]
+        );
+
+        // qemu-img prints nothing for an image which holds no snapshots.
+        assert_eq!(parse_snapshot_table("", "Snapshot list:").unwrap(), vec![]);
     }
 
     #[test]

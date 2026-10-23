@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstances, EngineType, NetworkingMode};
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::EMU_SERIAL_ENABLED;
+use ffx_emulator_common::validate_snapshot_name;
 use ffx_emulator_config::EmulatorEngine;
 use ffx_emulator_engines::{EngineBuilder, process_flag_template, update_serial_number};
 use ffx_emulator_start_args::StartCommand;
@@ -261,11 +262,65 @@ impl<T: EngineOperations> EmuStartTool<T> {
         !self.cmd.no_serial_number && self.context.get(EMU_SERIAL_ENABLED).unwrap_or(true)
     }
 
-    /// Checks the flags which relate to snapshots.
-    fn check_snapshot_flags(&self) -> Result<()> {
-        if self.cmd.enable_snapshots && self.cmd.config.is_some() {
+    /// Checks the flags which relate to snapshots, and applies the flags which they imply.
+    fn finalize_snapshot_flags(&mut self) -> Result<()> {
+        if !self.cmd.enable_snapshots && self.cmd.from_snapshot.is_none() {
+            return Ok(());
+        }
+        if self.cmd.config.is_some() {
             return_user_error!(
-                "--enable-snapshots cannot be used with a custom configuration (--config)."
+                "--enable-snapshots and --from-snapshot cannot be used with a custom \
+                configuration (--config)."
+            );
+        }
+        if let Some(snapshot) = &self.cmd.from_snapshot {
+            validate_snapshot_name(snapshot)?;
+            // The snapshot is stored in the disk image of the stopped instance, and can only be
+            // loaded by an emulator with that instance's configuration. So the instance has to
+            // be reused, rather than staged again from the product bundle.
+            self.cmd.reuse = true;
+        }
+        Ok(())
+    }
+
+    /// Checks that the stopped instance which is about to be reused, if there is one, can be
+    /// resumed from the snapshot named by `--from-snapshot`.
+    async fn check_snapshot_source(
+        &self,
+        existing: &mut Option<Box<dyn EmulatorEngine>>,
+    ) -> Result<()> {
+        let Some(snapshot) = &self.cmd.from_snapshot else {
+            return Ok(());
+        };
+        let name = self.cmd.name.as_deref().unwrap_or(DEFAULT_NAME);
+        let instance = match existing {
+            Some(instance) if instance.emu_config().runtime.snapshots_enabled => instance,
+            Some(_) => return_user_error!(
+                "Cannot resume from snapshot '{snapshot}': the emulator instance '{name}' does \
+                not support snapshots. Snapshot support has to be enabled when the instance is \
+                created, by starting it with `ffx emu start --enable-snapshots`."
+            ),
+            None => return_user_error!(
+                "Cannot resume from snapshot '{snapshot}': there is no stopped emulator \
+                instance named '{name}'. Snapshots are stored with the instance they were saved \
+                from, which has to be stopped with `ffx emu stop --persist` to keep them."
+            ),
+        };
+
+        // The emulator exits if it is asked to load a snapshot which doesn't exist, and only
+        // its log says why. Look for the snapshot first, so that a mistyped name is reported
+        // along with the names which can be used instead.
+        let available: Vec<String> =
+            instance.list_snapshots().await?.into_iter().map(|snapshot| snapshot.name).collect();
+        if !available.contains(snapshot) {
+            let available = if available.is_empty() {
+                "No snapshots have been saved for this instance.".to_string()
+            } else {
+                format!("The available snapshots are: {}.", available.join(", "))
+            };
+            return_user_error!(
+                "Cannot resume from snapshot '{snapshot}': the emulator instance '{name}' has \
+                no snapshot with that name. {available}"
             );
         }
         Ok(())
@@ -275,7 +330,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
         mut self,
         writer: &mut <EmuStartTool<T> as fho::FfxMain>::Writer,
     ) -> Result<Vec<String>> {
-        self.check_snapshot_flags()?;
+        self.finalize_snapshot_flags()?;
         let loaded_product_bundle = self.finalize_start_command(writer).await?;
 
         let product_bundle_path = loaded_product_bundle
@@ -338,6 +393,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
                 existing = None;
             }
         }
+        self.check_snapshot_source(&mut existing).await?;
 
         let mut engine =
             self.get_engine(writer, &emulator_configuration, engine_type, existing).await?;
@@ -658,6 +714,16 @@ impl<T: EngineOperations> EmuStartTool<T> {
             self.reuse_existing_engine(&mut engine, new_config).await?;
             return Ok((true, engine));
         } else {
+            if let Some(snapshot) = &self.cmd.from_snapshot {
+                // Staging the instance again would discard its snapshots, and a snapshot can't
+                // be loaded on top of different images anyway.
+                return_user_error!(
+                    "Cannot resume from snapshot '{snapshot}': --reuse-with-check found that \
+                    the emulator instance was not staged from the current contents of the \
+                    product bundle. Start the emulator without --from-snapshot to stage it \
+                    again, or without --reuse-with-check to resume from the snapshot anyway."
+                );
+            }
             let engine_type = EngineType::from_str(
                 &self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()),
             )
@@ -708,6 +774,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
             config.host.log = new_config.host.log.clone();
             config.runtime.startup_timeout = new_config.runtime.startup_timeout.clone();
             config.runtime.log_level = new_config.runtime.log_level.clone();
+            config.runtime.from_snapshot = new_config.runtime.from_snapshot.clone();
 
             update_serial_number(config, serial_enabled);
         }
@@ -756,6 +823,7 @@ mod tests {
     use camino::{Utf8Path, Utf8PathBuf};
     use emulator_instance::{LogLevel, RuntimeConfig, SerialMode};
     use ffx_config::environment::TestEnvBuilder;
+    use ffx_emulator_config::SnapshotInfo;
     use ffx_writer::TestBuffers;
     use pbms::ProductBundle;
     use product_bundle::ProductBundleV2;
@@ -782,6 +850,8 @@ mod tests {
         start_test_fn: fn(Command) -> Result<()>,
         config: EmulatorConfiguration,
         running: bool,
+        /// The names of the snapshots which are stored for the instance.
+        snapshots: &'static [&'static str],
     }
 
     impl Default for TestEngine {
@@ -797,6 +867,7 @@ mod tests {
                 did_configure: false,
                 config: EmulatorConfiguration::default(),
                 running: false,
+                snapshots: &[],
             }
         }
     }
@@ -850,6 +921,19 @@ mod tests {
 
         async fn is_running(&mut self) -> bool {
             self.running
+        }
+
+        async fn list_snapshots(&mut self) -> fho::Result<Vec<SnapshotInfo>> {
+            Ok(self
+                .snapshots
+                .iter()
+                .map(|name| SnapshotInfo {
+                    name: name.to_string(),
+                    vm_size: "382 MiB".to_string(),
+                    date: "2026-09-30 22:30:24".to_string(),
+                    vm_clock: "0000:00:19.615".to_string(),
+                })
+                .collect())
         }
     }
 
@@ -1939,6 +2023,50 @@ mod tests {
         assert_eq!(config.runtime.serial_number, SerialMode::Disabled);
     }
 
+    // Checks that the snapshot named by --from-snapshot is loaded by the reused instance, and
+    // that it is not loaded again by a later start which doesn't ask for it.
+    #[fuchsia::test]
+    async fn test_reuse_existing_engine_applies_from_snapshot() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().expect("test env");
+
+        let cmd =
+            StartCommand { name: Some("reuse-test".into()), reuse: true, ..Default::default() };
+        let tool = make_test_emu_start_tool(&env.context, cmd).await;
+
+        let mut existing_config = EmulatorConfiguration::default();
+        existing_config.runtime.snapshots_enabled = true;
+        let mut existing_engine: Box<dyn EmulatorEngine> = Box::new(TestEngine {
+            config: existing_config,
+            do_configure: true,
+            ..Default::default()
+        });
+
+        let mut new_config = EmulatorConfiguration::default();
+        new_config.runtime.from_snapshot = Some("booted".into());
+        tool.reuse_existing_engine(&mut existing_engine, &new_config)
+            .await
+            .expect("reuse_existing_engine");
+
+        let config = existing_engine.emu_config();
+        assert_eq!(config.runtime.from_snapshot, Some("booted".into()));
+        let loadvm = config.flags.args.iter().position(|arg| arg == "-loadvm");
+        let loadvm = loadvm.expect("-loadvm in the emulator arguments");
+        assert_eq!(config.flags.args[loadvm + 1], "booted");
+
+        new_config.runtime.from_snapshot = None;
+        tool.reuse_existing_engine(&mut existing_engine, &new_config)
+            .await
+            .expect("reuse_existing_engine");
+
+        let config = existing_engine.emu_config();
+        assert_eq!(config.runtime.from_snapshot, None);
+        assert!(!config.flags.args.contains(&"-loadvm".to_string()));
+        // The instance still supports snapshots, since that is decided when it is staged.
+        assert!(config.runtime.snapshots_enabled);
+    }
+
     /// Sets up the expectations for a start command which loads the product bundle and
     /// creates the configuration, `context_calls` being the number of times the context is
     /// expected to be used.
@@ -1946,11 +2074,11 @@ mod tests {
         tool: &mut EmuStartTool<MockEngineOperations>,
         env: &ffx_config::TestEnv,
         context_calls: usize,
-    ) {
+    ) -> ProductBundle {
         let pb = ProductBundle::V2(
             make_test_product_bundle(env.isolate_root.path()).expect("test product bundle"),
         );
-        let loaded_pb = LoadedProductBundle::new(pb, "some/path/to_bundle");
+        let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
         tool.engine_operations
             .expect_load_product_bundle()
             .returning(move |_| Ok(loaded_pb.clone()))
@@ -1965,29 +2093,220 @@ mod tests {
             .expect_get_emu_instances()
             .returning(move || emu_instances.clone())
             .times(1);
+        pb
     }
 
-    // Checks that --enable-snapshots is rejected when a custom configuration is used, since the
-    // instance is not staged in that case.
+    // Checks that --from-snapshot reuses the stopped instance without staging it again, even
+    // though --reuse was not specified.
     #[fuchsia::test]
-    async fn test_snapshot_flags_with_custom_config() {
-        let env = ffx_config::test_init().unwrap();
+    async fn test_from_snapshot_reuses_instance() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+        let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
         let cmd = StartCommand {
-            config: Some("config.file".into()),
-            enable_snapshots: true,
+            from_snapshot: Some("booted".into()),
+            net: Some("user".into()),
             ..Default::default()
         };
         let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
-        tool.engine_operations.expect_get_engine_by_name().times(0);
+        let pb = expect_configuration(&mut tool, &env, 2);
+
+        // The stopped instance was staged with snapshots enabled.
+        let mut staged_config = make_configs(&env.context, &tool.cmd, Some(pb), &emu_instances)
+            .await
+            .expect("staged config");
+        staged_config.runtime.snapshots_enabled = true;
+        staged_config.runtime.from_snapshot = None;
+
+        tool.engine_operations
+            .expect_get_engine_by_name()
+            .returning(move |_| {
+                Ok(Some(Box::new(TestEngine {
+                    do_stage: false,
+                    do_start: true,
+                    do_configure: true,
+                    config: staged_config.clone(),
+                    snapshots: &["booted"],
+                    ..Default::default()
+                }) as Box<dyn EmulatorEngine>))
+            })
+            .times(1);
+        // The instance holds the snapshot, so it must not be removed or replaced.
+        tool.engine_operations.expect_clean_up_instance_dir().times(0);
+        tool.engine_operations.expect_new_engine().times(0);
+
+        tool.main(VerifiedMachineWriter::<CommandStatus>::new(None))
+            .await
+            .expect("main in test_from_snapshot_reuses_instance");
+    }
+
+    // Checks that --from-snapshot fails if there is no stopped instance to load the snapshot from,
+    // rather than creating a new instance.
+    #[fuchsia::test]
+    async fn test_from_snapshot_without_instance() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+
+        let cmd = StartCommand {
+            from_snapshot: Some("booted".into()),
+            net: Some("user".into()),
+            ..Default::default()
+        };
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+        expect_configuration(&mut tool, &env, 1);
+
+        tool.engine_operations.expect_get_engine_by_name().returning(|_| Ok(None)).times(1);
         tool.engine_operations.expect_new_engine().times(0);
 
         let err = tool
             .main(VerifiedMachineWriter::<CommandStatus>::new(None))
             .await
-            .expect_err("snapshot flags are not supported with --config");
+            .expect_err("no instance to load the snapshot from");
         assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
-        assert!(err.to_string().contains("cannot be used with"), "unexpected error: {err}");
+        assert!(
+            err.to_string().contains("there is no stopped emulator instance named"),
+            "unexpected error: {err}"
+        );
+    }
+
+    // Checks that --from-snapshot fails if the stopped instance was not staged with snapshots
+    // enabled, and leaves that instance in place.
+    #[fuchsia::test]
+    async fn test_from_snapshot_instance_without_snapshot_support() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+
+        let cmd = StartCommand {
+            from_snapshot: Some("booted".into()),
+            net: Some("user".into()),
+            ..Default::default()
+        };
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+        expect_configuration(&mut tool, &env, 1);
+
+        tool.engine_operations
+            .expect_get_engine_by_name()
+            .returning(|_| {
+                Ok(Some(Box::new(TestEngine {
+                    config: EmulatorConfiguration::default(),
+                    ..Default::default()
+                }) as Box<dyn EmulatorEngine>))
+            })
+            .times(1);
+        tool.engine_operations.expect_clean_up_instance_dir().times(0);
+        tool.engine_operations.expect_new_engine().times(0);
+
+        let err = tool
+            .main(VerifiedMachineWriter::<CommandStatus>::new(None))
+            .await
+            .expect_err("instance does not support snapshots");
+        assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
+        assert!(err.to_string().contains("does not support snapshots"), "unexpected error: {err}");
+    }
+
+    // Checks that --from-snapshot fails before the emulator is launched if the stopped instance
+    // doesn't hold a snapshot with the given name, and reports the names which it does hold.
+    #[fuchsia::test]
+    async fn test_from_snapshot_missing_snapshot() {
+        let cases: [(&'static [&'static str], &str); 2] = [
+            (&["booted", "second"], "The available snapshots are: booted, second."),
+            (&[], "No snapshots have been saved for this instance."),
+        ];
+        for (snapshots, expected) in cases {
+            let builder = ffx_config::test_env();
+            let builder = make_fake_sdk(builder).await;
+            let env = builder.build().unwrap();
+
+            let cmd = StartCommand {
+                from_snapshot: Some("bootde".into()),
+                net: Some("user".into()),
+                ..Default::default()
+            };
+            let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+            expect_configuration(&mut tool, &env, 1);
+
+            let mut staged_config = EmulatorConfiguration::default();
+            staged_config.runtime.snapshots_enabled = true;
+            tool.engine_operations
+                .expect_get_engine_by_name()
+                .returning(move |_| {
+                    Ok(Some(Box::new(TestEngine {
+                        config: staged_config.clone(),
+                        snapshots,
+                        ..Default::default()
+                    }) as Box<dyn EmulatorEngine>))
+                })
+                .times(1);
+            // The instance is left as it is: it is not configured, started, removed or replaced.
+            tool.engine_operations.expect_clean_up_instance_dir().times(0);
+            tool.engine_operations.expect_new_engine().times(0);
+
+            let err = tool
+                .main(VerifiedMachineWriter::<CommandStatus>::new(None))
+                .await
+                .expect_err("the instance does not hold the snapshot");
+            assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "Cannot resume from snapshot 'bootde': the emulator instance \
+                    'fuchsia-emulator' has no snapshot with that name. {expected}"
+                )
+            );
+        }
+    }
+
+    // Checks that the name given to --from-snapshot is validated before anything else happens.
+    #[fuchsia::test]
+    async fn test_from_snapshot_invalid_name() {
+        let env = ffx_config::test_init().unwrap();
+
+        let cmd = StartCommand { from_snapshot: Some("not a name".into()), ..Default::default() };
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+        tool.engine_operations.expect_load_product_bundle().times(0);
+        tool.engine_operations.expect_get_engine_by_name().times(0);
+
+        let err = tool
+            .main(VerifiedMachineWriter::<CommandStatus>::new(None))
+            .await
+            .expect_err("invalid snapshot name");
+        assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
+        assert!(err.to_string().contains("Invalid snapshot name"), "unexpected error: {err}");
+    }
+
+    // Checks that the snapshot flags are rejected when a custom configuration is used, since
+    // the instance is not staged in that case.
+    #[fuchsia::test]
+    async fn test_snapshot_flags_with_custom_config() {
+        let env = ffx_config::test_init().unwrap();
+
+        for cmd in [
+            StartCommand {
+                config: Some("config.file".into()),
+                enable_snapshots: true,
+                ..Default::default()
+            },
+            StartCommand {
+                config: Some("config.file".into()),
+                from_snapshot: Some("booted".into()),
+                ..Default::default()
+            },
+        ] {
+            let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+            tool.engine_operations.expect_get_engine_by_name().times(0);
+            tool.engine_operations.expect_new_engine().times(0);
+
+            let err = tool
+                .main(VerifiedMachineWriter::<CommandStatus>::new(None))
+                .await
+                .expect_err("snapshot flags are not supported with --config");
+            assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
+            assert!(err.to_string().contains("cannot be used with"), "unexpected error: {err}");
+        }
     }
 
     // Checks that snapshots can't be enabled for an engine which doesn't support them.
@@ -2036,7 +2355,9 @@ mod tests {
         tool.engine_operations
             .expect_new_engine()
             .withf(|config, engine_type, _| {
-                config.runtime.snapshots_enabled && *engine_type == EngineType::Qemu
+                config.runtime.snapshots_enabled
+                    && config.runtime.from_snapshot.is_none()
+                    && *engine_type == EngineType::Qemu
             })
             .returning(|config, _, _| {
                 Ok(Box::new(TestEngine {
@@ -2133,6 +2454,103 @@ mod tests {
             .await
             .expect("reuse an instance which supports snapshots");
         assert!(existing_engine.emu_config().runtime.snapshots_enabled);
+    }
+
+    // Checks that --from-snapshot together with --reuse-with-check fails if the instance doesn't
+    // match the product bundle, instead of staging the instance again and losing its snapshots.
+    #[fuchsia::test]
+    async fn test_from_snapshot_with_changed_product_bundle() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+        let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
+
+        let cmd = StartCommand {
+            name: Some("reuse-test".into()),
+            from_snapshot: Some("booted".into()),
+            reuse_with_check: true,
+            net: Some("user".into()),
+            ..Default::default()
+        };
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+        let pb = expect_configuration(&mut tool, &env, 1);
+
+        let mut stale_config = make_configs(&env.context, &tool.cmd, Some(pb), &emu_instances)
+            .await
+            .expect("stale config");
+        stale_config.runtime.snapshots_enabled = true;
+        stale_config.guest.zbi_hash = "0123456789abcdef".into();
+        stale_config.guest.disk_hash = "fedcba9876543210".into();
+
+        tool.engine_operations
+            .expect_get_engine_by_name()
+            .returning(move |_| {
+                Ok(Some(Box::new(TestEngine {
+                    config: stale_config.clone(),
+                    snapshots: &["booted"],
+                    ..Default::default()
+                }) as Box<dyn EmulatorEngine>))
+            })
+            .times(1);
+        tool.engine_operations.expect_clean_up_instance_dir().times(0);
+        tool.engine_operations.expect_new_engine().times(0);
+
+        let err = tool
+            .main(VerifiedMachineWriter::<CommandStatus>::new(None))
+            .await
+            .expect_err("the product bundle has changed");
+        assert!(matches!(err, Error::User(_)), "expected a user error, got {err:?}");
+        assert!(
+            err.to_string().contains("not staged from the current contents of the product bundle"),
+            "unexpected error: {err}"
+        );
+    }
+
+    // Checks that --from-snapshot together with --reuse-with-check resumes the instance if it
+    // still matches the product bundle.
+    #[fuchsia::test]
+    async fn test_from_snapshot_with_unchanged_product_bundle() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+        let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
+
+        let cmd = StartCommand {
+            name: Some("reuse-test".into()),
+            from_snapshot: Some("booted".into()),
+            reuse_with_check: true,
+            net: Some("user".into()),
+            ..Default::default()
+        };
+        let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
+        let pb = expect_configuration(&mut tool, &env, 2);
+
+        let mut matching_config = make_configs(&env.context, &tool.cmd, Some(pb), &emu_instances)
+            .await
+            .expect("matching config");
+        matching_config.runtime.snapshots_enabled = true;
+        matching_config.guest.zbi_hash = "d53f0b8a19b29d74".into();
+        matching_config.guest.disk_hash = "d547336219b6b160".into();
+
+        tool.engine_operations
+            .expect_get_engine_by_name()
+            .returning(move |_| {
+                Ok(Some(Box::new(TestEngine {
+                    do_stage: false,
+                    do_start: true,
+                    do_configure: true,
+                    config: matching_config.clone(),
+                    snapshots: &["booted"],
+                    ..Default::default()
+                }) as Box<dyn EmulatorEngine>))
+            })
+            .times(1);
+        tool.engine_operations.expect_clean_up_instance_dir().times(0);
+        tool.engine_operations.expect_new_engine().times(0);
+
+        tool.main(VerifiedMachineWriter::<CommandStatus>::new(None))
+            .await
+            .expect("main in test_from_snapshot_with_unchanged_product_bundle");
     }
 
     #[fuchsia::test]

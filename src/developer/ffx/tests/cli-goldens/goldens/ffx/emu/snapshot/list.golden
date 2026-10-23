@@ -1,6 +1,6 @@
 {
   "name": "list",
-  "description": "List the snapshots saved for a running Fuchsia emulator.",
+  "description": "List the snapshots saved for a Fuchsia emulator.",
   "examples": [
     "ffx emu snapshot list\nffx emu snapshot list --name fuchsia-emulator"
   ],
@@ -26,7 +26,9 @@
       "hidden": false
     }
   ],
-  "notes": [],
+  "notes": [
+    "The emulator does not have to be running. The snapshots of an emulator which\nwas stopped with `ffx emu stop --persist` are the ones it can be resumed from\nwith `ffx emu start --from-snapshot <snapshot>`."
+  ],
   "commands": [],
   "positionals": [],
   "error_codes": []

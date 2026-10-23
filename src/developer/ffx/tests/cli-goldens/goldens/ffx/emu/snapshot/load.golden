@@ -27,7 +27,7 @@
     }
   ],
   "notes": [
-    "The current state of the emulator, including any changes made to its disk\nsince the snapshot was saved, is discarded.\n\nConnections which the guest had open do not survive a load: an open\n`ffx target ssh` session hangs and has to be started again, while new ffx\ncommands reconnect to the emulator on their own. The guest's wall clock goes\nback to the time at which the snapshot was saved."
+    "The current state of the emulator, including any changes made to its disk\nsince the snapshot was saved, is discarded.\n\nConnections which the guest had open do not survive a load: an open\n`ffx target ssh` session hangs and has to be started again, while new ffx\ncommands reconnect to the emulator on their own. The guest's wall clock goes\nback to the time at which the snapshot was saved.\n\nTo resume a stopped emulator from a snapshot, use\n`ffx emu start --from-snapshot <snapshot>` instead."
   ],
   "commands": [],
   "positionals": [

@@ -260,6 +260,11 @@
                 "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid={{device.vsock.cid}}"
             {{/if}}
         {{/if}}
+        {{#if runtime.from_snapshot}}
+            {{! Resume from a snapshot saved with `ffx emu snapshot save`, rather than
+                booting the guest. }}
+            ,"-loadvm", "{{runtime.from_snapshot}}"
+        {{/if}}
         {{#each runtime.addl_emu_args}}
          ,"{{this}}"
         {{/each}}

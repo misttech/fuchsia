@@ -119,7 +119,8 @@ pub trait EmulatorEngine: Send + Sync {
         Err(user_error!("Snapshots are not supported by this emulator engine."))
     }
 
-    /// Returns the snapshots which have been saved for the running emulator.
+    /// Returns the snapshots which have been saved for the emulator instance: the ones which the
+    /// running emulator can be restored to, or which the stopped emulator can be resumed from.
     ///
     /// The default implementation, which is used by the engines that don't support snapshots,
     /// returns an error.

@@ -10,13 +10,17 @@ use ffx_core::ffx_command;
 #[argh(
     subcommand,
     name = "snapshot",
-    description = "Save, load and list snapshots of a running Fuchsia emulator.",
+    description = "Save, load and list snapshots of a Fuchsia emulator.",
     example = "Start an emulator which supports snapshots, and save one once it has booted:
   $ ffx emu start --engine qemu --enable-snapshots
   $ ffx emu snapshot save booted
 
 Roll the running emulator back to that snapshot:
-  $ ffx emu snapshot load booted",
+  $ ffx emu snapshot load booted
+
+Stop the emulator, then later resume from the snapshot instead of booting:
+  $ ffx emu stop --persist
+  $ ffx emu start --from-snapshot booted",
     note = "A snapshot captures the complete state of a running emulator: the guest's
 memory, CPUs, devices and disk.
 
@@ -79,7 +83,10 @@ since the snapshot was saved, is discarded.
 Connections which the guest had open do not survive a load: an open
 `ffx target ssh` session hangs and has to be started again, while new ffx
 commands reconnect to the emulator on their own. The guest's wall clock goes
-back to the time at which the snapshot was saved."
+back to the time at which the snapshot was saved.
+
+To resume a stopped emulator from a snapshot, use
+`ffx emu start --from-snapshot <snapshot>` instead."
 )]
 pub struct SnapshotLoadCommand {
     /// name of the snapshot to load, as specified to `ffx emu snapshot save`.
@@ -97,9 +104,12 @@ pub struct SnapshotLoadCommand {
 #[argh(
     subcommand,
     name = "list",
-    description = "List the snapshots saved for a running Fuchsia emulator.",
+    description = "List the snapshots saved for a Fuchsia emulator.",
     example = "ffx emu snapshot list
-ffx emu snapshot list --name fuchsia-emulator"
+ffx emu snapshot list --name fuchsia-emulator",
+    note = "The emulator does not have to be running. The snapshots of an emulator which
+was stopped with `ffx emu stop --persist` are the ones it can be resumed from
+with `ffx emu start --from-snapshot <snapshot>`."
 )]
 pub struct SnapshotListCommand {
     /// name of the emulator to list the snapshots of, as specified to the

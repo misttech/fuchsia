@@ -31,8 +31,8 @@ pub fn host_is_mac() -> bool {
 }
 
 /// Checks that `name` can be used as the name of an emulator snapshot. Snapshot names are passed
-/// to the emulator through its monitor console, so they are limited to characters which don't
-/// need to be quoted there.
+/// to the emulator on its command line and through its monitor console, so they are limited to
+/// characters which don't need to be quoted in either.
 ///
 /// This is stricter than QEMU on purpose: QEMU itself also accepts other names, such as ones
 /// which start with '_' or '.'. Keeping to a conservative set of names means that a name can

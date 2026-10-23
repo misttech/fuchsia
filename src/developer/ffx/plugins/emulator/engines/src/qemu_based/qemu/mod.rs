@@ -31,6 +31,9 @@ use std::time::{Duration, Instant, SystemTime};
 mod image_conversion;
 mod monitor;
 
+/// The line which `qemu-img snapshot -l` prints above the table of the snapshots in an image.
+const IMAGE_SNAPSHOTS_HEADING: &str = "Snapshot list:";
+
 #[derive(Clone, Debug)]
 pub struct QemuEngine {
     data: EmulatorInstanceData,
@@ -105,24 +108,65 @@ impl QemuEngine {
         if self.get_engine_state() != EngineState::Running {
             return_user_error!(
                 "Emulator '{name}' is not running (current state: {}). Snapshots can only be \
-                saved, loaded and listed while the emulator is running.",
+                saved and loaded while the emulator is running. To resume a stopped emulator \
+                from a snapshot, use `ffx emu start --from-snapshot <snapshot>`.",
                 self.get_engine_state()
             );
         }
+        self.check_snapshots_enabled()?;
         let emu_config = self.data.get_emulator_configuration();
-        if !emu_config.runtime.snapshots_enabled {
-            return_user_error!(
-                "Emulator '{name}' does not support snapshots. Snapshot support has to be \
-                enabled when the emulator instance is created, by starting it with \
-                `ffx emu start --enable-snapshots`."
-            );
-        }
         let socket_path = self.get_path_for_console_type(
             &emu_config.runtime.instance_directory,
             EngineConsoleType::Command,
         );
         let memory = emu_config.device.memory.as_bytes().unwrap_or(u64::MAX);
         Monitor::connect(&socket_path, monitor::snapshot_timeout(memory))
+    }
+
+    /// Returns the snapshots which are stored in the disk image of the stopped emulator, as
+    /// listed by the `qemu-img` tool. While the emulator is running it holds a lock on the image,
+    /// and the snapshots are listed through its monitor instead.
+    fn stored_snapshots(&self) -> Result<Vec<SnapshotInfo>> {
+        self.check_snapshots_enabled()?;
+        // The snapshots are stored in the qcow2 image which the instance was staged with.
+        let image_path = match &self.data.get_emulator_configuration().guest.disk_image {
+            Some(DiskImage::Fvm(path)) | Some(DiskImage::Fxfs(path)) => path,
+            _ => return_bug!(
+                "Emulator '{}' has no disk image which can hold snapshots.",
+                self.data.get_name()
+            ),
+        };
+        let qemu_img = super::get_qemu_img_tool(&self.context)?;
+        let mut list_command = Command::new(&qemu_img);
+        list_command.args(["snapshot", "-l", "-f", "qcow2"]).arg(image_path);
+        log::debug!("Running command to list the snapshots of the disk image: {:?}", list_command);
+
+        let list_result =
+            list_command.output().map_err(|e| bug!("Error running {}: {e}", qemu_img.display()))?;
+        if !list_result.status.success() {
+            return_bug!(
+                "Error reading the snapshots of {}: {}",
+                image_path.display(),
+                String::from_utf8_lossy(&list_result.stderr)
+            );
+        }
+        monitor::parse_snapshot_table(
+            &String::from_utf8_lossy(&list_result.stdout),
+            IMAGE_SNAPSHOTS_HEADING,
+        )
+    }
+
+    /// Checks that the instance was staged with support for snapshots.
+    fn check_snapshots_enabled(&self) -> Result<()> {
+        if !self.data.get_emulator_configuration().runtime.snapshots_enabled {
+            return_user_error!(
+                "Emulator '{}' does not support snapshots. Snapshot support has to be \
+                enabled when the emulator instance is created, by starting it with \
+                `ffx emu start --enable-snapshots`.",
+                self.data.get_name()
+            );
+        }
+        Ok(())
     }
 }
 
@@ -238,7 +282,11 @@ impl EmulatorEngine for QemuEngine {
     }
 
     async fn list_snapshots(&mut self) -> Result<Vec<SnapshotInfo>> {
-        self.connect_to_snapshot_monitor()?.list_snapshots()
+        if self.get_engine_state() == EngineState::Running {
+            self.connect_to_snapshot_monitor()?.list_snapshots()
+        } else {
+            self.stored_snapshots()
+        }
     }
 
     /// Build the Command to launch Qemu emulator running Fuchsia.
@@ -515,8 +563,6 @@ mod tests {
         assert!(err.contains(expected), "unexpected error: {err}");
         let err = engine.load_snapshot("booted").await.expect_err("load fails").to_string();
         assert!(err.contains(expected), "unexpected error: {err}");
-        let err = engine.list_snapshots().await.expect_err("list fails").to_string();
-        assert!(err.contains(expected), "unexpected error: {err}");
     }
 
     #[fuchsia::test]
@@ -548,6 +594,71 @@ mod tests {
             let err = engine.load_snapshot(name).await.expect_err("load fails").to_string();
             assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_list_snapshots_of_stopped_emulator() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        // The fake qemu-img tool lists the snapshots in an image by printing its contents.
+        let image_path = temp.path().join("fxfs.blk.qcow2");
+        fs::write(
+            &image_path,
+            "Snapshot list:\n\
+            ID      TAG               VM_SIZE                DATE        VM_CLOCK     ICOUNT\n\
+            1       booted            382 MiB 2026-09-30 22:30:24  0000:00:19.615         --\n\
+            2       second           1.45 GiB 2026-10-01 08:15:00  0001:02:03.004         --\n",
+        )
+        .expect("write image");
+
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.name = "test-emu".to_string();
+        cfg.runtime.snapshots_enabled = true;
+        cfg.guest.disk_image = Some(DiskImage::Fxfs(image_path));
+        let stopped_engine = |cfg: &EmulatorConfiguration| {
+            let data =
+                EmulatorInstanceData::new(cfg.clone(), EngineType::Qemu, EngineState::Staged);
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()))
+        };
+
+        // The snapshots are read from the disk image, without the emulator having to run.
+        let snapshots = stopped_engine(&cfg).list_snapshots().await.expect("list snapshots");
+        assert_eq!(
+            snapshots,
+            vec![
+                SnapshotInfo {
+                    name: "booted".to_string(),
+                    vm_size: "382 MiB".to_string(),
+                    date: "2026-09-30 22:30:24".to_string(),
+                    vm_clock: "0000:00:19.615".to_string(),
+                },
+                SnapshotInfo {
+                    name: "second".to_string(),
+                    vm_size: "1.45 GiB".to_string(),
+                    date: "2026-10-01 08:15:00".to_string(),
+                    vm_clock: "0001:02:03.004".to_string(),
+                },
+            ]
+        );
+
+        // An instance which was staged without support for snapshots can't hold any.
+        cfg.runtime.snapshots_enabled = false;
+        let err = stopped_engine(&cfg).list_snapshots().await.expect_err("no snapshots");
+        assert!(
+            err.to_string().contains("Emulator 'test-emu' does not support snapshots"),
+            "unexpected error: {err}"
+        );
+
+        // The disk image has to be readable.
+        cfg.runtime.snapshots_enabled = true;
+        cfg.guest.disk_image = Some(DiskImage::Fxfs(temp.path().join("missing.qcow2")));
+        let err = stopped_engine(&cfg).list_snapshots().await.expect_err("no disk image");
+        assert!(
+            err.to_string().contains("Error reading the snapshots of"),
+            "unexpected error: {err}"
+        );
     }
 
     #[fuchsia::test]

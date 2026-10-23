@@ -414,6 +414,11 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub snapshots_enabled: bool,
 
+    /// The name of a previously saved snapshot to resume the emulator from when it is started,
+    /// instead of booting the guest.
+    #[serde(default)]
+    pub from_snapshot: Option<String>,
+
     /// Maximum amount of time to wait on the emulator health check to succeed before returning
     /// control to the user.
     pub startup_timeout: Duration,

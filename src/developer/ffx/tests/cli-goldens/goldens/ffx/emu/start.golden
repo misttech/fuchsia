@@ -136,6 +136,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "from-snapshot"
+        }
+      },
+      "optionality": "optional",
+      "long": "--from-snapshot",
+      "short": null,
+      "description": "resume the emulator from the named snapshot, instead of booting it. The snapshot must have been saved with `ffx emu snapshot save` by an emulator with the same name as this instance, which was then stopped with `ffx emu stop --persist`. As with `--reuse`, the stopped instance's image files and configuration are used as they are.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "gpu"
         }
       },

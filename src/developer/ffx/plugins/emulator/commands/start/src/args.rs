@@ -126,6 +126,13 @@ pub struct StartCommand {
     #[argh(option)]
     pub engine: Option<String>,
 
+    /// resume the emulator from the named snapshot, instead of booting it. The snapshot must have
+    /// been saved with `ffx emu snapshot save` by an emulator with the same name as this
+    /// instance, which was then stopped with `ffx emu stop --persist`. As with `--reuse`, the
+    /// stopped instance's image files and configuration are used as they are.
+    #[argh(option)]
+    pub from_snapshot: Option<String>,
+
     /// GPU acceleration mode. Allowed values are "swiftshader_indirect", "lavapipe", "software",
     /// "host", or "auto". Default is "swiftshader_indirect". "host" and "auto" are for
     /// experimental use only and are not officially supported by the Fuchsia emulator team;

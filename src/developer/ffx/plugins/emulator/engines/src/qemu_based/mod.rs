@@ -1213,9 +1213,13 @@ pub(crate) mod tests {
         fs::set_permissions(&fake_qemu, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
 
-        // The qemu-img tool is looked up next to the QEMU binary. This fake version records the
-        // arguments it is called with in its last argument, which is the image it should create.
-        const FAKE_QEMU_IMG_CONTENTS: &str = "#!/bin/bash\necho \"$@\" > \"${@: -1}\"";
+        // The qemu-img tool is looked up next to the QEMU binary. Its last argument is the image
+        // to work on. This fake version answers `snapshot -l` with the contents of the image, so
+        // that a test decides which snapshots are listed for it, and otherwise records the
+        // arguments it is called with in the image, which it is being asked to create.
+        const FAKE_QEMU_IMG_CONTENTS: &str = "#!/bin/bash\n\
+            if [[ \"$1 $2\" == \"snapshot -l\" ]]; then cat \"${@: -1}\"; \
+            else echo \"$@\" > \"${@: -1}\"; fi";
         let fake_qemu_img = isolate_root.join(QEMU_IMG_TOOL);
         fs::write(&fake_qemu_img, FAKE_QEMU_IMG_CONTENTS).expect("fake qemu-img");
         fs::set_permissions(&fake_qemu_img, fs::Permissions::from_mode(0o770))
