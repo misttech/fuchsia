@@ -165,7 +165,7 @@ func TestKeepLeadingSpace(t *testing.T) {
 	}
 }
 
-func ExampleDummyProcess() {
+func ExampleDemuxer_dummyProcess() {
 	// mock the input and outputs of llvm-symbolizer
 	symbo := newMockSymbolizer([]mockModule{
 		{
@@ -200,7 +200,7 @@ func ExampleDummyProcess() {
 	//[0.000] 00000.00000> This should be on it's own line
 }
 
-func ExampleDemux() {
+func ExampleDemuxer_demux() {
 	// mock the input and outputs of llvm-symbolizer
 	symbo := newMockSymbolizer([]mockModule{
 		{
@@ -266,7 +266,7 @@ func TestMsgSimpleBacktrace(t *testing.T) {
 	}
 }
 
-func ExampleMsgBacktrace() {
+func ExampleDemuxer_msgBacktrace() {
 	// mock the input and outputs of llvm-symbolizer
 	symbo := newMockSymbolizer([]mockModule{
 		{
@@ -300,7 +300,7 @@ func ExampleMsgBacktrace() {
 	//     #0    0x0000000012388680 in pow pow.c:23 <libc.so>+0x43680 sp 0xdeadbaaf bp 0xdeadbeef
 }
 
-func ExampleNoHeaderBacktrace() {
+func ExampleDemuxer_noHeaderBacktrace() {
 	// mock the input and outputs of llvm-symbolizer
 	symbo := newMockSymbolizer([]mockModule{
 		{
@@ -400,7 +400,7 @@ func ExampleNewBacktracePresenter() {
 	//[131.705] 01234.05678>    #3    0x0000000034567042 in <libmissing.no>+0x42
 }
 
-func ExampleBadAddr() {
+func ExampleDemuxer_badAddr() {
 	// mock the input and outputs of llvm-symbolizer
 	symbo := newMockSymbolizer([]mockModule{
 		{
