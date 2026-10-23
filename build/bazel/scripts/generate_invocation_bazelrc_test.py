@@ -6,31 +6,23 @@
 """Unit-tests for generate_invocation_bazelrc.py functions."""
 
 import os
-import sys
 import tempfile
 import unittest
 
-# Import regenerator.py as a module.
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import generate_invocation_bazelrc as gen
+from build.bazel.scripts import bazel_invocation as bazel_inv
+from build.bazel.scripts import generate_invocation_bazelrc as gen
+from build.resultstore import related_invocations as rel_inv
+
+_TEST_RESULTS_URL = "http://go/test-rs"
 
 
-class BBIDLinkTest(unittest.TestCase):
-    def test_led_link(self) -> None:
-        link = gen.bbid_link("infra/led/01234")
-        self.assertEqual(
-            link, "http://go/lucibuild/infra/led/01234/+/build.proto"
-        )
-
-    def test_regular_link(self) -> None:
-        link = gen.bbid_link("87654321")
-        self.assertEqual(link, "http://go/bbid/87654321")
+def _bes_meta(key: str, value: str) -> str:
+    return f"build:_bes_common --build_metadata={key}={value}"
 
 
 class MetadataOptionTest(unittest.TestCase):
     def test_key_value(self) -> None:
-        opt = gen.metadata_option("FOOD", "bbq")
+        opt = gen._metadata_option("FOOD", "bbq")
         self.assertEqual(opt, "--build_metadata=FOOD=bbq")
 
 
@@ -42,78 +34,89 @@ class BuildConfigOptionTest(unittest.TestCase):
 
 class MetadataBazelrcTest(unittest.TestCase):
     def test_no_id(self) -> None:
-        self.assertEqual(list(gen.metadata_bazelrc(dict())), [])
+        self.assertEqual(list(gen._metadata_bazelrc({})), [])
 
     def test_uuid_top_build(self) -> None:
         uuid = "uuid-6767"
-        rc = set(gen.metadata_bazelrc({"FX_BUILD_UUID": uuid}))
+        env = {
+            rel_inv.ENV_FX_BUILD_UUID: uuid,
+            rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
+        }
         self.assertEqual(
-            rc,
+            set(gen._metadata_bazelrc(env)),
             {
-                f"build:_bes_common --build_metadata=FX_BUILD_UUID={uuid}",
+                _bes_meta(rel_inv.KEY_FX_BUILD_UUID, uuid),
+                _bes_meta(
+                    rel_inv.KEY_SIBLING_BUILDS_LINK,
+                    f"{_TEST_RESULTS_URL}/?q={rel_inv.KEY_FX_BUILD_UUID}:{uuid}",
+                ),
+                _bes_meta(
+                    rel_inv.KEY_SUB_BUILDS_LINK,
+                    f"{_TEST_RESULTS_URL}/?q={rel_inv.KEY_PARENT_BUILD_ID}:{uuid}",
+                ),
             },
         )
 
     def test_uuid_sub_build(self) -> None:
-        uuid = "uuid-5678"
-        parent_id = "dada"
+        uuid = "fake-uuid-5678"
+        parent_id = "fake-parent-id"
         parent_link = f"go/to/{parent_id}"
         siblings_link = f"go/search_for/?q=PARENT={parent_id}"
-        rc = set(
-            gen.metadata_bazelrc(
-                {
-                    "FX_BUILD_UUID": uuid,
-                    "RESULTSTORE_PARENT_BUILD_ID": parent_id,
-                    "RESULTSTORE_PARENT_BUILD_LINK": parent_link,
-                    "RESULTSTORE_SIBLING_BUILDS_LINK": siblings_link,
-                }
-            )
-        )
-        self.assertEqual(
-            rc,
+        env = {
+            rel_inv.ENV_FX_BUILD_UUID: uuid,
+            rel_inv.ENV_PARENT_BUILD_ID: parent_id,
+            rel_inv.ENV_PARENT_BUILD_LINK: parent_link,
+            rel_inv.ENV_SIBLING_BUILDS_LINK: siblings_link,
+            rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
+        }
+        self.assertTrue(
             {
-                f"build:_bes_common --build_metadata=FX_BUILD_UUID={uuid}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={parent_id}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK={parent_link}",
-                f"build:_bes_common --build_metadata=SIBLING_BUILDS_LINK={siblings_link}",
-            },
+                _bes_meta(rel_inv.KEY_FX_BUILD_UUID, uuid),
+                _bes_meta(rel_inv.KEY_PARENT_BUILD_ID, parent_id),
+                _bes_meta(rel_inv.KEY_PARENT_BUILD_LINK, parent_link),
+                _bes_meta(rel_inv.KEY_SIBLING_BUILDS_LINK, siblings_link),
+            }.issubset(set(gen._metadata_bazelrc(env)))
         )
 
     def test_bbid_top_build(self) -> None:
-        bbid = "9988"
-        rc = set(gen.metadata_bazelrc({"BUILDBUCKET_ID": bbid}))
-        self.assertEqual(
-            rc,
+        bbid = "fake-bbid-9988"
+        env = {
+            rel_inv.ENV_BUILDBUCKET_ID: bbid,
+            rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
+        }
+        self.assertTrue(
             {
-                f"build:_bes_common --build_metadata=BUILDBUCKET_ID={bbid}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={bbid}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK=http://go/bbid/{bbid}",
-            },
+                _bes_meta(rel_inv.KEY_BUILDBUCKET_ID, bbid),
+                _bes_meta(rel_inv.KEY_PARENT_BUILD_ID, bbid),
+                _bes_meta(
+                    rel_inv.KEY_PARENT_BUILD_LINK, f"http://go/bbid/{bbid}"
+                ),
+                _bes_meta(
+                    rel_inv.KEY_SIBLING_BUILDS_LINK,
+                    f"{_TEST_RESULTS_URL}/?q={rel_inv.KEY_BUILDBUCKET_ID}:{bbid}",
+                ),
+            }.issubset(set(gen._metadata_bazelrc(env)))
         )
 
     def test_bbid_sub_build(self) -> None:
-        bbid = "8877"
-        parent_id = "baba"
+        bbid = "fake-bbid-8877"
+        parent_id = "fake-parent-id"
         parent_link = f"go/to/{parent_id}"
         siblings_link = f"go/search_for/?q=PARENT={parent_id}"
-        rc = set(
-            gen.metadata_bazelrc(
-                {
-                    "BUILDBUCKET_ID": bbid,
-                    "RESULTSTORE_PARENT_BUILD_ID": parent_id,
-                    "RESULTSTORE_PARENT_BUILD_LINK": parent_link,
-                    "RESULTSTORE_SIBLING_BUILDS_LINK": siblings_link,
-                }
-            )
-        )
-        self.assertEqual(
-            rc,
+        env = {
+            rel_inv.ENV_BUILDBUCKET_ID: bbid,
+            rel_inv.ENV_PARENT_BUILD_ID: parent_id,
+            rel_inv.ENV_PARENT_BUILD_LINK: parent_link,
+            rel_inv.ENV_SIBLING_BUILDS_LINK: siblings_link,
+            rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
+        }
+        self.assertTrue(
             {
-                f"build:_bes_common --build_metadata=BUILDBUCKET_ID={bbid}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_ID={parent_id}",
-                f"build:_bes_common --build_metadata=PARENT_BUILD_LINK={parent_link}",
-                f"build:_bes_common --build_metadata=SIBLING_BUILDS_LINK={siblings_link}",
-            },
+                _bes_meta(rel_inv.KEY_BUILDBUCKET_ID, bbid),
+                _bes_meta(rel_inv.KEY_PARENT_BUILD_ID, parent_id),
+                _bes_meta(rel_inv.KEY_PARENT_BUILD_LINK, parent_link),
+                _bes_meta(rel_inv.KEY_SIBLING_BUILDS_LINK, siblings_link),
+            }.issubset(set(gen._metadata_bazelrc(env)))
         )
 
 
@@ -125,36 +128,79 @@ class JiriPrebuiltBazelrcTest(unittest.TestCase):
         self.prebuilt_dir = os.path.join(self.fuchsia_dir, "prebuilt")
         os.makedirs(self.jiri_root)
         os.makedirs(self.prebuilt_dir)
+        self.expected_mounts = {
+            f"build --sandbox_add_mount_pair={self.jiri_root}",
+            f"build --sandbox_writable_path={self.jiri_root}",
+            f"build --sandbox_add_mount_pair={self.prebuilt_dir}",
+            f"build --sandbox_writable_path={self.prebuilt_dir}",
+        }
 
     def tearDown(self) -> None:
         self._temp_dir.cleanup()
 
     def test_sandbox_mounts(self) -> None:
-        rc = set(gen.jiri_prebuilt_bazelrc({"FUCHSIA_DIR": self.fuchsia_dir}))
-        self.assertEqual(
-            rc,
-            {
-                f"build --sandbox_add_mount_pair={self.jiri_root}",
-                f"build --sandbox_writable_path={self.jiri_root}",
-                f"build --sandbox_add_mount_pair={self.prebuilt_dir}",
-                f"build --sandbox_writable_path={self.prebuilt_dir}",
-            },
-        )
+        rc = set(gen._jiri_prebuilt_bazelrc({"FUCHSIA_DIR": self.fuchsia_dir}))
+        self.assertEqual(rc, self.expected_mounts)
 
     def test_symlinked_fuchsia_dir_resolved(self) -> None:
         with tempfile.TemporaryDirectory() as link_parent:
             symlink_dir = os.path.join(link_parent, "fuchsia_link")
             os.symlink(self.fuchsia_dir, symlink_dir)
-            rc = set(gen.jiri_prebuilt_bazelrc({"FUCHSIA_DIR": symlink_dir}))
-            self.assertEqual(
-                rc,
-                {
-                    f"build --sandbox_add_mount_pair={self.jiri_root}",
-                    f"build --sandbox_writable_path={self.jiri_root}",
-                    f"build --sandbox_add_mount_pair={self.prebuilt_dir}",
-                    f"build --sandbox_writable_path={self.prebuilt_dir}",
-                },
-            )
+            rc = set(gen._jiri_prebuilt_bazelrc({"FUCHSIA_DIR": symlink_dir}))
+            self.assertEqual(rc, self.expected_mounts)
+
+
+class AuthBazelrcTest(unittest.TestCase):
+    def test_loas_auth(self) -> None:
+        self.assertEqual(
+            list(gen._auth_bazelrc({"FX_BUILD_RBE_AUTH_TYPE": "loas"})),
+            [f"build:_remote_common --config={bazel_inv.CONFIG_GCERTAUTH}"],
+        )
+
+    def test_non_loas_auth(self) -> None:
+        self.assertEqual(
+            list(gen._auth_bazelrc({"FX_BUILD_RBE_AUTH_TYPE": "oauth"})), []
+        )
+        self.assertEqual(list(gen._auth_bazelrc({})), [])
+
+
+class ServiceProxiesBazelrcTest(unittest.TestCase):
+    def test_proxy_sockets(self) -> None:
+        env = {
+            bazel_inv.ENV_BAZEL_RBE_SOCKET: "/tmp/fake-rbe.sock",
+            bazel_inv.ENV_BAZEL_RESULTSTORE_SOCKET: "/tmp/fake-rs.sock",
+        }
+        rc = list(gen._service_proxies_bazelrc(env))
+        self.assertIn(
+            "build:_remote_common --remote_proxy=unix:///tmp/fake-rbe.sock", rc
+        )
+        self.assertIn(
+            "build:_resultstore --bes_proxy=unix:///tmp/fake-rs.sock", rc
+        )
+
+
+class GenerateBazelrcTest(unittest.TestCase):
+    def test_generate_bazelrc_with_metadata(self) -> None:
+        env = {
+            rel_inv.ENV_FX_BUILD_UUID: "fake-uuid-1",
+            rel_inv.ENV_RESULTS_URL: "http://go/fake-rs",
+        }
+        rc = list(gen.generate_bazelrc(env))
+        self.assertIn(_bes_meta(rel_inv.KEY_FX_BUILD_UUID, "fake-uuid-1"), rc)
+        self.assertIn(
+            _bes_meta(
+                rel_inv.KEY_SIBLING_BUILDS_LINK,
+                "http://go/fake-rs/?q=FX_BUILD_UUID:fake-uuid-1",
+            ),
+            rc,
+        )
+        self.assertIn(
+            _bes_meta(
+                rel_inv.KEY_SUB_BUILDS_LINK,
+                "http://go/fake-rs/?q=PARENT_BUILD_ID:fake-uuid-1",
+            ),
+            rc,
+        )
 
 
 if __name__ == "__main__":

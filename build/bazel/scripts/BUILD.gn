@@ -114,6 +114,10 @@ if (is_host) {
 
   python_library("generate_invocation_bazelrc") {
     sources = [ "generate_invocation_bazelrc.py" ]
+    library_deps = [
+      ":bazel_invocation",
+      "//build/resultstore:related_invocations",
+    ]
   }
 
   python_build_time_tests("generate_invocation_bazelrc_test") {

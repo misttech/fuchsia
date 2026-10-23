@@ -223,9 +223,7 @@ function cleanup {
   return "$exit_code"
 }
 trap cleanup EXIT
-"${_GENERATE_INVOCATION_BAZELRC}" \
-  --sub_builds_link="$RESULTSTORE_SUB_BUILDS_LINK" \
-  > "${_INVOCATION_BAZELRC}"
+"${_PREBUILT_PYTHON3}" -S "${_GENERATE_INVOCATION_BAZELRC}" > "${_INVOCATION_BAZELRC}" || die "Failed to generate ${_INVOCATION_BAZELRC}"
 
 # Save per-invocation logs.
 # Log directories are generated dynamically per fx-build invocation,
