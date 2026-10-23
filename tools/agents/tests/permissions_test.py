@@ -524,6 +524,38 @@ class PermissionsTest(BaseTestCase):
             )
         )
 
+    def test_read_command_reasons(self) -> None:
+        list_file = self.mock_root / "reasons.txt"
+        list_file.write_text(
+            "# General section header ignored\n"
+            "# Reason: Explicitly list files with `git add <file>`.\n"
+            "command(git add -A)\n"
+            "command(git add .)\n"
+            "\n"
+            "# Reason: Ignored because followed by blank line\n"
+            "\n"
+            "command(git status)\n",
+            encoding="utf-8",
+        )
+        reasons: dict[str, str] = {}
+        grants = permissions.read_command_list_file(list_file, reasons=reasons)
+        self.assertEqual(
+            grants,
+            [
+                "command(git add -A)",
+                "command(git add .)",
+                "command(git status)",
+            ],
+        )
+        self.assertEqual(
+            reasons,
+            {
+                "command(git add -A)": (
+                    "Explicitly list files with `git add <file>`."
+                )
+            },
+        )
+
     def test_read_command_list_file_nonexistent(self) -> None:
         self.assertEqual(
             permissions.read_command_list_file(

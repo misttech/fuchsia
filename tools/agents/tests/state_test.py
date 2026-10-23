@@ -288,6 +288,7 @@ class StateTest(BaseTestCase):
                         "deny": [],
                         "ask": [],
                     },
+                    "grant_reasons": {"command(deny_1)": "Use safe_1 instead."},
                 },
                 {
                     "timestamp": "2026-08-26 02:00:00",
@@ -342,6 +343,9 @@ class StateTest(BaseTestCase):
 
         reloaded = state.load_state(self.state_path)
         self.assertEqual(reloaded.active_profile, "read-only")
+        self.assertEqual(
+            reloaded.grant_reasons, {"command(deny_1)": "Use safe_1 instead."}
+        )
         self.assertEqual(len(reloaded.history), 1)
 
         # Execute rollback remaining step (back to before initial setup)
@@ -359,6 +363,7 @@ class StateTest(BaseTestCase):
         )
         reloaded_final = state.load_state(self.state_path)
         self.assertEqual(reloaded_final.active_profile, "")
+        self.assertEqual(reloaded_final.grant_reasons, {})
         self.assertEqual(len(reloaded_final.history), 0)
 
     def test_reset_success(self) -> None:

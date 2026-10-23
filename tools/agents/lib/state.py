@@ -49,6 +49,7 @@ class StateJournal:
     managed_grants: dict[str, list[str]] = dataclasses.field(
         default_factory=lambda: {"allow": [], "deny": [], "ask": []}
     )
+    grant_reasons: dict[str, str] = dataclasses.field(default_factory=dict)
     history: list[dict[str, Any]] = dataclasses.field(default_factory=list)
 
 
@@ -72,6 +73,7 @@ def load_state(state_path: pathlib.Path) -> StateJournal:
             fuchsia_root=data.get("fuchsia_root", ""),
             active_profile=data.get("active_profile", ""),
             managed_grants=managed_grants,
+            grant_reasons=dict(data.get("grant_reasons", {})),
             history=list(data.get("history", [])),
         )
     except Exception:
@@ -245,10 +247,12 @@ def rollback(
             cat: list(prev_entry.get("managed_grants", {}).get(cat, []))
             for cat in ("allow", "deny", "ask")
         }
+        new_reasons = dict(prev_entry.get("grant_reasons", {}))
         new_timestamp = prev_entry.get("timestamp", "")
     else:
         new_profile = ""
         new_managed = {"allow": [], "deny": [], "ask": []}
+        new_reasons = {}
         new_timestamp = ""
 
     if dry_run:
@@ -274,6 +278,7 @@ def rollback(
 
     state.active_profile = new_profile
     state.managed_grants = new_managed
+    state.grant_reasons = new_reasons
     state.last_updated = new_timestamp
     state.history = remaining_history
     save_state(state, state_path)

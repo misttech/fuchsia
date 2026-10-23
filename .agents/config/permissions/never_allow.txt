@@ -6,15 +6,23 @@
 # ALWAYS hard-denied across all profiles (including Full Access).
 
 # Irrecoverable loss of uncommitted files
+# Reason: Permanently deletes untracked files; inspect with `git status` or stash with `git stash -u` instead.
 git clean -f
+# Reason: Permanently discards uncommitted changes; use `git stash`, `git restore <file>`, or `git reset --keep <commit>` instead.
 git reset --hard
 
 # Destructive force pushing
+# Reason: Overwrites remote history; push a new patchset to `refs/for/main` without `--force` instead.
 git push --force
+# Reason: Overwrites remote history; push a new patchset to `refs/for/main` without `--force` instead.
 git push --force-with-lease
+# Reason: Overwrites remote history; push a new patchset to `refs/for/main` without `--force` instead.
 git push -f
 
 # Destructive filesystem operations
+# Reason: Formatting filesystems is destructive and never permitted in an agent session.
 mkfs
+# Reason: Recursive deletion of root or home directories is catastrophic; scope `rm` to specific paths inside the workspace or build directory.
 rm -rf /
+# Reason: Recursive deletion of root or home directories is catastrophic; scope `rm` to specific paths inside the workspace or build directory.
 rm -rf ~

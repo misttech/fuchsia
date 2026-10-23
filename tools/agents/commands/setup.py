@@ -236,22 +236,26 @@ def run(args: argparse.Namespace) -> int:
     allow_grants: list[str] = []
     deny_grants: list[str] = []
     ask_grants: list[str] = []
+    grant_reasons: dict[str, str] = {}
 
     print(f"\nApplying permission profile: [{selected_profile}]")
     grants = permissions.load_profile_grants(fuchsia_dir, selected_profile)
     allow_grants.extend(grants.allow)
     deny_grants.extend(grants.deny)
     ask_grants.extend(grants.ask)
+    grant_reasons.update(grants.reasons)
 
-    for raw_cmds, list_files, grants_target in (
-        (args.allow, args.allow_list, allow_grants),
-        (args.deny, args.deny_list, deny_grants),
-        (args.ask, args.ask_list, ask_grants),
+    for raw_cmds, list_files, grants_target, target_reasons in (
+        (args.allow, args.allow_list, allow_grants, None),
+        (args.deny, args.deny_list, deny_grants, grant_reasons),
+        (args.ask, args.ask_list, ask_grants, None),
     ):
         for cmd in raw_cmds:
             grants_target.extend(permissions.expand_command_variants(cmd))
         for f in list_files:
-            grants_target.extend(permissions.read_command_list_file(f))
+            grants_target.extend(
+                permissions.read_command_list_file(f, reasons=target_reasons)
+            )
 
     success = config.apply_grants(
         config_path=config_path,
@@ -261,6 +265,7 @@ def run(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         state_dir=state_dir,
         selected_profile=selected_profile,
+        grant_reasons=grant_reasons,
     )
     if not success:
         return 1

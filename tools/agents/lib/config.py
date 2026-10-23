@@ -11,7 +11,7 @@ import json
 import os
 import pathlib
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from agents.lib import paths, state
@@ -59,6 +59,7 @@ def apply_grants(
     dry_run: bool = False,
     state_dir: pathlib.Path | None = None,
     selected_profile: str = "",
+    grant_reasons: Mapping[str, str] | None = None,
 ) -> bool:
     """Load config.json, reconcile allow/deny/ask grants, create backup, and update state journal."""
     config_path = config_path or get_default_config_path()
@@ -134,14 +135,17 @@ def apply_grants(
     journal.schema_version = 1
     journal.last_updated = now_str
     journal.fuchsia_root = fuchsia_root_str
+    resolved_reasons = dict(grant_reasons or {})
     journal.active_profile = selected_profile
     journal.managed_grants = target_managed
+    journal.grant_reasons = resolved_reasons
     journal.history.append(
         {
             "timestamp": now_str,
             "profile": selected_profile,
             "backup_file": str(backup_path) if backup_path else None,
             "managed_grants": target_managed,
+            "grant_reasons": resolved_reasons,
         }
     )
     state.save_state(journal, state_path)

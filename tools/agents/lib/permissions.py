@@ -10,7 +10,7 @@ import dataclasses
 import pathlib
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from agents.lib import paths
 
@@ -58,6 +58,8 @@ PYTHON_TOOL_PREFIXES: tuple[str, ...] = (
     "./scripts/fuchsia-vendored-python",
     ".jiri_root/bin/fuchsia-vendored-python",
 )
+
+REASON_PREFIX = "# Reason:"
 
 TRUSTED_HELP_TOOLS: set[str] = {
     "fx",
@@ -124,6 +126,7 @@ class PermissionGrants:
     allow: Sequence[str] = ()
     deny: Sequence[str] = ()
     ask: Sequence[str] = ()
+    reasons: Mapping[str, str] = dataclasses.field(default_factory=dict)
 
 
 PROFILE_DEFINITIONS: dict[str, ProfileDefinition] = {
@@ -393,15 +396,36 @@ def expand_command_variants(raw_line: str) -> list[str]:
     return results
 
 
-def read_command_list_file(file_path: pathlib.Path) -> list[str]:
-    """Read a permission list file and return expanded grant variants."""
+def read_command_list_file(
+    file_path: pathlib.Path,
+    *,
+    reasons: dict[str, str] | None = None,
+) -> list[str]:
+    """Read a permission list file and return expanded grant variants.
+
+    If `reasons` is provided, populates it with mappings from expanded grant
+    strings to any immediately preceding `# Reason: <text>` comment.
+    """
     if not file_path.is_file():
         return []
 
     grants: list[str] = []
+    pending_reason: str | None = None
     with file_path.open("r", encoding="utf-8") as file_handle:
-        for line in file_handle:
-            grants.extend(expand_command_variants(line))
+        for raw_line in file_handle:
+            stripped = raw_line.strip()
+            if stripped.startswith(REASON_PREFIX):
+                pending_reason = stripped.removeprefix(REASON_PREFIX).strip()
+                continue
+            if not stripped or stripped.startswith("#"):
+                pending_reason = None
+                continue
+            expanded = expand_command_variants(raw_line)
+            grants.extend(expanded)
+            if reasons is not None and pending_reason:
+                for grant in expanded:
+                    reasons[grant] = pending_reason
+            pending_reason = None
     return grants
 
 
@@ -416,17 +440,25 @@ def load_profile_grants(
 
     profile = PROFILE_DEFINITIONS[profile_name]
     permission_dirs = paths.find_permission_dirs(fuchsia_dir)
+    reasons: dict[str, str] = {}
 
-    def _collect_rules(category_files: Sequence[str]) -> list[str]:
+    def _collect_rules(
+        category_files: Sequence[str],
+        *,
+        out_reasons: dict[str, str] | None = None,
+    ) -> list[str]:
         rules: list[str] = []
         for filename in category_files:
             for perm_dir in permission_dirs:
                 file_path = perm_dir / filename
-                rules.extend(read_command_list_file(file_path))
+                rules.extend(
+                    read_command_list_file(file_path, reasons=out_reasons)
+                )
         return list(dict.fromkeys(rules))
 
     return PermissionGrants(
         allow=_collect_rules(profile.allow),
-        deny=_collect_rules(profile.deny),
+        deny=_collect_rules(profile.deny, out_reasons=reasons),
         ask=_collect_rules(profile.ask),
+        reasons=reasons,
     )
