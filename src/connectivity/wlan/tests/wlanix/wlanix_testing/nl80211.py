@@ -1,13 +1,24 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Netlink (nl80211) constants and packet builders/parsers for wlanix tests."""
+"""Netlink (nl80211) constants, packet builders/parsers, and client wrapper for wlanix tests."""
 
+import asyncio
+import logging
 import struct
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
+from honeydew.transports.fuchsia_controller import (
+    fuchsia_controller as fc_transport,
+)
+from mobly import signals
 from mobly.asserts import assert_equal, fail
+
+from .fidl_servers import Nl80211MulticastServer
+
+logger = logging.getLogger(__name__)
 
 # Generic Netlink / nl80211 commands
 NL80211_CMD_GET_INTERFACE = 5
@@ -128,3 +139,102 @@ def verify_new_interface_response(
     raise RuntimeError(
         f"Did not find an iface index in the response list: {response_list}"
     )
+
+
+class Nl80211:
+    """Wrapper around fuchsia.wlan.wlanix/Nl80211 client."""
+
+    def __init__(
+        self,
+        proxy: fidl_wlanix.Nl80211Client,
+        fuchsia_controller: fc_transport.FuchsiaController,
+    ) -> None:
+        self.proxy = proxy
+        self._fc_transport = fuchsia_controller
+
+    async def send_message(
+        self, payload: Sequence[int] | bytes
+    ) -> Sequence[fidl_wlanix.Nl80211Message]:
+        """Sends a Generic Netlink payload over Nl80211.Message and returns the responses."""
+        msg = fidl_wlanix.Nl80211Message(
+            message=fidl_wlanix.Message(payload=list(payload))
+        )
+        responses = (await self.proxy.message(message=msg)).unwrap().responses
+        assert responses is not None, "Nl80211.Message() responses is None"
+        return responses
+
+    @asynccontextmanager
+    async def listen_multicast(
+        self, group: str
+    ) -> AsyncIterator[asyncio.Queue[fidl_wlanix.Nl80211Message]]:
+        """Subscribes to an nl80211 multicast group and yields the incoming message queue."""
+        client, server = self._fc_transport.channel_create()
+        async with Nl80211MulticastServer(client, server) as ctx:
+            self.proxy.get_multicast(
+                group=group, multicast=ctx.callback_channel.take()
+            )
+            yield ctx.message_queue
+
+    async def query_interface_attrs(self) -> dict[int, bytes]:
+        """Queries NL80211_CMD_GET_INTERFACE and returns the parsed attributes."""
+        responses = await self.send_message(
+            [
+                NL80211_CMD_GET_INTERFACE,  # Command: GetInterface
+                0x01,  # Version
+                0x00,
+                0x00,  # Reserved
+            ]
+        )
+        return verify_new_interface_response(responses)
+
+    async def get_iface_index(self) -> int:
+        """Queries NL80211_CMD_GET_INTERFACE and returns NL80211_ATTR_IFINDEX."""
+        attrs = await self.query_interface_attrs()
+        iface_index: int = struct.unpack("<I", attrs[NL80211_ATTR_IFINDEX])[0]
+        return iface_index
+
+    async def trigger_scan(
+        self, iface_index: int, timeout: float = 20.0
+    ) -> None:
+        """Triggers an nl80211 scan on the given interface index and waits for completion."""
+        logger.info("Triggering a scan on IfaceIndex %d", iface_index)
+        async with self.listen_multicast("scan") as scan_queue:
+            payload = [
+                NL80211_CMD_TRIGGER_SCAN,  # Command: TriggerScan
+                0x01,  # Version
+                0x00,
+                0x00,  # Reserved
+                *list(
+                    build_nla(
+                        NL80211_ATTR_IFINDEX, struct.pack("<I", iface_index)
+                    )
+                ),
+            ]
+            response_list = await self.send_message(payload)
+            assert_equal(
+                len(response_list),
+                1,
+                "Response from TriggerScan should contain a single ACK message.",
+            )
+            assert response_list[0].ack, "Response should have been an ACK."
+
+            try:
+                scan_message = await asyncio.wait_for(
+                    scan_queue.get(), timeout=timeout
+                )
+                logger.info("Received nl80211 scan result signal")
+                assert (
+                    scan_message.message
+                ), "Received a non-message nl80211 message"
+                assert (
+                    scan_message.message.payload is not None
+                ), "Received scan result indication without payload"
+                assert_equal(
+                    scan_message.message.payload[0],
+                    NL80211_CMD_NEW_SCAN_RESULTS,
+                    "Received unexpected scan result",
+                )
+            except TimeoutError as e:
+                raise signals.TestFailure(
+                    f"Did not receive a scan result within {timeout} seconds"
+                ) from e

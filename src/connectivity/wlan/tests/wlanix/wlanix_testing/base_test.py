@@ -18,7 +18,7 @@ from mobly.asserts import assert_equal
 from mobly.records import TestResultRecord
 from openwrt_access_point import OpenWrtAP
 
-from . import WifiChip, Wlanix
+from . import StaIface, WifiChip, Wlanix
 from .nl80211 import (
     NL80211_ATTR_IFINDEX,
     NL80211_ATTR_IFNAME,
@@ -83,6 +83,7 @@ class WifiChipBaseTestClass(WlanixBaseTestClass):
 
 
 class IfaceBaseTestClass(WifiChipBaseTestClass):
+    iface: StaIface
     wifi_sta_iface_proxy: fidl_wlanix.WifiStaIfaceClient
     supplicant_sta_iface_proxy: fidl_wlanix.SupplicantStaIfaceClient
     iface_name: str
@@ -100,37 +101,14 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
             "WifiChip should have returned an empty list of iface names",
         )
 
-        (
-            proxy,
-            server,
-        ) = self.dut.fuchsia_controller.channel_create()
-        (
-            await self.wifi_chip_proxy.create_sta_iface(iface=server.take())
-        ).unwrap()
-        self.wifi_sta_iface_proxy = fidl_wlanix.WifiStaIfaceClient(proxy)
-
-        get_name_response = (
-            await self.wifi_sta_iface_proxy.get_name()
-        ).unwrap()
-        assert (
-            get_name_response.iface_name is not None
-        ), "WifiStaIface.GetName() response is missing an iface_name value"
-        self.iface_name = get_name_response.iface_name
-
-        (
-            proxy,
-            server,
-        ) = self.dut.fuchsia_controller.channel_create()
-
-        self.wlanix_proxy.get_nl80211(nl80211=server.take())
-        self.nl80211_proxy = fidl_wlanix.Nl80211Client(proxy)
-
-        self.supplicant_sta_iface_proxy = self._wlanix.add_supplicant_sta_iface(
-            self.iface_name
-        )
+        self.iface = await self._chip.create_sta_iface()
+        self.wifi_sta_iface_proxy = self.iface.wifi_sta_iface
+        self.iface_name = self.iface.name
+        self.nl80211_proxy = self.iface.nl80211.proxy
+        self.supplicant_sta_iface_proxy = self.iface.supplicant_sta_iface
 
     async def teardown_class(self) -> None:
-        await self._chip.remove_sta_iface(self.iface_name)
+        await self.iface.remove()
         await super().teardown_class()
 
 

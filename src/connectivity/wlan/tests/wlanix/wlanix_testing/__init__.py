@@ -19,6 +19,11 @@ from mobly import signals
 from mobly.asserts import (
     assert_equal,
     assert_false,
+    assert_true,
+)
+from openwrt_access_point.lib.access_point_config import (
+    Security,
+    SecurityWpa3,
 )
 
 from .fidl_servers import (
@@ -53,6 +58,7 @@ from .nl80211 import (
     NL80211_SCHED_SCAN_MATCH_ATTR_SSID,
     NL80211_SCHED_SCAN_PLAN_INTERVAL,
     NL80211_SCHED_SCAN_PLAN_ITERATIONS,
+    Nl80211,
     build_nla,
     parse_netlink_attributes,
     verify_new_interface_response,
@@ -84,8 +90,10 @@ __all__ = [
     "NL80211_SCHED_SCAN_MATCH_ATTR_SSID",
     "NL80211_SCHED_SCAN_PLAN_INTERVAL",
     "NL80211_SCHED_SCAN_PLAN_ITERATIONS",
+    "Nl80211",
     "Nl80211MulticastServer",
     "Nl80211MulticastServerContext",
+    "StaIface",
     "SupplicantStaIfaceCallbackContext",
     "SupplicantStaIfaceCallbackServer",
     "WifiChip",
@@ -96,6 +104,152 @@ __all__ = [
     "parse_netlink_attributes",
     "verify_new_interface_response",
 ]
+
+
+class StaIface:
+    """Represents a STA interface created via WifiChip.CreateStaIface."""
+
+    def __init__(
+        self,
+        name: str,
+        chip: WifiChip,
+        wifi_sta_iface: fidl_wlanix.WifiStaIfaceClient,
+        supplicant_sta_iface: fidl_wlanix.SupplicantStaIfaceClient | None,
+        nl80211: Nl80211 | None,
+        fuchsia_controller: fc_transport.FuchsiaController,
+    ) -> None:
+        self.name = name
+        self._chip = chip
+        self.wifi_sta_iface = wifi_sta_iface
+        self._supplicant_sta_iface = supplicant_sta_iface
+        self._nl80211 = nl80211
+        self._fc_transport = fuchsia_controller
+
+    @property
+    def supplicant_sta_iface(self) -> fidl_wlanix.SupplicantStaIfaceClient:
+        if self._supplicant_sta_iface is None:
+            self._supplicant_sta_iface = (
+                self._chip.wlanix.add_supplicant_sta_iface(self.name)
+            )
+        return self._supplicant_sta_iface
+
+    @property
+    def nl80211(self) -> Nl80211:
+        if self._nl80211 is None:
+            self._nl80211 = self._chip.wlanix.get_nl80211()
+        return self._nl80211
+
+    async def get_name(self) -> str:
+        """Queries WifiStaIface.GetName() and returns the interface name."""
+        response = (await self.wifi_sta_iface.get_name()).unwrap()
+        assert (
+            response.iface_name is not None
+        ), "WifiStaIface.GetName() response is missing an iface_name value"
+        return response.iface_name
+
+    async def query_nl80211_attrs(self) -> dict[int, bytes]:
+        """Queries NL80211_CMD_GET_INTERFACE and returns the parsed attributes."""
+        return await self.nl80211.query_interface_attrs()
+
+    async def get_iface_index(self) -> int:
+        """Queries NL80211_CMD_GET_INTERFACE and returns NL80211_ATTR_IFINDEX."""
+        return await self.nl80211.get_iface_index()
+
+    async def trigger_scan(self, timeout: float = 20.0) -> None:
+        """Queries the interface index, triggers an nl80211 scan, and waits for results."""
+        iface_index = await self.get_iface_index()
+        await self.nl80211.trigger_scan(iface_index, timeout=timeout)
+
+    async def connect(
+        self,
+        ssid: str,
+        security: Security,
+        password: str | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        """Connects to the specified network via SupplicantStaIface and waits for completion."""
+        client, server = self._fc_transport.channel_create()
+        async with SupplicantStaIfaceCallbackServer(client, server) as ctx:
+            state_change_queue = ctx.state_change_queue
+            callback_channel = ctx.callback_channel
+
+            self.supplicant_sta_iface.register_callback(
+                callback=callback_channel.take()
+            )
+
+            proxy, net_server = self._fc_transport.channel_create()
+            self.supplicant_sta_iface.add_network(network=net_server.take())
+            supplicant_sta_network_proxy = (
+                fidl_wlanix.SupplicantStaNetworkClient(proxy)
+            )
+
+            supplicant_sta_network_proxy.set_ssid(
+                ssid=list(ssid.encode("ascii"))
+            )
+            if password:
+                if isinstance(security, SecurityWpa3):
+                    supplicant_sta_network_proxy.set_sae_password(
+                        password=list(password.encode("ascii"))
+                    )
+                else:
+                    supplicant_sta_network_proxy.set_psk_passphrase(
+                        passphrase=list(password.encode("ascii"))
+                    )
+
+            try:
+                (await supplicant_sta_network_proxy.select()).unwrap()
+            except AssertionError as e:
+                raise signals.TestFailure(
+                    f'Failed to connect to "{ssid}" with {security}'
+                ) from e
+
+            try:
+                state_change = await asyncio.wait_for(
+                    state_change_queue.get(), timeout=timeout
+                )
+            except TimeoutError as e:
+                raise signals.TestFailure(
+                    f'Timed out waiting for connection state change for "{ssid}"'
+                ) from e
+
+            assert isinstance(
+                state_change,
+                fidl_wlanix.SupplicantStaIfaceCallbackOnStateChangedRequest,
+            ), f"Expected OnStateChanged. Got {state_change!r}"
+            assert_equal(
+                state_change.new_state,
+                fidl_wlanix.StaIfaceCallbackState.COMPLETED,
+            )
+            assert_true(
+                state_change_queue.empty(),
+                "Unexpectedly received additional callback messages.",
+            )
+            logger.info('Successfully connected to "%s"!', ssid)
+
+    async def scan_and_connect(
+        self,
+        ssid: str,
+        security: Security,
+        password: str | None = None,
+        scan_timeout: float = 20.0,
+        connect_timeout: float = 30.0,
+    ) -> None:
+        """Triggers an nl80211 scan and connects to the specified network via SupplicantStaIface."""
+        await self.trigger_scan(timeout=scan_timeout)
+        await self.connect(
+            ssid=ssid,
+            security=security,
+            password=password,
+            timeout=connect_timeout,
+        )
+
+    async def disconnect(self) -> None:
+        """Disconnects the supplicant interface."""
+        await self.supplicant_sta_iface.disconnect()
+
+    async def remove(self) -> None:
+        """Removes this STA interface from its parent WifiChip."""
+        await self._chip.remove_sta_iface(self.name)
 
 
 class WifiChip:
@@ -120,6 +274,35 @@ class WifiChip:
             response.iface_names is not None
         ), "WifiChip.GetStaIfaceNames() response is missing an iface_names value"
         return list(response.iface_names)
+
+    async def create_sta_iface(
+        self, *, attach_supplicant: bool = True
+    ) -> StaIface:
+        """Creates a STA interface on this chip and returns a StaIface wrapper."""
+        proxy, server = self._fc_transport.channel_create()
+        (await self.proxy.create_sta_iface(iface=server.take())).unwrap()
+        wifi_sta_iface = fidl_wlanix.WifiStaIfaceClient(proxy)
+
+        get_name_response = (await wifi_sta_iface.get_name()).unwrap()
+        assert (
+            get_name_response.iface_name is not None
+        ), "WifiStaIface.GetName() response is missing an iface_name value"
+        iface_name = get_name_response.iface_name
+
+        supplicant_sta_iface: fidl_wlanix.SupplicantStaIfaceClient | None = None
+        if attach_supplicant:
+            supplicant_sta_iface = self.wlanix.add_supplicant_sta_iface(
+                iface_name
+            )
+
+        return StaIface(
+            name=iface_name,
+            chip=self,
+            wifi_sta_iface=wifi_sta_iface,
+            supplicant_sta_iface=supplicant_sta_iface,
+            nl80211=None,
+            fuchsia_controller=self._fc_transport,
+        )
 
     async def remove_sta_iface(self, iface_name: str) -> None:
         """Removes the specified STA interface and verifies it is no longer present."""
@@ -209,6 +392,12 @@ class Wlanix:
             iface_name=iface_name,
         )
         return fidl_wlanix.SupplicantStaIfaceClient(proxy)
+
+    def get_nl80211(self) -> Nl80211:
+        """Opens a new fuchsia.wlan.wlanix/Nl80211 channel wrapped in an Nl80211 helper."""
+        proxy, server = self._fc_transport.channel_create()
+        self.proxy.get_nl80211(nl80211=server.take())
+        return Nl80211(fidl_wlanix.Nl80211Client(proxy), self._fc_transport)
 
     async def start_wifi(self) -> fidl_wlanix.WifiClient:
         """Opens a Wifi channel, calls Start(), and verifies WiFi is started."""
