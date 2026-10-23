@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "bionic_compat",
+    srcs = [
+        "pthread.cc",
+        "resource.cc",
+    ],
+    hdrs = [
+        "include/ftw.h",
+        "include/linux/ioctl.h",
+        "include/linux/sched.h",
+        "include/linux/types.h",
+        "include/pthread.h",
+        "include/stdatomic.h",
+        "include/sys/cdefs.h",
+        "include/sys/ioctl.h",
+        "include/sys/resource.h",
+        "include/sys/types.h",
+        "include/sys/user.h",
+        "include/unistd.h",
+    ],
+    implementation_deps = ["//sdk/lib/fdio"],
+    includes = ["include"],
+    public_configs = [":bionic_compat_config"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/lib/android/binder:__pkg__",
+        "//src/lib/android/core:__pkg__",
+        "//src/lib/android/libbase:__pkg__",
+        "//src/lib/android/logging:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    # Bionic kernel UAPI headers are provided to GN consumers via
+    # `bionic_compat_config` in `public_configs`.
+    # @bazel2gn:skip
+    deps = ["//:bionic_uapi"],
+    # Link all objects, like a GN source_set. bazel2gn also generates a
+    # GN source_set (instead of a static_library) for this attribute.
+    alwayslink = True,
+)

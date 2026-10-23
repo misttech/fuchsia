@@ -13,6 +13,7 @@ load(
     "fuchsia_devicetree_toolchain_info",
 )
 load("@rules_license//rules:license.bzl", "license")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load(
     "//build/bazel/toolchains:linux_sysroot.bzl",
     "linux_sysroot_headers",
@@ -180,6 +181,23 @@ filegroup(
     name = "avb_testkey_atx_psk",
     srcs = ["third_party/android/platform/external/avb/test/data/testkey_atx_psk.pem"],
     visibility = ["//src/lib/assembly/test_keys:__pkg__"],
+)
+
+# Bionic kernel UAPI headers used by //src/lib/android/bionic_compat.
+# third_party/android/platform/bionic has no BUILD.bazel file, so this target
+# is defined in the root package.
+fx_cc_library(
+    name = "bionic_uapi",
+    hdrs = glob([
+        "third_party/android/platform/bionic/libc/kernel/android/uapi/**/*.h",
+        "third_party/android/platform/bionic/libc/kernel/uapi/**/*.h",
+    ]),
+    includes = [
+        "third_party/android/platform/bionic/libc/kernel/android/uapi",
+        "third_party/android/platform/bionic/libc/kernel/uapi",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/lib/android/bionic_compat:__pkg__"],
 )
 
 # Perfetto .proto files used by //src/starnix/modules/perfetto_consumer/lib/perfetto.
