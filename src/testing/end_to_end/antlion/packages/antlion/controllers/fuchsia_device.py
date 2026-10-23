@@ -30,7 +30,6 @@ from antlion.controllers.fuchsia_lib.ssh import (
     FuchsiaSSHProvider,
 )
 from antlion.decorators import cached_property
-from antlion.utils import get_interface_ip_addresses
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
     PowerSwitchDmcError,
@@ -604,78 +603,6 @@ class FuchsiaDevice:
                 self.log.warning(f"Unable to clean up WLAN Policy layer: {err}")
 
         self.stop_services()
-
-    def get_interface_ip_addresses(
-        self, interface: str
-    ) -> dict[str, list[str]]:
-        return get_interface_ip_addresses(self, interface)
-
-    def wait_for_ipv4_addr(self, interface: str) -> None:
-        """Checks if device has an ipv4 private address. Sleeps 1 second between
-        retries.
-
-        Args:
-            interface: name of interface from which to get ipv4 address.
-
-        Raises:
-            ConnectionError, if device does not have an ipv4 address after all
-            timeout.
-        """
-        self.log.info(
-            f"Checking for valid ipv4 addr. Retry {IP_ADDRESS_TIMEOUT} seconds."
-        )
-        timeout = time.time() + IP_ADDRESS_TIMEOUT
-        while time.time() < timeout:
-            ip_addrs = self.get_interface_ip_addresses(interface)
-
-            if len(ip_addrs["ipv4_private"]) > 0:
-                self.log.info(
-                    f"Device has an ipv4 address: {ip_addrs['ipv4_private'][0]}"
-                )
-                break
-            else:
-                self.log.debug(
-                    "Device does not yet have an ipv4 address...retrying in 1 second."
-                )
-                time.sleep(1)
-        else:
-            raise ConnectionError("Device failed to get an ipv4 address.")
-
-    def wait_for_ipv6_addr(self, interface: str) -> None:
-        """Checks if device has an ipv6 private local address. Sleeps 1 second
-        between retries.
-
-        Args:
-            interface: name of interface from which to get ipv6 address.
-
-        Raises:
-            ConnectionError, if device does not have an ipv6 address after all
-            timeout.
-        """
-        self.log.info(
-            f"Checking for valid ipv6 addr. Retry {IP_ADDRESS_TIMEOUT} seconds."
-        )
-        timeout = time.time() + IP_ADDRESS_TIMEOUT
-        while time.time() < timeout:
-            ip_addrs = self.get_interface_ip_addresses(interface)
-            # Check for any valid IPv6 address. While the test ideally uses a
-            # routed ULA (private local) address, a link-local address is
-            # sufficient for connectivity in some environments.
-            valid_addrs = (
-                ip_addrs["ipv6_link_local"]
-                + ip_addrs["ipv6_private_local"]
-                + ip_addrs["ipv6_public"]
-            )
-            if len(valid_addrs) > 0:
-                self.log.info(f"Device has valid ipv6 addresses: {valid_addrs}")
-                break
-            else:
-                self.log.debug(
-                    "Device does not yet have an ipv6 address...retrying in 1 second."
-                )
-                time.sleep(1)
-        else:
-            raise ConnectionError("Device failed to get an ipv6 address.")
 
     def stop_services(self) -> None:
         """Stops all host-side clients to the Fuchsia device.
