@@ -50,6 +50,9 @@ class UsbCdcTestHelper {
   [[maybe_unused]] static bool IsRxEndpointDead(const UsbCdcFunction& /*driver*/) { return false; }
   [[maybe_unused]] static bool IsTxEndpointDead(const UsbCdcFunction& /*driver*/) { return false; }
   [[maybe_unused]] static size_t ActiveRxVmoIdsSize(const UsbCdcFunction& /*driver*/) { return 0; }
+  static size_t GetBulkOutInFlightCount(UsbCdcFunction& driver) {
+    return driver.bulk_out_ep_.GetInFlightCount();
+  }
 
   // Simulates request recycling where all requests in the interrupt endpoint's free request
   // pool have a stale size of 8 bytes (matching network_notification).
@@ -612,6 +615,9 @@ class UsbCdcTest : public ::testing::Test {
                   .status());
 
     if (middle_action) {
+      driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+      driver_test_.RunInEnvironmentTypeContext(
+          [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteTx().has_value()); });
       EXPECT_STATUS(tx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
       middle_action();
     }
@@ -763,6 +769,9 @@ TEST_F(UsbCdcTest, Rx) {
             .status());
   }
 
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
   EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // Complete 2 requests, but we only have one rx space already queued.
@@ -785,6 +794,17 @@ TEST_F(UsbCdcTest, Rx) {
     EXPECT_EQ(data.length(), kDataSize1);
     EXPECT_EQ(data.id(), kBufferId1);
   });
+
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInDriverContext(
+            [&ready](UsbCdcFunction& driver) { ready = driver.HasPendingRxCompletions(); });
+        return ready;
+      },
+      zx::sec(5)));
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
 
   rx_completed->Reset();
 
@@ -835,15 +855,19 @@ TEST_F(UsbCdcTest, Stop) {
       .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
   };
 
-  ASSERT_OK(net_impl_client_.buffer(arena)
-                ->QueueRxSpace(
-                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
-                .status());
-
   auto rx_completed = std::make_shared<libsync::Completion>();
   driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
     env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
   });
+
+  ASSERT_OK(net_impl_client_.buffer(arena)
+                ->QueueRxSpace(
+                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
+                .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   auto trigger_stop = [&]() {
     auto result = net_impl_client_.buffer(arena)->Stop();
@@ -1035,6 +1059,11 @@ TEST_F(UsbCdcTest, UnconfigureRetainsRxSpaceUntilStop) {
       .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
   };
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
+  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+  });
+
   ASSERT_OK(net_impl_client_.buffer(arena)
                 ->QueueRxSpace(
                     fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
@@ -1042,12 +1071,8 @@ TEST_F(UsbCdcTest, UnconfigureRetainsRxSpaceUntilStop) {
 
   // Synchronize with the driver runtime to ensure QueueRxSpace has been fully processed.
   driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
-
-  auto rx_completed = std::make_shared<libsync::Completion>();
-  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
-    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
-  });
-
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
   EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // Unconfigure USB. Because NetworkDeviceImpl is still started, the RX space buffer should be
@@ -1061,9 +1086,9 @@ TEST_F(UsbCdcTest, UnconfigureRetainsRxSpaceUntilStop) {
     ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   }
   driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
-  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
   driver_test_.RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // Stopping NetworkDeviceImpl must return the retained RX space buffer with length 0.
   auto stop_result = net_impl_client_.buffer(arena)->Stop();
@@ -1090,6 +1115,11 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsOnStop) {
   ASSERT_OK(prepare_result.status());
   ASSERT_OK(prepare_result->s);
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
+  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+  });
+
   // In this offline state, queue an RX buffer. Then synchronize with the driver
   // runtime to ensure QueueRxSpace() has been fully processed.
   fnetdev::wire::RxSpaceBuffer rx_buffer = {
@@ -1105,12 +1135,13 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndReturnsOnStop) {
   // Verify that the driver did _not_ call CompleteRx().
   driver_test_.RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
-  // Stop the network device. Then synchronize with the driver runtime to give
-  // Stop() and CompleteRx() a chance to execute.
+  // Stop the network device and wait for the one-way CompleteRx() call to arrive
+  // at the environment dispatcher.
   auto stop_result = net_impl_client_.buffer(arena)->Stop();
   ASSERT_OK(stop_result.status());
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
 
   // Verify that, as part of Stop()-ing, the driver returned the RX buffer to
   // the interface.
@@ -1135,6 +1166,11 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndUsesWhenOnlined) {
   ASSERT_OK(prepare_result.status());
   ASSERT_OK(prepare_result->s);
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
+  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+  });
+
   // In this offline state, queue an RX buffer. Then synchronize with the driver
   // runtime to ensure QueueRxSpace() has been fully processed.
   fnetdev::wire::RxSpaceBuffer rx_buffer = {
@@ -1150,6 +1186,7 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndUsesWhenOnlined) {
   // Verify that the driver did _not_ call CompleteRx().
   driver_test_.RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // Bring the device online. The held RX space buffer should be retained across
   // SetConfigured(true) and SetInterface(1) without being bounced back empty.
@@ -1157,11 +1194,10 @@ TEST_F(UsbCdcTest, QueueRxSpaceWhileOfflineHoldsBuffersAndUsesWhenOnlined) {
   driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
   driver_test_.RunInEnvironmentTypeContext(
       [&](Environment& env) { EXPECT_FALSE(env.fake_ifc_.PopCompleteRx().has_value()); });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // Complete a USB RX packet on kBulkOutEp and verify the retained RX buffer is immediately used.
-  auto rx_completed = std::make_shared<libsync::Completion>();
-  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
-    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, kRxPacketSize);
   });
   ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
@@ -1185,6 +1221,11 @@ TEST_F(UsbCdcTest, QueueRxSpaceBeforeStartOrAfterStopReturnsImmediately) {
   ASSERT_OK(prepare_result.status());
   ASSERT_OK(prepare_result->s);
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
+  driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
+  });
+
   // 1. Before NetworkDeviceImpl::Start(), QueueRxSpace must immediately complete with length 0.
   fnetdev::wire::RxSpaceBuffer rx_buffer1 = {
       .id = kRxBufferId1,
@@ -1194,7 +1235,7 @@ TEST_F(UsbCdcTest, QueueRxSpaceBeforeStartOrAfterStopReturnsImmediately) {
                 ->QueueRxSpace(
                     fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer1, 1))
                 .status());
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
 
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
@@ -1203,6 +1244,8 @@ TEST_F(UsbCdcTest, QueueRxSpaceBeforeStartOrAfterStopReturnsImmediately) {
     EXPECT_EQ(rx->data()[0].id(), kRxBufferId1);
     EXPECT_EQ(rx->data()[0].length(), 0u);
   });
+
+  rx_completed->Reset();
 
   // 2. Start and then Stop NetworkDeviceImpl; QueueRxSpace after Stop() must also complete
   // immediately with length 0.
@@ -1218,7 +1261,7 @@ TEST_F(UsbCdcTest, QueueRxSpaceBeforeStartOrAfterStopReturnsImmediately) {
                 ->QueueRxSpace(
                     fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer2, 1))
                 .status());
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+  ASSERT_OK(rx_completed->Wait(zx::deadline_after(zx::sec(5))));
 
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
@@ -1468,6 +1511,7 @@ TEST_F(UsbCdcTest, Inspect) {
   ASSERT_OK(net_impl_client_.buffer(arena)
                 ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&tx_buffer, 1))
                 .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, kTxDataSize);
@@ -1488,6 +1532,7 @@ TEST_F(UsbCdcTest, Inspect) {
       net_impl_client_.buffer(arena)
           ->QueueRxSpace(fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_space, 1))
           .status());
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, kRxDataSize);
@@ -1733,31 +1778,36 @@ TEST_F(UsbCdcTest, RxCompletionHardwareDisconnected) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
   // Trigger an RX completion with ZX_ERR_IO_NOT_PRESENT on the Bulk Out endpoint.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_IO_NOT_PRESENT, 1024);
   });
 
   // The driver should immediately return the request to its private pool and NOT re-queue it.
-  // Therefore, the pending request count on the mock endpoint should remain (kRxDepth - 1).
+  // Therefore, the in-flight count on the driver and pending request count on the mock endpoint
+  // should remain (kRxDepth - 1).
   ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
       [&]() {
+        size_t in_flight = 0;
         size_t pending = 0;
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+          in_flight = UsbCdcTestHelper::GetBulkOutInFlightCount(driver);
+        });
         driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
           pending = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).pending_request_count();
         });
-        return pending == UsbCdcFunction::kRxDepth - 1;
+        return in_flight == UsbCdcFunction::kRxDepth - 1 && pending == UsbCdcFunction::kRxDepth - 1;
       },
       zx::sec(5)));
-
-  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   // Verify no packets were delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
     EXPECT_FALSE(rx.has_value());
   });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 }
 
 // Validates that cancelled RX requests (ZX_ERR_CANCELED) during teardown return to the pool without
@@ -1766,31 +1816,36 @@ TEST_F(UsbCdcTest, RxCompletionCanceled) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
   // Trigger an RX completion with ZX_ERR_CANCELED on the Bulk Out endpoint.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_CANCELED, 1024);
   });
 
   // The driver should immediately return the request to its private pool and NOT re-queue it.
-  // Therefore, the pending request count on the mock endpoint should remain (kRxDepth - 1).
+  // Therefore, the in-flight count on the driver and pending request count on the mock endpoint
+  // should remain (kRxDepth - 1).
   ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
       [&]() {
+        size_t in_flight = 0;
         size_t pending = 0;
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+          in_flight = UsbCdcTestHelper::GetBulkOutInFlightCount(driver);
+        });
         driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
           pending = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).pending_request_count();
         });
-        return pending == UsbCdcFunction::kRxDepth - 1;
+        return in_flight == UsbCdcFunction::kRxDepth - 1 && pending == UsbCdcFunction::kRxDepth - 1;
       },
       zx::sec(5)));
-
-  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   // Verify no packets were delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
     EXPECT_FALSE(rx.has_value());
   });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 }
 
 // Validates that RX completions arriving while the driver is transitioning to offline are safely
@@ -1853,32 +1908,37 @@ TEST_F(UsbCdcTest, RxDiscardedWhenOffline) {
       },
       zx::sec(5)));
 
+  auto rx_completed = std::make_shared<libsync::Completion>();
   // 4. Trigger a successful RX completion (ZX_OK) on the Bulk Out endpoint
   // while the interface is offline and cancellation is in progress.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_ifc_.set_on_complete_rx([rx_completed]() { rx_completed->Signal(); });
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_OK, 123);
   });
 
   // The driver should immediately return the request to its private pool and NOT re-queue it.
-  // Therefore, the pending request count on the mock endpoint should remain (kRxDepth - 1).
+  // Therefore, the in-flight count on the driver and pending request count on the mock endpoint
+  // should remain (kRxDepth - 1).
   ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
       [&]() {
+        size_t in_flight = 0;
         size_t pending = 0;
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+          in_flight = UsbCdcTestHelper::GetBulkOutInFlightCount(driver);
+        });
         driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
           pending = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).pending_request_count();
         });
-        return pending == UsbCdcFunction::kRxDepth - 1;
+        return in_flight == UsbCdcFunction::kRxDepth - 1 && pending == UsbCdcFunction::kRxDepth - 1;
       },
       zx::sec(5)));
-
-  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
-  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   // Verify that the packet was NOT delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
     EXPECT_FALSE(rx.has_value());
   });
+  EXPECT_STATUS(rx_completed->Wait(zx::time::infinite_past()), ZX_ERR_TIMED_OUT);
 
   // 5. Release the hold on cancellation so the SetInterface teardown can complete.
   cleanup_hold.call();
@@ -2079,6 +2139,15 @@ TEST_F(UsbCdcTest, SetInterfaceAltSettingOneReconfiguresSafelyWhilePending) {
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_IO, 0);
   });
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t in_flight = 0;
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) {
+          in_flight = UsbCdcTestHelper::GetBulkOutInFlightCount(driver);
+        });
+        return in_flight == UsbCdcFunction::kRxDepth - 1;
+      },
+      zx::sec(5)));
 
   // 6. Release the hold on cancellation so the barrier passes and reconfiguration completes.
   cleanup_hold.call();
