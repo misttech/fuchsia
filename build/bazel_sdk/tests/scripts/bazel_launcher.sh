@@ -156,6 +156,16 @@ if [[ -n "${_OUTPUT_USER_ROOT}" ]]; then
 fi
 _BAZEL_STARTUP_ARGS+=("--output_base=${_OUTPUT_BASE}")
 
+# Generate ephemeral invocation configuration (metadata, proxies, auth).
+readonly _INVOCATION_BAZELRC="$(mktemp "${_OUTPUT_BASE}/invocation.bazelrc.XXXXXX")"
+trap 'rm -f "${_INVOCATION_BAZELRC}"' EXIT
+
+"${_PYTHON_PREBUILT_DIR}/bin/python3" -S \
+  "${_FUCHSIA_SOURCE_DIR}/build/bazel/scripts/generate_invocation_bazelrc.py" \
+  > "${_INVOCATION_BAZELRC}"
+
+_BAZEL_STARTUP_ARGS+=("--bazelrc=${_INVOCATION_BAZELRC}")
+
 if [[ "${_BAZEL_COMMAND}" == "vendor" ]]; then
   _DOWNLOADER_ARG="--downloader_config=/dev/null"
   _REGISTRY_ARG="--registry=https://bcr.bazel.build/"
@@ -190,26 +200,6 @@ function _has_config() {
   return 1
 }
 
-# Detect when to use remote service endpoint overrides from infra.
-# TODO(https://fxbug.dev/450234102): Deprecate legacy BAZEL_*_socket_path after recipes migrate to main_build.py.
-# LINT.IfChange(bazel_socket_env_vars)
-_RESULTSTORE_SOCKET="${FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH:-${BAZEL_resultstore_socket_path:-}}"
-if { _has_config "resultstore" || _has_config "resultstore_infra"; } && [[ -n "${_RESULTSTORE_SOCKET}" ]]; then
-  _BAZEL_CONFIG_ARGS+=("--bes_proxy=unix://${_RESULTSTORE_SOCKET}")
-fi
-_RBE_SOCKET="${FX_INTERNAL_BAZEL_RBE_SOCKET_PATH:-${BAZEL_rbe_socket_path:-}}"
-if { _has_config "remote" || _has_config "remote_cache_only"; } && [[ -n "${_RBE_SOCKET}" ]]; then
-  _BAZEL_CONFIG_ARGS+=("--remote_proxy=unix://${_RBE_SOCKET}")
-fi
-# LINT.ThenChange(//build/scripts/main_build.py:bazel_socket_env_vars)
-
-_SIBLINGS_LINK_TEMPLATE=""
-for _arg in "${_ALL_CONFIG_ARGS[@]}"; do
-  if [[ "${_arg}" == *"resultstore"* ]]; then
-    _SIBLINGS_LINK_TEMPLATE="http://go/fxbtx/"
-  fi
-done
-
 _JOBS=""
 if _has_config "remote"; then
   _CPUS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "")"
@@ -229,33 +219,12 @@ if [[ -n "${FUCHSIA_BAZEL_JOB_COUNT:-}" ]]; then
   _JOBS="${FUCHSIA_BAZEL_JOB_COUNT}"
 fi
 
-_IS_REMOTE_BUILD=
-for _arg in "${_ALL_CONFIG_ARGS[@]}"; do
-  if [[ "${_arg}" == --config=remote* ]]; then
-    _IS_REMOTE_BUILD=true
-    break
-  fi
-done
-if [[ -n "${_IS_REMOTE_BUILD}" && ( "${FX_BUILD_RBE_AUTH_TYPE:-}" == "loas" || "${FX_BUILD_RS_AUTH_TYPE:-}" == "loas" ) ]]; then
-  _BAZEL_CONFIG_ARGS+=(--config=gcertauth)
+# In Corp environments with valid gcert credentials, use the credential helper
+# to automatically exchange LOAS for OAuth (Google Cloud Platform) tokens.
+# Note: --config=gcertauth is generated into _INVOCATION_BAZELRC when
+# FX_BUILD_RBE_AUTH_TYPE or FX_BUILD_RS_AUTH_TYPE is "loas".
+if [[ "${FX_BUILD_RBE_AUTH_TYPE:-}" == "loas" || "${FX_BUILD_RS_AUTH_TYPE:-}" == "loas" ]]; then
   unset GOOGLE_APPLICATION_CREDENTIALS
-fi
-
-if [[ -n "${BUILDBUCKET_ID:-}" ]]; then
-  _BAZEL_CONFIG_ARGS+=("--build_metadata=BUILDBUCKET_ID=${BUILDBUCKET_ID}")
-  _BAZEL_CONFIG_ARGS+=("--build_metadata=SIBLING_BUILDS_LINK=${_SIBLINGS_LINK_TEMPLATE}?q=BUILDBUCKET_ID:${BUILDBUCKET_ID}")
-  if [[ "${BUILDBUCKET_ID}" == *"/led/"* ]]; then
-    _BAZEL_CONFIG_ARGS+=("--build_metadata=PARENT_BUILD_LINK=go/lucibuild/${BUILDBUCKET_ID}/+/build.proto")
-  else
-    _BAZEL_CONFIG_ARGS+=("--build_metadata=PARENT_BUILD_LINK=go/bbid/${BUILDBUCKET_ID}")
-  fi
-fi
-if [[ -n "${BUILDBUCKET_BUILDER:-}" ]]; then
-  _BAZEL_CONFIG_ARGS+=("--build_metadata=BUILDBUCKET_BUILDER=${BUILDBUCKET_BUILDER}")
-fi
-if [[ -n "${FX_BUILD_UUID:-}" ]]; then
-  _BAZEL_CONFIG_ARGS+=("--build_metadata=FX_BUILD_UUID=${FX_BUILD_UUID}")
-  _BAZEL_CONFIG_ARGS+=("--build_metadata=SIBLING_BUILDS_LINK=${_SIBLINGS_LINK_TEMPLATE}?q=FX_BUILD_UUID:${FX_BUILD_UUID}")
 fi
 
 if [[ -n "${_JOBS}" ]]; then
@@ -301,4 +270,6 @@ if [[ "${FUCHSIA_BAZEL_PRINT_COMMANDS:-}" == "1" ]]; then
   echo >&2 "RUN_COMMAND: (cd ${_WORKSPACE_DIR@Q} && ${_FINAL_CMD[*]@Q})"
 fi
 
-cd "${_WORKSPACE_DIR}" && exec "${_FINAL_CMD[@]}"
+# Do not 'exec' here so that the shell process remains alive until the command
+# exits, ensuring that the EXIT trap triggers to clean up _INVOCATION_BAZELRC.
+cd "${_WORKSPACE_DIR}" && "${_FINAL_CMD[@]}"

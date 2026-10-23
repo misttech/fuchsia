@@ -285,16 +285,9 @@ done
 
 # In Corp environments with valid gcert credentials, use the credential helper
 # to automatically exchange LOAS for OAuth (Google Cloud Platform) tokens.
-# This requires less interaction from the user than 'gcloud auth ...'.
-#
-# Note: --config=gcertauth is only appended when FX_BUILD_RBE_AUTH_TYPE or
-# FX_BUILD_RS_AUTH_TYPE is "loas". When running on GCE bots or other machine-based environments
-# where neither is "loas", --config=gcertauth is omitted,
-# and Bazel automatically falls back to using GCE VM Metadata Server credentials
-# (via --google_default_credentials=true defined in remote_services.bazelrc).
-use_gcert_auth=()
+# Note: --config=gcertauth is generated into _INVOCATION_BAZELRC when
+# FX_BUILD_RBE_AUTH_TYPE or FX_BUILD_RS_AUTH_TYPE is "loas".
 if [[ "${FX_BUILD_RBE_AUTH_TYPE:-}" == "loas" || "${FX_BUILD_RS_AUTH_TYPE:-}" == "loas" ]]; then
-  use_gcert_auth=(--config=gcertauth)
   # Don't set this, otherwise bazel will look for it
   # (and fail if it doesn't exist).
   unset GOOGLE_APPLICATION_CREDENTIALS
@@ -366,7 +359,6 @@ fi
 # caution.
 [[ -n "${bazel_command_does_configuration}" ]] &&
   _BAZEL_EXTRA_ARGS+=(
-    "${use_gcert_auth[@]}"
     --config=_profiling
   )
 
