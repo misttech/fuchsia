@@ -5,18 +5,27 @@
 package resultdb
 
 import (
+	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
 var testDataDir = flag.String("test_data_dir", "testdata", "Path to testdata/; only used in GN build")
@@ -39,17 +48,12 @@ func TestGetLUCICtx(t *testing.T) {
 
 func TestParse2Summary(t *testing.T) {
 	t.Parallel()
-	const chunkSize = 5
-	var requests []*sinkpb.ReportTestResultsRequest
-	expectRequests := 0
 	for _, name := range []string{"summary.json", "summary2.json"} {
-		summary, err := ParseSummary(filepath.Join(*testDataDir, name))
+		summary, err := ParseSummaryTests(filepath.Join(*testDataDir, name))
 		if err != nil {
 			t.Fatal(err)
 		}
 		testResults, _, skipped := SummaryToResultSink(summary, []*resultpb.StringPair{}, name)
-		expectRequests += (len(testResults)-1)/chunkSize + 1
-		requests = append(requests, createTestResultsRequests(testResults, chunkSize)...)
 		for _, testResult := range testResults {
 			if len(testResult.TestId) == 0 {
 				t.Errorf("Empty testId is not allowed.")
@@ -59,13 +63,10 @@ func TestParse2Summary(t *testing.T) {
 			t.Errorf("Tests got skipped %v, expect no skip", skipped)
 		}
 	}
-	if len(requests) != expectRequests {
-		t.Errorf("Incorrect number of request chuncks, got: %d want %d", len(requests), expectRequests)
-	}
 }
 
 func TestFailWithLongTestName(t *testing.T) {
-	summary, err := ParseSummary(filepath.Join(*testDataDir, "summary_long_name.json"))
+	summary, err := ParseSummaryTests(filepath.Join(*testDataDir, "summary_long_name.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,12 +84,12 @@ func TestFailWithLongTestName(t *testing.T) {
 
 func TestParseExoneratedSummary(t *testing.T) {
 	// 1. Load and map the custom summary containing exonerations
-	summary, err := ParseSummary(filepath.Join(*testDataDir, "summary_exonerated.json"))
+	summary, err := ParseSummaryTests(filepath.Join(*testDataDir, "summary_exonerated.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Assert total count of target items in summary returned by ParseSummary
+	// Assert total count of target items in summary returned by ParseSummaryTests
 	if len(summary.Tests) != 5 {
 		t.Fatalf("Unexpected parsed tests count inside summary: got %d, want 5", len(summary.Tests))
 	}
@@ -238,5 +239,192 @@ func TestSendDataError(t *testing.T) {
 
 	if err := client.SendData(`{}`, "ReportTestResults"); err == nil {
 		t.Errorf("expected error for HTTP 400, got nil")
+	}
+}
+
+func TestReportSummariesMatchesSummaryToResultSink(t *testing.T) {
+	summaries := []string{
+		filepath.Join(*testDataDir, "summary.json"),
+		filepath.Join(*testDataDir, "summary2.json"),
+		filepath.Join(*testDataDir, "summary_exonerated.json"),
+	}
+	tags := []*resultpb.StringPair{
+		{Key: "builder", Value: "core.x64-release"},
+	}
+
+	var wantResults []*sinkpb.TestResult
+	var wantExonerations []*sinkpb.TestExoneration
+	var wantSkipped []string
+	for _, summaryFile := range summaries {
+		summary, err := ParseSummaryTests(summaryFile)
+		if err != nil {
+			t.Fatalf("ParseSummaryTests(%s) failed: %s", summaryFile, err)
+		}
+		results, exonerations, skipped := SummaryToResultSink(summary, tags, *testDataDir)
+		wantResults = append(wantResults, results...)
+		wantExonerations = append(wantExonerations, exonerations...)
+		wantSkipped = append(wantSkipped, skipped...)
+	}
+
+	var mu sync.Mutex
+	var gotResults []*sinkpb.TestResult
+	var gotExonerations []*sinkpb.TestExoneration
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed reading request body: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/ReportTestResults"):
+			var req sinkpb.ReportTestResultsRequest
+			if err := protojson.Unmarshal(body, &req); err != nil {
+				t.Errorf("failed unmarshaling ReportTestResultsRequest: %s", err)
+			}
+			if len(req.TestResults) > MaxBatchSize {
+				t.Errorf("batch size %d exceeds MaxBatchSize %d", len(req.TestResults), MaxBatchSize)
+			}
+			gotResults = append(gotResults, req.TestResults...)
+		case strings.HasSuffix(r.URL.Path, "/ReportTestExonerations"):
+			var req sinkpb.ReportTestExonerationsRequest
+			if err := protojson.Unmarshal(body, &req); err != nil {
+				t.Errorf("failed unmarshaling ReportTestExonerationsRequest: %s", err)
+			}
+			if len(req.TestExonerations) > MaxBatchSize {
+				t.Errorf("batch size %d exceeds MaxBatchSize %d", len(req.TestExonerations), MaxBatchSize)
+			}
+			gotExonerations = append(gotExonerations, req.TestExonerations...)
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		resultSink: &resultSink{
+			AuthToken:      "token",
+			ResultSinkAddr: strings.TrimPrefix(srv.URL, "http://"),
+		},
+		httpClient: srv.Client(),
+		semaphore:  make(chan struct{}, 64),
+	}
+	for i := 0; i < cap(client.semaphore); i++ {
+		client.semaphore <- struct{}{}
+	}
+
+	gotSkipped, err := client.ReportSummaries(summaries, tags, *testDataDir)
+	if err != nil {
+		t.Fatalf("ReportSummaries failed: %s", err)
+	}
+
+	if diff := cmp.Diff(wantSkipped, gotSkipped); diff != "" {
+		t.Errorf("skipped tests differ (-want +got):\n%s", diff)
+	}
+	sortTags := protocmp.SortRepeatedFields(&sinkpb.TestResult{}, "tags")
+	if diff := cmp.Diff(wantResults, gotResults, protocmp.Transform(), sortTags); diff != "" {
+		t.Errorf("reported results differ (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantExonerations, gotExonerations, protocmp.Transform()); diff != "" {
+		t.Errorf("reported exonerations differ (-want +got):\n%s", diff)
+	}
+}
+
+func TestReportSummariesBatching(t *testing.T) {
+	// Generate a summary with > 2*MaxBatchSize results and exonerations to
+	// exercise multi-batch flushing and final tail flushing.
+	const caseCount = MaxBatchSize*2 + 10
+	cases := make([]runtests.TestCaseResult, caseCount)
+	for i := range cases {
+		cases[i] = runtests.TestCaseResult{
+			DisplayName: fmt.Sprintf("suite/case_%d", i),
+			SuiteName:   "suite",
+			CaseName:    fmt.Sprintf("case_%d", i),
+			Status:      runtests.TestExonerated,
+			Format:      "Rust",
+		}
+	}
+	summary := runtests.TestSummary{
+		Outputs: map[string]string{"syslog.txt": "syslog.txt"},
+		Tests: []runtests.TestDetails{
+			{
+				Name:        "host_x64/multiplied_test",
+				SourceLabel: "//src/foo:multiplied_test",
+				Status:      runtests.TestFailure,
+				StartTime:   time.Unix(1700000000, 0),
+				TestResult:  runtests.TestResult{Cases: cases},
+			},
+		},
+	}
+	summaryBytes, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("failed marshaling summary: %s", err)
+	}
+	summaryPath := filepath.Join(t.TempDir(), "summary.json")
+	if err := os.WriteFile(summaryPath, summaryBytes, 0o600); err != nil {
+		t.Fatalf("failed writing summary: %s", err)
+	}
+
+	var resultBatchSizes []int
+	var exonerationBatchSizes []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed reading body: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/ReportTestResults"):
+			var req sinkpb.ReportTestResultsRequest
+			if err := protojson.Unmarshal(body, &req); err != nil {
+				t.Errorf("failed unmarshaling ReportTestResultsRequest: %s", err)
+			}
+			resultBatchSizes = append(resultBatchSizes, len(req.TestResults))
+		case strings.HasSuffix(r.URL.Path, "/ReportTestExonerations"):
+			var req sinkpb.ReportTestExonerationsRequest
+			if err := protojson.Unmarshal(body, &req); err != nil {
+				t.Errorf("failed unmarshaling ReportTestExonerationsRequest: %s", err)
+			}
+			exonerationBatchSizes = append(exonerationBatchSizes, len(req.TestExonerations))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		resultSink: &resultSink{
+			AuthToken:      "token",
+			ResultSinkAddr: strings.TrimPrefix(srv.URL, "http://"),
+		},
+		httpClient: srv.Client(),
+		semaphore:  make(chan struct{}, 64),
+	}
+	for i := 0; i < cap(client.semaphore); i++ {
+		client.semaphore <- struct{}{}
+	}
+
+	skipped, err := client.ReportSummaries([]string{summaryPath}, nil, t.TempDir())
+	if err != nil {
+		t.Fatalf("ReportSummaries failed: %s", err)
+	}
+	if len(skipped) != 0 {
+		t.Errorf("got skipped %v, want empty", skipped)
+	}
+
+	// caseCount cases + 1 top-level test result.
+	wantResultBatches := []int{MaxBatchSize, MaxBatchSize, 11}
+	if diff := cmp.Diff(wantResultBatches, resultBatchSizes); diff != "" {
+		t.Errorf("result batch sizes differ (-want +got):\n%s", diff)
+	}
+	// caseCount exonerated cases (top-level test has Status=TestFailure, not TestExonerated).
+	wantExonerationBatches := []int{MaxBatchSize, MaxBatchSize, 10}
+	if diff := cmp.Diff(wantExonerationBatches, exonerationBatchSizes); diff != "" {
+		t.Errorf("exoneration batch sizes differ (-want +got):\n%s", diff)
 	}
 }

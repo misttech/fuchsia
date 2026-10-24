@@ -9,11 +9,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
+	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
 // luciContext corresponds to the schema of the file identified by the
@@ -45,28 +49,75 @@ type resultDBInvocation struct {
 	Name string `json:"name"`
 }
 
-// TODO(b/527958872): Remove legacy report helpers once all test results are uploaded
-// via -post mode / SendData directly:
-//   - ReportTestResults
-//   - ReportTestExonerations
-//   - report
-func report[T proto.Message](c *Client, requests []T, endpoint string) error {
-	for _, req := range requests {
-		data := protojson.Format(req)
-		err := c.SendData(data, endpoint)
-		if err != nil {
-			return err
+func (c *Client) sendMessage(req proto.Message, endpoint string) error {
+	data, err := protojson.Marshal(req)
+	if err != nil {
+		return err
+	}
+	return c.SendData(string(data), endpoint)
+}
+
+// ReportSummaries parses each summary.json file and streams test results and
+// exonerations to ResultSink in batches of MaxBatchSize. Streaming per test
+// entry avoids holding all converted TestResult protobufs and unmarshaled
+// TestCaseResult slices in memory at once for large multiplied test runs.
+func (c *Client) ReportSummaries(summaries []string, tags []*resultpb.StringPair, outputRoot string) ([]string, error) {
+	if len(outputRoot) == 0 {
+		outputRoot, _ = os.Getwd()
+	}
+	rootPath, _ := filepath.Abs(outputRoot)
+
+	var pendingResults []*sinkpb.TestResult
+	var pendingExonerations []*sinkpb.TestExoneration
+	var allTestsSkipped []string
+
+	flushResults := func(batch []*sinkpb.TestResult) error {
+		return c.sendMessage(&sinkpb.ReportTestResultsRequest{TestResults: batch}, "ReportTestResults")
+	}
+	flushExonerations := func(batch []*sinkpb.TestExoneration) error {
+		return c.sendMessage(&sinkpb.ReportTestExonerationsRequest{TestExonerations: batch}, "ReportTestExonerations")
+	}
+
+	for _, summaryFile := range summaries {
+		if err := forEachSummaryTest(summaryFile, func(test *runtests.TestDetails) error {
+			results, exonerations, skipped := testToResultSink(test, tags, rootPath)
+			allTestsSkipped = append(allTestsSkipped, skipped...)
+
+			pendingResults = append(pendingResults, results...)
+			for len(pendingResults) >= MaxBatchSize {
+				if err := flushResults(pendingResults[:MaxBatchSize:MaxBatchSize]); err != nil {
+					return err
+				}
+				clear(pendingResults[:MaxBatchSize])
+				pendingResults = pendingResults[MaxBatchSize:]
+			}
+
+			pendingExonerations = append(pendingExonerations, exonerations...)
+			for len(pendingExonerations) >= MaxBatchSize {
+				if err := flushExonerations(pendingExonerations[:MaxBatchSize:MaxBatchSize]); err != nil {
+					return err
+				}
+				clear(pendingExonerations[:MaxBatchSize])
+				pendingExonerations = pendingExonerations[MaxBatchSize:]
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 	}
-	return nil
-}
 
-func (c *Client) ReportTestResults(requests []*sinkpb.ReportTestResultsRequest) error {
-	return report(c, requests, "ReportTestResults")
-}
+	if len(pendingResults) > 0 {
+		if err := flushResults(pendingResults); err != nil {
+			return nil, err
+		}
+	}
+	if len(pendingExonerations) > 0 {
+		if err := flushExonerations(pendingExonerations); err != nil {
+			return nil, err
+		}
+	}
 
-func (c *Client) ReportTestExonerations(requests []*sinkpb.ReportTestExonerationsRequest) error {
-	return report(c, requests, "ReportTestExonerations")
+	return allTestsSkipped, nil
 }
 
 func (c *Client) ReportInvocationLevelArtifacts(outputRoot string, invocationArtifacts []string) error {
@@ -74,8 +125,7 @@ func (c *Client) ReportInvocationLevelArtifacts(outputRoot string, invocationArt
 		Artifacts: InvocationLevelArtifacts(outputRoot, invocationArtifacts),
 	}
 
-	testResult := protojson.Format(invocationRequest)
-	return c.SendData(testResult, "ReportInvocationLevelArtifacts")
+	return c.sendMessage(invocationRequest, "ReportInvocationLevelArtifacts")
 }
 
 // SendData sends raw json payload to the specified endpoint on ResultSink.

@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
-	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
 	"go.fuchsia.dev/fuchsia/tools/testing/resultdb"
@@ -133,16 +132,7 @@ func readRealmFromLUCIContext() (string, error) {
 }
 
 func runParent() error {
-	var requests []*sinkpb.ReportTestResultsRequest
-	var exonerationRequests []*sinkpb.ReportTestExonerationsRequest
-	var allTestsSkipped []string
-
 	tagPairs, err := convertTags(tags)
-	if err != nil {
-		return err
-	}
-
-	requests, exonerationRequests, allTestsSkipped, err = resultdb.ProcessSummaries(summaries, tagPairs, outputRoot)
 	if err != nil {
 		return err
 	}
@@ -152,11 +142,8 @@ func runParent() error {
 		return err
 	}
 
-	if err = client.ReportTestResults(requests); err != nil {
-		return err
-	}
-
-	if err = client.ReportTestExonerations(exonerationRequests); err != nil {
+	allTestsSkipped, err := client.ReportSummaries(summaries, tagPairs, outputRoot)
+	if err != nil {
 		return err
 	}
 

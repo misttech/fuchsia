@@ -42,7 +42,6 @@ go_library(
     deps = [
         ":lib",
         "//third_party/luci-go/resultdb/proto/v1:resultdb_proto_go",
-        "//third_party/luci-go/resultdb/sink/proto/v1:resultsink_proto_go",
         "//tools/lib/flagmisc",
     ],
 )
