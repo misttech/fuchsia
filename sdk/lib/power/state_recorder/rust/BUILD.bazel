@@ -1,0 +1,99 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "rust",
+    srcs = ["src/lib.rs"],
+    crate_name = "state_recorder",
+    edition = "2024",
+    visibility = [
+        "//examples/power/state_recorder/rust:__pkg__",
+        "//src/connectivity/wlan/wlanix:__pkg__",
+        "//src/power/battery-manager:__pkg__",
+        "//src/power/bench/inspect/state_recorder:__pkg__",
+        "//src/power/cpu-manager:__pkg__",
+        "//src/power/power-manager:__pkg__",
+        "//src/power/system-activity-governor:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/trace/rust:trace",
+        "//third_party/rust_crates/vendor:futures-util",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:strum",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "state_recorder_lib_test",
+    crate = ":rust",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:strum_macros",
+    ],
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# TODO(https://fxrev.dev/1913272): Use //src/sys/test_runners:tmp_storage
+# expect_includes and fx_unittest_package once fxr/1913272 lands.
+fx_packaged_binary(
+    name = "rust_test_packaged_bin",
+    testonly = True,
+    binary = ":state_recorder_lib_test",
+    binary_name = "state_recorder_lib_test",
+)
+
+fx_component_manifest(
+    name = "power_state_recorder_rust_unittests-manifest",
+    testonly = True,
+    component_name = "power_state_recorder_rust_unittests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/power_state_recorder_rust_unittests.cml",
+)
+
+fx_test_component(
+    name = "power_state_recorder_rust_unittests-component",
+    compiled_manifest = ":power_state_recorder_rust_unittests-manifest",
+    component_name = "power_state_recorder_rust_unittests",
+    deps = [":rust_test_packaged_bin"],
+)
+
+fx_package(
+    name = "power_state_recorder_rust_unittests-package",
+    package_name = "power_state_recorder_rust_unittests",
+    test_components = [":power_state_recorder_rust_unittests-component"],
+)
+
+fx_test(
+    name = "power_state_recorder_rust_unittests",
+    package = ":power_state_recorder_rust_unittests-package",
+    visibility = ["//sdk/lib:__pkg__"],
+)
