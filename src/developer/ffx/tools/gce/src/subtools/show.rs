@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::args::ShowCommand;
-use async_trait::async_trait;
 use discovery::gce_watcher;
 use ffx_config::EnvironmentContext;
 use ffx_gce::GceContext;
@@ -63,7 +62,6 @@ pub struct ShowTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = MachineWriter<InstanceDetails>;
     type Error = fho::Error;

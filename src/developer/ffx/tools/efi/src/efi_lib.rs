@@ -4,7 +4,6 @@
 
 use crate::args::{EfiCommand, EfiSubCommand};
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use errors::ffx_bail;
 use sdk_metadata::CpuArchitecture;
 use std::cmp::max;
@@ -21,7 +20,6 @@ pub struct Efi {
     cmd: EfiCommand,
 }
 
-#[async_trait(?Send)]
 impl fho::FfxMain for Efi {
     type Writer = ffx_writer::SimpleWriter;
 

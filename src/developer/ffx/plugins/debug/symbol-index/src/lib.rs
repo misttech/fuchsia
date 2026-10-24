@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use errors::ffx_bail;
 use ffx_debug_symbol_index_args::*;
 use ffx_writer::VerifiedMachineWriter;
@@ -18,7 +17,6 @@ struct SymbolIndexPath {
     inner: String,
 }
 
-#[async_trait(?Send)]
 impl fho::TryFromEnv for SymbolIndexPath {
     type Error = fho::Error;
     async fn try_from_env(env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -52,7 +50,6 @@ impl CommandStatus {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for SymbolIndexTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

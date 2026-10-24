@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use errors::ffx_bail;
 use fdomain_fuchsia_recovery::FactoryResetProxy;
 use ffx_wipe_args::WipeCommand;
@@ -22,13 +21,12 @@ pub struct WipeTool {
 
 fho::embedded_plugin!(WipeTool);
 
-#[async_trait(?Send)]
 impl FfxMain for WipeTool {
     type Writer = MachineWriter<()>;
 
     type Error = ::fho::Error;
 
-    async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         if !self.cmd.force {
             writeln!(
                 writer,

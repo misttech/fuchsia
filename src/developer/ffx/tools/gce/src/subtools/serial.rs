@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::args::SerialCommand;
-use async_trait::async_trait;
 use discovery::gce_watcher;
 use ffx_config::EnvironmentContext;
 use ffx_gce::GceContext;
@@ -21,7 +20,6 @@ pub struct SerialTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for SerialTool {
     type Writer = SimpleWriter;
     type Error = fho::Error;

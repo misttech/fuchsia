@@ -47,7 +47,6 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-fs",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:crossterm",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:unicode-width",

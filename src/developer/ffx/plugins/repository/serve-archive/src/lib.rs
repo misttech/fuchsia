@@ -8,7 +8,6 @@ use fuchsia as _;
 use serde_json as _;
 
 use anyhow::Context as _;
-use async_trait::async_trait;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 use ffx_repository_serve_archive_args::ServeArchiveCommand;
@@ -19,26 +18,25 @@ use ffx_repository_server_start_args::{
 use ffx_writer::VerifiedMachineWriter;
 use fho::{AvailabilityFlag, Deferred, FfxMain, FfxTool, Result};
 use package_tool::{RepoCreateCommand, RepoPublishCommand, cmd_repo_create, cmd_repo_publish};
+use std::future::Future;
 use std::marker::PhantomData;
 use target_connector::Connector;
 use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder};
 use tempfile::TempDir;
 
-#[async_trait(?Send)]
 pub trait ServeArchiveTools {
-    async fn serve_archive(
+    fn serve_archive(
         cmd: ServeArchiveCommand,
         context: EnvironmentContext,
         target_spec: Deferred<TargetInfoQueryHolder>,
         rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
         host_address: Deferred<HostAddrHolder>,
         writer: VerifiedMachineWriter<CommandStatus>,
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>>;
 }
 
 pub struct DefaultServeArchiveTools {}
 
-#[async_trait(?Send)]
 impl ServeArchiveTools for DefaultServeArchiveTools {
     async fn serve_archive(
         cmd: ServeArchiveCommand,
@@ -140,7 +138,6 @@ pub struct ServeArchiveTool<T: ServeArchiveTools> {
 
 fho::embedded_plugin!(ServeArchiveTool<DefaultServeArchiveTools>);
 
-#[async_trait(?Send)]
 impl<T: ServeArchiveTools> FfxMain for ServeArchiveTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

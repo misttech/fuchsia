@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use discovery::{TargetHandle, TargetState};
 use errors::ffx_bail;
@@ -288,7 +287,6 @@ pub enum FlashError {
     Fho(#[from] fho::Error),
 }
 
-#[async_trait(?Send)]
 impl FfxMain for FlashTool {
     type Writer = VerifiedMachineWriter<FlashMessage>;
     type Error = FlashError;

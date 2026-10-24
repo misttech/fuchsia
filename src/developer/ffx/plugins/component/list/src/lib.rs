@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug_fdomain::cli::{list_cmd_print, list_cmd_serialized};
 use component_debug_fdomain::realm::Instance;
 use errors::ffx_error;
@@ -29,7 +28,6 @@ pub struct ListOutput {
     instances: Vec<Instance>,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<ListOutput>;
 

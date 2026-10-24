@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug_fdomain::cli::explore_cmd;
 use errors::ffx_error;
 use fdomain_fuchsia_dash::LauncherProxy;
@@ -25,7 +24,6 @@ pub struct ExploreTool {
 fho::embedded_plugin!(ExploreTool);
 
 // TODO(b/296310353): This plugin needs E2E tests.
-#[async_trait(?Send)]
 impl FfxMain for ExploreTool {
     // We use `MachineWriter<()>` to allow the `--machine` flag, which enables
     // JSON-formatted error output from the FFX framework. We do not produce

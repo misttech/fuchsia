@@ -18,7 +18,6 @@ ffx_plugin("ffx_bluetooth_pairable") {
     "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common",
     "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
 
   test_deps = []

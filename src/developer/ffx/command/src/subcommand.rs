@@ -174,7 +174,6 @@ impl ExternalSubToolSuite {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl ToolSuite for ExternalSubToolSuite {
     fn from_env(env: &EnvironmentContext) -> Result<Self> {
         let subtool_manifest: PathBuf =

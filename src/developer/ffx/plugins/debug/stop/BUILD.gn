@@ -16,7 +16,6 @@ ffx_plugin("ffx_debug_stop") {
     "//sdk/fidl/fuchsia.debugger:fuchsia.debugger_rust",
     "//sdk/rust/zx-status",
     "//src/developer/ffx/lib/fho:lib",
-    "//third_party/rust_crates:async-trait",
   ]
 
   data_deps = [ "//src/developer/debug/zxdb" ]

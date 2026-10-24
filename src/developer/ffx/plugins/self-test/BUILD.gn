@@ -37,7 +37,6 @@ ffx_plugin("ffx_selftest") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:termion",
   ]

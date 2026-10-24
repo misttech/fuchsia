@@ -4,7 +4,6 @@
 
 use ::gcs::client::Client;
 use anyhow::Context;
-use async_trait::async_trait;
 use chrono::{Datelike, Local, Timelike};
 use fdomain_client::fidl::Proxy as _;
 use fdomain_fuchsia_feedback::{
@@ -56,7 +55,6 @@ pub struct SnapshotTool {
 
 fho::embedded_plugin!(SnapshotTool);
 
-#[async_trait(?Send)]
 impl FfxMain for SnapshotTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

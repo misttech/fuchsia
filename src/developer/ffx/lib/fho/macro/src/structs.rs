@@ -29,7 +29,6 @@ impl ToTokens for StructDecl<'_> {
         let struct_name = &ast.ident;
         let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
         tokens.extend(quote! {
-            #[fho::macro_deps::async_trait(?Send)]
             impl #impl_generics fho::subtool::FfxTool<#err_ty> for #struct_name #ty_generics #where_clause
         })
     }

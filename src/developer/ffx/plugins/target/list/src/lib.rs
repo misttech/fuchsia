@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use analytics::add_custom_event;
-use async_trait::async_trait;
 
 use ffx_config::EnvironmentContext;
 use ffx_list_args::ListCommand;
@@ -93,7 +92,6 @@ pub struct ListTool {
 
 fho::embedded_plugin!(ListTool, ListError);
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Error = ListError;
 

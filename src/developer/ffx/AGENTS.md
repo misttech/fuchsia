@@ -50,7 +50,6 @@ Subtools use FHO (`FfxTool` and `FfxMain`) to declaratively inject environment c
 
 ```rust
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use fdomain_fuchsia_device::NameProviderProxy;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, Result};
@@ -108,7 +107,6 @@ impl std::fmt::Display for ExampleOutput {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ExampleTool {
     type Writer = VerifiedMachineWriter<ExampleOutput>;
 

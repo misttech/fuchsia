@@ -21,7 +21,6 @@ impl ToolSuiteCommand for UsbCommand {
 
 pub struct UsbSuite;
 
-#[async_trait::async_trait(?Send)]
 impl SubtoolSuite for UsbSuite {
     type Command = UsbCommand;
 

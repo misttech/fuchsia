@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_pkg::RepositoryManagerProxy;
 use fdomain_fuchsia_pkg_rewrite::EngineProxy;
 use fdomain_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
@@ -37,7 +36,6 @@ pub struct DeregisterTool {
 
 fho::embedded_plugin!(DeregisterTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DeregisterTool {
     type Writer = VerifiedMachineWriter<RepoDeregisterOutput>;
 

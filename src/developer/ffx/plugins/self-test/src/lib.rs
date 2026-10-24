@@ -27,7 +27,6 @@ pub struct SelfTestTool {
 
 fho::embedded_plugin!(SelfTestTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for SelfTestTool {
     type Writer = SimpleWriter;
 

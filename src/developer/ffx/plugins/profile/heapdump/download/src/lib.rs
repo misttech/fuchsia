@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use errors::ffx_error;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
@@ -27,7 +26,6 @@ pub struct DownloadTool {
 
 fho::embedded_plugin!(DownloadTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DownloadTool {
     type Writer = VerifiedMachineWriter<()>;
 

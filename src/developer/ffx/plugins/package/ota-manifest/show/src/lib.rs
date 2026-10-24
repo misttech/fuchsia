@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
-use async_trait::async_trait;
 use ffx_package_ota_manifest_show_args::ShowCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Error, FfxMain, FfxTool, Result};
@@ -108,7 +107,6 @@ pub struct ShowTool {
 
 fho::embedded_plugin!(ShowTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = MachineWriter<OtaManifestOutput>;
 

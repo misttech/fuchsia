@@ -16,7 +16,6 @@ ffx_plugin("ffx_gpu_usage") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
     "//src/lib/fdomain/local",

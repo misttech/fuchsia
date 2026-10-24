@@ -21,7 +21,6 @@ ffx_plugin("ffx_list") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]

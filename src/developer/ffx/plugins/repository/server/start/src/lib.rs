@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_config::logging::LogDirHandling;
 use ffx_repository_server_start_args::StartCommand;
@@ -121,7 +120,6 @@ pub struct ServerStartTool {
 
 fho::embedded_plugin!(ServerStartTool, RepoStartError);
 
-#[async_trait(?Send)]
 impl FfxMain for ServerStartTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = RepoStartError;

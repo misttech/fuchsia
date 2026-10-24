@@ -9,7 +9,6 @@
 use ::gcs::client::{Client, ProgressResponse, ProgressState};
 use anyhow::{Context, anyhow};
 use async_fs::rename;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_product::{CommandStatus, MachineOutput, MachineUi};
 use ffx_product_list::pb_list_impl;
@@ -31,7 +30,6 @@ pub struct PbDownloadTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for PbDownloadTool {
     type Writer = VerifiedMachineWriter<MachineOutput<()>>;
 

@@ -22,7 +22,6 @@ ffx_plugin("ffx_session_launch") {
     "//src/sys/lib/component_debug:component_debug_fdomain",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
     "//src/lib/fdomain/local",

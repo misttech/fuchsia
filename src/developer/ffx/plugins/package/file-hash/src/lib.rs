@@ -22,7 +22,6 @@ pub struct FileHashTool {
 
 fho::embedded_plugin!(FileHashTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FileHashTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
 

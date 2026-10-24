@@ -53,7 +53,6 @@ pub struct ProcessTool {
 
 fho::embedded_plugin!(ProcessTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ProcessTool {
     type Writer = Writer;
 

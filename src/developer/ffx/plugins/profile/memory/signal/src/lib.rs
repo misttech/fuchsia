@@ -5,7 +5,6 @@
 //! Implementation of the `signal` subcommand.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use errors::ffx_error;
 use fdomain_fuchsia_memory_debug::MemoryPressureProxy;
 use ffx_profile_memory_signal_args::SignalCommand;
@@ -23,7 +22,6 @@ pub struct MemorySignalTool {
 
 fho::embedded_plugin!(MemorySignalTool);
 
-#[async_trait(?Send)]
 impl FfxMain for MemorySignalTool {
     type Writer = SimpleWriter;
 

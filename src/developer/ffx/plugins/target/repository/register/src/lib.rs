@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_pkg::RepositoryManagerProxy;
 use fdomain_fuchsia_pkg_rewrite::EngineProxy;
 use ffx_config::EnvironmentContext;
@@ -56,7 +55,6 @@ pub struct RegisterTool {
 
 fho::embedded_plugin!(RegisterTool);
 
-#[async_trait(?Send)]
 impl FfxMain for RegisterTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

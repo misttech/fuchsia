@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{AudioProxy, AudioSettings2};
 use ffx_setui_audio_args::Audio;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct AudioTool {
 
 fho::embedded_plugin!(AudioTool);
 
-#[async_trait(?Send)]
 impl FfxMain for AudioTool {
     type Writer = SimpleWriter;
 

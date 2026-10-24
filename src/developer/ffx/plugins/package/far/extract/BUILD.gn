@@ -36,7 +36,6 @@ ffx_plugin("ffx_package_far_extract") {
   ]
   args_sources = [ "src/args.rs" ]
   edition = "2024"
-  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
   sdk_category = "not-yet-specified"
   version = "0.1.0"
   visibility = [
@@ -56,7 +55,6 @@ if (is_host) {
   rustc_test("ffx_package_far_extract_test") {
     sources = [ "src/lib.rs" ]
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     deps = [
              ":ffx_package_far_extract_args",
              "//src/developer/ffx/lib/fho:lib",

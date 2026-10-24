@@ -16,7 +16,6 @@ pub struct ArchiveExtractTool {
 
 fho::embedded_plugin!(ArchiveExtractTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveExtractTool {
     type Writer = VerifiedMachineWriter<()>;
 

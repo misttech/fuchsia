@@ -20,7 +20,6 @@ pub struct ArchiveListTool {
 
 fho::embedded_plugin!(ArchiveListTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveListTool {
     type Writer = MachineWriter<Vec<ArchiveEntry>>;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::Proxy as _;
 use fdomain_fuchsia_developer_console as fconsole;
 use ffx_target_shell_args::ShellCommand;
@@ -22,7 +21,6 @@ pub struct ShellTool {
 
 fho::embedded_plugin!(ShellTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ShellTool {
     type Writer = SimpleWriter;
 

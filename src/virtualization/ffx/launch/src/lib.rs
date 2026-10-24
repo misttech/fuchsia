@@ -16,7 +16,6 @@ pub struct GuestLaunchTool {
 
 fho::embedded_plugin!(GuestLaunchTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestLaunchTool {
     type Writer = MachineWriter<guest_cli::launch::LaunchResult>;
 

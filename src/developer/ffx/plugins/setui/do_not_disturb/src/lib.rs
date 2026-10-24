@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{DoNotDisturbProxy, DoNotDisturbSettings};
 use ffx_setui_do_not_disturb_args::DoNotDisturb;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct DoNotDisturbTool {
 
 fho::embedded_plugin!(DoNotDisturbTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DoNotDisturbTool {
     type Writer = SimpleWriter;
 

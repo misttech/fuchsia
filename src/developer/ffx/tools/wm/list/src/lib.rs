@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_list_args::WMListCommand;
 use ffx_writer::SimpleWriter;
@@ -20,7 +19,6 @@ pub struct ListTool {
 
 fho::embedded_plugin!(ListTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = SimpleWriter;
 

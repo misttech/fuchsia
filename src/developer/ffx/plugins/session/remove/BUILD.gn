@@ -16,7 +16,6 @@ ffx_plugin("ffx_session_remove") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/session/common:ffx_session_common",
-    "//third_party/rust_crates:async-trait",
   ]
 
   test_deps = [

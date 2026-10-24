@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{NightModeProxy, NightModeSettings};
 use ffx_setui_night_mode_args::NightMode;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct NightModeTool {
 
 fho::embedded_plugin!(NightModeTool);
 
-#[async_trait(?Send)]
 impl FfxMain for NightModeTool {
     type Writer = SimpleWriter;
 

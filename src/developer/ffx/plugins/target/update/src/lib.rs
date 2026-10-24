@@ -4,7 +4,6 @@
 
 //! A tool to update the target device.
 
-use async_trait::async_trait;
 use errors;
 use fdomain_client::AsHandleRef;
 use fdomain_client::fidl::Proxy as _;
@@ -161,7 +160,6 @@ pub struct UpdateTool {
 
 fho::embedded_plugin!(UpdateTool, UpdateError);
 
-#[async_trait(?Send)]
 impl FfxMain for UpdateTool {
     type Writer = SimpleWriter;
     type Error = UpdateError;

@@ -17,7 +17,6 @@ ffx_plugin("ffx_profile_heapdump_list") {
     "//src/developer/ffx/plugins/profile/heapdump/common:ffx_profile_heapdump_common",
     "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:prettytable-rs",
     "//third_party/rust_crates:serde",
   ]

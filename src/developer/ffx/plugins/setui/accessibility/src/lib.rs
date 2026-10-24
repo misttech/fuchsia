@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::AccessibilityProxy;
 use ffx_setui_accessibility_args::{Accessibility, SubCommandEnum};
 use ffx_writer::SimpleWriter;
@@ -27,7 +26,6 @@ pub struct AccessibilityTool {
 
 fho::embedded_plugin!(AccessibilityTool);
 
-#[async_trait(?Send)]
 impl FfxMain for AccessibilityTool {
     type Writer = SimpleWriter;
 

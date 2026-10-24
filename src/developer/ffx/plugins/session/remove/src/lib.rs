@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_element::{ManagerError, ManagerProxy};
 use ffx_session_common::CommandStatus;
 use ffx_session_remove_args::SessionRemoveCommand;
@@ -21,7 +20,6 @@ pub struct RemoveTool {
 
 fho::embedded_plugin!(RemoveTool);
 
-#[async_trait(?Send)]
 impl FfxMain for RemoveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;

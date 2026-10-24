@@ -21,7 +21,6 @@ ffx_plugin("ffx_package_far_cat") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/package/archive:lib",
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
-    "//third_party/rust_crates:async-trait",
   ]
 
   test_deps = [ "//third_party/rust_crates:serde_json" ]

@@ -1,8 +1,6 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::fdomain_fuchsia_bluetooth_pandora::{
     GrpcServerControllerProxy, GrpcServerControllerStartRequest, RootcanalClientControllerProxy,
     RootcanalClientControllerStartRequest, ServiceError,
@@ -24,7 +22,6 @@ pub struct PandoraTool {
 }
 
 fho::embedded_plugin!(PandoraTool);
-#[async_trait(?Send)]
 impl FfxMain for PandoraTool {
     type Writer = SimpleWriter;
 

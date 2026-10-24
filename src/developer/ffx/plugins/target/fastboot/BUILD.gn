@@ -31,7 +31,6 @@ ffx_plugin("ffx_fastboot_tool") {
     "//src/lib/assembly/product_bundle",
     "//src/storage/lib/sparse/rust:lib",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:schemars",
@@ -41,6 +40,7 @@ ffx_plugin("ffx_fastboot_tool") {
 
   test_deps = [
     "//src/lib/fuchsia",
+    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",

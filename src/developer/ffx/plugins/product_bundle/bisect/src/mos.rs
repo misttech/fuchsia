@@ -6,31 +6,28 @@ use crate::dimension::Dimension;
 use crate::search_space::SearchSpace;
 use anyhow::{Context, Result, ensure};
 use assembly_artifact_cache::{MOSClient, MOSIdentifier, Slot};
-use async_trait::async_trait;
 use camino::Utf8Path;
 use serde::Deserialize;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
 /// A trait to abstract the MOS client, allowing for mock implementations in tests.
-#[async_trait(?Send)]
 pub trait MOSClientTrait {
     /// Retrieve release information for a product bundle.
-    async fn get_pb_release_info(
+    fn get_pb_release_info(
         &mut self,
         name: String,
         version: String,
-    ) -> Result<Vec<MOSIdentifier>>;
+    ) -> impl std::future::Future<Output = Result<Vec<MOSIdentifier>>>;
 
     /// Interpolate between two artifact versions to get a list of all intermediate versions.
-    async fn interpolate(
+    fn interpolate(
         &self,
         start: &MOSIdentifier,
         end: &MOSIdentifier,
-    ) -> Result<Vec<MOSIdentifier>>;
+    ) -> impl std::future::Future<Output = Result<Vec<MOSIdentifier>>>;
 }
 
-#[async_trait(?Send)]
 impl MOSClientTrait for MOSClient {
     async fn get_pb_release_info(
         &mut self,
@@ -268,7 +265,6 @@ mod tests {
         interpolate_result: Result<Vec<MOSIdentifier>>,
     }
 
-    #[async_trait(?Send)]
     impl MOSClientTrait for MockMOSClient {
         async fn get_pb_release_info(
             &mut self,

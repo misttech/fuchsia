@@ -20,7 +20,6 @@ ffx_plugin("ffx_repository_packages") {
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//src/sys/pkg/lib/fuchsia-repo",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:humansize",

@@ -28,7 +28,6 @@ pub struct EmuStopTool {
 // removed.
 fho::embedded_plugin!(EmuStopTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for EmuStopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

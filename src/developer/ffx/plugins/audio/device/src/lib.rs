@@ -6,7 +6,6 @@
 #![cfg_attr(test, recursion_limit = "256")]
 
 use crate::list::DeviceQuery;
-use async_trait::async_trait;
 use blocking::Unblock;
 use fac::DEFAULT_RING_BUFFER_ELEMENT_ID;
 use fdomain_client::HandleBased;
@@ -64,7 +63,6 @@ pub struct DeviceTool {
 }
 
 fho::embedded_plugin!(DeviceTool);
-#[async_trait(?Send)]
 impl FfxMain for DeviceTool {
     type Writer = MachineWriter<DeviceResult>;
 
@@ -250,11 +248,7 @@ async fn device_play(
             selector: selector.into(),
             ring_buffer_element_id,
         })),
-        gain_settings: Some(fac::GainSettings {
-            mute: None,
-            gain: None,
-            ..Default::default()
-        }),
+        gain_settings: Some(fac::GainSettings { mute: None, gain: None, ..Default::default() }),
         active_channels_bitmask: channel_bitmask,
         ..Default::default()
     };

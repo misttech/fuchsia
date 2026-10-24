@@ -32,7 +32,6 @@ pub struct ExploreTool {
 
 fho::embedded_plugin!(ExploreTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ExploreTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

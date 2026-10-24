@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_repository_create_args::RepoCreateCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{Error, FfxMain, FfxTool, Result, bug};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
 use std::marker::PhantomData;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
@@ -24,14 +24,12 @@ pub enum CommandStatus {
 ///  trait is used to allow mocking of
 /// the method.
 
-#[async_trait(?Send)]
 pub trait PackageTools {
-    async fn cmd_repo_create(cmd: RepoCreateCommand) -> Result<()>;
+    fn cmd_repo_create(cmd: RepoCreateCommand) -> impl Future<Output = Result<()>>;
 }
 
 pub struct SizedPackageTools {}
 
-#[async_trait(?Send)]
 impl PackageTools for SizedPackageTools {
     async fn cmd_repo_create(cmd: RepoCreateCommand) -> Result<()> {
         package_tool::cmd_repo_create(cmd).await.map_err(Into::into)
@@ -48,7 +46,6 @@ pub struct CreateTool<T: PackageTools> {
 
 fho::embedded_plugin!(CreateTool<SizedPackageTools>);
 
-#[async_trait(?Send)]
 impl<T: PackageTools> FfxMain for CreateTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
@@ -80,7 +77,6 @@ mod tests {
     use ffx_writer::{Format, TestBuffers};
 
     struct OkFakeTools {}
-    #[async_trait(?Send)]
     impl PackageTools for OkFakeTools {
         async fn cmd_repo_create(_cmd: RepoCreateCommand) -> Result<()> {
             Ok(())
@@ -88,7 +84,6 @@ mod tests {
     }
 
     struct ErrFakeTools {}
-    #[async_trait(?Send)]
     impl PackageTools for ErrFakeTools {
         async fn cmd_repo_create(_cmd: RepoCreateCommand) -> Result<()> {
             Err(bug!("general error"))

@@ -16,7 +16,6 @@ pub struct ArchiveRemoveTool {
 
 fho::embedded_plugin!(ArchiveRemoveTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveRemoveTool {
     type Writer = VerifiedMachineWriter<()>;
 

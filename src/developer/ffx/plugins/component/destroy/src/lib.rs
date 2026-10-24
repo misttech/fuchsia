@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use cm_types::{BorrowedLongName, BorrowedName};
 use component_debug_fdomain::lifecycle::{DestroyError, destroy_instance_in_collection};
 use component_debug_fdomain::query::get_cml_moniker_from_query;
@@ -35,7 +34,6 @@ pub enum Output {
     GetMonikerFailed { message: String },
 }
 
-#[async_trait(?Send)]
 impl FfxMain for DestroyTool {
     type Writer = VerifiedMachineWriter<Output>;
 

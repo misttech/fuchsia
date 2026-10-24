@@ -28,7 +28,6 @@ pub struct EmuConsoleTool {
 // removed.
 fho::embedded_plugin!(EmuConsoleTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for EmuConsoleTool {
     type Writer = VerifiedMachineWriter<()>;
 

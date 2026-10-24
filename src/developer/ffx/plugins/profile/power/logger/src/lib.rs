@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_power_metrics::{self as fmetrics, Metric, Power, StatisticsArgs};
 use ffx_power_logger_args as args_mod;
 use ffx_writer::VerifiedMachineWriter;
@@ -19,7 +18,6 @@ pub struct PowerLoggerTool {
 
 fho::embedded_plugin!(PowerLoggerTool);
 
-#[async_trait(?Send)]
 impl FfxMain for PowerLoggerTool {
     type Writer = VerifiedMachineWriter<()>;
 

@@ -17,9 +17,6 @@ ffx_plugin(
     ],
     args_srcs = ["src/args.rs"],
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:async-trait",
-    ],
     sdk_category = "not-yet-specified",
     version = "0.1.0",
     visibility = ["//src/developer/ffx/plugins/package/blob:__pkg__"],

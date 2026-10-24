@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::args::StopCommand;
-use async_trait::async_trait;
 use discovery::gce_watcher;
 use ffx_config::EnvironmentContext;
 use ffx_gce::GceContext;
@@ -19,7 +18,6 @@ pub struct StopTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for StopTool {
     type Writer = MachineWriter<StopResult>;
     type Error = fho::Error;

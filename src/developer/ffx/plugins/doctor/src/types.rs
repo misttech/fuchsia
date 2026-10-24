@@ -5,7 +5,6 @@
 use crate::doctor_ledger::LedgerNode;
 use anyhow::Result;
 use async_lock::Mutex;
-use async_trait::async_trait;
 use doctor_utils::Recorder;
 use std::io::Write;
 use std::path::PathBuf;
@@ -86,12 +85,11 @@ impl StepType {
     }
 }
 
-#[async_trait]
 pub trait DoctorStepHandler {
-    async fn step(&mut self, step: StepType) -> Result<()>;
-    async fn output_step(&mut self, step: StepType) -> Result<()>;
-    async fn record(&mut self, step: StepType) -> Result<()>;
-    async fn result(&mut self, result: StepResult) -> Result<()>;
+    fn step(&mut self, step: StepType) -> impl std::future::Future<Output = Result<()>>;
+    fn output_step(&mut self, step: StepType) -> impl std::future::Future<Output = Result<()>>;
+    fn record(&mut self, step: StepType) -> impl std::future::Future<Output = Result<()>>;
+    fn result(&mut self, result: StepResult) -> impl std::future::Future<Output = Result<()>>;
 }
 
 pub struct DefaultDoctorStepHandler {
@@ -100,7 +98,6 @@ pub struct DefaultDoctorStepHandler {
     pub colors: Colors,
 }
 
-#[async_trait]
 impl DoctorStepHandler for DefaultDoctorStepHandler {
     async fn step(&mut self, step: StepType) -> Result<()> {
         write!(&mut self.writer, "{}", step.format(&self.colors))?;

@@ -1,8 +1,6 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth::HostId as FidlHostId;
 use fdomain_fuchsia_bluetooth_affordances::HostControllerProxy;
@@ -31,7 +29,6 @@ pub struct ControllerTool {
 }
 
 fho::embedded_plugin!(ControllerTool);
-#[async_trait(?Send)]
 impl FfxMain for ControllerTool {
     type Writer = SimpleWriter;
 

@@ -1,8 +1,6 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::ffx_bluetooth_pairable_args::{PairableCommand, PairableSubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_client::fidl::Proxy;
@@ -23,13 +21,12 @@ pub struct PairableTool {
 }
 
 fho::embedded_plugin!(PairableTool);
-#[async_trait(?Send)]
 impl FfxMain for PairableTool {
     type Writer = SimpleWriter;
 
     type Error = ::fho::Error;
 
-    async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth pairable once
             PairableSubCommand::Once(ref cmd) => {

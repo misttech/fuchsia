@@ -20,7 +20,6 @@ ffx_plugin("ffx_profile_heapdump_snapshot") {
     "//src/lib/fdomain/client",
     "//src/performance/memory/heapdump/lib/heapdump_snapshot:heapdump_snapshot_fdomain",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
 
   args_sources = [ "src/args.rs" ]

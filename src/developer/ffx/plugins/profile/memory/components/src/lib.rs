@@ -11,7 +11,6 @@ mod statistics;
 use crate::resource_annotator::ResourceAnnotator;
 use anyhow::{Result, anyhow};
 use assembly_container::AssemblyContainer;
-use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
 use attribution_processing::{AttributionData, Principal, Resource, ZXName, digest};
 use errors::ffx_error;
@@ -81,7 +80,6 @@ impl PluginOutput<ComponentProfileResult> for MachineWriter<ComponentProfileResu
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for MemoryComponentsTool {
     type Writer = MachineWriter<ComponentProfileResult>;
 

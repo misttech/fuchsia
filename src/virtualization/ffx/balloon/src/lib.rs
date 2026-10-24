@@ -16,7 +16,6 @@ pub struct GuestBalloonTool {
 
 fho::embedded_plugin!(GuestBalloonTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestBalloonTool {
     type Writer = MachineWriter<guest_cli::balloon::BalloonResult>;
 

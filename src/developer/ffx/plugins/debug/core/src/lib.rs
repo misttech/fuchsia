@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow, bail};
-use async_trait::async_trait;
 use chrono::{Local, TimeZone};
 use errors::{ffx_bail, ffx_error};
 use fdomain_client::fidl::Proxy;
@@ -35,7 +34,6 @@ pub struct CoreTool {
 
 fho::embedded_plugin!(CoreTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CoreTool {
     type Writer = SimpleWriter;
 

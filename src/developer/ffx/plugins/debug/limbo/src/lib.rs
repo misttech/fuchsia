@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use fdomain_fuchsia_exception::ProcessLimboProxy;
 use ffx_debug_limbo_args::{LimboCommand, LimboSubCommand};
 use ffx_writer::SimpleWriter;
@@ -23,7 +22,6 @@ pub struct LimboTool {
 
 fho::embedded_plugin!(LimboTool);
 
-#[async_trait(?Send)]
 impl FfxMain for LimboTool {
     type Writer = SimpleWriter;
 

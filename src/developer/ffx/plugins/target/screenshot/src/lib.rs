@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow, bail};
-use async_trait::async_trait;
 use chrono::{Datelike, Local, Timelike};
 use fdomain_fuchsia_io as fio;
 use fdomain_fuchsia_ui_composition::{
@@ -90,7 +89,6 @@ pub struct ScreenshotTool {
 
 fho::embedded_plugin!(ScreenshotTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ScreenshotTool {
     type Writer = VerifiedMachineWriter<ScreenshotOutput>;
 

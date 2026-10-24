@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_session_window::ManagerProxy;
 use ffx_wm_cycle_args::WMCycleCommand;
 use ffx_writer::SimpleWriter;
@@ -20,7 +19,6 @@ pub struct CycleTool {
 
 fho::embedded_plugin!(CycleTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CycleTool {
     type Writer = SimpleWriter;
 

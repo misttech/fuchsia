@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_devices_args::DevicesCommand;
 use ffx_writer::VerifiedMachineWriter;
@@ -21,7 +20,6 @@ pub struct DevicesTool {
 
 fho::embedded_plugin!(DevicesTool, ffx_list::ListError);
 
-#[async_trait(?Send)]
 impl FfxMain for DevicesTool {
     type Error = ffx_list::ListError;
     type Writer = VerifiedMachineWriter<Vec<JsonTarget>>;

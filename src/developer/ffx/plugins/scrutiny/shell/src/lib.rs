@@ -25,7 +25,6 @@ pub struct ScrutinyShellTool {
 
 fho::embedded_plugin!(ScrutinyShellTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyShellTool {
     type Writer = SimpleWriter;
 

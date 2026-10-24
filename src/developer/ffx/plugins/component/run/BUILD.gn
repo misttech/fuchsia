@@ -24,7 +24,6 @@ if (is_host) {
       "//src/sys/lib/cm_rust",
       "//src/sys/lib/component_debug:component_debug_fdomain",
       "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:futures",
     ]
 

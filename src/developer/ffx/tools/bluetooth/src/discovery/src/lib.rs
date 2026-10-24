@@ -1,8 +1,6 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::ffx_bluetooth_discovery_args::{DiscoveryCommand, DiscoverySubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth_affordances::{
@@ -21,13 +19,12 @@ pub struct DiscoveryTool {
 }
 
 fho::embedded_plugin!(DiscoveryTool);
-#[async_trait(?Send)]
 impl FfxMain for DiscoveryTool {
     type Writer = SimpleWriter;
 
     type Error = ::fho::Error;
 
-    async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth discovery start
             DiscoverySubCommand::Start(ref _cmd) => {

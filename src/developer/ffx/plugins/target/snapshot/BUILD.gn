@@ -21,7 +21,6 @@ ffx_plugin("ffx_snapshot") {
     "//src/lib/gcs",
     "//src/lib/structured_ui",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:schemars",

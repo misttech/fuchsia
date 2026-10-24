@@ -15,7 +15,6 @@ ffx_plugin("ffx_package_file_hash") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:rayon",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",

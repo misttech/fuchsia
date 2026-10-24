@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
-use async_trait::async_trait;
 use component_debug_fdomain::cli::doctor::write_result_table;
 use component_debug_fdomain::cli::run_cmd;
 use component_debug_fdomain::config::resolve_raw_config_overrides;
@@ -116,7 +115,6 @@ pub struct RunTool {
 
 fho::embedded_plugin!(RunTool);
 
-#[async_trait(?Send)]
 impl FfxMain for RunTool {
     type Writer = MachineWriter<LogEntry>;
 

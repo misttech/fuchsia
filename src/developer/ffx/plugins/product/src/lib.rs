@@ -17,7 +17,6 @@ impl ToolSuiteCommand for ProductCommand {
 
 pub struct ProductSuite;
 
-#[async_trait::async_trait(?Send)]
 impl SubtoolSuite for ProductSuite {
     type Command = ProductCommand;
 

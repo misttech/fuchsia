@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use fdomain_fuchsia_developer_ffx as ffx;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool, Result};
@@ -29,7 +28,6 @@ pub struct EchoTool {
 // [END tool_struct]
 
 // [START tool_impl]
-#[async_trait(?Send)]
 impl FfxMain for EchoTool {
     type Writer = MachineWriter<String>;
 

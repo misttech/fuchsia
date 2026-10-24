@@ -15,7 +15,6 @@ ffx_plugin("ffx_bluetooth_pandora") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
 
   args_sources = [ "src/args.rs" ]

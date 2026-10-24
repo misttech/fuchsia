@@ -5,7 +5,6 @@
 use crate::autocomplete::FuzzHelper;
 use anyhow::{Result, anyhow, bail};
 use argh::FromArgs;
-use async_trait::async_trait;
 use ffx_fuzz_args::{FuzzShellCommand, FuzzerState};
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
@@ -22,7 +21,6 @@ use termion::{color, style};
 /// Trait for getting input such as user commands.
 ///
 /// `Reader` provides a way to abstract the source of user input to the `ffx fuzz` plugin.
-#[async_trait(?Send)]
 pub trait Reader {
     /// Returns whether this reader interactively prompts a user.
     fn is_interactive(&self) -> bool {
@@ -33,10 +31,10 @@ pub trait Reader {
     fn start(&mut self, _tests_json: Option<String>, _state: Arc<Mutex<FuzzerState>>) {}
 
     /// Read and parse a command.
-    async fn prompt(&mut self) -> Option<ParsedCommand>;
+    fn prompt(&mut self) -> impl std::future::Future<Output = Option<ParsedCommand>>;
 
     /// Returns a future that waits until output has been paused and resumed.
-    async fn pause(&mut self) -> Result<()>;
+    fn pause(&mut self) -> impl std::future::Future<Output = Result<()>>;
 
     /// Returns past unparsed inputs. Returns an empty vector by default.
     fn history(&self) -> Vec<String> {
@@ -84,7 +82,6 @@ impl CommandReader {
     }
 }
 
-#[async_trait(?Send)]
 impl Reader for CommandReader {
     // Fixed commands don't prompt for additional commands.
     async fn prompt(&mut self) -> Option<ParsedCommand> {
@@ -120,7 +117,6 @@ impl ShellReader {
     }
 }
 
-#[async_trait(?Send)]
 impl Reader for ShellReader {
     fn is_interactive(&self) -> bool {
         true
@@ -214,7 +210,6 @@ async fn shell_read_loop(
 pub mod test_fixtures {
     use super::{ParsedCommand, Reader, parse};
     use anyhow::{Result, bail};
-    use async_trait::async_trait;
     use fuchsia_async as fasync;
     use fuchsia_fuzzctl_fdomain::{MonotonicDuration, deadline_after};
     use futures::channel::mpsc;
@@ -249,7 +244,6 @@ pub mod test_fixtures {
         }
     }
 
-    #[async_trait(?Send)]
     impl Reader for ScriptReader {
         /// Claims to be interactive (although it is not) to get all potential output.
         fn is_interactive(&self) -> bool {

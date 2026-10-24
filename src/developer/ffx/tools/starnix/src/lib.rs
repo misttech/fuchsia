@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
@@ -67,7 +66,6 @@ pub struct StarnixTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for StarnixTool {
     type Writer = VerifiedMachineWriter<StarnixToolOutput>;
 

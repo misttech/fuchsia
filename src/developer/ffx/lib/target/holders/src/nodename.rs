@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use safe_string::{ControlCharError, TermSafe};
 use std::ops::Deref;
 use target_behavior::{ConnectionBehavior, target_interface};
@@ -75,7 +74,6 @@ impl TryFrom<Option<String>> for NodenameHolder {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for NodenameHolder {
     type Error = ffx_command_error::Error;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

@@ -17,7 +17,6 @@ ffx_plugin("ffx_target_shell") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fdomain/client",
     "//src/sys/lib/socket-to-stdio",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
   ]
 

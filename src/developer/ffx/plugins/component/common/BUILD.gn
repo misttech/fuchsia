@@ -34,7 +34,6 @@ rustc_library("ffx_component") {
       "//src/developer/ffx/lib/rcs:lib",
       "//src/lib/fdomain/client",
       "//src/lib/fuchsia-async",
-      "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:futures",
     ]
     test_deps = [

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use ffx_command_error::{FfxContext as _, Result};
@@ -29,7 +28,6 @@ impl From<RemoteControlProxy> for RemoteControlProxyHolder {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for RemoteControlProxyHolder {
     type Error = ffx_command_error::Error;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

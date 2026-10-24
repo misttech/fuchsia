@@ -34,7 +34,6 @@ pub struct RepoDefaultTool {
 
 fho::embedded_plugin!(RepoDefaultTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for RepoDefaultTool {
     type Writer = VerifiedMachineWriter<RepoDefaultOutput>;
 

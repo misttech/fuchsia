@@ -4,7 +4,6 @@
 
 //! FFX plugin for get a path of the image inside product bundle.
 use assembled_system::Image;
-use async_trait::async_trait;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
@@ -39,7 +38,6 @@ pub struct PbGetImagePathTool {
     env: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for PbGetImagePathTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

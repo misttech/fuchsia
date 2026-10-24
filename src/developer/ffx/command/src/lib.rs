@@ -697,7 +697,6 @@ mod test {
 
     struct DummyToolSuite;
 
-    #[async_trait::async_trait(?Send)]
     impl ToolSuite for DummyToolSuite {
         fn from_env(_env: &EnvironmentContext) -> Result<Self> {
             Ok(Self)

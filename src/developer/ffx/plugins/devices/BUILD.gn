@@ -16,7 +16,6 @@ ffx_plugin("ffx_devices") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/target/list:ffx_list",
     "//src/developer/ffx/plugins/target/list/target_formatter",
-    "//third_party/rust_crates:async-trait",
   ]
 
   args_sources = [ "src/args.rs" ]

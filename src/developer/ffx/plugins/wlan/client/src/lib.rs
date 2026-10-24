@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use async_trait::async_trait;
 use fdomain_fuchsia_wlan_policy as wlan_policy;
 use ffx_wlan_client_args as arg_types;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
@@ -22,7 +21,6 @@ pub struct ClientTool {
 
 fho::embedded_plugin!(ClientTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ClientTool {
     type Writer = VerifiedMachineWriter<String>;
 

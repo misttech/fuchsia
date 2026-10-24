@@ -1,8 +1,6 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::ffx_bluetooth_connectable_args::{ConnectableCommand, ConnectableSubCommand};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_fuchsia_bluetooth_affordances::{
@@ -21,11 +19,10 @@ pub struct ConnectableTool {
 }
 
 fho::embedded_plugin!(ConnectableTool);
-#[async_trait(?Send)]
 impl FfxMain for ConnectableTool {
     type Writer = SimpleWriter;
     type Error = ::fho::Error;
-    async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand.clone() {
             // ffx bluetooth connectable start
             ConnectableSubCommand::Start(_) => {

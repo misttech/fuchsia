@@ -13,6 +13,7 @@ use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
 use fho_metadata::FhoToolMetadata;
 use std::fs::File;
+use std::future::Future;
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::ExitStatus;
@@ -28,7 +29,6 @@ use writer::ToolIO;
 // (https://doc.rust-lang.org/std/keyword.dyn.html). It means that methods such
 // as from_env() that need to know the size can still work, while allowing the
 // dynamically-sized trait objects to be referred to in a dyn context.
-#[async_trait(?Send)]
 pub trait FfxTool<E = Error>: FfxMain<Error = E>
 where
     E: Into<Error> + 'static,
@@ -39,54 +39,58 @@ where
     fn has_schema(&self) -> bool;
     fn requires_target() -> bool;
 
-    async fn from_env(env: FhoEnvironment, cmd: Self::Command) -> Result<Self>
+    fn from_env(env: FhoEnvironment, cmd: Self::Command) -> impl Future<Output = Result<Self>>
     where
         Self: Sized;
 
     /// Executes the tool. This is intended to be invoked by the user in main.
-    async fn execute_tool()
+    fn execute_tool() -> impl Future<Output = ()>
     where
         Self: Sized,
     {
-        let mut env_context = None;
-        let result = match ffx_command::init_cmd(ExecutableKind::Subtool) {
-            Ok(c) => {
-                env_context = Some(c.context.clone());
-                ffx_command::run::<FhoSuite<Self, E>>(c).await
-            }
-            Err(e) => Err(e),
-        };
-        let should_format = match FfxCommandLine::from_env() {
-            Ok(cli) => cli.global.should_format(),
-            Err(e) => {
-                log::warn!("Received error getting command line: {}", e);
-                match e {
-                    Error::Help { .. } => false,
-                    _ => true,
+        async {
+            let mut env_context = None;
+            let result = match ffx_command::init_cmd(ExecutableKind::Subtool) {
+                Ok(c) => {
+                    env_context = Some(c.context.clone());
+                    Box::pin(ffx_command::run::<FhoSuite<Self, E>>(c)).await
                 }
-            }
-        };
-        ffx_command::exit(env_context, result, should_format).await;
+                Err(e) => Err(e),
+            };
+            let should_format = match FfxCommandLine::from_env() {
+                Ok(cli) => cli.global.should_format(),
+                Err(e) => {
+                    log::warn!("Received error getting command line: {}", e);
+                    match e {
+                        Error::Help { .. } => false,
+                        _ => true,
+                    }
+                }
+            };
+            ffx_command::exit(env_context, result, should_format).await;
+        }
     }
 }
 
-#[async_trait(?Send)]
 pub trait FfxMain {
     type Writer: TryFromEnv + ToolIO + 'static;
     type Error: Into<Error> + 'static;
 
     /// The entrypoint of the tool. Once FHO has set up the environment for the tool, this is
     /// invoked. Should not be invoked directly unless for testing.
-    async fn main(self, writer: Self::Writer) -> std::result::Result<(), Self::Error>;
+    fn main(
+        self,
+        writer: Self::Writer,
+    ) -> impl Future<Output = std::result::Result<(), Self::Error>>;
 
     /// Given the writer, print the output schema. This is exposed to allow
     /// traversing the subtool adapters which combine more than one subtool which
     /// probably have different writers since they will have different output.
-    async fn try_print_schema(self, mut writer: Self::Writer) -> Result<()>
+    fn try_print_schema(self, mut writer: Self::Writer) -> impl Future<Output = Result<()>>
     where
         Self: Sized,
     {
-        writer.try_print_schema().map_err(|e| e.into())
+        async move { writer.try_print_schema().map_err(|e| e.into()) }
     }
 
     /// Returns the basename of the log file to use with this tool. With the exception
@@ -204,7 +208,7 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> ToolRunner for FhoTool<T, E> {
         if !analytics_command(&self.redacted_args.join(" ")) {
             metrics.print_notice(&mut std::io::stderr()).await?;
         }
-        let writer = TryFromEnv::try_from_env(&self.env)
+        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&self.env)
             .await
             .map_err(|e| Error::Unexpected(anyhow::Error::new(e)))?;
         let res: Result<ExitStatus> = if self.env.ffx_command().global.schema {
@@ -258,7 +262,7 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> FhoTool<T, E> {
             false => None,
             true => Some(ffx.unredacted_args_for_analytics()),
         };
-        let main = T::from_env(env.clone(), tool).await?;
+        let main = Box::pin(T::from_env(env.clone(), tool)).await?;
 
         let found = FhoTool {
             env,
@@ -272,7 +276,6 @@ impl<T: FfxTool<E>, E: Into<Error> + 'static> FhoTool<T, E> {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl<M: FfxTool<E>, E: Into<Error> + 'static> ToolSuite for FhoSuite<M, E> {
     fn from_env(context: &EnvironmentContext) -> Result<Self> {
         let context = context.clone();
@@ -341,7 +344,6 @@ mod tests {
     // This keeps the macros from having compiler errors.
     use crate::adapters::tests::{FakeCommand, FakeTool, SIMPLE_CHECK_COUNTER, TestWriter};
     use crate::{self as fho};
-    use async_trait::async_trait;
     use fho_macro::FfxTool;
     use fho_metadata::{FhoDetails, Only};
 
@@ -369,7 +371,6 @@ mod tests {
             #[command]
             _fake_command: FakeCommand,
         }
-        #[async_trait(?Send)]
         impl FfxMain for FakeToolWillFail {
             type Writer = TestWriter;
             type Error = Error;

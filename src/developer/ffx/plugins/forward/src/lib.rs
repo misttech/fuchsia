@@ -62,7 +62,6 @@ impl std::fmt::Display for ForwardMessage {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ForwardTool {
     type Writer = VerifiedMachineWriter<ForwardMessage>;
 

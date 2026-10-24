@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::DiscoverableProtocolMarker;
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};
@@ -23,7 +22,6 @@ impl<P> WithMoniker<P> {
     }
 }
 
-#[async_trait(?Send)]
 impl<P> TryFromEnvWith for WithMoniker<P>
 where
     P: fdomain_client::fidl::Proxy + 'static,
@@ -68,7 +66,6 @@ impl ExposedDirectoryConnector {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnvWith for ExposedDirectoryConnector {
     type Output = fdomain_fuchsia_io::DirectoryProxy;
     type Error = ffx_command_error::Error;
@@ -114,7 +111,6 @@ impl<P> OptionalProtocolConnector<P> {
     }
 }
 
-#[async_trait(?Send)]
 impl<P> TryFromEnvWith for OptionalProtocolConnector<P>
 where
     P: fdomain_client::fidl::Proxy + 'static,

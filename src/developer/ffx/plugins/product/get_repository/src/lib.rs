@@ -24,7 +24,6 @@ pub struct ProductGetRepoTool {
 }
 
 /// This plugin will get the info of repository inside product bundle.
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ProductGetRepoTool {
     type Writer = MachineWriter<Vec<RepositoryInfo>>;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnvWith};
@@ -15,7 +14,6 @@ pub struct WithToolbox<P> {
     pub(crate) _p: PhantomData<fn() -> P>,
 }
 
-#[async_trait(?Send)]
 impl<P> TryFromEnvWith for WithToolbox<P>
 where
     P: Proxy + 'static,

@@ -16,7 +16,6 @@ pub struct ScrutinyBlobfsTool {
 
 fho::embedded_plugin!(ScrutinyBlobfsTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyBlobfsTool {
     type Writer = SimpleWriter;
 

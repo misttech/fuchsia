@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
-use async_trait::async_trait;
 use camino::Utf8Path;
 use chrono::DateTime;
 use chrono::offset::Utc;
@@ -46,7 +45,6 @@ pub struct PackagesTool {
 
 fho::embedded_plugin!(PackagesTool);
 
-#[async_trait(?Send)]
 impl FfxMain for PackagesTool {
     type Writer = PackagesWriter;
 

@@ -26,7 +26,6 @@ pub struct ProductShowTool {
 }
 
 /// Create a product bundle.
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ProductShowTool {
     type Writer = SimpleWriter;
 

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use async_trait::async_trait;
 use fdomain_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated;
 use ffx_wlan_deprecated_args as arg_types;
 use ffx_writer::SimpleWriter;
@@ -20,7 +19,6 @@ pub struct DeprecatedTool {
 
 fho::embedded_plugin!(DeprecatedTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DeprecatedTool {
     type Writer = SimpleWriter;
 

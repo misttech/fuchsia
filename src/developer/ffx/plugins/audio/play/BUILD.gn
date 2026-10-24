@@ -29,7 +29,6 @@ ffx_plugin("ffx_audio_play") {
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
 
   test_deps = [

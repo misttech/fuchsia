@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::FhoEnvironment;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -13,25 +12,24 @@ use std::sync::Arc;
 
 /// TryFromEnv is used to perform dependency injection on the members of
 /// FfxTool.
-#[async_trait(?Send)]
 pub trait TryFromEnv: Sized {
     type Error: std::error::Error + Send + Sync + 'static;
-    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error>;
+    fn try_from_env(
+        env: &FhoEnvironment,
+    ) -> impl Future<Output = std::result::Result<Self, Self::Error>>;
 }
 
-#[async_trait(?Send)]
 pub trait TryFromEnvWith: 'static {
     type Output: 'static;
     type Error: std::error::Error + Send + Sync + 'static;
-    async fn try_from_env_with(
+    fn try_from_env_with(
         self,
         env: &FhoEnvironment,
-    ) -> std::result::Result<Self::Output, Self::Error>;
+    ) -> impl Future<Output = std::result::Result<Self::Output, Self::Error>>;
 }
 
 /// This is so that you can use a () somewhere that generically expects something
 /// to be TryFromEnv, but there's no meaningful type to put there.
-#[async_trait(?Send)]
 impl TryFromEnv for () {
     type Error = std::convert::Infallible;
     async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -39,7 +37,6 @@ impl TryFromEnv for () {
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for Arc<T>
 where
     T: TryFromEnv,
@@ -50,7 +47,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for Rc<T>
 where
     T: TryFromEnv,
@@ -61,7 +57,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for Box<T>
 where
     T: TryFromEnv,
@@ -72,7 +67,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for PhantomData<T> {
     type Error = std::convert::Infallible;
     async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -80,7 +74,6 @@ impl<T> TryFromEnv for PhantomData<T> {
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for std::result::Result<T, T::Error>
 where
     T: TryFromEnv,
@@ -91,7 +84,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for EnvironmentContext {
     type Error = std::convert::Infallible;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -99,7 +91,6 @@ impl TryFromEnv for EnvironmentContext {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for FhoEnvironment {
     type Error = std::convert::Infallible;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -132,7 +123,6 @@ pub struct Deferred<T: 'static, E = ffx_command_error::Error>(
     Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>,
 );
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for Deferred<T, T::Error>
 where
     T: TryFromEnv + 'static,
@@ -154,7 +144,6 @@ impl<T: 'static, E: 'static> Deferred<T, E> {
 /// The implementation of the decorator returned by [`deferred`]
 pub struct WithDeferred<T>(T);
 
-#[async_trait(?Send)]
 impl<T> TryFromEnvWith for WithDeferred<T>
 where
     T: TryFromEnvWith + 'static,
@@ -205,7 +194,6 @@ mod tests {
 
     #[derive(Debug)]
     struct AlwaysError;
-    #[async_trait(?Send)]
     impl TryFromEnv for AlwaysError {
         type Error = ffx_command_error::Error;
         async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

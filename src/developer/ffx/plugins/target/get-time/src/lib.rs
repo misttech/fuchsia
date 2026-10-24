@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ffx_target_get_time_args::GetTimeCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool};
@@ -25,7 +24,6 @@ pub struct GetTimeTool {
 
 fho::embedded_plugin!(GetTimeTool);
 
-#[async_trait(?Send)]
 impl FfxMain for GetTimeTool {
     type Writer = VerifiedMachineWriter<TimeInfo>;
 

@@ -42,7 +42,6 @@ impl ToolSuiteCommand for UartCommand {
 
 pub struct UartSuite;
 
-#[async_trait::async_trait(?Send)]
 impl SubtoolSuite for UartSuite {
     type Command = UartCommand;
 

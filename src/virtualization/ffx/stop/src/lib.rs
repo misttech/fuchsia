@@ -16,7 +16,6 @@ pub struct GuestStopTool {
 
 fho::embedded_plugin!(GuestStopTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestStopTool {
     type Writer = MachineWriter<guest_cli::stop::StopResult>;
 

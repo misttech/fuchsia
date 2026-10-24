@@ -5,7 +5,6 @@ mod args;
 use args::{MonitorCommand, SubCommand};
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};
@@ -593,7 +592,6 @@ where
     Ok(response)
 }
 
-#[async_trait(?Send)]
 impl FfxMain for MonitorTool {
     type Writer = MachineWriter<serde_json::Value>;
 

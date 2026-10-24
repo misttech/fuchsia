@@ -175,7 +175,6 @@ pub struct DriverTool {
     cmd: args::DriverCommand,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for DriverTool {
     type Writer = MachineWriter<serde_json::Value>;
 

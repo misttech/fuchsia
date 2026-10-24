@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug_fdomain::cli::stop_cmd;
 use errors::ffx_error;
 use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
@@ -27,7 +26,6 @@ pub struct StopTool {
 
 fho::embedded_plugin!(StopTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StopTool {
     type Writer = VerifiedMachineWriter<StopResult>;
 

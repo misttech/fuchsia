@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{FactoryResetProxy, FactoryResetSettings};
 use ffx_setui_factory_reset_args::FactoryReset;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct FactoryResetTool {
 
 fho::embedded_plugin!(FactoryResetTool);
 
-#[async_trait(?Send)]
 impl FfxMain for FactoryResetTool {
     type Writer = SimpleWriter;
 

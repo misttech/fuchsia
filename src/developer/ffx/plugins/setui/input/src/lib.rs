@@ -5,7 +5,6 @@
 // Used to interact with the input interface.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{DeviceType, InputProxy, InputState};
 use ffx_setui_input_args::Input;
 use ffx_writer::SimpleWriter;
@@ -24,7 +23,6 @@ pub struct InputTool {
 
 fho::embedded_plugin!(InputTool);
 
-#[async_trait(?Send)]
 impl FfxMain for InputTool {
     type Writer = SimpleWriter;
 

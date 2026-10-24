@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use blocking::Unblock;
 
 use fdomain_client::Socket;
@@ -27,7 +26,6 @@ pub struct RecordTool {
 }
 
 fho::embedded_plugin!(RecordTool);
-#[async_trait(?Send)]
 impl FfxMain for RecordTool {
     type Writer = SimpleWriter;
 

@@ -34,7 +34,6 @@ ffx_plugin("ffx_doctor") {
     "//src/lib/fuchsia-lockfile:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-lock",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:mockall",
     "//third_party/rust_crates:nix",

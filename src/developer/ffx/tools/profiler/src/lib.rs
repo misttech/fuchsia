@@ -71,7 +71,6 @@ pub struct ProfilerTool {
     context: EnvironmentContext,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ProfilerTool {
     type Writer = Writer;
 

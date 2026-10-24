@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use discovery::TargetState;
 use errors::ffx_bail;
@@ -84,7 +83,6 @@ pub struct BootloaderToolMessage {
     info_message: InfoMessage,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for BootloaderTool {
     type Writer = VerifiedMachineWriter<BootloaderToolMessage>;
 

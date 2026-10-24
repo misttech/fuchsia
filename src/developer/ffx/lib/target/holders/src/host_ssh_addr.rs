@@ -4,8 +4,6 @@
 
 use std::ops::Deref;
 
-use async_trait::async_trait;
-
 use ffx_ssh::parse::HostAddr;
 use fho::{FhoEnvironment, TryFromEnv};
 use target_behavior::{ConnectionBehavior, target_interface};
@@ -45,7 +43,6 @@ impl From<String> for HostAddrHolder {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for HostAddrHolder {
     type Error = ffx_command_error::Error;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

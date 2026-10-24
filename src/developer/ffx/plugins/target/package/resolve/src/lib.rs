@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_pkg_resolution::{
     PackageResolverProxy, PackageResolverResolveRequest, ResolveError,
 };
@@ -34,7 +33,6 @@ pub struct ResolveTool {
 
 fho::embedded_plugin!(ResolveTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ResolveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

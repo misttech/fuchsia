@@ -15,7 +15,6 @@ pub struct ExperimentTool {
 
 fho::embedded_plugin!(ExperimentTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ExperimentTool {
     type Writer = SimpleWriter;
 

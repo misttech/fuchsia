@@ -40,7 +40,6 @@ pub mod macro_deps {
     pub use anyhow;
     pub use argh;
     pub use async_lock;
-    pub use async_trait::async_trait;
     pub use ffx_command::{bug, check_strict_constraints, return_bug, return_user_error};
     pub use ffx_config::EnvironmentContext;
     pub use ffx_diagnostics_analytics_state;

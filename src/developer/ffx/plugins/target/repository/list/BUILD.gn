@@ -19,7 +19,6 @@ ffx_plugin("ffx_target_repository_list") {
     "//src/lib/fdomain/client",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext:fidl-fuchsia-pkg-rewrite-ext_fdomain",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:prettytable-rs",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",

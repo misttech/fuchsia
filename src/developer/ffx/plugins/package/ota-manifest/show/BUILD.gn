@@ -15,7 +15,6 @@ ffx_plugin("ffx_package_ota_manifest_show") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/sys/pkg/lib/update-package",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:prettytable-rs",
     "//third_party/rust_crates:ring",

@@ -50,7 +50,6 @@ impl std::fmt::Display for ConfigToolMessage {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ConfigTool {
     type Writer = VerifiedMachineWriter<ConfigToolMessage>;
 

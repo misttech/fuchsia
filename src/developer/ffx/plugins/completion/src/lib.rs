@@ -7,7 +7,6 @@ use argh::{
     SubCommandInfo,
 };
 use argh_complete::Generator;
-use async_trait::async_trait;
 use ffx_command::CliArgsInfo;
 use ffx_completion_args::CompletionCommand;
 use fho::{FfxMain, FfxTool, Result, return_user_error};
@@ -21,7 +20,6 @@ pub struct CompletionTool {
 
 fho::embedded_plugin!(CompletionTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CompletionTool {
     type Writer = fho::null_writer::NullWriter;
 

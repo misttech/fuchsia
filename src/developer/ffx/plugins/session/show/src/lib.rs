@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use component_debug_fdomain as component_debug;
 use ffx_session_show_args::SessionShowCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
@@ -24,7 +23,6 @@ pub struct ShowTool {
 
 fho::embedded_plugin!(ShowTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<component_debug::cli::show::ShowCmdInstance>;
     type Error = ::fho::Error;

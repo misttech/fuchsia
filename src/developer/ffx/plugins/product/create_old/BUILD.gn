@@ -33,7 +33,6 @@ rustc_library("lib") {
     "//src/lib/assembly/tool",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
   ]
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_power_metrics::{self as fmetrics, Metric, StatisticsArgs, Temperature};
 use ffx_temperature_logger_args as args_mod;
 use ffx_writer::VerifiedMachineWriter;
@@ -19,7 +18,6 @@ pub struct TemperatureLoggerTool {
 
 fho::embedded_plugin!(TemperatureLoggerTool);
 
-#[async_trait(?Send)]
 impl FfxMain for TemperatureLoggerTool {
     type Writer = VerifiedMachineWriter<()>;
 

@@ -20,7 +20,6 @@ pub struct FarCreateTool {
 
 fho::embedded_plugin!(FarCreateTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FarCreateTool {
     type Writer = VerifiedMachineWriter<()>;
 

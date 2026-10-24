@@ -42,7 +42,6 @@ impl FfxSuite {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl ToolSuite for FfxSuite {
     fn from_env(env: &EnvironmentContext) -> Result<Self> {
         let context = env.clone();
@@ -219,7 +218,7 @@ impl ToolRunner for FfxSubCommand {
                 false => None,
                 true => Some(self.app.unredacted_args_for_analytics()),
             };
-            let res = run_legacy_subcommand(self.app, self.context, self.cmd)
+            let res = Box::pin(run_legacy_subcommand(self.app, self.context, self.cmd))
                 .await
                 .map(|_| ExitStatus::from_raw(0));
             if let Err(ref e) = res {
@@ -299,7 +298,7 @@ async fn run_legacy_subcommand(
     subcommand: FfxBuiltIn,
 ) -> Result<()> {
     let env = FhoEnvironment::new(&context, &ffx);
-    ffx_lib_suite::ffx_plugin_impl(&env, subcommand).await
+    Box::pin(ffx_lib_suite::ffx_plugin_impl(&env, subcommand)).await
 }
 
 #[fuchsia_async::run_singlethreaded]

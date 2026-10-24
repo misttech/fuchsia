@@ -16,7 +16,6 @@ pub struct GuestSocatTool {
 
 fho::embedded_plugin!(GuestSocatTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestSocatTool {
     type Writer = MachineWriter<guest_cli::socat::SocatResult>;
 

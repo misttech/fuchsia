@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_session::LifecycleProxy;
 use ffx_session_common::CommandStatus;
 use ffx_session_stop_args::SessionStopCommand;
@@ -24,7 +23,6 @@ pub struct StopTool {
 
 fho::embedded_plugin!(StopTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;

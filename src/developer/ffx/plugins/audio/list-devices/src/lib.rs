@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_audio_device as fadevice;
 use fdomain_fuchsia_io as fio;
 use ffx_audio_device::device_list_untagged;
@@ -24,7 +23,6 @@ pub struct ListDevicesTool {
 }
 
 fho::embedded_plugin!(ListDevicesTool);
-#[async_trait(?Send)]
 impl FfxMain for ListDevicesTool {
     type Writer = MachineWriter<ListResult>;
 

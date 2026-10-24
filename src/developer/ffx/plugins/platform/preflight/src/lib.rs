@@ -72,7 +72,6 @@ pub struct PreflightTool {
 
 fho::embedded_plugin!(PreflightTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for PreflightTool {
     type Writer = SimpleWriter;
 

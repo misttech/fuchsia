@@ -20,7 +20,6 @@ rustc_library("lib") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust_fdomain",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:hex",
   ]
 

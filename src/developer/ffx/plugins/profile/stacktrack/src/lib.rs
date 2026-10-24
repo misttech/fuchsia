@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_stacktrack_client as fstacktrack_client;
 use ffx_config::EnvironmentContext;
@@ -26,7 +25,6 @@ pub struct StackTrackTool {
 
 fho::embedded_plugin!(StackTrackTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StackTrackTool {
     type Writer = MachineWriter<ResolvedSnapshot>;
     type Error = fho::Error;

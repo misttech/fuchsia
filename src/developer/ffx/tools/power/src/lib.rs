@@ -64,7 +64,6 @@ pub struct PowerTool {
     cmd: args::PowerCommand,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for PowerTool {
     type Writer = SimpleWriter;
 

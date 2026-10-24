@@ -22,7 +22,6 @@ ffx_plugin("ffx_target_log_message") {
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//third_party/rust_crates:async-trait",
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",

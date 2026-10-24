@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::show::TargetData;
-use async_trait::async_trait;
 use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
@@ -91,7 +90,6 @@ pub enum ShowError {
 
 fho::embedded_plugin!(ShowTool, ShowError);
 
-#[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<TargetShowInfo>;
     type Error = ShowError;

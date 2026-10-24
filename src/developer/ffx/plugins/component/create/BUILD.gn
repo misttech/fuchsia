@@ -20,7 +20,6 @@ if (is_host) {
       "//src/developer/ffx/lib/writer:lib",
       "//src/developer/ffx/plugins/component/common:ffx_component",
       "//src/sys/lib/component_debug:component_debug_fdomain",
-      "//third_party/rust_crates:async-trait",
     ]
 
     args_sources = [ "src/args.rs" ]

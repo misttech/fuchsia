@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_kernel as fstats;
 use fdomain_fuchsia_power_metrics::{self as fmetrics, CpuLoad, Metric};
 use ffx_cpu_load_args as args_mod;
@@ -60,7 +59,6 @@ pub struct CpuLoadTool {
 
 fho::embedded_plugin!(CpuLoadTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CpuLoadTool {
     type Writer = VerifiedMachineWriter<Option<CpuLoadOutput>>;
 

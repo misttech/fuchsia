@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use component_debug_fdomain::config::RawConfigEntry;
 use errors::ffx_error;
 use fdomain_fuchsia_component_decl as fdecl;
@@ -29,7 +28,6 @@ pub struct LaunchTool {
 
 fho::embedded_plugin!(LaunchTool);
 
-#[async_trait(?Send)]
 impl FfxMain for LaunchTool {
     type Writer = VerifiedMachineWriter<()>;
 

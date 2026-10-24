@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug::cli::format::format_start_error;
 use component_debug::lifecycle::start_instance;
 use component_debug::query::get_cml_moniker_from_query;
@@ -39,7 +38,6 @@ pub struct StartTool {
 
 fho::embedded_plugin!(StartTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StartTool {
     type Writer = VerifiedMachineWriter<StartResult>;
 

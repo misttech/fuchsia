@@ -8,7 +8,6 @@
 use crate::arg_templates::process_flag_template_with_context;
 use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
-use async_trait::async_trait;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
     NetworkingMode, Ramdisk, RamdiskKind, SerialMode,
@@ -245,7 +244,6 @@ pub(crate) struct PortPair {
 /// QEMU as the emulator.
 /// This allows the implementation to be shared
 /// across multiple engine types.
-#[async_trait(?Send)]
 pub(crate) trait QemuBasedEngine: EmulatorEngine {
     /// Checks that the required files are present
     fn check_required_files(&self, guest: &GuestConfig) -> Result<()> {

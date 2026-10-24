@@ -4,7 +4,6 @@
 
 use addr::TargetIpAddr;
 use anyhow::Result;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
@@ -26,7 +25,6 @@ pub struct SshTool {
 
 fho::embedded_plugin!(SshTool);
 
-#[async_trait(?Send)]
 impl FfxMain for SshTool {
     // This command doesn't actually produce any normal output itself.
     type Writer = SimpleWriter;

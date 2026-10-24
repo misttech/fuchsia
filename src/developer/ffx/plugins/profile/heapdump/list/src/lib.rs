@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
 use ffx_profile_heapdump_common::{
@@ -61,7 +60,6 @@ pub struct ListTool {
 
 fho::embedded_plugin!(ListTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = MachineWriter<Vec<StoredSnapshot>>;
 

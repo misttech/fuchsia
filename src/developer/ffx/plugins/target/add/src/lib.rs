@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target::{TargetInfoQuery, knock_target};
 use ffx_target_add_args::AddCommand;
@@ -31,7 +30,6 @@ pub struct AddTool {
 
 fho::embedded_plugin!(AddTool);
 
-#[async_trait(?Send)]
 impl FfxMain for AddTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

@@ -36,7 +36,6 @@ pub struct TriageTool {
     context: EnvironmentContext,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for TriageTool {
     type Writer = Writer;
 

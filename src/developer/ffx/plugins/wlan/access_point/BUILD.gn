@@ -18,7 +18,6 @@ ffx_plugin("ffx_wlan_ap") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
   args_deps = [
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust_fdomain",

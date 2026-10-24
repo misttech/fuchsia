@@ -26,7 +26,6 @@ pub struct SpeedtestTool {
 
 fho::embedded_plugin!(SpeedtestTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for SpeedtestTool {
     type Writer = VerifiedMachineWriter<Vec<client::SpeedtestReport>>;
 

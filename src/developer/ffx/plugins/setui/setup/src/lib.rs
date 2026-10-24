@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{ConfigurationInterfaces, SetupProxy, SetupSettings};
 use ffx_setui_setup_args::Setup;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct SetupTool {
 
 fho::embedded_plugin!(SetupTool);
 
-#[async_trait(?Send)]
 impl FfxMain for SetupTool {
     type Writer = SimpleWriter;
 

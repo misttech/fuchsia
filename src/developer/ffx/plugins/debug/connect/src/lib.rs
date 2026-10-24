@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use fdomain_fuchsia_debugger as fdebugger;
 use ffx_config::EnvironmentContext;
@@ -32,7 +31,6 @@ pub struct ConnectTool {
 
 fho::embedded_plugin!(ConnectTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ConnectTool {
     type Writer = SimpleWriter;
 

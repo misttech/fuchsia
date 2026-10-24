@@ -40,7 +40,6 @@ pub struct FuzzTool {
 
 fho::embedded_plugin!(FuzzTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FuzzTool {
     type Writer = SimpleWriter;
 

@@ -58,7 +58,7 @@ pub trait ToolRunner {
 
 /// Implements discovering and loading the subtools a particular ffx binary
 /// is capable of running.
-#[async_trait::async_trait(?Send)]
+#[allow(async_fn_in_trait)]
 pub trait ToolSuite: Sized {
     /// Initializes the tool suite from the ffx invocation's environment.
     fn from_env(env: &EnvironmentContext) -> Result<Self, Error>;

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug_fdomain::cli::show::ShowCmdInstance;
 use component_debug_fdomain::cli::{show_cmd_print, show_cmd_serialized};
 use errors::ffx_error;
@@ -20,7 +19,6 @@ pub struct ShowTool {
 
 fho::embedded_plugin!(ShowTool);
 
-#[async_trait(?Send)]
 impl FfxMain for ShowTool {
     type Writer = VerifiedMachineWriter<ShowCmdInstance>;
 

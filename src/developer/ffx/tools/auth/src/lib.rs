@@ -4,7 +4,6 @@
 
 use anyhow as _;
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use ffx_writer::SimpleWriter;
 use fho::{Error, FfxMain, FfxTool, Result};
 
@@ -29,7 +28,6 @@ pub struct AuthTool {
     pub cmd: AuthCommand,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for AuthTool {
     type Writer = SimpleWriter;
 

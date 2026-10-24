@@ -27,7 +27,6 @@ rustc_library("lib") {
     "//src/lib/assembly/util",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use async_trait::async_trait;
 use fdomain_fuchsia_wlan_policy as wlan_policy;
 use ffx_wlan_ap_args as arg_types;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct AccessPointTool {
 
 fho::embedded_plugin!(AccessPointTool);
 
-#[async_trait(?Send)]
 impl FfxMain for AccessPointTool {
     type Writer = SimpleWriter;
 

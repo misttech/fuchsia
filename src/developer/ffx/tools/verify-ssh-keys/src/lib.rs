@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_ssh::keys::{MatchingKeysInfo, SshKey};
 use ffx_writer::{MachineWriter, ToolIO as _};
@@ -31,7 +30,6 @@ pub struct VerifyTool {
     device_addr: SshAddrHolder,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for VerifyTool {
     type Writer = MachineWriter<SshKey>;
 

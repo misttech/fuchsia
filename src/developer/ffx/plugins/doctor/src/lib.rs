@@ -5,7 +5,6 @@ use crate::doctor_ledger::*;
 use crate::ledger_view::*;
 use anyhow::Result;
 use async_lock::Mutex;
-use async_trait::async_trait;
 use doctor_utils::DoctorRecorder;
 use errors::ffx_bail;
 use ffx_build_version::VersionInfo;
@@ -77,7 +76,6 @@ impl ShowToolWrapper {
     }
 }
 
-#[async_trait(?Send)]
 impl fho::TryFromEnv for ShowToolWrapper {
     type Error = std::convert::Infallible;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -95,7 +93,6 @@ pub struct DoctorTool {
 
 fho::embedded_plugin!(DoctorTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DoctorTool {
     type Writer = VerifiedMachineWriter<DoctorResult>;
 

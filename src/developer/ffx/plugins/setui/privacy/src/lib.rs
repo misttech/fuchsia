@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{PrivacyProxy, PrivacySettings};
 use ffx_setui_privacy_args::Privacy;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct PrivacyTool {
 
 fho::embedded_plugin!(PrivacyTool);
 
-#[async_trait(?Send)]
 impl FfxMain for PrivacyTool {
     type Writer = SimpleWriter;
 

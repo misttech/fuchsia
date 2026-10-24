@@ -32,7 +32,6 @@ pub struct ProductBundleCreateTool {
 fho::embedded_plugin!(ProductBundleCreateTool);
 
 /// Create a fuchsia product bundle.
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ProductBundleCreateTool {
     type Writer = SimpleWriter;
 

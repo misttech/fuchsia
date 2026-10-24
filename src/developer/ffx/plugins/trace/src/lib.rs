@@ -398,7 +398,6 @@ pub struct TraceTool {
     context: EnvironmentContext,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for TraceTool {
     type Writer = Writer;
 

@@ -29,7 +29,6 @@ ffx_plugin("ffx_audio_record") {
     "//src/developer/ffx/plugins/audio/common:ffx_audio_common",
     "//src/lib/fdomain/client",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:blocking",
     "//third_party/rust_crates:futures",
   ]

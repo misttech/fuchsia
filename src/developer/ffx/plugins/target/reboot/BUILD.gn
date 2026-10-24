@@ -21,7 +21,6 @@ ffx_plugin("ffx_reboot") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fidl/rust/fidl",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:tokio",

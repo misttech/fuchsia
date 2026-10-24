@@ -24,7 +24,6 @@ pub struct ExtractTool {
 
 fho::embedded_plugin!(ExtractTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ExtractTool {
     type Writer = VerifiedMachineWriter<ExtractResult>;
 

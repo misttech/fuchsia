@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use errors::ffx_bail;
 use ffx_audio_gen_args::{
     GenCommand, PinkNoiseCommand, SawtoothCommand, SineCommand, SquareCommand, SubCommand,
@@ -179,7 +178,6 @@ pub struct GenTool {
     cmd: GenCommand,
 }
 fho::embedded_plugin!(GenTool);
-#[async_trait(?Send)]
 impl FfxMain for GenTool {
     type Writer = SimpleWriter;
 

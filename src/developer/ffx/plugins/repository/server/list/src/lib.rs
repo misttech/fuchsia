@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use errors;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_list_args::ListCommand;
@@ -132,7 +131,6 @@ pub struct RepoListTool {
 
 fho::embedded_plugin!(RepoListTool, RepoListError);
 
-#[async_trait(?Send)]
 impl FfxMain for RepoListTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = RepoListError;

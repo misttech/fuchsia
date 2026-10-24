@@ -21,7 +21,6 @@ pub struct BlobHashTool {
 
 fho::embedded_plugin!(BlobHashTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for BlobHashTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
 

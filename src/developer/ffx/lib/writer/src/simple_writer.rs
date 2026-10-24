@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::{Format, Result, ToolIO};
-use async_trait::async_trait;
 use fho::{FhoEnvironment, TryFromEnv};
 use std::io::Write;
 use writer::{TestBuffers, Writer};
@@ -78,7 +77,6 @@ impl std::fmt::Display for InvalidMachineFormat {
 
 impl std::error::Error for InvalidMachineFormat {}
 
-#[async_trait(?Send)]
 impl TryFromEnv for SimpleWriter {
     type Error = InvalidMachineFormat;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

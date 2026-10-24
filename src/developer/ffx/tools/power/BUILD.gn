@@ -26,7 +26,6 @@ rustc_library("ffx_power") {
     "//src/power/tools/cli:lib_fdomain",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
   ]
   sources = [
     "src/args.rs",

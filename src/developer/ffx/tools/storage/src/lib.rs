@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
-use async_trait::async_trait;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, deferred};
 use target_holders::moniker;
@@ -31,7 +30,6 @@ pub struct StorageTool {
     fxfs_proxy: fho::Deferred<fdomain_fuchsia_fxfs::DebugProxy>,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for StorageTool {
     type Writer = SimpleWriter;
 

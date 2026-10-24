@@ -16,7 +16,6 @@ pub struct ScrutinyComponentsTool {
 
 fho::embedded_plugin!(ScrutinyComponentsTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyComponentsTool {
     type Writer = SimpleWriter;
 

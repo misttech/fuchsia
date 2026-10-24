@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_target_log_message_args::LogMessageCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext, FfxMain, FfxTool};
@@ -17,7 +16,6 @@ pub struct LogMessageTool {
 
 fho::embedded_plugin!(LogMessageTool);
 
-#[async_trait(?Send)]
 impl FfxMain for LogMessageTool {
     type Writer = SimpleWriter;
 

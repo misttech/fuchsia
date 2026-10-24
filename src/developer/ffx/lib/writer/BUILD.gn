@@ -55,7 +55,6 @@ if (is_host) {
     ]
     crate_name = "ffx_writer"
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     test_deps = [
       "//src/developer/ffx/config:lib",
       "//src/lib/fuchsia",

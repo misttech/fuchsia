@@ -48,7 +48,6 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "//src/lib/gcs",
     "//src/lib/structured_ui",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",

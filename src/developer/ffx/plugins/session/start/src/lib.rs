@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_session::{LifecycleProxy, LifecycleStartRequest};
 use ffx_session_common::CommandStatus;
 use ffx_session_start_args::SessionStartCommand;
@@ -23,7 +22,6 @@ pub struct StartTool {
 
 fho::embedded_plugin!(StartTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StartTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;

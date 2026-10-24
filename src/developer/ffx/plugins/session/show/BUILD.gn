@@ -17,7 +17,6 @@ ffx_plugin("ffx_session_show") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:termion",
   ]
 

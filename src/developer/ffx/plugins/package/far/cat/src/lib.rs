@@ -19,7 +19,6 @@ pub struct FarCatTool {
 
 fho::embedded_plugin!(FarCatTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FarCatTool {
     type Writer = VerifiedMachineWriter<FarCatResult>;
 

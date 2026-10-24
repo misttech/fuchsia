@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_session::RestarterProxy;
 use ffx_session_restart_args::SessionRestartCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
@@ -20,7 +19,6 @@ pub struct RestartTool {
 
 fho::embedded_plugin!(RestartTool);
 
-#[async_trait(?Send)]
 impl FfxMain for RestartTool {
     type Writer = VerifiedMachineWriter<()>;
 

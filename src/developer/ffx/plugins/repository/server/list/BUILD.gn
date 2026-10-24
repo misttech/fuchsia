@@ -26,7 +26,6 @@ ffx_plugin("ffx_repository_server_list") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/pkg/lib/fuchsia-repo",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:thiserror",

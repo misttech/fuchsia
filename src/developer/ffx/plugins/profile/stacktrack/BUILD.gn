@@ -28,7 +28,6 @@ if (is_host) {
       "//src/lib/fdomain/client",
       "//src/performance/memory/stacktrack/lib/stacktrack_snapshot:stacktrack_snapshot_fdomain",
       "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:async-trait",
     ]
   }
 

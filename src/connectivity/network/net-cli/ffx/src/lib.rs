@@ -239,7 +239,6 @@ pub struct NetTool {
     pub remote_control: RemoteControlProxyHolder,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for NetTool {
     type Writer = MachineWriter<serde_json::Value>;
 

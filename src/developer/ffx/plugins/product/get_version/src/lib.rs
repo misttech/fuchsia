@@ -16,7 +16,6 @@ use crate::load_config::{
 use crate::unique_release_info::UniqueReleaseInfoVector;
 
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool};
 use product_bundle::ProductBundle;
@@ -31,7 +30,6 @@ pub struct PbGetVersionTool {
     cmd: GetVersionCommand,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for PbGetVersionTool {
     type Writer = MachineWriter<UniqueReleaseInfoVector>;
 

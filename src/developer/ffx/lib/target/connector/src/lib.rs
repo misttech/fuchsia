@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_command_error::{Error, Result};
 use fho::{FhoEnvironment, TryFromEnv};
 use std::time::Duration;
@@ -93,7 +92,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<T> TryFromEnv for Connector<T>
 where
     T: TryFromEnv<Error = ffx_command_error::Error>,
@@ -187,7 +185,6 @@ mod tests {
     #[derive(Debug)]
     struct DummyHolder;
 
-    #[async_trait(?Send)]
     impl TryFromEnv for DummyHolder {
         type Error = ffx_command_error::Error;
         async fn try_from_env(_env: &FhoEnvironment) -> Result<Self, Self::Error> {

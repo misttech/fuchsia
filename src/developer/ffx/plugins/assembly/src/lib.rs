@@ -4,7 +4,6 @@
 
 use anyhow::Context;
 use assembly_api::{create_system, product_assembly};
-use async_trait::async_trait;
 use errors::FfxError;
 use ffx_assembly_args::*;
 use ffx_config::EnvironmentContext;
@@ -31,7 +30,6 @@ pub struct AssemblyTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for AssemblyTool {
     type Writer = VerifiedMachineWriter<AssemblyResult>;
 

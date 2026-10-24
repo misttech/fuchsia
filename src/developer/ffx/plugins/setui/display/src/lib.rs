@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::DisplayProxy;
 use ffx_setui_display_args::{Display, SubCommandEnum};
 use ffx_writer::SimpleWriter;
@@ -27,7 +26,6 @@ pub struct DisplayTool {
 
 fho::embedded_plugin!(DisplayTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DisplayTool {
     type Writer = SimpleWriter;
 

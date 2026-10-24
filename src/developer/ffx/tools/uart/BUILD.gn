@@ -22,7 +22,6 @@ if (is_host) {
       "//src/developer/lib/uart_fpl",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:argh",
-      "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:nix",
       "//third_party/rust_crates:rand",

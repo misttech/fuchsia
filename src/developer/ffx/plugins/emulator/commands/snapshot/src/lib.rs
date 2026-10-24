@@ -37,7 +37,6 @@ pub struct EmuSnapshotTool {
 
 fho::embedded_plugin!(EmuSnapshotTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for EmuSnapshotTool {
     type Writer = VerifiedMachineWriter<SnapshotOutput>;
 

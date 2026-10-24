@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_debugger as fdebugger;
 use fdomain_fuchsia_exception::ProcessLimboProxy;
 use ffx_config::EnvironmentContext;
@@ -26,7 +25,6 @@ pub struct CrashTool {
 
 fho::embedded_plugin!(CrashTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CrashTool {
     type Writer = SimpleWriter;
 

@@ -17,7 +17,6 @@ ffx_plugin("ffx_target_repository_rule_replace") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fuchsia-hyper",
     "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext:fidl-fuchsia-pkg-rewrite-ext_fdomain",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:http-body-util",
     "//third_party/rust_crates:hyper",
     "//third_party/rust_crates:schemars",

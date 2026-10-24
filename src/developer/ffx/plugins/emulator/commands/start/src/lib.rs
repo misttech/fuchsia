@@ -4,7 +4,6 @@
 
 use crate::pbm::{get_virtual_devices, make_configs};
 use anyhow::{Context, anyhow};
-use async_trait::async_trait;
 use emulator_instance::{EmulatorConfiguration, EmulatorInstances, EngineType, NetworkingMode};
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::EMU_SERIAL_ENABLED;
@@ -106,7 +105,7 @@ async fn download_from_gs(gs_url: &str) -> Result<PathBuf> {
 /// EngineOperations trait is used to allow mocking of
 /// these methods.
 #[cfg_attr(test, mockall::automock)]
-#[async_trait(?Send)]
+#[allow(async_fn_in_trait)]
 pub trait EngineOperations: TryFromEnv + 'static {
     async fn get_engine_by_name(
         &self,
@@ -139,7 +138,6 @@ pub struct EngineOperationsData {
     emu_instances: EmulatorInstances,
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for EngineOperationsData {
     type Error = fho::Error;
     async fn try_from_env(env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -150,7 +148,6 @@ impl TryFromEnv for EngineOperationsData {
     }
 }
 
-#[async_trait(?Send)]
 impl EngineOperations for EngineOperationsData {
     async fn get_engine_by_name(
         &self,
@@ -238,13 +235,12 @@ pub enum CommandStatus {
 // removed.
 fho::embedded_plugin!(EmuStartTool<EngineOperationsData>);
 
-#[async_trait(?Send)]
 impl<T: EngineOperations> FfxMain for EmuStartTool<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 
     type Error = ::fho::Error;
 
-    async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         match self.do_start(&mut writer).await {
             Ok(messages) => writer.machine(&CommandStatus::Ok { messages }).map_err(|e| bug!(e)),
             Err(Error::User(e)) => {
@@ -822,6 +818,7 @@ mod tests {
     use super::*;
     use assembled_system::Image;
     use assembly_partitions_config::PartitionsConfig;
+    use async_trait::async_trait;
     use camino::{Utf8Path, Utf8PathBuf};
     use emulator_instance::{LogLevel, RuntimeConfig, SerialMode};
     use ffx_config::environment::TestEnvBuilder;
@@ -962,7 +959,6 @@ mod tests {
         }
     }
 
-    #[async_trait(?Send)]
     impl TryFromEnv for MockEngineOperations {
         type Error = fho::Error;
         async fn try_from_env(

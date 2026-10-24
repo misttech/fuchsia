@@ -12,7 +12,6 @@ use assembly_config_schema as _;
 use assembly_container as _;
 use assembly_platform_artifacts as _;
 use assembly_util::{sanitize_for_mos_apis, shorten_path};
-use async_trait::async_trait;
 use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
@@ -53,7 +52,6 @@ fho::embedded_plugin!(ProductBisectTool);
 use gcs::error::GcsError;
 
 /// Initiate PB Bisection.
-#[async_trait(?Send)]
 impl FfxMain for ProductBisectTool {
     type Writer = SimpleWriter;
 

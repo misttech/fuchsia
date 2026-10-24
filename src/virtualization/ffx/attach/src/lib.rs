@@ -16,7 +16,6 @@ pub struct GuestAttachTool {
 
 fho::embedded_plugin!(GuestAttachTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestAttachTool {
     type Writer = MachineWriter<guest_cli::attach::AttachResult>;
 

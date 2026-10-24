@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_session_power::HandoffProxy;
 use ffx_session_common::CommandStatus;
 use ffx_session_drop_power_lease_args::SessionDropPowerLeaseCommand;
@@ -22,7 +21,6 @@ pub struct DropPowerLeaseTool {
 
 fho::embedded_plugin!(DropPowerLeaseTool);
 
-#[async_trait(?Send)]
 impl FfxMain for DropPowerLeaseTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

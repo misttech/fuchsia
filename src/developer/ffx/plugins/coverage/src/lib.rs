@@ -41,7 +41,6 @@ pub struct CoverageTool {
 
 fho::embedded_plugin!(CoverageTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for CoverageTool {
     type Writer = SimpleWriter;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug::cli::capability::RouteSegment;
 use component_debug::cli::{capability_cmd_print, capability_cmd_serialized};
 use component_debug_fdomain as component_debug;
@@ -22,7 +21,6 @@ pub struct CapabilityTool {
 
 fho::embedded_plugin!(CapabilityTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CapabilityTool {
     type Writer = VerifiedMachineWriter<Vec<RouteSegment>>;
     type Error = ::fho::Error;

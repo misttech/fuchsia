@@ -14,7 +14,6 @@ use crate::driver::{
 };
 use crate::metadata::{ConnectionMetadata, get_socket_path};
 use crate::sys::{get_peer_pid, is_driver_running};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{SimpleWriter, ToolIO};
 use fho::{FfxMain, FfxTool, Result, bug, user_error};
@@ -232,7 +231,6 @@ impl ConnectTool {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ConnectTool {
     type Writer = SimpleWriter;
     type Error = fho::Error;

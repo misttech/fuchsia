@@ -25,7 +25,6 @@
 //!    overly fragile, as it relies on every possible definition used by not just logging, but
 //!    diagnostics in general.
 
-use async_trait::async_trait;
 use diagnostics_data::{DataSource, LogsHierarchy, LogsMetadata};
 use ffx_writer::{Format, TestBuffers, ToolIO, VerifiedMachineWriter};
 use fho::{FhoEnvironment, TryFromEnv};
@@ -111,7 +110,6 @@ impl Write for CommandOutputMachineWriter {
     }
 }
 
-#[async_trait(?Send)]
 impl TryFromEnv for CommandOutputMachineWriter {
     type Error = std::convert::Infallible;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

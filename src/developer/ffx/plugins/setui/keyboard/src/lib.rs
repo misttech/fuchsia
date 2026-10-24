@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{KeyboardProxy, KeyboardSettings};
 use ffx_setui_keyboard_args::Keyboard;
 use ffx_writer::SimpleWriter;
@@ -21,7 +20,6 @@ pub struct KeyboardTool {
 
 fho::embedded_plugin!(KeyboardTool);
 
-#[async_trait(?Send)]
 impl FfxMain for KeyboardTool {
     type Writer = SimpleWriter;
 

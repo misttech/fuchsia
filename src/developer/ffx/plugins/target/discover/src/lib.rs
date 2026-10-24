@@ -4,7 +4,6 @@
 
 use addr::TargetAddr;
 use anyhow::{Context, anyhow};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_target_discover_args::{DiscoverCommand, DiscoverSubCommand, LoopMode};
 use ffx_writer::SimpleWriter;
@@ -64,7 +63,6 @@ impl ProcessManager for SystemProcessManager {
     }
 }
 
-#[async_trait(?Send)]
 trait DiscoveryRunner {
     async fn run_discovery(&self) -> Result<()>;
 }
@@ -80,7 +78,6 @@ struct RealDiscoveryRunner {
     output_mode: Output,
 }
 
-#[async_trait(?Send)]
 impl DiscoveryRunner for RealDiscoveryRunner {
     async fn run_discovery(&self) -> Result<()> {
         if matches!(self.output_mode, Output::All) {
@@ -119,7 +116,6 @@ struct Discoverer<P: ProcessManager, D: DiscoveryRunner> {
     output_mode: Output,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for DiscoverTool {
     type Writer = SimpleWriter;
 
@@ -564,7 +560,6 @@ mod tests {
         }
     }
 
-    #[async_trait(?Send)]
     impl DiscoveryRunner for MockDiscoveryRunner {
         async fn run_discovery(&self) -> Result<()> {
             self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

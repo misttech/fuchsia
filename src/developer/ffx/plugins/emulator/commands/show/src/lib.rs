@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use emulator_instance::EmulatorInstances;
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
@@ -73,7 +72,6 @@ fn which_details(cmd: &ShowCommand) -> Vec<ShowDetail> {
 //removed.
 fho::embedded_plugin!(EmuShowTool);
 
-#[async_trait(?Send)]
 impl FfxMain for EmuShowTool {
     type Writer = VerifiedMachineWriter<Vec<ShowDetail>>;
 

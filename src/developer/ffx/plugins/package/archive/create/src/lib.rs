@@ -16,7 +16,6 @@ pub struct ArchiveCreateTool {
 
 fho::embedded_plugin!(ArchiveCreateTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveCreateTool {
     type Writer = VerifiedMachineWriter<()>;
 

@@ -60,7 +60,6 @@ pub struct FidlTool {
 
 fho::embedded_plugin!(FidlTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FidlTool {
     type Writer = SimpleWriter;
 

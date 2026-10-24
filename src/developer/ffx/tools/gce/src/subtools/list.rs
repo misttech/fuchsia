@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::args::ListCommand;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_gce::GceContext;
 use ffx_gce::models::Instance;
@@ -20,7 +19,6 @@ pub struct ListTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = MachineWriter<Vec<Instance>>;
     type Error = fho::Error;

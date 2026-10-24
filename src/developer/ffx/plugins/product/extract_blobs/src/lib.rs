@@ -21,7 +21,6 @@ pub struct PbExtractBlobsTool {
     env: EnvironmentContext,
 }
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for PbExtractBlobsTool {
     type Writer = ffx_writer::SimpleWriter;
     type Error = ::fho::Error;

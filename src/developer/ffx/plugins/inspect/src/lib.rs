@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_diagnostics_host::ArchiveAccessorProxy;
@@ -36,7 +35,6 @@ pub struct InspectTool {
     rcs: Deferred<RemoteControlProxyHolder>,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for InspectTool {
     type Writer = VerifiedMachineWriter<InspectOutput>;
 

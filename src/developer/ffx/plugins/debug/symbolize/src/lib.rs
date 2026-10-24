@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
@@ -20,7 +19,6 @@ pub struct SymbolizeTool {
 
 fho::embedded_plugin!(SymbolizeTool);
 
-#[async_trait(?Send)]
 impl FfxMain for SymbolizeTool {
     type Writer = SimpleWriter;
 

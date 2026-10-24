@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use chrono::Local;
 use ffx_config::EnvironmentContext;
 use ffx_version_args::VersionCommand;
@@ -22,7 +21,6 @@ pub struct VersionTool {
 
 fho::embedded_plugin!(VersionTool);
 
-#[async_trait(?Send)]
 impl FfxMain for VersionTool {
     type Writer = MachineWriter<Versions>;
 

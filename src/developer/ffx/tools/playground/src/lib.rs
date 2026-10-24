@@ -5,7 +5,6 @@
 use anyhow::{Result, anyhow};
 use argh::{ArgsInfo, FromArgs};
 use async_fs as afs;
-use async_trait::async_trait;
 use buf_read_ext::BufReadExt as _;
 use crossterm::tty::IsTty;
 use errors::ffx_bail;
@@ -60,7 +59,6 @@ pub struct PlaygroundTool {
     context: EnvironmentContext,
 }
 
-#[async_trait(?Send)]
 impl FfxMain for PlaygroundTool {
     type Writer = SimpleWriter;
 

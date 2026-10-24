@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{NotificationType, Notifier};
 use ffx_diagnostics_checks::run_diagnostics;
@@ -53,7 +52,6 @@ impl Notifier for DefaultNotifier {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for Status {
     // This is a machine notifier, but there is (currently) no machine output in use yet.
     type Writer = VerifiedMachineWriter<StatusUpdate>;

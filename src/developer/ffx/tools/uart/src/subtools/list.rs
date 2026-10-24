@@ -4,7 +4,6 @@
 
 use crate::args::ListCommand;
 use crate::metadata::ConnectionMetadata;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool, Result};
@@ -48,7 +47,6 @@ impl ListTool {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = MachineWriter<Vec<ConnectionMetadata>>;
     type Error = fho::Error;

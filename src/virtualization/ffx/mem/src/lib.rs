@@ -16,7 +16,6 @@ pub struct GuestMemTool {
 
 fho::embedded_plugin!(GuestMemTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestMemTool {
     type Writer = MachineWriter<guest_cli::mem::GuestMemResult>;
 

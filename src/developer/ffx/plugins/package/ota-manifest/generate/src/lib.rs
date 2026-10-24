@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_package_ota_manifest_generate_args::GenerateCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext as _, FfxMain, FfxTool, Result};
@@ -34,7 +33,6 @@ fn replace_or_add_asset_image(
     Ok(())
 }
 
-#[async_trait(?Send)]
 impl FfxMain for GenerateTool {
     type Writer = SimpleWriter;
 

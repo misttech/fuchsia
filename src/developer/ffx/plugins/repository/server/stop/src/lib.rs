@@ -4,7 +4,6 @@
 
 use std::time::Duration;
 
-use async_trait::async_trait;
 use errors;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_stop_args::StopCommand;
@@ -80,7 +79,6 @@ pub struct RepoStopTool {
 
 fho::embedded_plugin!(RepoStopTool, RepoStopError);
 
-#[async_trait(?Send)]
 impl FfxMain for RepoStopTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = RepoStopError;

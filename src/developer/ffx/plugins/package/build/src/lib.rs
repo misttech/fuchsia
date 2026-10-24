@@ -16,7 +16,6 @@ pub struct PackageBuildTool {
 
 fho::embedded_plugin!(PackageBuildTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for PackageBuildTool {
     type Writer = VerifiedMachineWriter<()>;
 

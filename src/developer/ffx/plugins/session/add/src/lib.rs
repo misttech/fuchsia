@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_element::{
     self as felement, Annotation, AnnotationKey, AnnotationValue, ControllerMarker,
@@ -30,7 +29,6 @@ pub struct AddTool {
 
 fho::embedded_plugin!(AddTool);
 
-#[async_trait(?Send)]
 impl FfxMain for AddTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;

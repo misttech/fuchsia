@@ -53,7 +53,6 @@ pub struct NetTestRealmTool {
 
 fho::embedded_plugin!(NetTestRealmTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for NetTestRealmTool {
     type Writer = MachineWriter<String>;
 

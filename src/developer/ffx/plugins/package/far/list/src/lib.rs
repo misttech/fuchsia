@@ -41,7 +41,6 @@ pub struct FarListTool {
 
 fho::embedded_plugin!(FarListTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for FarListTool {
     type Writer = MachineWriter<Vec<FarEntry>>;
 

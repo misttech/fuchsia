@@ -70,7 +70,6 @@ impl Symbolize for NoOpSymoblizer {
 
 fho::embedded_plugin!(LogTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for LogTool {
     type Writer = CommandOutputMachineWriter;
 

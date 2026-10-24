@@ -12,7 +12,6 @@ use writer::ToolIO;
 /// use it.
 pub struct NullWriter;
 
-#[async_trait::async_trait(?Send)]
 impl TryFromEnv for NullWriter {
     type Error = std::convert::Infallible;
     async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

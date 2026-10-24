@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_developer_remotecontrol as rc;
 use fdomain_fuchsia_pkg as fpkg;
@@ -10,6 +9,7 @@ use futures::future::FutureExt;
 use futures::select;
 use pkg::{PkgServerInstanceInfo, PkgServerInstances};
 use rcs::open_with_timeout_at;
+use std::future::Future;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -28,20 +28,18 @@ impl Drop for ServerGuard {
 
 /// Trait for running package server commands.
 /// Mockable for tests.
-#[async_trait]
 pub trait PackageServerRunner {
-    async fn check_for_running_server(&self) -> anyhow::Result<bool>;
-    async fn run_package_server(
+    fn check_for_running_server(&self) -> impl Future<Output = anyhow::Result<bool>>;
+    fn run_package_server(
         &self,
         build_dir: Option<&str>,
-    ) -> anyhow::Result<Option<ServerGuard>>;
+    ) -> impl Future<Output = anyhow::Result<Option<ServerGuard>>>;
 }
 
 pub struct DefaultPackageServerRunner {
     pub process_dir: PathBuf,
 }
 
-#[async_trait]
 impl PackageServerRunner for DefaultPackageServerRunner {
     async fn check_for_running_server(&self) -> anyhow::Result<bool> {
         let mgr = PkgServerInstances::new(self.process_dir.clone());
@@ -272,7 +270,6 @@ mod tests {
         calls: std::sync::Mutex<Vec<String>>,
     }
 
-    #[async_trait]
     impl PackageServerRunner for MockPackageServerRunner {
         async fn check_for_running_server(&self) -> anyhow::Result<bool> {
             self.calls.lock().unwrap().push("check".to_string());

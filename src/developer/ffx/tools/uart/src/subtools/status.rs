@@ -7,7 +7,6 @@ use crate::metadata::{
     ConnectionMetadata, ConnectionStatus, DaemonMetrics, get_target_id, read_metadata,
 };
 use crate::sys::is_driver_running;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result, user_error};
@@ -269,7 +268,6 @@ fn print_status_report(
     Ok(())
 }
 
-#[async_trait(?Send)]
 impl FfxMain for StatusTool {
     type Writer = VerifiedMachineWriter<ConnectionStatusInfo>;
     type Error = fho::Error;

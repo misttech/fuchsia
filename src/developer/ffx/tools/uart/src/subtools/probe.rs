@@ -6,7 +6,6 @@ use crate::args::ProbeCommand;
 use crate::metadata::{ConnectionMetadata, ConnectionStatus};
 use crate::stream::{UartStream, connect_uart_stream, run_host_handshake};
 use crate::sys::is_driver_running;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result, user_error};
@@ -179,7 +178,6 @@ impl ProbeTool {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for ProbeTool {
     type Writer = VerifiedMachineWriter<ProbeResult>;
     type Error = fho::Error;

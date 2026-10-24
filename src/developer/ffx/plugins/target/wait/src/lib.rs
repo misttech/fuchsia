@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use errors;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::Notifier;
@@ -36,7 +35,6 @@ pub trait DeviceWaiter {
 
 pub struct DeviceWaiterImpl;
 
-#[async_trait(?Send)]
 impl fho::TryFromEnv for DeviceWaiterImpl {
     type Error = std::convert::Infallible;
     async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self, Self::Error> {
@@ -116,7 +114,6 @@ async fn run_diagnostics(env: &EnvironmentContext, timeout: Duration) -> String 
     notifier.into()
 }
 
-#[async_trait(?Send)]
 impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
     type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = WaitError;
@@ -170,7 +167,6 @@ mod test {
     use std::str::FromStr;
 
     // This is just here to satisfy trait bounds.
-    #[async_trait(?Send)]
     impl fho::TryFromEnv for MockDeviceWaiter {
         type Error = std::convert::Infallible;
         async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self, Self::Error> {

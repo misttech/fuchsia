@@ -27,7 +27,6 @@ pub struct DiagnosticsTool {
     pub rcs_holder: fho::Result<RemoteControlProxyHolder>,
 }
 
-#[async_trait::async_trait(?Send)]
 impl fho::FfxMain for DiagnosticsTool {
     type Writer = MachineWriter<DiagnosticsOutput>;
     type Error = fho::Error;

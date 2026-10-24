@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use ffx_target_default_args::{SubCommand, TargetDefaultCommand};
@@ -25,7 +24,6 @@ pub struct TargetDefaultTool {
 
 fho::embedded_plugin!(TargetDefaultTool);
 
-#[async_trait(?Send)]
 impl FfxMain for TargetDefaultTool {
     type Writer = VerifiedMachineWriter<TargetDefaultInfo>;
 

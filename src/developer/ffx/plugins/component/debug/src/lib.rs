@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use component_debug::query::get_single_instance_from_query;
 use component_debug::realm::{Runtime, get_runtime};
 use component_debug_fdomain as component_debug;
@@ -46,7 +45,6 @@ async fn get_job_koid(runtime: &Runtime) -> Result<zx_koid_t> {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for DebugTool {
     type Writer = MachineWriter<DebugResult>;
 

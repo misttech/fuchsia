@@ -16,7 +16,8 @@ def wrap_deps(dep: str) -> dict[str, str]:
     return {"enum": to_camel_case(dep), "lib": dep}
 
 
-TEMPLATE = """pub async fn ffx_plugin_impl(
+TEMPLATE = """#![allow(clippy::large_futures)]
+pub async fn ffx_plugin_impl(
   _env: &fho::FhoEnvironment,
   _cmd: {suite_args_lib}::FfxPluginCommand,
 ) -> fho::Result<()>
@@ -70,7 +71,6 @@ struct SuiteAdapter {{
     env:  fho::FhoEnvironment,
 }}
 
-#[fho::macro_deps::async_trait(?Send)]
 impl fho::FfxTool for SuiteAdapter {{
     type Command = {suite_args_lib}::FfxPluginCommand;
 
@@ -94,7 +94,6 @@ impl fho::FfxTool for SuiteAdapter {{
     }}
 }}
 
-#[fho::macro_deps::async_trait(?Send)]
 impl fho::FfxMain for SuiteAdapter {{
     // The Writer type here should not matter, and as such, do not
     // rely on it be accurate. The correct writer is created

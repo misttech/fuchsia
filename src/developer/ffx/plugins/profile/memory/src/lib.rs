@@ -14,7 +14,6 @@ use crate::plugin_output::filter_digest_by_process;
 use crate::write_csv_output::write_csv_output;
 use crate::write_human_readable_output::write_human_readable_output;
 use anyhow::Result;
-use async_trait::async_trait;
 use digest::{processed, raw};
 use errors::ffx_bail;
 use fdomain_client::fidl::Proxy;
@@ -73,7 +72,6 @@ pub struct MemoryTool {
 
 fho::embedded_plugin!(MemoryTool);
 
-#[async_trait(?Send)]
 impl FfxMain for MemoryTool {
     type Writer = MachineWriter<ProfileMemoryOutput>;
 

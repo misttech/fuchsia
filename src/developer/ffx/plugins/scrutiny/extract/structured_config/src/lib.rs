@@ -17,7 +17,6 @@ pub struct ScrutinyStructuredConfigTool {
 
 fho::embedded_plugin!(ScrutinyStructuredConfigTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyStructuredConfigTool {
     type Writer = SimpleWriter;
 

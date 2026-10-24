@@ -20,9 +20,6 @@ rustc_library(
     ],
     crate_name = "ffx_writer",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:async-trait",
-    ],
     target_compatible_with = HOST_CONSTRAINTS,
     test_deps = [
         "//src/developer/ffx/config:lib",

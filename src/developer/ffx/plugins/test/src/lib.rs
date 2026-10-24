@@ -12,7 +12,6 @@ use crate::suite_definition::{
     CombinedParams, combined_params_from_pilot_reader, test_params_from_reader,
 };
 use anyhow::{Context, Result, format_err};
-use async_trait::async_trait;
 use chrono::{TimeDelta, Utc};
 use errors::{ffx_bail, ffx_bail_with_code, ffx_error, ffx_error_with_code};
 use fdomain_client::fidl::Proxy;
@@ -96,7 +95,6 @@ impl Write for SyncBuffer {
     }
 }
 
-#[async_trait(?Send)]
 impl FfxMain for TestTool {
     type Writer = VerifiedMachineWriter<TestToolMessage>;
 

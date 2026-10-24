@@ -21,7 +21,6 @@ pub struct CompressTool {
 
 fho::embedded_plugin!(CompressTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for CompressTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
 

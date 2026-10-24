@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{IntlProxy, IntlSettings};
 use ffx_setui_intl_args::Intl;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct IntlTool {
 
 fho::embedded_plugin!(IntlTool);
 
-#[async_trait(?Send)]
 impl FfxMain for IntlTool {
     type Writer = SimpleWriter;
 

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 
 use fdomain_client::fidl::Proxy;
 use fdomain_client::{HandleBased, Socket};
@@ -25,7 +24,6 @@ pub struct PlayTool {
 }
 
 fho::embedded_plugin!(PlayTool);
-#[async_trait(?Send)]
 impl FfxMain for PlayTool {
     type Writer = MachineWriter<PlayResult>;
 

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use ffx_config::{ConfigError, EnvironmentContext};
 use ffx_target_remove_args::RemoveCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
@@ -30,7 +29,6 @@ pub struct RemoveTool {
 
 fho::embedded_plugin!(RemoveTool);
 
-#[async_trait(?Send)]
 impl FfxMain for RemoveTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

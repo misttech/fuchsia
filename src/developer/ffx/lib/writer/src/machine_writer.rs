@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::{Result, SimpleWriter, TestBuffers, ToolIO};
-use async_trait::async_trait;
 use fho::{FhoEnvironment, TryFromEnv};
 use serde::Serialize;
 use std::fmt::Display;
@@ -136,7 +135,6 @@ where
     }
 }
 
-#[async_trait(?Send)]
 impl<T: serde::Serialize> TryFromEnv for MachineWriter<T> {
     type Error = std::convert::Infallible;
     async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {

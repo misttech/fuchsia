@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_hardware_power_statecontrol::{
     AdminProxy, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
@@ -21,7 +20,6 @@ pub struct OffTool {
 
 fho::embedded_plugin!(OffTool);
 
-#[async_trait(?Send)]
 impl FfxMain for OffTool {
     type Writer = SimpleWriter;
 

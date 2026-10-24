@@ -22,7 +22,6 @@ impl ToolSuiteCommand for GceCommand {
 
 pub struct GceSuite;
 
-#[async_trait::async_trait(?Send)]
 impl SubtoolSuite for GceSuite {
     type Command = GceCommand;
 

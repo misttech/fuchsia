@@ -1,8 +1,6 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-use ::async_trait::async_trait;
 use ::ffx_bluetooth_peer_args::{LeSecurityLevel, PeerCommand, PeerSubCommand, Transport};
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
 use fdomain_client::fidl::Proxy;
@@ -33,13 +31,12 @@ pub struct PeerTool {
 }
 
 fho::embedded_plugin!(PeerTool);
-#[async_trait(?Send)]
 impl FfxMain for PeerTool {
     type Writer = SimpleWriter;
 
     type Error = ::fho::Error;
 
-    async fn main(mut self, mut writer: Self::Writer) -> Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> Result<()> {
         let peers: Vec<Peer> = self.get_peers().await?;
         match self.cmd.subcommand.clone() {
             // ffx bluetooth peer list

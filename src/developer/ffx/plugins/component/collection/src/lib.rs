@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use component_debug::cli::{collection_list_cmd, collection_show_cmd};
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
@@ -20,7 +19,6 @@ pub struct CollectionTool {
 
 fho::embedded_plugin!(CollectionTool);
 
-#[async_trait(?Send)]
 impl FfxMain for CollectionTool {
     type Writer = SimpleWriter;
 

@@ -43,14 +43,14 @@ impl<T: FfxTool> SubtoolBox for Subtool<T> {
         self.tool.borrow().as_ref().expect("subtool is gone?").has_schema()
     }
     async fn try_print_schema(&self, env: &FhoEnvironment) -> Result<()> {
-        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(env)
+        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(env)
             .await
             .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
         self.tool.borrow_mut().take().expect("subtool is gone?").try_print_schema(writer).await
     }
 
     async fn run(&self, env: FhoEnvironment) -> Result<()> {
-        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(&env)
+        let writer = <<T as FfxMain>::Writer as TryFromEnv>::try_from_env(&env)
             .await
             .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
         self.tool
@@ -79,7 +79,6 @@ pub trait ToolSuiteCommand {
 
 /// A trait for implementing a suite of subtools. The implementation is likely simply:
 /// ```
-/// #[async_trait::async_trait(?Send)]
 /// impl SubtoolSuite for MySuite {
 ///     type Command = MyCommand;
 ///
@@ -99,7 +98,7 @@ pub trait ToolSuiteCommand {
 ///     }
 /// }
 /// ```
-#[async_trait::async_trait(?Send)]
+#[allow(async_fn_in_trait)]
 pub trait SubtoolSuite {
     type Command: ToolSuiteCommand + FromArgs + SubCommand + ArgsInfo;
     async fn new_subtool(
@@ -123,12 +122,11 @@ pub struct FfxSubtoolSuite<S: SubtoolSuite> {
     _marker: std::marker::PhantomData<S>,
 }
 
-#[async_trait::async_trait(?Send)]
 impl<S: SubtoolSuite> FfxTool for FfxSubtoolSuite<S> {
     type Command = S::Command;
     async fn from_env(env: FhoEnvironment, cmd: Self::Command) -> Result<Self> {
         let subcommand = cmd.into_subcommand();
-        let subtool = S::new_subtool(env.clone(), subcommand).await?;
+        let subtool = Box::pin(S::new_subtool(env.clone(), subcommand)).await?;
         Ok(Self { subtool, env, _marker: std::marker::PhantomData })
     }
 
@@ -143,7 +141,6 @@ impl<S: SubtoolSuite> FfxTool for FfxSubtoolSuite<S> {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl<S: SubtoolSuite> FfxMain for FfxSubtoolSuite<S> {
     type Writer = crate::null_writer::NullWriter;
     type Error = Error;

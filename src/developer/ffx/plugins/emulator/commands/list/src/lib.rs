@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use emulator_instance::{
     EmulatorInstanceData, EmulatorInstanceInfo, EmulatorInstances, EngineState,
 };
@@ -21,7 +20,7 @@ Run `ffx emu stop --all` to stop all running emulators and clean up broken insta
 "#;
 
 #[cfg_attr(test, mockall::automock)]
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait Instances: TryFromEnv + 'static {
     async fn get_all_instances(&self) -> Result<Vec<EmulatorInstanceData>, fho::Error>;
 }
@@ -33,7 +32,6 @@ pub struct InstanceData {
 #[derive(Debug, Clone, Default)]
 pub struct WithInstances<P: Instances>(PhantomData<P>);
 
-#[async_trait(?Send)]
 impl TryFromEnv for InstanceData {
     type Error = fho::Error;
     async fn try_from_env(env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -45,14 +43,12 @@ impl TryFromEnv for InstanceData {
     }
 }
 
-#[async_trait]
 impl Instances for InstanceData {
     async fn get_all_instances(&self) -> Result<Vec<EmulatorInstanceData>, fho::Error> {
         self.emu_instances.get_all_instances().map_err(|e| anyhow::Error::from(e).into())
     }
 }
 
-#[async_trait(?Send)]
 impl<T: Instances> TryFromEnvWith for WithInstances<T> {
     type Output = T;
     type Error = fho::Error;
@@ -81,7 +77,6 @@ pub struct EmuListTool<T: Instances> {
 // removed.
 fho::embedded_plugin!(EmuListTool<InstanceData>);
 
-#[async_trait(?Send)]
 impl<T: Instances> FfxMain for EmuListTool<T> {
     type Writer = VerifiedMachineWriter<Vec<EmuListItem>>;
 
@@ -128,7 +123,6 @@ mod tests {
     use super::*;
     use ffx_writer::{Format, TestBuffers};
 
-    #[async_trait(?Send)]
     impl TryFromEnv for MockInstances {
         type Error = fho::Error;
         async fn try_from_env(

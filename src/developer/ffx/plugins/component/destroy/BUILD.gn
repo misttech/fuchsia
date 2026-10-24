@@ -20,7 +20,6 @@ ffx_plugin("ffx_component_destroy") {
     "//src/sys/lib/component_debug:component_debug_fdomain",
     "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
   ]

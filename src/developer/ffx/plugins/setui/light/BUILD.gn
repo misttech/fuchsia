@@ -25,7 +25,6 @@ ffx_plugin("ffx_setui_light") {
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/setui/utils",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
   ]
 
   test_deps = [

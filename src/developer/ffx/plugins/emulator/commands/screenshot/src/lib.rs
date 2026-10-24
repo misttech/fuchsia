@@ -30,7 +30,6 @@ pub struct ScreenshotTool {
 
 fho::embedded_plugin!(ScreenshotTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScreenshotTool {
     type Writer = VerifiedMachineWriter<ScreenshotResult>;
 

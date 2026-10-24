@@ -31,7 +31,6 @@ ffx_plugin("ffx_repository_serve_archive") {
     "//src/sys/pkg/lib/fuchsia-repo",
     "//src/sys/pkg/lib/package-tool",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:camino",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:tempfile",

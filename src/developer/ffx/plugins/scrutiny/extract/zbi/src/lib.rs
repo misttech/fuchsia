@@ -16,7 +16,6 @@ pub struct ScrutinyZbiTool {
 
 fho::embedded_plugin!(ScrutinyZbiTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyZbiTool {
     type Writer = SimpleWriter;
 

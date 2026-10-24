@@ -29,7 +29,6 @@ if (is_host) {
       "//src/developer/ffx/lib/writer:lib",
       "//src/developer/ffx/tools/speedtest/common:speedtest_fdomain",
       "//src/lib/fuchsia-async",
-      "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:schemars",

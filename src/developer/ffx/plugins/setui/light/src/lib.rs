@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
-use async_trait::async_trait;
 use fdomain_fuchsia_settings::{LightProxy, LightState};
 use ffx_setui_light_args::LightGroup;
 use ffx_writer::SimpleWriter;
@@ -22,7 +21,6 @@ pub struct LightTool {
 
 fho::embedded_plugin!(LightTool);
 
-#[async_trait(?Send)]
 impl FfxMain for LightTool {
     type Writer = SimpleWriter;
 

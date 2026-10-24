@@ -30,7 +30,6 @@ pub struct SdkTool {
 
 fho::embedded_plugin!(SdkTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for SdkTool {
     type Writer = VerifiedMachineWriter<SdkInfo>;
 

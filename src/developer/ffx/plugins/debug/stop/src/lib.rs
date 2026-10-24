@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use ffx_debug_stop_args::StopCommand;
 use fho::{FfxMain, FfxTool, SimpleWriter, moniker};
 use fidl_fuchsia_debugger::DebugAgentProxy;
@@ -20,7 +19,6 @@ pub struct StopTool {
 
 fho::embedded_plugin!(StopTool);
 
-#[async_trait(?Send)]
 impl FfxMain for StopTool {
     type Writer = SimpleWriter;
 

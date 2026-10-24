@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_pkg::RepositoryKeyConfig::Ed25519Key;
 use fdomain_fuchsia_pkg::{RepositoryConfig, RepositoryManagerProxy};
@@ -101,7 +100,6 @@ pub enum CommandStatus {
 }
 
 fho::embedded_plugin!(ListTool);
-#[async_trait(?Send)]
 impl FfxMain for ListTool {
     type Writer = VerifiedMachineWriter<CommandStatus>;
 

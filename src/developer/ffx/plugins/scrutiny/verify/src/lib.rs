@@ -30,7 +30,6 @@ pub struct ScrutinyVerifyTool {
 
 fho::embedded_plugin!(ScrutinyVerifyTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ScrutinyVerifyTool {
     type Writer = SimpleWriter;
 

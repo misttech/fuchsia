@@ -16,7 +16,6 @@ pub struct GuestVsockPerfTool {
 
 fho::embedded_plugin!(GuestVsockPerfTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for GuestVsockPerfTool {
     type Writer = MachineWriter<guest_cli::vsockperf::VsockPerfResult>;
 

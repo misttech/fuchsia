@@ -25,7 +25,6 @@ rustc_library("lib") {
     "//src/lib/structured_ui",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:omaha_client",

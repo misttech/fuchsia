@@ -19,7 +19,6 @@ pub struct ArchiveCatTool {
 
 fho::embedded_plugin!(ArchiveCatTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveCatTool {
     type Writer = VerifiedMachineWriter<FarCatResult>;
 

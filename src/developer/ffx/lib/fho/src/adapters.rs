@@ -31,10 +31,13 @@ macro_rules! embedded_plugin {
 
             // Create the writer, and if the schema is flag is set,
             // try to print it and then exit.
-            let mut writer: <$tool as $crate::FfxMain>::Writer =
-                $crate::TryFromEnv::try_from_env(&env).await.map_err(|e| {
-                    $crate::Error::Unexpected($crate::macro_deps::anyhow::Error::new(e))
-                })?;
+            #[allow(unreachable_code)]
+            let mut writer =
+                <<$tool as $crate::FfxMain>::Writer as $crate::TryFromEnv>::try_from_env(&env)
+                    .await
+                    .map_err(|e| {
+                        $crate::Error::Unexpected($crate::macro_deps::anyhow::Error::new(e))
+                    })?;
             if env.ffx_command().global.schema {
                 if <<$tool as $crate::FfxMain>::Writer as ToolIO>::has_schema() {
                     writer.try_print_schema()?;
@@ -77,7 +80,6 @@ pub(crate) mod tests {
     use crate::subtool::{FhoHandler, ToolCommand};
     use crate::{CheckEnv, FfxMain, FfxTool, FhoEnvironment, TryFromEnv};
     use argh::{ArgsInfo, FromArgs};
-    use async_trait::async_trait;
     use ffx_command::FfxCommandLine;
     use ffx_command_error::Result;
     use std::cell::RefCell;
@@ -107,7 +109,6 @@ pub(crate) mod tests {
     #[derive(Debug)]
     pub struct NewTypeString(String);
 
-    #[async_trait(?Send)]
     impl TryFromEnv for NewTypeString {
         type Error = std::convert::Infallible;
         async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -124,7 +125,6 @@ pub(crate) mod tests {
 
     pub struct TestWriter;
 
-    #[async_trait(?Send)]
     impl TryFromEnv for TestWriter {
         type Error = std::convert::Infallible;
         async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
@@ -160,7 +160,6 @@ pub(crate) mod tests {
         }
     }
 
-    #[async_trait(?Send)]
     impl FfxMain for FakeTool {
         type Writer = TestWriter;
         type Error = crate::Error;

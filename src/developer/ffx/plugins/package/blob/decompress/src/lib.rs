@@ -21,7 +21,6 @@ pub struct DecompressTool {
 
 fho::embedded_plugin!(DecompressTool);
 
-#[async_trait::async_trait(?Send)]
 impl FfxMain for DecompressTool {
     type Writer = VerifiedMachineWriter<CommandResult>;
 
