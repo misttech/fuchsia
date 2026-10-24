@@ -60,7 +60,6 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:either",
     "//third_party/rust_crates:futures",
@@ -105,29 +104,14 @@ rustc_library("lib") {
 rustc_binary("bin-basic") {
   edition = "2024"
   name = "netcfg_basic"
-  source_root = "src/bin/basic.rs"
+  source_root = "src/main.rs"
 
   deps = [
     ":lib",
     "//src/lib/fuchsia",
   ]
 
-  sources = [ "src/bin/basic.rs" ]
-
-  configs += [ "//build/config/rust/lints:deny_unused_results" ]
-}
-
-rustc_binary("bin-advanced") {
-  edition = "2024"
-  name = "netcfg_advanced"
-  source_root = "src/bin/advanced.rs"
-
-  deps = [
-    ":lib",
-    "//src/lib/fuchsia",
-  ]
-
-  sources = [ "src/bin/advanced.rs" ]
+  sources = [ "src/main.rs" ]
 
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
@@ -141,18 +125,6 @@ fuchsia_component("component-basic") {
 fuchsia_package("package-basic") {
   package_name = "netcfg-basic"
   deps = [ ":component-basic" ]
-  visibility = [ "//bundles/assembly/*" ]
-}
-
-fuchsia_component("component-advanced") {
-  component_name = "netcfg-advanced"
-  manifest = "meta/netcfg-advanced.cml"
-  deps = [ ":bin-advanced" ]
-}
-
-fuchsia_package("package-advanced") {
-  package_name = "netcfg-advanced"
-  deps = [ ":component-advanced" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 

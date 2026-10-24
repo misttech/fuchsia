@@ -51,11 +51,10 @@ use fuchsia_async as fasync;
 
 use anyhow::{Context as _, anyhow, format_err};
 use assert_matches::assert_matches;
-use async_trait::async_trait;
 use async_utils::stream::WithTag as _;
 use dns_server_watcher::{DEFAULT_DNS_PORT, DnsServers, DnsServersUpdateSource};
 use futures::stream::BoxStream;
-use futures::{FutureExt, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
+use futures::{FutureExt, StreamExt as _, TryStreamExt as _};
 use log::{debug, error, info, trace, warn};
 use net_declare::fidl_ip_v4;
 use net_declare::net::prefix_length_v4;
@@ -3685,7 +3684,7 @@ impl<'a> NetCfg<'a> {
     }
 }
 
-pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
+pub async fn run() -> Result<(), anyhow::Error> {
     let opt: Opt = argh::from_env();
     let Opt { min_severity: LogLevel(min_severity), config_data } = &opt;
 
@@ -3775,47 +3774,11 @@ pub async fn run<M: Mode>() -> Result<(), anyhow::Error> {
     debug!("updating default servers to {:?}", servers);
     netcfg.update_dns_servers(DnsServersUpdateSource::Default, servers).await;
 
-    M::run(netcfg)
-        .map_err(|e| {
-            let err_str = format!("fatal error running main: {:?}", e);
-            error!("{}", err_str);
-            anyhow!(err_str)
-        })
-        .await
-}
-
-/// Allows callers of `netcfg::run` to configure at compile time which features
-/// should be enabled.
-///
-/// This trait may be expanded to support combinations of features that can be
-/// assembled together for specific netcfg builds.
-#[async_trait(?Send)]
-pub trait Mode {
-    async fn run<'a>(netcfg: NetCfg<'a>) -> Result<(), anyhow::Error>;
-}
-
-/// In this configuration, netcfg acts as the policy manager for netstack,
-/// watching for device events and configuring the netstack with new interfaces
-/// as needed on new device discovery. It does not implement any FIDL protocols.
-pub enum BasicMode {}
-
-#[async_trait(?Send)]
-impl Mode for BasicMode {
-    async fn run<'a>(mut netcfg: NetCfg<'a>) -> Result<(), anyhow::Error> {
-        netcfg.run().await.context("event loop")
-    }
-}
-
-/// In this configuration, netcfg implements the base functionality included in
-/// `BasicMode`, and also serves the `fuchsia.net.virtualization/Control`
-/// protocol, allowing clients to create virtual networks.
-pub enum VirtualizationEnabled {}
-
-#[async_trait(?Send)]
-impl Mode for VirtualizationEnabled {
-    async fn run<'a>(mut netcfg: NetCfg<'a>) -> Result<(), anyhow::Error> {
-        netcfg.run().await.context("event loop")
-    }
+    netcfg.run().await.context("event loop").map_err(|e| {
+        let err_str = format!("fatal error running main: {:?}", e);
+        error!("{}", err_str);
+        anyhow!(err_str)
+    })
 }
 
 fn map_control_error(
