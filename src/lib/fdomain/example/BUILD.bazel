@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# NOTE: `fdomain-example-component` and `fdomain-example` remain in BUILD.gn
+# above the sentinel because `fdomain-example-bin` depends on
+# `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`). `@rules_rust`
+# puts both `src/storage/lib/vfs/rust/libvfs-<hash>.so` and its `_solib_*`
+# symlink into `default_runfiles` when a `rustc_test` lists `vfs` in `deps`,
+# causing `fx_packaged_binary` + `fx_package` to fail with:
+# "Multiple files are being installed into the package at lib/libvfs-<hash>.so".
+rustc_test(
+    name = "fdomain-example-bin",
+    srcs = [
+        "src/lib.rs",
+        "src/transport.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
+        "//examples/fidl/fuchsia.examples:fuchsia.examples_rust_fdomain",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+        "//src/lib/fdomain/client",
+        "//src/lib/fdomain/container",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
