@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/elf-search.h"],
+    deps = [
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_cc_library(
+    name = "elf-search",
+    srcs = ["elf-search.cc"],
+    implementation_deps = [
+        "//src/lib/elfldltl:headers",
+        "//zircon/system/ulib/trace",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//sdk/lib/c/test:__pkg__",
+        "//src/bringup/bin/critical-services/storage-watchdog:__pkg__",
+        "//src/lib/elf-search:__subpackages__",
+        "//src/performance/cpu_profiler:__pkg__",
+        "//src/performance/memory/sampler/instrumentation:__pkg__",
+        "//zircon/system/ulib/inspector:__pkg__",
+    ],
+    deps = [
+        ":headers",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+)
