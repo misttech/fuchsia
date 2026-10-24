@@ -67,6 +67,7 @@ fn get_operating_system_macos(
 pub struct PreflightTool {
     #[command]
     pub cmd: PreflightCommand,
+    pub context: ffx_config::EnvironmentContext,
 }
 
 fho::embedded_plugin!(PreflightTool);
@@ -78,20 +79,27 @@ impl FfxMain for PreflightTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        preflight_cmd_impl(self.cmd, &mut writer).await.map_err(Into::into)
+        preflight_cmd_impl(&self.context, self.cmd, &mut writer).await.map_err(Into::into)
     }
 }
 
-pub async fn preflight_cmd_impl<W: Write>(cmd: PreflightCommand, writer: &mut W) -> Result<()> {
+pub async fn preflight_cmd_impl<W: Write>(
+    context: &ffx_config::EnvironmentContext,
+    cmd: PreflightCommand,
+    writer: &mut W,
+) -> Result<()> {
     let config = PreflightConfig { system: get_operating_system()? };
-    let checks: Vec<Box<dyn PreflightCheck>> = vec![
+    let checks: Vec<Box<dyn PreflightCheck + '_>> = vec![
         Box::new(check::build_prereqs::BuildPrereqs::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
         Box::new(check::femu_graphics::FemuGraphics::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
         Box::new(check::emu_networking::EmuNetworking::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
         Box::new(check::emu_acceleration::EmuAcceleration::new(
             &command_runner::SYSTEM_COMMAND_RUNNER,
         )),
-        Box::new(check::ssh_checks::SshChecks::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
+        Box::new(check::ssh_checks::SshChecks::new(
+            &command_runner::SYSTEM_COMMAND_RUNNER,
+            context,
+        )),
     ];
 
     let results = run_preflight_checks(&checks, &config).await?;
@@ -107,7 +115,7 @@ pub async fn preflight_cmd_impl<W: Write>(cmd: PreflightCommand, writer: &mut W)
 }
 
 async fn run_preflight_checks(
-    checks: &Vec<Box<dyn PreflightCheck>>,
+    checks: &[Box<dyn PreflightCheck + '_>],
     config: &PreflightConfig,
 ) -> Result<Vec<check::PreflightCheckResult>> {
     let mut results = vec![];

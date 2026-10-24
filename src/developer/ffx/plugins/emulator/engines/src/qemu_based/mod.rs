@@ -5,7 +5,7 @@
 //! The qemu_base module encapsulates traits and functions specific
 //! for engines using QEMU as the emulator platform.
 
-use crate::arg_templates::process_flag_template;
+use crate::arg_templates::process_flag_template_with_context;
 use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
 use async_trait::async_trait;
@@ -575,7 +575,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         env::set_current_dir(emu_config.runtime.instance_directory.parent().unwrap())
             .map_err(|e| bug!("problem changing directory to instance dir: {e}"))?;
 
-        emu_config.flags = process_flag_template(emu_config)
+        emu_config.flags = process_flag_template_with_context(emu_config, context)
             .map_err(|e| bug!("Emulator engine failed to process the flags template file: {e}."))?;
 
         Ok(())

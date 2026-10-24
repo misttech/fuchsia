@@ -97,6 +97,15 @@ fn sanitize_cmd(mut cmd: BisectCommand) -> BisectCommand {
     cmd
 }
 
+/// Resolve the bisection plan home directory from the environment context.
+fn get_bisect_home(env_context: &EnvironmentContext) -> fho::Result<Utf8PathBuf> {
+    let home =
+        env_context.get_home_dir().map_err(|e| fho::bug!("Could not find home directory: {e}"))?;
+    let fuchsia_home = Utf8PathBuf::from_path_buf(home.join(".fuchsia"))
+        .map_err(|p| fho::bug!("Path is not valid UTF-8: {}", p.display()))?;
+    Ok(fuchsia_home.join("bisect"))
+}
+
 /// Setup the environment for bisection, returning the plan home path,
 /// MOS client, and artifact cache.
 async fn setup_core(
@@ -104,10 +113,7 @@ async fn setup_core(
     env_context: &EnvironmentContext,
 ) -> Result<(Utf8PathBuf, MOSClient, ArtifactCache)> {
     // Create a directory for storing plan status and search results.
-    let home = std::env::home_dir().context("Could not find home directory")?;
-    let fuchsia_home = Utf8PathBuf::from_path_buf(home.join(".fuchsia"))
-        .map_err(|p| anyhow::anyhow!("Path is not valid UTF-8: {}", p.display()))?;
-    let bisect_home = fuchsia_home.join("bisect");
+    let bisect_home = get_bisect_home(env_context)?;
     let plan_home =
         bisect_home.join(&cmd.name).join(format!("{}_to_{}", cmd.from_success, cmd.to_failure));
     fs::create_dir_all(&plan_home).with_context(|| {
@@ -243,7 +249,7 @@ async fn run_bisection<'a>(
             if let Some(script_path) = &script_clone {
                 run_automated_test(script_path, &pb_path, &mut print2).await
             } else {
-                prompt_for_manual_test(&pb_path, &mut print2)
+                prompt_for_manual_test(&pb_path, env_context, &mut print2)
             }
         }
     };
@@ -332,5 +338,22 @@ mod tests {
         )
         .expect("in tree context");
         assert_eq!(find_fuchsia_dir(&ctx), Some(Utf8PathBuf::from("/fake/fuchsia")));
+    }
+
+    #[test]
+    fn test_get_bisect_home_uses_isolate_root() {
+        let env = ffx_config::test_env().build().expect("test env");
+        let bisect_home = get_bisect_home(&env.context).expect("bisect home");
+        let expected_root =
+            std::path::absolute(env.isolate_root.path()).expect("absolute isolate_root");
+        assert_eq!(
+            bisect_home,
+            Utf8PathBuf::from_path_buf(expected_root.join(".fuchsia").join("bisect")).unwrap()
+        );
+
+        let env_with_home =
+            ffx_config::test_env().env_var("HOME", "/custom/home").build().expect("test env");
+        let custom_bisect_home = get_bisect_home(&env_with_home.context).expect("bisect home");
+        assert_eq!(custom_bisect_home, Utf8PathBuf::from("/custom/home/.fuchsia/bisect"));
     }
 }

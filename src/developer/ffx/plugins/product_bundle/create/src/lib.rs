@@ -225,10 +225,13 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
     }
 }
 
-fn default_path_for_product_bundle_name(name: impl AsRef<str>) -> Result<Utf8PathBuf> {
-    let home = std::env::home_dir().context("Getting the home dir")?;
+fn default_path_for_product_bundle_name(
+    context: &EnvironmentContext,
+    name: impl AsRef<str>,
+) -> fho::Result<Utf8PathBuf> {
+    let home = context.get_home_dir().map_err(|e| fho::bug!("Getting the home dir: {e}"))?;
     let home = Utf8PathBuf::from_path_buf(home)
-        .map_err(|e| anyhow!("error converting path to utf8: {:?}", e))?;
+        .map_err(|e| fho::bug!("error converting path to utf8: {:?}", e))?;
     Ok(home.join(".fuchsia").join("product_bundles").join(name.as_ref()))
 }
 
@@ -277,7 +280,9 @@ async fn sanitized_product_bundle_create(
         CreateResult::Stage => return Ok(()),
         CreateResult::Out(out) => Ok(out),
         CreateResult::ZbiOnly(out) => Ok(out),
-        CreateResult::Default => default_path_for_product_bundle_name(&name),
+        CreateResult::Default => {
+            default_path_for_product_bundle_name(context, &name).map_err(anyhow::Error::from)
+        }
     }?;
 
     writer
@@ -422,5 +427,27 @@ mod test {
         assert!(result.is_ok());
         let sanitized = result.unwrap();
         assert_eq!(sanitized.recovery_board_config, Some("recovery_board".to_string()));
+    }
+
+    #[test]
+    fn test_default_path_for_product_bundle_name_isolated() {
+        let env = ffx_config::test_env().build().expect("test env");
+        let path =
+            default_path_for_product_bundle_name(&env.context, "my_pb").expect("default pb path");
+        let expected_root =
+            std::path::absolute(env.isolate_root.path()).expect("absolute isolate_root");
+        assert_eq!(
+            path,
+            Utf8PathBuf::from_path_buf(
+                expected_root.join(".fuchsia").join("product_bundles").join("my_pb")
+            )
+            .unwrap()
+        );
+
+        let env_with_home =
+            ffx_config::test_env().env_var("HOME", "/custom/home").build().expect("test env");
+        let custom_path = default_path_for_product_bundle_name(&env_with_home.context, "my_pb")
+            .expect("custom pb path");
+        assert_eq!(custom_path, Utf8PathBuf::from("/custom/home/.fuchsia/product_bundles/my_pb"));
     }
 }

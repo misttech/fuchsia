@@ -16,7 +16,6 @@ use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config;
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use fho::{Result, bug, return_bug};
-use std::env;
 use std::path::Path;
 use std::process::Command;
 
@@ -38,7 +37,7 @@ impl FemuEngine {
 
     fn validate_configuration(&self) -> Result<()> {
         let emulator_configuration = self.data.get_emulator_configuration();
-        if !emulator_configuration.runtime.headless && std::env::var("DISPLAY").is_err() {
+        if !emulator_configuration.runtime.headless && self.context.env_var("DISPLAY").is_err() {
             eprintln!(
                 "DISPLAY not set in the local environment, try running with --headless if you \
                 encounter failures related to display or Qt.",
@@ -166,8 +165,11 @@ impl EmulatorEngine for FemuEngine {
         if self.data.get_emulator_configuration().flags.envs.len() > 0 {
             // Add environment variables if not already present.
             // This does not overwrite any existing values.
-            let unset_envs =
-                emulator_configuration.flags.envs.iter().filter(|(k, _)| env::var(k).is_err());
+            let unset_envs = emulator_configuration
+                .flags
+                .envs
+                .iter()
+                .filter(|(k, _)| self.context.env_var(k).is_err());
             if unset_envs.clone().count() > 0 {
                 cmd.envs(unset_envs);
             }
@@ -281,8 +283,10 @@ mod tests {
     }
     #[fuchsia::test]
     fn test_build_emulator_cmd_existing_env() {
-        unsafe { env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value") };
-        let env = ffx_config::test_env().build().unwrap();
+        let env = ffx_config::test_env()
+            .env_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value")
+            .build()
+            .unwrap();
         let program_name = "/test_femu_bin";
         let mut cfg = EmulatorConfiguration::default();
         cfg.host.networking = NetworkingMode::User;

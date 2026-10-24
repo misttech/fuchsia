@@ -618,7 +618,10 @@ async fn run_session(
     Ok(())
 }
 
-async fn download_android_symbols(opts: args::DownloadAndroidSymbols) -> Result<()> {
+async fn download_android_symbols(
+    opts: args::DownloadAndroidSymbols,
+    context: &EnvironmentContext,
+) -> Result<()> {
     info!("Fetching android symbols for build {} target {}", opts.bid, opts.target);
 
     let target_prefix = opts.target.split('-').next().unwrap_or(&opts.target);
@@ -671,8 +674,8 @@ async fn download_android_symbols(opts: args::DownloadAndroidSymbols) -> Result<
     }
 
     // Determine the user's .build-id directory
-    let home = std::env::var("HOME").context("Failed to get HOME env var")?;
-    let build_id_dir = std::path::PathBuf::from(home).join(".fuchsia/debug/build-id");
+    let home = context.get_home_dir().context("Failed to get HOME directory")?;
+    let build_id_dir = home.join(".fuchsia/debug/build-id");
     std::fs::create_dir_all(&build_id_dir)?;
 
     println!("Populating .build-id cache...");
@@ -859,7 +862,7 @@ impl ProfilerTool {
                 unreachable!("handled above without a target connection")
             }
             ProfilerSubCommand::DownloadAndroidSymbols(opts) => {
-                return download_android_symbols(opts)
+                return download_android_symbols(opts, &context)
                     .await
                     .map_err(|e| user_error!("Failed to download Android symbols: {e:?}"));
             }

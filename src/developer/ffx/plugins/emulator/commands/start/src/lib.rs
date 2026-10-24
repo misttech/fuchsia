@@ -10,7 +10,9 @@ use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::EMU_SERIAL_ENABLED;
 use ffx_emulator_common::validate_snapshot_name;
 use ffx_emulator_config::EmulatorEngine;
-use ffx_emulator_engines::{EngineBuilder, process_flag_template, update_serial_number};
+use ffx_emulator_engines::{
+    EngineBuilder, process_flag_template_with_context, update_serial_number,
+};
 use ffx_emulator_start_args::StartCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{
@@ -158,7 +160,7 @@ impl EngineOperations for EngineOperationsData {
         builder.get_engine_by_name(name).map_err(|e| e.into())
     }
     fn edit_configuration(&self, emu_config: &mut EmulatorConfiguration) -> Result<()> {
-        crate::editor::edit_configuration(emu_config).map_err(|e| e.into())
+        crate::editor::edit_configuration(&self.context, emu_config).map_err(|e| e.into())
     }
 
     async fn new_engine(
@@ -794,7 +796,7 @@ impl<T: EngineOperations> EmuStartTool<T> {
             let config = engine.emu_config_mut();
             // Process the flag template to regenerate the command line parameters for the emulator
             // binary (QEMU/Femu), incorporating the updated port mappings and configuration parameters.
-            config.flags = process_flag_template(config)
+            config.flags = process_flag_template_with_context(config, &self.context)
                 .context("Failed to process the flags template file.")?;
         }
 

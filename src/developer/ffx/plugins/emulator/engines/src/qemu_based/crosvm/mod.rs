@@ -300,8 +300,8 @@ mod tests {
     use super::*;
     use crate::EngineBuilder;
     use crate::qemu_based::tests::make_fake_sdk;
+    use std::fs;
     use std::path::PathBuf;
-    use std::{env, fs};
     use tempfile::tempdir;
 
     #[fuchsia::test]
@@ -323,8 +323,10 @@ mod tests {
 
     #[fuchsia::test]
     fn test_build_emulator_cmd_existing_env() {
-        unsafe { env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value") };
-        let env = ffx_config::test_env().build().expect("test env");
+        let env = ffx_config::test_env()
+            .env_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value")
+            .build()
+            .expect("test env");
         let program_name = "/test_crosvm_bin";
         let mut cfg = EmulatorConfiguration::default();
         cfg.host.networking = NetworkingMode::None;

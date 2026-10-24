@@ -73,6 +73,7 @@ fn find_debug_file(
     symbol_index: &symbol_index::SymbolIndex,
     extra_build_id_dirs: &[std::path::PathBuf],
     binary_id: &str,
+    context: &ffx_config::EnvironmentContext,
 ) -> Option<std::path::PathBuf> {
     if binary_id.len() <= 2 {
         return None;
@@ -103,8 +104,7 @@ fn find_debug_file(
     }
 
     // Fallback to the default symbol cache and build-id directories
-    if let Ok(home) = std::env::var("HOME") {
-        let home_path = std::path::PathBuf::from(home);
+    if let Ok(home_path) = context.get_home_dir() {
         for rel in [".fuchsia/debug/symbol-cache", ".fuchsia/debug/build-id"] {
             if let Some(p) = probe_dir(&home_path.join(rel)) {
                 return Some(p);
@@ -140,7 +140,7 @@ impl UnsymbolizedSamples {
             log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
         let symbol_index_path =
-            symbol_index::global_symbol_index_path().unwrap_or_else(|_| "".to_string());
+            symbol_index::global_symbol_index_path(context).unwrap_or_else(|_| "".to_string());
         let global_symbol_index = symbol_index::SymbolIndex::load_aggregate(&symbol_index_path)
             .unwrap_or_else(|_| symbol_index::SymbolIndex::new());
 
@@ -173,7 +173,7 @@ impl UnsymbolizedSamples {
                             .add_module(&module.name, &build_id_bytes);
 
                         // Provide the unstripped host binary file path to the unwinder
-                        let debug_file = find_debug_file(&global_symbol_index, &extra_build_id_dirs, &module.build_id);
+                        let debug_file = find_debug_file(&global_symbol_index, &extra_build_id_dirs, &module.build_id, context);
                         let debug_path = debug_file.as_ref().and_then(|p| p.to_str());
 
                         let mut min_load_address = u64::MAX;

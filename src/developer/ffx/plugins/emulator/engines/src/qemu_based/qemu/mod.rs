@@ -22,7 +22,6 @@ use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail, Snapsho
 use fho::{Result, bug, return_bug, return_user_error, user_error};
 use monitor::Monitor;
 use serde_json::{Deserializer, Value, json};
-use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -314,8 +313,11 @@ impl EmulatorEngine for QemuEngine {
         if self.data.get_emulator_configuration().flags.envs.len() > 0 {
             // Add environment variables if not already present.
             // This does not overwrite any existing values.
-            let unset_envs =
-                emulator_configuration.flags.envs.iter().filter(|(k, _)| env::var(k).is_err());
+            let unset_envs = emulator_configuration
+                .flags
+                .envs
+                .iter()
+                .filter(|(k, _)| self.context.env_var(k).is_err());
             if unset_envs.clone().count() > 0 {
                 cmd.envs(unset_envs);
             }
@@ -754,8 +756,10 @@ mod tests {
 
     #[fuchsia::test]
     fn test_build_emulator_cmd_existing_env() {
-        unsafe { env::set_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value") };
-        let env = ffx_config::test_env().build().unwrap();
+        let env = ffx_config::test_env()
+            .env_var("FLAG_NAME_THAT_DOES_EXIST", "preset_value")
+            .build()
+            .unwrap();
         let program_name = "/test_femu_bin";
         let mut cfg = EmulatorConfiguration::default();
         cfg.host.networking = NetworkingMode::User;

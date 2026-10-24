@@ -55,10 +55,13 @@ pub async fn run_automated_test(
 /// and return the results.
 pub fn prompt_for_manual_test(
     product_bundle_path: &Utf8PathBuf,
+    env_context: &ffx_config::EnvironmentContext,
     mut print_fn: impl FnMut(&str),
 ) -> Result<bool> {
     print_fn("");
-    let shortened_pb_path = std::env::home_dir()
+    let shortened_pb_path = env_context
+        .get_home_dir()
+        .ok()
         .and_then(|home| camino::Utf8PathBuf::from_path_buf(home).ok())
         .and_then(|home_utf8| product_bundle_path.strip_prefix(&home_utf8).ok())
         .map(|stripped| format!("~/{}", stripped))

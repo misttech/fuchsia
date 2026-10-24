@@ -157,12 +157,21 @@ impl HelperDef for DiskImageHelper {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct EnvironmentHelper {}
+#[derive(Clone, Default)]
+pub struct EnvironmentHelper {
+    context: Option<ffx_config::EnvironmentContext>,
+}
+
+impl EnvironmentHelper {
+    pub fn new(context: Option<ffx_config::EnvironmentContext>) -> Self {
+        Self { context }
+    }
+}
 
 /// This Handlebars helper is used for substitution of an environment variable.
 /// Rather than pulling the value from a data structure, it will call
-/// std::env::var(value), where value is the parameter to the helper. If the
+/// `EnvironmentContext::env_var` (or `std::env::var(value)` when no context is
+/// provided), where value is the parameter to the helper. If the
 /// specified environment variable is unset, the resulting output will be empty.
 ///
 /// Example:
@@ -194,12 +203,16 @@ impl HelperDef for EnvironmentHelper {
         _: &mut RenderContext<'reg, 'rc>,
         out: &mut dyn Output,
     ) -> HelperResult {
-        // Get the key specified in param(0) and retrieve the value from std::env.
+        // Get the key specified in param(0) and retrieve the value from the environment.
         let param = h.param(0).ok_or_else(|| {
             RenderErrorReason::Other(format!("Parameter 0 is missing in {:?}", h))
         })?;
         if let Some(key) = param.value().as_str() {
-            match std::env::var(key) {
+            let val = match &self.context {
+                Some(ctx) => ctx.env_var(key),
+                None => std::env::var(key),
+            };
+            match val {
                 Ok(val) => out.write(&json_escape(&val))?,
                 Err(_) => (), // An Err means the variable isn't set or the key is invalid.
             }
@@ -209,6 +222,20 @@ impl HelperDef for EnvironmentHelper {
 }
 
 pub fn process_flag_template(emu_config: &EmulatorConfiguration) -> Result<FlagData> {
+    process_flag_template_optional_context(emu_config, None)
+}
+
+pub fn process_flag_template_with_context(
+    emu_config: &EmulatorConfiguration,
+    context: &ffx_config::EnvironmentContext,
+) -> Result<FlagData> {
+    process_flag_template_optional_context(emu_config, Some(context))
+}
+
+fn process_flag_template_optional_context(
+    emu_config: &EmulatorConfiguration,
+    context: Option<&ffx_config::EnvironmentContext>,
+) -> Result<FlagData> {
     let template_text = if let Some(template_path) = &emu_config.runtime.template {
         std::fs::read_to_string(template_path).context(format!(
             "couldn't locate template file from path {:?}",
@@ -221,7 +248,7 @@ pub fn process_flag_template(emu_config: &EmulatorConfiguration) -> Result<FlagD
             DEFAULT_FLAGS_TEMPLATE_STR.to_string()
         }
     };
-    let flag_data = process_flag_template_inner(&template_text, emu_config)?;
+    let flag_data = process_flag_template_inner_with_context(&template_text, emu_config, context)?;
     dedupe_kernel_args(flag_data, &emu_config.runtime.addl_kernel_args)
 }
 
@@ -283,6 +310,14 @@ pub(crate) fn process_flags_from_str(
     process_flag_template_inner(text, emu_config)
 }
 
+pub(crate) fn process_flags_from_str_with_context(
+    text: &str,
+    emu_config: &EmulatorConfiguration,
+    context: &ffx_config::EnvironmentContext,
+) -> Result<FlagData> {
+    process_flag_template_inner_with_context(text, emu_config, Some(context))
+}
+
 /// Escapes string content for safe interpolation into JSON flag templates.
 ///
 /// Emulator flag templates are rendered as raw JSON text using Handlebars before
@@ -306,11 +341,19 @@ fn process_flag_template_inner(
     template_text: &str,
     emu_config: &EmulatorConfiguration,
 ) -> Result<FlagData> {
+    process_flag_template_inner_with_context(template_text, emu_config, None)
+}
+
+fn process_flag_template_inner_with_context(
+    template_text: &str,
+    emu_config: &EmulatorConfiguration,
+    context: Option<&ffx_config::EnvironmentContext>,
+) -> Result<FlagData> {
     // This performs all the variable substitution and condition resolution.
     let mut handlebars = Handlebars::new();
     handlebars.set_strict_mode(true);
     handlebars.register_escape_fn(json_escape);
-    handlebars.register_helper("env", Box::new(EnvironmentHelper {}));
+    handlebars.register_helper("env", Box::new(EnvironmentHelper::new(context.cloned())));
     handlebars.register_helper("eq", Box::new(EqHelper {}));
     handlebars.register_helper("ua", Box::new(UnitAbbreviationHelper {}));
     handlebars.register_helper("di", Box::new(DiskImageHelper {}));
@@ -351,7 +394,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_env_helper() {
-        unsafe { std::env::set_var("MY_VARIABLE", "my_value") };
+        let env = ffx_config::test_env().env_var("MY_VARIABLE", "my_value").build().unwrap();
 
         let var_template = "{{env units}}";
         let literal_template = r#"{{env "MY_VARIABLE"}}"#;
@@ -359,7 +402,7 @@ mod tests {
 
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(true);
-        handlebars.register_helper("env", Box::new(EnvironmentHelper {}));
+        handlebars.register_helper("env", Box::new(EnvironmentHelper::new(Some(env.context))));
 
         let json = handlebars.render_template(&var_template, &string_struct);
         assert!(json.is_ok());
@@ -1387,7 +1430,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_json_injection_env_helper() {
-        unsafe { std::env::set_var("EVIL_INJECT_VAR", r#"val", "injected_arg"#) };
+        let env = ffx_config::test_env()
+            .env_var("EVIL_INJECT_VAR", r#"val", "injected_arg"#)
+            .build()
+            .unwrap();
         let template = r#"
         {
             "args": ["{{env "EVIL_INJECT_VAR"}}"],
@@ -1397,7 +1443,9 @@ mod tests {
             "options": []
         }"#;
         let emu_config = EmulatorConfiguration::default();
-        let flags = process_flag_template_inner(template, &emu_config).expect("processed");
+        let flags =
+            process_flag_template_inner_with_context(template, &emu_config, Some(&env.context))
+                .expect("processed");
         assert_eq!(flags.args.len(), 1);
         assert_eq!(flags.args[0], r#"val", "injected_arg"#);
     }

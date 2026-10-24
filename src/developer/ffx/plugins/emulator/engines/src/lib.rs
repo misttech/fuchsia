@@ -10,7 +10,7 @@ mod qemu_based;
 pub mod serialization;
 mod show_output;
 
-pub use arg_templates::process_flag_template;
+pub use arg_templates::{process_flag_template, process_flag_template_with_context};
 use emulator_instance::{
     DeviceConfig, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
     EmulatorInstances, EngineOption, EngineState, EngineType, FlagData, GuestConfig, HostConfig,
@@ -175,8 +175,10 @@ impl EngineBuilder {
 
         engine.load_emulator_binary()?;
 
-        engine.emu_config_mut().flags = process_flag_template(engine.emu_config())
-            .map_err(|e| bug!("Engine builder failed to process the flags template file: {e}"))?;
+        engine.emu_config_mut().flags =
+            process_flag_template_with_context(engine.emu_config(), &self.context).map_err(
+                |e| bug!("Engine builder failed to process the flags template file: {e}"),
+            )?;
         engine.save_to_disk().await?;
 
         Ok(engine)
@@ -249,6 +251,15 @@ impl EngineBuilder {
 // the template into a FlagData object.
 pub fn process_flags_from_str(text: &str, emu_config: &EmulatorConfiguration) -> Result<FlagData> {
     arg_templates::process_flags_from_str(text, emu_config)
+        .map_err(|e| bug!("Error processing flags: {e}"))
+}
+
+pub fn process_flags_from_str_with_context(
+    text: &str,
+    emu_config: &EmulatorConfiguration,
+    context: &EnvironmentContext,
+) -> Result<FlagData> {
+    arg_templates::process_flags_from_str_with_context(text, emu_config, context)
         .map_err(|e| bug!("Error processing flags: {e}"))
 }
 

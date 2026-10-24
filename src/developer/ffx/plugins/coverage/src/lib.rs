@@ -36,6 +36,7 @@ struct ExportParams<'a> {
 pub struct CoverageTool {
     #[command]
     cmd: CoverageCommand,
+    context: ffx_config::EnvironmentContext,
 }
 
 fho::embedded_plugin!(CoverageTool);
@@ -47,7 +48,7 @@ impl FfxMain for CoverageTool {
     type Error = ::fho::Error;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        coverage(self.cmd).await.map_err(Into::into)
+        coverage(self.cmd, &self.context).await.map_err(Into::into)
     }
 }
 
@@ -63,7 +64,10 @@ impl From<bool> for VerboseMode {
     }
 }
 
-pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
+pub async fn coverage(
+    cmd: CoverageCommand,
+    context: &ffx_config::EnvironmentContext,
+) -> Result<()> {
     let verbose_mode = VerboseMode::from(cmd.verbose);
     let clang_bin_dir = cmd.clang_dir.join("bin");
     let llvm_profdata_bin = clang_bin_dir.join("llvm-profdata");
@@ -86,7 +90,7 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
 
     let symbol_index_path = match cmd.symbol_index_json {
         Some(p) => p.to_string_lossy().to_string(),
-        None => global_symbol_index_path()?,
+        None => global_symbol_index_path(context)?,
     };
     let symbol_index = SymbolIndex::load_aggregate(&symbol_index_path)?;
     let bin_files = profdata_runner.find_binaries(&symbol_index, &profraws)?;
@@ -514,7 +518,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_coverage() {
-        let _env = ffx_config::test_init().unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_dir = TempDir::new().unwrap();
         let test_dir_path = test_dir.path().to_path_buf();
@@ -527,20 +531,23 @@ mod tests {
 
         // Missing both llvm-profdata and llvm-cov.
         assert!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: None,
-                export_json: None,
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: None,
+                    export_json: None,
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await
             .is_err()
         );
@@ -551,20 +558,23 @@ mod tests {
 
         // Still missing llvm-cov.
         assert!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: None,
-                export_json: None,
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: None,
+                    export_json: None,
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await
             .is_err()
         );
@@ -574,103 +584,118 @@ mod tests {
 
         // Print coverage to stdout.
         assert_matches!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: None,
-                export_json: None,
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: None,
+                    export_json: None,
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await,
             Ok(())
         );
 
         // Export HTML.
         assert_matches!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: Some(PathBuf::from(&test_dir_path)),
-                export_lcov: None,
-                export_json: None,
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: Some(PathBuf::from(&test_dir_path)),
+                    export_lcov: None,
+                    export_json: None,
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await,
             Ok(())
         );
 
         // Export LCOV.
         assert_matches!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: Some(PathBuf::from(&test_dir_path).join("test.lcov")),
-                export_json: None,
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: Some(PathBuf::from(&test_dir_path).join("test.lcov")),
+                    export_json: None,
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await,
             Ok(())
         );
 
         // Export JSON.
         assert_matches!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: None,
-                export_json: Some(PathBuf::from(&test_dir_path).join("test.json")),
-                path_remappings: Vec::new(),
-                compilation_dir: None,
-                include_filename_regex: None,
-                ignore_filename_regex: None,
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: None,
+                    export_json: Some(PathBuf::from(&test_dir_path).join("test.json")),
+                    path_remappings: Vec::new(),
+                    compilation_dir: None,
+                    include_filename_regex: None,
+                    ignore_filename_regex: None,
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await,
             Ok(())
         );
 
         // Export with non-empty path_remappings and compilation_dir.
         assert_matches!(
-            coverage(CoverageCommand {
-                test_output_dir: PathBuf::from(&test_dir_path),
-                clang_dir: PathBuf::from(&test_dir_path),
-                symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
-                export_html: None,
-                export_lcov: None,
-                export_json: None,
-                path_remappings: vec![
-                    "from_path,to_path".to_string(),
-                    "from_path2,to_path2".to_string()
-                ],
-                compilation_dir: Some(PathBuf::from("path/to/comp/dir")),
-                include_filename_regex: Some("include_pat".to_string()),
-                ignore_filename_regex: Some("ignore_pat".to_string()),
-                src_files: Vec::new(),
-                verbose: false,
-            })
+            coverage(
+                CoverageCommand {
+                    test_output_dir: PathBuf::from(&test_dir_path),
+                    clang_dir: PathBuf::from(&test_dir_path),
+                    symbol_index_json: Some(PathBuf::from(&test_symbol_index_json)),
+                    export_html: None,
+                    export_lcov: None,
+                    export_json: None,
+                    path_remappings: vec![
+                        "from_path,to_path".to_string(),
+                        "from_path2,to_path2".to_string()
+                    ],
+                    compilation_dir: Some(PathBuf::from("path/to/comp/dir")),
+                    include_filename_regex: Some("include_pat".to_string()),
+                    ignore_filename_regex: Some("ignore_pat".to_string()),
+                    src_files: Vec::new(),
+                    verbose: false,
+                },
+                &env.context,
+            )
             .await,
             Ok(())
         );

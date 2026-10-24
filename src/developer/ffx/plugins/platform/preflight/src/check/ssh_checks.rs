@@ -8,7 +8,7 @@ use crate::command_runner::CommandRunner;
 use crate::config::*;
 use anyhow::Result;
 use async_trait::async_trait;
-use std::env;
+use ffx_config::EnvironmentContext;
 
 const SSH_NOT_FOUND_ERROR: &str = "Did not find an ssh binary on the path for the current user.";
 const SSH_NOT_FOUND_RESOLUTION_MESSAGE: &str = "To resolve, run: sudo apt install ssh";
@@ -18,11 +18,12 @@ const SUCCESS_MESSAGE: &str = "Found ssh binary and $HOME/.ssh directory.";
 
 pub struct SshChecks<'a> {
     command_runner: &'a CommandRunner,
+    context: &'a EnvironmentContext,
 }
 
 impl<'a> SshChecks<'a> {
-    pub fn new(command_runner: &'a CommandRunner) -> Self {
-        SshChecks { command_runner }
+    pub fn new(command_runner: &'a CommandRunner, context: &'a EnvironmentContext) -> Self {
+        SshChecks { command_runner, context }
     }
 }
 
@@ -40,7 +41,7 @@ impl PreflightCheck for SshChecks<'_> {
                 OperatingSystem::MacOS(..) => Ok(Failure(SSH_NOT_FOUND_ERROR.to_string(), None)),
             };
         }
-        let home = env::var("HOME").unwrap();
+        let home = self.context.env_var("HOME")?;
         let (ssh_config_status, _stdout, _stderr) =
             (self.command_runner)(&vec!["test", "-d", &format!("{}/.ssh", home)])?;
         if !ssh_config_status.success() {
@@ -60,7 +61,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_success() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(0), "".to_string(), "".to_string()));
@@ -69,7 +70,7 @@ mod test {
             Ok((ExitStatus(0), "/usr/bin/ssh\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::Linux }).await;
         assert!(matches!(response?, PreflightCheckResult::Success(..)));
         Ok(())
@@ -77,7 +78,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_no_ssh_binary() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 unreachable!()
@@ -86,7 +87,7 @@ mod test {
             Ok((ExitStatus(1), "ssh not found\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::Linux }).await;
         assert!(matches!(response?, PreflightCheckResult::Failure(..)));
         Ok(())
@@ -94,7 +95,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_linux_no_ssh_config() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(1), "".to_string(), "".to_string()));
@@ -103,7 +104,7 @@ mod test {
             Ok((ExitStatus(0), "/usr/bin/ssh\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::Linux }).await;
         assert!(matches!(response?, PreflightCheckResult::Failure(..)));
         Ok(())
@@ -111,7 +112,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_success() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(0), "".to_string(), "".to_string()));
@@ -120,7 +121,7 @@ mod test {
             Ok((ExitStatus(0), "/usr/local/bin/ssh\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::MacOS(10, 15) }).await;
         assert!(matches!(response?, PreflightCheckResult::Success(..)));
         Ok(())
@@ -128,7 +129,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_no_ssh_binary() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 unreachable!()
@@ -137,7 +138,7 @@ mod test {
             Ok((ExitStatus(1), "ssh not found\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::MacOS(10, 15) }).await;
         assert!(matches!(response?, PreflightCheckResult::Failure(..)));
         Ok(())
@@ -145,7 +146,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_macos_no_ssh_config() -> Result<()> {
-        unsafe { env::set_var("HOME", "~") };
+        let env = ffx_config::test_env().env_var("HOME", "~").build()?;
         let run_command: CommandRunner = |args| {
             if args.to_vec() == vec!["test", "-d", "~/.ssh"] {
                 return Ok((ExitStatus(1), "".to_string(), "".to_string()));
@@ -154,7 +155,7 @@ mod test {
             Ok((ExitStatus(0), "/usr/local/bin/ssh\n".to_string(), "".to_string()))
         };
 
-        let check = SshChecks::new(&run_command);
+        let check = SshChecks::new(&run_command, &env.context);
         let response = check.run(&PreflightConfig { system: OperatingSystem::MacOS(10, 15) }).await;
         assert!(matches!(response?, PreflightCheckResult::Failure(..)));
         Ok(())

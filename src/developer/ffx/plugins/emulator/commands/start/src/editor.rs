@@ -4,8 +4,9 @@
 
 use anyhow::{Context, Result, bail};
 use emulator_instance::EmulatorConfiguration;
-use ffx_emulator_engines::process_flags_from_str;
-use std::env::{temp_dir, var};
+use ffx_config::EnvironmentContext;
+use ffx_emulator_engines::process_flags_from_str_with_context;
+use std::env::temp_dir;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process::Command;
@@ -22,10 +23,13 @@ const TEMP_FILE_HEADER: &'static str = r#"
 }}
 "#;
 
-pub(crate) fn edit_configuration(emu_config: &mut EmulatorConfiguration) -> Result<()> {
+pub(crate) fn edit_configuration(
+    context: &EnvironmentContext,
+    emu_config: &mut EmulatorConfiguration,
+) -> Result<()> {
     let flags = emu_config.flags.clone();
     // Start by generating a temporary file to hold the flags during editing.
-    let editor = var("EDITOR").unwrap_or_else(|_| "/usr/bin/nano".to_string());
+    let editor = context.env_var("EDITOR").unwrap_or_else(|_| "/usr/bin/nano".to_string());
     let mut file_path = temp_dir();
     file_path.push("editable");
     {
@@ -56,8 +60,8 @@ pub(crate) fn edit_configuration(emu_config: &mut EmulatorConfiguration) -> Resu
     let mut edited_text = String::new();
     file.read_to_string(&mut edited_text)
         .context("Error reading new flags from temporary file.")?;
-    let new_flag_data =
-        process_flags_from_str(&edited_text, emu_config).context("Error processing user input.")?;
+    let new_flag_data = process_flags_from_str_with_context(&edited_text, emu_config, context)
+        .context("Error processing user input.")?;
     emu_config.flags = new_flag_data;
     Ok(())
 }

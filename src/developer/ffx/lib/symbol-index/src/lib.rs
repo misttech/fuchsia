@@ -30,8 +30,8 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-pub fn global_symbol_index_path() -> Result<String> {
-    let home = home::home_dir().ok_or(SymbolIndexError::HomeDirectoryNotFound)?;
+pub fn global_symbol_index_path(context: &EnvironmentContext) -> Result<String> {
+    let home = context.get_home_dir().map_err(|_| SymbolIndexError::HomeDirectoryNotFound)?;
     Ok(pathbuf_to_string(home)? + "/.fuchsia/debug/symbol-index.json")
 }
 
@@ -45,7 +45,7 @@ pub fn ensure_symbol_index_registered(context: &EnvironmentContext) -> Result<()
 
     let symbol_index_path = pathbuf_to_string(symbol_index_path)?;
 
-    let global_symbol_index = global_symbol_index_path()?;
+    let global_symbol_index = global_symbol_index_path(context)?;
 
     // Note: This clobbers the existing global symbol-index if it is invalid.
     let mut index = SymbolIndex::load(&global_symbol_index).unwrap_or_else(|_| SymbolIndex::new());
@@ -290,5 +290,20 @@ mod tests {
         index.save(&path).unwrap();
         let index = SymbolIndex::load(&path).unwrap();
         assert_eq!(index.gcs_flat.len(), 1);
+    }
+
+    #[test]
+    fn test_global_symbol_index_path_isolated() {
+        let env = ffx_config::test_env().build().unwrap();
+        let path = global_symbol_index_path(&env.context).unwrap();
+        let expected_root = std::path::absolute(env.isolate_root.path()).unwrap();
+        assert_eq!(PathBuf::from(path), expected_root.join(".fuchsia/debug/symbol-index.json"));
+
+        let env_with_home = ffx_config::test_env().env_var("HOME", "/custom/home").build().unwrap();
+        let custom_path = global_symbol_index_path(&env_with_home.context).unwrap();
+        assert_eq!(
+            PathBuf::from(custom_path),
+            PathBuf::from("/custom/home/.fuchsia/debug/symbol-index.json")
+        );
     }
 }
