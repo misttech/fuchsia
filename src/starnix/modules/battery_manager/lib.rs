@@ -18,7 +18,7 @@ pub fn battery_manager_device_init(kernel: &Kernel) {
     registry.add_numberless_device(
         "battery".into(),
         /* parent = */ None,
-        registry.objects.get_or_create_class("power_supply".into()),
+        registry.objects.power_supply_class(),
         |device, dir| {
             build_device_directory(device, dir);
             dir.entry(

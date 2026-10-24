@@ -7,7 +7,6 @@
 use crate::blob_sink::TraceBufferSink;
 use crate::packet_forwarder::{MonotonicClock, PacketForwarder, forward_slices};
 use anyhow::{Context as _, anyhow, bail};
-use argh::FromArgs;
 use fuchsia_trace::{BufferingMode, ProlongedContext, TraceState, category_enabled, trace_state};
 use fuchsia_trace_observer::TraceObserver;
 use futures::{SinkExt, StreamExt};
@@ -26,7 +25,7 @@ use perfetto_trace_protos::perfetto::protos::trace_packet;
 use starnix_core::security;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::tracing::PidKoidSession;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{ArgNameAndValue, CurrentTask, Kernel};
 use starnix_core::vfs::FsString;
 use starnix_logging::{CATEGORY_ATRACE, log_debug, log_error, log_info, log_warn};
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
@@ -60,7 +59,6 @@ const PERFETTO_BUFFER_SIZE_KB: u32 = 63488;
 /// FreeBuffers has been sent.
 // TODO(b/571694521): Release the context once the drain stops writing (fxr/1881111).
 const DRAIN_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(30);
-
 
 /// Supported Android Atrace categories and their corresponding Fuchsia trace category strings.
 /// Each entry is `(android_atrace_category_name, fuchsia_trace_category)`.
@@ -646,21 +644,19 @@ fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) -> Res
     Ok(())
 }
 
-/// Configuration options for the `perfetto` module.
-#[derive(FromArgs, Debug)]
-struct PerfettoArgs {
-    /// path to the Perfetto consumer socket inside the container filesystem
-    #[argh(option)]
-    socket_path: String,
-}
-
 fn parse_args(args: &[&str]) -> Result<FsString, anyhow::Error> {
-    let parsed =
-        PerfettoArgs::from_args(&["perfetto"], args).map_err(|e| anyhow!("{}", e.output))?;
-    if parsed.socket_path.is_empty() {
-        bail!("Perfetto socket path must not be empty");
+    let mut socket_path: Option<&str> = None;
+    for &arg in args {
+        match ArgNameAndValue::from(arg) {
+            ArgNameAndValue { name: "socket_path", value: Some(path) } if !path.is_empty() => {
+                socket_path = Some(path);
+            }
+            _ => bail!("invalid perfetto argument: {arg}"),
+        }
     }
-    Ok(parsed.socket_path.into())
+    let socket_path =
+        socket_path.ok_or_else(|| anyhow!("missing required perfetto socket_path=<path>"))?;
+    Ok(socket_path.into())
 }
 
 /// Validates `perfetto` module configuration `args`.

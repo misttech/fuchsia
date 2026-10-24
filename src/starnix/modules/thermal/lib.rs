@@ -10,8 +10,7 @@ mod powercap;
 mod thermal_zone;
 
 use crate::thermal_zone::{SensorProps, ThermalZone};
-use anyhow::{Error, anyhow};
-use argh::FromArgs;
+use anyhow::{Error, anyhow, bail};
 use cooling::cooling_device_init;
 use family::ThermalFamily;
 use fidl_fuchsia_hardware_temperature as ftemperature;
@@ -20,7 +19,7 @@ use fidl_fuchsia_thermal as fthermal;
 use powercap::powercap_device_init;
 use starnix_core::device::kobject::Device;
 use starnix_core::fs::sysfs::build_device_directory;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{ArgNameAndValue, CurrentTask, Kernel};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
@@ -567,25 +566,17 @@ fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
     Ok(())
 }
 
-/// Configuration options for the `thermal` module.
-#[derive(FromArgs, Debug, Default, PartialEq, Eq)]
-struct ThermalArgs {
-    /// comma-separated list of cooling devices to register (e.g. "cpu,fcc=8")
-    #[argh(option)]
-    cooling: Option<String>,
-}
-
 fn parse_args(args: &[&str]) -> Result<Vec<String>, Error> {
-    let parsed = ThermalArgs::from_args(&["thermal"], args).map_err(|e| anyhow!("{}", e.output))?;
-    match parsed.cooling {
-        Some(cooling) => {
-            if cooling.is_empty() {
-                return Err(anyhow!("cooling option must not be empty"));
+    let mut cooling_devices = Vec::new();
+    for &arg in args {
+        match ArgNameAndValue::from(arg) {
+            ArgNameAndValue { name: "cooling", value: Some(cooling) } if !cooling.is_empty() => {
+                cooling_devices = cooling.split(',').map(String::from).collect();
             }
-            Ok(cooling.split(',').map(String::from).collect())
+            _ => bail!("invalid thermal argument: {arg}"),
         }
-        None => Ok(Vec::new()),
     }
+    Ok(cooling_devices)
 }
 
 /// Validates `thermal` module configuration `args`.

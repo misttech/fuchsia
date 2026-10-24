@@ -15,7 +15,19 @@ depend on `starnix_core`, or in `//src/starnix/kernel`, if the code does need to
 
 Two common use cases for Starnix modules are device drivers and file systems.
 
-## Configuration
+## Container configuration
+
+Containers configure which modules to initialize via `program.modules` in their component manifest
+(`.cml`):
+
+- `"<module> [key=value...]"` enables `<module>` with optional `modprobe`-style `key=value` options
+  (e.g. `"boot_notifier cpu_boost_secs=45"`, `"framebuffer aspect_ratio=1:1"`).
+- Standard Linux kernel modules listed in `DEFAULT_MODULES` (in `//src/starnix/modules/lib.rs`) are
+  enabled by default for all containers.
+- `"-<module>"` explicitly disables a module that would otherwise be enabled by default or by an
+  included manifest shard.
+
+## Build configuration
 
 To ensure code quality and consistency across all Starnix modules, each
 module's `BUILD.gn` file must include the common clippy lint configuration and

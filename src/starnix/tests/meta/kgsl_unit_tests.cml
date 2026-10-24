@@ -10,6 +10,5 @@
     program: {
         binary: "data/tests/kgsl_unit_tests",
         uid: "0",
-        features: [ "kgsl" ],
     },
 }

@@ -11,8 +11,8 @@
         features: [
             "container",
             "devtmpfs",
-            "framebuffer",
         ],
+        modules: [ "framebuffer" ],
         init: [],
         mounts: [
             "/:remote_bundle:data/system:nosuid,nodev,relatime",

@@ -4,14 +4,15 @@
 
 #![recursion_limit = "512"]
 
-use anyhow::{Context, Error, anyhow};
-use argh::FromArgs;
+use anyhow::{Context, Error, bail};
 use fidl_fuchsia_power_cpu_manager::BoostMarker;
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, Kernel, LockupDetectorReceiver, ThreadLockupDetector};
+use starnix_core::task::{
+    ArgNameAndValue, CurrentTask, Kernel, LockupDetectorReceiver, ThreadLockupDetector,
+};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_nonseekable,
@@ -27,18 +28,17 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use zerocopy::IntoBytes;
 
-/// Configuration options for the `boot_notifier` module.
-#[derive(FromArgs, Debug, Default)]
-struct BootNotifierArgs {
-    /// duration in seconds to enable boot-time CPU boost
-    #[argh(option)]
-    cpu_boost_secs: Option<u32>,
-}
-
 fn parse_args(args: &[&str]) -> Result<Option<zx::MonotonicDuration>, Error> {
-    let parsed = BootNotifierArgs::from_args(&["boot_notifier"], args)
-        .map_err(|e| anyhow!("{}", e.output))?;
-    Ok(parsed.cpu_boost_secs.map(|secs| zx::MonotonicDuration::from_seconds(secs.into())))
+    let mut cpu_boost_secs: Option<u32> = None;
+    for &arg in args {
+        match ArgNameAndValue::from(arg) {
+            ArgNameAndValue { name: "cpu_boost_secs", value: Some(value) } => {
+                cpu_boost_secs = Some(value.parse().context("invalid cpu_boost_secs value")?);
+            }
+            _ => bail!("invalid boot_notifier argument: {arg}"),
+        }
+    }
+    Ok(cpu_boost_secs.map(|secs| zx::MonotonicDuration::from_seconds(secs.into())))
 }
 
 /// Validates `boot_notifier` module configuration `args`.

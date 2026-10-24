@@ -273,7 +273,7 @@ impl Modules {
         self.initial_view_id_annotation = initial_view_id_annotation;
     }
 
-    /// Parses and registers a single module specification string (`"<module> [args...]"` or
+    /// Parses and registers a single module specification string (`"<module> [key=value...]"` or
     /// `"-<module>"`).
     pub fn add_spec(&mut self, spec: &str) -> Result<(), Error> {
         let mut tokens = spec.split_whitespace();
@@ -288,18 +288,7 @@ impl Modules {
             self.disable(disabled_module);
             return Ok(());
         }
-        let mut args = Vec::new();
-        for token in tokens {
-            // Normalize `--option=value` into `["--option", "value"]` for `argh::FromArgs`.
-            if token.starts_with('-')
-                && let Some((flag, value)) = token.split_once('=')
-            {
-                args.push(flag.to_string());
-                args.push(value.to_string());
-            } else {
-                args.push(token.to_string());
-            }
-        }
+        let args = tokens.map(String::from).collect();
         self.add_with_args(name, args);
         Ok(())
     }
@@ -340,7 +329,7 @@ impl Modules {
         self.args(module).is_some()
     }
 
-    /// Returns the normalized arguments configured for `module`, if enabled.
+    /// Returns the arguments configured for `module`, if enabled.
     pub fn args(&self, module: &str) -> Option<&[String]> {
         match self.entries.get(module)? {
             ModuleState::DefaultEnabled => {

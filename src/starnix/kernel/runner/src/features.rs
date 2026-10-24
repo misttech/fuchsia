@@ -7,7 +7,7 @@ use anyhow::{Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::mm::MlockPinFlavor;
 use starnix_core::task::{Kernel, KernelFeatures, OomWatermarksMb, SystemLimits};
-use starnix_features::Feature;
+use starnix_features::{Feature, FeatureAndArgs};
 use starnix_modules::{Framebuffer, Modules, validate_module};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -178,9 +178,6 @@ impl Features {
 }
 
 /// Parses container features and modules from `start_info` and `kernel_extra_features`.
-///
-/// Legacy module entries found in `program.features`, `kernel_extra_features`, or
-/// `config.extra_features` are translated into [`Modules`] entries for backwards compatibility.
 pub fn parse_features(
     start_info: &ContainerStartInfo,
     kernel_extra_features: &[String],
@@ -212,7 +209,7 @@ pub fn parse_features(
         .chain(kernel_extra_features.iter())
         .chain(extra_features.iter())
     {
-        let (feature, raw_args) = Feature::try_parse_feature_and_args(entry)?;
+        let FeatureAndArgs { feature, raw_args } = FeatureAndArgs::try_parse(entry)?;
         match (feature, raw_args) {
             (Feature::AndroidSerialno, _) => features.android_serialno = true,
             (Feature::AndroidBootreason, _) => features.android_bootreason = true,
@@ -257,7 +254,7 @@ pub fn parse_features(
                 ));
             }
             (Feature::MagmaSupportedVendors, Some(arg)) => {
-                modules.add_with_args("magma", vec!["--supported-vendors".to_string(), arg]);
+                modules.add_with_args("magma", vec![format!("supported_vendors={arg}")]);
             }
             (Feature::MagmaSupportedVendors, None) => {
                 return Err(anyhow!(
@@ -273,7 +270,7 @@ pub fn parse_features(
             (Feature::IoUring, _) => features.kernel.io_uring = true,
             (Feature::ErrorOnFailedReboot, _) => features.kernel.error_on_failed_reboot = true,
             (Feature::Perfetto, Some(socket_path)) => {
-                modules.add_with_args("perfetto", vec!["--socket-path".to_string(), socket_path]);
+                modules.add_with_args("perfetto", vec![format!("socket_path={socket_path}")]);
             }
             (Feature::Perfetto, None) => {
                 return Err(anyhow!("Perfetto feature must contain a socket path"));
@@ -305,7 +302,7 @@ pub fn parse_features(
             (Feature::SelinuxTestSuite, _) => features.kernel.selinux_test_suite = true,
             (Feature::TestData, _) => features.test_data = true,
             (Feature::Cooling, Some(arg)) => {
-                modules.add_with_args("thermal", vec!["--cooling".to_string(), arg]);
+                modules.add_with_args("thermal", vec![format!("cooling={arg}")]);
             }
             (Feature::Cooling, None) => {
                 return Err(anyhow!("cooling feature must have an argument"));
@@ -329,16 +326,18 @@ pub fn parse_features(
         if !legacy_boot_notifier && !modules.is_enabled("boot_notifier") {
             return Err(anyhow!("boot_notifier_cpu_boost feature requires boot_notifier"));
         }
-        validate_module("boot_notifier", Some(&["--cpu-boost-secs", &secs]))?;
+        let arg = format!("cpu_boost_secs={secs}");
+        validate_module("boot_notifier", Some(&[arg.as_str()]))?;
         if modules.args("boot_notifier") == Some(&[]) {
-            modules.add_with_args("boot_notifier", vec!["--cpu-boost-secs".to_string(), secs]);
+            modules.add_with_args("boot_notifier", vec![arg]);
         }
     }
 
     if let Some(ratio) = legacy_aspect_ratio {
-        validate_module("framebuffer", Some(&["--aspect-ratio", &ratio]))?;
+        let arg = format!("aspect_ratio={ratio}");
+        validate_module("framebuffer", Some(&[arg.as_str()]))?;
         if modules.args("framebuffer") == Some(&[]) {
-            modules.add_with_args("framebuffer", vec!["--aspect-ratio".to_string(), ratio]);
+            modules.add_with_args("framebuffer", vec![arg]);
         }
     }
 
@@ -449,11 +448,11 @@ mod tests {
             vec!["container".to_string()],
             vec![
                 "ashmem".to_string(),
-                "boot_notifier --cpu-boost-secs 60".to_string(),
-                "framebuffer --aspect-ratio=9:16".to_string(),
-                "magma --supported-vendors 0x13B5,0x5143,0x8086".to_string(),
-                "perfetto --socket-path /dev/socket/traced_consumer".to_string(),
-                "thermal --cooling cpu,fcc=8".to_string(),
+                "boot_notifier cpu_boost_secs=60".to_string(),
+                "framebuffer aspect_ratio=9:16".to_string(),
+                "magma supported_vendors=0x13B5,0x5143,0x8086".to_string(),
+                "perfetto socket_path=/dev/socket/traced_consumer".to_string(),
+                "thermal cooling=cpu,fcc=8".to_string(),
             ],
         );
 
@@ -462,26 +461,17 @@ mod tests {
         assert!(features.container);
         assert!(modules.is_enabled("ashmem"));
         assert_eq!(modules.args("ashmem"), Some(&[][..]));
-        assert_eq!(
-            modules.args("boot_notifier"),
-            Some(&["--cpu-boost-secs".to_string(), "60".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("framebuffer"),
-            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
-        );
+        assert_eq!(modules.args("boot_notifier"), Some(&["cpu_boost_secs=60".to_string()][..]));
+        assert_eq!(modules.args("framebuffer"), Some(&["aspect_ratio=9:16".to_string()][..]));
         assert_eq!(
             modules.args("magma"),
-            Some(&["--supported-vendors".to_string(), "0x13B5,0x5143,0x8086".to_string()][..])
+            Some(&["supported_vendors=0x13B5,0x5143,0x8086".to_string()][..])
         );
         assert_eq!(
             modules.args("perfetto"),
-            Some(&["--socket-path".to_string(), "/dev/socket/traced_consumer".to_string()][..])
+            Some(&["socket_path=/dev/socket/traced_consumer".to_string()][..])
         );
-        assert_eq!(
-            modules.args("thermal"),
-            Some(&["--cooling".to_string(), "cpu,fcc=8".to_string()][..])
-        );
+        assert_eq!(modules.args("thermal"), Some(&["cooling=cpu,fcc=8".to_string()][..]));
     }
 
     #[fuchsia::test]
@@ -506,26 +496,17 @@ mod tests {
             parse_features(&start_info, &[]).expect("legacy features should translate");
         assert!(modules.is_enabled("ashmem"));
         assert!(modules.is_enabled("mmcblk_stub"));
-        assert_eq!(
-            modules.args("boot_notifier"),
-            Some(&["--cpu-boost-secs".to_string(), "45".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("framebuffer"),
-            Some(&["--aspect-ratio".to_string(), "16:9".to_string()][..])
-        );
+        assert_eq!(modules.args("boot_notifier"), Some(&["cpu_boost_secs=45".to_string()][..]));
+        assert_eq!(modules.args("framebuffer"), Some(&["aspect_ratio=16:9".to_string()][..]));
         assert_eq!(
             modules.args("magma"),
-            Some(&["--supported-vendors".to_string(), "0x13B5,0x8086".to_string()][..])
+            Some(&["supported_vendors=0x13B5,0x8086".to_string()][..])
         );
         assert_eq!(
             modules.args("perfetto"),
-            Some(&["--socket-path".to_string(), "/dev/socket/traced_consumer".to_string()][..])
+            Some(&["socket_path=/dev/socket/traced_consumer".to_string()][..])
         );
-        assert_eq!(
-            modules.args("thermal"),
-            Some(&["--cooling".to_string(), "cpu,fcc=8".to_string()][..])
-        );
+        assert_eq!(modules.args("thermal"), Some(&["cooling=cpu,fcc=8".to_string()][..]));
     }
 
     #[fuchsia::test]
@@ -573,35 +554,23 @@ mod tests {
         let start_info = test_start_info(
             vec!["boot_notifier".to_string()],
             vec![
-                "boot_notifier --cpu-boost-secs 60".to_string(),
+                "boot_notifier cpu_boost_secs=60".to_string(),
                 "boot_notifier".to_string(),
-                "framebuffer --aspect-ratio=9:16".to_string(),
+                "framebuffer aspect_ratio=9:16".to_string(),
                 "framebuffer".to_string(),
-                "magma --supported-vendors 0x13B5".to_string(),
+                "magma supported_vendors=0x13B5".to_string(),
                 "magma".to_string(),
-                "thermal --cooling cpu,fcc=8".to_string(),
+                "thermal cooling=cpu,fcc=8".to_string(),
                 "thermal".to_string(),
             ],
         );
 
         let (_features, modules) =
             parse_features(&start_info, &[]).expect("parse_features should succeed");
-        assert_eq!(
-            modules.args("boot_notifier"),
-            Some(&["--cpu-boost-secs".to_string(), "60".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("framebuffer"),
-            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("magma"),
-            Some(&["--supported-vendors".to_string(), "0x13B5".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("thermal"),
-            Some(&["--cooling".to_string(), "cpu,fcc=8".to_string()][..])
-        );
+        assert_eq!(modules.args("boot_notifier"), Some(&["cpu_boost_secs=60".to_string()][..]));
+        assert_eq!(modules.args("framebuffer"), Some(&["aspect_ratio=9:16".to_string()][..]));
+        assert_eq!(modules.args("magma"), Some(&["supported_vendors=0x13B5".to_string()][..]));
+        assert_eq!(modules.args("thermal"), Some(&["cooling=cpu,fcc=8".to_string()][..]));
     }
 
     #[fuchsia::test]
@@ -658,36 +627,24 @@ mod tests {
                 "cooling:cpu".to_string(),
             ],
             vec![
-                "boot_notifier --cpu-boost-secs 120".to_string(),
-                "framebuffer --aspect-ratio=9:16".to_string(),
-                "magma --supported-vendors 0x8086".to_string(),
-                "perfetto --socket-path /dev/socket/new".to_string(),
-                "thermal --cooling fcc=8".to_string(),
+                "boot_notifier cpu_boost_secs=120".to_string(),
+                "framebuffer aspect_ratio=9:16".to_string(),
+                "magma supported_vendors=0x8086".to_string(),
+                "perfetto socket_path=/dev/socket/new".to_string(),
+                "thermal cooling=fcc=8".to_string(),
             ],
         );
 
         let (_features, modules) =
             parse_features(&start_info, &[]).expect("parse_features should succeed");
-        assert_eq!(
-            modules.args("boot_notifier"),
-            Some(&["--cpu-boost-secs".to_string(), "120".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("framebuffer"),
-            Some(&["--aspect-ratio".to_string(), "9:16".to_string()][..])
-        );
-        assert_eq!(
-            modules.args("magma"),
-            Some(&["--supported-vendors".to_string(), "0x8086".to_string()][..])
-        );
+        assert_eq!(modules.args("boot_notifier"), Some(&["cpu_boost_secs=120".to_string()][..]));
+        assert_eq!(modules.args("framebuffer"), Some(&["aspect_ratio=9:16".to_string()][..]));
+        assert_eq!(modules.args("magma"), Some(&["supported_vendors=0x8086".to_string()][..]));
         assert_eq!(
             modules.args("perfetto"),
-            Some(&["--socket-path".to_string(), "/dev/socket/new".to_string()][..])
+            Some(&["socket_path=/dev/socket/new".to_string()][..])
         );
-        assert_eq!(
-            modules.args("thermal"),
-            Some(&["--cooling".to_string(), "fcc=8".to_string()][..])
-        );
+        assert_eq!(modules.args("thermal"), Some(&["cooling=fcc=8".to_string()][..]));
 
         let disabled_boot_notifier = test_start_info(
             vec!["boot_notifier".to_string(), "boot_notifier_cpu_boost:45".to_string()],
@@ -702,15 +659,19 @@ mod tests {
     fn reject_unknown_modules_and_invalid_module_arguments() {
         for invalid_spec in [
             "unknown_module",
+            "ashmem unexpected",
             "ashmem --unexpected",
-            "boot_notifier --cpu-boost-secs=-1",
-            "boot_notifier --unknown-flag",
-            "framebuffer --aspect-ratio=0:9",
-            "framebuffer --aspect-ratio=9:0",
-            "framebuffer --aspect-ratio=invalid",
-            "magma --supported-vendors=not_hex",
-            "perfetto --socket-path=",
-            "thermal --cooling=",
+            "boot_notifier cpu_boost_secs=-1",
+            "boot_notifier --cpu-boost-secs=60",
+            "boot_notifier cpu-boost-secs=60",
+            "boot_notifier unknown_option=1",
+            "boot_notifier =60",
+            "framebuffer aspect_ratio=0:9",
+            "framebuffer aspect_ratio=9:0",
+            "framebuffer aspect_ratio=invalid",
+            "magma supported_vendors=not_hex",
+            "perfetto socket_path=",
+            "thermal cooling=",
         ] {
             let start_info = test_start_info(Vec::new(), vec![invalid_spec.to_string()]);
             assert!(

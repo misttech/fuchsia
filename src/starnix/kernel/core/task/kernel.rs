@@ -178,10 +178,20 @@ impl KernelFeatures {
     }
 }
 
-/// Kernel command line argument structure
+/// Kernel command line or module argument structure (`name` or `name=value`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArgNameAndValue<'a> {
     pub name: &'a str,
     pub value: Option<&'a str>,
+}
+
+impl<'a> From<&'a str> for ArgNameAndValue<'a> {
+    fn from(arg: &'a str) -> Self {
+        match arg.split_once('=') {
+            Some((name, value)) => Self { name, value: Some(value) },
+            None => Self { name: arg, value: None },
+        }
+    }
 }
 
 type DeferredDropCallback = Box<dyn FnOnce() + Send + Sync>;
@@ -1222,11 +1232,7 @@ impl Kernel {
 
     /// Returns an iterator of the command line arguments.
     pub fn cmdline_args_iter(&self) -> impl Iterator<Item = ArgNameAndValue<'_>> {
-        parse_cmdline(self.cmdline.to_str().unwrap_or_default()).filter_map(|arg| {
-            arg.split_once('=')
-                .map(|(name, value)| ArgNameAndValue { name: name, value: Some(value) })
-                .or(Some(ArgNameAndValue { name: arg, value: None }))
-        })
+        parse_cmdline(self.cmdline.to_str().unwrap_or_default()).map(ArgNameAndValue::from)
     }
 
     /// Returns the container-configured CacheConfig.

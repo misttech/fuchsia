@@ -263,9 +263,11 @@ mod tests {
             assert!(root.lookup("devices/soc0/revision".into()).is_some());
             assert!(root.lookup("devices/soc0/uevent".into()).is_some());
 
-            // Backing device info.
+            // Backing device info and power supply class.
             assert!(root.lookup("class/bdi/0:80".into()).is_some());
             assert!(root.lookup("devices/virtual/bdi/0:80/read_ahead_kb".into()).is_some());
+            assert!(root.lookup("class/power_supply".into()).is_some());
+            assert!(root.lookup("class/power_supply/battery".into()).is_none());
         })
         .await;
     }

@@ -48,6 +48,7 @@ impl KObjectStore {
 
         // Generic Linux device and class registrations.
         register_cpu_devices(kernel);
+        let _ = self.power_supply_class();
 
         // TODO(https://fxbug.dev/452096300): Register backing_dev_info devices from actual
         // superblocks instead of a hardcoded 0:80 stub.
@@ -165,6 +166,11 @@ impl KObjectStore {
     /// Device class used for powercap devices.
     pub fn powercap_class(&self) -> Class {
         self.get_or_create_class("powercap".into())
+    }
+
+    /// Device class used for power-supply devices (`/sys/class/power_supply`).
+    pub fn power_supply_class(&self) -> Class {
+        self.get_or_create_class("power_supply".into())
     }
 
     /// Device class used for graphics devices.

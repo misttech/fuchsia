@@ -7,8 +7,7 @@
 mod server;
 
 use crate::server::{FramebufferServer, init_viewport_scene, start_presentation_loop};
-use anyhow::anyhow;
-use argh::FromArgs;
+use anyhow::{anyhow, bail};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_math as fmath;
 use fidl_fuchsia_ui_composition as fuicomposition;
@@ -20,7 +19,7 @@ use starnix_core::device::{DeviceMode, DeviceOps, DeviceRegistry};
 use starnix_core::fs::sysfs::build_device_directory;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{ArgNameAndValue, CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::{
@@ -77,18 +76,17 @@ impl std::str::FromStr for AspectRatio {
     }
 }
 
-/// Configuration options for the `framebuffer` module.
-#[derive(FromArgs, Debug, Default)]
-struct FramebufferArgs {
-    /// display aspect ratio formatted as "width:height" (e.g. "9:16")
-    #[argh(option)]
-    aspect_ratio: Option<AspectRatio>,
-}
-
 fn parse_args(args: &[&str]) -> Result<Option<AspectRatio>, anyhow::Error> {
-    let parsed =
-        FramebufferArgs::from_args(&["framebuffer"], args).map_err(|e| anyhow!("{}", e.output))?;
-    Ok(parsed.aspect_ratio)
+    let mut aspect_ratio: Option<AspectRatio> = None;
+    for &arg in args {
+        match ArgNameAndValue::from(arg) {
+            ArgNameAndValue { name: "aspect_ratio", value: Some(value) } => {
+                aspect_ratio = Some(value.parse()?);
+            }
+            _ => bail!("invalid framebuffer argument: {arg}"),
+        }
+    }
+    Ok(aspect_ratio)
 }
 
 /// Validates `framebuffer` module configuration `args`.

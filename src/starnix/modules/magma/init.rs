@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use crate::{GpuDeviceConfig, MagmaFile, get_magma_params};
-use anyhow::{Error, anyhow};
-use argh::FromArgs;
+use anyhow::{Error, anyhow, bail};
 use bstr::BString;
 use starnix_core::device::DeviceOps;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{ArgNameAndValue, CurrentTask, Kernel};
 use starnix_core::vfs::{FileOps, NamespaceNode};
 
 use starnix_uapi::device_id::DeviceId;
@@ -17,28 +16,29 @@ use starnix_uapi::open_flags::OpenFlags;
 const VENDOR_ARM: u16 = 0x13B5;
 const VENDOR_INTEL: u16 = 0x8086;
 
-/// Configuration options for the `magma` module.
-#[derive(FromArgs, Debug, Default)]
-struct MagmaArgs {
-    /// comma-separated list of 16-bit hex vendor IDs (e.g. "0x13B5,0x8086")
-    #[argh(option)]
-    supported_vendors: Option<String>,
-}
-
 fn parse_supported_vendors(args: &[&str]) -> Result<Vec<u16>, Error> {
-    let parsed = MagmaArgs::from_args(&["magma"], args).map_err(|e| anyhow!("{}", e.output))?;
-    match parsed.supported_vendors {
-        Some(vendors_arg) => vendors_arg
-            .split(',')
-            .map(|s| {
-                let trimmed = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
-                u16::from_str_radix(trimmed, 16).map_err(|_| {
-                    anyhow!("supported vendors must be comma-separated hex IDs: 0x1234[,0xabcd]")
-                })
-            })
-            .collect(),
-        None => Ok(vec![VENDOR_ARM, VENDOR_INTEL]),
+    let mut supported_vendors: Option<Vec<u16>> = None;
+    for &arg in args {
+        match ArgNameAndValue::from(arg) {
+            ArgNameAndValue { name: "supported_vendors", value: Some(vendors_arg) } => {
+                let vendors = vendors_arg
+                    .split(',')
+                    .map(|s| {
+                        let trimmed =
+                            s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+                        u16::from_str_radix(trimmed, 16).map_err(|_| {
+                            anyhow!(
+                                "supported vendors must be comma-separated hex IDs: 0x1234[,0xabcd]"
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<u16>, Error>>()?;
+                supported_vendors = Some(vendors);
+            }
+            _ => bail!("invalid magma argument: {arg}"),
+        }
     }
+    Ok(supported_vendors.unwrap_or_else(|| vec![VENDOR_ARM, VENDOR_INTEL]))
 }
 
 /// Validates `magma` module configuration `args`.

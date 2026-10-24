@@ -98,11 +98,12 @@ Currently, most implementations reside in `starnix_core`, but
 ### Modules
 
 Many Starnix kernel features are implemented as [*modules*][starnix-modules].
-During initialization, the Starnix kernel only initializes modules that are
-enabled through a corresponding feature flag. Modules typically register
-themselves with `starnix_core`. For example, a device module registers as the
-handler for specific device numbers with the `DeviceRegistry`, while a file
-system module registers with the `FsRegistry`.
+During initialization, the Starnix kernel initializes modules that are enabled
+by default or listed in the container's `program.modules` configuration (unless
+explicitly disabled via `"-<module>"`). Modules typically register themselves
+with `starnix_core`. For example, a device module registers as the handler for
+specific device numbers with the `DeviceRegistry`, while a file system module
+registers with the `FsRegistry`.
 
 Modules are not called directly by `starnix_core`. Instead, they implement
 traits corresponding to the abstractions they provide. For example, device

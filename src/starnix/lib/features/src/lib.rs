@@ -82,18 +82,9 @@ impl Feature {
     pub fn try_parse(s: &str) -> Result<Feature, UnsupportedFeatureError> {
         Feature::from_str(s).map_err(|_| UnsupportedFeatureError(s.to_string()))
     }
-
-    /// Parses a feature and args from a string.
-    pub fn try_parse_feature_and_args(
-        s: &str,
-    ) -> Result<(Feature, Option<String>), UnsupportedFeatureError> {
-        let (raw_flag, raw_args) =
-            s.split_once(':').map(|(f, a)| (f, Some(a.to_string()))).unwrap_or((s, None));
-        Self::try_parse(raw_flag).map(|feature| (feature, raw_args))
-    }
 }
 
-/// A feature together with any arguments that go along with it, if specified.
+/// Feature together with any arguments that go along with it, if specified.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureAndArgs {
     /// The feature.

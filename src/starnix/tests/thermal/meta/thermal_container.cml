@@ -19,7 +19,7 @@
         ],
         modules: [
             // keep-sorted start
-            "thermal --cooling cpu,fcc=8",
+            "thermal cooling=cpu,fcc=8",
 
             // keep-sorted end
         ],

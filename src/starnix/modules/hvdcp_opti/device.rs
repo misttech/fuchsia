@@ -60,7 +60,7 @@ fn register_hvdcp_opti_devices(
     let platform_bus = objects.platform_bus();
     let spmi_bus = objects.get_or_create_bus("spmi".into());
     let iio = objects.get_or_create_bus("iio".into());
-    let power_supply = objects.get_or_create_class("power_supply".into());
+    let power_supply = objects.power_supply_class();
 
     let spmi = registry.add_bus_device(
         "1c40000.qcom,spmi".into(),

@@ -28,7 +28,6 @@ rustc_library("boot") {
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
     "//third_party/rust_crates:zerocopy",
   ]
 }
