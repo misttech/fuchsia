@@ -150,6 +150,41 @@ class QueriesTest(unittest.TestCase):
         first_switch = scheduling.records[0][0]
         self.assertIsInstance(first_switch, trace_model.ContextSwitch)
 
+    def test_get_scheduling_records_end_states(self) -> None:
+        # Columns: ts, cpu, dur, end_state, priority, tid, state
+        mock_rows = [
+            ["1000", "0", "100", "R", "3122", "101", "Running"],
+            ["1100", "0", "100", "S", "3122", "102", "Running"],
+            ["1200", "0", "100", "D", "3122", "103", "Running"],
+            ["1300", "0", "100", "T", "3122", "104", "Running"],
+            ["1400", "0", "100", "Z", "3122", "105", "Running"],
+            # Gap from 1500 to 1600 exercises outgoing_state across an idle gap.
+            ["1600", "0", "100", "X", "3122", "106", "Running"],
+            ["1700", "0", "100", "R", "3122", "107", "Running"],
+        ]
+        with mock.patch.object(self.importer, "_query", return_value=mock_rows):
+            scheduling = self.importer.get_scheduling_records()
+
+        switches = [
+            r
+            for r in scheduling.records[0]
+            if isinstance(r, trace_model.ContextSwitch)
+        ]
+        outgoing = [(r.outgoing_tid, r.outgoing_state) for r in switches]
+        self.assertEqual(
+            outgoing,
+            [
+                (0, trace_model.ThreadState.ZX_THREAD_STATE_RUNNING),
+                (101, trace_model.ThreadState.ZX_THREAD_STATE_RUNNING),
+                (102, trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED),
+                (103, trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED),
+                (104, trace_model.ThreadState.ZX_THREAD_STATE_SUSPENDED),
+                (105, trace_model.ThreadState.ZX_THREAD_STATE_DYING),
+                (0, trace_model.ThreadState.ZX_THREAD_STATE_RUNNING),
+                (106, trace_model.ThreadState.ZX_THREAD_STATE_DEAD),
+            ],
+        )
+
     def test_get_flow_events(self) -> None:
         (
             _,
