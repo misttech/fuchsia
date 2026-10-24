@@ -16,16 +16,10 @@ import argparse
 import getpass
 import json
 import os
-import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-
-# Ensure fuchsia root is in sys.path
-_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_DIR) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_DIR))
 
 from build.profile import procfs
 
