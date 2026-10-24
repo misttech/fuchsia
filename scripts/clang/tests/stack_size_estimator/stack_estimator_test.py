@@ -6,21 +6,18 @@
 import argparse
 import io
 import json
-import os
 import pathlib
-import subprocess
 import sys
 import tempfile
 import unittest
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import call_graph
 import graph
 import stack_estimator
-import symbolizer
 
 # This will be set by main() from the command line arguments.
 TESTDATA_DIR: pathlib.Path
@@ -275,30 +272,6 @@ class TestStackEstimator(unittest.TestCase):
         # main (64) calls foo (16), bar (32), baz (8)
         # Total = 64 + 32 = 96
         self.assertEqual(max_stack, 96)
-
-
-class TestSymbolizer(unittest.TestCase):
-    """Tests for symbolizer.Symbolizer."""
-
-    @patch.object(subprocess, "Popen")
-    def test_symbolizer(self, mock_popen: MagicMock) -> None:
-        # Mock the process
-        mock_process = MagicMock()
-        mock_popen.return_value = mock_process
-
-        # Mock stdout.readline to return a source location
-        mock_process.stdout.readline.side_effect = ["main.c:10\n", "foo.c:20\n"]
-
-        # Mock path exists for bin and obj
-        with patch.object(os.path, "exists", return_value=True):
-            sym = symbolizer.Symbolizer("llvm-symbolizer", "test.elf")
-            results = sym.symbolize([0x1000, 0x2000])
-
-            self.assertEqual(results[0x1000], "main.c:10")
-            self.assertEqual(results[0x2000], "foo.c:20")
-
-            sym.close()
-            mock_process.terminate.assert_called()
 
 
 class TestStackEstimatorEndToEnd(unittest.TestCase):

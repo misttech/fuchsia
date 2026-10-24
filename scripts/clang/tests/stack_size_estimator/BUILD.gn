@@ -23,7 +23,6 @@ if (is_host) {
       "//scripts/clang/stack_size_estimator/call_graph.py",
       "//scripts/clang/stack_size_estimator/graph.py",
       "//scripts/clang/stack_size_estimator/stack_estimator.py",
-      "//scripts/clang/stack_size_estimator/symbolizer.py",
     ]
     testdata_dir = "$target_out_dir/test_data"
     deps = [ ":test_data" ]

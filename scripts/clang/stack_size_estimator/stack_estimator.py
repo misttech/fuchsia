@@ -5,14 +5,12 @@
 
 import argparse
 import json
-import os
 import sys
 from collections import deque
 from pathlib import Path
 from typing import Any
 
 import call_graph
-import symbolizer
 from graph import Graph
 
 # Type aliases
@@ -156,33 +154,11 @@ def _load_json_file(path: Path | str) -> Any:
         sys.exit(1)
 
 
-def _symbolize_addresses(
-    llvm_symbolizer_path: str | None, elf_file: str | None, all_addrs: list[int]
-) -> dict[int, str]:
-    src_map: dict[int, str] = {}
-    if (
-        llvm_symbolizer_path
-        and os.path.exists(llvm_symbolizer_path)
-        and elf_file
-        and os.path.exists(elf_file)
-    ):
-        try:
-            with symbolizer.Symbolizer(llvm_symbolizer_path, elf_file) as sym:
-                src_map = sym.symbolize(all_addrs)
-        except OSError as e:
-            print(
-                f"Warning: Failed to initialize symbolizer: {e}",
-                file=sys.stderr,
-            )
-    return src_map
-
-
 def _generate_output_json(
     func_info: FunctionInfoByAddr,
     results: SccResults,
     addr_to_scc_id: dict[int, int],
     adj_list: dict[int, dict[str, Any]],
-    src_map: dict[int, str],
     entry_functions: list[str | dict[str, Any]],
     display_names: dict[int, list[str]],
 ) -> dict[str, Any]:
@@ -211,9 +187,6 @@ def _generate_output_json(
             node_data["indirect"].append(ind_group)
         for uninst in adj.get("uninstrumented", []):
             node_data["uninstrumented"].append(uninst)
-
-        if u in src_map:
-            node_data["source"] = src_map[u]
 
         all_nodes[u] = node_data
 
@@ -330,8 +303,6 @@ def estimate(
     config = _load_json_file(config_path)
 
     entry_functions = config.get("entry_functions", ["main"])
-    llvm_symbolizer_path = config.get("llvm_symbolizer_path")
-    elf_file = config.get("elf_file")
 
     try:
         data = call_graph.single_file(_load_json_file(callgraph_path))
@@ -353,16 +324,11 @@ def estimate(
 
     results = calculate_max_stack_usage(cg, func_info, sccs)
 
-    src_map = _symbolize_addresses(
-        llvm_symbolizer_path, elf_file, list(func_info.keys())
-    )
-
     return _generate_output_json(
         func_info,
         results,
         addr_to_scc_id,
         adj_list,
-        src_map,
         entry_functions,
         call_graph.get_display_names(data),
     )

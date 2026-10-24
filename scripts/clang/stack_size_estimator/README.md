@@ -19,16 +19,12 @@ The `stack_estimator.py` expects a configuration JSON file. The schema of `confi
 ```json
 {
   "entry_functions": ["main", {"name": "task_entry", "address": 4096}],
-  "exclude_functions": ["panic"],
-  "llvm_symbolizer_path": "/path/to/llvm-symbolizer",
-  "elf_file": "/path/to/binary.elf"
+  "exclude_functions": ["panic"]
 }
 ```
 
 *   `entry_functions`: (Optional) A list of entry point functions to analyze. Defaults to `["main"]` if not specified. Each is a function name, or a dictionary with a `name` and an `address`. Local functions in different translation units can have the same name; such functions must be given by address.
 *   `exclude_functions`: (Optional) A list of functions to leave out of the analysis, each a function name, or a dictionary with an `address` (and a `name`, for the reader), as for `entry_functions`; a local function whose name is not unique is given by address. An excluded function is treated as using no stack, and calls to it are ignored, so excluding a function asserts that it is never reached in this configuration, for example a panic handler that never returns.
-*   `llvm_symbolizer_path`: (Optional) Path to the `llvm-symbolizer` binary.
-*   `elf_file`: (Optional) Path to the corresponding ELF binary. Required alongside `llvm_symbolizer_path` to resolve source locations.
 
 ## Output
 
@@ -57,8 +53,7 @@ The standard output will be a JSON object containing the global graph nodes, det
       "sccId": 0,
       "direct": [12350, 12400],
       "indirect": [],
-      "uninstrumented": [],
-      "source": "main.c:10"
+      "uninstrumented": []
     }
   },
   "cycles": [
@@ -124,7 +119,7 @@ The JSON output contains the following three main sections that provide the resu
 
 1.  **`entry_functions`**: An array containing max stack usage metrics and cycle detection flags for each entry point defined in `config.json`. This is the primary result of the tool to consult for a program's overall stack usage.
 2.  **`cycles`**: An array of objects detailing any detected strongly connected components (recursive cycles) reachable in the parsed call graph.
-3.  **`nodes`**: A dictionary containing structural call graph info directly (direct and indirect calls) along with the calculated max cumulative stack metric per function in the graph. It also includes the original file and line number sources when the `llvm-symbolizer` is used.
+3.  **`nodes`**: A dictionary containing structural call graph info directly (direct and indirect calls) along with the calculated max cumulative stack metric per function in the graph. Functions are identified by address and name; a consumer that wants source locations can symbolize the addresses.
 
 ## Key Algorithms
 
