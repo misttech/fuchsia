@@ -454,26 +454,18 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
             outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
             args={},
         ),
-    ] + (
-        [
-            # Note: This context switch record switches into the kernel idle thread (incoming_prio represents kIdleWeight).
-            # Perfetto's FuchsiaTraceParser engine explicitly filters out context switches into the idle thread to conserve memory
-            # and declutter user trace tracks. Thus, it is omitted from the scheduling stream when importing directly from FXT.
-            trace_model.ContextSwitch(
-                start=us_tp(698607476.7395687),
-                incoming_tid=1036,
-                outgoing_tid=7021,
-                incoming_prio=-2147483648,
-                outgoing_prio=3122,
-                outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
-                args={},
-            ),
-        ]
-        if not is_fxt
-        else []
-    )
+        trace_model.ContextSwitch(
+            start=us_tp(698607476.739 if is_fxt else 698607476.7395687),
+            incoming_tid=0 if is_fxt else 1036,
+            outgoing_tid=7021,
+            incoming_prio=-2147483648,
+            outgoing_prio=3122,
+            outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+            args={},
+        ),
+    ]
 
-    scheduling_records[1] = [  # type: ignore[assignment]
+    scheduling_records[1] = [
         trace_model.ContextSwitch(
             start=us_tp(697868165.358 if is_fxt else 697868165.3588456),
             incoming_tid=7023,
@@ -485,22 +477,16 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
             else trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
             args={},
         ),
-    ] + (
-        [
-            # Note: Omitted in FXT path because Perfetto drops context switches into the kernel idle thread (incoming_prio represents kIdleWeight).
-            trace_model.ContextSwitch(
-                start=us_tp(697868586.6018075),
-                incoming_tid=1037,
-                outgoing_tid=7023,
-                incoming_prio=-2147483648,
-                outgoing_prio=3122,
-                outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
-                args={},
-            ),
-        ]
-        if not is_fxt
-        else []
-    )
+        trace_model.ContextSwitch(
+            start=us_tp(697868586.601 if is_fxt else 697868586.6018075),
+            incoming_tid=0 if is_fxt else 1037,
+            outgoing_tid=7023,
+            incoming_prio=-2147483648,
+            outgoing_prio=3122,
+            outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+            args={},
+        ),
+    ]
 
     return trace_model.Model(processes, scheduling_records)
 

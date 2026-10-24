@@ -595,6 +595,22 @@ class _FxtImporter:
         )
         cpu_states: dict[int, CpuState] = {}
 
+        def make_idle_switch(state: CpuState) -> trace_model.ContextSwitch:
+            assert state.last_end_ts is not None
+            return trace_model.ContextSwitch(
+                start=trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_nanoseconds(
+                        float(state.last_end_ts)
+                    )
+                ),
+                incoming_tid=IDLE_TID,
+                outgoing_tid=state.last_tid,
+                incoming_prio=IDLE_PRIO,
+                outgoing_prio=state.last_prio,
+                outgoing_state=state.last_end_state,
+                args={},
+            )
+
         for row in data:
             cpu = int(row[1])
             ts_ns = int(row[0])
@@ -611,22 +627,7 @@ class _FxtImporter:
                 and ts_ns > cpu_state.last_end_ts
                 and cpu_state.last_tid != IDLE_TID
             ):
-                gap_start_timestamp = trace_time.TimePoint.from_epoch_delta(
-                    trace_time.TimeDelta.from_nanoseconds(
-                        float(cpu_state.last_end_ts)
-                    )
-                )
-                records.append(
-                    trace_model.ContextSwitch(
-                        start=gap_start_timestamp,
-                        incoming_tid=IDLE_TID,
-                        outgoing_tid=cpu_state.last_tid,
-                        incoming_prio=IDLE_PRIO,
-                        outgoing_prio=cpu_state.last_prio,
-                        outgoing_state=cpu_state.last_end_state,
-                        args={},
-                    )
-                )
+                records.append(make_idle_switch(cpu_state))
                 cpu_state = cpu_state._replace(
                     last_tid=IDLE_TID,
                     last_prio=IDLE_PRIO,
@@ -662,11 +663,18 @@ class _FxtImporter:
             )
 
             cpu_states[cpu] = CpuState(
-                last_end_ts=ts_ns + raw_dur,
+                last_end_ts=ts_ns + raw_dur if raw_dur >= 0 else None,
                 last_tid=tid,
                 last_prio=prio,
                 last_end_state=END_STATE_MAP.get(row[3], END_STATE_MAP["R"]),
             )
+
+        for cpu, cpu_state in cpu_states.items():
+            if (
+                cpu_state.last_end_ts is not None
+                and cpu_state.last_tid != IDLE_TID
+            ):
+                scheduling_records[cpu].append(make_idle_switch(cpu_state))
 
         return self._SchedulingRecords(scheduling_records)
 
