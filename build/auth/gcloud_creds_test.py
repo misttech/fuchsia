@@ -5,15 +5,9 @@
 
 """Unit tests for gcloud_creds.py."""
 
-# Add our active parent directory to sys.path to enable flat, direct imports of sister modules
-import pathlib
-import sys
-
-_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import tempfile
@@ -21,9 +15,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
-import apt
-import gcloud
-import gcloud_creds
+from build.auth import apt, gcloud, gcloud_creds
 
 
 class IsolateGcloudCredsTestBase(unittest.TestCase):
@@ -33,6 +25,7 @@ class IsolateGcloudCredsTestBase(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        gcloud.path.cache_clear()
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = pathlib.Path(self.temp_dir_obj.name)
         self.out_dir = self.temp_dir / "out"
