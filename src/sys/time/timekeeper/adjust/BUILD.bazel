@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "time_adjust",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//src/sys/time/timekeeper:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/trace/rust:trace",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:scopeguard",
+    ],
+)
+
+rustc_test(
+    name = "time_adjust_test",
+    crate = ":time_adjust",
+    edition = "2024",
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+fx_unittest_package(
+    name = "time_adjust_test_package",
+    unit_tests = [":time_adjust_test"],
+)
