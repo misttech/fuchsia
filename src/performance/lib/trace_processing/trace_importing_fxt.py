@@ -605,6 +605,35 @@ class _FxtImporter:
                 trace_time.TimeDelta.from_nanoseconds(float(ts_ns))
             )
 
+            cpu_state = cpu_states.get(cpu, default_cpu_state)
+            if (
+                cpu_state.last_end_ts is not None
+                and ts_ns > cpu_state.last_end_ts
+                and cpu_state.last_tid != IDLE_TID
+            ):
+                gap_start_timestamp = trace_time.TimePoint.from_epoch_delta(
+                    trace_time.TimeDelta.from_nanoseconds(
+                        float(cpu_state.last_end_ts)
+                    )
+                )
+                records.append(
+                    trace_model.ContextSwitch(
+                        start=gap_start_timestamp,
+                        incoming_tid=IDLE_TID,
+                        outgoing_tid=cpu_state.last_tid,
+                        incoming_prio=IDLE_PRIO,
+                        outgoing_prio=cpu_state.last_prio,
+                        outgoing_state=cpu_state.last_end_state,
+                        args={},
+                    )
+                )
+                cpu_state = cpu_state._replace(
+                    last_tid=IDLE_TID,
+                    last_prio=IDLE_PRIO,
+                    last_end_state=END_STATE_MAP["R"],
+                )
+                cpu_states[cpu] = cpu_state
+
             if state == "W":
                 records.append(
                     trace_model.Waking(
@@ -620,56 +649,17 @@ class _FxtImporter:
             tid = int(row[5])
             prio = int(row[4])
 
-            cpu_state = cpu_states.get(cpu, default_cpu_state)
-            last_end_ts = cpu_state.last_end_ts
-            last_tid = cpu_state.last_tid
-            last_prio = cpu_state.last_prio
-            last_end_state = cpu_state.last_end_state
-
-            if last_end_ts is not None and ts_ns > last_end_ts:
-                if last_tid != IDLE_TID:
-                    gap_start_timestamp = trace_time.TimePoint.from_epoch_delta(
-                        trace_time.TimeDelta.from_nanoseconds(
-                            float(last_end_ts)
-                        )
-                    )
-                    records.append(
-                        trace_model.ContextSwitch(
-                            start=gap_start_timestamp,
-                            incoming_tid=IDLE_TID,
-                            outgoing_tid=last_tid,
-                            incoming_prio=IDLE_PRIO,
-                            outgoing_prio=last_prio,
-                            outgoing_state=last_end_state,
-                            args={},
-                        )
-                    )
-                    last_tid = IDLE_TID
-                    last_prio = IDLE_PRIO
-
-                records.append(
-                    trace_model.ContextSwitch(
-                        start=timestamp,
-                        incoming_tid=tid,
-                        outgoing_tid=IDLE_TID,
-                        incoming_prio=prio,
-                        outgoing_prio=IDLE_PRIO,
-                        outgoing_state=END_STATE_MAP["R"],
-                        args={},
-                    )
+            records.append(
+                trace_model.ContextSwitch(
+                    start=timestamp,
+                    incoming_tid=tid,
+                    outgoing_tid=cpu_state.last_tid,
+                    incoming_prio=prio,
+                    outgoing_prio=cpu_state.last_prio,
+                    outgoing_state=cpu_state.last_end_state,
+                    args={},
                 )
-            else:
-                records.append(
-                    trace_model.ContextSwitch(
-                        start=timestamp,
-                        incoming_tid=tid,
-                        outgoing_tid=last_tid,
-                        incoming_prio=prio,
-                        outgoing_prio=last_prio,
-                        outgoing_state=last_end_state,
-                        args={},
-                    )
-                )
+            )
 
             cpu_states[cpu] = CpuState(
                 last_end_ts=ts_ns + raw_dur,

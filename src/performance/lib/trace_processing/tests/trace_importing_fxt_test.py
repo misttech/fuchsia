@@ -13,6 +13,7 @@ from tp_shell import PerfettoTraceProcessor
 from trace_processing import (
     trace_importing_fxt,
     trace_model,
+    trace_time,
 )
 
 
@@ -183,6 +184,80 @@ class QueriesTest(unittest.TestCase):
                 (0, trace_model.ThreadState.ZX_THREAD_STATE_RUNNING),
                 (106, trace_model.ThreadState.ZX_THREAD_STATE_DEAD),
             ],
+        )
+
+    def test_get_scheduling_records_waking_during_idle_gap(self) -> None:
+        # Columns: ts, cpu, dur, end_state, priority, tid, state
+        mock_rows = [
+            ["1000", "0", "500", "S", "3122", "101", "Running"],
+            ["2000", "0", "0", "", "0", "102", "W"],
+            ["2500", "0", "500", "R", "3122", "102", "Running"],
+        ]
+        with mock.patch.object(self.importer, "_query", return_value=mock_rows):
+            scheduling = self.importer.get_scheduling_records()
+
+        records = scheduling.records[0]
+        self.assertEqual(len(records), 4)
+
+        self.assertIsInstance(records[0], trace_model.ContextSwitch)
+        assert isinstance(records[0], trace_model.ContextSwitch)
+        self.assertEqual(
+            records[0].start,
+            trace_time.TimePoint.from_epoch_delta(
+                trace_time.TimeDelta.from_nanoseconds(1000.0)
+            ),
+        )
+        self.assertEqual(records[0].tid, 101)
+        self.assertEqual(records[0].outgoing_tid, 0)
+        self.assertEqual(records[0].prio, 3122)
+        self.assertIsNone(records[0].outgoing_prio)
+        self.assertEqual(
+            records[0].outgoing_state,
+            trace_model.ThreadState.ZX_THREAD_STATE_RUNNING,
+        )
+
+        self.assertIsInstance(records[1], trace_model.ContextSwitch)
+        assert isinstance(records[1], trace_model.ContextSwitch)
+        self.assertEqual(
+            records[1].start,
+            trace_time.TimePoint.from_epoch_delta(
+                trace_time.TimeDelta.from_nanoseconds(1500.0)
+            ),
+        )
+        self.assertEqual(records[1].tid, 0)
+        self.assertEqual(records[1].outgoing_tid, 101)
+        self.assertEqual(records[1].prio, trace_model.INT32_MIN)
+        self.assertEqual(records[1].outgoing_prio, 3122)
+        self.assertEqual(
+            records[1].outgoing_state,
+            trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+        )
+
+        self.assertIsInstance(records[2], trace_model.Waking)
+        self.assertEqual(
+            records[2].start,
+            trace_time.TimePoint.from_epoch_delta(
+                trace_time.TimeDelta.from_nanoseconds(2000.0)
+            ),
+        )
+        self.assertEqual(records[2].tid, 102)
+        self.assertEqual(records[2].prio, 0)
+
+        self.assertIsInstance(records[3], trace_model.ContextSwitch)
+        assert isinstance(records[3], trace_model.ContextSwitch)
+        self.assertEqual(
+            records[3].start,
+            trace_time.TimePoint.from_epoch_delta(
+                trace_time.TimeDelta.from_nanoseconds(2500.0)
+            ),
+        )
+        self.assertEqual(records[3].tid, 102)
+        self.assertEqual(records[3].outgoing_tid, 0)
+        self.assertEqual(records[3].prio, 3122)
+        self.assertEqual(records[3].outgoing_prio, trace_model.INT32_MIN)
+        self.assertEqual(
+            records[3].outgoing_state,
+            trace_model.ThreadState.ZX_THREAD_STATE_RUNNING,
         )
 
     def test_get_flow_events(self) -> None:
