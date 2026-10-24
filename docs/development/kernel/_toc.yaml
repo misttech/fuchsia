@@ -26,3 +26,5 @@ toc:
   path: /docs/development/kernel/notes_on_kernel_development.md
 - title: "Adding a new syscall or object type"
   path: /docs/development/kernel/adding_a_new_syscall.md
+- title: "Versioning syscall structs"
+  path: /docs/development/kernel/syscall_struct_versioning.md

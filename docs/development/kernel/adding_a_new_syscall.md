@@ -12,6 +12,12 @@ Because our system continues to change, you should expect that this guide is out
 of date.  Sorry.  If you are following this guide and you notice errors or
 omissions, please make an attempt to update it.  Thank you!
 
+If you are changing a struct used by an existing syscall rather than adding a
+new syscall, see [Versioning syscall structs][struct-versioning].  If your new
+syscall takes or returns a struct, give it a way for callers to specify the
+struct version (such as a topic or version bits in `options`) so the struct
+can evolve later.
+
 
 ## Overview
 
@@ -158,6 +164,7 @@ to `NEXT` to make the syscall available in the next stable API level.
 search rather than CL in gerrit. -->
 
 [345252431]: https://fxbug.dev/345252431
+[struct-versioning]: /docs/development/kernel/syscall_struct_versioning.md
 [stub-cl]: https://fxrev.dev/1181176
 [fidlc-properties]: /tools/fidl/fidlc/src/properties.h
 [fidlc-names]: /tools/fidl/fidlc/src/names.cc

@@ -285,6 +285,15 @@ when you explicitly intend to interact with the panic shell.
 `fx core-tests` runs Zircon core tests and is a good way to verify that
 Zircon core tests have not regressed.
 
+#### Changing syscall structs
+
+Never change the layout, size, or field meaning of a struct that crosses the
+Zircon syscall boundary in place (for example, the `zx_info_*_t` structs used
+by `zx_object_get_info()`, or anything under `zircon/system/public/zircon/` or
+`sdk/rust/zx-types`). Instead, add a new versioned struct and keep the old one
+until no callers use it. Before you make such a change, read
+[`docs/development/kernel/syscall_struct_versioning.md`](docs/development/kernel/syscall_struct_versioning.md).
+
 ### Debugging
 
 `ffx debug symbolize` renders backtrace markup into readable symbol names.

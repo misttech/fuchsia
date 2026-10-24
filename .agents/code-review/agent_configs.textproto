@@ -248,6 +248,20 @@ configs: {
 }
 
 configs: {
+  id: "fuchsia-zircon-syscall-struct-versioning"
+  display_name: "Zircon Syscall Struct Versioning"
+  description: "Rules for evolving Zircon syscall ABI structs with versioned (_vN) structs and topics."
+  tags: "code-review-agent"
+  skills: "zircon-syscall-struct-versioning"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "zircon/system/public/zircon/.*\\.h"
+    path_regex: "zircon/vdso/.*\\.fidl"
+    path_regex: "sdk/rust/zx-types/.*\\.rs"
+  }
+}
+
+configs: {
   id: "fuchsia-zircon-cpp-to-rust"
   display_name: "Fuchsia Zircon C++ to Rust Porting"
   description: "Zircon C++ to Rust porting rubric and FBL intrusive container porting patterns."

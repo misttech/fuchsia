@@ -94,6 +94,17 @@ Individual option values must be defined as preprocessor macros that cast a
 numeric literal to `uint32_t`. The options must be bit flags that can be
 combined using the bitwise `|` operator.
 
+### Versioning structs {#versioning-structs}
+
+Structs that cross the syscall boundary are part of the ABI and can't be
+changed in place. A function that takes or returns a struct must have a
+parameter that lets the caller specify the version of the struct, such as a
+`topic` parameter or version bits reserved in the `options` parameter. Don't
+add a version field to the struct itself.
+
+To change an existing struct, add a new versioned struct as described in
+[Versioning syscall structs](/docs/development/kernel/syscall_struct_versioning.md).
+
 ### Handles
 
 When a function is given a handle as a parameter, the function must either
