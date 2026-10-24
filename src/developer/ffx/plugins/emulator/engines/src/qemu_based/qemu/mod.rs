@@ -19,19 +19,21 @@ use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::QEMU_TOOL;
 use ffx_emulator_common::{find_unused_vsock_cid, validate_snapshot_name};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail, SnapshotInfo};
-use fho::{Result, bug, return_bug, return_user_error, user_error};
+use fho::{Result, bug, return_bug, return_user_error};
 use monitor::Monitor;
 use serde_json::{Deserializer, Value, json};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::Duration;
 
 mod image_conversion;
 mod monitor;
 
 /// The line which `qemu-img snapshot -l` prints above the table of the snapshots in an image.
 const IMAGE_SNAPSHOTS_HEADING: &str = "Snapshot list:";
+
+/// Timeout for opening the QMP socket, and for each QMP command.
+const QMP_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
 pub struct QemuEngine {
@@ -397,66 +399,29 @@ impl QemuEngine {
         let console_path =
             self.get_path_for_console_type(&instance_dir, EngineConsoleType::Machine);
 
-        const MAX_ELAPSED: Duration = Duration::from_secs(10);
         let mut socket = QemuSocket::new(&console_path);
-        let start = Instant::now();
-        let stream = self.open_socket(&mut socket, &MAX_ELAPSED).await?;
+        let stream = self.open_socket(&mut socket, &QMP_TIMEOUT).await?;
 
         let mut responses = Deserializer::from_reader(&stream).into_iter::<Value>();
 
         let filename = absolute_path.to_str().ok_or_else(|| bug!("Invalid target path"))?;
-        let command_id = format!(
-            "screendump-{}",
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("system time before epoch!")
-                .as_nanos()
-        );
 
         // We take a two-step approach to capture the screenshot:
         // 1. Capture the screenshot in PPM format from QEMU to the temporary destination.
         // 2. Read the PPM file into memory and overwrite it with its PNG-encoded version.
         // This avoids creating extra temporary files on the host filesystem.
-        let request = json!({
-            "execute": "screendump",
-            "id": command_id,
-            "arguments": {
-                "filename": filename,
-                "format": "ppm"
-            }
-        });
-        let request_cmd = format!("{}\n", request);
+        crate::qemu_based::qmp_execute(
+            &stream,
+            &mut responses,
+            "screendump",
+            Some(json!({ "filename": filename, "format": "ppm" })),
+            QMP_TIMEOUT,
+        )?;
 
-        (&stream)
-            .write_all(request_cmd.as_bytes())
-            .map_err(|e| user_error!("Error writing screendump: {e}"))?;
-
-        // Wait for the specific response with our ID.
-        loop {
-            if start.elapsed() > MAX_ELAPSED {
-                return Err(user_error!(
-                    "Timed out ({} s) waiting for screendump response.",
-                    MAX_ELAPSED.as_secs()
-                ));
-            }
-            let data = responses
-                .next()
-                .ok_or_else(|| user_error!("QMP connection closed while waiting for screendump"))?
-                .map_err(|e| user_error!("Error reading QMP response: {e}"))?;
-
-            if data.get("id").and_then(|id| id.as_str()) == Some(&command_id) {
-                if let Some(error) = data.get("error") {
-                    return Err(user_error!("Screenshot error from emulator: {}", error));
-                }
-                if let Some(_return_value) = data.get("return") {
-                    return image_conversion::convert_ppm_to_png(
-                        /* ppm_source= */ absolute_path,
-                        /* png_destination= */ absolute_path,
-                    );
-                }
-                return Err(user_error!("Unknown QMP response for screendump: {:?}", data));
-            }
-        }
+        image_conversion::convert_ppm_to_png(
+            /* ppm_source= */ absolute_path,
+            /* png_destination= */ absolute_path,
+        )
     }
 }
 
@@ -486,11 +451,14 @@ mod tests {
     use crate::qemu_based::tests::make_fake_sdk;
     use emulator_instance::{NetworkingMode, PortMapping};
     use std::ffi::OsStr;
-    use std::fs;
+    use std::io::Write as _;
+    use std::os::unix::net::UnixListener;
+    use std::sync::mpsc;
+    use std::{fs, thread};
     use tempfile::tempdir;
 
     /// Returns an engine for an emulator instance which appears to be running, and which keeps
-    /// its monitor socket in `instance_directory`.
+    /// its console sockets in `instance_directory`.
     fn running_engine(
         env: &ffx_config::TestEnv,
         instance_directory: &Path,
@@ -503,7 +471,11 @@ mod tests {
         let mut data = EmulatorInstanceData::new(cfg, EngineType::Qemu, EngineState::Running);
         // Set the emulator PID to the PID of the test, so that the engine state is Running.
         data.set_pid(std::process::id());
-        QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()))
+        QemuEngine::new(
+            &env.context,
+            data,
+            EmulatorInstances::new(instance_directory.to_path_buf()),
+        )
     }
 
     #[fuchsia::test]
@@ -823,5 +795,70 @@ mod tests {
         ];
 
         assert_eq!(actual, expected)
+    }
+
+    /// An error that the fake QMP server returns for one command.
+    struct FakeQmpError {
+        /// Index of the failing command, not counting `qmp_capabilities`.
+        command_index: usize,
+        desc: &'static str,
+    }
+
+    /// Starts a fake QMP server on `<instance_dir>/qmp` for one connection.
+    ///
+    /// The server answers every command with success, except for the one selected by `error`.
+    /// It sends each request, except `qmp_capabilities`, to the returned receiver.
+    fn start_fake_qmp(
+        instance_dir: &Path,
+        error: Option<FakeQmpError>,
+    ) -> (mpsc::Receiver<Value>, thread::JoinHandle<()>) {
+        let listener = UnixListener::bind(instance_dir.join("qmp")).expect("bind fake qmp socket");
+        let (sender, receiver) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let greeting = json!({"QMP": {"version": {}, "capabilities": []}});
+            stream.write_all(format!("{greeting}\n").as_bytes()).expect("greeting");
+            let reader = stream.try_clone().expect("clone");
+            let mut command_index = 0;
+            for request in Deserializer::from_reader(reader).into_iter::<Value>() {
+                let Ok(request) = request else { break };
+                let reply = if request["execute"] == "qmp_capabilities" {
+                    json!({"return": {}})
+                } else {
+                    sender.send(request.clone()).expect("send");
+                    let reply = match &error {
+                        Some(error) if error.command_index == command_index => json!({
+                            "error": {"class": "GenericError", "desc": error.desc},
+                            "id": request["id"]
+                        }),
+                        _ => json!({"return": {}, "id": request["id"]}),
+                    };
+                    command_index += 1;
+                    reply
+                };
+                if stream.write_all(format!("{reply}\n").as_bytes()).is_err() {
+                    break;
+                }
+            }
+        });
+        (receiver, handle)
+    }
+
+    #[fuchsia::test]
+    async fn test_screenshot_qmp_error() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let error = FakeQmpError { command_index: 0, desc: "no display" };
+        let (receiver, handle) = start_fake_qmp(temp.path(), Some(error));
+        let mut engine = running_engine(&env, temp.path(), false);
+
+        let output = temp.path().join("screenshot.png");
+        let err = engine.capture_screenshot_qmp(&output).await.unwrap_err().to_string();
+        assert_eq!(err, "QMP command 'screendump' failed: no display");
+        let request = receiver.try_recv().expect("screendump request");
+        assert_eq!(request["execute"], "screendump");
+        assert_eq!(request["arguments"]["filename"], output.to_str().unwrap());
+        drop(engine);
+        handle.join().unwrap();
     }
 }

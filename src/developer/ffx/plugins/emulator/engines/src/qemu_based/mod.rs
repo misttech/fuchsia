@@ -25,13 +25,14 @@ use fuchsia_async::Timer;
 use serde_json::{Deserializer, Value, json};
 use shared_child::SharedChild;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 use std::{env, str};
@@ -64,6 +65,99 @@ pub(crate) fn check_screenshot_preconditions(engine: &dyn EmulatorEngine, absolu
     assert!(!absolute_path.is_dir(), "Output path must not be a directory ({:?})", absolute_path);
     if let Some(parent) = absolute_path.parent() {
         assert!(parent.is_dir(), "Parent path must be a directory ({:?})", parent);
+    }
+}
+
+/// Reads the next QMP message from `responses`, waiting until `deadline` at most.
+///
+/// `responses` must be a JSON stream deserializer that reads from `stream` or from a clone of
+/// it. `waiting_for` describes the expected message in error messages.
+fn qmp_read<I>(
+    stream: &UnixStream,
+    responses: &mut I,
+    deadline: Instant,
+    waiting_for: &str,
+) -> Result<Value>
+where
+    I: Iterator<Item = serde_json::Result<Value>>,
+{
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return_user_error!("Timed out waiting for {waiting_for}.");
+    }
+    // The read timeout is a socket option, so it also applies to clones of `stream`.
+    stream.set_read_timeout(Some(remaining)).map_err(|e| bug!("{e}"))?;
+    let error = match responses.next() {
+        Some(Ok(data)) => return Ok(data),
+        None => return_user_error!("QMP connection closed while waiting for {waiting_for}."),
+        Some(Err(error)) => error,
+    };
+    let kind = error.io_error_kind();
+    if Instant::now() >= deadline
+        || matches!(kind, Some(ErrorKind::WouldBlock | ErrorKind::TimedOut))
+    {
+        return_user_error!("Timed out waiting for {waiting_for}.");
+    }
+    if matches!(
+        kind,
+        Some(ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::UnexpectedEof)
+    ) {
+        return_user_error!("QMP connection closed while waiting for {waiting_for}: {error}");
+    }
+    return_user_error!("Error reading {waiting_for}: {error}")
+}
+
+/// Executes one QMP command on an initialized QMP connection.
+///
+/// Returns the `return` value of the reply. Skips messages that are not the reply, such as
+/// asynchronous events. Errors if QEMU replies with an `error` object, or if no reply arrives
+/// within `timeout`.
+///
+/// `responses` must be a JSON stream deserializer that reads from `stream` or from a clone of
+/// it.
+pub(crate) fn qmp_execute<I>(
+    stream: &UnixStream,
+    responses: &mut I,
+    command: &str,
+    arguments: Option<Value>,
+    timeout: Duration,
+) -> Result<Value>
+where
+    I: Iterator<Item = serde_json::Result<Value>>,
+{
+    // QEMU sends each reply only to the connection that sent the command. A counter is enough
+    // to tell this command's reply apart from replies to earlier commands.
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let command_id = format!("{command}-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+
+    let mut request = json!({ "execute": command, "id": command_id });
+    if let Some(arguments) = arguments {
+        request["arguments"] = arguments;
+    }
+    let deadline = Instant::now() + timeout;
+    let mut writer = stream;
+    writer
+        .write_all(format!("{request}\n").as_bytes())
+        .map_err(|e| user_error!("Error writing QMP command '{command}': {e}"))?;
+
+    let waiting_for = format!("the QMP response to '{command}'");
+    loop {
+        let data = qmp_read(stream, responses, deadline, &waiting_for)?;
+        if data.get("id").and_then(Value::as_str) != Some(command_id.as_str()) {
+            log::debug!("Skipping QMP message while waiting for '{command}': {data}");
+            continue;
+        }
+        if let Some(error) = data.get("error") {
+            let desc = error
+                .get("desc")
+                .and_then(Value::as_str)
+                .map_or_else(|| error.to_string(), str::to_string);
+            return_user_error!("QMP command '{command}' failed: {desc}");
+        }
+        if let Some(return_value) = data.get("return") {
+            return Ok(return_value.clone());
+        }
+        return_user_error!("Unexpected QMP response to '{command}': {data}");
     }
 }
 
@@ -1094,7 +1188,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         let start = Instant::now();
         loop {
             if start.elapsed() > *max_elapsed {
-                return_bug!("Reading port mappings timed out");
+                return_user_error!("Timed out opening the emulator's QMP socket.");
             }
             if !self.is_running().await {
                 return_user_error!("Emulator instance is not running.");
@@ -2477,5 +2571,139 @@ pub(crate) mod tests {
         let engine =
             crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
         check_screenshot_preconditions(&engine, &dir_path);
+    }
+
+    /// Runs `server` as the QEMU side of a QMP connection on a socket pair, and returns the
+    /// client side of the connection.
+    fn fake_qmp_pair<F>(server: F) -> (UnixStream, std::thread::JoinHandle<()>)
+    where
+        F: FnOnce(UnixStream, &mut dyn Iterator<Item = serde_json::Result<Value>>) + Send + 'static,
+    {
+        let (client, server_stream) = UnixStream::pair().expect("socket pair");
+        let handle = std::thread::spawn(move || {
+            let reader = server_stream.try_clone().expect("clone");
+            let mut requests = Deserializer::from_reader(reader).into_iter::<Value>();
+            server(server_stream, &mut requests);
+        });
+        (client, handle)
+    }
+
+    fn write_json(mut stream: &UnixStream, value: Value) {
+        stream.write_all(format!("{value}\n").as_bytes()).expect("write");
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_success() {
+        let (client, handle) = fake_qmp_pair(|stream, requests| {
+            write_json(&stream, json!({"QMP": {"version": {}, "capabilities": []}}));
+            let request = requests.next().unwrap().unwrap();
+            assert_eq!(request["execute"], "input-send-event");
+            assert_eq!(request["arguments"], json!({"events": []}));
+            write_json(&stream, json!({"return": {"ok": 1}, "id": request["id"]}));
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let result = qmp_execute(
+            &client,
+            &mut responses,
+            "input-send-event",
+            Some(json!({"events": []})),
+            Duration::from_secs(10),
+        )
+        .expect("qmp_execute");
+        assert_eq!(result, json!({"ok": 1}));
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_no_arguments() {
+        let (client, handle) = fake_qmp_pair(|stream, requests| {
+            let request = requests.next().unwrap().unwrap();
+            assert_eq!(request["execute"], "query-status");
+            assert!(request.get("arguments").is_none(), "{request}");
+            write_json(&stream, json!({"return": {}, "id": request["id"]}));
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let result =
+            qmp_execute(&client, &mut responses, "query-status", None, Duration::from_secs(10))
+                .expect("qmp_execute");
+        assert_eq!(result, json!({}));
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_skips_events_and_other_ids() {
+        let (client, handle) = fake_qmp_pair(|stream, requests| {
+            let request = requests.next().unwrap().unwrap();
+            // Reply to the qmp_capabilities command sent by open_socket(), which has no id.
+            write_json(&stream, json!({"return": {}}));
+            write_json(&stream, json!({"event": "RTC_CHANGE", "data": {"offset": 0}}));
+            write_json(&stream, json!({"return": {"wrong": true}, "id": "some-other-id"}));
+            write_json(&stream, json!({"return": {"right": true}, "id": request["id"]}));
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let result =
+            qmp_execute(&client, &mut responses, "cmd", None, Duration::from_secs(10)).unwrap();
+        assert_eq!(result, json!({"right": true}));
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_error() {
+        let (client, handle) = fake_qmp_pair(|stream, requests| {
+            let request = requests.next().unwrap().unwrap();
+            write_json(
+                &stream,
+                json!({
+                    "error": {
+                        "class": "GenericError",
+                        "desc": "Input handler not found for event type rel"
+                    },
+                    "id": request["id"]
+                }),
+            );
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let err =
+            qmp_execute(&client, &mut responses, "input-send-event", None, Duration::from_secs(10))
+                .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "QMP command 'input-send-event' failed: Input handler not found for event type rel"
+        );
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_timeout() {
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let (client, handle) = fake_qmp_pair(move |_stream, requests| {
+            // Read the request but never answer it; keep the socket open until the client is
+            // done so that the client sees a timeout rather than a closed connection.
+            let _ = requests.next();
+            let _ = done_rx.recv();
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let start = Instant::now();
+        let err = qmp_execute(&client, &mut responses, "cmd", None, Duration::from_millis(200))
+            .unwrap_err();
+        assert!(start.elapsed() >= Duration::from_millis(200));
+        assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+        assert!(err.to_string().contains("Timed out"), "{err}");
+        done_tx.send(()).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    fn test_qmp_execute_connection_closed() {
+        let (client, handle) = fake_qmp_pair(|stream, requests| {
+            let _ = requests.next();
+            write_json(&stream, json!({"event": "SHUTDOWN"}));
+            // Dropping the stream closes the connection.
+        });
+        let mut responses = Deserializer::from_reader(&client).into_iter::<Value>();
+        let err =
+            qmp_execute(&client, &mut responses, "cmd", None, Duration::from_secs(10)).unwrap_err();
+        assert!(err.to_string().contains("connection closed"), "{err}");
+        handle.join().unwrap();
     }
 }
