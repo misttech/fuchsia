@@ -1,3 +1,4 @@
+#!/usr/bin/env fuchsia-vendored-python
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -5,15 +6,9 @@
 """Unit tests for rbe_settings.py."""
 
 import json
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-# Insert fuchsia root directory to sys.path so we can import the build packages hermetically
-_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, _FUCHSIA_DIR)
 
 from build.rbe import rbe_settings
 

@@ -34,7 +34,7 @@ EOF
 readonly PROTOBUF_WHEEL="prebuilt/third_party/protobuf-py3"
 
 env \
-  PYTHONPATH="$script_dir_abs":"$script_dir_abs"/proto:"$project_root/$PROTOBUF_WHEEL" \
+  PYTHONPATH="$project_root":"$script_dir_abs":"$script_dir_abs"/proto:"$project_root/$PROTOBUF_WHEEL" \
   "$python" \
   -S \
   "$script_dir"/"$stem".py \

@@ -33,12 +33,6 @@ from typing import (
 )
 
 import cl_utils
-
-# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
-_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-if _FUCHSIA_DIR not in sys.path:
-    sys.path.insert(0, _FUCHSIA_DIR)
-
 import depfile
 import fuchsia
 import output_leak_scanner

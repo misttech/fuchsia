@@ -5,15 +5,9 @@
 
 """Unit-tests for rbe_profile.py."""
 
-import os
-import sys
 import unittest
 from pathlib import Path
 from unittest import mock
-
-# Insert fuchsia root directory to sys.path so we can import the build packages hermetically
-_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-sys.path.insert(0, _FUCHSIA_DIR)
 
 from build.rbe import rbe_profile
 

@@ -7,16 +7,9 @@
 
 import contextlib
 import io
-import os
 import pathlib
-import sys
 import unittest
 from unittest import mock
-
-# Insert fuchsia root directory to sys.path so we can import the build packages hermetically
-_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-if _FUCHSIA_DIR not in sys.path:
-    sys.path.insert(0, _FUCHSIA_DIR)
 
 from build.rbe import casfs
 

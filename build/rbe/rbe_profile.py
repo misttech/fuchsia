@@ -13,11 +13,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-# Ensure the fuchsia root is in sys.path so we can import build python modules
-_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_DIR) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_DIR))
-
 from build.python.modules.serialization import serialization
 from build.scripts import service_profile
 
