@@ -74,6 +74,18 @@ description: >
   within one hour. If the user specifies a different command in the prompt, use
   that one instead.
 
+* **assign reviewer** : Whether Planter assigns a human reviewer to each
+  created CL with `--assign-reviewer`, once a CQ dry run of the CL passes.
+  Planter picks the reviewer by the reviewer routing table at
+  go/fuchsia-bazel-migration-reviewers. It is enabled if the user asks for it in
+  the prompt (e.g., "assign reviewers", "use --assign-reviewer"). Otherwise, it
+  is disabled.
+
+* **Planter check script** : The script in the "Script" section of the
+  document at go/planter_check_and_update. It checks whether the installed
+  Planter is up to date and updates it if it is not. If the user specifies a
+  different script in the prompt, use that one instead.
+
 * **Planter installation guide** : The document with the steps to install
   Planter, at go/planter_installation_guide. If the user specifies a different
   guide in the prompt, use that one instead.

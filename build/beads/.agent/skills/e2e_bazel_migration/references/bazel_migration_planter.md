@@ -38,9 +38,11 @@ For a **migration group**, the `<package_names>` are the GN labels of the packag
 5. Use "gsheets" skill: Update the "Migration Status" of each **migration package** in the **control table** to "CL_created" and set "Last Status Update" to the **status timestamp**.
    * If it fails to update the **control table**, ignore the failure.
 
+6. If **assign reviewer** is enabled, refer to [Assign a Reviewer](#assign-a-reviewer) to assign a reviewer to the CL.
+
 ## Several Migration Groups
 
-The Planter fleet runs the Planter tasks of the **migration groups** in parallel, one task in each registered Fuchsia checkout (slot) at a time, and uploads one CL for each **migration group**. See [FLEET.md](https://source.corp.google.com/piper///depot/google3/experimental/users/lindkvist/planter/FLEET.md) for how the fleet works.
+The Planter fleet runs the Planter tasks of the **migration groups** in parallel, one task in each registered Fuchsia checkout (slot) at a time, and uploads one CL for each **migration group**. See the Planter fleet guide in the "References" section of the document at go/planter_check_and_update for how the fleet works.
 
 A **migration group** fails when its Planter task cannot be queued, or the task is not uploaded to Gerrit. A failed **migration group** does not stop the other **migration groups**; handle it as described in [Migration Group Failure](error_handling.md#migration-group-failure).
 
@@ -67,6 +69,7 @@ A **migration group** fails when its Planter task cannot be queued, or the task 
       * If it fails to amend the commit or upload a new patchset, ignore the failure.
    2. Use "gsheets" skill: Update the "Migration Status" of each package of the **migration group** in the **control table** to "CL_created" and set "Last Status Update" to the **status timestamp**.
       * If it fails to update the **control table**, ignore the failure.
+   3. If **assign reviewer** is enabled, refer to [Assign a Reviewer](#assign-a-reviewer) to assign a reviewer to the CL. Run it for the CLs in parallel, at most one for each slot, before the slots are released in the next step, because fixing CQ failures needs a slot.
 
 7. If worktree slots were allocated in step 2, refer to [Release Worktree Slots](#release-worktree-slots) to release them.
 
@@ -93,4 +96,13 @@ Release the worktree slots allocated in [Allocate Worktree Slots](#allocate-work
 1. Run `<planter> slot remove <name>` to unregister the slot.
 2. Run `fx worktree remove <name>` to return the worktree to the pool.
 * If either command fails, ignore the failure, and report the slots that could not be released to the user.
+
+## Assign a Reviewer
+
+Assign a human reviewer to a created CL with Planter's `--assign-reviewer`. Planter assigns the reviewer only after a CQ dry run of the CL passes, so this also runs CQ on the CL and fixes CQ failures.
+
+1. From the root of the Fuchsia checkout, run `<planter> run --gerrit --cq --assign-reviewer --task=<task ID>`, where `<task ID>` is the task ID of the **migration group** of the CL. Planter votes Commit-Queue+1, fixes CQ failures and uploads new patchsets (at most 3 rounds), and assigns a reviewer once a CQ dry run passes.
+   * A CQ dry run can take hours; run the command in the background and wait for it to exit. Do not treat a slow run as a failure.
+2. Use "fuchsia-gerrit-cli" skill to get the reviewers of the CL, and record the assigned reviewer for the "Completed" notification.
+   * If the command fails or no reviewer is assigned (e.g., CQ still fails after the fix rounds), do not fail the Bazel Migration and CL Creation step: the CL is created. Record "not assigned" with the reason for the "Completed" notification, and continue. The user can assign one later with `<planter> assign-reviewer <CL number>`.
 

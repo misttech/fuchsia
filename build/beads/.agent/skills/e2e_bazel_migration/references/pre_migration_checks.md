@@ -56,7 +56,7 @@ The `<planter>` below is the `planter` binary resolved with `"$(command -v plant
 ### 1. Check the Planter Binary
 
 1. Run `command -v planter || ls -l "$HOME/.local/bin/planter"` to find the `planter` binary.
-   * If the binary is found, run `<planter> version` to verify that it starts.
+   * If the binary is found, run `<planter> version` to verify that it starts. If it starts, refer to [Check the Planter Version](#3-check-the-planter-version) to update it if there is a newer version.
    * If the binary is not found, or `<planter> version` fails, refer to [Install Planter](#2-install-planter) to install it.
 
 
@@ -72,16 +72,42 @@ The `<planter>` below is the `planter` binary resolved with `"$(command -v plant
    * If `command -v planter` still finds nothing, `~/.local/bin` is not on `PATH`. This is fine for the migration: `scripts/planter_task_add_run.sh` falls back to `~/.local/bin/planter`.
 
 
-### 3. Check the Shared Machinery
+### 3. Check the Planter Version
+
+Planter changes often. Use the **Planter check script** to check whether the installed Planter is up to date, and update it if it is not.
+
+1. Use the `go-links` skill to resolve the **Planter check script** link to its destination, read the document it points to, and get the script from its "Script" section.
+   * If the user specified a different Planter check script in the prompt, do not resolve the link. Use that script instead.
+   * If the link cannot be resolved, the document cannot be read, or it has no script, tell the user, skip this check, and continue.
+2. Save the script to a file outside the Fuchsia checkout (e.g., `"$(mktemp)"`), and run it with `bash`. It updates Planter if it is out of date; the update can take 10 minutes or more, so allow a long timeout or run it in the background and wait for it to finish.
+   * If it exits with `0`, Planter is up to date or was updated. Continue.
+   * Otherwise, if `<planter> version` still works, keep using the installed Planter: tell the user that Planter could not be updated, with the output of the script, and continue. Do not fail the Pre-Migration Checks step.
+   * Otherwise, fail the Pre-Migration Checks step with the reason: "Failed to update Planter".
+
+
+### 4. Check the Shared Machinery
 
 1. Run `ls "$HOME/.planter/beads/build/beads/planter/machinery/prompts/coder.md"` to check whether the Planter shared machinery is set up.
    * If the file does not exist, run `<planter> init-project` from the root of the Fuchsia checkout to set it up.
    * If `<planter> init-project` fails, fail the Pre-Migration Checks step with the reason: "Failed to initialize the Planter shared machinery".
 
 
-### 4. Check the Antigravity Environment
+### 5. Check the Antigravity Environment
 
 Planter drives its coding and reviewer agents through the Antigravity language server. It reads the server address from `ANTIGRAVITY_LS_ADDRESS` (default `localhost:5387`) and the CSRF token from `ANTIGRAVITY_CSRF_TOKEN`, which are set in Antigravity terminals.
 
 1. Run `[[ -n "${ANTIGRAVITY_CSRF_TOKEN:-}" ]]` to check that the command runs in an Antigravity terminal.
    * If it fails, fail the Pre-Migration Checks step with the reason: "Planter must run from an Antigravity terminal".
+
+
+### 6. Check the Reviewer Assignment Support
+
+Run this check only if **assign reviewer** is enabled.
+
+1. Run `<planter> run --help 2>&1 | grep -q -- -assign-reviewer` to check that Planter supports `--assign-reviewer`.
+   * If it fails, Planter is older than the `--assign-reviewer` support. Refer to [Install Planter](#2-install-planter) to rebuild Planter from head, and check again.
+   * If it still fails, fail the Pre-Migration Checks step with the reason: "Planter does not support --assign-reviewer".
+
+2. Planter reads the reviewer routing table (go/fuchsia-bazel-migration-reviewers) with the gcloud Application Default Credentials (ADC), which need the Sheets scope. Run `curl -s "https://oauth2.googleapis.com/tokeninfo?access_token=$(gcloud auth application-default print-access-token)"` and check that its `scope` contains `https://www.googleapis.com/auth/spreadsheets`.
+   * If the command fails or the scope is missing, fail the Pre-Migration Checks step with the reason: "gcloud ADC lacks the Sheets scope for --assign-reviewer; run `gcloud auth application-default login --scopes=openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/spreadsheets`". Do not run the login command yourself, because it needs the user to sign in in a browser.
+     * Keep `openid` in `--scopes`. Google also grants `openid` with these scopes, and without it the login fails with "Scope has changed" after the sign-in.

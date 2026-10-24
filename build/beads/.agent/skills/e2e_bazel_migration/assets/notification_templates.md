@@ -10,7 +10,9 @@ In the templates below:
   **migration packages**, separated by `, `, with duplicates removed.
 * `<Fuchsia_Gerrit_CLs>`: One line for each **migration group** whose CL is
   created, in the form `<CL number>: <paths of its packages>`. If there is one
-  **migration group**, only its CL number.
+  **migration group**, only its CL number. If **assign reviewer** is enabled,
+  append ` (reviewer: <assigned reviewer>)`, or ` (reviewer: not assigned,
+  <reason>)`.
 * `<failed_migration_groups>`: One line for each failed **migration group**, in
   the form `<paths of its packages>: <reason>`. If no **migration group**
   failed, `None`.
