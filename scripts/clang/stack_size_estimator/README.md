@@ -113,10 +113,9 @@ The estimator calculates stack usage by handling recursion conservatively via St
 ## Data Structures
 
 ### Internal Graph
-The `Graph` class (in `graph.py`) uses an adjacency list representation:
+The `Graph` class (in `graph.py`) uses an adjacency list representation, which keeps the vertices in insertion order so that the results are reproducible:
 ```python
 class Graph:
-    vertices: Set[Address]
     graph: Dict[Address, List[Address]]
 ```
 
@@ -129,5 +128,5 @@ The JSON output contains the following three main sections that provide the resu
 
 ## Key Algorithms
 
-*   **Tarjan's Algorithm**: For finding SCCs in $O(V+E)$.
+*   **Tarjan's Algorithm**: For finding SCCs in $O(V+E)$. The depth-first search is iterative, so arbitrarily deep call chains are supported.
 *   **Topological Sort**: For processing the Condensation DAG in dependency order.

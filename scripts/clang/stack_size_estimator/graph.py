@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Graph algorithms and utilities."""
-import logging
+from collections.abc import KeysView
 from typing import Any
 
 
@@ -10,14 +10,19 @@ class Graph:
     """A simple directed graph implementation."""
 
     def __init__(self) -> None:
-        self.vertices: set[Any] = set()
+        # Maps each vertex to its successors. Vertices are kept in insertion
+        # order, so that traversals, and the numbering of the SCCs they
+        # produce, are the same from one run to the next.
         self.graph: dict[Any, list[Any]] = {}
+
+    @property
+    def vertices(self) -> KeysView[Any]:
+        """The vertices of the graph, in insertion order."""
+        return self.graph.keys()
 
     def add_vertex(self, u: Any) -> None:
         """Adds a vertex to the graph."""
-        self.vertices.add(u)
-        if u not in self.graph:
-            self.graph[u] = []
+        self.graph.setdefault(u, [])
 
     def add_edge(self, u: Any, v: Any) -> None:
         """Adds a directed edge from u to v."""
@@ -28,56 +33,60 @@ class Graph:
     def get_sccs(self) -> list[list[Any]]:
         """
         Finds Strongly Connected Components using Tarjan's algorithm.
+
+        The depth-first search is iterative, so that call chains deeper than
+        Python's recursion limit are handled.
         """
         index_counter = 0
-        stack = []
-        lowlink = {}
-        index = {}
-        result = []
+        stack: list[Any] = []
+        on_stack: set[Any] = set()
+        lowlink: dict[Any, int] = {}
+        index: dict[Any, int] = {}
+        result: list[list[Any]] = []
 
-        def connect(node: Any) -> None:
-            nonlocal index_counter
-            index[node] = index_counter
-            lowlink[node] = index_counter
+        for root in self.vertices:
+            if root in index:
+                continue
+            # Each work item is a node and an iterator over its successors,
+            # which records how far the node's successors have been visited.
+            work = [(root, iter(self.graph[root]))]
+            index[root] = lowlink[root] = index_counter
             index_counter += 1
-            stack.append(node)
-
-            try:
-                successors = self.graph.get(node, [])
+            stack.append(root)
+            on_stack.add(root)
+            while work:
+                node, successors = work[-1]
+                descended = False
                 for successor in successors:
                     if successor not in index:
-                        connect(successor)
-                        lowlink[node] = min(lowlink[node], lowlink[successor])
-                    elif successor in stack:
-                        lowlink[node] = min(lowlink[node], index[successor])
-            except RecursionError:
-                # A RecursionError occurs when the DFS encounters a deeply
-                # nested, linear chain of function calls that exceeds Python's
-                # recursion limit (e.g. 1000 nodes deep in a straight line).
-                logging.warning(
-                    "Recursion error encountered on node %s. "
-                    "Graph is too deep.",
-                    node,
-                )
-                # Fallback or handle deep recursion if needed
-
-            if lowlink[node] == index[node]:
-                # SCC found. The current node is the root of the SCC.
-                # Nodes belonging to this SCC are currently on the stack.
-                # The stack is guaranteed to not be empty because 'node'
-                # itself was added at the start of connect(node) and
-                # hasn't been popped yet.
-                connected_component = []
-                while True:
-                    successor = stack.pop()
-                    connected_component.append(successor)
-                    if successor == node:
+                        index[successor] = lowlink[successor] = index_counter
+                        index_counter += 1
+                        stack.append(successor)
+                        on_stack.add(successor)
+                        work.append((successor, iter(self.graph[successor])))
+                        descended = True
                         break
-                result.append(connected_component)
+                    if successor in on_stack:
+                        lowlink[node] = min(lowlink[node], index[successor])
+                if descended:
+                    continue
 
-        for node in self.vertices:
-            if node not in index:
-                connect(node)
+                # All successors of node have been visited.
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    lowlink[parent] = min(lowlink[parent], lowlink[node])
+                if lowlink[node] == index[node]:
+                    # SCC found. The current node is the root of the SCC.
+                    # Nodes belonging to this SCC are currently on the stack.
+                    connected_component = []
+                    while True:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        connected_component.append(member)
+                        if member == node:
+                            break
+                    result.append(connected_component)
 
         return result
 
@@ -92,16 +101,21 @@ class Graph:
         visited = set()
         stack = []
 
-        def visit(node: Any) -> None:
-            visited.add(node)
-            for neighbor in self.graph.get(node, []):
-                if neighbor not in visited:
-                    visit(neighbor)
-            stack.append(node)
-
-        for node in self.vertices:
-            if node not in visited:
-                visit(node)
+        for root in self.vertices:
+            if root in visited:
+                continue
+            visited.add(root)
+            work = [(root, iter(self.graph[root]))]
+            while work:
+                node, neighbors = work[-1]
+                for neighbor in neighbors:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        work.append((neighbor, iter(self.graph[neighbor])))
+                        break
+                else:
+                    work.pop()
+                    stack.append(node)
 
         # Stack has reverse topological order (children first).
         # We want u before v (parents first).

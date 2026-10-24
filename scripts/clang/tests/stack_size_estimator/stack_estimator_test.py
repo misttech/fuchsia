@@ -60,6 +60,17 @@ class TestGraphHelper(unittest.TestCase):
         # 1 and 2 can be in any order in between
         self.assertSetEqual(set(order[1:3]), {1, 2})
 
+    def test_deep_chain(self) -> None:
+        # Deeper than Python's default recursion limit.
+        g = graph.Graph()
+        n = 20000
+        for i in range(n):
+            g.add_edge(i, i + 1)
+        self.assertEqual(len(g.get_sccs()), n + 1)
+        self.assertEqual(g.topological_sort(), list(range(n + 1)))
+        g.add_edge(n, 0)
+        self.assertEqual(len(g.get_sccs()), 1)
+
 
 class TestCallGraph(unittest.TestCase):
     """Tests for call_graph.py."""
