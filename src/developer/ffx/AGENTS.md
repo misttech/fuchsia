@@ -73,6 +73,7 @@ pub struct ExampleTool {
 * **Immediate Target Injection**: Use `#[with(moniker("..."))]` or `#[with(toolbox())]` on a FIDL proxy field (or inject `RemoteControlProxyHolder`, `NodenameHolder`, `SshAddrHolder`, `HostAddrHolder`) when every invocation of the tool needs the target.
 * **Conditional / Lazy Target Injection (`fho::Deferred<T>`)**: When a tool has subcommands or code paths that may not require a target connection, wrap the proxy or holder in `fho::Deferred<T>` (or `#[with(fho::deferred(moniker("...")))]`) and `.await?` it only on the branch that needs it.
 * **Resilient Multi-Shot Reconnection (`Connector<T>`)**: For workflows that reboot or flash the target device and must reconnect across disconnects, use `Connector<RemoteControlProxyHolder>` or `DirectConnector` (`try_connect()`).
+* **Native `async fn` in `FfxMain` and `TryFromEnv`**: `FfxMain::main` and `TryFromEnv::try_from_env` use native `async fn`. Do not annotate them with `#[async_trait]` or `#[async_trait(?Send)]`.
 
 ---
 
@@ -279,3 +280,26 @@ While supporting both machine and human-readable output is the default expectati
      inputs = [ "test_data/mock_driver.py" ]
      ```
   3. Embed the script in the Rust test using `include_str!("../test_data/mock_driver.py")`, write it to the test's `TempDir`, and set its permissions to `0o755` before invoking it.
+
+---
+
+## 8. Rust Guidelines & Trait Conventions
+
+### Do Not Use `async_trait` (`#[async_trait]`)
+* **Do NOT use the `async_trait` macro (`#[async_trait]`, `#[async_trait(?Send)]`) or the `async-trait` crate in `ffx` code**, whether in subtools or library crates.
+* **Use native `async fn` in traits instead**:
+  ```rust
+  pub trait MyService {
+      async fn do_something(&self) -> Result<()>;
+  }
+
+  impl MyService for MyServiceImpl {
+      async fn do_something(&self) -> Result<()> {
+          Ok(())
+      }
+  }
+  ```
+* **Why**: With Rust 2024 and modern editions, native `async fn in trait` is supported directly by the compiler. Using native async traits avoids macro overhead, improves compilation times, and eliminates unnecessary heap allocations (`Box<dyn Future>`) per invocation.
+* **Do NOT add `//third_party/rust_crates:async-trait` to `BUILD.gn` dependencies**.
+* **Dynamic Dispatch (`dyn Trait`) Exception**: The only exception where `#[async_trait(?Send)]` remains permissible is when a trait strictly requires dynamic dispatch (e.g., `Box<dyn MyTrait>`), because native `async fn in trait` is not yet dyn-compatible (RFC 3498). In all other cases (including `FfxMain`, `TryFromEnv`, and static dispatch traits), native async traits must be used.
+
