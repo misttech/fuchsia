@@ -61,6 +61,11 @@ type RunOptions struct {
 
 	// Whether to set a new process group ID so that we can kill the subprocess
 	// and any of its children.
+	//
+	// Note that when Setpgid is true, any processes left running in the
+	// subprocess's process group are killed (SIGKILL) as soon as the subprocess
+	// itself exits, so it must not be used for commands that intentionally
+	// leave background children behind.
 	Setpgid bool
 }
 
@@ -300,7 +305,12 @@ func WaitForCmd(ctx context.Context, cmd *exec.Cmd) error {
 	pgidSet := cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid
 	select {
 	case err := <-errs:
-		// Process is done so no need to worry about cleanup. Just exit.
+		// The command has completed, but it may still have orphaned child
+		// processes running in its process group if it exited without cleaning
+		// them up. Kill the process group if Setpgid was enabled.
+		if pgidSet {
+			killProcess(ctx, cmd, pgidSet)
+		}
 		return err
 	case <-ctx.Done():
 		logRunningProcesses(ctx)

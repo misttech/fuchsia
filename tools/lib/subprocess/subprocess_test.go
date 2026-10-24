@@ -277,6 +277,50 @@ func TestRun(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("should kill orphaned child processes when command exits with Setpgid", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("Skipping on Mac because setting pgid doesn't work")
+		}
+		rand.Seed(time.Now().UTC().UnixNano())
+		sleepDuration := rand.Intn(10000) + 10000
+
+		// Spawn a background sleep process that closes stdout/stderr and
+		// outlives the parent shell script.
+		script := writeScript(t, fmt.Sprintf(
+			`#!/bin/bash
+			sleep %d </dev/null >/dev/null 2>&1 &
+			exit 0`, sleepDuration),
+		)
+
+		r := Runner{}
+		if err := r.Run(ctx, []string{script}, RunOptions{Setpgid: true}); err != nil {
+			t.Fatalf("Expected script to succeed, but got: %s", err)
+		}
+
+		if output := waitForNoProcessMatching(t, fmt.Sprintf("sleep %d", sleepDuration)); output != "" {
+			t.Errorf("Expected background sleep process to be killed on command exit, but pgrep found: %s", output)
+		}
+	})
+}
+
+// waitForNoProcessMatching polls `pgrep -f pattern` for up to 2 seconds and
+// returns the last non-empty pgrep output, or "" once no process matches.
+// SIGKILL delivery is asynchronous, so a process may still be visible for a
+// short time after killProcess returns.
+func waitForNoProcessMatching(t *testing.T, pattern string) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		output, err := exec.Command("pgrep", "-f", pattern).CombinedOutput()
+		if err != nil && len(output) == 0 {
+			return ""
+		}
+		if time.Now().After(deadline) {
+			return string(output)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func writeScript(t *testing.T, contents string) string {
