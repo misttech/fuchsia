@@ -23,7 +23,6 @@ import cxx
 import depfile
 import fuchsia
 import remote_action
-from build.rbe import casfs
 
 _SCRIPT_BASENAME = Path(__file__).name
 _SCRIPT_DIR = Path(__file__).parent
@@ -213,11 +212,6 @@ class CxxRemoteAction(object):
             # the depfile ourslves.
             # return self._verify_remote_depfile()
             self._rewrite_remote_depfile()
-        elif self.remote_action.casfs_virtualize and self._depfile_exists():
-            # Prefetch the virtualized depfile in this worker process so Ninja's
-            # single-threaded main loop does not block on serialized FUSE fetches.
-            assert self.depfile is not None
-            casfs.prefetch(self.depfile)
 
         # we expect the depfile to always be downloaded, via --download_regex
         return 0
@@ -311,7 +305,7 @@ class CxxRemoteAction(object):
                 )
             )
 
-        # Prepare remote compile action.
+        # Prepare remote compile action
         remote_output_dirs = [
             *self.cxx_action.output_dirs(),
             *self.command_line_output_dirs,

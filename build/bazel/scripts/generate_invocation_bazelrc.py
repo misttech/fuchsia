@@ -14,16 +14,10 @@ from pathlib import Path
 _DEFAULT_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 from build.bazel.scripts import bazel_invocation as bazel_inv
-from build.rbe import casfs
 from build.resultstore import related_invocations as rel_inv
 from build.resultstore import rs_profile
 
 build_config_option = bazel_inv.build_config_option
-
-
-def startup_config_option(options: str) -> str:
-    """Returns a bazelrc command for a startup option."""
-    return f"startup {options}"
 
 
 def _metadata_option(key: str, value: str) -> str:
@@ -58,10 +52,6 @@ def _metadata_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
 def _service_proxies_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
     """Generates bazelrc lines for remote execution and BES proxy sockets."""
     yield from bazel_inv.generate_service_proxies_bazelrc(env)
-    if env.get(casfs.ENV_CASFS_VIRTUALIZE) == "1":
-        yield startup_config_option(
-            f"--unix_digest_hash_attribute_name={casfs.XATTR_RBE_ARI_BIN_HASH}"
-        )
     yield from _jiri_prebuilt_bazelrc(env)
 
 

@@ -222,15 +222,6 @@ function cleanup {
   fi
   return "$exit_code"
 }
-# main_build.py sets FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE to 0 or 1,
-# but resolve it via casfs.py when invoked standalone.
-# LINT.IfChange(rbe_casfs_env_vars)
-if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "0" && "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "1" ]]; then
-  FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE="$("${_PREBUILT_PYTHON3}" -S "${_SRCDIR}/../rbe/casfs.py")"
-  export FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE
-fi
-# LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_env_vars)
-
 trap cleanup EXIT
 "${_PREBUILT_PYTHON3}" -S "${_GENERATE_INVOCATION_BAZELRC}" > "${_INVOCATION_BAZELRC}" || die "Failed to generate ${_INVOCATION_BAZELRC}"
 

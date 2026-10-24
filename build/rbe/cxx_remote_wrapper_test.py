@@ -20,14 +20,13 @@ import cxx
 import cxx_remote_wrapper
 import fuchsia
 import remote_action
-from build.rbe import casfs, rbe_profile
+from build.rbe import rbe_profile
 from build.resultstore import rs_profile
 
 _temp_dir = None
 _orig_cwd = None
 _rbe_profile_patcher = None
 _rs_profile_patcher = None
-_casfs_patcher = None
 
 
 def setUpModule() -> None:
@@ -35,7 +34,7 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher, _casfs_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     _orig_cwd = os.getcwd()
     _temp_dir = tempfile.TemporaryDirectory()
     os.chdir(_temp_dir.name)
@@ -62,22 +61,15 @@ def setUpModule() -> None:
         auth_type="fake-auth",
     )
 
-    _casfs_patcher = mock.patch.object(
-        casfs, "load", return_value=casfs.CasfsConfig(virtualize=False)
-    )
-    _casfs_patcher.start()
-
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher, _casfs_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     if _orig_cwd:
         os.chdir(_orig_cwd)
     if _temp_dir:
         _temp_dir.cleanup()
 
-    if _casfs_patcher:
-        _casfs_patcher.stop()
     if _rbe_profile_patcher:
         _rbe_profile_patcher.stop()
     if _rs_profile_patcher:
@@ -369,70 +361,6 @@ class CxxRemoteActionTests(unittest.TestCase):
                     [fake_builddir / crash_dir],
                 )
                 mock_tc_inputs.assert_called_once()
-
-    def test_casfs_virtualize_retains_crash_dir_and_prefetches_depfile(
-        self,
-    ) -> None:
-        fake_root = Path("/usr/project")
-        fake_builddir = Path("build-it")
-        fake_cwd = fake_root / fake_builddir
-        crash_dir = Path("clang-crashreports")
-        compiler = Path("clang++")
-        source = Path("hello.cc")
-        output = Path("hello.o")
-        depfile = Path("hello.o.d")
-        command = _strs(
-            [
-                compiler,
-                "--target=riscv64-apple-darwin21",
-                f"-fcrash-diagnostics-dir={crash_dir}",
-                "-MD",
-                "-MF",
-                depfile,
-                "-c",
-                source,
-                "-o",
-                output,
-            ]
-        )
-        with mock.patch.object(
-            casfs, "load", return_value=casfs.CasfsConfig(virtualize=True)
-        ):
-            with mock.patch.object(
-                cxx_remote_wrapper, "check_missing_remote_tools"
-            ):
-                with mock.patch.object(
-                    remote_action, "PROJECT_ROOT", fake_root
-                ):
-                    c = cxx_remote_wrapper.CxxRemoteAction(
-                        ["--disable-xattr", "--", *command],
-                        working_dir=fake_cwd,
-                        host_platform=fuchsia.REMOTE_PLATFORM,
-                        auto_reproxy=False,
-                    )
-                    with mock.patch.object(
-                        fuchsia,
-                        "remote_clang_compiler_toolchain_inputs",
-                        return_value=iter([]),
-                    ):
-                        self.assertEqual(c.prepare(), 0)
-
-                    self.assertTrue(c.remote_action.casfs_virtualize)
-                    self.assertEqual(
-                        c.remote_action.output_dirs_relative_to_working_dir,
-                        [crash_dir],
-                    )
-                    with mock.patch.object(
-                        cxx_remote_wrapper.CxxRemoteAction,
-                        "_depfile_exists",
-                        return_value=True,
-                    ):
-                        with mock.patch.object(
-                            casfs,
-                            "prefetch",
-                        ) as mock_prefetch:
-                            self.assertEqual(c._post_remote_success_action(), 0)
-                        mock_prefetch.assert_called_once_with(depfile)
 
     def test_remote_flag_back_propagating(self) -> None:
         compiler = Path("clang++")

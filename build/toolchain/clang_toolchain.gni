@@ -449,9 +449,6 @@ template("clang_toolchain") {
             "\"$breakpad_outfile\"",
             "--preserve_unchanged_output_mtime",
           ]
-          if (disable_xattr_for_rbe) {
-            _remote_dump_syms_prefix_list += [ "--disable-xattr" ]
-          }
           if (_link_rbe_enable) {
             cxx_link_remote_dump_syms_prefix =
                 string_join(" ",
@@ -841,9 +838,6 @@ template("clang_toolchain") {
           "-S",
           rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
         ]
-        if (disable_xattr_for_rbe) {
-          _linker_prefix_list += [ "--disable-xattr" ]
-        }
         if (link_rbe_check == "determinism") {
           _linker_prefix_list += [
             "--local",
@@ -929,9 +923,6 @@ template("clang_toolchain") {
           "-S",
           rebase_path(cxx_link_remote_wrapper, root_build_dir),
         ]
-        if (disable_xattr_for_rbe) {
-          _linker_prefix_list += [ "--disable-xattr" ]
-        }
         if (link_rbe_check == "determinism") {
           _linker_prefix_list += [
             "--local",

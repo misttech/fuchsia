@@ -31,7 +31,6 @@ import fuchsia
 import linker
 import remote_action
 import rustc
-from build.rbe import casfs
 
 _SCRIPT_BASENAME = Path(__file__).name
 
@@ -906,10 +905,7 @@ class RustRemoteAction(object):
         # including the depfile and emitted llvm-ir (if applicable).
         # The depfile *must* be downloaded because it is consumed by ninja.
         if not self._main_args.download_outputs:
-            if (
-                not self._main_args.download_regex
-                and not casfs.load().virtualize
-            ):
+            if not self._main_args.download_regex:
                 self._main_args.download_regex = f"-{self.primary_output}$"
             self._main_args.download_outputs = True
 
@@ -1086,7 +1082,6 @@ class RustRemoteAction(object):
 
         if (
             self.remote_action.skipping_some_download
-            and not self.remote_action.casfs_virtualize
             and self._rust_action.main_output_is_executable
         ):
             # TODO(b/285030257): This is a workaround to a problem where

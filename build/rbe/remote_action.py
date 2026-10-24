@@ -30,7 +30,6 @@ from typing import (
     AbstractSet,
     Any,
     Optional,
-    TypeAlias,
 )
 
 import cl_utils
@@ -39,9 +38,7 @@ import fuchsia
 import output_leak_scanner
 import remotetool
 import textpb
-from build.rbe import casfs, rbe_profile
-
-DownloaderCallback: TypeAlias = Callable[[], remotetool.RemoteTool]
+from build.rbe import rbe_profile
 
 _SCRIPT_BASENAME = Path(__file__).name
 
@@ -439,17 +436,8 @@ class ReproxyLogEntry(object):
     def completion_status(self) -> str:
         return self._raw["completion_status"][0].text
 
-    @functools.cached_property
-    def output_file_is_executable(self) -> dict[Path, bool]:
-        d = self.remote_metadata.get("output_file_is_executable", dict())
-        return {Path(k): v.text.strip() == "true" for k, v in d.items()}
-
     def make_download_stub_info(
-        self,
-        path: Path,
-        build_id: str,
-        casfs_virtualize: bool,
-        fallback_downloader: DownloaderCallback | None = None,
+        self, path: Path, build_id: str
     ) -> Optional["DownloadStubInfo"]:
         type = "file"
         if path in self.output_file_digests:
@@ -461,16 +449,8 @@ class ReproxyLogEntry(object):
             # Named outputs are not required to exist remotely,
             # for example, crash-report dirs are only created under certain
             # conditions.  re-client treats all outputs as optional,
-            # and does not consider missing outputs as an error.
+            # and does not consider missing outputs an error.
             return None
-        if casfs_virtualize:
-            return CasfsDownloadStubInfo(
-                path=path,
-                type=type,
-                blob_digest=digest,
-                is_executable=self.output_file_is_executable.get(path, False),
-                fallback_downloader=fallback_downloader,
-            )
         return Ext4DownloadStubInfo(
             path=path,
             type=type,
@@ -484,8 +464,6 @@ class ReproxyLogEntry(object):
         files: Iterable[Path],
         dirs: Iterable[Path],
         build_id: str,
-        casfs_virtualize: bool,
-        fallback_downloader: DownloaderCallback | None = None,
     ) -> dict[Path, "DownloadStubInfo"]:
         """Construct a map of paths to DownloadStubInfo.
 
@@ -493,10 +471,6 @@ class ReproxyLogEntry(object):
           files: files to create download stubs for.
           dirs: directories to create download stubs for.
           build_id: any string that corresponds to a unique build.
-          casfs_virtualize: if True, create CasfsDownloadStubInfo objects.
-          fallback_downloader: lazy provider of a RemoteTool instance for
-            downloading artifacts that casfs cannot virtualize (such as
-            directories).
 
         Returns:
           Dictionary of paths to their stubs objects.
@@ -506,8 +480,6 @@ class ReproxyLogEntry(object):
             stub_info = self.make_download_stub_info(
                 path=f,
                 build_id=build_id,
-                casfs_virtualize=casfs_virtualize,
-                fallback_downloader=fallback_downloader,
             )
             if stub_info is not None:
                 stubs[f] = stub_info
@@ -516,8 +488,6 @@ class ReproxyLogEntry(object):
             stub_info = self.make_download_stub_info(
                 path=d,
                 build_id=build_id,
-                casfs_virtualize=casfs_virtualize,
-                fallback_downloader=fallback_downloader,
             )
             if stub_info is not None:
                 stubs[d] = stub_info
@@ -756,7 +726,7 @@ class DownloadStubInfo(abc.ABC):
 
 
 class Ext4DownloadStubInfo(DownloadStubInfo):
-    """Legacy text-based download stub with user.fuchsia.rbe.download_stub xattr."""
+    """Text-based download stub with user.fuchsia.rbe.download_stub xattr."""
 
     def __init__(
         self,
@@ -990,121 +960,6 @@ class Ext4DownloadStubInfo(DownloadStubInfo):
         return status
 
 
-class CasfsDownloadStubInfo(DownloadStubInfo):
-    """casfs (ABFS) virtualized RBE artifact via casfs.ari_size xattr.
-
-    Instead of writing a text stub file that must be explicitly downloaded via
-    remotetool before local tools can read it, CasfsDownloadStubInfo creates a
-    0-byte file on the casfs FUSE mount and sets the `casfs.ari_size` extended
-    attribute to `rbe:<sha256>:<size>:<size>`.
-
-    When `casfs` intercepts this setxattr call on a freshly created 0-byte
-    inode, it converts the inode into a CAS-backed virtualized file that:
-      - Reports `<size>` via `stat()` without downloading the blob.
-      - Exposes `casfs.rbe_ari_hash` (`<sha256>/<size>`) and
-        `casfs.rbe_ari_bin_hash` (raw 32-byte SHA-256) in `O(1)` for subsequent
-        RBE and Bazel actions.
-      - Transparently hydrates the blob on-demand via `cachemand` if any local
-        process opens and reads the file.
-    """
-
-    def __init__(
-        self,
-        path: Path,
-        type: str,
-        blob_digest: str,
-        is_executable: bool = False,
-        fallback_downloader: DownloaderCallback | None = None,
-    ):
-        super().__init__(
-            path=path,
-            type=type,
-            blob_digest=blob_digest,
-        )
-        self._is_executable = is_executable
-        self._fallback_downloader = fallback_downloader
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CasfsDownloadStubInfo):
-            return False
-        return (
-            super().__eq__(other)
-            and self._is_executable == other._is_executable
-        )
-
-    def create(
-        self,
-        working_dir_abs: Path,
-        dest: Path | None = None,
-        use_xattr: bool = _CAN_HAVE_XATTR,
-    ) -> None:
-        assert working_dir_abs.is_absolute()
-        path = working_dir_abs / (dest or self.path)
-        if self.type == "dir":
-            if self._fallback_downloader is None:
-                raise ValueError(
-                    "casfs virtualization requires a fallback_downloader for directory outputs"
-                )
-            path.mkdir(parents=True, exist_ok=True)
-            self._fallback_downloader().download_dir(
-                path=path,
-                digest=self.blob_digest,
-                cwd=working_dir_abs,
-            )
-            return
-        if self.type != "file":
-            raise ValueError(
-                f"casfs virtualization only supports file and dir outputs, got: {self.type}"
-            )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        sha256, sep, size_str = self.blob_digest.partition("/")
-        if sep != "/" or int(size_str) < 0:
-            raise ValueError(
-                f"Invalid blob_digest for casfs virtualization: {self.blob_digest}"
-            )
-        # Unlink any existing file first and create a fresh empty inode.
-        # casfs requires `casfs.ari_size` to be set on a newly created 0-byte
-        # file rather than mutating an already-virtualized or populated inode
-        # in-place.
-        path.unlink(missing_ok=True)
-        with open(path, "wb"):
-            pass
-        if self._is_executable:
-            path.chmod(0o755)
-        ari_val = f"rbe:{sha256}:{size_str}:{size_str}".encode()
-        os.setxattr(path, casfs.XATTR_ARI_SIZE, ari_val)
-
-    def update(
-        self,
-        working_dir_abs: Path,
-        preserve_unchanged_output_mtime: bool = False,
-        use_xattr: bool = _CAN_HAVE_XATTR,
-    ) -> None:
-        path = working_dir_abs / self.path
-        if (
-            self.type == "file"
-            and preserve_unchanged_output_mtime
-            and path.exists()
-        ):
-            try:
-                old_sha256 = os.getxattr(
-                    path, casfs.XATTR_RBE_ARI_HASH
-                ).decode()
-                st = path.stat()
-                old_size = st.st_size
-                old_is_exec = bool(st.st_mode & 0o111)
-                if (
-                    f"{old_sha256}/{old_size}" == self.blob_digest
-                    and old_is_exec == self._is_executable
-                ):
-                    return
-            except OSError:
-                # Existing file is not a casfs RBE ARI stub (e.g. a regular
-                # file); recreate the stub.
-                pass
-        self.create(working_dir_abs, use_xattr=use_xattr)
-
-
 def _file_starts_with(path: Path, text: str) -> bool:
     with open(path, "rb") as f:
         # read only a small number of bytes to compare
@@ -1314,7 +1169,6 @@ class RemoteAction(object):
         post_remote_run_success_action: Callable[[], int] | None = None,
         remote_debug_command: Sequence[str] | None = None,
         use_xattr: bool = _CAN_HAVE_XATTR,
-        casfs_virtualize: bool = False,
     ):
         """RemoteAction constructor.
 
@@ -1338,8 +1192,7 @@ class RemoteAction(object):
           output_dirs: directories to be fetched after remote execution, relative to the
             current working dir.
           platform: rewrapper --platform, containing remote execution parameters
-          download_outputs: rewrapper --download_outputs (optional). Overridden
-            to False when casfs_virtualize is active.
+          download_outputs: rewrapper --download_outputs (optional).
           download_regex: rewrapper --download_regex (optional).
           disable: if true, execute locally.
           verbose: if true, print more information about what is happening.
@@ -1378,9 +1231,6 @@ class RemoteAction(object):
           remote_debug_command: if True, run different command remotely instead of
             the original command, for debugging the remote inputs setup.
           use_xattr: if True, use xattrs to record artifact digests.
-            Incompatible with casfs_virtualize.
-          casfs_virtualize: if True, virtualize remote outputs on casfs via
-            casfs.ari_size instead of downloading them.
         """
         self._rewrapper = rewrapper
         self._config = cfg  # can be None
@@ -1470,27 +1320,10 @@ class RemoteAction(object):
             if self._remote_fsatrace_method == "wrap":
                 self._inputs.append(self._fsatrace_remote_wrapper)
 
-        self._casfs_virtualize = casfs_virtualize
-
-        if casfs_virtualize:
-            if self._use_xattr:
-                raise ValueError(
-                    f"Cannot enable use_xattr (missing --disable-xattr) when {casfs.ENV_CASFS_VIRTUALIZE}=1."
-                )
-            if download_regex is not None:
-                self.vmsg(
-                    f"Warning: Ignoring --download_regex={download_regex} when {casfs.ENV_CASFS_VIRTUALIZE}=1."
-                )
-                download_regex = None
-
-        self._download_outputs = download_outputs and not self._casfs_virtualize
+        self._download_outputs = download_outputs
         self._download_regex = download_regex
 
         self._cleanup_files: list[Path] = []
-
-    @property
-    def casfs_virtualize(self) -> bool:
-        return self._casfs_virtualize
 
     @property
     def verbose(self) -> bool:
@@ -2137,8 +1970,6 @@ exec "${{cmd[@]}}"
             files=self.output_files_relative_to_working_dir,
             dirs=self.output_dirs_relative_to_working_dir,
             build_id=build_id,
-            casfs_virtualize=self._casfs_virtualize,
-            fallback_downloader=self.downloader,
         )
 
         # rewrapper has already downloaded the outputs that were not excluded
@@ -2164,11 +1995,6 @@ exec "${{cmd[@]}}"
           Mapping of path to status.
           Failures are always included, but successes are optional.
         """
-        if self._casfs_virtualize:
-            # casfs transparently hydrates virtualized files on-demand when
-            # local commands open and read them.
-            return {}
-
         # stub_paths are relative to the current working dir
         stub_paths = [
             path
@@ -2295,9 +2121,7 @@ exec "${{cmd[@]}}"
                 return post_run_status
 
         if self.compare_with_local:  # requesting comparison vs. local
-            # On casfs, virtualized outputs are hydrated on-demand by cachemand
-            # when _compare_against_local() reads them.
-            if not self.skipping_some_download or self._casfs_virtualize:
+            if not self.skipping_some_download:
                 # Also run locally, and compare outputs.
                 return self._compare_against_local()
 
@@ -3221,9 +3045,6 @@ def remote_action_from_args(
         diagnose_nonzero=main_args.diagnose_nonzero,
         remote_debug_command=main_args.remote_debug_command,
         use_xattr=_CAN_HAVE_XATTR and not main_args.disable_xattr,
-        casfs_virtualize=kwargs.pop(
-            "casfs_virtualize", casfs.load().virtualize
-        ),
         **kwargs,
     )
 

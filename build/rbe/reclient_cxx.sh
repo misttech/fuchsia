@@ -93,14 +93,6 @@ function msg() {
   echo "[$script_basename]" "$@"
 }
 
-# LINT.IfChange(rbe_casfs_env_vars)
-if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-0}" == "1" ]]
-then
-  echo >&2 "[$script_basename] Error: cxx_minimalist_wrapper (reclient_cxx.sh) is incompatible with FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE=1. Use cxx_remote_wrapper.py instead."
-  exit 1
-fi
-# LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_env_vars)
-
 function dmsg() {
   # Uncomment for verbose debug messages:
   # echo "[$script_basename]" "$@"

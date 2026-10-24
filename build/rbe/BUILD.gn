@@ -200,7 +200,6 @@ if (is_host) {
   python_library("remote_action") {
     sources = [ "remote_action.py" ]
     library_deps = [
-      ":casfs",
       ":cl_utils",
       ":depfile",
       ":fuchsia",
@@ -239,7 +238,6 @@ if (is_host) {
   python_library("cxx_link_remote_wrapper") {
     sources = [ "cxx_link_remote_wrapper.py" ]
     library_deps = [
-      ":casfs",
       ":cxx",
       ":fuchsia",
       ":linker",
@@ -255,7 +253,6 @@ if (is_host) {
   python_library("cxx_remote_wrapper") {
     sources = [ "cxx_remote_wrapper.py" ]
     library_deps = [
-      ":casfs",
       ":cl_utils",
       ":cxx",
       ":fuchsia",
@@ -281,7 +278,6 @@ if (is_host) {
   python_library("rustc_remote_wrapper") {
     sources = [ "rustc_remote_wrapper.py" ]
     library_deps = [
-      ":casfs",
       ":cl_utils",
       ":fuchsia",
       ":linker",
