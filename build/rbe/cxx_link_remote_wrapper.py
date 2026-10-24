@@ -25,6 +25,7 @@ import depfile
 import fuchsia
 import linker
 import remote_action
+from build.rbe import casfs
 
 _SCRIPT_BASENAME = Path(__file__).name
 _SCRIPT_DIR = Path(__file__).parent
@@ -200,6 +201,11 @@ class CxxLinkRemoteAction(object):
         if self.compiler_type == cxx.Compiler.GCC and self._depfile_exists():
             return self._verify_remote_depfile()
             # self._rewrite_remote_depfile()
+        elif self.remote_action.casfs_virtualize and self._depfile_exists():
+            # Prefetch the virtualized depfile in this worker process so Ninja's
+            # single-threaded main loop does not block on serialized FUSE fetches.
+            assert self.depfile is not None
+            casfs.prefetch(self.depfile)
 
         # Note: --download_outputs=false is re-interpreted so that depfiles
         # will always be downloaded.
@@ -216,6 +222,7 @@ class CxxLinkRemoteAction(object):
         if (
             self.primary_output is not None
             and self.remote_action.skipping_some_download
+            and not self.remote_action.casfs_virtualize
             and self._main_args.output_is_executable
         ):
             self.primary_output.chmod(_EXEC_PERMS)
@@ -420,7 +427,7 @@ class CxxLinkRemoteAction(object):
 
         remote_inputs += self.command_line_inputs
 
-        # Prepare remote compile action
+        # Prepare remote compile action.
         remote_output_dirs = [
             *self.cxx_action.output_dirs(),
             *self.command_line_output_dirs,
@@ -450,7 +457,10 @@ class CxxLinkRemoteAction(object):
         # downloading the main linker output, but download everything else.
         # This will always fetch the depfile, which is needed by ninja.
         if not self._main_args.download_outputs:
-            if not self._main_args.download_regex:
+            if (
+                not self._main_args.download_regex
+                and not casfs.load().virtualize
+            ):
                 self._main_args.download_regex = f"-{self.primary_output}$"
             self._main_args.download_outputs = True
 

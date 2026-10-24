@@ -289,9 +289,20 @@ fi
 
 # main_build.py sets FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE to 0 or 1,
 # but resolve it via casfs.py when invoked standalone.
+# LINT.IfChange(rbe_casfs_env_vars)
 if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "0" && "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "1" ]]
 then
   FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE="$("$python" -S "$casfs_script")"
+fi
+
+if [[ "$FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE" == "1" ]]
+# LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_env_vars)
+then
+  # LINT.IfChange(rbe_casfs_xattr_hash)
+  bootstrap_env+=(
+    RBE_xattr_digest=casfs.rbe_ari_hash
+  )
+  # LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_xattr_hash)
 fi
 
 # These environment variables take precedence over those found in --cfg.

@@ -18,7 +18,33 @@ _FUCHSIA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 # Path relative to the Fuchsia source root for sticky casfs RBE configuration.
 _RBE_CASFS_CONFIG = pathlib.Path(".fx/config/rbe_casfs")
 
+# LINT.IfChange(rbe_casfs_env_vars)
 ENV_CASFS_VIRTUALIZE = "FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE"
+# LINT.ThenChange(
+#   //build/bazel/wrapper.bazel.sh:rbe_casfs_env_vars,
+#   //build/rbe/fuchsia-reproxy-wrap.sh:rbe_casfs_env_vars,
+#   //build/rbe/reclient_cxx.sh:rbe_casfs_env_vars
+# )
+
+# casfs (ABFS) extended attributes for virtualized RBE artifacts.
+XATTR_ARI_SIZE = "casfs.ari_size"
+# LINT.IfChange(rbe_casfs_xattr_hash)
+XATTR_RBE_ARI_HASH = "casfs.rbe_ari_hash"
+# LINT.ThenChange(//build/rbe/fuchsia-reproxy-wrap.sh:rbe_casfs_xattr_hash)
+XATTR_RBE_ARI_BIN_HASH = "casfs.rbe_ari_bin_hash"
+
+
+def prefetch(path: pathlib.Path) -> None:
+    """Hydrates a virtualized casfs file into cachemand's local cache.
+
+    Ninja's main event loop (ImplicitDepLoader::LoadDepFile) is
+    single-threaded and reads .d depfiles immediately after subprocess exit.
+    Blocking on a 1-byte read here inside the parallel worker subprocess
+    ensures the file is hydrated before the worker exits, avoiding
+    head-of-line blocking on Ninja's main thread.
+    """
+    with open(path, "rb") as f:
+        f.read(1)
 
 
 @dataclasses.dataclass
@@ -99,18 +125,17 @@ def load(
 ) -> CasfsConfig:
     """Loads RBE casfs configuration, prioritizing environment over on-disk config."""
     env = environ if environ is not None else os.environ
-    virtualize = _load_preference(source_dir / _RBE_CASFS_CONFIG) or False
     raw_env = env.get(ENV_CASFS_VIRTUALIZE, "")
     if raw_env != "":
         parsed = _parse_bool(raw_env)
         if parsed is not None:
-            virtualize = parsed
-        else:
-            print(
-                f"Warning: Invalid {ENV_CASFS_VIRTUALIZE} environment value {raw_env!r}; "
-                "expected 0, 1, true, false, yes, or no.",
-                file=sys.stderr,
-            )
+            return CasfsConfig(virtualize=parsed)
+        print(
+            f"Warning: Invalid {ENV_CASFS_VIRTUALIZE} environment value {raw_env!r}; "
+            "expected 0, 1, true, false, yes, or no.",
+            file=sys.stderr,
+        )
+    virtualize = _load_preference(source_dir / _RBE_CASFS_CONFIG) or False
     return CasfsConfig(virtualize=virtualize)
 
 
