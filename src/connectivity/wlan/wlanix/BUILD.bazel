@@ -2,7 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -33,4 +49,122 @@ fidl_library(
         "//sdk/fidl/fuchsia.wlan.stats",
         "//zircon/vdso/zx",
     ],
+)
+
+rustc_binary(
+    name = "wlanix_bin",
+    srcs = [
+        "src/bss_scorer.rs",
+        "src/default_drop.rs",
+        "src/ifaces.rs",
+        "src/main.rs",
+        "src/nl80211/attr/band.rs",
+        "src/nl80211/attr/bss.rs",
+        "src/nl80211/attr/mod.rs",
+        "src/nl80211/attr/sched_scan_match.rs",
+        "src/nl80211/attr/sched_scan_plan.rs",
+        "src/nl80211/attr/sta_info.rs",
+        "src/nl80211/cmd.rs",
+        "src/nl80211/constants.rs",
+        "src/nl80211/mod.rs",
+        "src/nl80211/nested.rs",
+        "src/scheduled_scans.rs",
+        "src/security/mod.rs",
+        "src/security/wep.rs",
+    ],
+    binary_name = "wlanix",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+        "//third_party/rust_crates/vendor:num-derive",
+        "//third_party/rust_crates/vendor:strum_macros",
+    ],
+    deps = [
+        ":fuchsia.wlan.wlanix_rust",
+        ":wlanix-config",
+        "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_rust",
+        "//sdk/lib/power/state_recorder/rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/power_manager",
+        "//src/connectivity/wlan/lib/telemetry:wlan-telemetry",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_core",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_generic",
+        "//src/starnix/lib/third_party/rust_netlink/netlink_packet_utils",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:strum",
+    ],
+)
+
+rustc_test(
+    name = "wlanix_bin_test",
+    crate = ":wlanix_bin",
+    deps = [
+        "//src/connectivity/wlan/lib/power_manager:power_manager_testing",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlanix-tests",
+    # This allows tests to pass even when there's an error log.
+    max_log_severity = "ERROR",
+    unit_tests = [":wlanix_bin_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "wlanix_packaged_bin",
+    binary = ":wlanix_bin",
+    binary_name = "wlanix",
+)
+
+fx_component_manifest(
+    name = "wlanix-manifest",
+    component_name = "wlanix",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/wlanix.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "wlanix-config",
+    cm_label = ":wlanix-manifest",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":wlanix-manifest",
+    component_name = "wlanix",
+    deps = [":wlanix_packaged_bin"],
 )
