@@ -247,13 +247,9 @@ class HidDevTest : public ::testing::Test {
     ASSERT_EQ(ZX_OK, result.status_value());
   }
   fidl::WireSyncClient<fuchsia_input_report::InputDevice> GetSyncClient() {
-    auto connect_result =
-        driver_test().RunInNodeContext<zx::result<zx::channel>>([](fdf_testing::TestNode& node) {
-          return node.children().at("InputReport").ConnectToDevice();
-        });
+    zx::result connect_result = driver_test().Connect<fuchsia_input_report::Service::InputDevice>();
     EXPECT_TRUE(connect_result.is_ok());
-    return fidl::WireSyncClient(
-        fidl::ClientEnd<fuchsia_input_report::InputDevice>(std::move(connect_result.value())));
+    return fidl::WireSyncClient(std::move(connect_result.value()));
   }
 
   zx_status_t ReadAndAcknowledgeOneEvent(

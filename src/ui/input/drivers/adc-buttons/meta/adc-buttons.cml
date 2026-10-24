@@ -13,7 +13,9 @@
         binary: "driver/adc-buttons.so",
         bind: "meta/bind/adc-buttons.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { service: "fuchsia.driver.compat.Service" },
         {
@@ -22,5 +24,10 @@
         },
         { service: "fuchsia.hardware.platform.device.Service" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

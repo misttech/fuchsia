@@ -231,8 +231,7 @@ class FocaltechTest : public testing::Test {
     ASSERT_OK(driver_test_.StartDriver());
     VerifyGpioInit();
 
-    zx::result input_device = driver_test_.ConnectThroughDevfs<fuchsia_input_report::InputDevice>(
-        FtDevice::kChildNodeName);
+    zx::result input_device = driver_test_.Connect<fuchsia_input_report::Service::InputDevice>();
     ASSERT_OK(input_device);
     input_device_.Bind(std::move(input_device.value()),
                        driver_test_.runtime().GetForegroundDispatcher()->async_dispatcher());

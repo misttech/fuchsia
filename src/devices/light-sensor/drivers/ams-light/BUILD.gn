@@ -36,7 +36,6 @@ source_set("common") {
   ]
   public_deps = [
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//src/devices/i2c/lib/i2c-channel",
     "//src/ui/input/lib/input-report-reader",
     "//zircon/system/ulib/zircon-internal",

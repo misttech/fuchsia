@@ -715,16 +715,16 @@ zx::result<> Tcs3400::Start(fdf::DriverContext context) {
     ;
   }
 
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed bind devfs connector: {}", connector.status_string());
-    return connector.take_error();
+  zx::result result = outgoing()->AddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+      }));
+  if (result.is_error()) {
+    fdf::error("Failed to add input report service: {}", result);
+    return result.take_error();
   }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs_args(
-      {.connector = std::move(connector.value()), .class_name = "input-report"});
-
-  zx::result child = AddOwnedChild(kChildNodeName, devfs_args);
+  zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();
@@ -732,10 +732,6 @@ zx::result<> Tcs3400::Start(fdf::DriverContext context) {
   child_ = std::move(child.value());
 
   return zx::ok();
-}
-
-void Tcs3400::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> request) {
-  bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }
 
 }  // namespace tcs

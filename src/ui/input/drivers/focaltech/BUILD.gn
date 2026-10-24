@@ -83,7 +83,6 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/stdcompat",
     "//src/devices/i2c/lib/i2c-channel",
     "//src/graphics/display/lib/device-protocol-display",

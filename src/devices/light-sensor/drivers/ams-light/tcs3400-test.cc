@@ -198,8 +198,7 @@ class Tcs3400TestBase {
 
     WaitForConfiguration();
 
-    zx::result input_device = driver_test_.ConnectThroughDevfs<fuchsia_input_report::InputDevice>(
-        Tcs3400::kChildNodeName);
+    zx::result input_device = driver_test_.Connect<fuchsia_input_report::Service::InputDevice>();
     ASSERT_OK(input_device);
     input_device_.Bind(std::move(input_device.value()));
 

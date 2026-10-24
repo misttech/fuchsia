@@ -175,6 +175,19 @@ impl fidl_input_report::InputDeviceServerHandler for FidlInputDevice {
     }
 }
 
+/// Service handler for `fuchsia.input.report.Service`.
+#[derive(Clone)]
+pub struct InputDeviceServiceHandler {
+    pub fidl_input_device: FidlInputDevice,
+}
+
+impl fidl_input_report::ServiceHandler for InputDeviceServiceHandler {
+    fn input_device(&self, server_end: fidl_next::ServerEnd<fidl_input_report::InputDevice>) {
+        #[expect(unused)]
+        let server_task = server_end.spawn(self.fidl_input_device.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -325,21 +325,18 @@ zx::result<> FtDevice::Start(fdf::DriverContext context) {
   total_report_count_ = metrics_root_.CreateUint("total_report_count", 0);
   last_event_timestamp_ = metrics_root_.CreateUint("last_event_timestamp", 0);
 
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", connector);
-    return connector.take_error();
+  zx::result result = outgoing()->AddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+      }));
+  if (result.is_error()) {
+    fdf::error("Failed to add input report service: {}", result);
+    return result.take_error();
   }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs({
-      .connector = std::move(connector.value()),
-      .class_name = "input-report",
-      .connector_supports = fuchsia_device_fs::ConnectionType::kController,
-  });
-
-  zx::result child = AddOwnedChild(kChildNodeName, devfs);
+  zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
-    fdf::error("Failed to create child: {}", child);
+    fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
   child_ = std::move(child.value());
@@ -450,10 +447,6 @@ void FtDevice::LogRegisterValue(uint8_t addr, std::string_view name) {
     node_.CreateString(name, "error", &values_);
     fdf::error("  {:16}: error {}", name, result);
   }
-}
-
-void FtDevice::DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> server) {
-  bindings_.AddBinding(dispatcher(), std::move(server), this, fidl::kIgnoreBindingClosure);
 }
 
 }  // namespace ft

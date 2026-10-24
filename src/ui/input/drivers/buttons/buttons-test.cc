@@ -359,8 +359,7 @@ class ButtonsTest : public ::testing::Test {
 
   fidl::ClientEnd<fuchsia_input_report::InputDevice> GetClient() {
     // Connect to InputDevice.
-    zx::result connect_result =
-        driver_test().ConnectThroughDevfs<fuchsia_input_report::InputDevice>("buttons");
+    zx::result connect_result = driver_test().Connect<fuchsia_input_report::Service::InputDevice>();
     EXPECT_EQ(ZX_OK, connect_result.status_value());
     return std::move(connect_result.value());
   }

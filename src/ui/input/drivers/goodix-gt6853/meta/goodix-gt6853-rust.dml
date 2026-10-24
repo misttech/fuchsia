@@ -9,6 +9,9 @@
         binary: "driver/goodix-gt6853-rust.so",
         default_dispatcher_scheduler_role: "fuchsia.ui.input.drivers.goodix-gt6853.device",
     },
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         {
             name: "pdev",
@@ -49,6 +52,12 @@
             name: "pin-states-0",
             service: "fuchsia.hardware.pin.PinStatesService",
             availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

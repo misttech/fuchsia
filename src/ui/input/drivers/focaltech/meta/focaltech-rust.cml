@@ -15,7 +15,9 @@
         binary: "driver/focaltech-rust.so",
         bind: "meta/bind/focaltech.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.i2c.Service" },
@@ -24,5 +26,10 @@
             availability: "optional",
         },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

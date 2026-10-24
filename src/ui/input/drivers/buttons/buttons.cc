@@ -236,19 +236,22 @@ zx::result<> Buttons::Start(fdf::DriverContext context) {
   device_ = std::make_unique<buttons::ButtonsDevice>(dispatcher(), std::move(buttons),
                                                      std::move(gpios), std::move(sag_client));
 
-  auto result = outgoing()->component().AddUnmanagedProtocol<fuchsia_input_report::InputDevice>(
-      input_report_bindings_.CreateHandler(device_.get(), dispatcher(),
-                                           fidl::kIgnoreBindingClosure),
-      kDeviceName);
+  zx::result result = outgoing()->AddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = input_report_bindings_.CreateHandler(device_.get(), dispatcher(),
+                                                               fidl::kIgnoreBindingClosure),
+      }));
   if (result.is_error()) {
     fdf::error("Failed to add input report service: {}", result);
     return result.take_error();
   }
 
-  if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    fdf::error("Failed to export to devfs: {}", result);
-    return result.take_error();
+  zx::result child = AddOwnedChild(kDeviceName);
+  if (child.is_error()) {
+    fdf::error("Failed to add child: {}", child);
+    return child.take_error();
   }
+  child_ = std::move(child.value());
 
   return zx::ok();
 }
@@ -256,25 +259,6 @@ zx::result<> Buttons::Start(fdf::DriverContext context) {
 void Buttons::Stop(fdf::StopCompleter completer) {
   device_->ShutDown();
   completer(zx::ok());
-}
-
-zx::result<> Buttons::CreateDevfsNode() {
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    return connector.take_error();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector).value(), .class_name = "input-report"}};
-
-  zx::result child = AddOwnedChild(kDeviceName, devfs_args);
-  if (child.is_error()) {
-    fdf::error("Failed to add child: {}", child);
-    return child.take_error();
-  }
-  child_ = std::move(child).value();
-
-  return zx::ok();
 }
 
 }  // namespace buttons

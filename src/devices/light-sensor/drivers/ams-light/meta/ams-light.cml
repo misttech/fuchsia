@@ -8,12 +8,21 @@
         bind: "meta/bind/ams-light.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         {
             service: [
                 "fuchsia.hardware.gpio.Service",
                 "fuchsia.hardware.i2c.Service",
             ],
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

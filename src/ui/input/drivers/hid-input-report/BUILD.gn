@@ -42,7 +42,6 @@ source_set("driver-internals") {
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/power/cpp",
     "//sdk/lib/inspect/component/cpp",

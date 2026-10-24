@@ -6,7 +6,7 @@
     include: [],
     program: {},
     capabilities: [
-        { service: "fuchsia.hardware.buttons.Service" },
+        { service: "fuchsia.input.report.Service" },
         {
             driver_config: "fuchsia.buttons.GpioButtonsMetadata",
             defs: {
@@ -172,6 +172,12 @@
         {
             protocol: "fuchsia.power.system.ActivityGovernor",
             availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

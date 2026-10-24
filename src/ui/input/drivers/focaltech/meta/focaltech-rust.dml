@@ -11,6 +11,9 @@
     program: {
         binary: "driver/focaltech-rust.so",
     },
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         {
             name: "gpio-int",
@@ -71,6 +74,12 @@
             name: "pin-states-0",
             service: "fuchsia.hardware.pin.PinStatesService",
             availability: "optional",
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

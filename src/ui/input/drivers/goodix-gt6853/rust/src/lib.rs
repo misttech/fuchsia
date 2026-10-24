@@ -13,16 +13,20 @@ pub mod registers;
 pub mod testing;
 
 use crate::hardware_integration::descriptors;
-use crate::hardware_integration::devfs::DevfsHandler;
-use crate::hardware_integration::fidl_input_device::FidlInputDevice;
+use crate::hardware_integration::fidl_input_device::{FidlInputDevice, InputDeviceServiceHandler};
 use crate::hardware_units::controller::Controller;
 use crate::hardware_units::i2c::MessageInterfaceUnitI2c;
 use crate::registers::product_info::ProductIdentification;
 use crate::registers::status::FirmwareStatus;
-use fdf_component::{Driver, DriverContext, DriverError, Node, NodeBuilder, driver_register};
+use fdf_component::{
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
+};
 use fidl_fuchsia_driver_framework::NodeControllerMarker;
 use fidl_next_fuchsia_hardware_gpio as fidl_gpio;
 use fidl_next_fuchsia_hardware_i2c as fidl_i2c;
+use fidl_next_fuchsia_input_report as fidl_input_report;
+use fuchsia_component::server::ServiceFs;
+use futures::StreamExt;
 use std::sync::{Arc, Mutex};
 
 struct GoodixGt6853Driver {
@@ -33,8 +37,7 @@ struct GoodixGt6853Driver {
     #[expect(unused)]
     fidl_input_device: FidlInputDevice,
     controller_task: Mutex<Option<fuchsia_async::Task<()>>>,
-    #[expect(unused)]
-    devfs_task: fuchsia_async::Task<()>,
+    fidl_service_task: Mutex<Option<fuchsia_async::Task<()>>>,
 }
 
 driver_register!(GoodixGt6853Driver);
@@ -139,11 +142,20 @@ impl Driver for GoodixGt6853Driver {
 
         let descriptor = descriptors::make_device_descriptor();
         let fidl_input_device = FidlInputDevice::new(descriptor);
-        let devfs_handler = DevfsHandler::new(fidl_input_device.clone());
-        let (devfs_args, devfs_task) = devfs_handler.serve();
 
-        let mut node_args = NodeBuilder::new(Self::NAME).build();
-        node_args.devfs_args = Some(devfs_args);
+        let mut outgoing_fs = ServiceFs::new();
+        let service_handler =
+            InputDeviceServiceHandler { fidl_input_device: fidl_input_device.clone() };
+        let offer = ServiceOffer::<fidl_input_report::Service>::new_next().add_default_named_next(
+            &mut outgoing_fs,
+            "default",
+            service_handler,
+        );
+        context.serve_outgoing(&mut outgoing_fs)?;
+        let fidl_service_task = fuchsia_async::Task::spawn(outgoing_fs.collect());
+
+        let node_args =
+            NodeBuilder::new(Self::NAME).add_offer(offer.build_zircon_offer_next()).build();
 
         let parent_node = context.take_node()?;
         let child_node = parent_node.add_child(node_args).await?;
@@ -161,7 +173,7 @@ impl Driver for GoodixGt6853Driver {
             child_node,
             fidl_input_device,
             controller_task: Mutex::new(Some(controller_task)),
-            devfs_task,
+            fidl_service_task: Mutex::new(Some(fidl_service_task)),
         })
     }
 
@@ -169,6 +181,10 @@ impl Driver for GoodixGt6853Driver {
         log::info!("Stopping goodix_gt6853 driver");
         let controller_task = self.controller_task.lock().unwrap().take();
         if let Some(task) = controller_task {
+            task.abort().await;
+        }
+        let fidl_service_task = self.fidl_service_task.lock().unwrap().take();
+        if let Some(task) = fidl_service_task {
             task.abort().await;
         }
     }

@@ -12,7 +12,6 @@
 #include <lib/device-protocol/display-panel.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/stdcompat/inplace_vector.h>
 #include <lib/stdcompat/span.h>
@@ -222,8 +221,6 @@ class FtDevice : public fdf::DriverBase2,
   zx_status_t UpdateFirmwareIfNeeded(const fuchsia_hardware_input_focaltech::Metadata& metadata,
                                      display::PanelType panel_type);
 
-  void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> server);
-
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> int_gpio_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> reset_gpio_;
   zx::interrupt irq_;
@@ -249,8 +246,6 @@ class FtDevice : public fdf::DriverBase2,
   uint32_t y_max_;
 
   fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
-  driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_{
-      fit::bind_member<&FtDevice::DevfsConnect>(this)};
   fdf::OwnedChildNode child_;
 };
 }  // namespace ft

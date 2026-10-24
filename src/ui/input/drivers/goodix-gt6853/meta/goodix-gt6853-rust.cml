@@ -15,7 +15,9 @@
         default_dispatcher_scheduler_role: "fuchsia.ui.input.drivers.goodix-gt6853.device",
         bind: "meta/bind/goodix-gt6853-bind.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.i2c.Service" },
@@ -24,5 +26,10 @@
             availability: "optional",
         },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

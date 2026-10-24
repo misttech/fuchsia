@@ -11,7 +11,6 @@
 #include <lib/async/cpp/task.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -117,8 +116,6 @@ class Tcs3400 : public fdf::DriverBase2,
   // 360 Hz / 2 = 180 reports per 1/2 second.
   static constexpr uint16_t kMaxReportsPerHalfSecond = 180;
 
-  void DevfsConnect(fidl::ServerEnd<fuchsia_input_report::InputDevice> request);
-
   void HandlePoll();
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
@@ -149,8 +146,6 @@ class Tcs3400 : public fdf::DriverBase2,
   zx::result<> WriteReg(uint8_t reg, uint8_t value);
   zx::result<uint8_t> ReadReg(uint8_t reg);
 
-  driver_devfs::Connector<fuchsia_input_report::InputDevice> devfs_connector_{
-      fit::bind_member<&Tcs3400::DevfsConnect>(this)};
   fidl::ServerBindingGroup<fuchsia_input_report::InputDevice> bindings_;
   fdf::OwnedChildNode child_;
 };

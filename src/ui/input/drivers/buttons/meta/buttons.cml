@@ -14,7 +14,7 @@
         bind: "meta/bind/buttons.bindbc",
     },
     capabilities: [
-        { service: "fuchsia.hardware.buttons.Service" },
+        { service: "fuchsia.input.report.Service" },
     ],
     use: [
         {
@@ -39,5 +39,10 @@
         },
         { service: "fuchsia.hardware.platform.device.Service" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

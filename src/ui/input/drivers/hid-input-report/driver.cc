@@ -38,37 +38,17 @@ zx::result<> InputReportDriver::Start(fdf::DriverContext context) {
     return zx::error(status);
   }
 
-  // Export our InputReport protocol.
-  auto result = outgoing()->component().AddUnmanagedProtocol<fuchsia_input_report::InputDevice>(
-      input_report_bindings_.CreateHandler(input_report_.get(), dispatcher(),
-                                           fidl::kIgnoreBindingClosure),
-      kDeviceName);
+  // Export our InputReport service.
+  auto result = outgoing()->AddService<fuchsia_input_report::Service>(
+      fuchsia_input_report::Service::InstanceHandler({
+          .input_device = input_report_bindings_.CreateHandler(input_report_.get(), dispatcher(),
+                                                               fidl::kIgnoreBindingClosure),
+      }));
   if (result.is_error()) {
     return result.take_error();
   }
 
-  if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    return result.take_error();
-  }
-
-  return zx::ok();
-}
-
-void InputReportDriver::Stop(fdf::StopCompleter completer) {
-  input_report_.reset();
-  completer(zx::ok());
-}
-
-zx::result<> InputReportDriver::CreateDevfsNode() {
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    return connector.take_error();
-  }
-
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector).value(), .class_name = "input-report"}};
-
-  zx::result child = AddOwnedChild(kDeviceName, devfs_args);
+  zx::result child = AddOwnedChild(kDeviceName);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();
@@ -76,6 +56,11 @@ zx::result<> InputReportDriver::CreateDevfsNode() {
   child_ = std::move(child).value();
 
   return zx::ok();
+}
+
+void InputReportDriver::Stop(fdf::StopCompleter completer) {
+  input_report_.reset();
+  completer(zx::ok());
 }
 
 }  // namespace hid_input_report_dev

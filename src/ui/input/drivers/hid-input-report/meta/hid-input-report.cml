@@ -15,9 +15,16 @@
         colocate: "true",
         bind: "meta/bind/hid-input-report.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.input.Service" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
+        },
+    ],
 }

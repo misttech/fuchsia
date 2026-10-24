@@ -33,11 +33,20 @@
             ],
         },
     },
+    capabilities: [
+        { service: "fuchsia.input.report.Service" },
+    ],
     use: [
         {
             name: "default",
             service: "fuchsia.hardware.input.Service",
             generate_bind_rule: false,
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }

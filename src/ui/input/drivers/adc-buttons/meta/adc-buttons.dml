@@ -6,6 +6,7 @@
     include: [],
     program: {},
     capabilities: [
+        { service: "fuchsia.input.report.Service" },
         {
             driver_config: "fuchsia.buttons.AdcButtonsMetadata",
             defs: {
@@ -130,6 +131,12 @@
                     },
                 ],
             },
+        },
+    ],
+    expose: [
+        {
+            service: "fuchsia.input.report.Service",
+            from: "self",
         },
     ],
 }
