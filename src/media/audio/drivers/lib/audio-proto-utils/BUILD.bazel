@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "audio-proto-utils",
+    srcs = ["format-utils.cc"],
+    hdrs = ["include/audio-proto-utils/format-utils.h"],
+    implementation_deps = ["//zircon/system/ulib/fbl"],
+    includes = ["include"],
+    visibility = ["//src/media/audio:__subpackages__"],
+    deps = ["//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp"],
+)
+
+fx_cc_binary(
+    name = "audio-proto-utils-unit-tests",
+    testonly = True,
+    srcs = ["unit-tests.cc"],
+    tags = ["manual"],
+    deps = [
+        ":audio-proto-utils",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "audio-proto-utils-tests",
+    unit_tests = [":audio-proto-utils-unit-tests"],
+    visibility = ["//src/media:__pkg__"],
+)
