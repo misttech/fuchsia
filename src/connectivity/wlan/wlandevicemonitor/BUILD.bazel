@@ -2,9 +2,117 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/wlandevicemonitor.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+metrics_registry(
+    name = "wlan_metrics_registry",
+    # We don't need to include a copy of our projects's Cobalt registry in our
+    # package because we rely on it being packaged with Cobalt itself
+    generate_binarypb = False,
+    generate_rust = True,
+    # This must match the ID of our Cobalt project as specified in:
+    # third_party/cobalt_config/projects.yaml
+    project_id = 3708719327,
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/device.rs",
+        "src/device_watch.rs",
+        "src/inspect.rs",
+        "src/main.rs",
+        "src/phy_event_service.rs",
+        "src/service.rs",
+        "src/watchable_map.rs",
+        "src/watcher_service.rs",
+    ],
+    crate_name = "wlandevicemonitor",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        ":wlandevicemonitor_config",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+        "//sdk/fidl/fuchsia.wlan.phy:fuchsia.wlan.phy_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    crate_name = "wlandevicemonitor_bin_test",
+    deps = [
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "wlandevicemonitor-tests",
+    # This allows tests to pass even when there's an error log.
+    max_log_severity = "ERROR",
+    unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
+
+# `wlandevicemonitor_component` in BUILD.gn includes `:wlan_metrics_registry` in
+# `deps`, which in Bazel is a `rustc_library` alias rather than a package
+# resource target. Keep the component and package definitions in BUILD.gn above
+# the sentinel, and skip syncing this manifest so `:wlandevicemonitor_config`
+# refers to the same `:wlandevicemonitor-manifest` label in both builds.
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "wlandevicemonitor-manifest",
+    component_name = "wlandevicemonitor",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/wlandevicemonitor.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "wlandevicemonitor_config",
+    cm_label = ":wlandevicemonitor-manifest",
 )

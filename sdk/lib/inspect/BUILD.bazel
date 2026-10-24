@@ -48,6 +48,7 @@ cml_shard(
     shard = "client.shard.cml",
     visibility = [
         "//src/connectivity/policy/http-client:__pkg__",
+        "//src/connectivity/wlan:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
     ],
