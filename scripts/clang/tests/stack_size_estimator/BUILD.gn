@@ -10,9 +10,7 @@ if (is_host) {
     sources = [
       "test_call_graph.json",
       "test_combined.json",
-      "test_config.json",
       "test_indirect.json",
-      "test_input.json",
       "test_stack_sizes.json",
     ]
     outputs = [ "$target_out_dir/test_data/{{source_file_part}}" ]

@@ -6,10 +6,10 @@ The `stack_estimator.py` tool estimates the maximum stack usage of a program by 
 
 ## Usage
 
-The script accepts two positional arguments: the path to the configuration JSON, and the path to the call graph JSON.
+The script accepts two positional arguments: the path to the configuration JSON, and the path to the call graph JSON. The call graph JSON is the output of `llvm-readelf --call-graph-info --stack-sizes --elf-output-style=JSON` for a single linked ELF file.
 
 ```bash
-python3 scripts/stack_size_estimator/stack_estimator.py config.json callgraph.json
+python3 scripts/clang/stack_size_estimator/stack_estimator.py config.json callgraph.json
 ```
 
 ## Configuration
@@ -18,13 +18,15 @@ The `stack_estimator.py` expects a configuration JSON file. The schema of `confi
 
 ```json
 {
-  "entry_functions": ["main", "task_entry"],
+  "entry_functions": ["main", {"name": "task_entry", "address": 4096}],
+  "exclude_functions": ["panic"],
   "llvm_symbolizer_path": "/path/to/llvm-symbolizer",
   "elf_file": "/path/to/binary.elf"
 }
 ```
 
-*   `entry_functions`: (Optional) A list of entry point function names to analyze. Defaults to `["main"]` if not specified.
+*   `entry_functions`: (Optional) A list of entry point functions to analyze. Defaults to `["main"]` if not specified. Each is a function name, or a dictionary with a `name` and an `address`. Local functions in different translation units can have the same name; such functions must be given by address.
+*   `exclude_functions`: (Optional) A list of functions to leave out of the analysis, each a function name, or a dictionary with an `address` (and a `name`, for the reader), as for `entry_functions`; a local function whose name is not unique is given by address. An excluded function is treated as using no stack, and calls to it are ignored, so excluding a function asserts that it is never reached in this configuration, for example a panic handler that never returns.
 *   `llvm_symbolizer_path`: (Optional) Path to the `llvm-symbolizer` binary.
 *   `elf_file`: (Optional) Path to the corresponding ELF binary. Required alongside `llvm_symbolizer_path` to resolve source locations.
 
@@ -40,8 +42,11 @@ The standard output will be a JSON object containing the global graph nodes, det
     {
       "entry_function": "main",
       "scc_id": 0,
+      "address": 12345,
       "max_stack_usage": 1024,
-      "has_cycles": false
+      "is_lower_bound": false,
+      "has_cycles": false,
+      "uninstrumented_callees": []
     }
   ],
   "nodes": {
@@ -52,6 +57,7 @@ The standard output will be a JSON object containing the global graph nodes, det
       "sccId": 0,
       "direct": [12350, 12400],
       "indirect": [],
+      "uninstrumented": [],
       "source": "main.c:10"
     }
   },
@@ -64,6 +70,10 @@ The standard output will be a JSON object containing the global graph nodes, det
   ]
 }
 ```
+
+`is_lower_bound` is true if the stack usage could be higher than `max_stack_usage` because a function reachable from the entry function:
+
+*   calls a function that has no call graph information (`uninstrumented_callees`). Calls to functions in other modules have callee address 0.
 
 ## Architecture & Core Concepts
 

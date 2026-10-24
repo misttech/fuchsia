@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -182,8 +183,8 @@ def _generate_output_json(
     addr_to_scc_id: dict[int, int],
     adj_list: dict[int, dict[str, Any]],
     src_map: dict[int, str],
-    entry_functions: list[str],
-    name_to_addr: dict[str, int],
+    entry_functions: list[str | dict[str, Any]],
+    display_names: dict[int, list[str]],
 ) -> dict[str, Any]:
     all_nodes = {}
 
@@ -200,13 +201,16 @@ def _generate_output_json(
             "sccId": scc_id,
             "direct": [],
             "indirect": [],
+            "uninstrumented": [],
         }
 
-        adj = adj_list.get(u, {"direct": [], "indirect": []})
-        for v in adj["direct"]:
+        adj = adj_list.get(u, {})
+        for v in adj.get("direct", []):
             node_data["direct"].append(v)
-        for ind_group in adj["indirect"]:
+        for ind_group in adj.get("indirect", []):
             node_data["indirect"].append(ind_group)
+        for uninst in adj.get("uninstrumented", []):
+            node_data["uninstrumented"].append(uninst)
 
         if u in src_map:
             node_data["source"] = src_map[u]
@@ -227,17 +231,44 @@ def _generate_output_json(
 
     entry_funcs_output: list[dict[str, Any]] = []
 
-    for entry_function in entry_functions:
-        if entry_function not in name_to_addr:
+    for entry_item in entry_functions:
+        if isinstance(entry_item, dict):
+            entry_function = entry_item.get("name")
+            specified_addr = entry_item.get("address")
+        else:
+            entry_function = entry_item
+            specified_addr = None
+
+        entry_addr: int | None = None
+        error = "Entry function not found"
+        if specified_addr is not None:
+            # An address identifies the function exactly, so it is not
+            # second-guessed by looking up the name.
+            if specified_addr in addr_to_scc_id:
+                entry_addr = specified_addr
+        elif isinstance(entry_function, str):
+            # Local functions in different translation units can have the
+            # same name, so a name can be ambiguous.
+            candidates = [
+                addr
+                for addr, info in func_info.items()
+                if entry_function in info.get("names", [])
+            ]
+            if len(candidates) == 1:
+                entry_addr = candidates[0]
+            elif candidates:
+                error = "Ambiguous entry function name; specify an address"
+
+        if entry_addr is None:
             entry_funcs_output.append(
                 {
                     "entry_function": entry_function,
-                    "error": "Entry function not found",
+                    "address": specified_addr,
+                    "error": error,
                 }
             )
             continue
 
-        entry_addr = name_to_addr[entry_function]
         entry_scc_id = addr_to_scc_id.get(entry_addr)
         max_stack = 0
         if entry_scc_id is not None and entry_scc_id in results:
@@ -245,12 +276,43 @@ def _generate_output_json(
 
         has_cycles = any(cycle["id"] == entry_scc_id for cycle in all_cycles)
 
+        # Collect reachable uninstrumented callees from this entry point
+        reachable = set()
+        uninstrumented_by_addr: dict[int, dict[str, Any]] = {}
+        queue = deque([entry_addr])
+        while queue:
+            curr = queue.popleft()
+            if curr in reachable:
+                continue
+            reachable.add(curr)
+            curr_adj = adj_list.get(curr, {})
+            for uninst_addr in curr_adj.get("uninstrumented", []):
+                if uninst_addr not in uninstrumented_by_addr:
+                    uninstrumented_by_addr[uninst_addr] = {
+                        "address": uninst_addr,
+                        "callers": [],
+                    }
+                    # Names are only for display.
+                    if uninst_addr in display_names:
+                        uninstrumented_by_addr[uninst_addr][
+                            "name"
+                        ] = display_names[uninst_addr][0]
+                uninstrumented_by_addr[uninst_addr]["callers"].append(curr)
+
+            queue.extend(call_graph.callees(curr_adj))
+
+        uninstrumented_list = list(uninstrumented_by_addr.values())
+        is_lower_bound = bool(uninstrumented_list)
+
         entry_funcs_output.append(
             {
                 "entry_function": entry_function,
+                "address": entry_addr,
                 "scc_id": entry_scc_id,
                 "max_stack_usage": max_stack,
+                "is_lower_bound": is_lower_bound,
                 "has_cycles": has_cycles,
+                "uninstrumented_callees": uninstrumented_list,
             }
         )
 
@@ -266,16 +328,20 @@ def estimate(
 ) -> dict[str, Any]:
     """Estimates max stack usage and returns the result as a dictionary."""
     config = _load_json_file(config_path)
-    data = _load_json_file(callgraph_path)
 
     entry_functions = config.get("entry_functions", ["main"])
     llvm_symbolizer_path = config.get("llvm_symbolizer_path")
     elf_file = config.get("elf_file")
 
-    stack_sizes = call_graph.parse_stack_sizes(data)
-    cg, name_to_addr, func_info, adj_list = call_graph.build_call_graph(
-        data, stack_sizes, config
-    )
+    try:
+        data = call_graph.single_file(_load_json_file(callgraph_path))
+        stack_sizes = call_graph.parse_stack_sizes(data)
+        cg, _, func_info, adj_list = call_graph.build_call_graph(
+            data, stack_sizes, config
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # --- Analysis Logic ---
     addr_to_scc_id = {}
@@ -298,7 +364,7 @@ def estimate(
         adj_list,
         src_map,
         entry_functions,
-        name_to_addr,
+        call_graph.get_display_names(data),
     )
 
 
