@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
@@ -37,9 +37,7 @@ async fn lease(lessor: &fbroker::LessorProxy, level: u8) -> Result<fbroker::Leas
 struct PowerElement {
     element_control: fbroker::ElementControlProxy,
     lessor: fbroker::LessorProxy,
-    element_runner: RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>,
     assertive_dependency_token: fbroker::DependencyToken,
-    initial_level: fbroker::PowerLevel,
     lease: RefCell<Option<fbroker::LeaseControlProxy>>,
     component_controller: fcomponent::ControllerProxy,
 }
@@ -81,7 +79,7 @@ impl PowerElement {
             .await?
             .map_err(|e| anyhow!("register assertive dependency token failed: {e:?}"))?;
 
-        let (component_controller, controller_server_end) = fidl::endpoints::create_proxy();
+        let (component_controller, controller_server_end) = create_proxy();
         let _ = realm
             .create_child(
                 &fdecl::CollectionRef { name: ELEMENTS_COLLECTION.into() },
@@ -98,59 +96,40 @@ impl PowerElement {
             )
             .await?;
 
+        let (element_exposed_dir, element_exposed_dir_server) = create_proxy();
+        realm
+            .open_exposed_dir(
+                &fdecl::ChildRef {
+                    name: element_name.to_string(),
+                    collection: Some(ELEMENTS_COLLECTION.to_string()),
+                },
+                element_exposed_dir_server,
+            )
+            .await
+            .with_context(|| {
+                format!("Failed to call open_exposed_dir for power element {}", element_name)
+            })?
+            .map_err(|e| {
+                anyhow!("Failed to open exposed dir for power element {}: {:?}", element_name, e)
+            })?;
+
+        let proxy = connect_to_protocol_at_dir_root::<ControlMarker>(&element_exposed_dir)
+            .with_context(|| {
+                format!("Failed to connect to Control for power element {}", element_name)
+            })?;
+        proxy
+            .start(element_name, initial_current_level, element_runner_server)
+            .await
+            .with_context(|| format!("Failed to call start for power element {}", element_name))?
+            .map_err(|e| anyhow!("Failed to run power element {}: {:?}", element_name, e))?;
+
         Ok(Self {
             element_control: element_control_proxy,
             lessor: lessor_proxy,
-            element_runner: RefCell::new(Some(element_runner_server)),
             assertive_dependency_token,
-            initial_level: initial_current_level,
             lease: RefCell::new(None),
             component_controller,
         })
-    }
-}
-
-struct PowerTopology {
-    elements: RefCell<HashMap<String, PowerElement>>,
-}
-
-impl PowerTopology {
-    async fn run_power_elements(&self) -> Result<(), Error> {
-        let realm = connect_to_protocol::<fcomponent::RealmMarker>()
-            .map_err(|err| anyhow!("Failed to run power elements, no realm connection {}", err))?;
-
-        for (element_name, element) in self.elements.borrow().iter() {
-            let element_runner = element
-                .element_runner
-                .borrow_mut()
-                .take()
-                .ok_or_else(|| anyhow!("Element ({element_name}) not added"))?;
-            let initial_current_level = element.initial_level;
-
-            let (element_exposed_dir, element_exposed_dir_server) = fidl::endpoints::create_proxy();
-            if let Err(e) = realm
-                .open_exposed_dir(
-                    &fidl_fuchsia_component_decl::ChildRef {
-                        name: element_name.clone(),
-                        collection: Some(ELEMENTS_COLLECTION.to_string()),
-                    },
-                    element_exposed_dir_server,
-                )
-                .await
-            {
-                return Err(anyhow!("Failed to run power element: {}, error {}", element_name, e));
-            }
-
-            let proxy = connect_to_protocol_at_dir_root::<ControlMarker>(&element_exposed_dir)?;
-
-            if let Err(_) =
-                proxy.start(&element_name, initial_current_level, element_runner).await?
-            {
-                error!(element_name:%; "Failed to run power element");
-                return Err(anyhow!("Failed to run power element: {}", element_name));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -158,15 +137,15 @@ impl PowerTopology {
 pub struct TopologyTestDaemon {
     topology_proxy: fbroker::TopologyProxy,
     // Holds elements and their leases for test.power.topology.TopologyControl.
-    internal_topology: PowerTopology,
+    elements: RefCell<HashMap<String, PowerElement>>,
 }
 
 impl TopologyTestDaemon {
     pub async fn new() -> Result<Rc<Self>> {
         let topology_proxy = connect_to_protocol::<fbroker::TopologyMarker>()?;
-        let internal_topology = PowerTopology { elements: RefCell::new(HashMap::new()) };
+        let elements = RefCell::new(HashMap::new());
 
-        Ok(Rc::new(Self { topology_proxy, internal_topology }))
+        Ok(Rc::new(Self { topology_proxy, elements }))
     }
 
     pub async fn run(self: Rc<Self>) -> Result<()> {
@@ -178,25 +157,27 @@ impl TopologyTestDaemon {
             .take_and_serve_directory_handle()
             .context("failed to serve outgoing namespace")?;
 
+        let scope = fasync::Scope::new();
+        let scope_handle = scope.to_handle();
         service_fs
             .for_each_concurrent(None, move |request: IncomingRequest| {
                 let topology_proxy = self.topology_proxy.clone();
+                let scope_handle = scope_handle.clone();
                 async move {
                     match request {
                         IncomingRequest::TopologyControl(stream) => {
                             let ttd = Rc::new(TopologyTestDaemon {
                                 topology_proxy,
-                                internal_topology: PowerTopology {
-                                    elements: RefCell::new(HashMap::new()),
-                                },
+                                elements: RefCell::new(HashMap::new()),
                             });
-                            fasync::Task::local(ttd.handle_topology_control_request(stream))
-                                .detach()
+                            let _ = scope_handle
+                                .spawn_local(ttd.handle_topology_control_request(stream));
                         }
                     }
                 }
             })
             .await;
+        scope.await;
         Ok(())
     }
 
@@ -271,14 +252,14 @@ impl TopologyTestDaemon {
         mut elements: Vec<fpt::Element>,
     ) -> fpt::TopologyControlCreateResult {
         // Clear old topology when creating a new topology.
-        for (_, element) in self.internal_topology.elements.borrow().iter() {
+        for (_, element) in self.elements.borrow().iter() {
             let _ = element
                 .component_controller
                 .destroy()
                 .await
                 .expect("Failed to destroy old element instance");
         }
-        self.internal_topology.elements.borrow_mut().clear();
+        self.elements.borrow_mut().clear();
 
         let realm = connect_to_protocol::<fcomponent::RealmMarker>().map_err(|err| {
             error!(err:%; "Failed to connect to fuchsia.component.Realm");
@@ -286,7 +267,7 @@ impl TopologyTestDaemon {
         })?;
 
         {
-            let mut internal_topology_elements = self.internal_topology.elements.borrow_mut();
+            let mut internal_topology_elements = self.elements.borrow_mut();
             while elements.len() > 0 {
                 let element = elements.pop().unwrap();
                 self.clone()
@@ -299,11 +280,6 @@ impl TopologyTestDaemon {
                     .await?
             }
         }
-
-        self.internal_topology.run_power_elements().await.map_err(|err| {
-            error!(err:%; "Failed to run power elements on separate components");
-            fpt::CreateTopologyGraphError::Internal
-        })?;
 
         Ok(())
     }
@@ -375,7 +351,7 @@ impl TopologyTestDaemon {
         level: u8,
         wait_for_status: fbroker::LeaseStatus,
     ) -> fpt::TopologyControlAcquireLeaseResult {
-        let elements = self.internal_topology.elements.borrow_mut();
+        let elements = self.elements.borrow_mut();
         let element = elements.get(&element_name).ok_or_else(|| {
             warn!(element_name:%; "Failed to find element name in the created topology graph");
             fpt::LeaseControlError::InvalidElement
@@ -410,7 +386,7 @@ impl TopologyTestDaemon {
         self: Rc<Self>,
         element_name: String,
     ) -> fpt::TopologyControlDropLeaseResult {
-        let elements = self.internal_topology.elements.borrow();
+        let elements = self.elements.borrow();
         let element = elements.get(&element_name).ok_or_else(|| {
             warn!(element_name:%; "Failed to find element name in the created topology graph");
             fpt::LeaseControlError::InvalidElement
@@ -425,7 +401,7 @@ impl TopologyTestDaemon {
         element_name: String,
         status_channel: ServerEnd<fbroker::StatusMarker>,
     ) -> fpt::TopologyControlOpenStatusChannelResult {
-        let elements = self.internal_topology.elements.borrow_mut();
+        let elements = self.elements.borrow_mut();
         let element = elements.get(&element_name).ok_or_else(|| {
             warn!(element_name:%; "Failed to find element name in the created topology graph");
             fpt::OpenStatusChannelError::InvalidElement
