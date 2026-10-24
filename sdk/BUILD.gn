@@ -63,14 +63,9 @@ if (current_build_target_api_level != "PLATFORM") {
     }
   }
 
-  # TODO(https://fxbug.dev/330709069): We should actually assert this, but doing
-  # so breaks some builders that are out of sync with the support levels. We
-  # should remove those builders and make this an assertion.
-  if (!_override_is_supported) {
-    print(
-        "`current_build_target_api_level` (${current_build_target_api_level}) is not one of the supported API levels: ${idk_buildable_api_levels}")
-    print("Attempting to build anyways, but this may not go well...")
-  }
+  assert(
+      _override_is_supported,
+      "`current_build_target_api_level` (${current_build_target_api_level}) is not one of the supported API levels: ${idk_buildable_api_levels}")
 }
 
 # Include in the deps of targets that need to ensure that all atoms in the IDK

@@ -2532,12 +2532,9 @@ group("root_targets") {
   testonly = true
   visibility = [ ":*" ]
   deps = [
-    # These are only required by the
-    # core.x64-sdk_source_sets_and_shlibs-apiXX-build_only
-    # builders. TODO(https://fxbug.dev/42082833): Remove these lines once these builders are
-    # removed since they seem no longer necessary.
-    "//build/sdk:sdk_versioned_shared_libraries",
-    "//build/sdk:sdk_versioned_source_sets",
+    # This group ensures all targets in the IDK cc allowlists are processed.
+    # Ensure it and its dependencies are not pruned.
+    "//build/sdk:_idk_versioned_cc_libraries",
 
     # The Fuchsia Bazel SDK generated from the Fuchsia IDK, and the associated
     # tests.

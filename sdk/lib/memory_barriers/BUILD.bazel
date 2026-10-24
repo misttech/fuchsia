@@ -20,8 +20,8 @@ idk_cc_source_library(
         "//src/sysmem:__subpackages__",
         "//vendor/amlogic/drivers:__subpackages__",
 
-        # TODO(https://fxbug.dev/330709069): Remove these once the bots and targets are removed.
-        "//build/sdk:__subpackages__",
+        # For bazel2gn.
+        "//build/sdk:__pkg__",
 
         # TODO(https://fxbug.dev/428229472): Once Bazel-defined atoms are used
         # in the production build path, remove this atom from the IDK macro

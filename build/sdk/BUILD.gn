@@ -363,23 +363,21 @@ group("partner_idk_static_libraries_allowlist") {
   visibility = _partner_idk_versioned_static_libraries_list
 }
 
-# TODO(https://fxbug.dev/330709069): Remove these once the bots no longer use them.
-group("sdk_versioned_source_sets") {
+# This private target only exists to ensure that its deps are not deleted.
+# Those deps only exist to ensure that each target using the cc IDK templates
+# are processed by GN and enforce `testonly` as appropriate. Because there is
+# no dependency on this target, it does not ensure that those targets build or
+# are included in the IDK.
+group("_idk_versioned_cc_libraries") {
   visibility = [ "//:root_targets" ]
-  deps = [ ":all_partner_idk_source_sets" ]
+  deps = [
+    ":all_partner_idk_source_sets",
+    ":partner_idk_versioned_shared_libraries",
+    ":partner_idk_versioned_static_libraries",
+  ]
 
   # Some of the allowed libraries are marked testonly.
   testonly = true
-}
-
-group("sdk_versioned_shared_libraries") {
-  visibility = [ "//:root_targets" ]
-  deps = [
-    ":partner_idk_versioned_shared_libraries",
-
-    # Include static libraries here too rather than updating the bots.
-    ":partner_idk_versioned_static_libraries",
-  ]
 }
 
 python_binary("generate_archive_manifest_from_idk_directory") {
