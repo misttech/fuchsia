@@ -6,32 +6,84 @@ use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
 use safe_string::TermSafe;
 
-pub trait AsDiagnosticMessage {
-    fn as_diagnostic_message(&self) -> String;
+/// Returns a documentation link for the given path.
+///
+/// When executed in an AI agent environment, returns an in-tree path formatted as `//docs/<path>.md`
+/// (or `//docs/<path>/README.md` for directories). Otherwise, returns a URL to the documentation on
+/// `https://fuchsia.dev/fuchsia-src/`.
+pub fn doc_link(path: &str) -> String {
+    doc_link_with_env(path, &agents::SystemEnvironment)
 }
 
-// WARN: This assumes the discovery sources enum has been condensed into a single value. Since it's
+/// Same as [`doc_link`], but allows supplying a custom [`agents::EnvironmentSource`] for testing.
+pub fn doc_link_with_env<E: agents::EnvironmentSource>(path: &str, env: &E) -> String {
+    let unstripped = path
+        .strip_prefix("https://fuchsia.dev/fuchsia-src/")
+        .or_else(|| path.strip_prefix("https://fuchsia.dev/"))
+        .or_else(|| path.strip_prefix("//docs/"))
+        .or_else(|| path.strip_prefix("docs/"))
+        .unwrap_or(path);
+    let raw_path = unstripped.strip_prefix('/').unwrap_or(unstripped);
+
+    let (base_path, fragment) = match raw_path.split_once('#') {
+        Some((base, frag)) => (base, Some(frag)),
+        None => (raw_path, None),
+    };
+
+    let (web_path, doc_path) = if base_path.ends_with("/README.md") || base_path == "README.md" {
+        let dir = base_path.strip_suffix("README.md").unwrap().trim_end_matches('/');
+        (dir.to_string(), base_path.to_string())
+    } else if base_path.ends_with('/') {
+        let dir = base_path.trim_end_matches('/');
+        (dir.to_string(), format!("{dir}/README.md"))
+    } else if let Some(stripped) = base_path.strip_suffix(".md") {
+        (stripped.to_string(), base_path.to_string())
+    } else {
+        (base_path.to_string(), format!("{base_path}.md"))
+    };
+
+    let frag_suffix = fragment.map(|f| format!("#{f}")).unwrap_or_default();
+
+    if agents::is_invoked_by_agent(env) {
+        format!("//docs/{doc_path}{frag_suffix}")
+    } else {
+        format!("https://fuchsia.dev/fuchsia-src/{web_path}{frag_suffix}")
+    }
+}
+
+pub trait AsDiagnosticMessage {
+    fn as_diagnostic_message_with_env<E: agents::EnvironmentSource>(&self, env: &E) -> String;
+
+    fn as_diagnostic_message(&self) -> String {
+        self.as_diagnostic_message_with_env(&agents::SystemEnvironment)
+    }
+}
+
+// WARN: This assumes the discovery sources has been condensed into a single flag value. Since it's
 // a bitflags struct it could be more than one. This is intended to be used with an iterator rather
 // than have the string handling happen in here.
-impl AsDiagnosticMessage for u8 {
-    fn as_diagnostic_message(&self) -> String {
+impl AsDiagnosticMessage for DiscoverySources {
+    fn as_diagnostic_message_with_env<E: agents::EnvironmentSource>(&self, env: &E) -> String {
         match *self {
-            v if v == DiscoverySources::EMULATOR.bits() => "",
-            v if v == DiscoverySources::MDNS.bits() => {
-                "For mDNS debugging, see: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution"
+            DiscoverySources::MDNS => {
+                let link = doc_link_with_env(
+                    "development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution",
+                    env,
+                );
+                format!("For mDNS debugging, see: {link}")
             }
-            v if v == DiscoverySources::MANUAL.bits() => "",
-            v if v == DiscoverySources::FASTBOOT_FILE.bits() => "",
-            v if v == DiscoverySources::USB_VSOCK.bits() => "",
-            v if v == DiscoverySources::USB_FASTBOOT.bits() => "",
-            v if v == DiscoverySources::GCE.bits() => "",
-            v if v == DiscoverySources::UART.bits() => "",
+            DiscoverySources::EMULATOR
+            | DiscoverySources::MANUAL
+            | DiscoverySources::FASTBOOT_FILE
+            | DiscoverySources::USB_VSOCK
+            | DiscoverySources::USB_FASTBOOT
+            | DiscoverySources::GCE
+            | DiscoverySources::UART => String::new(),
             b => panic!(
-                "Un-handled bit type: {b}. This may be a failure from the discovery library of ffx. Please report this to {}",
+                "Un-handled bit type: {b:?}. This may be a failure from the discovery library of ffx. Please report this to {}",
                 errors::BUG_REPORT_URL
             ),
         }
-        .to_owned()
     }
 }
 
@@ -363,5 +415,125 @@ mod tests {
         let formatted_query_uart = format_query(&query_uart);
         assert!(!formatted_query_uart.value.contains('\x1b'));
         assert_eq!(formatted_query_uart.value, "query\\u{1b}[36m_uart");
+    }
+
+    #[test]
+    fn test_as_diagnostic_message() {
+        let mdns = DiscoverySources::MDNS;
+
+        let non_agent_env: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        assert_eq!(
+            mdns.as_diagnostic_message_with_env(&non_agent_env),
+            "For mDNS debugging, see: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution"
+        );
+
+        let mut agent_env = std::collections::HashMap::new();
+        agent_env.insert("ANTIGRAVITY_AGENT".to_string(), "1".to_string());
+        assert_eq!(
+            mdns.as_diagnostic_message_with_env(&agent_env),
+            "For mDNS debugging, see: //docs/development/tools/ffx/workflows/network-connectivity/device-discovery.md#multicast-dns-resolution"
+        );
+    }
+
+    #[test]
+    fn test_doc_link() {
+        let non_agent_env: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        let mut agent_env = std::collections::HashMap::new();
+        agent_env.insert("ANTIGRAVITY_AGENT".to_string(), "1".to_string());
+
+        // File path without extension
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon"
+        );
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &agent_env
+            ),
+            "//docs/development/tools/ffx/workflows/network-connectivity/ssh-daemon.md"
+        );
+
+        // Directory path ending with slash
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity"
+        );
+        assert_eq!(
+            doc_link_with_env("development/tools/ffx/workflows/network-connectivity/", &agent_env),
+            "//docs/development/tools/ffx/workflows/network-connectivity/README.md"
+        );
+
+        // Path ending in README.md
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/README.md",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity"
+        );
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/README.md",
+                &agent_env
+            ),
+            "//docs/development/tools/ffx/workflows/network-connectivity/README.md"
+        );
+
+        // Path with anchor / fragment
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution"
+        );
+        assert_eq!(
+            doc_link_with_env(
+                "development/tools/ffx/workflows/network-connectivity/device-discovery#multicast-dns-resolution",
+                &agent_env
+            ),
+            "//docs/development/tools/ffx/workflows/network-connectivity/device-discovery.md#multicast-dns-resolution"
+        );
+
+        // Full URL with fuchsia-src prefix
+        assert_eq!(
+            doc_link_with_env(
+                "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon"
+        );
+        assert_eq!(
+            doc_link_with_env(
+                "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &agent_env
+            ),
+            "//docs/development/tools/ffx/workflows/network-connectivity/ssh-daemon.md"
+        );
+
+        // Full URL with base https://fuchsia.dev/ prefix
+        assert_eq!(
+            doc_link_with_env(
+                "https://fuchsia.dev/development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &non_agent_env
+            ),
+            "https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon"
+        );
+        assert_eq!(
+            doc_link_with_env(
+                "https://fuchsia.dev/development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                &agent_env
+            ),
+            "//docs/development/tools/ffx/workflows/network-connectivity/ssh-daemon.md"
+        );
     }
 }

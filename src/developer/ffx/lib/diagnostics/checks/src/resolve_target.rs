@@ -195,9 +195,12 @@ where
                         colors.red,
                         colors.reset
                     ))?;
-                notifier.info(
-                        format!("The following link contains steps for general network debugging: https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity")
-                    )?;
+                let doc_link = ffx_diagnostics_formatting::doc_link(
+                    "development/tools/ffx/workflows/network-connectivity/",
+                );
+                notifier.info(format!(
+                    "The following link contains steps for general network debugging: {doc_link}"
+                ))?;
                 for (name, source) in sources.iter_names() {
                     // TODO(b/427299969): Style hinting should be supported here to remove the need
                     // for this caller to implement styling. For certain displays styling should
@@ -208,7 +211,7 @@ where
                         colors.red, name, colors.reset
                     ))?;
                     use ffx_diagnostics_formatting::AsDiagnosticMessage;
-                    let additional_message = source.bits().as_diagnostic_message();
+                    let additional_message = source.as_diagnostic_message();
                     if !additional_message.is_empty() {
                         notifier.info(additional_message)?;
                     }

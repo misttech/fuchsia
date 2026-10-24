@@ -86,6 +86,15 @@ impl TargetConnector for ConnectorHolder {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+#[error(
+    "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult {doc_link}\nUnderlying error: {underlying}"
+)]
+pub struct SshConnectionError {
+    pub doc_link: String,
+    pub underlying: String,
+}
+
 impl<N, P> Check for ConnectSsh<'_, N, P>
 where
     N: Notifier + Sized,
@@ -191,13 +200,14 @@ where
                         },
                     )
                     .await;
-                    Err(anyhow::anyhow!(
-                        "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon\nUnderlying error: {}",
-                        match e {
-                            ConnectionError::ConnectionStartError(_, s) => anyhow::anyhow!("{}", s),
-                            _ => e.into(),
-                        }
-                    ))
+                    let doc_link = ffx_diagnostics_formatting::doc_link(
+                        "development/tools/ffx/workflows/network-connectivity/ssh-daemon",
+                    );
+                    let underlying = match e {
+                        ConnectionError::ConnectionStartError(_, s) => s,
+                        _ => e.to_string(),
+                    };
+                    Err(SshConnectionError { doc_link, underlying }.into())
                 }
             }
         })
