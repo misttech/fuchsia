@@ -189,6 +189,12 @@ UNIT_TEST_ATTRS = ("with_unit_tests", "with_host_unit_tests", "test_deps", "test
 # With fx_test() in the checkout, GN device test packages migrate to Bazel unless they use
 # something Bazel device tests cannot express yet.
 FX_TEST_AVAILABLE = os.path.isfile(os.path.join(workdir, "build/bazel/rules/testing/fx_test.bzl"))
+_fidl_bzl_path = os.path.join(workdir, "build/bazel/rules/fidl/fidl_library.bzl")
+FIDL_RUST_NEXT_UNIMPLEMENTED = (
+    os.path.isfile(_fidl_bzl_path)
+    and "_rust_fdomain_next" not in open(_fidl_bzl_path, encoding="utf-8").read()
+)
+FIDL_RUST_NEXT_DEP_RE = re.compile(r":([A-Za-z0-9_.-]+_rust_(?:fdomain_)?next)\b")
 GN_TEST_PACKAGE_TEMPLATES = ("fuchsia_unittest_package", "fuchsia_test_package")
 # C/C++ and Rust device tests migrate (Rust via fx_packaged_binary of a rust_test).
 MIGRATABLE_TEST_LANGUAGES = ("cc", "rust")
@@ -1191,10 +1197,16 @@ for pkg_dir in sorted(candidate_dirs):
             ):
                 continue
             if tname in gn_info["pre_targets"] and (
-                gn_info["pre_targets"][tname][0] not in CONVERTIBLE_GN_TEMPLATES
+                gn_info["pre_targets"][tname][0]
+                not in (
+                    CONVERTIBLE_GN_TEMPLATES
+                    | GN_TEST_TEMPLATES
+                    | set(GN_TEST_PACKAGE_TEMPLATES)
+                    | {"fuchsia_package", "fuchsia_package_with_single_component", "fuchsia_component"}
+                )
                 or GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2])
             ):
-                continue  # bazel2gn cannot emit its GN-only template or attributes (see gn_attr_parity).
+                continue  # bazel2gn cannot emit its GN template or GN-only attributes (see gn_attr_parity / gn_target_type_parity).
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
             ):
@@ -1493,6 +1505,34 @@ for pkg_dir in sorted(candidate_dirs):
                 return False
             return re.search(r'\bname\s*=\s*"' + re.escape(name or os.path.basename(path)) + '"', text) is not None
 
+        def has_gn_only_test_inputs(raw_body):
+            """Whether a GN test target body uses Ninja-generated inputs, GN variables/conditionals,
+            or depends on a local GN-only generator/action target that has no Bazel equivalent."""
+            body = re.sub(r"#[^\n]*", "", raw_body)
+            if "$" in body or re.search(r"\b(?:if|foreach)\s*\(", body):
+                return True
+            if re.search(r"\bsource_root\s*=\s*[^\s\"#]", body):
+                return True
+            if re.search(r"\b(?:sources|inputs)\s*\+?=\s*[A-Za-z_]", body):
+                return True
+            for sm in re.finditer(r"\b(?:sources|inputs)\s*\+?=\s*\[([^\]]*)\]", body):
+                if re.sub(r'"[^"]*"|,|\s', "", sm.group(1)):
+                    return True
+            for dm in re.finditer(
+                r"\b(?:public_deps|deps|non_rust_deps|data_deps|test_deps)\s*\+?=\s*\[([^\]]*)\]", body
+            ):
+                for dep in re.findall(r'"([^"]+)"', dm.group(1)):
+                    if dep.startswith(":") and "(" not in dep:
+                        dname = dep[1:]
+                        if (
+                            dname in gn_info["pre_targets"]
+                            and dname not in bazel_rules
+                            and gn_info["pre_targets"][dname][0] not in CONVERTIBLE_GN_TEMPLATES
+                            and gn_info["pre_targets"][dname][0] != "resource"
+                        ):
+                            return True
+            return False
+
         def test_language(label):
             """Returns "rust", "cc" (a C/C++ test Bazel can build), or None if unknown/unbuildable."""
             if not label.startswith(":") or "(" in label:
@@ -1515,9 +1555,11 @@ for pkg_dir in sorted(candidate_dirs):
                 return None
             ttmpl, _, tbody = gn_info["pre_targets"][name]
             tbody = re.sub(r"#[^\n]*", "", tbody)
+            if has_gn_only_test_inputs(tbody):
+                return None
             if ttmpl.startswith("rustc_"):
                 return "rust"
-            if ttmpl not in GN_CC_TEST_TEMPLATES or "$" in tbody or re.search(r"\b(?:if|foreach)\s*\(", tbody):
+            if ttmpl not in GN_CC_TEST_TEMPLATES:
                 return None
             srcs = []
             for sm in re.finditer(r"\bsources\s*\+?=\s*\[([^\]]*)\]", tbody):
@@ -1610,9 +1652,8 @@ for pkg_dir in sorted(candidate_dirs):
                             for cl in re.findall(r'"([^"]+)"', cm.group(1)):
                                 if cl.startswith(":") and "(" not in cl:
                                     pkg_test_deps.add(cl[1:])
-                owner = gn_info["pre_targets"].get(local) or gn_info["pre_targets"].get(
-                    re.sub(r"_test$", "", local)
-                )
+            for td_name in sorted(pkg_test_deps):
+                owner = gn_info["pre_targets"].get(td_name) or gn_info["pre_targets"].get(re.sub(r"_test$", "", td_name))
                 if owner:
                     seed_texts.append(owner[2])
                     if GN_ONLY_ATTR_RE.search(owner[2]):
@@ -1625,6 +1666,8 @@ for pkg_dir in sorted(candidate_dirs):
                     )
                     if owner_blocked:
                         blockers.append("GN-blocked dependency")
+                    if has_gn_only_test_inputs(owner[2]):
+                        blockers.append("Ninja-generated inputs or GN-only generator deps")
             # Unknown or unbuildable tests never trigger it.
             langs = {test_language(l) for l in labels}
             if blockers or not labels or not langs <= set(MIGRATABLE_TEST_LANGUAGES):
@@ -2070,6 +2113,21 @@ def is_standard_unittest_cml(cml_abs):
 for pkg_dir in sorted(candidate_dirs):
     bazel_abs = os.path.join(workdir, pkg_dir, "BUILD.bazel")
     bazel_rel = os.path.join(pkg_dir, "BUILD.bazel")
+    gn_abs = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    gn_rel = os.path.join(pkg_dir, "BUILD.gn")
+    if FIDL_RUST_NEXT_UNIMPLEMENTED and os.path.isfile(gn_abs):
+        try:
+            if FIDL_RUST_NEXT_DEP_RE.search(open(gn_abs, encoding="utf-8").read()):
+                findings[:] = [
+                    f
+                    for f in findings
+                    if not (
+                        f.get("file") == gn_rel
+                        and f.get("category") in ("gn_test_package_not_migrated", "duplicate_target_above_sentinel")
+                    )
+                ]
+        except Exception:
+            pass
     if not os.path.isfile(bazel_abs):
         continue
     try:
@@ -2077,6 +2135,30 @@ for pkg_dir in sorted(candidate_dirs):
         btree = ast.parse(btext, filename=bazel_abs)
     except Exception:
         continue
+    if FIDL_RUST_NEXT_UNIMPLEMENTED:
+        next_m = FIDL_RUST_NEXT_DEP_RE.search(btext)
+        if next_m:
+            next_line = btext.count("\n", 0, next_m.start()) + 1
+            findings.append({
+                "source": "migration_sanity",
+                "category": "unimplemented_fidl_rust_next_dep",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": next_line,
+                "message": (
+                    f"'{bazel_rel}' depends on `:{next_m.group(1)}`, but `fidl_library()` in "
+                    "`//build/bazel/rules/fidl/fidl_library.bzl` leaves `enable_rust_next` as an unimplemented "
+                    "stub and does not generate `*_rust_next` or `*_rust_fdomain_next` Bazel targets yet."
+                ),
+                "remediation": (
+                    f"Do not leave an unbuildable target in '{bazel_rel}': if the entire package is blocked on "
+                    f"`*_rust_next` / `*_rust_fdomain_next` bindings, delete '{bazel_rel}' and restore '{gn_rel}' "
+                    f"(`rm -f {bazel_rel} && git checkout -- {gn_rel}`), run `run_checks.sh` on the clean tree so it "
+                    "exits 0, and report the blocker in `summary` with `modified_files: []` and `disputed_findings: []`. "
+                    f"If '{bazel_rel}' also migrates unblocked targets, remove only the blocked target from '{bazel_rel}' "
+                    f"and keep it in '{gn_rel}'."
+                ),
+            })
     rules_used = set()
     rust_tests = []
     for node in btree.body:

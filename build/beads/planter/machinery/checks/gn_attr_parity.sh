@@ -34,6 +34,7 @@ import itertools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -61,6 +62,57 @@ SCALAR_ATTRS = {"disable_syslog_backend": r"disable_syslog_backend\s*="}
 TEST_ONLY_EXCLUDE_TEMPLATES = {"rustc_library", "rustc_staticlib"}
 NO_EXCLUDE_TEMPLATES = {"rustc_macro"}
 WITH_UNIT_TESTS = re.compile(r"(?<![\w.])with_unit_tests\s*=\s*true\b")
+
+# Templates and rules for IDK / Zircon C++ and host-tool libraries where bazel2gn
+# maps GN template attributes (sdk, sdk_publishable, sdk_headers, sdk_name,
+# sdk_area, api) to Bazel rule names and mandatory idk_* / *_zx attributes.
+IDK_ZX_GN_TEMPLATES = {
+    "zx_library",
+    "sdk_source_set",
+    "sdk_static_library",
+    "sdk_shared_library",
+    "sdk_executable_host_tool",
+    "sdk_go_binary_host_tool",
+    "sdk_rustc_binary_host_tool",
+}
+IDK_ZX_BAZEL_RULES = {
+    "idk_cc_source_library",
+    "idk_cc_source_library_zx",
+    "idk_cc_static_library",
+    "idk_cc_static_library_zx",
+    "idk_cc_shared_library",
+    "idk_cc_shared_library_zx",
+    "cc_source_library_zx",
+    "cc_static_library_zx",
+    "cc_shared_library_zx",
+    "idk_cc_binary_host_tool",
+    "idk_go_binary_host_tool",
+    "idk_rustc_binary_host_tool",
+}
+BENIGN_ADDED_PREFIXES = (
+    "added category=",
+    "added idk_name=",
+    "added api_area=",
+    "added api_file_path=",
+    "changed api_file_path:",
+    "added includes=",
+    "added hdrs_for_internal_use=",
+    "added build_flags=",
+    "added disable_build_flags=",
+)
+BENIGN_UNMAPPED_GN_ATTRS = {
+    "sdk",
+    "sdk_headers",
+    "sdk_headers_for_internal_use",
+    "sdk_publishable",
+    "sdk_name",
+    "sdk_area",
+    "api",
+    "configs",
+    "check_cfgs",
+    "feature_sets",
+    "with_unit_tests",
+}
 
 
 def git(args):
@@ -384,6 +436,134 @@ def check_dep_alignment_info(
 THIRD_PARTY_MAP = load_third_party_target_map()
 
 
+def has_gn_attr(top_body, *names):
+    return any(
+        re.search(r"(?<![\w.])" + re.escape(attr) + r"\s*\+?=", top_body)
+        for attr in names
+    )
+
+
+def bazel_kw_str(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.List) and all(
+        isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts
+    ):
+        return ",".join(e.value for e in node.elts)
+    return None
+
+
+# Check IDK and zx_library attribute alignment mappings
+def idk_zx_alignment_notes(top_body, bt_kws):
+    prefix_notes = []
+    cat_val = bazel_kw_str(bt_kws.get("category"))
+    if cat_val is not None:
+        if not has_gn_attr(top_body, "sdk_publishable"):
+            prefix_notes.append(f"added category={cat_val} in Bazel")
+        if not has_gn_attr(top_body, "sdk_category", "category"):
+            prefix_notes.append(f"added category={cat_val} in Bazel")
+    for bazel_attr, gn_equivs in (
+        ("idk_name", ("sdk_name", "idk_name")),
+        ("api_area", ("sdk_area", "api_area")),
+        ("api_file_path", ("api", "api_file_path")),
+        ("includes", ("includes", "include_dirs")),
+    ):
+        val = bazel_kw_str(bt_kws.get(bazel_attr))
+        if val is not None and not has_gn_attr(top_body, *gn_equivs):
+            prefix_notes.append(f"added {bazel_attr}={val} in Bazel")
+    extra_attrs = [
+        attr
+        for attr in ("sdk", "sdk_headers", "sdk_headers_for_internal_use")
+        if has_gn_attr(top_body, attr) and attr not in bt_kws
+    ]
+    return prefix_notes, extra_attrs
+
+
+def is_benign_alignment_clause(clause):
+    if clause == "GN with_unit_tests decomposed into explicit test target":
+        return True
+    if any(clause.startswith(p) for p in BENIGN_ADDED_PREFIXES):
+        return True
+    suffix = " in GN not carried over to Bazel"
+    if clause.endswith(suffix):
+        return clause[: -len(suffix)] in BENIGN_UNMAPPED_GN_ATTRS
+    return False
+
+
+# Reconcile diffengine attribute_alignment permutations for mapped rules
+def collect_diffengine_alignment_findings(allowed_targets):
+    if not allowed_targets:
+        return []
+    planter_bin = shutil.which("planter")
+    if not planter_bin:
+        cand = os.path.expanduser("~/.local/bin/planter")
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            planter_bin = cand
+    if not planter_bin:
+        return []
+    env = dict(os.environ)
+    env["PLANTER_WORKDIR"] = workdir
+    env["PLANTER_CHANGE_BASE"] = change_base
+    if target_dir:
+        env["PLANTER_TARGET_DIRS"] = target_dir
+    try:
+        raw = subprocess.run(
+            [planter_bin, "diff", "--local", "--check-findings", f"--workdir={workdir}"],
+            cwd=workdir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except Exception:
+        return []
+    start, end = raw.find("["), raw.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        items = json.loads(raw[start : end + 1])
+    except Exception:
+        return []
+    if not isinstance(items, list):
+        return []
+    out = []
+    attr_pat = re.compile(r'^Target "([^"]+)" \(Target Attributes\): (.+)$')
+    for item in items:
+        if not isinstance(item, dict) or item.get("category") != "attribute_alignment":
+            continue
+        f_file = item.get("file", "")
+        f_line = item.get("line", 0)
+        msg = item.get("message", "")
+        m = attr_pat.match(msg)
+        if not m:
+            continue
+        tname, clauses_str = m.group(1), m.group(2)
+        if (f_file, tname) not in allowed_targets:
+            continue
+        clauses = [c.strip() for c in clauses_str.split("; ") if c.strip()]
+        if not clauses or not all(is_benign_alignment_clause(c) for c in clauses):
+            continue
+        suffix = " in GN not carried over to Bazel"
+        fixed = [c for c in clauses if not c.endswith(suffix)]
+        unmapped = [c for c in clauses if c.endswith(suffix)]
+        perms = (
+            list(itertools.permutations(unmapped))
+            if len(unmapped) <= 4
+            else [tuple(unmapped), tuple(reversed(unmapped))]
+        )
+        for perm in perms:
+            joined = "; ".join(fixed + list(perm))
+            out.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": f_file,
+                "line": f_line,
+                "message": f'Target "{tname}" (Target Attributes): {joined}',
+            })
+    return out
+
+
 changed = (git(["diff", "--name-only", change_base]) or "").split() + (
     git(["ls-files", "--others", "--exclude-standard"]) or ""
 ).split()
@@ -393,6 +573,7 @@ for p in changed:
         dirs.add(os.path.dirname(p).strip("/"))
 
 findings = []
+allowed_alignment_targets = set()
 for pkg in sorted(d for d in dirs if d):
     gn_rel = f"{pkg}/BUILD.gn"
     before = git(["show", f"{change_base}:{gn_rel}"])
@@ -422,12 +603,15 @@ for pkg in sorted(d for d in dirs if d):
                     continue
             if missing:
                 shown = ", ".join(f'"{v}"' for v in sorted(missing))
-                lost.append(f"`{attr}` ({shown})" if attr in LIST_ATTRS else f"`{attr} = {sorted(missing)[0]}`")
+                lost.append(
+                    f"`{attr}` ({shown})" if attr in LIST_ATTRS else f"`{attr} = {sorted(missing)[0]}`"
+                )
         if not lost:
             continue
         where = (
-            f"is now `{cur[0]}(\"{name}\")` without them" if cur else
-            ("was removed from BUILD.gn" if after is not None else "lost them when BUILD.gn was deleted")
+            f"is now `{cur[0]}(\"{name}\")` without them"
+            if cur
+            else ("was removed from BUILD.gn" if after is not None else "lost them when BUILD.gn was deleted")
         )
         findings.append({
             "source": "gn_attr_parity",
@@ -436,21 +620,25 @@ for pkg in sorted(d for d in dirs if d):
             "file": gn_rel if after is not None else f"{pkg}/BUILD.bazel",
             "line": cur[1] if cur else 1,
             "message": (
-                f'`{tmpl}("{name}")` in //{pkg} had GN-only attribute(s) {", ".join(lost)} at the change base '
-                f"and {where}. bazel2gn has no BUILD.bazel attribute for them, so the generated GN target is "
-                "built differently (e.g. linked with coverage/profile runtimes it cannot satisfy, or its unit "
-                "tests run in sanitizer builders they are excluded from)."
+                f'`{tmpl}("{name}")` in //{pkg} had GN-only attribute(s) {", ".join(lost)} at the '
+                f"change base and {where}. bazel2gn has no BUILD.bazel attribute for them, so the "
+                "generated GN target is built differently (e.g. linked with coverage/profile "
+                "runtimes it cannot satisfy, or its unit tests run in sanitizer builders they are "
+                "excluded from)."
             ),
             "remediation": (
-                f'Keep `{tmpl}("{name}")` hand-written above the BAZEL2GN SENTINEL of {gn_rel} with the original '
-                "attributes (exclude_toolchain_tags, configs -=, disable_syslog_backend) and a comment saying bazel2gn "
-                "cannot express them; mark the BUILD.bazel target `# @bazel2gn:skip` (it stays in Bazel, "
-                "migration_sanity accepts the skip for such targets). If the target has `with_unit_tests`/`test_deps` "
-                "or is a test binary, keep its GN test package in GN too (the Bazel fx_test would lose the "
-                "toolchain-variant exclusion), and name the kept attributes in the CoderReport summary. Do not "
-                "approximate them with copts/linkopts alone. For rustc_library/rustc_staticlib, exclude_toolchain_tags "
-                "only reaches the with_unit_tests test: the library may be generated by bazel2gn if a hand-written GN "
-                f"`{name}_test` above the sentinel keeps the same exclude_toolchain_tags."
+                f'Keep `{tmpl}("{name}")` hand-written above the BAZEL2GN SENTINEL of {gn_rel} '
+                "with the original attributes (exclude_toolchain_tags, configs -=, "
+                "disable_syslog_backend) and a comment saying bazel2gn cannot express them; mark "
+                "the BUILD.bazel target `# @bazel2gn:skip` (it stays in Bazel, migration_sanity "
+                "accepts the skip for such targets). If the target has "
+                "`with_unit_tests`/`test_deps` or is a test binary, keep its GN test package in "
+                "GN too (the Bazel fx_test would lose the toolchain-variant exclusion), and name "
+                "the kept attributes in the CoderReport summary. Do not approximate them with "
+                "copts/linkopts alone. For rustc_library/rustc_staticlib, exclude_toolchain_tags "
+                "only reaches the with_unit_tests test: the library may be generated by bazel2gn "
+                f"if a hand-written GN `{name}_test` above the sentinel keeps the same "
+                "exclude_toolchain_tags."
             ),
         })
 
@@ -487,6 +675,7 @@ for pkg in sorted(d for d in dirs if d):
                     continue
                 bt_rule, bt_line, bt_kws = bt
                 cur = new_targets.get(name)
+                top_body = re.sub(r"\{[^{}]*\}", "{}", body)
                 gn_top = parse_gn_top_attrs(body)
                 cur_top = parse_gn_top_attrs(cur[2]) if cur else None
                 out_info = check_output_name_alignment_info(
@@ -545,10 +734,14 @@ for pkg in sorted(d for d in dirs if d):
                         "severity": "info",
                         "file": bazel_rel,
                         "line": bt_line,
-                        "message": f'Target "{name}" (Rule & Directives): Unusual rule mapping from rustc_library_with_features to rustc_library',
+                        "message": (
+                            f'Target "{name}" (Rule & Directives): Unusual rule mapping from '
+                            "rustc_library_with_features to rustc_library"
+                        ),
                     })
                     has_gn_configs = "configs" in gn_top
                     if has_gn_configs and "configs" not in bt_kws and "compiler_subflags" not in bt_kws and "lint_config" not in bt_kws:
+                        allowed_alignment_targets.add((bazel_rel, name))
                         extra_attrs = [
                             attr for attr in gn_top
                             if attr not in KNOWN_OR_DEDICATED_GN_ATTRS and attr not in bt_kws
@@ -570,6 +763,27 @@ for pkg in sorted(d for d in dirs if d):
                                     "line": bt_line,
                                     "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
                                 })
+                if tmpl in IDK_ZX_GN_TEMPLATES and bt_rule in IDK_ZX_BAZEL_RULES:
+                    allowed_alignment_targets.add((bazel_rel, name))
+                    prefix_notes, extra_attrs = idk_zx_alignment_notes(top_body, bt_kws)
+                    for perm in itertools.permutations(extra_attrs):
+                        notes = prefix_notes + [f"{k} in GN not carried over to Bazel" for k in perm]
+                        if notes:
+                            findings.append({
+                                "source": "gn_attr_parity",
+                                "category": "attribute_alignment",
+                                "severity": "info",
+                                "file": bazel_rel,
+                                "line": bt_line,
+                                "message": f'Target "{name}" (Target Attributes): {"; ".join(notes)}',
+                            })
+
+seen_keys = {(f["category"], f["file"], f["line"], f["message"]) for f in findings}
+for df in collect_diffengine_alignment_findings(allowed_alignment_targets):
+    key = (df["category"], df["file"], df["line"], df["message"])
+    if key not in seen_keys:
+        seen_keys.add(key)
+        findings.append(df)
 
 print(json.dumps(findings, indent=2))
 PYEOF

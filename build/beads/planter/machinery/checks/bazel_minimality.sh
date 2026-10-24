@@ -795,6 +795,11 @@ for rel_path, full_path in bazel_files:
         if (
             rule_name in UNWRAPPED_FUCHSIA_RULES
             and not rel_path.startswith("build/bazel/")
+            and not (
+                os.path.dirname(rel_path).strip("/") not in target_dirs
+                and base_bazel_flat
+                and f'{rule_name}(name="{target_name}"' in base_bazel_flat
+            )
         ):
             wrapper_rule, wrapper_bzl, wrapper_path = UNWRAPPED_FUCHSIA_RULES[rule_name]
             if os.path.isfile(os.path.join(workdir, wrapper_path)):

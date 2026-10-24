@@ -31,6 +31,7 @@ import ast
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -333,21 +334,47 @@ def get_preexisting_vis_info(rel_path):
             continue
     return set(), set()
 
-# Batch-discover all files mentioning any candidate package in a single rg invocation
+# Batch-discover all files mentioning any candidate package across checkout repositories
 pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
-rg_args = ["rg", "-l", "--fixed-strings"]
-for p in pkg_paths:
-    rg_args.extend(["-e", f"//{p}"])
-rg_args.extend(["-g", "*BUILD.gn", "-g", "*BUILD.bazel", "-g", "*.gni", "-g", "*.bzl", workdir])
+search_roots = [r for r in (workdir, os.path.join(workdir, VG_ROOT)) if os.path.isdir(r)]
+patterns = [arg for p in pkg_paths for arg in ("-e", f"//{p}")]
+build_globs = ("*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl")
 
 matched_files = set()
-try:
-    out = subprocess.check_output(rg_args, stderr=subprocess.DEVNULL, text=True)
-    for line in out.splitlines():
+rg_bin = shutil.which("rg")
+if rg_bin and patterns and search_roots:
+    rg_cmd = [rg_bin, "-l", "--fixed-strings", *patterns]
+    for g in build_globs:
+        rg_cmd.extend(["-g", g])
+    rg_cmd.extend(search_roots)
+    res = subprocess.run(rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    for line in res.stdout.splitlines():
         if line.strip():
             matched_files.add(line.strip())
-except Exception:
-    pass
+elif patterns:
+    for repo in search_roots:
+        if not os.path.isdir(os.path.join(repo, ".git")):
+            continue
+        res = subprocess.run(
+            ["git", "-C", repo, "grep", "-l", "--fixed-strings", *patterns, "--", *build_globs],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        for line in res.stdout.splitlines():
+            if line.strip():
+                matched_files.add(os.path.join(repo, line.strip()))
+        untracked = subprocess.run(
+            ["git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--", *build_globs],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        for line in untracked.stdout.splitlines():
+            if line.strip():
+                fpath = os.path.join(repo, line.strip())
+                if os.path.isfile(fpath):
+                    matched_files.add(fpath)
 
 for p in pkg_paths:
     parts = p.split("/")
@@ -444,11 +471,12 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
                 gn_src = f.read()
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
+            has_sentinel = "BAZEL2GN SENTINEL" in gn_src
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
-                if tmpl not in CONVERTIBLE_GN_TEMPLATES:
+                if tmpl not in CONVERTIBLE_GN_TEMPLATES or (not has_sentinel and pkg_path != target_dir):
                     gn_nonconvertible_targets.add(t)
         except Exception:
             pass

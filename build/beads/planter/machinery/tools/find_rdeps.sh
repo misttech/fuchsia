@@ -152,11 +152,13 @@ if os.path.isfile(gn_file):
                 package_targets.add(m.group(2))
         if bazel_targets:
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
+            has_sentinel = "BAZEL2GN SENTINEL" in gn_src
+            env_target_dir = os.environ.get("PLANTER_TARGET_DIR", "").strip().strip("/")
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
-                if tmpl not in CONVERTIBLE_GN_TEMPLATES:
+                if tmpl not in CONVERTIBLE_GN_TEMPLATES or (not has_sentinel and env_target_dir and target_pkg != env_target_dir):
                     gn_nonconvertible_targets.add(t)
         else:
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
@@ -169,29 +171,44 @@ if os.path.isfile(gn_file):
     except Exception:
         pass
 
+import shutil
+
+VG_ROOT = "vendor/" + "google"
+search_roots = [r for r in (workdir, os.path.join(workdir, VG_ROOT)) if os.path.isdir(r)]
+build_globs = ("*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl")
 label_prefix = f"//{target_pkg}"
 files = []
-try:
-    out = subprocess.check_output(
-        ["rg", "-l", "--fixed-strings", label_prefix, "-g", "*BUILD.gn", "-g", "*BUILD.bazel", "-g", "*.gni", "-g", "*.bzl", workdir],
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-    files = [line.strip() for line in out.splitlines() if line.strip()]
-except Exception:
-    for repo in [workdir, os.path.join(workdir, "vendor/" + "google")]:
+rg_bin = shutil.which("rg")
+if rg_bin and search_roots:
+    rg_cmd = [rg_bin, "-l", "--fixed-strings", label_prefix]
+    for g in build_globs:
+        rg_cmd.extend(["-g", g])
+    rg_cmd.extend(search_roots)
+    res = subprocess.run(rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    files = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+else:
+    for repo in search_roots:
         if os.path.isdir(os.path.join(repo, ".git")):
-            try:
-                out = subprocess.check_output(
-                    ["git", "-C", repo, "grep", "-l", "--fixed-strings", label_prefix, "--", "*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl"],
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                )
-                for line in out.splitlines():
-                    if line.strip():
-                        files.append(os.path.join(repo, line.strip()))
-            except Exception:
-                pass
+            res = subprocess.run(
+                ["git", "-C", repo, "grep", "-l", "--fixed-strings", label_prefix, "--", *build_globs],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for line in res.stdout.splitlines():
+                if line.strip():
+                    files.append(os.path.join(repo, line.strip()))
+            untracked = subprocess.run(
+                ["git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--", *build_globs],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for line in untracked.stdout.splitlines():
+                if line.strip():
+                    fpath = os.path.join(repo, line.strip())
+                    if os.path.isfile(fpath):
+                        files.append(fpath)
 
 # Also include ancestor BUILD.gn files that may reference target_pkg via relative GN labels
 pkg_parts = target_pkg.split("/")
