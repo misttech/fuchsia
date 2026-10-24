@@ -19,10 +19,6 @@ for _ in range(5):
         break
     fuchsia_root = fuchsia_root.parent
 
-# Append fuchsia_root to sys.path so we can import tools.integration.fint.proto
-if fuchsia_root.exists() and str(fuchsia_root) not in sys.path:
-    sys.path.insert(0, str(fuchsia_root))
-
 protobuf_wheel = fuchsia_root / "prebuilt" / "third_party" / "protobuf-py3"
 if protobuf_wheel.exists() and str(protobuf_wheel) not in sys.path:
     sys.path.insert(0, str(protobuf_wheel))
@@ -47,9 +43,9 @@ from typing import Any, Generator
 from unittest import mock
 from unittest.mock import MagicMock
 
-import fint_build
 from build.scripts import signal_utils
 from google.protobuf import json_format, text_format
+from tools.integration.fint import fint_build
 from tools.integration.fint.proto import (
     build_artifacts_pb2,
     context_pb2,

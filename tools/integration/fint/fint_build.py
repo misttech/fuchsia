@@ -29,10 +29,6 @@ if not found_root:
         f"Could not find valid Fuchsia root containing {PREBUILT_PROTOBUF_DIR}"
     )
 
-# Append fuchsia_root to sys.path so we can import tools.integration.fint.proto
-if fuchsia_root.exists() and str(fuchsia_root) not in sys.path:
-    sys.path.insert(0, str(fuchsia_root))
-
 protobuf_wheel = fuchsia_root / PREBUILT_PROTOBUF_DIR
 if protobuf_wheel.exists() and str(protobuf_wheel) not in sys.path:
     sys.path.insert(0, str(protobuf_wheel))
