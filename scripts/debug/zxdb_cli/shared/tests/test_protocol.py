@@ -84,12 +84,28 @@ class TestStackTraceRequestSchema(unittest.TestCase):
         self.assertEqual(req.thread_id, 1)
         self.assertIsNone(req.pid)
         self.assertFalse(req.raw)
+        self.assertFalse(req.force_remote_unwind)
+        self.assertIsNone(req.unwinder)
 
     def test_valid_request_pid(self) -> None:
         req = StackTraceRequest(pid=1234, raw=True)
         self.assertIsNone(req.thread_id)
         self.assertEqual(req.pid, 1234)
         self.assertTrue(req.raw)
+        self.assertFalse(req.force_remote_unwind)
+        self.assertIsNone(req.unwinder)
+
+    def test_valid_request_unwinder_and_remote_unwind(self) -> None:
+        req = StackTraceRequest(
+            thread_id=1, force_remote_unwind=True, unwinder="fp"
+        )
+        self.assertEqual(req.thread_id, 1)
+        self.assertTrue(req.force_remote_unwind)
+        self.assertEqual(req.unwinder, "fp")
+
+    def test_malformed_request_invalid_unwinder(self) -> None:
+        with self.assertRaises(ValidationError):
+            StackTraceRequest(thread_id=1, unwinder="invalid")
 
     def test_malformed_request_both(self) -> None:
         with self.assertRaises(ValidationError):

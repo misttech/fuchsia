@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Final, Literal
 from pydantic import BaseModel, model_validator
 from pydap.dap_types import Source
 from shared.protocol.base import BaseRequest
+from zxdb_dap import UnwinderType
 
 
 class StackFrame(BaseModel):
@@ -18,6 +19,7 @@ class StackFrame(BaseModel):
     column: int
     source: Source | None = None
     presentation_hint: str | None = None
+    trust: str | None = None
 
 
 class ThreadStackTraceResponse(BaseModel):
@@ -47,6 +49,8 @@ class StackTraceRequest(
     thread_id: int | None = None
     pid: int | None = None
     raw: bool = False
+    force_remote_unwind: bool = False
+    unwinder: UnwinderType | None = None
     response_type: ClassVar[Any] = (
         ThreadStackTraceResponse | ProcessStackTraceResponse
     )

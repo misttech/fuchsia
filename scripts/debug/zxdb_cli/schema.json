@@ -716,6 +716,31 @@
                         "default": false,
                         "title": "Raw",
                         "type": "boolean"
+                    },
+                    "force_remote_unwind": {
+                        "default": false,
+                        "title": "Force Remote Unwind",
+                        "type": "boolean"
+                    },
+                    "unwinder": {
+                        "anyOf": [
+                            {
+                                "enum": [
+                                    "cfi",
+                                    "fp",
+                                    "scs",
+                                    "plt",
+                                    "armehabi",
+                                    "sigreturn"
+                                ],
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Unwinder"
                     }
                 },
                 "title": "StackTraceRequest",
@@ -1540,6 +1565,18 @@
                         ],
                         "default": null,
                         "title": "Presentation Hint"
+                    },
+                    "trust": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Trust"
                     }
                 },
                 "required": [

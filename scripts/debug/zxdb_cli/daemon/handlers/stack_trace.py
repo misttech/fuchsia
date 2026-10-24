@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydap.models import StackTraceArguments
 from shared.protocol.base import Response
 from shared.protocol.stack_trace import (
     COMMAND_NAME,
@@ -15,6 +14,7 @@ from shared.protocol.stack_trace import (
     StackTraceRequest,
     ThreadStackTraceResponse,
 )
+from zxdb_dap import UnwinderType, ZxdbStackTraceArguments
 
 __all__ = ["COMMAND_NAME", "handle"]
 
@@ -65,11 +65,15 @@ async def _fetch_thread_stack_trace(
     daemon: Daemon,
     thread_id: int,
     raw: bool = False,
+    force_remote_unwind: bool = False,
+    unwinder: UnwinderType | None = None,
 ) -> ThreadStackTraceResponse:
     await daemon.ensure_stopped(thread_id)
-    stack_resp = await daemon.dap_client.stack_trace(
-        StackTraceArguments(
+    stack_resp = await daemon.dap_client.zxdb_stack_trace(
+        ZxdbStackTraceArguments(
             thread_id=thread_id,
+            remote_unwind=True if force_remote_unwind else None,
+            unwinder=unwinder,
         ),
     )
     frames: list[StackFrame] = []
@@ -90,6 +94,7 @@ async def _fetch_thread_stack_trace(
                     column=f.column,
                     source=f.source,
                     presentation_hint=f.presentation_hint,
+                    trust=f.trust,
                 )
             )
     if not raw:
@@ -112,7 +117,11 @@ async def handle(
     try:
         if req.thread_id is not None:
             thread_trace = await _fetch_thread_stack_trace(
-                daemon, req.thread_id, raw=req.raw
+                daemon,
+                req.thread_id,
+                raw=req.raw,
+                force_remote_unwind=req.force_remote_unwind,
+                unwinder=req.unwinder,
             )
             return Response(
                 success=True,
@@ -137,7 +146,11 @@ async def handle(
         for t in process.threads.values():
             try:
                 t_trace = await _fetch_thread_stack_trace(
-                    daemon, t.id, raw=req.raw
+                    daemon,
+                    t.id,
+                    raw=req.raw,
+                    force_remote_unwind=req.force_remote_unwind,
+                    unwinder=req.unwinder,
                 )
                 threads_traces.append(t_trace)
             except Exception:

@@ -302,6 +302,34 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             StackTraceRequest(thread_id=1, raw=True)
         )
 
+        mock_send.reset_mock()
+        exit_code = await main(
+            [
+                "stack-trace",
+                "-t",
+                "1",
+                "--force-remote-unwind",
+                "--unwinder",
+                "fp",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StackTraceRequest(
+                thread_id=1,
+                raw=False,
+                force_remote_unwind=True,
+                unwinder="fp",
+            )
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_stack_trace_invalid_unwinder(self, mock_send: Mock) -> None:
+        with contextlib.redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit):
+                await main(["stack-trace", "-t", "1", "--unwinder", "invalid"])
+        mock_send.assert_not_called()
+
     @patch("cli.cli.send_command")
     async def test_stack_trace_command_pid_flag(self, mock_send: Mock) -> None:
         mock_send.return_value = 0

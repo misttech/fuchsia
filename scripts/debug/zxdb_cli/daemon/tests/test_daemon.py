@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from daemon.daemon import CommandHandlerRegistry, Daemon
 from daemon.handlers import start
 from daemon.state import Process, Thread
-from pydap.client import DapClient, DapError
+from pydap.client import DapError
 from pydap.dap_types import Breakpoint, Source, StackFrame
 from pydap.models import (
     DataBreakpointInfoResponse,
@@ -55,7 +55,10 @@ from shared.protocol.variables import VariablesRequest
 from zxdb_dap import (
     AsyncTaskNode,
     ZxdbConsoleCommandArguments,
+    ZxdbDapClient,
     ZxdbPauseArguments,
+    ZxdbStackFrame,
+    ZxdbStackTraceArguments,
 )
 
 
@@ -1402,7 +1405,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp = Mock()
         mock_stack_resp.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=1,
                 name="f1",
                 line=1,
@@ -1410,7 +1413,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=2,
                 name="f2",
                 line=2,
@@ -1420,7 +1423,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         mock_stack_resp.body.total_frames = 2
-        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
+            return_value=mock_stack_resp
+        )
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -1459,7 +1464,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp = Mock()
         mock_stack_resp.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=1,
                 name="f1",
                 line=1,
@@ -1467,7 +1472,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=2,
                 name="f2",
                 line=2,
@@ -1475,7 +1480,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=3,
                 name="f3",
                 line=3,
@@ -1483,7 +1488,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="normal",
                 source=None,
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=4,
                 name="f4",
                 line=4,
@@ -1491,7 +1496,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="C++ stdlib"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=5,
                 name="f5",
                 line=5,
@@ -1501,7 +1506,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         mock_stack_resp.body.total_frames = 5
-        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
+            return_value=mock_stack_resp
+        )
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -1531,7 +1538,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp = Mock()
         mock_stack_resp.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=1,
                 name="f1",
                 line=1,
@@ -1539,7 +1546,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="normal",
                 source=None,
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=2,
                 name="f2",
                 line=2,
@@ -1547,7 +1554,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="normal",
                 source=None,
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=3,
                 name="f3",
                 line=3,
@@ -1555,7 +1562,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=4,
                 name="f4",
                 line=4,
@@ -1563,7 +1570,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=5,
                 name="f5",
                 line=5,
@@ -1573,7 +1580,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             ),
         ]
         mock_stack_resp.body.total_frames = 5
-        mock_dap_client.stack_trace = AsyncMock(return_value=mock_stack_resp)
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
+            return_value=mock_stack_resp
+        )
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -1598,6 +1607,54 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(frames[3].frame_index, 4)
 
     @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_stack_trace_unwinder_and_trust(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_stack_resp = Mock()
+        mock_stack_resp.body.stack_frames = [
+            ZxdbStackFrame(
+                id=1,
+                name="f1",
+                line=10,
+                column=1,
+                presentation_hint="normal",
+                source=None,
+                trust="FP",
+            ),
+        ]
+        mock_stack_resp.body.total_frames = 1
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
+            return_value=mock_stack_resp
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        with patch.object(daemon, "ensure_stopped", new_callable=AsyncMock):
+            resp = await daemon.registry.handle(
+                "stack-trace",
+                StackTraceRequest(
+                    thread_id=1,
+                    force_remote_unwind=True,
+                    unwinder="fp",
+                ),
+            )
+
+            self.assertTrue(resp.success)
+            mock_dap_client.zxdb_stack_trace.assert_called_once_with(
+                ZxdbStackTraceArguments(
+                    thread_id=1,
+                    remote_unwind=True,
+                    unwinder="fp",
+                )
+            )
+            assert isinstance(resp.body, ThreadStackTraceResponse)
+            self.assertEqual(len(resp.body.stack_frames), 1)
+            self.assertEqual(resp.body.stack_frames[0].trust, "FP")
+
+    @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_exception(
         self, mock_dap_client_class: Mock
     ) -> None:
@@ -1606,9 +1663,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client._send_request = AsyncMock(
             return_value={"invalid": "response_structure"}
         )
-        # Real stack_trace calls _send_request and model_validate
-        mock_dap_client.stack_trace = lambda args: DapClient.stack_trace(
-            mock_dap_client, args
+        # Real zxdb_stack_trace calls _send_request and model_validate
+        mock_dap_client.zxdb_stack_trace = (
+            lambda args: ZxdbDapClient.zxdb_stack_trace(mock_dap_client, args)
         )
 
         daemon = Daemon(port=15678)
@@ -1631,7 +1688,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp_1 = Mock()
         mock_stack_resp_1.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=1,
                 name="f1",
                 line=1,
@@ -1639,7 +1696,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
                 presentation_hint="subtle",
                 source=Source(origin="Rust panic"),
             ),
-            StackFrame(
+            ZxdbStackFrame(
                 id=2,
                 name="f2",
                 line=2,
@@ -1652,7 +1709,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp_2 = Mock()
         mock_stack_resp_2.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=3,
                 name="worker_func",
                 line=3,
@@ -1663,7 +1720,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         ]
         mock_stack_resp_2.body.total_frames = 1
 
-        mock_dap_client.stack_trace = AsyncMock(
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
             side_effect=[mock_stack_resp_1, mock_stack_resp_2]
         )
 
@@ -1743,7 +1800,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         mock_stack_resp_1 = Mock()
         mock_stack_resp_1.body.stack_frames = [
-            StackFrame(
+            ZxdbStackFrame(
                 id=1,
                 name="func_ok",
                 line=1,
@@ -1754,7 +1811,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         ]
         mock_stack_resp_1.body.total_frames = 1
 
-        mock_dap_client.stack_trace = AsyncMock(
+        mock_dap_client.zxdb_stack_trace = AsyncMock(
             side_effect=[mock_stack_resp_1, Exception("Thread exited")]
         )
 

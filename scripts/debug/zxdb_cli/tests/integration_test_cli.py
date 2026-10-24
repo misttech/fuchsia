@@ -195,6 +195,7 @@ class FakeDapServerMixin(unittest.IsolatedAsyncioTestCase):
                                         },
                                         "line": 10,
                                         "column": 1,
+                                        "trust": "CFI",
                                     }
                                 ],
                                 "totalFrames": 1,
@@ -690,6 +691,29 @@ class TestCLIIntegration(FakeDapServerMixin):
             self.assertEqual(frames[0]["frame_index"], 0)
             self.assertEqual(frames[0]["name"], "main")
             self.assertEqual(frames[0]["source"]["name"], "main.cc")
+            self.assertEqual(frames[0]["trust"], "CFI")
+
+            # Verify unwinder and force-remote-unwind flags forward to DAP
+            f_unwinder = StringIO()
+            with contextlib.redirect_stdout(f_unwinder):
+                exit_code = await main(
+                    [
+                        "stack-trace",
+                        "-t",
+                        "1",
+                        "--force-remote-unwind",
+                        "--unwinder",
+                        "fp",
+                    ]
+                )
+            self.assertEqual(exit_code, 0)
+            last_stack_req = [
+                r
+                for r in self.received_dap_requests
+                if r.get("command") == "stackTrace"
+            ][-1]
+            self.assertTrue(last_stack_req["arguments"].get("remoteUnwind"))
+            self.assertEqual(last_stack_req["arguments"].get("unwinder"), "fp")
 
             # Stop via CLI
             exit_code = await main(["stop"])
