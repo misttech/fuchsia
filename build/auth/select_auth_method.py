@@ -20,7 +20,7 @@ import subprocess
 import sys
 from typing import TextIO
 
-from build.auth import gcloud
+import gcloud
 
 
 class AuthType(str, enum.Enum):

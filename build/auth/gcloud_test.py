@@ -4,13 +4,19 @@
 
 """Unit tests for gcloud.py."""
 
+# Add our active parent directory to sys.path to enable flat, direct imports of sister modules
 import pathlib
+import sys
+
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPT_DIR))
+
 import shutil
 import subprocess
 import unittest
 from unittest import mock
 
-from build.auth import gcloud
+import gcloud
 
 
 class GcloudTest(unittest.TestCase):
@@ -21,9 +27,7 @@ class GcloudTest(unittest.TestCase):
         gcloud.path.cache_clear()
         # path() falls back to looking for a system package install, which
         # would make results depend on whether gcloud is installed on the host.
-        patcher = mock.patch.object(
-            gcloud.apt, "get_binary_path", return_value=None
-        )
+        patcher = mock.patch("gcloud.apt.get_binary_path", return_value=None)
         patcher.start()
         self.addCleanup(patcher.stop)
 

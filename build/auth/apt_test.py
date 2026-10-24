@@ -4,13 +4,19 @@
 
 """Unit tests for apt.py."""
 
+# Add our active parent directory to sys.path to enable flat, direct imports of sister modules
+import pathlib
+import sys
+
+_SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPT_DIR))
+
 import shutil
 import subprocess
-import sys
 import unittest
 from unittest import mock
 
-from build.auth import apt
+import apt
 
 
 class AptTest(unittest.TestCase):

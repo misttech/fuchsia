@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from build.auth import gcloud, select_auth_method
+import gcloud
+import select_auth_method
 
 
 class SelectAuthMethodTest(unittest.TestCase):
