@@ -13,6 +13,7 @@
 //!   * Allow waiting for all strongly-held references to be dropped after
 //!     marking the data.
 
+use core::cell::UnsafeCell;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use core::ops::Deref;
@@ -242,17 +243,38 @@ mod debug_id {
     }
 }
 
+/// A slot for the destruction notifier.
+///
+/// Wraps an [`UnsafeCell`] to isolate the [`Sync`] implementation so that
+/// [`Inner<T>`] can automatically derive `Sync` based on its fields without
+/// requiring a blanket manual `unsafe impl Sync`.
+struct NotifierSlot<T>(UnsafeCell<Option<Box<dyn Notifier<T>>>>);
+
+// SAFETY: `NotifierSlot<T>` wraps an `UnsafeCell` for interior mutability.
+// The `UnsafeCell` in `notifier` is only ever accessed through a shared
+// reference when consuming the unique `Primary<T>` instance (in
+// `Primary::unwrap_with_notifier` and `Primary::unwrap_or_notify_with`), which
+// cannot race with any other shared access because only one `Primary<T>` ever
+// exists for a given `Inner<T>`, nor with `Inner::drop` or `Inner::unwrap`
+// because `Primary<T>`'s `Arc<Inner<T>>` is still alive during the write and
+// its subsequent `Arc::drop` Release-Acquire synchronization happens-before
+// `Inner::drop`. `Notifier<T>: Send` ensures the boxed notifier can be moved
+// across threads from `Primary` to whichever thread drops the last `Strong`.
+unsafe impl<T: Sync> Sync for NotifierSlot<T> {}
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct Inner<T> {
     marked_for_destruction: AtomicBool,
     callers: caller::Callers,
     data: core::mem::ManuallyDrop<T>,
-    // NB: Notifier could be an atomic pointer or atomic box but this mutex is
-    // never contended and we don't have to import new code into the repository
-    // (i.e. atomicbox) or write unsafe code.
+    // Safety invariant: `notifier` is initialized to `None` when `Inner<T>` is
+    // constructed and may only be mutated through a shared reference by the
+    // unique `Primary<T>` owner while its `Arc<Inner<T>>` is still alive
+    // (before dropping that `Arc`), or through `&mut Inner<T>` during
+    // destruction.
     #[derivative(Debug = "ignore")]
-    notifier: crate::Mutex<Option<Box<dyn Notifier<T>>>>,
+    notifier: NotifierSlot<T>,
     resource_token: ResourceTokenValue,
 }
 
@@ -301,9 +323,13 @@ impl<T> Inner<T> {
 
     /// Sets the notifier for this `Inner`.
     ///
-    /// Panics if notifier is already set.
-    fn set_notifier<N: Notifier<T> + 'static>(&self, notifier: N) {
-        let Self { notifier: slot, .. } = self;
+    /// # Safety
+    ///
+    /// The caller must ensure that `set_notifier` is called at most once on
+    /// `this`, using the `Arc<Self>` extracted from consuming the unique
+    /// [`Primary<T>`] associated with `this`.
+    unsafe fn set_notifier<N: Notifier<T> + 'static>(this: alloc::sync::Arc<Self>, notifier: N) {
+        let Self { notifier: NotifierSlot(slot), .. } = &*this;
 
         // Using dynamic dispatch to notify allows us to not have to know the
         // notifier that will be used from creation and spread the type on all
@@ -311,15 +337,36 @@ impl<T> Inner<T> {
         // and dynamic dispatch costs here are tiny compared to the overall work
         // of destroying the resources this module is targeting.
         let boxed: Box<dyn Notifier<T>> = Box::new(notifier);
-        let prev_notifier = { slot.lock().replace(boxed) };
-        // Uphold invariant that this can only be done from Primary.
+
+        // SAFETY: By the caller's `# Safety` contract, `set_notifier` is called
+        // at most once on `this` (from the unique `Primary<T>`). No other
+        // shared reference accesses `slot`, and exclusive accesses in
+        // `Inner::drop` and `Inner::unwrap` cannot run while `this: Arc<Self>`
+        // is alive, so we have unique access to the contents of `slot` for the
+        // duration of this statement.
+        let prev_notifier = unsafe { (*slot.get()).replace(boxed) };
+        // Uphold invariant that this can only be done once from Primary.
         assert!(prev_notifier.is_none(), "can't have a notifier already installed");
+
+        // Explicitly drop `this` after writing `slot` to uphold the `Drop`
+        // invariant: `Arc::drop` either runs `Inner::drop` on this thread
+        // (if `this` was the last strong reference) or performs a Release
+        // decrement that synchronizes-with the Acquire fence in `Arc::drop`
+        // before `Inner::drop` runs on whichever thread drops the last strong
+        // reference.
+        core::mem::drop(this);
     }
 }
 
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
-        let Inner { marked_for_destruction, data, callers: _, notifier, resource_token: _ } = self;
+        let Inner {
+            marked_for_destruction,
+            data,
+            callers: _,
+            notifier: NotifierSlot(notifier),
+            resource_token: _,
+        } = self;
         // Take data out of ManuallyDrop in case we panic in pre_drop_check.
         // That'll ensure data is dropped if we hit the panic.
         //
@@ -327,7 +374,7 @@ impl<T> Drop for Inner<T> {
         // taking.
         let data = unsafe { core::mem::ManuallyDrop::take(data) };
         Self::pre_drop_check(marked_for_destruction);
-        if let Some(mut notifier) = notifier.lock().take() {
+        if let Some(mut notifier) = notifier.get_mut().take() {
             notifier.notify(data);
         }
     }
@@ -420,7 +467,7 @@ impl<T> Primary<T> {
                 marked_for_destruction: AtomicBool::new(false),
                 callers: caller::Callers::default(),
                 data: core::mem::ManuallyDrop::new(data),
-                notifier: crate::Mutex::new(None),
+                notifier: NotifierSlot(UnsafeCell::new(None)),
                 resource_token: ResourceTokenValue::default(),
             })),
         }
@@ -438,7 +485,7 @@ impl<T> Primary<T> {
                 marked_for_destruction: AtomicBool::new(false),
                 callers: caller::Callers::default(),
                 data: core::mem::ManuallyDrop::new(data_fn(Weak(weak.clone()))),
-                notifier: crate::Mutex::new(None),
+                notifier: NotifierSlot(UnsafeCell::new(None)),
                 resource_token: ResourceTokenValue::default(),
             })),
         }
@@ -513,10 +560,10 @@ impl<T> Primary<T> {
     /// upgraded.
     pub fn unwrap_with_notifier<N: Notifier<T> + 'static>(this: Self, notifier: N) {
         let inner = Self::mark_for_destruction_and_take_inner(this);
-        inner.set_notifier(notifier);
-        // Now we can drop our inner reference, if we were the last this will
-        // trigger the notifier.
-        core::mem::drop(inner);
+        // SAFETY: `this: Primary<T>` is the unique `Primary` reference for
+        // `inner` and is consumed by value here, so `set_notifier` is called at
+        // most once on `inner`.
+        unsafe { Inner::set_notifier(inner, notifier) };
     }
 
     /// Marks this [`Primary`] for destruction and returns `Ok` if this was the
@@ -531,7 +578,10 @@ impl<T> Primary<T> {
     ) -> Result<T, O> {
         Self::try_unwrap(this).map_err(move |inner| {
             let (notifier, output) = new_notifier();
-            inner.set_notifier(notifier);
+            // SAFETY: `this: Primary<T>` is the unique `Primary` reference for
+            // `inner` and is consumed by value here, so `set_notifier` is
+            // called at most once on `inner`.
+            unsafe { Inner::set_notifier(inner, notifier) };
             output
         })
     }
