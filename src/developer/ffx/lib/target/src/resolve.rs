@@ -453,20 +453,76 @@ pub fn build_discovery_builder_common(ctx: &EnvironmentContext) -> DiscoveryBuil
     build_discovery_builder(sources, ctx)
 }
 
+fn handle_transport_sources(th: &TargetHandle) -> DiscoverySources {
+    match &th.state {
+        discovery::TargetState::Product { addrs, .. } => {
+            let mut seen = DiscoverySources::empty();
+            for addr in addrs {
+                match addr {
+                    TargetAddr::Net(_) => seen.insert(DiscoverySources::MDNS),
+                    TargetAddr::UsbCtx(_) => seen.insert(DiscoverySources::USB_VSOCK),
+                    TargetAddr::Uart(_) => seen.insert(DiscoverySources::UART),
+                    TargetAddr::VSockCtx(_) => seen.insert(DiscoverySources::EMULATOR),
+                }
+            }
+            if seen.is_empty() { DiscoverySources::all() } else { seen }
+        }
+        discovery::TargetState::Fastboot(_)
+        | discovery::TargetState::Zedboot
+        | discovery::TargetState::Unknown => DiscoverySources::all(),
+    }
+}
+
+fn short_circuit_stream_by_sources(
+    stream: impl Stream<Item = TargetEvent>,
+    query: TargetInfoQuery,
+    sources: DiscoverySources,
+) -> impl Stream<Item = TargetHandle> {
+    let expected_transports =
+        sources & (DiscoverySources::MDNS | DiscoverySources::USB_VSOCK | DiscoverySources::UART);
+    let wait_for_all_transports =
+        matches!(query, TargetInfoQuery::NodenameOrId(_) | TargetInfoQuery::Id(_));
+    let is_first = matches!(query, TargetInfoQuery::First);
+    let (single_target_tx, single_target_rx) = futures::channel::oneshot::channel();
+    stream
+        .scan((DiscoverySources::empty(), Some(single_target_tx)), move |(seen, tx), ev| {
+            if tx.is_none() {
+                return futures::future::ready(None);
+            }
+            let th = if let TargetEvent::Added(th) = ev {
+                if !is_first {
+                    seen.insert(handle_transport_sources(&th));
+                    if !wait_for_all_transports
+                        || seen.contains(expected_transports)
+                        || seen.contains(DiscoverySources::EMULATOR)
+                    {
+                        if let Some(tx) = tx.take() {
+                            let _ = tx.send(());
+                        }
+                    }
+                }
+                Some(th)
+            } else {
+                None
+            };
+            futures::future::ready(Some(th))
+        })
+        .filter_map(futures::future::ready)
+        .take_until(single_target_rx)
+}
+
 // Return a stream of TargetHandles that come from the specified sources, and
-// match the query. The discovery will return early if a result "perfectly"
-// matches the query (e.g. an mDNS response with the exact name requested).
+// match the query. The discovery will return early once all enabled transport
+// sources have reported a match for the query (or on the first match when only
+// a single transport is active).
 fn get_discovery_stream_with_sources(
     query: TargetInfoQuery,
     sources: DiscoverySources,
     ctx: &EnvironmentContext,
-) -> Result<impl Stream<Item = TargetHandle>> {
-    let discovery = build_discovery(sources, ctx);
-    // Just get the new handles
-    let stream = discovery.discovery_stream(query).map_err(anyhow::Error::from)?;
-    Ok(stream.filter_map(|ev| async move {
-        if let TargetEvent::Added(th) = ev { Some(th) } else { None }
-    }))
+) -> std::result::Result<impl Stream<Item = TargetHandle>, crate::FfxTargetCrateError> {
+    let discovery = build_discovery_builder(sources, ctx).with_short_circuit(false).build(ctx);
+    let stream = discovery.discovery_stream(query.clone())?;
+    Ok(short_circuit_stream_by_sources(stream, query, sources))
 }
 
 // Return a set of TargetHandles that come from the specified sources, and match
@@ -1856,5 +1912,70 @@ mod test {
 
         let query = TargetInfoQuery::try_from("fb-node").unwrap();
         assert!(lookup_discovery_cache(&query, true, &test_env.context).await.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_short_circuit_stream_waits_for_all_enabled_transports_on_nodename() {
+        let mdns_addr: TargetAddr = "[fe80::1%1]:22".parse().unwrap();
+        let usb_addr = TargetAddr::UsbCtx(3);
+        let mdns_handle = TargetHandle {
+            node_name: Some("target-a".to_string()),
+            state: discovery::TargetState::Product { addrs: vec![mdns_addr.clone()], serial: None },
+            manual: false,
+        };
+        let usb_handle = TargetHandle {
+            node_name: Some("target-a".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![usb_addr.clone()],
+                serial: Some("SER123".to_string()),
+            },
+            manual: false,
+        };
+        // Add a trailing event after both transports have reported; the stream should
+        // short-circuit as soon as both MDNS and USB_VSOCK have emitted a handle.
+        let trailing_handle = TargetHandle {
+            node_name: Some("target-a".to_string()),
+            state: discovery::TargetState::Product { addrs: vec![mdns_addr], serial: None },
+            manual: false,
+        };
+        let inner_stream = futures::stream::iter(vec![
+            TargetEvent::Added(mdns_handle.clone()),
+            TargetEvent::Added(usb_handle.clone()),
+            TargetEvent::Added(trailing_handle),
+        ]);
+        let sources = DiscoverySources::MDNS | DiscoverySources::USB_VSOCK;
+        let query = TargetInfoQuery::NodenameOrId("target-a".to_string());
+        let results: Vec<TargetHandle> =
+            short_circuit_stream_by_sources(inner_stream, query, sources).collect().await;
+        assert_eq!(results, vec![mdns_handle, usb_handle]);
+    }
+
+    #[fuchsia::test]
+    async fn test_short_circuit_stream_single_transport_short_circuits_immediately() {
+        let usb_handle1 = TargetHandle {
+            node_name: Some("target-a".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![TargetAddr::UsbCtx(3)],
+                serial: Some("SER123".to_string()),
+            },
+            manual: false,
+        };
+        let usb_handle2 = TargetHandle {
+            node_name: Some("target-a".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![TargetAddr::UsbCtx(4)],
+                serial: Some("SER123".to_string()),
+            },
+            manual: false,
+        };
+        let inner_stream = futures::stream::iter(vec![
+            TargetEvent::Added(usb_handle1.clone()),
+            TargetEvent::Added(usb_handle2),
+        ]);
+        let sources = DiscoverySources::USB_VSOCK;
+        let query = TargetInfoQuery::NodenameOrId("target-a".to_string());
+        let results: Vec<TargetHandle> =
+            short_circuit_stream_by_sources(inner_stream, query, sources).collect().await;
+        assert_eq!(results, vec![usb_handle1]);
     }
 }

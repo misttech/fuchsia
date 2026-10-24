@@ -173,8 +173,30 @@ fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     let mut result = Vec::with_capacity(boot_merged.len() + serial_merged.len() + unmerged.len());
     result.extend(boot_merged.into_values());
     merge_serial_targets(&mut result, serial_merged.into_values());
-    result.extend(unmerged);
+    merge_unmerged_targets(&mut result, unmerged);
     result
+}
+
+fn merge_unmerged_targets(
+    result: &mut Vec<TargetInfo>,
+    unmerged_targets: impl IntoIterator<Item = TargetInfo>,
+) {
+    for t in unmerged_targets {
+        if let Some(nodename) = t.nodename.as_ref().filter(|n| !n.is_empty()) {
+            let mut matches = result
+                .iter_mut()
+                .filter(|x| {
+                    x.nodename.as_ref() == Some(nodename)
+                        && x.serial_number.as_ref().is_some_and(|s| !s.is_empty())
+                })
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                merge_infos(matches[0], t);
+                continue;
+            }
+        }
+        result.push(t);
+    }
 }
 
 fn merge_serial_targets(
@@ -467,6 +489,27 @@ mod test {
         let mut addr_lens: Vec<usize> = targets.iter().map(|x| x.addresses.len()).collect();
         addr_lens.sort();
         assert_eq!(addr_lens, vec![1, 1, 1]);
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_usb_with_serial_and_mdns_without_serial_no_bootid() {
+        let usb_addr = addr::TargetAddr::UsbCtx(3);
+        let mut t_usb = make_target_info(&usb_addr, None);
+        t_usb.serial_number = Some("55291FDCH00AYZ".to_string());
+        t_usb.nodename = Some("fuchsia-ba3c-7a84-47a0".to_string());
+        t_usb.rcs_state = RemoteControlState::Unknown;
+
+        let mdns_addr: addr::TargetAddr = "[fe80::5417:7b2c:c9fc:a058%2]:0".parse().unwrap();
+        let mut t_mdns = make_target_info(&mdns_addr, None);
+        t_mdns.serial_number = None;
+        t_mdns.nodename = Some("fuchsia-ba3c-7a84-47a0".to_string());
+        t_mdns.rcs_state = RemoteControlState::Unknown;
+
+        let targets = merge_target_addrs(vec![t_mdns, t_usb]);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].nodename.as_deref(), Some("fuchsia-ba3c-7a84-47a0"));
+        assert_eq!(targets[0].serial_number.as_deref(), Some("55291FDCH00AYZ"));
+        assert_eq!(targets[0].addresses, vec![usb_addr, mdns_addr]);
     }
 
     #[fuchsia::test]

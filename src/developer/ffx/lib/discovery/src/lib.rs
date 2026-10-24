@@ -218,6 +218,7 @@ pub struct DiscoveryBuilder {
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
+    short_circuit: bool,
     short_circuit_on_first: bool,
 }
 
@@ -296,6 +297,13 @@ impl DiscoveryBuilder {
         self
     }
 
+    /// Control whether non-`First` queries short-circuit on the first matching event.
+    /// By default (`true`), non-`First` queries close the stream on the first match.
+    pub fn with_short_circuit(mut self, short_circuit: bool) -> Self {
+        self.short_circuit = short_circuit;
+        self
+    }
+
     /// Control whether `TargetInfoQuery::First` short-circuits on the first match.
     /// By default (`false`), `First` waits for the discovery window to complete to detect ambiguity.
     pub fn with_short_circuit_on_first(mut self, short_circuit_on_first: bool) -> Self {
@@ -313,6 +321,7 @@ impl DiscoveryBuilder {
             sources: self.sources,
             timeout: self.timeout,
             state_filter: self.state_filter,
+            short_circuit: self.short_circuit,
             short_circuit_on_first: self.short_circuit_on_first,
             stream: Mutex::new(None),
             context: context.clone(),
@@ -353,6 +362,7 @@ impl Default for DiscoveryBuilder {
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
             state_filter: TargetStateFilter::default(),
+            short_circuit: true,
             short_circuit_on_first: false,
         }
     }
@@ -394,6 +404,7 @@ pub struct Discovery {
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
+    short_circuit: bool,
     short_circuit_on_first: bool,
     // For testing purposes, we can provide an arbitrary stream.
     // For example, in the testing module `setup_test()` uses this to store
@@ -459,7 +470,9 @@ impl Discovery {
         let single_target_tx = Arc::new(Mutex::new(Some(single_target_tx)));
         let is_indefinite = self.timeout.is_none();
         let state_filter = self.state_filter;
-        let short_circuit_on_first = self.short_circuit_on_first || is_indefinite;
+        let short_circuit = self.short_circuit;
+        let short_circuit_on_first =
+            self.short_circuit_on_first || (is_indefinite && short_circuit);
         Ok(stream
             .filter_map(move |ev| {
                 let query = query.clone();
@@ -468,10 +481,12 @@ impl Discovery {
                     let th = ev.target_handle();
                     // Only match against the query and state filter
                     if state_filter.matches(&th.state) && query.match_handle(th) {
-                        // When we add a handle that matches our query, fire the oneshot if not First
-                        // or if short_circuit_on_first is true.
+                        // When we add a handle that matches our query, fire the oneshot if
+                        // short-circuiting is enabled for non-First queries, or if
+                        // short_circuit_on_first is true.
                         if matches!(ev, TargetEvent::Added(_))
-                            && (!matches!(query, TargetInfoQuery::First) || short_circuit_on_first)
+                            && ((!matches!(query, TargetInfoQuery::First) && short_circuit)
+                                || short_circuit_on_first)
                         {
                             // We'll only need the oneshot once
                             if let Some(s) = sender.lock().unwrap().take() {
@@ -785,6 +800,40 @@ pub mod test {
 
         // We should get the first handle, and then the stream should be closed.
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_devices_filtered_no_short_circuit() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let handle_ip = TargetHandle {
+            node_name: Some("test-target-1".to_string()),
+            state: TargetState::Product {
+                addrs: vec![TargetAddr::from_str("127.0.0.1:8022").unwrap()],
+                serial: None,
+            },
+            manual: false,
+        };
+        let handle_usb = TargetHandle {
+            node_name: Some("test-target-1".to_string()),
+            state: TargetState::Product {
+                addrs: vec![TargetAddr::UsbCtx(3)],
+                serial: Some("serial-1".to_string()),
+            },
+            manual: false,
+        };
+        let events =
+            vec![TargetEvent::Added(handle_ip.clone()), TargetEvent::Added(handle_usb.clone())];
+        let stream = Box::new(futures::stream::iter(events));
+        let discovery = DiscoveryBuilder::default()
+            .with_short_circuit(false)
+            .build_with_stream(&env.context, stream);
+        let mut stream = discovery
+            .discovery_stream(TargetInfoQuery::NodenameOrId("test-target-1".to_string()))
+            .unwrap();
+
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle_ip);
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle_usb);
         assert!(stream.next().await.is_none());
     }
 
