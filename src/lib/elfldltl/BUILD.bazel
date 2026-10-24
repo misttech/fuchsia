@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+# These APIs are close to being universally portable.  They depend only on
+# standard C++20, <lib/fit/result.h>, <lib/stdcompat/bit.h>,
+# <lib/stdcompat/inplace_vector.h> and rely only on library features
+# available in all environments.  This may include
+# references to container and allocation APIs that cannot actually be used in
+# special environments (without infallible allocation), but using the headers
+# should be compatible as long as the specific functions and classes relying
+# on those library features are not used.
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = [
+        "include/lib/elfldltl/abi-ptr.h",
+        "include/lib/elfldltl/abi-span.h",
+        "include/lib/elfldltl/alloc-checker-container.h",
+        "include/lib/elfldltl/compat-hash.h",
+        "include/lib/elfldltl/constants.h",
+        "include/lib/elfldltl/container.h",
+        "include/lib/elfldltl/diagnostics.h",
+        "include/lib/elfldltl/diagnostics-ostream.h",
+        "include/lib/elfldltl/dwarf/cfi-entry.h",
+        "include/lib/elfldltl/dwarf/eh-frame-hdr.h",
+        "include/lib/elfldltl/dwarf/encoding.h",
+        "include/lib/elfldltl/dwarf/section-data.h",
+        "include/lib/elfldltl/dynamic.h",
+        "include/lib/elfldltl/fd.h",
+        "include/lib/elfldltl/field.h",
+        "include/lib/elfldltl/file.h",
+        "include/lib/elfldltl/gnu-hash.h",
+        "include/lib/elfldltl/init-fini.h",
+        "include/lib/elfldltl/internal/abi-span.h",
+        "include/lib/elfldltl/internal/const-string.h",
+        "include/lib/elfldltl/internal/diagnostics-printf.h",
+        "include/lib/elfldltl/internal/dynamic-tag-error.h",
+        "include/lib/elfldltl/internal/init-fini.h",
+        "include/lib/elfldltl/internal/load-segment-types.h",
+        "include/lib/elfldltl/internal/no_unique_address.h",
+        "include/lib/elfldltl/internal/phdr-error.h",
+        "include/lib/elfldltl/layout.h",
+        "include/lib/elfldltl/link.h",
+        "include/lib/elfldltl/link-map-list.h",
+        "include/lib/elfldltl/load.h",
+        "include/lib/elfldltl/loadinfo-mapped-memory.h",
+        "include/lib/elfldltl/loadinfo-mutable-memory.h",
+        "include/lib/elfldltl/machine.h",
+        "include/lib/elfldltl/mapped-fd-file.h",
+        "include/lib/elfldltl/memory.h",
+        "include/lib/elfldltl/mmap-loader.h",
+        "include/lib/elfldltl/note.h",
+        "include/lib/elfldltl/perfect-symbol-table.h",
+        "include/lib/elfldltl/phdr.h",
+        "include/lib/elfldltl/posix.h",
+        "include/lib/elfldltl/preallocated-vector.h",
+        "include/lib/elfldltl/relocation.h",
+        "include/lib/elfldltl/relro.h",
+        "include/lib/elfldltl/resolve.h",
+        "include/lib/elfldltl/self.h",
+        "include/lib/elfldltl/soname.h",
+        "include/lib/elfldltl/static-pie.h",
+        "include/lib/elfldltl/static-pie-with-vdso.h",
+        "include/lib/elfldltl/static-vector.h",
+        "include/lib/elfldltl/svr4-abi.h",
+        "include/lib/elfldltl/symbol.h",
+        "include/lib/elfldltl/tls-layout.h",
+        "include/lib/elfldltl/unique-fd.h",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "include/lib/elfldltl/mapped-vmo-file.h",
+            "include/lib/elfldltl/segment-with-vmo.h",
+            "include/lib/elfldltl/vmar-loader.h",
+            "include/lib/elfldltl/vmo.h",
+            "include/lib/elfldltl/zircon.h",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//src/lib/elf-search:__pkg__"],
+    deps = [
+        "//sdk/lib/fit",
+        "//sdk/lib/stdcompat",
+        "//zircon/system/ulib/fbl",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//zircon/system/ulib/zx",
+        ],
+        "//conditions:default": [],
+    }),
+)
+# LINT.ThenChange(BUILD.gn)

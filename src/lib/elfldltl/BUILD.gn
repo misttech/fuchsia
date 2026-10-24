@@ -9,6 +9,7 @@ import("//build/toolchain/zircon/user_basic_redirect.gni")
 has_fd = !is_kernel && toolchain_variant.tags + [ "standalone" ] -
                        [ "standalone" ] == toolchain_variant.tags
 
+# LINT.IfChange
 library_headers("headers") {
   # These APIs are close to being universally portable.  They depend only on
   # standard C++20, <lib/fit/result.h>, <lib/stdcompat/bit.h>,
@@ -119,6 +120,8 @@ library_headers("headers") {
     ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 # The implementation code is in the hermetic library, below.  This target is
 # used to link that into a final link where input linker scripts can have
