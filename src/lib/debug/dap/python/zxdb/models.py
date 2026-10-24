@@ -5,16 +5,38 @@
 from typing import Literal
 
 from pydantic import Field
-from pydap.dap_types import DapBaseModel, Thread
+from pydap.dap_types import DapBaseModel, StackFrame, Thread
 from pydap.models import (
     Event,
     PauseArguments,
     Response,
+    StackTraceResponse,
+    StackTraceResponseBody,
     ThreadEvent,
     ThreadEventBody,
     ThreadsResponse,
     ThreadsResponseBody,
 )
+
+UnwinderType = Literal["cfi", "fp", "scs", "plt", "armehabi", "sigreturn"]
+
+
+class ZxdbStackFrame(StackFrame):
+    """Zxdb-specific stack frame model containing trust."""
+
+    trust: str | None = None
+
+
+class ZxdbStackTraceResponseBody(StackTraceResponseBody):
+    """Body of response to `stackTrace` request containing zxdb stack frames."""
+
+    stack_frames: list[ZxdbStackFrame]
+
+
+class ZxdbStackTraceResponse(StackTraceResponse):
+    """Response to `stackTrace` request with zxdb-specific frame info."""
+
+    body: ZxdbStackTraceResponseBody
 
 
 class ZxdbPauseArguments(PauseArguments):

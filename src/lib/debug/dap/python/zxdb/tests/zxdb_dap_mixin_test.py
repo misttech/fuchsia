@@ -241,7 +241,9 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
     async def test_zxdb_stack_trace(self) -> None:
         client = ZxdbDapClient()
         reader, writer = self._start_client(client)
-        args = ZxdbStackTraceArguments(thread_id=5678, remote_unwind=True)
+        args = ZxdbStackTraceArguments(
+            thread_id=5678, remote_unwind=True, unwinder="fp"
+        )
 
         send_task = asyncio.create_task(client.zxdb_stack_trace(args))
 
@@ -259,8 +261,16 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
             "success": True,
             "command": "stackTrace",
             "body": {
-                "stackFrames": [],
-                "totalFrames": 0,
+                "stackFrames": [
+                    {
+                        "id": 1,
+                        "name": "main",
+                        "line": 10,
+                        "column": 1,
+                        "trust": "FP",
+                    }
+                ],
+                "totalFrames": 1,
             },
         }
 
@@ -271,6 +281,13 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(req_val["command"], "stackTrace")
         self.assertEqual(req_val["arguments"]["threadId"], 5678)
         self.assertTrue(req_val["arguments"]["remoteUnwind"])
+        self.assertEqual(req_val["arguments"]["unwinder"], "fp")
+        self.assertEqual(len(resp.body.stack_frames), 1)
+        self.assertEqual(resp.body.stack_frames[0].trust, "FP")
+
+    def test_zxdb_stack_trace_invalid_unwinder(self) -> None:
+        with self.assertRaises(ValidationError):
+            ZxdbStackTraceArguments(thread_id=5678, unwinder="invalid")
 
     async def test_threads_response_process_id(self) -> None:
         client = ZxdbDapClient()
