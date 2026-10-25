@@ -90,7 +90,7 @@ clap = { version = "4.6.7", default-features = false, features = ["std", "help",
 cmac = "0.8"
 cpio = "0.4.1"
 crc = "3.4.0"
-crc32fast = "1.5.0"
+crc32fast = "1.5.2"
 criterion = { version = "0.8.2", default-features = false, features = ["csv_output", "cargo_bench_support"] }
 crossbeam = "0.8.5"
 crossbeam-utils = "0.8.23"
@@ -644,7 +644,7 @@ rustflags = [
 [gn.package.crc-catalog."2.4.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
 
-[gn.package.crc32fast."1.5.0"]
+[gn.package.crc32fast."1.5.2"]
 rustflags = ["--cfg=stable_arm_crc32_intrinsics"]
 
 [gn.package.criterion."0.8.2"]

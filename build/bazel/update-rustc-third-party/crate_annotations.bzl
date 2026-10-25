@@ -75,7 +75,7 @@ CRATE_ANNOTATIONS = {
     ],
     "crc32fast": [
         crate.annotation(
-            version = "1.5.0",
+            version = "1.5.2",
             rustc_flags = [
                 "--cfg=stable_arm_crc32_intrinsics",
             ],

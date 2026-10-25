@@ -646,14 +646,14 @@ alias(
 )
 
 alias(
-    name = "crc32fast-1.5.0",
-    actual = "//third_party/rust_crates/vendor/crc32fast-1.5.0:crc32fast",
+    name = "crc32fast-1.5.2",
+    actual = "//third_party/rust_crates/vendor/crc32fast-1.5.2:crc32fast",
     tags = ["manual"],
 )
 
 alias(
     name = "crc32fast",
-    actual = "//third_party/rust_crates/vendor/crc32fast-1.5.0:crc32fast",
+    actual = "//third_party/rust_crates/vendor/crc32fast-1.5.2:crc32fast",
     tags = ["manual"],
 )
 

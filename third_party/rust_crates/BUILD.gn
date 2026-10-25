@@ -444,11 +444,11 @@ group("crc-3.4.0") {
 }
 
 group("crc32fast") {
-  public_deps = [ ":crc32fast-v1_5_0" ]
+  public_deps = [ ":crc32fast-v1_5_2" ]
 }
 
-group("crc32fast-1.5.0") {
-  public_deps = [ ":crc32fast-v1_5_0" ]
+group("crc32fast-1.5.2") {
+  public_deps = [ ":crc32fast-v1_5_2" ]
 }
 
 group("criterion") {
@@ -6737,18 +6737,18 @@ rustc_library("crc-v3_4_0") {
   applicable_licenses = [ ":crc-v3_4_0.license" ]
 }
 
-license("crc32fast-v1_5_0.license") {
+license("crc32fast-v1_5_2.license") {
   public_package_name = "crc32fast"
   license_files = [
-    "//third_party/rust_crates/vendor/crc32fast-1.5.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crc32fast-1.5.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crc32fast-1.5.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crc32fast-1.5.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("crc32fast-v1_5_0") {
+rustc_library("crc32fast-v1_5_2") {
   crate_name = "crc32fast"
-  source_root = "//third_party/rust_crates/vendor/crc32fast-1.5.0/src/lib.rs"
-  output_name = "crc32fast-8d01c2afeadc8e7a"
+  source_root = "//third_party/rust_crates/vendor/crc32fast-1.5.2/src/lib.rs"
+  output_name = "crc32fast-41cb7b5bff37465b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -6761,8 +6761,8 @@ rustc_library("crc32fast-v1_5_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8d01c2afeadc8e7a",
-    "-Cextra-filename=-8d01c2afeadc8e7a",
+    "-Cmetadata=41cb7b5bff37465b",
+    "-Cextra-filename=-41cb7b5bff37465b",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=stable_arm_crc32_intrinsics",
@@ -6770,7 +6770,7 @@ rustc_library("crc32fast-v1_5_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crc32fast-v1_5_0.license" ]
+  applicable_licenses = [ ":crc32fast-v1_5_2.license" ]
 }
 
 license("crc-catalog-v2_4_0.license") {
@@ -9637,7 +9637,7 @@ rustc_library("flate2-v1_1_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crc32fast-v1_5_0" ]
+  deps += [ ":crc32fast-v1_5_2" ]
   deps += [ ":miniz_oxide-v0_8_9" ]
   if (current_cpu == "wasm32" && !false) {
     deps += [ ":miniz_oxide-v0_8_9" ]
@@ -16840,7 +16840,7 @@ rustc_library("png-v0_18_1") {
 
   deps = []
   deps += [ ":bitflags-v2_13_2" ]
-  deps += [ ":crc32fast-v1_5_0" ]
+  deps += [ ":crc32fast-v1_5_2" ]
   deps += [ ":fdeflate-v0_3_7" ]
   deps += [ ":flate2-v1_1_9" ]
   deps += [ ":miniz_oxide-v0_8_9" ]
@@ -27412,7 +27412,7 @@ rustc_library("zip-v9_0_5") {
 
   deps = []
   deps += [ ":memchr-v2_8_3" ]
-  deps += [ ":crc32fast-v1_5_0" ]
+  deps += [ ":crc32fast-v1_5_2" ]
   deps += [ ":flate2-v1_1_9" ]
   deps += [ ":indexmap-v2_14_0" ]
   deps += [ ":typed-path-v0_12_3" ]
