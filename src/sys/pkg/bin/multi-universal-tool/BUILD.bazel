@@ -3,14 +3,14 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
 
 package(default_applicable_licenses = ["//:license"])
 
-# NOTE: `multi-universal-tool_test` and `multi-universal-tool-tests` remain in
-# BUILD.gn above the sentinel because `multi-universal-tool_test` transitively
-# depends on `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`),
-# which places two copies of `libvfs-<hash>.so` in Bazel `default_runfiles`.
-# TODO(https://fxbug.dev/574652780): Move :multi-universal-tool_test and :multi-universal-tool-tests to Bazel once the duplicate lib/libvfs-*.so packaging issue is fixed.
 rustc_binary(
     name = "multi-universal-tool",
     srcs = ["src/main.rs"],
@@ -27,4 +27,18 @@ rustc_binary(
         "//third_party/rust_crates/vendor:anyhow",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "multi-universal-tool_test",
+    crate = ":multi-universal-tool",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "multi-universal-tool-tests",
+    unit_tests = [":multi-universal-tool_test"],
 )

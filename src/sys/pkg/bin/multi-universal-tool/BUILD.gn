@@ -2,31 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/rust/rustc_test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-# Kept in GN because `multi-universal-tool_test` transitively depends on
-# `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`), which places
-# two copies of `libvfs-<hash>.so` in Bazel `default_runfiles` and causes
-# `fx_packaged_binary` + `fx_package` to fail with duplicate `lib/libvfs-*.so`.
-rustc_test("multi-universal-tool_test") {
-  output_name = "multi_universal_tool_bin_test"
-  edition = "2024"
-  source_root = "src/main.rs"
-
-  deps = [
-    "//src/sys/pkg/bin/pkgctl:lib",
-    "//src/sys/pkg/bin/update:lib",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:thiserror",
-  ]
-
-  sources = [ "src/main.rs" ]
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-}
-
-fuchsia_unittest_package("multi-universal-tool-tests") {
-  deps = [ ":multi-universal-tool_test" ]
+bazel_test_suite("multi-universal-tool-tests") {
+  target_tests =
+      [ "//src/sys/pkg/bin/multi-universal-tool:multi-universal-tool-tests" ]
 }
 
 group("hermetic_tests") {
