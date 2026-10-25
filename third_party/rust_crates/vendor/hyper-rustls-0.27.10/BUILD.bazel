@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "hyper-rustls",
     package_url = "https://github.com/rustls/hyper-rustls",
-    package_version = "0.27.9",
+    package_version = "0.27.10",
 )
 
 license(
@@ -86,7 +86,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.27.9",
+    version = "0.27.10",
     deps = [
         "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/http-1.5.0:http",

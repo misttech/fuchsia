@@ -999,25 +999,25 @@ group("hyper-1.11.1") {
 
 if (!(current_os == "fuchsia")) {
   group("hyper-rustls") {
-    public_deps = [ ":hyper-rustls-v0_27_9" ]
+    public_deps = [ ":hyper-rustls-v0_27_10" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("hyper-rustls-0.27.9") {
-    public_deps = [ ":hyper-rustls-v0_27_9" ]
+  group("hyper-rustls-0.27.10") {
+    public_deps = [ ":hyper-rustls-v0_27_10" ]
   }
 }
 
 if (current_os == "fuchsia") {
   group("hyper-rustls") {
-    public_deps = [ ":hyper-rustls-v0_27_9" ]
+    public_deps = [ ":hyper-rustls-v0_27_10" ]
   }
 }
 
 if (current_os == "fuchsia") {
-  group("hyper-rustls-0.27.9") {
-    public_deps = [ ":hyper-rustls-v0_27_9" ]
+  group("hyper-rustls-0.27.10") {
+    public_deps = [ ":hyper-rustls-v0_27_10" ]
   }
 }
 
@@ -12003,21 +12003,21 @@ rustc_library("hyper-v1_11_1") {
   applicable_licenses = [ ":hyper-v1_11_1.license" ]
 }
 
-license("hyper-rustls-v0_27_9.license") {
+license("hyper-rustls-v0_27_10.license") {
   public_package_name = "hyper_rustls"
   license_files = [
-    "//third_party/rust_crates/vendor/hyper-rustls-0.27.9/LICENSE",
-    "//third_party/rust_crates/vendor/hyper-rustls-0.27.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hyper-rustls-0.27.9/LICENSE-ISC",
-    "//third_party/rust_crates/vendor/hyper-rustls-0.27.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/hyper-rustls-0.27.10/LICENSE",
+    "//third_party/rust_crates/vendor/hyper-rustls-0.27.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hyper-rustls-0.27.10/LICENSE-ISC",
+    "//third_party/rust_crates/vendor/hyper-rustls-0.27.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("hyper-rustls-v0_27_9") {
+rustc_library("hyper-rustls-v0_27_10") {
   crate_name = "hyper_rustls"
   source_root =
-      "//third_party/rust_crates/vendor/hyper-rustls-0.27.9/src/lib.rs"
-  output_name = "hyper_rustls-12dbf7798ea24bda"
+      "//third_party/rust_crates/vendor/hyper-rustls-0.27.10/src/lib.rs"
+  output_name = "hyper_rustls-6b68d181388985b1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -12037,8 +12037,8 @@ rustc_library("hyper-rustls-v0_27_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=12dbf7798ea24bda",
-    "-Cextra-filename=-12dbf7798ea24bda",
+    "-Cmetadata=6b68d181388985b1",
+    "-Cextra-filename=-6b68d181388985b1",
     "--cfg=feature=\"http1\"",
     "--cfg=feature=\"ring\"",
     "--cfg=feature=\"rustls-native-certs\"",
@@ -12047,7 +12047,7 @@ rustc_library("hyper-rustls-v0_27_9") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hyper-rustls-v0_27_9.license" ]
+  applicable_licenses = [ ":hyper-rustls-v0_27_10.license" ]
 }
 
 license("hyper-util-v0_1_20.license") {
