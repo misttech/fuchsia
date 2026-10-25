@@ -1162,6 +1162,119 @@ static bool pmm_node_alloc_failure_reporting_test() {
   END_TEST;
 }
 
+namespace {
+
+struct PmmSlabWaiterArgs {
+  PmmNode* node;
+  size_t num_pages;
+  ktl::atomic<bool> started{false};
+  ktl::atomic<zx_status_t> status{ZX_ERR_INTERNAL};
+};
+
+int pmm_slab_waiter_thread(void* arg) {
+  auto* args = static_cast<PmmSlabWaiterArgs*>(arg);
+  VmPageDoublyLinkedList slab_pages;
+  args->started.store(true);
+
+  for (size_t i = 0; i < args->num_pages; ++i) {
+    zx::result<vm_page_t*> res = args->node->AllocPage(
+        PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT);  // NOLINT(bugprone-signed-bitwise)
+    while (res.status_value() == ZX_ERR_SHOULD_WAIT) {
+      res = args->node->WaitForSinglePageAllocation(Deadline::after_mono(ZX_SEC(5)),
+                                                    /*suspendable=*/true);
+    }
+    if (res.is_error()) {
+      if (!slab_pages.is_empty()) {
+        args->node->FreeList(&slab_pages);
+      }
+      args->status.store(res.status_value());
+      return 0;
+    }
+    slab_pages.push_back(res.value());
+  }
+
+  args->node->FreeList(&slab_pages);
+  args->status.store(ZX_OK);
+  return 0;
+}
+
+// Regression test for https://fxbug.dev/573602747:
+// Verifies that under checkerboard arena fragmentation (64 free pages with a maximum contiguous
+// run of 1 page) and PMM low-memory SHOULD_WAIT state:
+// 1. Multi-page contiguous arena searches (such as 64-page zx_vmo_create_contiguous) fail.
+// 2. A 64-page non-contiguous slab allocation using PMM_ALLOC_FLAG_CAN_WAIT blocks during the
+//    SHOULD_WAIT window instead of failing immediately with ZX_ERR_NO_MEMORY, and succeeds once
+//    reclamation clears the low-memory condition.
+bool pmm_fragmented_and_delayed_slab_alloc_test() {
+  BEGIN_TEST;
+
+  static constexpr size_t kSlabPages = 64;
+  static constexpr size_t kArenaPages = kSlabPages * 2;
+  const vaddr_t base = 0x2000000;
+  const pmm_arena_info_t info{
+      .name = "test arena",
+      .flags = 0,
+      .base = base,
+      .size = kArenaPages * kPageSize,
+  };
+
+  // Heap-allocate page_array (6 KiB) to avoid overflowing 8 KiB kernel stacks.
+  fbl::AllocChecker ac;
+  ktl::unique_ptr<vm_page_t[]> page_array(new (&ac) vm_page_t[kArenaPages]{});
+  ASSERT_TRUE(ac.check());
+  PmmArena arena;
+  arena.InitForTest(info, page_array.get());
+
+  // Fragment the arena in a checkerboard pattern: 64 free pages, 64 allocated pages, max
+  // contiguous run = 1 page.
+  for (size_t i = 1; i < kArenaPages; i += 2) {
+    SetPageStateRange(vm_page_state::ALLOC, &page_array[i], 1);
+  }
+
+  // Any multi-page contiguous search (including 64-page MMU page-table imports) must fail,
+  // while 64 individual 1-page allocations succeed.
+  EXPECT_EQ(nullptr, arena.FindFreeContiguous(kSlabPages, kPageShift));
+  EXPECT_EQ(nullptr, arena.FindFreeContiguous(2, kPageShift));
+  for (size_t i = 0; i < kSlabPages; ++i) {
+    vm_page_t* page = arena.FindFreeContiguous(1, kPageShift);
+    ASSERT_NONNULL(page);
+    SetPageStateRange(vm_page_state::ALLOC, page, 1);
+  }
+  EXPECT_EQ(nullptr, arena.FindFreeContiguous(1, kPageShift));
+
+  // Verify that a 64-page waitable allocation on a PmmNode in SHOULD_WAIT state blocks until
+  // the low-memory state is cleared and then completes all 64 page allocations.
+  ManagedPmmNode node;
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  PmmSlabWaiterArgs waiter_args{
+      .node = &node.node(),
+      .num_pages = kSlabPages,
+  };
+  Thread* thread =
+      Thread::Create("pmm slab waiter", pmm_slab_waiter_thread, &waiter_args, DEFAULT_PRIORITY);
+  ASSERT_NONNULL(thread);
+  thread->Resume();
+
+  while (!waiter_args.started.load()) {
+    Thread::Current::SleepRelative(ZX_MSEC(1));
+  }
+  Thread::Current::SleepRelative(ZX_MSEC(50));
+  // Still blocked waiting for low-memory SHOULD_WAIT to clear.
+  EXPECT_EQ(ZX_ERR_INTERNAL, waiter_args.status.load());
+
+  // Re-enable allocations with delay_pages = 0 so all 64 pages in the node can be allocated
+  // without re-tripping SHOULD_WAIT mid-slab.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, UINT64_MAX, 0));
+
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+  EXPECT_EQ(ZX_OK, waiter_args.status.load());
+
+  END_TEST;
+}
+
+}  // namespace
+
 UNITTEST_START_TESTCASE(pmm_tests)
 VM_UNITTEST(pmm_smoke_test)
 VM_UNITTEST(pmm_alloc_contiguous_one_test)
@@ -1185,6 +1298,7 @@ VM_UNITTEST(pmm_get_arena_info_test)
 VM_UNITTEST(pmm_arena_find_free_contiguous_test)
 VM_UNITTEST(pmm_alloc_append_test)
 VM_UNITTEST(pmm_page_to_from_index_test)
+VM_UNITTEST(pmm_fragmented_and_delayed_slab_alloc_test)
 UNITTEST_END_TESTCASE(pmm_tests, "pmm", "Physical memory manager tests")
 
 #if __has_feature(address_sanitizer)

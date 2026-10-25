@@ -4258,4 +4258,122 @@ mod pmm_node_rust {
             node.node().free_page(page, PmmOptDelayReuse::Default);
         }
     }
+
+    struct PmmSlabWaiterArgs {
+        node: *const PmmNode,
+        num_pages: usize,
+        started: *const AtomicBool,
+        status: *const AtomicI32,
+    }
+
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Send for PmmSlabWaiterArgs {}
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Sync for PmmSlabWaiterArgs {}
+
+    extern "C" fn pmm_slab_waiter_thread(arg: *mut core::ffi::c_void) -> i32 {
+        const WAIT_TIMEOUT_SECS: i64 = 5;
+
+        // SAFETY: `arg` is a valid pointer to `PmmSlabWaiterArgs` passed during `thread::spawn`
+        // that outlives this thread (which is joined before `PmmSlabWaiterArgs` is dropped).
+        let args = unsafe { &*(arg as *const PmmSlabWaiterArgs) };
+        // SAFETY: `args.node` points to a pinned `PmmNode` living for the test duration.
+        let node = unsafe { &*args.node };
+        // SAFETY: `args.started` points to a stack `AtomicBool` living for the test duration.
+        let started = unsafe { &*args.started };
+        // SAFETY: `args.status` points to a stack `AtomicI32` living for the test duration.
+        let status = unsafe { &*args.status };
+
+        stack_pin_init!(let slab_pages = VmPageDoublyLinkedList::new());
+        started.store(true, Ordering::SeqCst);
+
+        for _ in 0..args.num_pages {
+            let mut res = node.alloc_page(ALLOC_FLAG_ANY | ALLOC_FLAG_CAN_WAIT);
+            while matches!(res, Err(Status::SHOULD_WAIT)) {
+                res = node.wait_for_single_page_allocation(
+                    Deadline::after_mono(
+                        DurationMono::from_seconds(WAIT_TIMEOUT_SECS),
+                        TimerSlack::none(),
+                    ),
+                    /*suspendable=*/ true,
+                );
+            }
+            match res {
+                Ok(page) => {
+                    // SAFETY: `page` was just allocated from `node`, so it is valid and not in any
+                    // list.
+                    unsafe { slab_pages.as_mut().push_back_raw(page.as_non_null()) };
+                }
+                Err(err) => {
+                    if !slab_pages.is_empty() {
+                        // SAFETY: `slab_pages` contains only pages allocated from `node` above.
+                        unsafe {
+                            node.free_list(slab_pages.as_mut(), PmmOptDelayReuse::Default);
+                        }
+                    }
+                    status.store(err.into_raw(), Ordering::SeqCst);
+                    return 0;
+                }
+            }
+        }
+
+        // SAFETY: `slab_pages` contains only pages allocated from `node` above.
+        unsafe {
+            node.free_list(slab_pages.as_mut(), PmmOptDelayReuse::Default);
+        }
+        status.store(zx_types::ZX_OK, Ordering::SeqCst);
+        0
+    }
+
+    /// Verifies 64-page waitable allocation wakes and completes when SHOULD_WAIT clears.
+    #[test]
+    fn node_delayed_slab_alloc() {
+        // Regression test for https://fxbug.dev/573602747:
+        // Verifies that a 64-page waitable allocation on a `PmmNode` in the `SHOULD_WAIT`
+        // low-memory state blocks in `wait_for_single_page_allocation` until
+        // `set_free_memory_signal` clears the low-memory state, and then wakes and completes all 64
+        // page allocations.
+        const POLL_SLEEP_MS: i64 = 1;
+        const BLOCK_CHECK_SLEEP_MS: i64 = 50;
+
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        let started = AtomicBool::new(false);
+        let status = AtomicI32::new(Status::INTERNAL.into_raw());
+        let waiter_args = PmmSlabWaiterArgs {
+            node: node.node() as *const _,
+            num_pages: ManagedPmmNode::NUM_PAGES,
+            started: &started as *const _,
+            status: &status as *const _,
+        };
+
+        // SAFETY: `waiter_args` and its referenced atomics/node outlive the spawned thread, which
+        // is joined before returning from this test.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm slab waiter".as_ptr(),
+                pmm_slab_waiter_thread,
+                &waiter_args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        while !started.load(Ordering::SeqCst) {
+            let _ = thread::sleep_relative(DurationMono::from_millis(POLL_SLEEP_MS));
+        }
+        let _ = thread::sleep_relative(DurationMono::from_millis(BLOCK_CHECK_SLEEP_MS));
+        // Still blocked waiting for low-memory SHOULD_WAIT to clear.
+        expect_eq!(status.load(Ordering::SeqCst), Status::INTERNAL.into_raw());
+
+        // Re-enable allocations with delay_pages = 0 so all 64 pages in the node can be allocated
+        // without re-tripping SHOULD_WAIT mid-slab.
+        expect_true!(node.set_free_memory_signal(0, u64::MAX, 0));
+
+        // SAFETY: `thread` is a valid `Thread` handle spawned above.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+        expect_eq!(status.load(Ordering::SeqCst), zx_types::ZX_OK);
+    }
 }

@@ -586,8 +586,9 @@ mod pmm_arena_rust {
     use crate::vm::page_state::VmPageState;
     use ::page as kernel_page;
     use core::ptr::NonNull;
+    use fbl::Vector;
     use page_bindings::vm_page_state;
-    use unittest::{assert_true, unwrap_ok};
+    use unittest::{assert_true, expect_true, unwrap_ok};
     use zx_status::Status;
 
     unsafe fn set_page_state_range(state: vm_page_state, start: NonNull<VmPage>, count: usize) {
@@ -681,5 +682,57 @@ mod pmm_arena_rust {
         //
         // See there are none left.
         assert_true!(arena.find_free_contiguous(1, k_page_shift).is_none());
+    }
+
+    /// Tests single-page slab allocations on a checkerboard-fragmented arena.
+    #[test]
+    fn checkerboard_fragmented_slab_alloc() {
+        // Regression test for https://fxbug.dev/573602747:
+        // Verifies that on a checkerboard-fragmented arena (64 free pages, 64 allocated pages, max
+        // contiguous run = 1 page), multi-page contiguous searches fail while 64 individual 1-page
+        // allocations succeed.
+        const SLAB_PAGES: usize = 64;
+        const ARENA_PAGES: usize = SLAB_PAGES * 2;
+        const BASE: usize = 0x2000000;
+
+        let mut name = [0u8; 16];
+        name[..9].copy_from_slice(b"frag test");
+        let info = PmmArenaInfo {
+            name,
+            flags: 0,
+            base: PAddr(BASE),
+            size: ARENA_PAGES * kernel_page::SIZE,
+        };
+
+        // Heap-allocate `page_array` (~6 KiB) to avoid overflowing 8 KiB kernel stacks.
+        let mut page_array = Vector::<VmPage>::new();
+        assert_true!(page_array.resize_with(ARENA_PAGES, VmPage::default).is_ok());
+
+        let mut arena = PmmArena::new();
+        // SAFETY: `page_array` holds `ARENA_PAGES` initialized `VmPage` elements and outlives
+        // `arena`.
+        unsafe { arena.init_for_test(&info, page_array.as_mut_ptr()) };
+
+        // Fragment the arena in a checkerboard pattern: 64 free pages, 64 allocated pages, max
+        // contiguous run = 1 page.
+        for i in (1..ARENA_PAGES).step_by(2) {
+            // SAFETY: `i < ARENA_PAGES` is within bounds of `arena`'s `page_array` exclusively
+            // owned by this test.
+            unsafe { set_page_state_range(vm_page_state::ALLOC, arena.get_page(i), 1) };
+        }
+
+        // Any multi-page contiguous search (including 64-page MMU page-table imports) must fail,
+        // while 64 individual 1-page allocations succeed.
+        let page_shift = kernel_page::SHIFT as u8;
+        expect_true!(arena.find_free_contiguous(SLAB_PAGES, page_shift).is_none());
+        expect_true!(arena.find_free_contiguous(2, page_shift).is_none());
+        for _ in 0..SLAB_PAGES {
+            let page =
+                unwrap_ok!(arena.find_free_contiguous(1, page_shift).ok_or(Status::NO_MEMORY));
+            // SAFETY: `page` points to a valid element within `page_array` returned by
+            // `find_free_contiguous`.
+            unsafe { set_page_state_range(vm_page_state::ALLOC, page, 1) };
+        }
+        expect_true!(arena.find_free_contiguous(1, page_shift).is_none());
     }
 }

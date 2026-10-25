@@ -6151,4 +6151,43 @@ mod vmo_rs {
             expect_true!(test_with_vmo(unwrap_some!(VmObject::downcast_paged(vmo))));
         }
     }
+
+    /// Verifies pinning and per-page lookup on a 64-page non-contiguous VMO.
+    #[test]
+    fn vmo_non_contiguous_slab_pin_test() {
+        // Regression test for https://fxbug.dev/573602747:
+        // Verifies that a 64-page (256 KiB) non-contiguous VMO created with `ALLOC_FLAG_CAN_WAIT`
+        // and pinned via `PinnedVmObject::create` wires all 64 pages and allows per-page physical
+        // address lookup for 4 KiB page-table sub-allocation without requiring physical contiguity
+        // across pages.
+        const SLAB_PAGES: u64 = 64;
+        const SLAB_SIZE: u64 = SLAB_PAGES * PAGE_SIZE;
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let slab_vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY | pmm::ALLOC_FLAG_CAN_WAIT,
+            0,
+            SLAB_SIZE,
+        ));
+        expect_false!(slab_vmo.is_contiguous());
+
+        let pinned_slab = unwrap_ok!(PinnedVmObject::create(
+            VmObjectPaged::into_vm_object(slab_vmo.clone()),
+            0,
+            SLAB_SIZE,
+            /*write=*/ true,
+        ));
+        // SAFETY: `pinned_slab` keeps all pages in `[0, SLAB_SIZE)` pinned and attached to
+        // `slab_vmo` for the duration of this check.
+        expect_true!(unsafe { pages_in_wired_queue(&slab_vmo, 0, SLAB_SIZE) });
+
+        for i in 0..SLAB_PAGES {
+            let page_pa = unwrap_ok!(slab_vmo.lookup_contiguous(i * PAGE_SIZE, PAGE_SIZE));
+            expect_ne!(page_pa.0, 0);
+            expect_eq!(page_pa.0 & (PAGE_SIZE_USIZE - 1), 0);
+        }
+
+        drop(pinned_slab);
+    }
 }

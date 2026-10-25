@@ -5565,6 +5565,40 @@ static bool vmo_take_pages_spurious_parent_content_test() {
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/573602747:
+// Verifies that a 64-page (256 KiB) non-contiguous VMO created with PMM_ALLOC_FLAG_CAN_WAIT and
+// pinned via PinnedVmObject::Create wires all 64 pages and allows per-page physical address
+// lookup for 4 KiB page-table sub-allocation without requiring physical contiguity across pages.
+bool vmo_non_contiguous_slab_pin_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  constexpr size_t kSlabPages = 64;
+  constexpr size_t kSlabSize = kSlabPages * kPageSize;
+
+  fbl::RefPtr<VmObjectPaged> slab_vmo;
+  zx_status_t status = VmObjectPaged::Create(
+      PMM_ALLOC_FLAG_ANY | PMM_ALLOC_FLAG_CAN_WAIT,  // NOLINT(bugprone-signed-bitwise)
+      0u, kSlabSize, &slab_vmo);
+  ASSERT_OK(status);
+  ASSERT_TRUE(slab_vmo);
+  EXPECT_FALSE(slab_vmo->is_contiguous());
+
+  PinnedVmObject pinned_slab;
+  ASSERT_OK(PinnedVmObject::Create(slab_vmo, 0, kSlabSize, /*write=*/true, &pinned_slab));
+  EXPECT_TRUE(PagesInWiredQueue(slab_vmo.get(), 0, kSlabSize));
+
+  for (size_t i = 0; i < kSlabPages; ++i) {
+    paddr_t page_pa = 0;
+    EXPECT_OK(slab_vmo->LookupContiguous(i * kPageSize, kPageSize, &page_pa));
+    EXPECT_NE(0u, page_pa);
+    EXPECT_EQ(0u, page_pa & (kPageSize - 1));
+  }
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5649,6 +5683,7 @@ VM_UNITTEST(vmo_ever_pinned_hidden_parent_creation_test)
 VM_UNITTEST(vmo_ever_pinned_page_migration_test)
 VM_UNITTEST(vmo_ever_pinned_parent_merge_test)
 VM_UNITTEST(vmo_take_pages_spurious_parent_content_test)
+VM_UNITTEST(vmo_non_contiguous_slab_pin_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace
