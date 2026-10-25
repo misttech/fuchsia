@@ -56,3 +56,8 @@ python_library("libs") {
   source_root = "//src/testing/end_to_end/libs"
   library_deps = []
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
