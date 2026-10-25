@@ -37,6 +37,35 @@ var rustBinaryRules = map[string]bool{
 	"rustc_binary_host_tool": true,
 }
 
+// genericRustCrateNames are generic Rust target/crate names whose unit test
+// binaries (`<name>_test`, `<name>_lib_test`, `<name>_bin_test`,
+// `<name>_host_test`, etc.) collide in `${root_out_dir}` across packages when
+// no package-specific `name` or `crate_name` is set.
+var genericRustCrateNames = map[string]bool{
+	"a":                  true,
+	"bin":                true,
+	"bin_with_fake_time": true,
+	"client":             true,
+	"common":             true,
+	"core":               true,
+	"driver":             true,
+	"fidl":               true,
+	"framework":          true,
+	"lib":                true,
+	"main":               true,
+	"parser":             true,
+	"rust":               true,
+	"server":             true,
+	"test":               true,
+	"test_lib":           true,
+	"test_util":          true,
+	"testing":            true,
+	"tests":              true,
+	"util":               true,
+	"utils":              true,
+	"validator":          true,
+}
+
 // crateAttrs are attributes that a Rust test with `crate` takes from the
 // target named by `crate` instead of from the test, like rules_rust's
 // `rust_test()` does. rules_rust ignores the test's own `edition`.
@@ -353,12 +382,56 @@ func attrName(arg syntax.Expr) (string, bool) {
 // callStringAttr returns the value of a string literal attribute of a call.
 func callStringAttr(call *syntax.CallExpr, name string) (string, bool) {
 	for _, arg := range call.Args {
+		if skip, err := hasSkipAnnotation(arg); err != nil || skip {
+			continue
+		}
 		if attr, ok := attrName(arg); ok && attr == name {
 			val, err := stringLiteralValue(arg.(*syntax.BinaryExpr).Y)
 			return val, err == nil
 		}
 	}
 	return "", false
+}
+
+func isGenericRustTestOutputName(name string) bool {
+	s := strings.ReplaceAll(name, "-", "_")
+	for _, suffix := range []string{"_lib_test", "_bin_test", "_dylib_test", "_host_test", "_test"} {
+		if before, ok := strings.CutSuffix(s, suffix); ok {
+			s = before
+			break
+		}
+	}
+	return genericRustCrateNames[s]
+}
+
+// validateRustTestOutputName rejects `rustc_test` and `host_rustc_test`
+// targets whose effective GN binary output name is an undisambiguated generic
+// name (such as `lib_test`, `bin_test`, `core_test`, etc.) that would collide
+// in `${root_out_dir}` across packages.
+func validateRustTestOutputName(call *syntax.CallExpr, rawAttrs []string) error {
+	fn, ok := call.Fn.(*syntax.Ident)
+	if !ok || !rustTestRules[fn.Name] {
+		return nil
+	}
+	for _, raw := range rawAttrs {
+		if strings.HasPrefix(strings.TrimSpace(raw), "output_name") {
+			return nil
+		}
+	}
+	name, _ := callStringAttr(call, "name")
+	outputName := strings.ReplaceAll(name, "-", "_")
+	if cn, ok := callStringAttr(call, "crate_name"); ok && cn != "" {
+		outputName = strings.ReplaceAll(cn, "-", "_")
+	}
+	if !attrsToOmitByRules[fn.Name]["binary_name"] {
+		if bn, ok := callStringAttr(call, "binary_name"); ok && bn != "" {
+			outputName = strings.ReplaceAll(bn, "-", "_")
+		}
+	}
+	if isGenericRustTestOutputName(outputName) {
+		return fmt.Errorf("%s(name = %q) resolves to generic GN test binary name %q in ${root_out_dir}, which collides across packages; use a package-specific name or set crate_name", fn.Name, name, outputName)
+	}
+	return nil
 }
 
 // stringLiteralValue returns the value of a Starlark string literal.

@@ -41,6 +41,7 @@ rustc_binary(
 rustc_test(
     name = "bin_test",
     crate = ":bin",
+    crate_name = "fake_cobalt_bin_test",
     edition = "2024",
     deps = [
         "//src/lib/async-utils",

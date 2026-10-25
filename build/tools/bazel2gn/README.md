@@ -158,7 +158,10 @@ so `bazel2gn` translates test rules too:
     crate must be defined in the same `BUILD.bazel`, and its `srcs`,
     `crate_root`, `edition`, `rustc_env`, `deps`, `proc_macro_deps`,
     `link_deps`, and `compile_data` are inlined into the GN test, like
-    `rules_rust` does.
+    `rules_rust` does. Generic undisambiguated test binary names (such as
+    `lib_test` or `bin_test`) are rejected so test binaries from different
+    packages do not collide in `${root_out_dir}`; name the test after the crate
+    (or set `crate_name`, which maps to GN's `output_name`).
 *   `host_rustc_test()` and `host_go_test()` map to GN `rustc_test()` and
     `go_test()` inside `if (is_host)`. `data`, `test_data`, and `test_label`
     are errors, because the GN templates have no equivalent.

@@ -23,6 +23,7 @@ rustc_library(
 host_rustc_test(
     name = "test_util_test",
     crate = ":test_util",
+    crate_name = "assembly_test_util_lib_test",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//src/lib/assembly:__pkg__"],
     deps = [

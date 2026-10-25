@@ -317,6 +317,10 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		if err := validateFxComponent(expr); err != nil {
 			return nil, err
 		}
+	case "rustc_test", "host_rustc_test":
+		if err := validateRustTestOutputName(expr, rawAttrs); err != nil {
+			return nil, err
+		}
 	}
 	// TODO(jayzhuang): Handle package level settings, e.g. visibility.
 	if gnTemplateName == noGNEquivalent || bazelRule == "package" {

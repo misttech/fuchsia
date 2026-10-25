@@ -85,7 +85,7 @@ func TestRustTestBinaryCrate(t *testing.T) {
 )
 
 rustc_test(
-	name = "bin_test",
+	name = "foo_bin_test",
 	crate = ":bin",
 	edition = "2024",
 	deps = [":baz"],
@@ -100,7 +100,7 @@ rustc_test(
 		":bar",
 	]
 }
-rustc_test("bin_test") {
+rustc_test("foo_bin_test") {
 	sources = [
 		"src/main.rs",
 	]
@@ -211,6 +211,60 @@ rustc_test("ffx_foo_test") {
 	}
 }
 
+func TestRustTestDisambiguatedOutputName(t *testing.T) {
+	bazel := `load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+
+rustc_library(
+	name = "lib",
+	srcs = ["src/lib.rs"],
+	crate_name = "ffx_product",
+	edition = "2024",
+)
+
+rustc_test(
+	name = "lib_test",
+	crate = ":lib",
+	crate_name = "ffx_product_lib_test",
+)
+
+# @bazel2gn:raw_attribute:output_name = "ffx_product_host_lib_test"
+host_rustc_test(
+	name = "lib_host_test",
+	crate = ":lib",
+)`
+	wantGN := `rustc_library("lib") {
+	sources = [
+		"src/lib.rs",
+	]
+	crate_name = "ffx_product"
+	edition = "2024"
+}
+rustc_test("lib_test") {
+	sources = [
+		"src/lib.rs",
+	]
+	edition = "2024"
+	output_name = "ffx_product_lib_test"
+}
+if (is_host) {
+	rustc_test("lib_host_test") {
+		sources = [
+			"src/lib.rs",
+		]
+		edition = "2024"
+		output_name = "ffx_product_host_lib_test"
+	}
+}`
+	f := toSyntaxFile(t, bazel)
+	lines, err := bazel2gn.FileToGN(f)
+	if err != nil {
+		t.Fatalf("FileToGN() failed: %s", err)
+	}
+	if diff := cmp.Diff(strings.Join(lines, "\n"), wantGN); diff != "" {
+		t.Errorf("FileToGN() diff (-got +want):\n%s", diff)
+	}
+}
+
 func TestRustTestCrateErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -228,6 +282,40 @@ func TestRustTestCrateErrors(t *testing.T) {
 			bazel: `rustc_test(
 	name = "foo_test",
 	crate = ":foo",
+)`,
+		},
+		{
+			name: "generic lib_test without crate_name",
+			bazel: `rustc_library(
+	name = "lib",
+	srcs = ["src/lib.rs"],
+	crate_name = "ffx_product",
+)
+
+rustc_test(
+	name = "lib_test",
+	crate = ":lib",
+)`,
+		},
+		{
+			name: "generic core_test without crate_name",
+			bazel: `rustc_library(
+	name = "core",
+	srcs = ["src/lib.rs"],
+	crate_name = "fdf_core",
+)
+
+host_rustc_test(
+	name = "core_test",
+	crate = ":core",
+)`,
+		},
+		{
+			name: "standalone host_rustc_test with generic lib_test name",
+			bazel: `host_rustc_test(
+	name = "lib_test",
+	srcs = ["src/lib.rs"],
+	binary_name = "custom_bazel_only_name",
 )`,
 		},
 	} {

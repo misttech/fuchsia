@@ -81,6 +81,7 @@ rustc_test("lib_test") {
            "//third_party/rust_crates:tempfile",
          ]
   deps += [ "//src/sys/test_runners:tmp_storage" ]
+  output_name = "time_persistence_lib_test"
 }
 fuchsia_unittest_package("time-persistence-tests") {
   package_name = "time-persistence-tests-gn"

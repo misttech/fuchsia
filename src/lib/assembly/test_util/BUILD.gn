@@ -49,6 +49,7 @@ if (is_host) {
              "//third_party/rust_crates:serial_test",
              "//third_party/rust_crates:tempfile",
            ]
+    output_name = "assembly_test_util_lib_test"
     visibility = [
       ":*",
       "//src/lib/assembly:*",

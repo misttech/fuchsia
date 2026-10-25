@@ -57,6 +57,9 @@ set -euo pipefail
 #    library) is an sdk_*() library other than sdk_source_set() (Bazel `idk_cc_shared_library`,
 #    `idk_cc_static_library` and their `_zx` variants), whose tests stay dual-tested. When the
 #    target under test lives in another package, the INFO finding says this can't be verified.
+# 9. generic_test_output_name (error): flags any `rustc_test` or `host_rustc_test` in BUILD.bazel
+#    whose effective GN binary output name is an undisambiguated generic name (such as `lib_test`,
+#    `bin_test`, `core_test`, etc.) that collides in `${root_out_dir}` across packages.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -2413,6 +2416,50 @@ for pkg_dir in sorted(candidate_dirs):
             if crate_name and tname not in (f"{crate_name}_host_test", f"{crate_name}-host_test"):
                 hygiene(line, f"Host test wrapper `{tname}` does not follow the `<crate>_host_test` naming.",
                         f"Rename it to `{crate_name}_host_test` and update the BUILD.gn host_tests reference.")
+
+    GENERIC_RUST_CRATE_NAMES = {
+        "a", "bin", "bin_with_fake_time", "client", "common", "core", "driver",
+        "fidl", "framework", "lib", "main", "parser", "rust", "server", "test",
+        "test_lib", "test_util", "testing", "tests", "util", "utils",
+        "validator",
+    }
+
+    def is_generic_rust_test_output_name(name):
+        base = name.replace("-", "_")
+        for suffix in ("_lib_test", "_bin_test", "_dylib_test", "_host_test", "_test"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return base in GENERIC_RUST_CRATE_NAMES
+
+    gn_info = parse_gn_file(os.path.join(workdir, pkg_dir, "BUILD.gn"))
+    btext_lines = btext.splitlines()
+    for tname, (rule, kws, line) in calls.items():
+        if rule not in ("rustc_test", "host_rustc_test") or not (gn_info and gn_info["has_sentinel"]):
+            continue
+        idx = line - 2
+        while idx >= 0 and btext_lines[idx].strip().startswith("#"):
+            idx -= 1
+        if any("@bazel2gn:skip" in l or "raw_attribute:output_name" in l for l in btext_lines[idx + 1 : line - 1]):
+            continue
+        out_name = (str_val(kws.get("binary_name")) if rule == "rustc_test" else None) or str_val(kws.get("crate_name")) or tname
+        effective_out = out_name.replace("-", "_")
+        if is_generic_rust_test_output_name(effective_out):
+            findings.append({
+                "source": "migration_sanity",
+                "category": "generic_test_output_name",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": line,
+                "message": (
+                    f"`{rule}(name = \"{tname}\")` in '{bazel_rel}' resolves to generic test binary name "
+                    f"`{effective_out}` in `${{root_out_dir}}`, which collides across packages."
+                ),
+                "remediation": (
+                    f"Use a package-specific `name` or set `crate_name` on `{rule}(name = \"{tname}\")` in "
+                    f"'{bazel_rel}' and re-run `fx bazel2gn -d {pkg_dir}`."
+                ),
+            })
 
 print(json.dumps(findings, indent=2))
 PYEOF

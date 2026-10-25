@@ -25,19 +25,14 @@ rustc_binary(
 
 host_rustc_test(
     name = "bin_test",
-    srcs = ["src/main.rs"],
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
-    crate_root = "src/main.rs",
-    edition = "2024",
+    crate = ":bin",
+    crate_name = "expectation_file_preprocessor_bin_test",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
-        "//src/lib/testing/expectation/ser",
-        "//third_party/rust_crates/vendor:argh",
-        "//third_party/rust_crates/vendor:glob",
         "//third_party/rust_crates/vendor:pathdiff",
         "//third_party/rust_crates/vendor:pretty_assertions",
         "//third_party/rust_crates/vendor:serde_json",
-        "//third_party/rust_crates/vendor:serde_json5",
         "//third_party/rust_crates/vendor:tempfile",
     ],
 )

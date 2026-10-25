@@ -58,18 +58,21 @@ if (is_host) {
 if (is_host) {
   rustc_test("bin_test") {
     sources = [ "src/main.rs" ]
-    configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    source_root = "src/main.rs"
     edition = "2024"
     deps = [
-      "//src/lib/testing/expectation/ser",
-      "//third_party/rust_crates:argh",
-      "//third_party/rust_crates:glob",
-      "//third_party/rust_crates:pathdiff",
-      "//third_party/rust_crates:pretty_assertions",
-      "//third_party/rust_crates:serde_json",
-      "//third_party/rust_crates:serde_json5",
-      "//third_party/rust_crates:tempfile",
-    ]
+             "//src/lib/testing/expectation/ser",
+             "//third_party/rust_crates:argh",
+             "//third_party/rust_crates:glob",
+             "//third_party/rust_crates:serde_json5",
+           ] +
+           [
+             "//third_party/rust_crates:pathdiff",
+             "//third_party/rust_crates:pretty_assertions",
+             "//third_party/rust_crates:serde_json",
+             "//third_party/rust_crates:tempfile",
+           ]
+    source_root = "src/main.rs"
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    output_name = "expectation_file_preprocessor_bin_test"
   }
 }

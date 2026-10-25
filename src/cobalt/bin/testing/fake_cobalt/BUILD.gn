@@ -82,6 +82,7 @@ rustc_test("bin_test") {
            "//src/lib/fuchsia-async",
          ]
   source_root = "src/main.rs"
+  output_name = "fake_cobalt_bin_test"
 }
 fuchsia_component_manifest("component_v2_manifest") {
   testonly = true

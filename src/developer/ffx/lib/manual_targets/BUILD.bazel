@@ -47,6 +47,7 @@ rustc_library(
 host_rustc_test(
     name = "lib_test",
     crate = ":lib",
+    crate_name = "manual_targets_lib_test",
     edition = "2024",
     visibility = ["//src/developer/ffx:__pkg__"],
     deps = [

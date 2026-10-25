@@ -102,6 +102,7 @@ if (is_host) {
              "//third_party/rust_crates:pretty_assertions",
              "//third_party/rust_crates:serial_test",
            ]
+    output_name = "manual_targets_lib_test"
     visibility = [
       ":*",
       "//src/developer/ffx:*",

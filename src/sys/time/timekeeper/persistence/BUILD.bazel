@@ -33,6 +33,7 @@ rustc_test(
     # maps to `deps` in GN via bazel2gn.
     aspect_hints = ["//src/sys/test_runners:tmp_storage"],
     crate = ":lib",
+    crate_name = "time_persistence_lib_test",
     edition = "2024",
     deps = [
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
