@@ -103,6 +103,6 @@ rust_library(
         "//third_party/rust_crates/vendor/signature-3.0.0:signature",
         "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
         "//third_party/rust_crates/vendor/typed-builder-0.23.2:typed_builder",
-        "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
+        "//third_party/rust_crates/vendor/uuid-1.27.0:uuid",
     ],
 )

@@ -529,7 +529,7 @@ _NORMAL_DEPENDENCIES = {
             "uom": Label("//third_party/rust_crates/vendor/uom-0.38.0:uom"),
             "url": Label("//third_party/rust_crates/vendor/url-2.5.8:url"),
             "utf8parse": Label("//third_party/rust_crates/vendor/utf8parse-0.2.2:utf8parse"),
-            "uuid": Label("//third_party/rust_crates/vendor/uuid-1.23.3:uuid"),
+            "uuid": Label("//third_party/rust_crates/vendor/uuid-1.27.0:uuid"),
             "valico": Label("//third_party/rust_crates/vendor/valico-4.0.0:valico"),
             "vt100": Label("//third_party/rust_crates/vendor/vt100-0.16.2:vt100"),
             "vte": Label("//third_party/rust_crates/vendor/vte-0.15.0:vte"),

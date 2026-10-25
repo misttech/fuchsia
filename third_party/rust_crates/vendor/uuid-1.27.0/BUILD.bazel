@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "uuid",
     package_url = "https://github.com/uuid-rs/uuid",
-    package_version = "1.23.3",
+    package_version = "1.27.0",
 )
 
 license(
@@ -79,7 +79,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.23.3",
+    version = "1.27.0",
     deps = [
         "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
         "//third_party/rust_crates/vendor/serde_core-1.0.229:serde_core",

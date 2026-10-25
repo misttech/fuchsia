@@ -3506,14 +3506,14 @@ alias(
 )
 
 alias(
-    name = "uuid-1.23.3",
-    actual = "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
+    name = "uuid-1.27.0",
+    actual = "//third_party/rust_crates/vendor/uuid-1.27.0:uuid",
     tags = ["manual"],
 )
 
 alias(
     name = "uuid",
-    actual = "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
+    actual = "//third_party/rust_crates/vendor/uuid-1.27.0:uuid",
     tags = ["manual"],
 )
 

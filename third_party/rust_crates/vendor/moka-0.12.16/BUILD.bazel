@@ -86,6 +86,6 @@ rust_library(
         "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
         "//third_party/rust_crates/vendor/smallvec-1.15.2:smallvec",
         "//third_party/rust_crates/vendor/tagptr-0.2.0:tagptr",
-        "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
+        "//third_party/rust_crates/vendor/uuid-1.27.0:uuid",
     ],
 )

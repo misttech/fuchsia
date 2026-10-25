@@ -74,6 +74,6 @@ rust_library(
         "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/crc-3.4.0:crc",
         "//third_party/rust_crates/vendor/simple-bytes-0.2.14:simple_bytes",
-        "//third_party/rust_crates/vendor/uuid-1.23.3:uuid",
+        "//third_party/rust_crates/vendor/uuid-1.27.0:uuid",
     ],
 )

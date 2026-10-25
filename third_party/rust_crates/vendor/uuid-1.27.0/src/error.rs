@@ -87,10 +87,11 @@ impl<'a> InvalidUuid<'a> {
                     return Error(ErrorKind::ParseChar { character, index });
                 }
             }
-            (
-                RequestedUuid::Any | RequestedUuid::Urn,
-                [b'u', b'r', b'n', b':', b'u', b'u', b'i', b'd', b':', ..],
-            ) => ("urn:uuid:".len()..self.0.len(), RequestedUuid::Urn),
+            (RequestedUuid::Any | RequestedUuid::Urn, bytes)
+                if bytes.len() >= 9 && bytes[..9].eq_ignore_ascii_case(b"urn:uuid:") =>
+            {
+                ("urn:uuid:".len()..self.0.len(), RequestedUuid::Urn)
+            }
             (RequestedUuid::Urn, _) => {
                 return Error(ErrorKind::ParseChar {
                     character: input_str.chars().next().unwrap(),
@@ -104,17 +105,15 @@ impl<'a> InvalidUuid<'a> {
         let mut group_bounds = [0; 4];
 
         for (index, character) in input_str[bounds.clone()].char_indices() {
-            let byte = character as u8;
-
-            match (format, byte.to_ascii_lowercase()) {
-                (_, b'0'..=b'9' | b'a'..=b'f') => (),
-                (RequestedUuid::Simple, b'-') => {
+            match (format, character) {
+                (_, character) if character.is_ascii_hexdigit() => (),
+                (RequestedUuid::Simple, '-') => {
                     return Error(ErrorKind::ParseChar {
                         character: '-',
                         index: index + bounds.start,
                     })
                 }
-                (_, b'-') => {
+                (_, '-') => {
                     if format == RequestedUuid::Any {
                         format = RequestedUuid::Hyphenated;
                     }

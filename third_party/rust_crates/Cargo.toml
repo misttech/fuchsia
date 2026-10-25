@@ -274,7 +274,7 @@ untrusted = "0.9"
 uom = "0.38.0"
 url = { version = "2.5.8", features = ["serde"] }
 utf8parse = "0.2.2"
-uuid = { version = "1.23.3", features = ["serde", "v4"] }
+uuid = { version = "1.27.0", features = ["serde", "v4"] }
 valico = "4.0.0"
 vt100 = "0.16.2"
 vte = "0.15"
@@ -1441,7 +1441,7 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.unicode-xid."0.2.6"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.uuid."1.23.3"]
+[gn.package.uuid."1.27.0"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.valico."4.0.0"]

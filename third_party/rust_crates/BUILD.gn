@@ -2730,11 +2730,11 @@ group("utf8parse-0.2.2") {
 }
 
 group("uuid") {
-  public_deps = [ ":uuid-v1_23_3" ]
+  public_deps = [ ":uuid-v1_27_0" ]
 }
 
-group("uuid-1.23.3") {
-  public_deps = [ ":uuid-v1_23_3" ]
+group("uuid-1.27.0") {
+  public_deps = [ ":uuid-v1_27_0" ]
 }
 
 group("valico") {
@@ -5320,7 +5320,7 @@ rustc_library("bt-common-v0_0_1") {
   deps = []
   deps += [ ":futures-v0_3_34" ]
   deps += [ ":thiserror-v2_0_21" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = []
 
@@ -10919,7 +10919,7 @@ rustc_library("gpt-v4_1_0") {
   deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":crc-v3_4_0" ]
   deps += [ ":simple-bytes-v0_2_14" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = []
 
@@ -14296,7 +14296,7 @@ rustc_library("moka-v0_12_16") {
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":tagptr-v0_2_0" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = []
 
@@ -15270,7 +15270,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":signature-v3_0_0" ]
   deps += [ ":thiserror-v2_0_21" ]
   deps += [ ":typed-builder-v0_23_2" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = []
 
@@ -19223,7 +19223,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":rend-v0_5_4" ]
   deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]
   deps += [ ":tinyvec-v1_13_3" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = []
 
@@ -19244,7 +19244,7 @@ rustc_library("rkyv-v0_8_18") {
     bytes_1 = ":bytes-v1_12_1.actual"
     indexmap_2 = ":indexmap-v2_14_0.actual"
     tinyvec_1 = ":tinyvec-v1_13_3.actual"
-    uuid_1 = ":uuid-v1_23_3.actual"
+    uuid_1 = ":uuid-v1_27_0.actual"
   }
   visibility = [ ":*" ]
 
@@ -25965,16 +25965,16 @@ rustc_library("utf8parse-v0_2_2") {
   applicable_licenses = [ ":utf8parse-v0_2_2.license" ]
 }
 
-license("uuid-v1_23_3.license") {
+license("uuid-v1_27_0.license") {
   public_package_name = "uuid"
   license_files =
-      [ "//third_party/rust_crates/vendor/uuid-1.23.3/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/uuid-1.27.0/LICENSE-APACHE" ]
 }
 
-rustc_library("uuid-v1_23_3") {
+rustc_library("uuid-v1_27_0") {
   crate_name = "uuid"
-  source_root = "//third_party/rust_crates/vendor/uuid-1.23.3/src/lib.rs"
-  output_name = "uuid-46290d4cfad17d28"
+  source_root = "//third_party/rust_crates/vendor/uuid-1.27.0/src/lib.rs"
+  output_name = "uuid-6592596d8b542bb3"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -25996,8 +25996,8 @@ rustc_library("uuid-v1_23_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=46290d4cfad17d28",
-    "-Cextra-filename=-46290d4cfad17d28",
+    "-Cmetadata=6592596d8b542bb3",
+    "-Cextra-filename=-6592596d8b542bb3",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"rng\"",
     "--cfg=feature=\"serde\"",
@@ -26007,7 +26007,7 @@ rustc_library("uuid-v1_23_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":uuid-v1_23_3.license" ]
+  applicable_licenses = [ ":uuid-v1_27_0.license" ]
 }
 
 license("valico-v4_0_0.license") {
@@ -26042,7 +26042,7 @@ rustc_library("valico-v4_0_0") {
   deps += [ ":serde_json-v1_0_151" ]
   deps += [ ":uritemplate-next-v0_2_0" ]
   deps += [ ":url-v2_5_8" ]
-  deps += [ ":uuid-v1_23_3" ]
+  deps += [ ":uuid-v1_27_0" ]
 
   rustenv = [ "OUT_DIR=../../../../compat/valico" ]
 
