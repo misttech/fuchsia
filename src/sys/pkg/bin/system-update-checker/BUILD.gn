@@ -2,96 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
-import("//build/rust/rustc_test.gni")
 
-# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
-# target, so that `:system_update_checker_config` refers to the same label in
-# both builds.
-fuchsia_component_manifest("manifest") {
-  component_name = "system-update-checker"
-  manifest = "meta/system-update-checker.cml"
-}
-
-fuchsia_component("component") {
-  cm_label = ":manifest"
-  deps = [ ":bin" ]
-}
-
+# Kept in GN because `:bin` depends on `rustc_dylib`
+# `//src/lib/fuchsia-component`, which `collect_debug_symbols_manifest_aspect`
+# does not yet collect for assembled `fx_package` targets.
 fuchsia_package("system-update-checker") {
   deps = [ ":component" ]
-}
-
-# Kept in GN because `bin_test` transitively depends on
-# `//src/storage/lib/vfs/rust:vfs` (`rustc_dylib("vfs_dylib")`), which places
-# two copies of `libvfs-<hash>.so` in Bazel `default_runfiles` and causes
-# `fx_packaged_binary` + `fx_package` to fail with duplicate
-# `lib/libvfs-*.so`.
-rustc_test("bin_test") {
-  output_name = "system_update_checker_bin_test"
-  edition = "2024"
-  source_root = "src/main.rs"
-  deps = [
-    ":system_update_checker_config",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-    "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
-    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
-    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
-    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
-    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/rust",
-    "//src/lib/diagnostics/inspect/runtime/rust",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
-    "//src/lib/fdio/rust:fdio",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-sync",
-    "//src/lib/fuchsia-url",
-    "//src/lib/mapped-vmo",
-    "//src/sys/lib/fidl-fuchsia-pkg-ext",
-    "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
-    "//src/sys/pkg/lib/async-generator",
-    "//src/sys/pkg/lib/event-queue",
-    "//src/sys/pkg/lib/fidl-fuchsia-update-ext",
-    "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
-    "//src/sys/pkg/lib/fuchsia-hash",
-    "//src/sys/pkg/lib/update-package",
-    "//src/sys/pkg/testing/mock-paver",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:http",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:maplit",
-    "//third_party/rust_crates:proptest",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:sha2",
-    "//third_party/rust_crates:tempfile",
-    "//third_party/rust_crates:test-case",
-    "//third_party/rust_crates:thiserror",
-  ]
-  sources = [
-    "src/apply.rs",
-    "src/channel.rs",
-    "src/channel_handler.rs",
-    "src/check.rs",
-    "src/completion_responder.rs",
-    "src/connect.rs",
-    "src/errors.rs",
-    "src/main.rs",
-    "src/rate_limiter.rs",
-    "src/update_manager.rs",
-    "src/update_monitor.rs",
-    "src/update_service.rs",
-  ]
-  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 fuchsia_unittest_component("system-update-checker-bin-test") {
@@ -100,6 +18,7 @@ fuchsia_unittest_component("system-update-checker-bin-test") {
 }
 
 fuchsia_test_package("system-update-checker-tests") {
+  package_name = "system-update-checker-tests-gn"
   test_components = [ ":system-update-checker-bin-test" ]
   test_specs = {
     log_settings = {
@@ -108,9 +27,17 @@ fuchsia_test_package("system-update-checker-tests") {
   }
 }
 
+bazel_test_suite("bazel_tests") {
+  target_tests =
+      [ "//src/sys/pkg/bin/system-update-checker:system-update-checker-tests" ]
+}
+
 group("hermetic_tests") {
   testonly = true
-  public_deps = [ ":system-update-checker-tests" ]
+  public_deps = [
+    ":bazel_tests",
+    ":system-update-checker-tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -194,6 +121,86 @@ rustc_binary("bin") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+fuchsia_component_manifest("manifest") {
+  component_name = "system-update-checker"
+  manifest = "meta/system-update-checker.cml"
+}
 fuchsia_structured_config_rust_lib("system_update_checker_config") {
   cm_label = ":manifest"
+}
+fuchsia_component("component") {
+  cm_label = ":manifest"
+  component_name = "system-update-checker"
+  visibility = [
+    ":*",
+    "//src/sys/pkg/tests/system-update-checker:*",
+  ]
+  deps = [ ":bin" ]
+}
+rustc_test("bin_test") {
+  sources = [
+    "src/apply.rs",
+    "src/channel.rs",
+    "src/channel_handler.rs",
+    "src/check.rs",
+    "src/completion_responder.rs",
+    "src/connect.rs",
+    "src/errors.rs",
+    "src/main.rs",
+    "src/rate_limiter.rs",
+    "src/update_manager.rs",
+    "src/update_monitor.rs",
+    "src/update_service.rs",
+  ]
+  edition = "2024"
+  deps = [
+           ":system_update_checker_config",
+           "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+           "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
+           "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+           "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
+           "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+           "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
+           "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
+           "//sdk/rust/zx",
+           "//src/lib/diagnostics/inspect/contrib/rust",
+           "//src/lib/diagnostics/inspect/runtime/rust",
+           "//src/lib/diagnostics/inspect/rust",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//src/lib/fuchsia-component",
+           "//src/lib/fuchsia-sync",
+           "//src/lib/fuchsia-url",
+           "//src/lib/mapped-vmo",
+           "//src/sys/lib/fidl-fuchsia-pkg-ext",
+           "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+           "//src/sys/pkg/lib/async-generator",
+           "//src/sys/pkg/lib/event-queue",
+           "//src/sys/pkg/lib/fidl-fuchsia-update-ext",
+           "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+           "//src/sys/pkg/lib/fuchsia-hash",
+           "//src/sys/pkg/lib/update-package",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:http",
+           "//third_party/rust_crates:log",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:serde_json",
+           "//third_party/rust_crates:sha2",
+           "//third_party/rust_crates:thiserror",
+         ] + [
+           "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+           "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+           "//src/lib/fdio/rust:fdio",
+           "//src/sys/pkg/testing/mock-paver",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:maplit",
+           "//third_party/rust_crates:proptest",
+           "//third_party/rust_crates:tempfile",
+           "//third_party/rust_crates:test-case",
+         ]
+  source_root = "src/main.rs"
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  output_name = "system_update_checker_bin_test"
 }
