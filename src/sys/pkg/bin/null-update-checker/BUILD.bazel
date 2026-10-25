@@ -4,13 +4,22 @@
 
 load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
     "fx_component_manifest",
 )
 load(
     "//build/bazel/rules/components:structured_config.bzl",
     "fuchsia_structured_config_rust_lib",
 )
-load("//build/bazel/rules/rust:defs.bzl", "rustc_binary")
+load(
+    "//build/bazel/rules/packages:fx_package.bzl",
+    "fx_package",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -28,7 +37,7 @@ rustc_binary(
     crate_name = "null_update_checker",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    visibility = ["//visibility:private"],
+    tags = ["manual"],
     deps = [
         ":null_update_checker_config",
         "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
@@ -47,9 +56,16 @@ rustc_binary(
     ],
 )
 
-# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
-# above the bazel2gn sentinel in BUILD.gn instead.
 # @bazel2gn:skip
+fx_packaged_binary(
+    name = "null_update_checker_packaged_bin",
+    binary = ":bin",
+    binary_name = "null_update_checker",
+)
+
+# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
+# target, so that `:null_update_checker_config` refers to the same label in
+# both builds.
 fx_component_manifest(
     name = "manifest",
     component_name = "null-update-checker",
@@ -57,6 +73,24 @@ fx_component_manifest(
         "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/null-update-checker.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    deps = [
+        ":null_update_checker_packaged_bin",
+    ],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "package",
+    package_name = "null-update-checker",
+    components = [
+        ":component",
+    ],
+    visibility = ["//bundles/assembly:__subpackages__"],
 )
 
 fuchsia_structured_config_rust_lib(
