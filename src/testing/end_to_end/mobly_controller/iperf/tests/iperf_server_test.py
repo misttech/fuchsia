@@ -43,7 +43,9 @@ class IPerfServerModuleTest(unittest.TestCase):
             iperf_server.create(["not_a_port"])  # type: ignore[list-item]
 
     @mock.patch("libs.ssh.connection.SshConnection")
-    @mock.patch("antlion.utils.get_interface_based_on_ip", return_value="eth1")
+    @mock.patch(
+        "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
+    )
     @mock.patch(
         "libs.commands.command.LinuxCommand.available", return_value=False
     )
@@ -68,7 +70,9 @@ class IPerfServerModuleTest(unittest.TestCase):
         self.assertEqual(server.test_interface, "lan")
 
     @mock.patch("libs.ssh.connection.SshConnection")
-    @mock.patch("antlion.utils.get_interface_based_on_ip", return_value="eth1")
+    @mock.patch(
+        "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
+    )
     @mock.patch(
         "libs.commands.command.LinuxCommand.available", return_value=False
     )
@@ -246,7 +250,9 @@ class IPerfServerOverSshTest(unittest.TestCase):
             }
         )
 
-    @mock.patch("antlion.utils.get_interface_based_on_ip", return_value="eth1")
+    @mock.patch(
+        "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
+    )
     def test_raspberry_pi_setup_with_nmcli_and_journalctl(
         self, _mock_net: mock.Mock
     ) -> None:
@@ -339,8 +345,10 @@ class IPerfServerOverSshTest(unittest.TestCase):
                     ignore_status=True,
                 )
 
-    @mock.patch("antlion.utils.get_interface_based_on_ip", return_value="eth1")
-    @mock.patch("antlion.utils.renew_linux_ip_address")
+    @mock.patch(
+        "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
+    )
+    @mock.patch("iperf.iperf_server.renew_linux_ip_address")
     def test_renew_test_interface_ip_address(
         self, mock_renew: mock.Mock, _mock_net: mock.Mock
     ) -> None:
@@ -414,7 +422,7 @@ class IPerfServerOverSshTest(unittest.TestCase):
         with mock.patch(
             "libs.commands.command.LinuxCommand.available", return_value=True
         ), mock.patch(
-            "antlion.utils.get_interface_based_on_ip", return_value="eth1"
+            "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
         ):
             server = IPerfServerOverSsh(
                 ssh_settings=ssh_cfg,
@@ -468,7 +476,7 @@ class IPerfServerOverSshTest(unittest.TestCase):
         with mock.patch(
             "libs.commands.command.LinuxCommand.available", return_value=True
         ), mock.patch(
-            "antlion.utils.get_interface_based_on_ip", return_value="eth1"
+            "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
         ):
             server = IPerfServerOverSsh(
                 ssh_settings=ssh_cfg,
@@ -500,7 +508,7 @@ class IPerfServerOverSshTest(unittest.TestCase):
         with mock.patch(
             "libs.commands.command.LinuxCommand.available", return_value=True
         ), mock.patch(
-            "antlion.utils.get_interface_based_on_ip", return_value="eth1"
+            "iperf.iperf_server.get_interface_based_on_ip", return_value="eth1"
         ):
             server = IPerfServerOverSsh(
                 ssh_settings=ssh_cfg,

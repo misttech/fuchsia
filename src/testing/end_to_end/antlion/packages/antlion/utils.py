@@ -9,7 +9,6 @@ from __future__ import annotations
 import ipaddress
 import time
 
-from libs.proc.runner import CalledProcessError, Runner
 from libs.ssh.connection import SshConnection
 
 # Default max seconds it takes to Duplicate Address Detection to finish before
@@ -140,57 +139,3 @@ def get_addr(
     raise AddressTimeout(
         f'No available "{addr_type}" address after {timeout_sec}s'
     )
-
-
-def get_interface_based_on_ip(runner: Runner, desired_ip_address: str) -> str:
-    """Gets the interface for a particular IP
-
-    Args:
-        comm_channel: How to send commands to a device.  Can be ssh, adb serial,
-            etc.  Must have the run function implemented.
-        desired_ip_address: The IP address that is being looked for on a device.
-
-    Returns:
-        The name of the test interface.
-
-    Raises:
-        RuntimeError: when desired_ip_address is not found
-    """
-
-    desired_ip_address = desired_ip_address.split("%", 1)[0]
-    ip = runner.run(["ip", "-o", "addr", "show"])
-    for line in ip.stdout.decode("utf-8").splitlines():
-        if desired_ip_address in line:
-            return line.split()[1]
-    raise RuntimeError(
-        f'IP "{desired_ip_address}" not found in list:\n{ip.stdout.decode("utf-8")}'
-    )
-
-
-def renew_linux_ip_address(runner: Runner, interface: str) -> None:
-    # Ensure the interface is not empty, so we don't accidentally target _all_ interfaces.
-    if not interface:
-        raise ValueError("Interface name must not be empty.")
-
-    # If dhcpcd is managing this interface (common on Raspberry Pi OS), release
-    # its lease so it stops managing the interface and does not race with dhclient.
-    try:
-        runner.run(f"sudo dhcpcd -k {interface}")
-    except CalledProcessError:
-        # dhcpcd may not be installed or running on this device.
-        pass
-
-    # Ensure interface is UP.
-    runner.run(f"sudo ip link set {interface} up")
-    # Release any existing lease on the DHCP server and stop the running
-    # dhclient daemon to prevent multiple competing daemons.
-    try:
-        runner.run(f"sudo dhclient -r {interface}")
-    except CalledProcessError:
-        # No prior dhclient process or lease to release.
-        pass
-    # Flush existing IPv4 addresses to ensure stale leases from previous networks
-    # are removed, preventing MultipleAddresses errors when a new lease is assigned.
-    runner.run(f"sudo ip -4 addr flush dev {interface}")
-    # Negotiate a fresh lease for the current network scope and start a new daemon.
-    runner.run(f"sudo dhclient {interface}")
