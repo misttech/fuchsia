@@ -1,7 +1,7 @@
 //! [Electronic Codebook][1] (ECB) mode.
 //!
-//! <img src="https://user-images.githubusercontent.com/7829098/171395128-0ff53e16-1969-4848-8db4-3fc4fd0cbbb4.svg" width="49%" />
-//! <img src="https://user-images.githubusercontent.com/7829098/171395113-219f6995-4e2d-4f4a-bb10-d6a229c10989.svg" width="49%"/>
+//! <img src="https://raw.githubusercontent.com/RustCrypto/media/26acc39f/img/block-modes/ecb_enc.svg" width="49%" />
+//! <img src="https://raw.githubusercontent.com/RustCrypto/media/26acc39f/img/block-modes/ecb_dec.svg" width="49%"/>
 //!
 //! Mode functionality is accessed using traits from re-exported [`cipher`] crate.
 //!
@@ -57,8 +57,7 @@
 //! # }
 //! ```
 //!
-//! With enabled `alloc` feature you also can use allocating convenience
-//! methods:
+//! With enabled `alloc` feature you also can use allocating convenience methods:
 //! ```
 //! # #[cfg(all(feature = "alloc", feature = "block-padding"))] {
 //! # use aes::cipher::{block_padding::Pkcs7, BlockModeDecrypt, BlockModeEncrypt, KeyInit};
@@ -86,13 +85,10 @@
 
 #![no_std]
 #![doc(
-    html_logo_url = "https://raw.githubusercontent.com/RustCrypto/media/26acc39f/logo.svg",
-    html_favicon_url = "https://raw.githubusercontent.com/RustCrypto/media/26acc39f/logo.svg",
-    html_root_url = "https://docs.rs/ECB/0.2.0"
+    html_logo_url = "https://raw.githubusercontent.com/RustCrypto/media/6ee8e381/logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/RustCrypto/media/6ee8e381/logo.svg"
 )]
-#![forbid(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs, rust_2018_idioms)]
 
 mod decrypt;
 mod encrypt;

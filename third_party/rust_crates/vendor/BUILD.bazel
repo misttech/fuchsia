@@ -844,14 +844,14 @@ alias(
 )
 
 alias(
-    name = "ecb-0.2.0",
-    actual = "//third_party/rust_crates/vendor/ecb-0.2.0:ecb",
+    name = "ecb-0.2.1",
+    actual = "//third_party/rust_crates/vendor/ecb-0.2.1:ecb",
     tags = ["manual"],
 )
 
 alias(
     name = "ecb",
-    actual = "//third_party/rust_crates/vendor/ecb-0.2.0:ecb",
+    actual = "//third_party/rust_crates/vendor/ecb-0.2.1:ecb",
     tags = ["manual"],
 )
 

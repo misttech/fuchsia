@@ -6,27 +6,27 @@
 ![Rust Version][rustc-image]
 [![Build Status][build-image]][build-link]
 
-Generic implementation of the [Electronic Codebook][ECB] (ECB) block cipher
+Generic implementation of the [Electronic Codebook][ECB] (CBC) block cipher
 mode of operation.
 
-<img src="https://github.com/magic-akari/ecb/assets/7829098/2d92507b-a014-4769-8022-71802e6f8bd9" width="50%"><img src="https://github.com/magic-akari/ecb/assets/7829098/8596750d-0034-4a7f-bf28-4482c62a9f97" width="50%">
+<img src="https://raw.githubusercontent.com/RustCrypto/media/26acc39f/img/block-modes/ecb_enc.svg" width="49%"><img src="https://raw.githubusercontent.com/RustCrypto/media/26acc39f/img/block-modes/ecb_dec.svg" width="49%">
 
 See [documentation][cipher-doc] of the `cipher` crate for additional information.
 
-## Minimum Supported Rust Version
-
-Rust **1.85** or higher.
-
-Minimum supported Rust version can be changed in the future, but it will be
-done with a minor version bump.
-
-## SemVer Policy
-
-- All on-by-default features of this library are covered by SemVer
-- MSRV is considered exempt from SemVer as noted above
-
 ## License
+
+Licensed under either of:
+
+ * [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0)
  * [MIT license](http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
 
 [//]: # (badges)
 
@@ -42,4 +42,4 @@ done with a minor version bump.
 [//]: # (general links)
 
 [ECB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#ECB
-[cipher-doc]: https://docs.rs/cipher/
+[cipher-doc]: https://docs.rs/cipher

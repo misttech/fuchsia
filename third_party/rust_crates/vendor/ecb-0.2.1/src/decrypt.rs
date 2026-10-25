@@ -29,7 +29,7 @@ where
 {
     fn decrypt_with_backend(&mut self, f: impl BlockModeDecClosure<BlockSize = Self::BlockSize>) {
         let Self { cipher } = self;
-        cipher.decrypt_with_backend(Closure { f })
+        cipher.decrypt_with_backend(Closure { f });
     }
 }
 

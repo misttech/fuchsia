@@ -21,14 +21,17 @@ package(
 package_info(
     name = "package_info",
     package_name = "ecb",
-    package_url = "https://github.com/magic-akari/ecb",
-    package_version = "0.2.0",
+    package_url = "https://github.com/RustCrypto/block-modes",
+    package_version = "0.2.1",
 )
 
 license(
     name = "license",
-    license_kinds = ["@rules_license//licenses/spdx:MIT"],
-    license_text = "LICENSE",
+    license_kinds = [
+        "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:MIT",
+    ],
+    license_text = "LICENSE-APACHE",
 )
 
 rust_library(
@@ -73,7 +76,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.0",
+    version = "0.2.1",
     deps = [
         "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",
     ],

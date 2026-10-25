@@ -584,11 +584,11 @@ group("dyn-clone-1.0.20") {
 }
 
 group("ecb") {
-  public_deps = [ ":ecb-v0_2_0" ]
+  public_deps = [ ":ecb-v0_2_1" ]
 }
 
-group("ecb-0.2.0") {
-  public_deps = [ ":ecb-v0_2_0" ]
+group("ecb-0.2.1") {
+  public_deps = [ ":ecb-v0_2_1" ]
 }
 
 group("either") {
@@ -8542,15 +8542,19 @@ rustc_library("dyn-clone-v1_0_20") {
   applicable_licenses = [ ":dyn-clone-v1_0_20.license" ]
 }
 
-license("ecb-v0_2_0.license") {
+license("ecb-v0_2_1.license") {
   public_package_name = "ecb"
-  license_files = [ "//third_party/rust_crates/vendor/ecb-0.2.0/LICENSE" ]
+  license_files = [
+    "//third_party/rust_crates/vendor/ecb-0.2.1/LICENSE",
+    "//third_party/rust_crates/vendor/ecb-0.2.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ecb-0.2.1/LICENSE-MIT",
+  ]
 }
 
-rustc_library("ecb-v0_2_0") {
+rustc_library("ecb-v0_2_1") {
   crate_name = "ecb"
-  source_root = "//third_party/rust_crates/vendor/ecb-0.2.0/src/lib.rs"
-  output_name = "ecb-6aeb2fb6045b846c"
+  source_root = "//third_party/rust_crates/vendor/ecb-0.2.1/src/lib.rs"
+  output_name = "ecb-d7490b5c2e0b7453"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -8563,15 +8567,15 @@ rustc_library("ecb-v0_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6aeb2fb6045b846c",
-    "-Cextra-filename=-6aeb2fb6045b846c",
+    "-Cmetadata=d7490b5c2e0b7453",
+    "-Cextra-filename=-d7490b5c2e0b7453",
     "--cfg=feature=\"block-padding\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ecb-v0_2_0.license" ]
+  applicable_licenses = [ ":ecb-v0_2_1.license" ]
 }
 
 license("ecdsa-v0_14_8.license") {
