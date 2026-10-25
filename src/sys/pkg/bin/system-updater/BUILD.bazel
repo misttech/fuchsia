@@ -5,13 +5,22 @@
 load("//build/bazel/rules:compiled_action.bzl", "compiled_action")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
     "fx_component_manifest",
+    "fx_test_component",
 )
 load(
     "//build/bazel/rules/components:structured_config.bzl",
     "fuchsia_structured_config_rust_lib",
 )
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -37,7 +46,6 @@ compiled_action(
         "$(location :epoch.json)",
     ],
     tool = "//src/sys/pkg/bin/system-updater/epoch:generator",
-    visibility = ["//visibility:private"],
 )
 
 rustc_binary(
@@ -74,7 +82,6 @@ rustc_binary(
     rustc_env = {
         "EPOCH_PATH": "$(location :epoch.json)",
     },  # @bazel2gn:raw_overwrite:[ "EPOCH_PATH=$rebased_epoch_file" ]
-    visibility = ["//visibility:private"],
     deps = [
         ":config_lib",
         "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
@@ -130,28 +137,121 @@ rustc_binary(
     ],
 )
 
-# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
-# above the bazel2gn sentinel in BUILD.gn instead.
-# @bazel2gn:skip
+# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
+# target, so that `:config_lib` refers to the same label in both builds.
 fx_component_manifest(
     name = "manifest",
     component_name = "system-updater",
     includes = [
         "meta/system-updater-common.shard.cml",
-        "//sdk/lib/inspect:client.shard.cml",
-        "//sdk/lib/inspect:offer.shard.cml",
-        "//sdk/lib/inspect:use.shard.cml",
-        "//sdk/lib/syslog:client.shard.cml",
-        "//sdk/lib/syslog:offer.shard.cml",
-        "//sdk/lib/syslog:use.shard.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/system-updater.cml",
-    visibility = ["//visibility:private"],
 )
 
 fuchsia_structured_config_rust_lib(
     name = "config_lib",
     cm_label = ":manifest",
     crate_name = "system_updater_config",
-    visibility = ["//visibility:private"],
+)
+
+fx_packaged_binary(
+    name = "system_updater_packaged_bin",
+    binary = ":bin",
+    binary_name = "system_updater",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "system-updater",
+    visibility = [
+        "//src/security/tests/pkg_test/tests:__subpackages__",
+        "//src/sys/pkg:__subpackages__",
+    ],
+    deps = [":system_updater_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "isolated-v2-manifest",
+    component_name = "system-updater-isolated",
+    includes = [
+        "meta/system-updater-common.shard.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/system-updater-isolated.cml",
+)
+
+fx_component(
+    name = "isolated-v2",
+    compiled_manifest = ":isolated-v2-manifest",
+    component_name = "system-updater-isolated",
+    visibility = ["//src/sys/pkg/tests/system-updater:__pkg__"],
+    deps = [":system_updater_packaged_bin"],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "bin_test",
+    compile_data = [":epoch.json"],
+    crate = ":bin",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    rustc_env = {
+        "EPOCH_PATH": "$(location :epoch.json)",
+    },
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing",
+        "//src/sys/pkg/testing/mock-crash-reporter:lib",
+        "//src/sys/pkg/testing/mock-paver",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_test_packaged_bin",
+    testonly = True,
+    binary = ":bin_test",
+    binary_name = "system_updater_bin_test",
+)
+
+fx_component_manifest(
+    name = "test-component-manifest",
+    testonly = True,
+    component_name = "system-updater-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/storage/lib/fs_management:client.shard.cml",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/system-updater-bin-test.cml",
+)
+
+fx_test_component(
+    name = "test-component",
+    compiled_manifest = ":test-component-manifest",
+    component_name = "system-updater-tests",
+    deps = [":bin_test_packaged_bin"],
+)
+
+fx_package(
+    name = "system-updater-tests-package",
+    package_name = "system-updater-tests",
+    test_components = [":test-component"],
+)
+
+fx_test(
+    name = "system-updater-tests",
+    max_log_severity = "ERROR",
+    package = ":system-updater-tests-package",
 )

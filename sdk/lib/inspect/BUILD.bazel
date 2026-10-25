@@ -19,7 +19,6 @@ exports_files(
         "//src/sys/pkg/bin/omaha-client:__pkg__",
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-update-committer:__pkg__",
-        "//src/sys/pkg/bin/system-updater:__pkg__",
         "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
         "//src/sys/pkg/tests/pkg-resolver:__pkg__",
     ],
@@ -51,6 +50,7 @@ cml_shard(
         "//src/connectivity/wlan:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
+        "//src/sys/pkg/bin/system-updater:__pkg__",
     ],
 )
 

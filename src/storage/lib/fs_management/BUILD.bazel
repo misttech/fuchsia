@@ -6,5 +6,8 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["client.shard.cml"],
-    visibility = ["//bundles/assembly:__subpackages__"],
+    visibility = [
+        "//bundles/assembly:__subpackages__",
+        "//src/sys/pkg/bin/system-updater:__pkg__",
+    ],
 )
