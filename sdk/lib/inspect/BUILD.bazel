@@ -50,6 +50,7 @@ cml_shard(
         "//src/connectivity/wlan:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
+        "//src/sys/pkg/bin/pkg-resolver:__pkg__",
         "//src/sys/pkg/bin/system-updater:__pkg__",
     ],
 )

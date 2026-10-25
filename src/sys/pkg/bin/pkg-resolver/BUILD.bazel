@@ -2,9 +2,136 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/pkg-resolver-common.shard.cml"],
     visibility = ["//src/sys/pkg/tests/pkg-resolver:__pkg__"],
+)
+
+# `pkg-resolver` is conceptually a binary, but it built as a lib here so it can
+# be aggregated into //src/sys/pkg/bin/grand-swd-binary to save disk space.
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/authority_service.rs",
+        "src/cache.rs",
+        "src/cache/inspect.rs",
+        "src/cache/retry.rs",
+        "src/cache_package_index.rs",
+        "src/clock.rs",
+        "src/component_resolver.rs",
+        "src/config.rs",
+        "src/eager_package_manager.rs",
+        "src/error.rs",
+        "src/inspect_util.rs",
+        "src/main.rs",
+        "src/metrics_util.rs",
+        "src/ota_downloader.rs",
+        "src/repository.rs",
+        "src/repository/filesystem_repository.rs",
+        "src/repository/http_repository.rs",
+        "src/repository/updating_tuf_client.rs",
+        "src/repository_manager.rs",
+        "src/repository_service.rs",
+        "src/resolver_service.rs",
+        "src/resolver_service/inspect.rs",
+        "src/resolver_service/resolve_with_context.rs",
+        "src/rewrite_manager.rs",
+        "src/rewrite_service.rs",
+        "src/test_util.rs",
+        "src/util.rs",
+    ],
+    crate_name = "pkg_resolver",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = ["//src/sys/pkg/bin/grand-swd-binary:__pkg__"],
+    deps = [
+        ":config_lib",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//sdk/fidl/fuchsia.pkg.http:fuchsia.pkg.http_rust",
+        "//sdk/fidl/fuchsia.pkg.internal:fuchsia.pkg.internal_rust",
+        "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution_rust",
+        "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust",
+        "//sdk/rust/zx",
+        "//src/lib/cobalt/rust/builders",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/fidl-contrib",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/fuchsia-url",
+        "//src/lib/http-sse:http_sse",
+        "//src/lib/http-uri-ext",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//src/lib/versioning/version-history/rust",
+        "//src/storage/lib/delivery_blob",
+        "//src/sys/lib/fidl-fuchsia-component-abi-ext",
+        "//src/sys/lib/fidl-fuchsia-pkg-ext",
+        "//src/sys/lib/fidl-fuchsia-pkg-rewrite-ext",
+        "//src/sys/lib/fuchsia_backoff",
+        "//src/sys/lib/mem_util",
+        "//src/sys/pkg/lib/eager-package-config",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+        "//src/sys/pkg/lib/system-image",
+        "//src/sys/pkg/lib/work-queue",
+        "//third_party/rust_crates/forks/tuf-0.3.0-beta14:tuf",  # @bazel2gn:path_overwrite://third_party/rust_crates:tuf
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-lock",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:p256",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:typed-builder",
+    ],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "pkg-resolver",
+    includes = [
+        "meta/pkg-resolver-common.shard.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/pkg-resolver.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "config_lib",
+    cm_label = ":manifest",
+    crate_name = "pkg_resolver_config",
 )
