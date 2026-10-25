@@ -14,11 +14,11 @@ gn_source_root = rebase_path("//", root_build_dir)
 not_needed([ "gn_source_root" ])
 
 group("aes") {
-  public_deps = [ ":aes-v0_9_1" ]
+  public_deps = [ ":aes-v0_9_3" ]
 }
 
-group("aes-0.9.1") {
-  public_deps = [ ":aes-v0_9_1" ]
+group("aes-0.9.3") {
+  public_deps = [ ":aes-v0_9_3" ]
 }
 
 group("aes-gcm") {
@@ -3017,16 +3017,16 @@ rustc_library("aead-v0_6_1") {
   applicable_licenses = [ ":aead-v0_6_1.license" ]
 }
 
-license("aes-v0_9_1.license") {
+license("aes-v0_9_3.license") {
   public_package_name = "aes"
   license_files =
-      [ "//third_party/rust_crates/vendor/aes-0.9.1/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/aes-0.9.3/LICENSE-APACHE" ]
 }
 
-rustc_library("aes-v0_9_1") {
+rustc_library("aes-v0_9_3") {
   crate_name = "aes"
-  source_root = "//third_party/rust_crates/vendor/aes-0.9.1/src/lib.rs"
-  output_name = "aes-994e7717cce9cfe1"
+  source_root = "//third_party/rust_crates/vendor/aes-0.9.3/src/lib.rs"
+  output_name = "aes-7285870cec0104ed"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -3043,13 +3043,13 @@ rustc_library("aes-v0_9_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=994e7717cce9cfe1",
-    "-Cextra-filename=-994e7717cce9cfe1",
+    "-Cmetadata=7285870cec0104ed",
+    "-Cextra-filename=-7285870cec0104ed",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":aes-v0_9_1.license" ]
+  applicable_licenses = [ ":aes-v0_9_3.license" ]
 }
 
 license("aes-gcm-v0_11_1.license") {
@@ -3071,7 +3071,7 @@ rustc_library("aes-gcm-v0_11_1") {
 
   deps = []
   deps += [ ":aead-v0_6_1" ]
-  deps += [ ":aes-v0_9_1" ]
+  deps += [ ":aes-v0_9_3" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
   deps += [ ":ctutils-v0_4_5" ]
@@ -3113,7 +3113,7 @@ rustc_library("aes-gcm-siv-v0_12_1") {
 
   deps = []
   deps += [ ":aead-v0_6_1" ]
-  deps += [ ":aes-v0_9_1" ]
+  deps += [ ":aes-v0_9_3" ]
   deps += [ ":cipher-v0_5_2" ]
   deps += [ ":ctr-v0_10_1" ]
   deps += [ ":ctutils-v0_4_5" ]

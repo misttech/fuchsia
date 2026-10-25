@@ -26,7 +26,7 @@ edition = "2024"
 
 [dependencies]
 # keep-sorted start
-aes = "0.9.1"
+aes = "0.9.3"
 aes-gcm = "0.11.1"
 aes-gcm-siv = "0.12.1"
 ansi_term = "0.12.0"
@@ -569,7 +569,7 @@ require_feature_reviews = [
 license_files = ["LICENSE-APACHE"]
 
 
-[gn.package.aes."0.9.1"]
+[gn.package.aes."0.9.3"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.ahash."0.8.12".platform."cfg(any(target_arch = \"x86_64\", target_arch = \"aarch64\", target_arch = \"mips64\", target_arch = \"powerpc64\", target_arch = \"riscv64gc\", target_arch = \"s390x\"))"]

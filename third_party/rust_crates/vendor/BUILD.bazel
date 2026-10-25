@@ -32,14 +32,14 @@ filegroup(
 
 # Workspace Member Dependencies
 alias(
-    name = "aes-0.9.1",
-    actual = "//third_party/rust_crates/vendor/aes-0.9.1:aes",
+    name = "aes-0.9.3",
+    actual = "//third_party/rust_crates/vendor/aes-0.9.3:aes",
     tags = ["manual"],
 )
 
 alias(
     name = "aes",
-    actual = "//third_party/rust_crates/vendor/aes-0.9.1:aes",
+    actual = "//third_party/rust_crates/vendor/aes-0.9.3:aes",
     tags = ["manual"],
 )
 
