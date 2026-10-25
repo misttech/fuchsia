@@ -1164,7 +1164,6 @@ config("Wno-conversion") {
     "//zircon/third_party/uapp/mkfs-msdosfs:*",
     "//zircon/third_party/ulib/cksum:*",
     "//zircon/third_party/ulib/musl/*",
-    "//zircon/tools/lz4:*",
   ]
 }
 
@@ -1180,7 +1179,6 @@ config("Wno-implicit-fallthrough") {
     "//third_party/rust_crates/compat/brotli",
     "//zircon/third_party/dev/ethernet/e1000:e1000_third_party",
     "//zircon/third_party/ulib/boringssl",
-    "//zircon/tools/lz4",
   ]
 }
 

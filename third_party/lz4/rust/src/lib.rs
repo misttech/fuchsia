@@ -104,7 +104,7 @@ pub fn decompress_into(data: &[u8], destination: &mut [u8]) -> Result<usize, Err
 pub struct HcCompressionLevel(i32);
 
 impl HcCompressionLevel {
-    pub const MIN: Self = Self(3);
+    pub const MIN: Self = Self(2);
     pub const DEFAULT: Self = Self(9);
     pub const OPT_MIN: Self = Self(10);
     pub const MAX: Self = Self(12);

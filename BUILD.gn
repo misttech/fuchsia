@@ -1604,7 +1604,6 @@ build_api_module("tool_paths") {
     "//tools/fidl/fidlc:host($host_toolchain)",
     "//zircon/third_party/uapp/mkfs-msdosfs($host_toolchain)",
     "//src/storage/blobfs/tools:blobfs($host_toolchain)",
-    "//zircon/tools/lz4($host_toolchain)",
     "//src/storage/minfs/tools:minfs($host_toolchain)",
     "//zircon/tools/zbi($host_toolchain)",
     "//zircon/tools/zither($host_toolchain)",

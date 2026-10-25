@@ -31,12 +31,7 @@ static_library("lz4") {
 
     # Preempt the default that will break symbols out of hidden visibility.
     "LZ4LIB_VISIBILITY=",
-
-    # lz4frame.h doesn't let you just predefine LZ4FLIB_API like you can
-    # LZ4LIB_VISIBILITY, so this kludge works with how its macros are
-    # defined so the //third_party/lz4/src sources don't need to be touched.
-    "LZ4_DLL_IMPORT=1",
-    "__declspec(x)=",
+    "LZ4FLIB_VISIBILITY=",
 
     # Upstream lz4.c disables LZ4_FAST_DEC_LOOP for non-Apple aarch64 Clang
     # builds (see https://github.com/lz4/lz4/pull/707). Enabling it
