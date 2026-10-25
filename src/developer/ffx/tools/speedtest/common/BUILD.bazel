@@ -1,0 +1,107 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "speedtest",
+    srcs = [
+        "src/client.rs",
+        "src/lib.rs",
+        "src/server.rs",
+        "src/socket.rs",
+        "src/test.rs",
+        "src/throughput.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/developer/ffx/tools/speedtest/target:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust_flex",
+        "//sdk/rust/zx-status",
+        "//src/lib/fdomain/client",
+        "//src/lib/fdomain/client:flex_fidl",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_library(
+    name = "speedtest_fdomain",
+    srcs = [
+        "src/client.rs",
+        "src/lib.rs",
+        "src/server.rs",
+        "src/socket.rs",
+        "src/test.rs",
+        "src/throughput.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_features = ["fdomain"],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/plugins/forward:__pkg__",
+        "//src/developer/ffx/tools/speedtest:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust_fdomain_flex",
+        "//sdk/rust/zx-status",
+        "//src/lib/fdomain/client",
+        "//src/lib/fdomain/client:flex_fdomain",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "speedtest_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":speedtest",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "speedtest-target-tests",
+    unit_tests = [":speedtest_test"],
+    visibility = ["//src/developer/ffx:__pkg__"],
+)
+
+host_rustc_test(
+    name = "speedtest_fdomain_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":speedtest_fdomain",
+    crate_features = ["fdomain"],
+    edition = "2024",
+    visibility = ["//src/developer/ffx:__pkg__"],
+    deps = [
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)

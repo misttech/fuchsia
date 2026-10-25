@@ -59,6 +59,7 @@ test_suite(
         "//src/developer/ffx/plugins/version:ffx_version_test",
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common_host_test",
         "//src/developer/ffx/tools/bluetooth/common:ffx_bluetooth_common_test",
+        "//src/developer/ffx/tools/speedtest/common:speedtest_fdomain_test",
     ],
 )
 
@@ -67,5 +68,6 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/developer/ffx/plugins/wlan/common:ffx-wlan-common-tests",
+        "//src/developer/ffx/tools/speedtest/common:speedtest-target-tests",
     ],
 )
