@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "grand-swd-binary",
+    srcs = ["src/main.rs"],
+    crate_name = "grand_swd_binary",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/sys/pkg/bin:__subpackages__"],
+    deps = [
+        "//src/sys/pkg/bin/omaha-client:lib",
+        "//src/sys/pkg/bin/pkg-resolver:lib",
+        "//src/sys/pkg/bin/system-update-committer:lib",
+        "//src/sys/pkg/bin/system-update-configurator:lib",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "grand-swd-binary_test",
+    crate = ":grand-swd-binary",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+)
+
+fx_unittest_package(
+    name = "grand-swd-binary-tests",
+    unit_tests = [":grand-swd-binary_test"],
+)
