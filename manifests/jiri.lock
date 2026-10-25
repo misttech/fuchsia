@@ -376,8 +376,8 @@
     },
     {
         "package": "fuchsia/third_party/android/aemu/release-gfxstream/linux-amd64",
-        "version": "bid:16641118",
-        "instance_id": "pXP3S97OeF-IF2Xq_Zvxvz3_Sy_gOLJDS4a2W1RB4NUC"
+        "version": "bid:16716839",
+        "instance_id": "BYnAxN1RT7kcAnmpKNk_RpL3Wryf-bEsqFOWYQuMIb8C"
     },
     {
         "package": "fuchsia/third_party/android/aemu/release-gfxstream/linux-arm64",
@@ -386,8 +386,8 @@
     },
     {
         "package": "fuchsia/third_party/android/aemu/release-gfxstream/linux-arm64",
-        "version": "bid:16641118",
-        "instance_id": "Zy5XwB1UvpPg74nXuaDYgW-jA4NcicBM9Hv6VaqkR8YC"
+        "version": "bid:16716839",
+        "instance_id": "j3yuG91IEgn-4bmpn-uMkm9C71gPRPenBbhoIPlgB_UC"
     },
     {
         "package": "fuchsia/third_party/android/aemu/release/linux-amd64",
