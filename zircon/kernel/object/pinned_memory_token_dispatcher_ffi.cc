@@ -21,9 +21,9 @@ extern "C" {
 zx_status_t cpp_pinned_memory_token_dispatcher_create(
     BusTransactionInitiatorDispatcher* bti,
     ffi::Uninitialized<KernelHandle<PinnedMemoryTokenDispatcher>>* handle_out) {
+  fbl::RefPtr<BusTransactionInitiatorDispatcher> bti_ref = fbl::ImportFromRawPtr(bti);
   fbl::AllocChecker ac;
-  KernelHandle new_handle(
-      fbl::AdoptRef(new (&ac) PinnedMemoryTokenDispatcher(fbl::ImportFromRawPtr(bti))));
+  KernelHandle new_handle(fbl::AdoptRef(new (&ac) PinnedMemoryTokenDispatcher(ktl::move(bti_ref))));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }

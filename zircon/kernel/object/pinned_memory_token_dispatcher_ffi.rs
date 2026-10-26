@@ -28,6 +28,13 @@ unsafe extern "C" {
         out_result: *mut MaybeUninit<QueryAddressResult>,
     ) -> zx_status_t;
 
+    /// Allocates and initializes a `PinnedMemoryTokenDispatcher`.
+    ///
+    /// # Safety
+    ///
+    /// `bti` must be a valid owning raw pointer from `RefPtr::into_raw`; ownership of that
+    /// reference is consumed whether or not allocation succeeds. `handle_out` must point to
+    /// writable, uninitialized memory for `KernelHandle<PinnedMemoryTokenDispatcher>`.
     pub(crate) fn cpp_pinned_memory_token_dispatcher_create(
         bti: *mut BusTransactionInitiatorDispatcher,
         handle_out: *mut MaybeUninit<KernelHandle<PinnedMemoryTokenDispatcher>>,
