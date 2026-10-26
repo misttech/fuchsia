@@ -5,6 +5,7 @@
 package artifactory
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,13 @@ import (
 	"path/filepath"
 
 	"go.fuchsia.dev/fuchsia/tools/build"
+)
+
+const (
+	// gceUploadName is the canonical name of the uploaded GCE image.
+	gceUploadName = "disk.tar.gz"
+	// gceImageName is the canonical expected name of a source image in GCE.
+	gceImageName = "disk.raw"
 )
 
 type TransferManifest struct {
@@ -51,6 +59,25 @@ func productBundle2Uploads(mods productBundlesModules, blobsRemote string, produ
 			return nil, err
 		}
 		uploads = append(uploads, pbUploads...)
+		if pb.UEFIDiskPath != "" {
+			diskPath := filepath.Join(mods.BuildDir(), pb.UEFIDiskPath)
+			if info, err := os.Stat(diskPath); err == nil {
+				uploads = append(uploads, Upload{
+					Source:      diskPath,
+					Destination: path.Join(pbRemoteDir, gceUploadName),
+					Compress:    true,
+					Signed:      true,
+					TarHeader: &tar.Header{
+						Format: tar.FormatGNU,
+						Name:   gceImageName,
+						Mode:   0666,
+						Size:   info.Size(),
+					},
+				})
+			} else if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("failed to stat GCE disk image: %w", err)
+			}
+		}
 	}
 	return uploads, nil
 }

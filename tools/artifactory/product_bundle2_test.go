@@ -5,6 +5,8 @@
 package artifactory
 
 import (
+	"archive/tar"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -149,11 +151,67 @@ func TestProductBundle2Uploads(t *testing.T) {
 		},
 	}
 
-	actual, err := productBundle2Uploads(m, "BLOBS", "PRODUCT_BUNDLES")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !reflect.DeepEqual(actual, expected) {
-		t.Fatalf("unexpected product bundle uploads:\nexpected: %v\nactual: %v\n", expected, actual)
-	}
+	t.Run("unset UEFIDiskPath", func(t *testing.T) {
+		// Even if a disk.raw exists alongside transfer.json, it should not be
+		// uploaded unless UEFIDiskPath is configured in product_bundles.json.
+		if err := os.WriteFile(filepath.Join(dir, gceImageName), []byte("ignored"), 0o600); err != nil {
+			t.Fatalf("failed to write stray disk.raw: %v", err)
+		}
+		m.productBundles[0].UEFIDiskPath = ""
+
+		actual, err := productBundle2Uploads(m, "BLOBS", "PRODUCT_BUNDLES")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("unexpected product bundle uploads:\nexpected: %v\nactual: %v\n", expected, actual)
+		}
+	})
+
+	uefiDiskRelPath := filepath.Join("uefi_disks", "my-product-bundle", gceImageName)
+
+	t.Run("UEFIDiskPath not built", func(t *testing.T) {
+		m.productBundles[0].UEFIDiskPath = uefiDiskRelPath
+
+		actual, err := productBundle2Uploads(m, "BLOBS", "PRODUCT_BUNDLES")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("unexpected product bundle uploads when disk not built:\nexpected: %v\nactual: %v\n", expected, actual)
+		}
+	})
+
+	t.Run("UEFIDiskPath built", func(t *testing.T) {
+		diskContent := []byte("fake uefi disk")
+		diskPath := filepath.Join(dir, uefiDiskRelPath)
+		if err := os.MkdirAll(filepath.Dir(diskPath), 0o700); err != nil {
+			t.Fatalf("failed to create disk dir: %v", err)
+		}
+		if err := os.WriteFile(diskPath, diskContent, 0o600); err != nil {
+			t.Fatalf("failed to write fake disk.raw: %v", err)
+		}
+		m.productBundles[0].UEFIDiskPath = uefiDiskRelPath
+
+		expectedWithDisk := append(append([]Upload(nil), expected...), Upload{
+			Source:      diskPath,
+			Destination: filepath.Join("PRODUCT_BUNDLES", "my-product-bundle", gceUploadName),
+			Compress:    true,
+			Signed:      true,
+			TarHeader: &tar.Header{
+				Format: tar.FormatGNU,
+				Name:   gceImageName,
+				Mode:   0666,
+				Size:   int64(len(diskContent)),
+			},
+		})
+
+		actualWithDisk, err := productBundle2Uploads(m, "BLOBS", "PRODUCT_BUNDLES")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(actualWithDisk, expectedWithDisk) {
+			t.Fatalf("unexpected product bundle uploads with GCE disk:\nexpected: %v\nactual: %v\n", expectedWithDisk, actualWithDisk)
+		}
+	})
 }

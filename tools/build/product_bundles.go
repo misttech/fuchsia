@@ -32,6 +32,10 @@ type ProductBundle struct {
 	// Json is the path (relative to the build directory) of the JSON
 	// representation of the product bundle.
 	Json string `json:"json"`
+
+	// UEFIDiskPath is the path (relative to the build directory) to the UEFI
+	// disk image for the product bundle, if configured.
+	UEFIDiskPath string `json:"uefi_disk_path,omitempty"`
 }
 
 // ProductBundlesManifest is a JSON list of product bundles produced by the
