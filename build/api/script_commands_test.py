@@ -3,13 +3,9 @@
 # found in the LICENSE file.
 
 import argparse
-import os
-import sys
 import unittest
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-from script_commands import ScriptCommandBase, ScriptCommandList
+from build.api.script_commands import ScriptCommandBase, ScriptCommandList
 
 
 class ExitCodeCommand(ScriptCommandBase):

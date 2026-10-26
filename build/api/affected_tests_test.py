@@ -5,21 +5,14 @@
 
 import json
 import os
-import sys
+import re
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import affected_tests
-import ninja_artifacts
-
-sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
-import re
-
-from build_utils import (
+from build.api import affected_tests, ninja_artifacts
+from build.bazel.scripts.build_utils import (
     BazelPaths,
     CommandResult,
     MockBazelLauncher,

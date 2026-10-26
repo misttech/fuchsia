@@ -13,8 +13,7 @@ import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from debug_symbols import (
+from build.api.debug_symbols import (
     CommandPool,
     DebugSymbolExporter,
     DebugSymbolsManifestParser,

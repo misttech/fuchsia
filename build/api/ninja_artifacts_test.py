@@ -3,17 +3,12 @@
 # found in the LICENSE file.
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-import ninja_artifacts
-
-sys.path.insert(1, str(_SCRIPT_DIR / "../bazel/scripts"))
-from build_utils import MockNinjaRunner
+from build.api import ninja_artifacts
+from build.bazel.scripts.build_utils import MockNinjaRunner
 
 
 class NinjaArtifactsTest(unittest.TestCase):

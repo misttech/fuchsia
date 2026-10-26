@@ -23,14 +23,10 @@ from pathlib import Path
 
 _SCRIPT_FILE = Path(__file__)
 _SCRIPT_DIR = _SCRIPT_FILE.parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-from script_commands import ScriptCommandBase, ScriptCommandList
-
-sys.path.insert(0, str(_SCRIPT_DIR / "../bazel/scripts"))
+from build.api.script_commands import ScriptCommandBase, ScriptCommandList
 
 if T.TYPE_CHECKING:
-    import gn_labels
-    import gn_ninja_outputs
+    from build.api import gn_labels, gn_ninja_outputs
 
 _FUCHSIA_DIR = (_SCRIPT_DIR / ".." / "..").resolve()
 
@@ -175,7 +171,7 @@ class BuildApiModuleList(object):
 def load_ninja_outputs_database(build_dir: Path) -> None | T.Any:
     """Load the Ninja outputs database, return None on error."""
     try:
-        import gn_ninja_outputs
+        from build.api import gn_ninja_outputs
 
         return gn_ninja_outputs.load_from_build_dir(build_dir)
     except RuntimeError as e:
@@ -227,9 +223,9 @@ class LastBuildApiFilter(object):
 
     @staticmethod
     def generate_filter(ninja: Path, build_dir: Path) -> T.Any:
-        import build_utils
-        import ninja_artifacts
-        from build_api_filter import BuildApiFilter
+        from build.api import ninja_artifacts
+        from build.api.build_api_filter import BuildApiFilter
+        from build.bazel.scripts import build_utils
 
         ninja_runner = build_utils.NinjaRunner(ninja, build_dir)
         last_build_artifacts = ninja_artifacts.get_last_build_artifacts(
@@ -383,7 +379,7 @@ class DebugSymbolCommandState(object):
         keep_duplicates: bool = False,
         test_mode: bool = False,
     ) -> None:
-        import debug_symbols
+        from build.api import debug_symbols
 
         self._modules = modules
         self._ninja = ninja
@@ -442,7 +438,7 @@ class DebugSymbolCommandState(object):
 
         import json
 
-        import elf_sizes
+        from build.api import elf_sizes
 
         with module.path.open("rt") as f:
             images_json = json.load(f)
@@ -579,7 +575,7 @@ class ExportLastBuildDebugSymbolsCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        import debug_symbols
+        from build.api import debug_symbols
 
         state = DebugSymbolCommandState(
             args.modules,
@@ -648,7 +644,7 @@ class ExportLastBuildDebugSymbolsCommand(ScriptCommandBase):
         )
         exporter.parse_debug_symbols(state.debug_symbol_entries)
 
-        import elf_sizes
+        from build.api import elf_sizes
 
         elf_sizes_paths = state.get_elf_sizes_paths(last_build_only=True)
         (
@@ -686,8 +682,8 @@ class LastNinjaArtifactsCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        import build_utils
-        import ninja_artifacts
+        from build.api import ninja_artifacts
+        from build.bazel.scripts import build_utils
 
         ninja = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = build_utils.NinjaRunner(ninja, args.build_dir)
@@ -723,7 +719,7 @@ class NinjaPathToGnLabelCommand(ScriptCommandBase):
         if not outputs:
             return 1
 
-        import gn_ninja_outputs
+        from build.api import gn_ninja_outputs
 
         assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
 
@@ -855,11 +851,10 @@ def resolve_gn_labels_to_ninja_paths(
     if not outputs:
         return ("Could not load Ninja outputs", [])
 
-    import gn_ninja_outputs
+    from build.api import gn_ninja_outputs
+    from build.api.gn_labels import GnLabelQualifier
 
     assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
-
-    from gn_labels import GnLabelQualifier
 
     host_cpu = host_tag.split("-")[1]
     target_cpu = _get_target_cpu(build_dir)
@@ -967,11 +962,10 @@ class FxBuildArgsToLabelsCommand(ScriptCommandBase):
         if not outputs:
             return 1
 
-        import gn_ninja_outputs
+        from build.api import gn_ninja_outputs
+        from build.api.gn_labels import GnLabelQualifier
 
         assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
-
-        from gn_labels import GnLabelQualifier
 
         host_cpu = args.host_tag.split("-")[1]
         target_cpu = _get_target_cpu(args.build_dir)
@@ -1091,8 +1085,8 @@ return correct results, as depfile dependencies will be missing.
         if args.files_list:
             changed_files += args.files_list.read_text().splitlines()
 
-        import build_utils
-        import ninja_artifacts
+        from build.api import ninja_artifacts
+        from build.bazel.scripts import build_utils
 
         root_targets: list[str] = []
         for target in args.root_target:
@@ -1167,10 +1161,8 @@ where each line is in the format <test_label>,<test_env>, where
     def run(args: argparse.Namespace) -> int:
         changed_files = args.files_list.read_text().splitlines()
         # Lazy imports, see technical note at the top of this file.
-        import affected_tests
-
-        sys.path.insert(0, f"{_SCRIPT_DIR}/../bazel/scripts")
-        import build_utils
+        from build.api import affected_tests
+        from build.bazel.scripts import build_utils
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
         ninja_runner = build_utils.NinjaRunner(ninja_path, args.build_dir)
@@ -1304,11 +1296,10 @@ class FileToTestPackageCommand(ScriptCommandBase):
         if not outputs:
             return 1
 
-        import gn_ninja_outputs
+        from build.api import gn_ninja_outputs
+        from build.api.file_to_test_package import FileToTestPackageFinder
 
         assert isinstance(outputs, gn_ninja_outputs.NinjaOutputsBase)
-
-        from file_to_test_package import FileToTestPackageFinder
 
         finder = FileToTestPackageFinder(
             args.build_dir,

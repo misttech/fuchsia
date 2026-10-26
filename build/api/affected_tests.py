@@ -12,11 +12,8 @@ import tempfile
 import typing as T
 from pathlib import Path
 
-import ninja_artifacts
-
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../../build/bazel/scripts"))
-from build_utils import BazelLauncher, NinjaRunner
+from build.api import ninja_artifacts
+from build.bazel.scripts.build_utils import BazelLauncher, NinjaRunner
 
 # Set this to True to debug operations locally in this script.
 _DEBUG = False

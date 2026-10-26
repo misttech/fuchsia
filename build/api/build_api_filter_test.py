@@ -4,13 +4,11 @@
 # found in the LICENSE file.
 
 import json
-import sys
 import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import build_api_filter
+from build.api import build_api_filter
 
 
 class BuildApiModulesFilterTest(unittest.TestCase):

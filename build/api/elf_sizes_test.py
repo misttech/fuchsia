@@ -9,7 +9,7 @@ import typing as T
 import unittest
 from pathlib import Path
 
-import elf_sizes
+from build.api import elf_sizes
 
 
 def _write_json(path: Path, content: T.Any) -> None:

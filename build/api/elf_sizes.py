@@ -10,12 +10,8 @@ import sys
 import typing as T
 from pathlib import Path
 
-import debug_symbols
-import gn_ninja_outputs
-
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
-import build_utils
+from build.api import debug_symbols, gn_ninja_outputs
+from build.bazel.scripts import build_utils
 
 
 def extract_elf_sizes_paths(

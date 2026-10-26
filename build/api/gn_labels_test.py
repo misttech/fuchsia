@@ -3,12 +3,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from gn_labels import GnLabelQualifier, qualify_gn_target_name, split_gn_label
+from build.api.gn_labels import (
+    GnLabelQualifier,
+    qualify_gn_target_name,
+    split_gn_label,
+)
 
 
 class GnLabelsTest(unittest.TestCase):

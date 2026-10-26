@@ -4,7 +4,6 @@
 
 import json
 import os
-import sys
 import tempfile
 import time
 import typing as T
@@ -12,10 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
-import build_utils
-import file_to_test_package
+from build.api import file_to_test_package
+from build.bazel.scripts import build_utils
 
 
 class TestFileToTestPackageFinder(unittest.TestCase):

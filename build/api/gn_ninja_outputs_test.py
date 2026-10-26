@@ -4,14 +4,12 @@
 # found in the LICENSE file.
 
 import json
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import gn_ninja_outputs
+from build.api import gn_ninja_outputs
 
 _NINJA_OUTPUTS = {
     "//:foo": ["obj/foo.stamp"],
