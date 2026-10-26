@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# This is a partial, Bazel-only, headers-only target: it only provides
+# <lib/arch/intrin.h>, which is all that its current Bazel users (fasttime and,
+# through it, the Starnix vDSO) need. It is not a migration of this directory:
+# BUILD.gn is hand-written and not generated from this file, and GN's
+# //zircon/kernel/lib/arch is the full static_library.
+fx_cc_library(
+    name = "arch",
+    hdrs = select({
+        "@platforms//cpu:arm": ["arm/include/lib/arch/intrin.h"],
+        "@platforms//cpu:arm64": ["arm64/include/lib/arch/intrin.h"],
+        "@platforms//cpu:riscv64": ["riscv64/include/lib/arch/intrin.h"],
+        "@platforms//cpu:x86_64": ["x86/include/lib/arch/intrin.h"],
+        "//conditions:default": [],
+    }),
+    includes = select({
+        "@platforms//cpu:arm": ["arm/include"],
+        "@platforms//cpu:arm64": ["arm64/include"],
+        "@platforms//cpu:riscv64": ["riscv64/include"],
+        "@platforms//cpu:x86_64": ["x86/include"],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//sdk/lib/c:__subpackages__",
+        "//sdk/lib/ld:__subpackages__",
+        "//src/bringup:__subpackages__",
+        "//src/firmware/paver/test:__pkg__",
+        "//src/performance/memory/stacktrack/instrumentation:__pkg__",
+        "//src/virtualization/tests/hypervisor:__pkg__",
+        "//src/zircon:__subpackages__",
+        "//zircon/kernel:__subpackages__",
+        "//zircon/system:__subpackages__",
+        "//zircon/third_party:__subpackages__",
+    ],
+    deps = select({
+        "@platforms//cpu:arm": [],
+        "@platforms//cpu:arm64": [],
+        "@platforms//cpu:riscv64": [],
+        "@platforms//cpu:x86_64": [],
+        "//conditions:default": ["//zircon/kernel/lib/arch/host"],
+    }),
+)

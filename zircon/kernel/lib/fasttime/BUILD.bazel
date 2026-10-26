@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Note: The GN targets below the sentinel in BUILD.gn are auto-generated from
+# this file via `fx bazel2gn`. This library is used by the kernel build, which
+# stays on GN. If the kernel build ever needs to express something in GN that
+# bazel2gn cannot handle, either annotate the rule (or attribute) here with
+# `@bazel2gn:skip` (placed on a `#` comment line immediately above it) and
+# maintain its GN definition manually above the sentinel in BUILD.gn (using
+# LINT.IfChange / LINT.ThenChange to keep them in sync), or emit the GN
+# directly with a `@bazel2gn:raw_attribute` annotation, as is done for the
+# `public_deps` of :headers below.
+
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "fasttime",
+    actual = ":headers",
+    visibility = [
+        "//src/starnix/kernel:__subpackages__",
+        "//zircon/kernel:__subpackages__",
+    ],
+)
+
+# In GN, library_headers() should get its header dependencies via
+# `public_deps`, and //zircon/kernel/lib/arch is the full arch library, whereas
+# the Bazel //zircon/kernel/lib/arch target only provides <lib/arch/intrin.h>.
+# So bazel2gn skips the Bazel `deps` and the GN `public_deps` are written out
+# by hand.
+# @bazel2gn:raw_attribute:public_deps = [ "//zircon/kernel/lib/arch", "//zircon/system/public", "//zircon/system/ulib/affine" ]
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = [
+        "include/lib/fasttime/clock.h",
+        "include/lib/fasttime/internal/abi.h",
+        "include/lib/fasttime/internal/time.h",
+        "include/lib/fasttime/time.h",
+    ],
+    visibility = [
+        "//src/starnix/kernel:__subpackages__",
+        "//zircon/kernel:__subpackages__",
+    ],
+    # @bazel2gn:skip
+    deps = [
+        "//zircon/kernel/lib/arch",
+        "//zircon/system/public",
+        "//zircon/system/ulib/affine",
+    ],
+)
