@@ -1,0 +1,34 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "manual.conformance.large",
+    testonly = True,
+    srcs = ["large.test.fidl"],
+    excluded_checks = [
+        "vector-bounds-not-specified",
+        "wrong-prefix-for-platform-source-library",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "conformance_utils",
+    testonly = True,
+    hdrs = ["conformance_utils.h"],
+    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
+    copts = ["-Wno-conversion"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/fidl_base",
+        "//zircon/system/public",
+        "//zircon/system/ulib/zx",
+    ],
+)
