@@ -916,10 +916,6 @@ impl Controller {
 
         let provider =
             hermetic_network_connector.connect_to_protocol::<fnet_dhcp::ClientProviderMarker>()?;
-        provider
-            .check_presence()
-            .await
-            .expect("dhcp client should be included in hermetic network realm");
 
         let client = provider.new_client_ext(id, fnet_dhcp_ext::default_new_client_params());
         let control =

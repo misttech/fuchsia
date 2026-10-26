@@ -24,6 +24,7 @@ build-info-service
 ?codec_factory
 ?config-data
 ?core
+?dhcp-client
 ?dhcpv4-server
 ?dhcpv6-client
 ?diagnostics

@@ -6,13 +6,7 @@ import("//build/components.gni")
 
 fuchsia_package("netstack3") {
   package_name = "netstack3"
-  deps = [
-    # TODO(https://fxbug.dev/42076541): Move this component out of this package
-    # and into the network package once both Netstack2 and Netstack3 are using
-    # the component for all DHCPv4 functionality.
-    "dhcpv4/client/bindings:component",
-    "netstack3:component",
-  ]
+  deps = [ "netstack3:component" ]
 
   visibility = [
     ":*",

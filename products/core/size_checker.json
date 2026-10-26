@@ -58,6 +58,7 @@
             "limit": 10402875,
             "creep_limit": 81920,
             "pkgs": [
+                "dhcp-client",
                 "dhcpv4-server",
                 "dhcpv6-client",
                 "dns-resolver",

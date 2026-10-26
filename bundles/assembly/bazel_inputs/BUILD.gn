@@ -639,6 +639,7 @@ group("network_realm") {
 group("network_realm_packages") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
+    "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/client/bindings:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",

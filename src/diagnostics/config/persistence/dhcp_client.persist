@@ -9,7 +9,7 @@
         max_bytes: 10000,
         min_seconds_between_fetch: 60,
         selectors: [
-            "INSPECT:core/network/netstack/dhcp-client:root/Clients",
+            "INSPECT:core/network/dhcp-client:root/Clients",
         ],
     },
 ]

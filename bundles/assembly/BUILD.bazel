@@ -1528,6 +1528,7 @@ assembly_input_bundle(
     name = "network_realm_packages",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
+        "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/client/bindings:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv4/server:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dhcpv6/client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",

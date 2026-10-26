@@ -70,6 +70,12 @@ fuchsia_component("component") {
   deps = [ ":dhcp_client" ]
 }
 
+fuchsia_package("package") {
+  package_name = "dhcp-client"
+  deps = [ ":component" ]
+  visibility = [ "//bundles/assembly/*" ]
+}
+
 fuchsia_test_component("dhcp-client-test") {
   manifest = "meta/dhcp-client-test.cml"
   deps = [

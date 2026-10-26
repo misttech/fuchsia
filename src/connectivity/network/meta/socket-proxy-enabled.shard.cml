@@ -14,12 +14,18 @@
     ],
     offer: [
         {
+            // TODO(https://fxbug.dev/577224779): These components consume
+            // unproxied (unmarked) sockets directly from netstack because they
+            // need interface-scoped traffic rather than default-network
+            // traffic. Replace this CML-level selection with a network
+            // selection API.
             protocol: [
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",
             ],
             from: "#netstack",
             to: [
+                "#dhcp-client",
                 "#reachability",
                 "#socket-proxy",
             ],

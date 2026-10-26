@@ -673,8 +673,8 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/network",
+                    "/core/network/dhcp-client",
                     "/core/network/dhcpd",
-                    "/core/network/netstack/dhcp-client",
                     "/core/network/netstack",
                     "/core/testing/netstack-tests:**",
                 ],

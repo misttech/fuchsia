@@ -721,6 +721,7 @@ Fuzzy matching failed due to too many matches, please re-try with one of these:
 bootstrap/boot-drivers:PCI0.bus.00_04_0.00_04_0.virtio-net
 core/network
 core/network-tun
+core/network/dhcp-client
 core/network/dhcpd
 core/network/dhcpv6-client
 core/network/dns-resolver
@@ -728,7 +729,6 @@ core/network/http-client
 core/network/netcfg
 core/network/netcfg/netcfg-config
 core/network/netstack
-core/network/netstack/dhcp-client
 core/network/reachability
 ```
 

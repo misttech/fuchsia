@@ -4573,9 +4573,6 @@ mod tests {
                     assert_eq!(params, dhcpv4::new_client_params());
                     request.into_stream()
                 }
-                fnet_dhcp::ClientProviderRequest::CheckPresence { responder: _ } => {
-                    unreachable!("only called at startup")
-                }
             };
 
             let responder = expect_watch_dhcpv4_configuration(&mut client_req_stream);
@@ -4941,9 +4938,6 @@ mod tests {
                 assert_eq!(params, dhcpv4::new_client_params());
                 request.into_stream()
             }
-            fnet_dhcp::ClientProviderRequest::CheckPresence { responder: _ } => {
-                unreachable!("only called at startup")
-            }
         };
 
         let responder = expect_watch_dhcpv4_configuration(&mut client_req_stream);
@@ -5089,9 +5083,6 @@ mod tests {
                     assert_eq!(interface_id, INTERFACE_ID.get());
                     assert_eq!(params, dhcpv4::new_client_params());
                     request.into_stream_and_control_handle()
-                }
-                fnet_dhcp::ClientProviderRequest::CheckPresence { responder: _ } => {
-                    unreachable!("only called at startup")
                 }
             };
 

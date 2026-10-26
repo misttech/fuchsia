@@ -1845,8 +1845,6 @@ impl<'a> TestInterface<'a> {
             .connect_to_protocol::<fnet_dhcp::ClientProviderMarker>()
             .expect("get fuchsia.net.dhcp.ClientProvider");
 
-        provider.check_presence().await.expect("check presence should succeed");
-
         let client = provider.new_client_ext(id, fnet_dhcp_ext::default_new_client_params());
         let control = control.clone();
         let route_set_provider = realm
