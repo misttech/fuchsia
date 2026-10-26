@@ -6,11 +6,13 @@ package tefmocheck
 
 import (
 	_ "embed"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
+	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
@@ -44,6 +46,16 @@ failure_mode_checks:
     log_types:
       - serialLogType
       - syslogType
+  - kind: "string_in_log"
+    name: "regex_check"
+    string: 'error \d+: .*\ndetail'
+    is_regex: true
+    prefilter_prefix: "detail"
+    log_types:
+      - swarmingOutputType
+    skip_passed_task: true
+    attribute_to_test: true
+    add_tag: true
   - kind: "string_in_log"
     string: "critical to root job killed with"
     log_types:
@@ -83,6 +95,8 @@ failure_mode_checks:
 		},
 	}
 
+	testRegex := regexp.MustCompile(`error \d+: .*\ndetail`)
+
 	expected := []FailureModeCheck{
 		&stringInLogCheck{
 			String: "Exceeded safe temperature range",
@@ -111,6 +125,17 @@ failure_mode_checks:
 			Type:   syslogType,
 		},
 		&stringInLogCheck{
+			CheckName:            "regex_check",
+			String:               `error \d+: .*\ndetail`,
+			PrefilterPrefix:      "detail",
+			prefilterPrefixBytes: []byte("detail"),
+			Type:                 swarmingOutputType,
+			SkipPassedTask:       true,
+			AttributeToTest:      true,
+			AddTag:               true,
+			regex:                testRegex,
+		},
+		&stringInLogCheck{
 			String:       "critical to root job killed with",
 			Type:         swarmingOutputType,
 			ExceptBlocks: exceptBlocks,
@@ -127,7 +152,14 @@ failure_mode_checks:
 		},
 	}
 
-	if diff := cmp.Diff(expected, checks, cmp.AllowUnexported(stringInLogCheck{}, logBlock{})); diff != "" {
+	regexComparer := cmp.Comparer(func(a, b *regexp.Regexp) bool {
+		if a == nil || b == nil {
+			return a == b
+		}
+		return a.String() == b.String()
+	})
+
+	if diff := cmp.Diff(expected, checks, cmp.AllowUnexported(stringInLogCheck{}, logBlock{}), regexComparer); diff != "" {
 		t.Errorf("LoadChecksFromYAML() returned diff (-want +got):\n%s", diff)
 	}
 }
@@ -147,6 +179,26 @@ func TestLoadChecksFromYAML_Errors(t *testing.T) {
 			name:    "string_in_log missing type",
 			yaml:    "failure_mode_checks: [{kind: 'string_in_log', string: 'error'}]",
 			wantErr: "field is required",
+		},
+		{
+			name:    "string_in_log regex missing name",
+			yaml:    "failure_mode_checks: [{kind: 'string_in_log', string: 'foo.*', is_regex: true, log_types: ['swarmingOutputType']}]",
+			wantErr: "'name' field is required",
+		},
+		{
+			name:    "string_in_log prefilter_prefix without regex",
+			yaml:    "failure_mode_checks: [{kind: 'string_in_log', string: 'foo', prefilter_prefix: 'bar', log_types: ['swarmingOutputType']}]",
+			wantErr: "'prefilter_prefix' field can only be set when 'is_regex' is true",
+		},
+		{
+			name:    "string_in_log prefilter_prefix not in regex",
+			yaml:    "failure_mode_checks: [{kind: 'string_in_log', name: 'typo', string: 'foo.*', is_regex: true, prefilter_prefix: 'bar', log_types: ['swarmingOutputType']}]",
+			wantErr: "must appear in regex pattern",
+		},
+		{
+			name:    "string_in_log invalid regex",
+			yaml:    "failure_mode_checks: [{kind: 'string_in_log', name: 'bad', string: '[unclosed', is_regex: true, log_types: ['swarmingOutputType']}]",
+			wantErr: "error parsing regexp",
 		},
 		{
 			name:    "unknown kind",
@@ -182,6 +234,34 @@ func TestLoadChecksFromYAMLEmpty(t *testing.T) {
 
 	if len(checks) != 0 {
 		t.Errorf("Expected 0 checks, got %d", len(checks))
+	}
+}
+
+func TestStringInLogCheck_NameOverride(t *testing.T) {
+	yamlData := `
+failure_mode_checks:
+  - kind: "string_in_log"
+    name: "custom_string_name"
+    string: "some specific error message"
+    log_types:
+      - syslogType
+  - kind: "string_in_log"
+    string: "default string message"
+    log_types:
+      - syslogType
+`
+	checks, err := LoadChecksFromYAML([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("LoadChecksFromYAML failed: %v", err)
+	}
+	if len(checks) != 2 {
+		t.Fatalf("got %d checks, want 2", len(checks))
+	}
+	if got, want := checks[0].Name(), "string_in_log/syslog.txt/custom_string_name"; got != want {
+		t.Errorf("checks[0].Name() = %q, want %q", got, want)
+	}
+	if got, want := checks[1].Name(), "string_in_log/syslog.txt/default_string_message"; got != want {
+		t.Errorf("checks[1].Name() = %q, want %q", got, want)
 	}
 }
 
@@ -306,6 +386,178 @@ func TestFastbootAndHealthCheckOrdering(t *testing.T) {
 				}
 				if len(got) != 0 {
 					t.Errorf("RunChecks on passed task returned %d results, want 0: %+v", len(got), got)
+				}
+			}
+		})
+	}
+}
+
+func TestGoCrashChecks(t *testing.T) {
+	checks, err := LoadChecksFromYAML(embeddedCheckConfigsYAML)
+	if err != nil {
+		t.Fatalf("LoadChecksFromYAML failed: %v", err)
+	}
+
+	const (
+		panicCheckName = "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/go_panic"
+		fatalCheckName = "testing_failure_mode/string_in_log/infra_and_test_std_and_klog.txt/go_fatal_error"
+	)
+
+	tests := []struct {
+		name              string
+		log               string
+		perTest           []TestLog
+		failed            bool
+		wantName          string
+		wantFailureReason string
+		wantTags          []build.TestTag
+	}{
+		{
+			name:              "runtime nil pointer panic",
+			log:               "panic: runtime error: invalid memory address or nil pointer dereference\n[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x1234]\n\ngoroutine 1 [running]:\nmain.main()\n",
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "panic: runtime error: invalid memory address or nil pointer dereference",
+		},
+		{
+			name:              "closed channel panic",
+			log:               "panic: send on closed channel\n\ngoroutine 18 [running]:\ngo.fuchsia.dev/fuchsia/tools/net/mdns.(*mDNS).Start.func1()\n",
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "panic: send on closed channel",
+		},
+		{
+			name:              "explicit string panic",
+			log:               "panic: unexpected invariant violation\n\ngoroutine 4 [running]:\ngo.fuchsia.dev/fuchsia/tools/botanist.foo()\n",
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "panic: unexpected invariant violation",
+		},
+		{
+			name:              "prefixed subprocess panic",
+			log:               "2026-10-20 10:00:00.000000 testrunner: panic: sync: negative WaitGroup counter\n2026-10-20 10:00:00.000001 testrunner: \n2026-10-20 10:00:00.000002 testrunner: goroutine 9 [running]:\n",
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "2026-10-20 10:00:00.000000 testrunner: panic: sync: negative WaitGroup counter",
+		},
+		{
+			name:              "interleaved stderr mid-panic and mid-goroutine header",
+			log:               "panic: 2026-10-09 15:55:01.929241 runtime error: invalid memory address or nil pointer dereference\n\n[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x85353a]\n\ngoroutine 7 [running2026-10-09 15:55:02.210465 botanist: packet from [fe80::1]\n]:\ngo.fuchsia.dev/fuchsia/tools/net/mdns.(*mDNS).Close(0xc00007c2a0)\n",
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "panic: 2026-10-09 15:55:01.929241 runtime error: invalid memory address or nil pointer dereference",
+		},
+		{
+			name:              "concurrent map writes fatal error",
+			log:               "fatal error: concurrent map writes\n\ngoroutine 7 [running]:\ngo.fuchsia.dev/fuchsia/tools/botanist.bar()\n",
+			failed:            true,
+			wantName:          fatalCheckName,
+			wantFailureReason: "fatal error: concurrent map writes",
+		},
+		{
+			name:              "all goroutines asleep deadlock fatal error",
+			log:               "fatal error: all goroutines are asleep - deadlock!\n\ngoroutine 1 [chan receive]:\nmain.main()\n",
+			failed:            true,
+			wantName:          fatalCheckName,
+			wantFailureReason: "fatal error: all goroutines are asleep - deadlock!",
+		},
+		{
+			name:              "runtime stack system throw fatal error",
+			log:               "fatal error: runtime: out of memory\n\nruntime stack:\nruntime.throw({0x1234, 0x15})\n",
+			failed:            true,
+			wantName:          fatalCheckName,
+			wantFailureReason: "fatal error: runtime: out of memory",
+		},
+		{
+			name: "per-test panic attributes tag to running test",
+			log:  "panic: slice bounds out of range\n\ngoroutine 3 [running]:\n",
+			perTest: []TestLog{
+				{
+					TestName: "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
+					Bytes:    []byte("panic: slice bounds out of range\n\ngoroutine 3 [running]:\n"),
+					FilePath: "foo/stdio.txt",
+					Index:    0,
+				},
+			},
+			failed:            true,
+			wantName:          panicCheckName,
+			wantFailureReason: "panic: slice bounds out of range",
+			wantTags:          []build.TestTag{{Key: "test_name", Value: "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm"}},
+		},
+		{
+			name:     "passed task ignores unit test panic output",
+			log:      "panic: expected test panic\n\ngoroutine 5 [running]:\n",
+			failed:   false,
+			wantName: "",
+		},
+		{
+			name:     "single line mentioning goroutine and panic does not false positive",
+			log:      "2026-10-20 10:00:00.000000 test: goroutine observed panic: synthetic message\n",
+			failed:   true,
+			wantName: "",
+		},
+		{
+			name:     "non-Go panic without goroutine stack header does not false positive",
+			log:      "2026-10-20 10:00:00.000000 device: panic: firmware assertion failed\nstack backtrace:\n  0: 0xffff0000\n",
+			failed:   true,
+			wantName: "",
+		},
+		{
+			name:     "non-fatal error prefix at start of line does not trigger go_fatal_error",
+			log:      "non-fatal error: transient glitch\n\ngoroutine 1 [running]:\n",
+			failed:   true,
+			wantName: "",
+		},
+		{
+			name:     "prefixed non-fatal error does not trigger go_fatal_error",
+			log:      "2026-10-20 10:00:00.000000 test: non-fatal error: transient glitch\n\ngoroutine 1 [running]:\n",
+			failed:   true,
+			wantName: "",
+		},
+		{
+			name:     "prefixed non-panic does not trigger go_panic",
+			log:      "2026-10-20 10:00:00.000000 test: non-panic: synthetic message\n\ngoroutine 1 [running]:\n",
+			failed:   true,
+			wantName: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			to := TestingOutputs{
+				SwarmingOutput:        []byte(tc.log),
+				SwarmingOutputPerTest: tc.perTest,
+				SwarmingSummary: &SwarmingTaskSummary{
+					Results: &SwarmingRpcsTaskResult{
+						TaskId:  "task-123",
+						State:   "COMPLETED",
+						Failure: tc.failed,
+					},
+				},
+			}
+			got, err := RunChecks(checks, &to, "")
+			if err != nil {
+				t.Fatalf("RunChecks failed: %v", err)
+			}
+			if tc.wantName == "" {
+				if len(got) != 0 {
+					t.Errorf("expected no matches, got %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Name != tc.wantName {
+				t.Errorf("RunChecks() = %+v, want single check %q", got, tc.wantName)
+				return
+			}
+			if diff := cmp.Diff(tc.wantTags, got[0].Tags); diff != "" {
+				t.Errorf("Tags diff (-want +got):\n%s", diff)
+			}
+			if tc.wantFailureReason != "" {
+				if got[0].TestResult.FailureReason == nil || len(got[0].TestResult.FailureReason.Errors) == 0 {
+					t.Fatalf("expected FailureReason with error message, got: %+v", got[0].TestResult.FailureReason)
+				}
+				if gotReason := got[0].TestResult.FailureReason.Errors[0].Message; gotReason != tc.wantFailureReason {
+					t.Errorf("FailureReason.Errors[0].Message = %q, want %q", gotReason, tc.wantFailureReason)
 				}
 			}
 		})

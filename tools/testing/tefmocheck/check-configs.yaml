@@ -994,12 +994,28 @@ failure_mode_checks:
   string: "botanist ERROR: failed to run snapshot over ssh"
   log_types: ["swarmingOutputType"]
 
-# For https://fxbug.dev/565930479.
-# Catch unhandled Go runtime panics in host tools (e.g. botanist or testrunner)
-# that exit before logging a top-level botanist failure message. Attribute to
-# the running test when a panic appears in test output.
+# For https://fxbug.dev/565930479 and https://fxbug.dev/527958327.
+# Catch unhandled Go panics and runtime fatal errors across host tools (e.g.
+# botanist, testrunner, or host test binaries).
 - kind: "string_in_log"
-  string: "panic: runtime error:"
+  name: "go_panic"
+  # Match "panic: " followed within a few lines (allowing blank, signal, or
+  # interleaved lines and log prefixes) by a Go goroutine stack header so we
+  # catch all Go panics without matching device or non-Go logs.
+  string: '(?m)(?:^|[^-\w\n])panic: .*\n(?:.*\n){0,8}.*goroutine \d+ \['
+  is_regex: true
+  prefilter_prefix: "panic: "
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+  attribute_to_test: true
+  add_tag: true
+
+- kind: "string_in_log"
+  name: "go_fatal_error"
+  # Same as go_panic, also matching "runtime stack:" for throws on the system stack (g0).
+  string: '(?m)(?:^|[^-\w\n])fatal error: .*\n(?:.*\n){0,8}.*(?:goroutine \d+ \[|runtime stack:)'
+  is_regex: true
+  prefilter_prefix: "fatal error: "
   log_types: ["swarmingOutputType"]
   skip_passed_task: true
   attribute_to_test: true

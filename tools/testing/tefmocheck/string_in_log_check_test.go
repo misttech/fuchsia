@@ -6,6 +6,8 @@ package tefmocheck
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -1034,6 +1036,195 @@ func TestBotanistErrorPrefixCheck(t *testing.T) {
 			}
 			if got := c.Check(&to); got != tc.shouldMatch {
 				t.Errorf("c.Check() for %q on %q = %t, want %t", tc.checkString, tc.log, got, tc.shouldMatch)
+			}
+		})
+	}
+}
+
+func TestRegexCheck(t *testing.T) {
+	const panicPattern = `(?m)(?:\[worker-\d+\]\s+)?(?:^|[^-\w\n])panic: .*\n(?:.*\n){0,8}.*goroutine \d+ \[`
+	const panicPrefix = "panic: "
+
+	exceptBlocks := []*logBlock{
+		{
+			startString: "=== RUN   TestIgnoredPanic",
+			endString:   "--- PASS: TestIgnoredPanic",
+		},
+	}
+
+	crossTestLog0 := "=== RUN   TestIgnoredPanic\nsetup\n"
+	crossTestLog1 := "panic: test panic\n\ngoroutine 5 [running]:\n" + strings.Repeat("frame()\n", 9) + "--- PASS: TestIgnoredPanic\n"
+	crossTestLog2 := "panic: unhandled panic\n\ngoroutine 1 [running]:\n"
+	crossTestLog := crossTestLog0 + crossTestLog1 + crossTestLog2
+	crossTestPerTest := []TestLog{
+		{
+			TestName: "test0",
+			Bytes:    []byte(crossTestLog0),
+			Index:    0,
+		},
+		{
+			TestName: "test1",
+			Bytes:    []byte(crossTestLog1),
+			Index:    len(crossTestLog0),
+		},
+		{
+			TestName: "test2",
+			Bytes:    []byte(crossTestLog2),
+			Index:    len(crossTestLog0) + len(crossTestLog1),
+		},
+	}
+	crossTestPerTestIgnoredOnly := []TestLog{
+		{
+			TestName: "test0",
+			Bytes:    []byte(crossTestLog0),
+			Index:    0,
+		},
+		{
+			TestName: "test1",
+			Bytes:    []byte(crossTestLog1),
+			Index:    len(crossTestLog0),
+		},
+	}
+
+	for _, tc := range []struct {
+		name            string
+		prefilterPrefix string
+		log             string
+		perTest         []TestLog
+		shouldMatch     bool
+		wantLine        string
+	}{
+		{
+			name:            "without prefilter matches multiline pattern and attributes first line",
+			prefilterPrefix: "",
+			log:             "2026-10-20 10:00:00.000000 test: panic: sync: negative WaitGroup counter\n\ngoroutine 9 [running]:\n",
+			shouldMatch:     true,
+			wantLine:        "2026-10-20 10:00:00.000000 test: panic: sync: negative WaitGroup counter",
+		},
+		{
+			name:            "without prefilter ignores match inside except_block",
+			prefilterPrefix: "",
+			log:             "=== RUN   TestIgnoredPanic\npanic: test panic\n\ngoroutine 5 [running]:\n--- PASS: TestIgnoredPanic\n",
+			shouldMatch:     false,
+		},
+		{
+			name:            "without prefilter ignores match in second test within except block started in first test",
+			prefilterPrefix: "",
+			log:             crossTestLog0 + crossTestLog1,
+			perTest:         crossTestPerTestIgnoredOnly,
+			shouldMatch:     false,
+		},
+		{
+			name:            "with prefilter matches when prefix present and lookback matches single delimiter",
+			prefilterPrefix: panicPrefix,
+			log:             "2026-10-20 10:00:00.000000 testrunner: panic: sync: negative WaitGroup counter\n\ngoroutine 9 [running]:\n",
+			shouldMatch:     true,
+			wantLine:        "2026-10-20 10:00:00.000000 testrunner: panic: sync: negative WaitGroup counter",
+		},
+		{
+			name:            "with prefilter matches when pattern includes preceding token in lookback",
+			prefilterPrefix: panicPrefix,
+			log:             "[worker-42]   panic: sync: negative WaitGroup counter\n\ngoroutine 9 [running]:\n",
+			shouldMatch:     true,
+			wantLine:        "[worker-42]   panic: sync: negative WaitGroup counter",
+		},
+		{
+			name:            "with prefilter prevents false positive on non-matching prefix boundary",
+			prefilterPrefix: panicPrefix,
+			log:             "2026-10-20 10:00:00.000000 test: non-panic: synthetic message\n\ngoroutine 1 [running]:\n",
+			shouldMatch:     false,
+		},
+		{
+			name:            "with prefilter fast path returns false when prefix is absent",
+			prefilterPrefix: panicPrefix,
+			log:             "healthy test output\nmore healthy test output\n",
+			shouldMatch:     false,
+		},
+		{
+			name:            "with prefilter matches subsequent valid prefix occurrence when earlier occurrence fails regex",
+			prefilterPrefix: panicPrefix,
+			log:             "non-panic: ignore this\nfiller line\npanic: real failure\n\ngoroutine 1 [running]:\n",
+			shouldMatch:     true,
+			wantLine:        "panic: real failure",
+		},
+		{
+			name:            "with prefilter ignores match in except block and finds next match",
+			prefilterPrefix: panicPrefix,
+			log:             "=== RUN   TestIgnoredPanic\npanic: test panic\n\ngoroutine 5 [running]:\n" + strings.Repeat("frame()\n", 9) + "--- PASS: TestIgnoredPanic\npanic: unhandled panic\n\ngoroutine 1 [running]:\n",
+			shouldMatch:     true,
+			wantLine:        "panic: unhandled panic",
+		},
+		{
+			name:            "with prefilter ignores match in second test within except block started in first test",
+			prefilterPrefix: panicPrefix,
+			log:             crossTestLog0 + crossTestLog1,
+			perTest:         crossTestPerTestIgnoredOnly,
+			shouldMatch:     false,
+		},
+		{
+			name:            "with prefilter matches in subsequent test outside except block started in earlier test",
+			prefilterPrefix: panicPrefix,
+			log:             crossTestLog,
+			perTest:         crossTestPerTest,
+			shouldMatch:     true,
+			wantLine:        "panic: unhandled panic",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := stringInLogCheck{
+				CheckName:       "regex_check",
+				String:          panicPattern,
+				PrefilterPrefix: tc.prefilterPrefix,
+				Type:            swarmingOutputType,
+				AttributeToTest: true,
+				regex:           regexp.MustCompile(panicPattern),
+				ExceptBlocks:    exceptBlocks,
+			}
+			to := TestingOutputs{
+				SwarmingOutput:        []byte(tc.log),
+				SwarmingOutputPerTest: tc.perTest,
+				SwarmingSummary: &SwarmingTaskSummary{
+					Results: &SwarmingRpcsTaskResult{TaskId: "abc", State: "COMPLETED", Failure: true},
+				},
+			}
+			if got := c.Check(&to); got != tc.shouldMatch {
+				t.Fatalf("c.Check() = %t, want %t", got, tc.shouldMatch)
+			}
+			if tc.wantLine != "" && c.FailureReason() != tc.wantLine {
+				t.Errorf("FailureReason() = %q, want %q", c.FailureReason(), tc.wantLine)
+			}
+		})
+	}
+}
+
+func BenchmarkRegexCheckPrefilter(b *testing.B) {
+	const panicPattern = `(?m)(?:^|[^-\w\n])panic: .*\n(?:.*\n){0,8}.*goroutine \d+ \[`
+	log := []byte(strings.Repeat("2026-10-20 10:00:00.000000 normal log output line from running test suite without panics\n", 10000))
+	to := TestingOutputs{
+		SwarmingOutput: log,
+		SwarmingSummary: &SwarmingTaskSummary{
+			Results: &SwarmingRpcsTaskResult{TaskId: "abc", State: "COMPLETED", Failure: true},
+		},
+	}
+
+	for _, tc := range []struct {
+		name            string
+		prefilterPrefix string
+	}{
+		{name: "without_prefilter", prefilterPrefix: ""},
+		{name: "with_prefilter", prefilterPrefix: "panic: "},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			c := stringInLogCheck{
+				CheckName:       "go_panic",
+				String:          panicPattern,
+				PrefilterPrefix: tc.prefilterPrefix,
+				Type:            swarmingOutputType,
+				regex:           regexp.MustCompile(panicPattern),
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				c.Check(&to)
 			}
 		})
 	}
