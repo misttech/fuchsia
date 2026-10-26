@@ -12,6 +12,7 @@
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/zx/clock.h>
 
 #include <set>
 
@@ -620,6 +621,8 @@ TEST_P(ParameterizedButtonsTest, DirectButtonFlaky) {
   auto init_result = Init(kMetadataSingleButtonDirect, /* suspend_enabled */ GetParam());
   ASSERT_TRUE(init_result.is_ok());
 
+  fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader = GetReader();
+
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
     env.SetGpioReadResponse(0, 1);
     env.SetGpioReadResponse(0, 0);
@@ -628,7 +631,6 @@ TEST_P(ParameterizedButtonsTest, DirectButtonFlaky) {
     env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
   });
 
-  fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader = GetReader();
   zx_status_t status = ReadAndAcknowledgeOneEvent(
       reader,
       [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
@@ -745,31 +747,9 @@ TEST_P(ParameterizedButtonsTest, DuplicateReports) {
 
   // Push FDR (both VOL_UP and VOL_DOWN).
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
-    env.SetGpioReadResponse(2, 1);
-    env.SetGpioReadResponse(2, 1);
-
-    // Report.
-    env.SetGpioReadResponse(0, 1);
-    env.SetGpioReadResponse(1, 1);
-    env.SetGpioReadResponse(2, 1);
-
-    // Release VOL_UP.
-    env.SetGpioReadResponse(0, 0);
-    env.SetGpioReadResponse(0, 0);
-
-    // Report.
-    env.SetGpioReadResponse(0, 0);
-    env.SetGpioReadResponse(1, 1);
-    env.SetGpioReadResponse(2, 0);
-
-    // Release FDR (both VOL_UP and VOL_DOWN).
-    env.SetGpioReadResponse(2, 0);
-    env.SetGpioReadResponse(2, 0);
-
-    // Report (same as before).
-    env.SetGpioReadResponse(0, 0);
-    env.SetGpioReadResponse(1, 1);
-    env.SetGpioReadResponse(2, 0);
+    env.SetDefaultGpioReadResponse(0, 1);
+    env.SetDefaultGpioReadResponse(1, 1);
+    env.SetDefaultGpioReadResponse(2, 1);
 
     env.fake_gpio_interrupts_[2].trigger(0, zx::clock::get_boot());
   });
@@ -804,7 +784,12 @@ TEST_P(ParameterizedButtonsTest, DuplicateReports) {
     ASSERT_OK(status);
   }
 
+  // Release VOL_UP (leaving VOL_DOWN held and FDR deasserted).
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 0);
+    env.SetDefaultGpioReadResponse(1, 1);
+    env.SetDefaultGpioReadResponse(2, 0);
+
     env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
   });
 
@@ -830,9 +815,16 @@ TEST_P(ParameterizedButtonsTest, DuplicateReports) {
     ASSERT_OK(status);
   }
 
+  // Release FDR (reported values do not change, so no new report is emitted).
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
     env.fake_gpio_interrupts_[2].trigger(0, zx::clock::get_boot());
   });
+
+  zx_signals_t observed = 0;
+  EXPECT_EQ(reader.client_end().channel().wait_one(
+                ZX_CHANNEL_READABLE,
+                zx::deadline_after(zx::duration(kDebounceThresholdNs) + zx::msec(20)), &observed),
+            ZX_ERR_TIMED_OUT);
 }
 
 TEST_P(ParameterizedButtonsTest, CamMute) {
@@ -850,6 +842,7 @@ TEST_P(ParameterizedButtonsTest, CamMute) {
     env.SetGpioReadResponse(0, 0);
     env.SetGpioReadResponse(1, 0);
     env.SetGpioReadResponse(2, 1);
+    env.SetDefaultGpioReadResponse(2, 1);
 
     env.fake_gpio_interrupts_[2].trigger(0, zx::clock::get_boot());
   });
@@ -885,6 +878,7 @@ TEST_P(ParameterizedButtonsTest, CamMute) {
     env.SetGpioReadResponse(0, 0);
     env.SetGpioReadResponse(1, 0);
     env.SetGpioReadResponse(2, 0);
+    env.SetDefaultGpioReadResponse(2, 0);
 
     env.fake_gpio_interrupts_[2].trigger(0, zx::clock::get_boot());
   });
@@ -945,12 +939,8 @@ TEST_P(ParameterizedButtonsTest, PollOneButton) {
     ASSERT_OK(status);
   }
 
-  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
-    env.SetDefaultGpioReadResponse(1, 1);
-
-    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
-    env.fake_gpio_interrupts_[1].trigger(0, zx::clock::get_boot());
-  });
+  driver_test().RunInEnvironmentTypeContext(
+      [](ButtonsTestEnvironment& env) { env.SetDefaultGpioReadResponse(1, 1); });
 
   {
     zx_status_t status = ReadAndAcknowledgeOneEvent(
@@ -983,7 +973,7 @@ TEST_P(ParameterizedButtonsTest, PollOneButton) {
 
   driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
     env.SetDefaultGpioReadResponse(0, 0);
-    env.fake_gpio_interrupts_[1].trigger(0, zx::clock::get_boot());
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
   });
 
   {
@@ -1030,6 +1020,198 @@ TEST_P(ParameterizedButtonsTest, PollOneButton) {
         });
     ASSERT_OK(status);
   }
+}
+
+TEST_P(ParameterizedButtonsTest, LeadingEdgePressImmediateNotification) {
+  const bool suspend_enabled = GetParam();
+  auto result = Init(kMetadataSingleButtonDirect, suspend_enabled);
+  ASSERT_TRUE(result.is_ok());
+
+  fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader = GetReader();
+
+  const zx::time press_start = zx::clock::get_monotonic();
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 1);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  zx::time press_event_time = zx::time::infinite_past();
+  zx_status_t status = ReadAndAcknowledgeOneEvent(
+      reader,
+      [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
+        const fidl::VectorView<fuchsia_input_report::wire::InputReport>& reports = event->reports;
+        ASSERT_EQ(reports.size(), 1U);
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+
+        ASSERT_TRUE(report.has_event_time());
+        press_event_time = zx::time(report.event_time());
+        ASSERT_TRUE(report.has_consumer_control());
+        const fuchsia_input_report::wire::ConsumerControlInputReport& consumer_control =
+            report.consumer_control();
+
+        ASSERT_TRUE(consumer_control.has_pressed_buttons());
+        ASSERT_EQ(consumer_control.pressed_buttons().size(), 1U);
+        EXPECT_EQ(consumer_control.pressed_buttons()[0],
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
+      });
+  ASSERT_OK(status);
+
+  // Leading-edge notification must arrive immediately without waiting for the 50 ms holdoff timer.
+  EXPECT_GE(press_event_time, press_start);
+  EXPECT_LT(press_event_time - press_start, zx::duration(kDebounceThresholdNs));
+
+  driver_test().RunInEnvironmentTypeContext([suspend_enabled](ButtonsTestEnvironment& env) {
+    EXPECT_EQ(env.fake_sag_.HasWakeLeaseBeenTaken(), suspend_enabled);
+  });
+
+  // When the 50 ms holdoff timer expires while the button remains held, no duplicate report is
+  // emitted.
+  zx_signals_t observed = 0;
+  EXPECT_EQ(reader.client_end().channel().wait_one(
+                ZX_CHANNEL_READABLE,
+                zx::deadline_after(zx::duration(kDebounceThresholdNs) + zx::msec(20)), &observed),
+            ZX_ERR_TIMED_OUT);
+}
+
+TEST_P(ParameterizedButtonsTest, ContactBounceProducesSinglePressReport) {
+  const bool suspend_enabled = GetParam();
+  auto result = Init(kMetadataSingleButtonDirect, suspend_enabled);
+  ASSERT_TRUE(result.is_ok());
+
+  fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader = GetReader();
+
+  // Initial press edge (0 -> 1).
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 1);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  zx_status_t status = ReadAndAcknowledgeOneEvent(
+      reader,
+      [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
+        const fidl::VectorView<fuchsia_input_report::wire::InputReport>& reports = event->reports;
+        ASSERT_EQ(reports.size(), 1U);
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+        ASSERT_TRUE(report.has_consumer_control());
+        const fuchsia_input_report::wire::ConsumerControlInputReport& consumer_control =
+            report.consumer_control();
+        ASSERT_TRUE(consumer_control.has_pressed_buttons());
+        ASSERT_EQ(consumer_control.pressed_buttons().size(), 1U);
+        EXPECT_EQ(consumer_control.pressed_buttons()[0],
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
+      });
+  ASSERT_OK(status);
+
+  // Simulate contact bounce (press -> release -> press) inside the 50 ms holdoff window.
+  zx::nanosleep(zx::deadline_after(zx::msec(2)));
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 0);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  zx::nanosleep(zx::deadline_after(zx::msec(5)));
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 1);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  // Wait past the 50 ms holdoff window and verify zero chatter/duplicate reports are emitted.
+  zx_signals_t observed = 0;
+  EXPECT_EQ(reader.client_end().channel().wait_one(
+                ZX_CHANNEL_READABLE,
+                zx::deadline_after(zx::duration(kDebounceThresholdNs) + zx::msec(25)), &observed),
+            ZX_ERR_TIMED_OUT);
+
+  // Verify interrupt polarity was properly maintained across bounces and a subsequent clean release
+  // reports immediately.
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    EXPECT_EQ(env.fake_gpio_servers_[0].GetInterruptMode(),
+              fuchsia_hardware_gpio::InterruptMode::kEdgeLow);
+    env.SetDefaultGpioReadResponse(0, 0);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  status = ReadAndAcknowledgeOneEvent(
+      reader,
+      [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
+        const fidl::VectorView<fuchsia_input_report::wire::InputReport>& reports = event->reports;
+        ASSERT_EQ(reports.size(), 1U);
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+        ASSERT_TRUE(report.has_consumer_control());
+        const fuchsia_input_report::wire::ConsumerControlInputReport& consumer_control =
+            report.consumer_control();
+        ASSERT_TRUE(consumer_control.has_pressed_buttons());
+        EXPECT_EQ(consumer_control.pressed_buttons().size(), 0U);
+      });
+  ASSERT_OK(status);
+}
+
+TEST_P(ParameterizedButtonsTest, FastTapEmitsPressImmediatelyAndReleaseAfterHoldoff) {
+  const bool suspend_enabled = GetParam();
+  auto result = Init(kMetadataSingleButtonDirect, suspend_enabled);
+  ASSERT_TRUE(result.is_ok());
+
+  fidl::WireSyncClient<fuchsia_input_report::InputReportsReaderV2> reader = GetReader();
+
+  // Press at T = 0 ms.
+  const zx::time press_start = zx::clock::get_monotonic();
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 1);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  zx::time press_event_time = zx::time::infinite_past();
+  zx_status_t status = ReadAndAcknowledgeOneEvent(
+      reader,
+      [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
+        const fidl::VectorView<fuchsia_input_report::wire::InputReport>& reports = event->reports;
+        ASSERT_EQ(reports.size(), 1U);
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+        ASSERT_TRUE(report.has_event_time());
+        press_event_time = zx::time(report.event_time());
+        ASSERT_TRUE(report.has_consumer_control());
+        const fuchsia_input_report::wire::ConsumerControlInputReport& consumer_control =
+            report.consumer_control();
+        ASSERT_TRUE(consumer_control.has_pressed_buttons());
+        ASSERT_EQ(consumer_control.pressed_buttons().size(), 1U);
+        EXPECT_EQ(consumer_control.pressed_buttons()[0],
+                  fuchsia_input::wire::ConsumerControlButton::kVolumeUp);
+      });
+  ASSERT_OK(status);
+  EXPECT_GE(press_event_time, press_start);
+  EXPECT_LT(press_event_time - press_start, zx::duration(kDebounceThresholdNs));
+
+  // Release 10 ms later (inside the 50 ms holdoff window).
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    env.SetDefaultGpioReadResponse(0, 0);
+    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
+  });
+
+  // Trailing release must be emitted when the 50 ms holdoff timer reconciles the settled state so
+  // the button is never stuck pressed.
+  zx::time release_event_time = zx::time::infinite_past();
+  status = ReadAndAcknowledgeOneEvent(
+      reader,
+      [&](fidl::WireEvent<fuchsia_input_report::InputReportsReaderV2::OnInputReports>* event) {
+        const fidl::VectorView<fuchsia_input_report::wire::InputReport>& reports = event->reports;
+        ASSERT_EQ(reports.size(), 1U);
+        const fuchsia_input_report::wire::InputReport& report = reports[0];
+        ASSERT_TRUE(report.has_event_time());
+        release_event_time = zx::time(report.event_time());
+        ASSERT_TRUE(report.has_consumer_control());
+        const fuchsia_input_report::wire::ConsumerControlInputReport& consumer_control =
+            report.consumer_control();
+        ASSERT_TRUE(consumer_control.has_pressed_buttons());
+        EXPECT_EQ(consumer_control.pressed_buttons().size(), 0U);
+      });
+  ASSERT_OK(status);
+  EXPECT_GE(release_event_time - press_event_time, zx::duration(kDebounceThresholdNs));
+
+  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
+    EXPECT_EQ(env.fake_gpio_servers_[0].GetInterruptMode(),
+              fuchsia_hardware_gpio::InterruptMode::kEdgeHigh);
+  });
 }
 
 }  // namespace buttons

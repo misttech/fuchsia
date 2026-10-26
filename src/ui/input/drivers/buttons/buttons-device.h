@@ -16,6 +16,7 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/port.h>
+#include <lib/zx/time.h>
 #include <lib/zx/timer.h>
 #include <zircon/syscalls-next.h>
 #include <zircon/threads.h>
@@ -53,7 +54,7 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
                          std::vector<fuchsia_buttons::GpioButtonConfig> buttons,
                          std::vector<Gpio> gpios,
                          fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client);
-  void Notify(size_t button_index);
+  bool Notify(size_t button_index);
   void ShutDown();
 
   // fuchsia_input_report::InputDevice required methods
@@ -127,7 +128,7 @@ class ButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevice>
     bool enqueued;
     zx::timer timer;
     bool value;
-    zx::time timestamp = zx::time::infinite_past();
+    zx::time_boot timestamp = zx::time_boot::infinite_past();
   };
   fbl::Array<debounce_state> debounce_states_;
   // last_report_ saved to de-duplicate reports

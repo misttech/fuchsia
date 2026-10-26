@@ -85,17 +85,22 @@ void ButtonsDevice::ButtonsInputReport::ToFidlInputReport(
   input_report.event_time(event_time.get()).consumer_control(consumer_control.Build());
 }
 
-void ButtonsDevice::Notify(size_t button_index) {
+bool ButtonsDevice::Notify(size_t button_index) {
   zx::result<ButtonsInputReport> result = GetInputReportInternal();
   if (result.is_error()) {
     fdf::error("GetInputReport failed {}", zx_status_get_string(result.error_value()));
-  } else if (!last_report_.has_value() || *last_report_ != result.value()) {
+    debounce_states_[button_index].timestamp = zx::time_boot::infinite_past();
+    return false;
+  }
+
+  const bool state_changed = !last_report_.has_value() || *last_report_ != result.value();
+  if (state_changed) {
     last_report_ = result.value();
     readers_.SendReportToAllReaders(*last_report_);
 
-    if (debounce_states_[button_index].timestamp != zx::time::infinite_past()) {
-      const zx::duration latency =
-          zx::clock::get_monotonic() - debounce_states_[button_index].timestamp;
+    if (debounce_states_[button_index].timestamp != zx::time_boot::infinite_past()) {
+      const zx::duration latency = std::max(
+          zx::duration(0), zx::clock::get_boot() - debounce_states_[button_index].timestamp);
 
       total_latency_ += latency;
       report_count_++;
@@ -111,13 +116,13 @@ void ButtonsDevice::Notify(size_t button_index) {
       total_report_count_.Add(1);
       last_event_timestamp_.Set(last_report_->event_time.get());
     }
-  }
-  if (buttons_[button_index].id() == fuchsia_buttons::GpioButtonId::kFdr) {
-    fdf::info("FDR (up and down buttons) pressed");
+    if (buttons_[button_index].id() == fuchsia_buttons::GpioButtonId::kFdr) {
+      fdf::info("FDR (up and down buttons) pressed");
+    }
   }
 
-  debounce_states_[button_index].enqueued = false;
-  debounce_states_[button_index].timestamp = zx::time::infinite_past();
+  debounce_states_[button_index].timestamp = zx::time_boot::infinite_past();
+  return state_changed;
 }
 
 int ButtonsDevice::Thread() {
@@ -160,22 +165,29 @@ int ButtonsDevice::Thread() {
         }
         debounce_states_[type].value = *reconfig_result;
 
-        // Notify
-        debounce_states_[type].timer.set(zx::deadline_after(zx::duration(kDebounceThresholdNs)),
-                                         zx::duration(0));
         if (!debounce_states_[type].enqueued) {
-          debounce_states_[type].timer.wait_async(port_, kPortKeyTimerStart + type,
-                                                  ZX_TIMER_SIGNALED, 0);
-          debounce_states_[type].timestamp = zx::time(packet.interrupt.timestamp);
+          debounce_states_[type].timestamp = zx::time_boot(packet.interrupt.timestamp);
+          // Leading-edge debounce: report validated state changes immediately (0 ms delay) and arm
+          // a 50 ms holdoff timer to suppress contact bounce and reconcile the settled GPIO state.
+          if (Notify(type)) {
+            debounce_states_[type].timer.set(zx::deadline_after(zx::duration(kDebounceThresholdNs)),
+                                             zx::duration(0));
+            debounce_states_[type].timer.wait_async(port_, kPortKeyTimerStart + type,
+                                                    ZX_TIMER_SIGNALED, 0);
+            debounce_states_[type].enqueued = true;
+          }
+        } else if (debounce_states_[type].timestamp == zx::time_boot::infinite_past()) {
+          debounce_states_[type].timestamp = zx::time_boot(packet.interrupt.timestamp);
         }
-        debounce_states_[type].enqueued = true;
       }
 
       gpios_[type].irq.ack();
     }
 
     if (packet.key >= kPortKeyTimerStart && packet.key < (kPortKeyTimerStart + buttons_.size())) {
-      Notify(packet.key - kPortKeyTimerStart);
+      const size_t button_index = packet.key - kPortKeyTimerStart;
+      debounce_states_[button_index].enqueued = false;
+      Notify(button_index);
     }
 
     if (packet.key == kPortKeyPollTimer) {
@@ -436,13 +448,13 @@ zx::result<bool> ButtonsDevice::ReconfigurePolarity(size_t idx, uint64_t int_por
   }
   current = read_result1.value()->value;
 
-  fidl::Arena arena;
-  auto config = fuchsia_hardware_gpio::wire::InterruptConfiguration::Builder(arena)
-                    .mode(current ? fuchsia_hardware_gpio::InterruptMode::kEdgeLow
-                                  : fuchsia_hardware_gpio::InterruptMode::kEdgeHigh)
-                    .Build();
   do {
     {
+      fidl::Arena arena;
+      auto config = fuchsia_hardware_gpio::wire::InterruptConfiguration::Builder(arena)
+                        .mode(current ? fuchsia_hardware_gpio::InterruptMode::kEdgeLow
+                                      : fuchsia_hardware_gpio::InterruptMode::kEdgeHigh)
+                        .Build();
       fidl::WireResult result = gpio.client->ConfigureInterrupt(config);
       if (!result.ok()) {
         fdf::error("Failed to send ConfigureInterrupt request to gpio {}: {}", idx,
