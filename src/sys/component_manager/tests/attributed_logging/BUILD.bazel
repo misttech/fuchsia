@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "e2e-bin",
+    srcs = ["e2e-test.rs"],
+    crate_name = "attributed_logging_e2e_test",
+    crate_root = "e2e-test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)

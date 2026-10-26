@@ -1,0 +1,221 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "empty",
+    srcs = ["empty.rs"],
+    crate_root = "empty.rs",
+    edition = "2024",
+)
+
+rustc_binary(
+    name = "use-unoffered",
+    srcs = ["use-unoffered.rs"],
+    binary_name = "use_unoffered",
+    crate_root = "use-unoffered.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "archive-reader",
+    srcs = ["archive-reader.rs"],
+    binary_name = "archive_reader",
+    crate_root = "archive-reader.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/diagnostics/data",
+        "//src/lib/diagnostics/reader",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "archive-reader_packaged_bin",
+    binary = ":archive-reader",
+    binary_name = "archive_reader",
+)
+
+fx_component_manifest(
+    name = "reader-manifest",
+    testonly = True,
+    component_name = "reader",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/reader.cml",
+)
+
+fx_component(
+    name = "reader",
+    testonly = True,
+    compiled_manifest = ":reader-manifest",
+    component_name = "reader",
+    deps = [":archive-reader_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "empty_packaged_bin",
+    binary = ":empty",
+    binary_name = "empty",
+)
+
+fx_component_manifest(
+    name = "empty-component-manifest",
+    testonly = True,
+    component_name = "empty",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/empty.cml",
+)
+
+fx_component(
+    name = "empty-component",
+    testonly = True,
+    compiled_manifest = ":empty-component-manifest",
+    component_name = "empty",
+    deps = [":empty_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "use-unoffered_packaged_bin",
+    binary = ":use-unoffered",
+    binary_name = "use_unoffered",
+)
+
+fx_component_manifest(
+    name = "without-use-manifest",
+    testonly = True,
+    component_name = "without-use",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/without-use.cml",
+)
+
+fx_component(
+    name = "without-use",
+    testonly = True,
+    compiled_manifest = ":without-use-manifest",
+    component_name = "without-use",
+    deps = [":use-unoffered_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "use-unoffered-component-manifest",
+    testonly = True,
+    component_name = "use-unoffered",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/use-unoffered.cml",
+)
+
+fx_component(
+    name = "use-unoffered-component",
+    testonly = True,
+    compiled_manifest = ":use-unoffered-component-manifest",
+    component_name = "use-unoffered",
+    deps = [":use-unoffered_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "optional-use-unoffered-component-manifest",
+    testonly = True,
+    component_name = "optional-use-unoffered",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/optional-use-unoffered.cml",
+)
+
+fx_component(
+    name = "optional-use-unoffered-component",
+    testonly = True,
+    compiled_manifest = ":optional-use-unoffered-component-manifest",
+    component_name = "optional-use-unoffered",
+    deps = [":use-unoffered_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "optional-use-from-void-component-manifest",
+    testonly = True,
+    component_name = "optional-use-from-void",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/optional-use-from-void.cml",
+)
+
+fx_component(
+    name = "optional-use-from-void-component",
+    testonly = True,
+    compiled_manifest = ":optional-use-from-void-component-manifest",
+    component_name = "optional-use-from-void",
+    deps = [":use-unoffered_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "offers-to-children-unavailable-manifest",
+    testonly = True,
+    component_name = "offers-to-children-unavailable",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:offer.shard",
+    ],
+    manifest = "meta/offers-to-children-unavailable.cml",
+)
+
+fx_component(
+    name = "offers-to-children-unavailable",
+    testonly = True,
+    compiled_manifest = ":offers-to-children-unavailable-manifest",
+    component_name = "offers-to-children-unavailable",
+)
+
+fx_component_manifest(
+    name = "offers-to-children-unavailable-but-optional-manifest",
+    testonly = True,
+    component_name = "offers-to-children-unavailable-but-optional",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:offer.shard",
+    ],
+    manifest = "meta/offers-to-children-unavailable-but-optional.cml",
+)
+
+fx_component(
+    name = "offers-to-children-unavailable-but-optional",
+    testonly = True,
+    compiled_manifest = ":offers-to-children-unavailable-but-optional-manifest",
+    component_name = "offers-to-children-unavailable-but-optional",
+)
+
+fx_component_manifest(
+    name = "routing-tests-manifest",
+    testonly = True,
+    component_name = "routing-tests",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:offer.shard",
+    ],
+    manifest = "meta/routing-tests.cml",
+)
+
+fx_component(
+    name = "routing-tests",
+    testonly = True,
+    compiled_manifest = ":routing-tests-manifest",
+    component_name = "routing-tests",
+)

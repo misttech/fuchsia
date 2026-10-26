@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "looper_bin",
+    testonly = True,
+    srcs = ["src/looper.rs"],
+    crate_name = "looper",
+    crate_root = "src/looper.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/binder/fidl:fuchsia.component.tests_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "binder_integration_test_bin",
+    srcs = ["src/binder_integration_test.rs"],
+    crate_name = "binder_integration_test",
+    crate_root = "src/binder_integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/binder/fidl:fuchsia.component.tests_rust",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "boot_integration_test_bin",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/diagnostics/reader/rust:lib",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
