@@ -5752,11 +5752,6 @@ zx_status_t brcmf_if_get_iface_histogram_stats(
   }
   auto stats_builder = fuchsia_wlan_stats::wire::IfaceHistogramStats::Builder(arena);
 
-  ndev->stats.noise_floor_histograms = {};
-  ndev->stats.rssi_histograms = {};
-  ndev->stats.rx_rate_index_histograms = {};
-  ndev->stats.snr_histograms = {};
-
   if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFG)) {
     // MFG builds do not support many of the stats iovars.
     return ZX_ERR_NOT_SUPPORTED;
@@ -5784,30 +5779,23 @@ zx_status_t brcmf_if_get_iface_histogram_stats(
               histograms_report.antennaid.idx);
     return antenna_id_status;
   }
-  ndev->stats.noise_floor_histograms.resize(1);
+  fidl::VectorView<fuchsia_wlan_stats::wire::NoiseFloorHistogram> noise_floor_histograms(arena, 1);
   brcmf_convert_histograms_report_noise_floor(histograms_report, antenna_id,
-                                              ndev->stats.noise_floor_histograms.data(), arena);
-  ndev->stats.rssi_histograms.resize(1);
-  brcmf_convert_histograms_report_rssi(histograms_report, antenna_id,
-                                       ndev->stats.rssi_histograms.data(), arena);
-  ndev->stats.rx_rate_index_histograms.resize(1);
+                                              noise_floor_histograms.data(), arena);
+  fidl::VectorView<fuchsia_wlan_stats::wire::RssiHistogram> rssi_histograms(arena, 1);
+  brcmf_convert_histograms_report_rssi(histograms_report, antenna_id, rssi_histograms.data(),
+                                       arena);
+  fidl::VectorView<fuchsia_wlan_stats::wire::RxRateIndexHistogram> rx_rate_index_histograms(arena,
+                                                                                            1);
   brcmf_convert_histograms_report_rx_rate_index(histograms_report, antenna_id,
-                                                ndev->stats.rx_rate_index_histograms.data(), arena);
-  ndev->stats.snr_histograms.resize(1);
-  brcmf_convert_histograms_report_snr(histograms_report, antenna_id,
-                                      ndev->stats.snr_histograms.data(), arena);
+                                                rx_rate_index_histograms.data(), arena);
+  fidl::VectorView<fuchsia_wlan_stats::wire::SnrHistogram> snr_histograms(arena, 1);
+  brcmf_convert_histograms_report_snr(histograms_report, antenna_id, snr_histograms.data(), arena);
 
-  // Conversion from banjo to FIDL table.
-  stats_builder.noise_floor_histograms(
-      fidl::VectorView<fuchsia_wlan_stats::wire::NoiseFloorHistogram>(
-          arena, ndev->stats.noise_floor_histograms));
-  stats_builder.rssi_histograms(fidl::VectorView<fuchsia_wlan_stats::wire::RssiHistogram>(
-      arena, ndev->stats.rssi_histograms));
-  stats_builder.rx_rate_index_histograms(
-      fidl::VectorView<fuchsia_wlan_stats::wire::RxRateIndexHistogram>(
-          arena, ndev->stats.rx_rate_index_histograms));
-  stats_builder.snr_histograms(
-      fidl::VectorView<fuchsia_wlan_stats::wire::SnrHistogram>(arena, ndev->stats.snr_histograms));
+  stats_builder.noise_floor_histograms(noise_floor_histograms);
+  stats_builder.rssi_histograms(rssi_histograms);
+  stats_builder.rx_rate_index_histograms(rx_rate_index_histograms);
+  stats_builder.snr_histograms(snr_histograms);
 
   *out_stats = stats_builder.Build();
 
