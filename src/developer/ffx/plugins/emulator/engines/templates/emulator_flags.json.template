@@ -351,6 +351,13 @@
             "DISPLAY": "{{env "DISPLAY"}}",
         {{/unless}}
         "QEMU_AUDIO_DRV": "none"
+        {{! In headless mode with lavapipe, host GLES composition with ANGLE/swangle }}
+        {{! leaks staging VkDeviceMemory on glTexSubImage2D calls. Setting }}
+        {{! ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER=1 forces host GLES to use }}
+        {{! SwiftShader in place while keeping guest Vulkan on Lavapipe. }}
+        {{#if (eq host.gpu "lavapipe")}}
+          ,"ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER": "1"
+        {{/if}}
         {{#each runtime.addl_env}}
           ,"{{@key}}" : "{{this}}"
         {{/each}}

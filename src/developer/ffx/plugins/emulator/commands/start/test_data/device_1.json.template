@@ -229,5 +229,8 @@
             "DISPLAY": "{{env "DISPLAY"}}",
         {{/unless}}
         "QEMU_AUDIO_DRV": "none"
+        {{#if (eq host.gpu "lavapipe")}}
+          ,"ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER": "1"
+        {{/if}}
     }
 }

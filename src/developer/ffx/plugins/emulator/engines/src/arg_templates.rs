@@ -371,8 +371,8 @@ mod tests {
 
     use super::*;
     use emulator_instance::{
-        AccelerationMode, DeviceConfig, EngineType, GuestConfig, HostConfig, NetworkingMode,
-        OperatingSystem, RuntimeConfig, VirtualCpu,
+        AccelerationMode, DeviceConfig, EngineType, GpuType, GuestConfig, HostConfig,
+        NetworkingMode, OperatingSystem, RuntimeConfig, VirtualCpu,
     };
     use ffx_emulator_config::AudioModel;
     use serde::Serialize;
@@ -1448,5 +1448,61 @@ mod tests {
                 .expect("processed");
         assert_eq!(flags.args.len(), 1);
         assert_eq!(flags.args[0], r#"val", "injected_arg"#);
+    }
+
+    #[test]
+    fn test_lavapipe_gl_mode_swiftshader() {
+        // Test default template (non-EFI, non-GPT).
+        let default_config = EmulatorConfiguration {
+            host: HostConfig { gpu: GpuType::Lavapipe, ..Default::default() },
+            ..Default::default()
+        };
+        let actual = process_flag_template(&default_config).expect("ok processing");
+        assert_eq!(
+            actual.envs.get("ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER"),
+            Some(&"1".to_string())
+        );
+
+        // Test EFI template.
+        let efi_config = EmulatorConfiguration {
+            guest: GuestConfig {
+                kernel_image: Some(PathBuf::from("/path/to/some.efi")),
+                ovmf_code: "/some/ovmf_code.fd".into(),
+                ovmf_vars: "/some/ovmf_vars.fd".into(),
+                ..Default::default()
+            },
+            host: HostConfig { gpu: GpuType::Lavapipe, ..Default::default() },
+            ..Default::default()
+        };
+        let actual_efi = process_flag_template(&efi_config).expect("ok processing");
+        assert_eq!(
+            actual_efi.envs.get("ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER"),
+            Some(&"1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_non_lavapipe_no_gl_mode_swiftshader() {
+        // Test default template with swiftshader_indirect (default GPU).
+        let default_config = EmulatorConfiguration {
+            host: HostConfig { gpu: GpuType::SwiftshaderIndirect, ..Default::default() },
+            ..Default::default()
+        };
+        let actual = process_flag_template(&default_config).expect("ok processing");
+        assert_eq!(actual.envs.get("ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER"), None);
+
+        // Test EFI template with swiftshader_indirect.
+        let efi_config = EmulatorConfiguration {
+            guest: GuestConfig {
+                kernel_image: Some(PathBuf::from("/path/to/some.efi")),
+                ovmf_code: "/some/ovmf_code.fd".into(),
+                ovmf_vars: "/some/ovmf_vars.fd".into(),
+                ..Default::default()
+            },
+            host: HostConfig { gpu: GpuType::SwiftshaderIndirect, ..Default::default() },
+            ..Default::default()
+        };
+        let actual_efi = process_flag_template(&efi_config).expect("ok processing");
+        assert_eq!(actual_efi.envs.get("ANDROID_EMU_LAVAPIPE_GL_MODE_SWIFTSHADER"), None);
     }
 }
