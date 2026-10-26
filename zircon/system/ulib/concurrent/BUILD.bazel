@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Note: The GN targets in BUILD.gn are auto-generated from this file via
+# `fx bazel2gn`. If the kernel build ever needs to express something in GN that
+# bazel2gn cannot handle, individual rules (or all rules) in this file can be
+# annotated with `@bazel2gn:skip` (placed on a `#` comment line immediately
+# above the rule) so their GN definitions can be maintained manually above the
+# sentinel in BUILD.gn (using LINT.IfChange / LINT.ThenChange to keep them in
+# sync).
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = [
+        "include/lib/concurrent/capability_token.h",
+        "include/lib/concurrent/chainlock.h",
+        "include/lib/concurrent/chainlock_guard.h",
+        "include/lib/concurrent/chainlock_transaction.h",
+        "include/lib/concurrent/chainlock_transaction_common.h",
+        "include/lib/concurrent/chainlockable.h",
+        "include/lib/concurrent/common.h",
+        "include/lib/concurrent/copy.h",
+        "include/lib/concurrent/seqlock.h",
+        "include/lib/concurrent/seqlock.inc.h",
+        "include/lib/concurrent/seqlock_payload.h",
+    ],
+    visibility = ["//zircon/kernel/lib/kconcurrent:__pkg__"],
+    deps = ["//sdk/lib/stdcompat"],
+)
+
+# seqlock_usermode_fuchsia.cc must not be built into the kernel, which also
+# uses this library. bazel2gn can't express GN's `is_kernel`, so the GN
+# condition for it is written out by hand in the raw_attribute below, and the
+# matching select() entry is skipped by bazel2gn. Keep the two in sync.
+# @bazel2gn:raw_attribute:if (is_fuchsia && !is_kernel) { sources += [ "seqlock_usermode_fuchsia.cc" ] }
+fx_cc_library(
+    name = "concurrent",
+    srcs = [
+        "chainlock_transaction_common.cc",
+        "copy.cc",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "seqlock_usermode_fuchsia.cc",  # @bazel2gn:skip
+        ],
+        "//build/bazel/platforms:is_host_os": ["seqlock_usermode_posix.cc"],
+    }),
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    visibility = [
+        "//zircon/kernel/lib/kconcurrent:__pkg__",
+        "//zircon/system/ulib/concurrent/rust:__pkg__",
+        "//zircon/system/ulib/concurrent/tests:__pkg__",
+    ],
+    deps = [":headers"],
+    alwayslink = True,
+)
+
+# TODO(b/398297232)
+#
+# If we are building for the VDSO, we need to enable an additional options.
+#
+# On ARM64, we cannot allow the compiler to generate the hooks needed to do
+# runtime detection of LSE atomics support.  It has no place to put the init
+# hook, and even if it did, there are no writable data segments for it to store
+# its result.
+#
+fx_cc_library(
+    name = "concurrent_vdso",
+    srcs = ["copy.cc"],
+    implementation_deps = ["//sdk/lib/stdcompat"],
+    public_configs = select({
+        "@platforms//cpu:arm64": ["//build/config/arm64:no-outline-atomics"],
+        "//conditions:default": [],
+    }),
+    visibility = [
+        "//src/starnix/kernel/vdso:__pkg__",
+        "//zircon/kernel/lib/userabi/vdso:__pkg__",
+    ],
+    deps = [":headers"],
+    alwayslink = True,
+)
