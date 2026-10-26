@@ -1,1 +1,1 @@
-per-file crate_annotations.bzl = file: /third_party/rust_crates/OWNERS
+file: /third_party/rust_crates/OWNERS
