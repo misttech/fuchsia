@@ -102,7 +102,7 @@ class StarnixTouchTest : public starnix_input_test::StarnixInputTestBase {
   }
 
   // Reads sequences of touch events from `input_dump.cc`, via `out_socket`
-  // until we get num_expected events.
+  // until we get num_expected events and the trailing EV_SYN packet.
   //
   // Because of the variable amount of packets read at a time, we may create
   // varying  amounts of TouchEvents from a single call to GetEvDevPackets.
@@ -110,14 +110,18 @@ class StarnixTouchTest : public starnix_input_test::StarnixInputTestBase {
   // to read more packets.
   std::vector<TouchEvent> GetTouchEventSequenceOfLen(zx::socket& out_socket, size_t num_expected) {
     std::vector<TouchEvent> result;
+    // Use this flag to ensure we end on a syn packet so a subsequent read won't see it.
+    bool last_event_was_syn = false;
 
-    while (result.size() < num_expected) {
+    while (result.size() < num_expected || !last_event_was_syn) {
       std::vector<EvDevPacket> pkts = GetEvDevPackets(out_socket);
 
       for (EvDevPacket pkt : pkts) {
         if (pkt.type == EV_SYN) {
+          last_event_was_syn = true;
           continue;
         }
+        last_event_was_syn = false;
 
         if (pkt.type == EV_KEY) {
           if (pkt.code != BTN_TOUCH) {
