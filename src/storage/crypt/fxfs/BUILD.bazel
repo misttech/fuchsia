@@ -1,0 +1,108 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",
+        "src/log.rs",
+    ],
+    crate_name = "fxfs_crypt",
+    edition = "2024",
+    visibility = ["//src/storage/fxfs/platform:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/storage/crypt/fxfs/common:lib",
+        "//src/storage/fxfs/crypto",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "fxfs_crypt_lib_test"
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_component(
+    name = "fxfs-crypt-test",
+    binary = ":lib_test",
+)
+
+fx_package(
+    name = "fxfs-crypt-tests-package",
+    package_name = "fxfs-crypt-tests",
+    test_components = [":fxfs-crypt-test"],
+)
+
+fx_test(
+    name = "fxfs-crypt-tests",
+    package = ":fxfs-crypt-tests-package",
+)
+
+rustc_binary(
+    name = "fxfs_crypt",
+    srcs = ["src/main.rs"],
+    # Optimize for size
+    build_flags = ["//build/config/rust:bootfs"],
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fxfs_crypt_packaged_bin",
+    binary = ":fxfs_crypt",
+    binary_name = "fxfs_crypt",
+)
+
+fx_component_manifest(
+    name = "fxfs-crypt-manifest",
+    component_name = "fxfs-crypt",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fxfs_crypt.cml",
+)
+
+fx_component(
+    name = "fxfs-crypt",
+    compiled_manifest = ":fxfs-crypt-manifest",
+    component_name = "fxfs-crypt",
+    deps = [":fxfs_crypt_packaged_bin"],
+)
+
+fx_package(
+    name = "package",
+    package_name = "fxfs-crypt",
+    components = [":fxfs-crypt"],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)
