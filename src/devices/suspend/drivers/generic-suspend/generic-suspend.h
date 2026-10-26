@@ -70,8 +70,14 @@ class GenericSuspend : public fdf::DriverBase2,
  private:
   void Serve(fidl::ServerEnd<fuchsia_hardware_power_suspend::Suspender> request);
   zx::result<> CreateDevfsNode();
+  // Emits trace events for, and records in Inspect, the per-wake-source
+  // details of `report`, as returned by a successful `SystemSuspendEnter`.
+  void RecordWakeSourceReport(const WakeSourceReport& report);
 
   std::optional<inspect::BoundedListNode> inspect_events_;
+  // Details of the wake source report from the most recent successful resume.
+  // Replaced on every successful resume.
+  std::optional<inspect::Node> inspect_last_wake_report_;
   std::optional<inspect::ComponentInspector> exposed_inspector_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_power_suspend::Suspender> suspend_bindings_;
