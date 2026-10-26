@@ -4,27 +4,29 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
+use core::ffi::c_void;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
     ZX_DEFAULT_PROFILE_RIGHTS, ZX_OBJ_TYPE_PROFILE, ZX_PRIORITY_DEFAULT, ZX_PRIORITY_HIGH,
-    ZX_PROFILE_INFO_FLAG_CPU_MASK, ZX_PROFILE_INFO_FLAG_DEADLINE,
-    ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY, ZX_PROFILE_INFO_FLAG_PRIORITY, zx_cpu_set_t,
-    zx_profile_info_t, zx_rights_t,
+    ZX_PROFILE_INFO_FLAG_CPU_MASK, ZX_PROFILE_INFO_FLAG_CRITICAL, ZX_PROFILE_INFO_FLAG_DEADLINE,
+    ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY, ZX_PROFILE_INFO_FLAG_NO_INHERIT,
+    ZX_PROFILE_INFO_FLAG_PRIORITY, zx_cpu_set_t, zx_profile_info_t, zx_rights_t,
 };
 
 use super::KernelHandle;
-use super::profile_dispatcher_ffi::{
-    cpp_profile_dispatcher_create, cpp_profile_dispatcher_validate_and_create_profile,
-};
+use super::profile_dispatcher_ffi::cpp_profile_dispatcher_create;
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::{MemoryPriority, VmAddressRegionDispatcher};
 use crate::counters;
-use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+use crate::kernel::scheduler::SchedCompactDuration;
+use crate::kernel::scheduler_state::{
+    HIGHEST_PRIORITY, LOWEST_PRIORITY, SchedulerStateBaseProfile,
+};
 use crate::kernel::types::cpu_mask_t;
+use crate::platform_rs::timer::DurationMono;
 
 use object_constants_rs as object_constants;
 
@@ -50,15 +52,74 @@ fn parse_cpu_mask(set: &zx_cpu_set_t) -> cpu_mask_t {
 fn validate_and_create_profile(
     info: &zx_profile_info_t,
 ) -> Result<SchedulerStateBaseProfile, Status> {
-    let mut profile = MaybeUninit::uninit();
-    // SAFETY: info and profile pointers are valid.
-    let status = unsafe {
-        cpp_profile_dispatcher_validate_and_create_profile(info as *const _, &mut profile)
-    };
-    Status::ok(status)?;
-    // SAFETY: On success, cpp_profile_dispatcher_validate_and_create_profile() initializes
-    // profile
-    Ok(unsafe { profile.assume_init() })
+    // Ensure that none of the flags outside of the set of valid flags has been set.
+    const ALL_FLAGS: u32 = ZX_PROFILE_INFO_FLAG_PRIORITY
+        | ZX_PROFILE_INFO_FLAG_CPU_MASK
+        | ZX_PROFILE_INFO_FLAG_DEADLINE
+        | ZX_PROFILE_INFO_FLAG_NO_INHERIT
+        | ZX_PROFILE_INFO_FLAG_CRITICAL;
+    if (info.flags & !ALL_FLAGS) != 0 {
+        return Err(Status::INVALID_ARGS);
+    }
+
+    // Ensure that exactly one of the "discipline selection" flags has been set.
+    const DISCIPLINE_SELECTION_FLAGS: u32 =
+        ZX_PROFILE_INFO_FLAG_PRIORITY | ZX_PROFILE_INFO_FLAG_DEADLINE;
+    if (info.flags & DISCIPLINE_SELECTION_FLAGS).count_ones() != 1 {
+        return Err(Status::INVALID_ARGS);
+    }
+
+    // Deadline profiles may not be flagged as NO_INHERIT.
+    const DEADLINE_NO_INHERIT: u32 =
+        ZX_PROFILE_INFO_FLAG_DEADLINE | ZX_PROFILE_INFO_FLAG_NO_INHERIT;
+    if (info.flags & DEADLINE_NO_INHERIT) == DEADLINE_NO_INHERIT {
+        return Err(Status::INVALID_ARGS);
+    }
+
+    let inheritable = (info.flags & ZX_PROFILE_INFO_FLAG_NO_INHERIT) == 0;
+
+    if (info.flags & ZX_PROFILE_INFO_FLAG_PRIORITY) != 0 {
+        if (info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) != 0 {
+            return Err(Status::INVALID_ARGS);
+        }
+        // SAFETY: `zx_profile_info_t` is initialized from `FromBytes` (or zeroed), and
+        // `ZX_PROFILE_INFO_FLAG_PRIORITY` selects `priority_params`.
+        let priority = unsafe { info.zx_profile_info_union.priority_params.priority };
+        if !(LOWEST_PRIORITY..=HIGHEST_PRIORITY).contains(&priority) {
+            return Err(Status::INVALID_ARGS);
+        }
+        Ok(SchedulerStateBaseProfile::fair(priority, inheritable))
+    } else {
+        debug_assert!(inheritable);
+        // SAFETY: `zx_profile_info_t` is initialized from `FromBytes` (or zeroed), and
+        // `ZX_PROFILE_INFO_FLAG_DEADLINE` selects `deadline_params`.
+        let params = unsafe { info.zx_profile_info_union.deadline_params };
+        let admissible = params.capacity > 0
+            && params.capacity <= params.relative_deadline
+            && params.relative_deadline <= params.period
+            && inheritable;
+        if !admissible {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        // Check that the parameters are within the range of the signed 32-bit
+        // `SchedCompactDuration`. This permits more compact storage of profile
+        // parameters and provides protection against excessive values.
+        let max_compact = i64::from(SchedCompactDuration::max().raw_value());
+        if params.capacity > max_compact
+            || params.relative_deadline > max_compact
+            || params.period > max_compact
+        {
+            return Err(Status::OUT_OF_RANGE);
+        }
+
+        let critical = (info.flags & ZX_PROFILE_INFO_FLAG_CRITICAL) != 0;
+        Ok(SchedulerStateBaseProfile::deadline_with_critical(
+            DurationMono::from_nanos(params.capacity),
+            DurationMono::from_nanos(params.relative_deadline),
+            critical,
+        ))
+    }
 }
 
 fn parse_memory_priority(info: &zx_profile_info_t) -> Result<MemoryPriority, Status> {
@@ -79,7 +140,13 @@ const THREAD_FLAGS: u32 = SCHED_FLAGS | AFFINITY_FLAGS;
 const MEMORY_FLAGS: u32 = ZX_PROFILE_INFO_FLAG_MEMORY_PRIORITY;
 const REQUIRED_FLAGS: u32 = THREAD_FLAGS | MEMORY_FLAGS;
 
-pub fn validate_profile_info(info: &zx_profile_info_t) -> Result<(), Status> {
+struct ParsedProfileInfo {
+    profile: Option<SchedulerStateBaseProfile>,
+    cpu_mask: Option<cpu_mask_t>,
+    memory_priority: Option<MemoryPriority>,
+}
+
+fn parse_profile_info(info: &zx_profile_info_t) -> Result<ParsedProfileInfo, Status> {
     if (info.flags & REQUIRED_FLAGS) == 0 {
         return Err(Status::INVALID_ARGS);
     }
@@ -88,15 +155,22 @@ pub fn validate_profile_info(info: &zx_profile_info_t) -> Result<(), Status> {
         return Err(Status::INVALID_ARGS);
     }
 
-    if (info.flags & SCHED_FLAGS) != 0 {
-        let _ = validate_and_create_profile(info)?;
-    }
+    let profile = if (info.flags & SCHED_FLAGS) != 0 {
+        Some(validate_and_create_profile(info)?)
+    } else {
+        None
+    };
 
-    if (info.flags & MEMORY_FLAGS) != 0 {
-        let _ = parse_memory_priority(info)?;
-    }
+    let cpu_mask = if (info.flags & AFFINITY_FLAGS) != 0 {
+        Some(parse_cpu_mask(&info.cpu_affinity_mask))
+    } else {
+        None
+    };
 
-    Ok(())
+    let memory_priority =
+        if (info.flags & MEMORY_FLAGS) != 0 { Some(parse_memory_priority(info)?) } else { None };
+
+    Ok(ParsedProfileInfo { profile, cpu_mask, memory_priority })
 }
 
 #[guarded]
@@ -114,27 +188,20 @@ pub struct ProfileDispatcherState {
 }
 
 impl ProfileDispatcherState {
-    pub fn init(
+    /// Initializes a `ProfileDispatcherState` from a pointer to `Option<ParsedProfileInfo>`.
+    ///
+    /// # Safety
+    ///
+    /// `parsed_info` must point to a valid `Some(ParsedProfileInfo)`.
+    pub(super) unsafe fn init(
         _dispatcher: *const ProfileDispatcher,
-        info: &zx_profile_info_t,
+        parsed_info: *mut c_void,
     ) -> impl PinInit<Self, core::convert::Infallible> {
-        let profile = if (info.flags & SCHED_FLAGS) != 0 {
-            Some(validate_and_create_profile(info).expect("pre-validated profile"))
-        } else {
-            None
-        };
-
-        let cpu_mask = if (info.flags & AFFINITY_FLAGS) != 0 {
-            Some(parse_cpu_mask(&info.cpu_affinity_mask))
-        } else {
-            None
-        };
-
-        let memory_priority = if (info.flags & MEMORY_FLAGS) != 0 {
-            Some(parse_memory_priority(info).expect("pre-validated memory priority"))
-        } else {
-            None
-        };
+        // SAFETY: `parsed_info` points to `Some(ParsedProfileInfo)` on
+        // `ProfileDispatcher::create`'s stack and is consumed at most once.
+        let ParsedProfileInfo { profile, cpu_mask, memory_priority } =
+            unsafe { (*parsed_info.cast::<Option<ParsedProfileInfo>>()).take() }
+                .expect("pre-parsed profile info");
 
         DISPATCHER_PROFILE_CREATE_COUNT.add(1);
 
@@ -163,16 +230,13 @@ super::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl ProfileDispatcher {
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_PROFILE_RIGHTS
-    }
-
     pub fn create(info: &zx_profile_info_t) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        validate_profile_info(info)?;
-        // SAFETY: `cpp_profile_dispatcher_create` initializes `handle` on success.
-        let handle = unsafe {
-            KernelHandle::create(|out| cpp_profile_dispatcher_create(info as *const _, out))
-        }?;
+        let mut parsed = Some(parse_profile_info(info)?);
+        let parsed_ptr = (&raw mut parsed).cast::<c_void>();
+        // SAFETY: `cpp_profile_dispatcher_create` forwards `parsed_ptr` to
+        // `ProfileDispatcherState::init` and initializes `handle` on success.
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_profile_dispatcher_create(parsed_ptr, out)) }?;
         Ok((handle, ZX_DEFAULT_PROFILE_RIGHTS))
     }
 

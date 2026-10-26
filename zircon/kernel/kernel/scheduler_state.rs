@@ -6,9 +6,10 @@
 
 //! Types and structures for kernel scheduler state (`include/kernel/scheduler_state.h`).
 
+use crate::kernel::scheduler::{BaseProfile, SchedDeadlineParams, SchedDuration, SchedUtilization};
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use crate::platform_rs::timer::{DurationMono, InstantMono};
-use core::mem::{MaybeUninit, align_of, size_of};
+use core::mem::{align_of, size_of};
 use object_constants_rs as object_constants;
 use wait_queue_bindings as bindings;
 use zr::OpaqueFacade;
@@ -128,11 +129,9 @@ impl SchedulerState {
     }
 }
 
-/// Opaque wrapper around C++ `SchedulerState::BaseProfile`.
-#[repr(C, align(8))]
-pub struct SchedulerStateBaseProfile(
-    zr::OpaqueBytes<{ object_constants::kSchedulerStateBaseProfileSize }>,
-);
+/// Wrapper around [`BaseProfile`] matching C++ `SchedulerState::BaseProfile`.
+#[repr(transparent)]
+pub struct SchedulerStateBaseProfile(BaseProfile);
 
 zr::static_assert_size_and_align!(
     SchedulerStateBaseProfile,
@@ -141,16 +140,6 @@ zr::static_assert_size_and_align!(
 );
 
 unsafe extern "C" {
-    fn cpp_scheduler_state_base_profile_init_fair(
-        out_profile: *mut MaybeUninit<SchedulerStateBaseProfile>,
-        priority: i32,
-        inheritable: bool,
-    );
-    fn cpp_scheduler_state_base_profile_init_deadline(
-        out_profile: *mut MaybeUninit<SchedulerStateBaseProfile>,
-        capacity_ns: zx_types::zx_duration_mono_t,
-        deadline_ns: zx_types::zx_duration_mono_t,
-    );
     fn cpp_scheduler_state_curr_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_last_cpu(state: *const SchedulerState) -> cpu_num_t;
     fn cpp_scheduler_state_hard_affinity(state: *const SchedulerState) -> cpu_mask_t;
@@ -183,14 +172,8 @@ impl SchedulerStateBaseProfile {
     /// Panics if `priority` is outside `LOWEST_PRIORITY..=HIGHEST_PRIORITY`.
     pub fn fair(priority: i32, inheritable: bool) -> Self {
         assert!((LOWEST_PRIORITY..=HIGHEST_PRIORITY).contains(&priority));
-        let mut profile = MaybeUninit::uninit();
-        // SAFETY: `priority` is validated to be within `LOWEST_PRIORITY..=HIGHEST_PRIORITY`, and
-        // `cpp_scheduler_state_base_profile_init_fair` unconditionally initializes a scheduler
-        // state into the provided storage.
-        unsafe {
-            cpp_scheduler_state_base_profile_init_fair(&mut profile, priority, inheritable);
-            profile.assume_init()
-        }
+        let weight = crate::kernel::scheduler::SchedulerState::convert_priority_to_weight(priority);
+        Self(BaseProfile::new_fair_with_weight(weight, inheritable))
     }
 
     /// Creates a deadline `SchedulerStateBaseProfile` with the given capacity and deadline.
@@ -198,24 +181,29 @@ impl SchedulerStateBaseProfile {
     /// # Panics
     ///
     /// Panics if `capacity.0 <= 0` or `capacity.0 > deadline.0`.
-    pub fn deadline(
-        capacity: crate::platform_rs::timer::DurationMono,
-        deadline: crate::platform_rs::timer::DurationMono,
-    ) -> Self {
-        assert!(capacity.0 > 0 && capacity.0 <= deadline.0);
-        let mut profile = MaybeUninit::uninit();
-        // SAFETY: `cpp_scheduler_state_base_profile_init_deadline` unconditionally initializes
-        // a deadline base profile into the provided storage, and `0 < capacity <= deadline` is
-        // verified above.
-        unsafe {
-            cpp_scheduler_state_base_profile_init_deadline(&mut profile, capacity.0, deadline.0);
-            profile.assume_init()
-        }
+    pub fn deadline(capacity: DurationMono, deadline: DurationMono) -> Self {
+        Self::deadline_with_critical(capacity, deadline, false)
     }
 
-    /// Returns a raw pointer to the underlying byte storage.
-    pub fn get(&self) -> *mut [u8; object_constants::kSchedulerStateBaseProfileSize] {
-        self.0.get()
+    /// Creates a deadline `SchedulerStateBaseProfile` with the given capacity, deadline, and
+    /// critical flag.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity.0 <= 0` or `capacity.0 > deadline.0`.
+    pub fn deadline_with_critical(
+        capacity: DurationMono,
+        deadline: DurationMono,
+        critical: bool,
+    ) -> Self {
+        assert!(capacity.0 > 0 && capacity.0 <= deadline.0);
+        let capacity_ns = SchedDuration::from_raw(capacity.0);
+        let deadline_ns = SchedDuration::from_raw(deadline.0);
+        let utilization = SchedUtilization::from(capacity_ns / deadline_ns);
+        Self(BaseProfile::new_deadline(
+            SchedDeadlineParams { capacity_ns, deadline_ns, utilization },
+            critical,
+        ))
     }
 }
 

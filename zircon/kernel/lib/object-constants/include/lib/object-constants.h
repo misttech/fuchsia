@@ -127,7 +127,7 @@ constexpr size_t kPinnedMemoryTokenDispatcherStateAlign = 8;
 constexpr size_t kPinnedMemoryTokenDispatcherStateOffset = 48;
 
 // Size, alignment, and offset for ProfileDispatcherState.
-constexpr size_t kProfileDispatcherStateSize = 96 + kLockClassIdSize;
+constexpr size_t kProfileDispatcherStateSize = 88 + kLockClassIdSize;
 constexpr size_t kProfileDispatcherStateAlign = 8;
 constexpr size_t kProfileDispatcherStateOffset = 48;
 

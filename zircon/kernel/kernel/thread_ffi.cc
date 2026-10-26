@@ -88,8 +88,6 @@ void cpp_thread_set_memory_stall_state(Thread* thread, ThreadStallState value);
 Thread* cpp_thread_create_default(const char* name, thread_start_routine entry, void* arg);
 Thread* cpp_thread_create_with_priority(const char* name, thread_start_routine entry, void* arg,
                                         int priority);
-void cpp_scheduler_state_base_profile_init_fair(
-    ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, int priority, bool inheritable);
 Thread* cpp_thread_create_with_profile(const char* name_ptr, size_t name_len,
                                        thread_start_routine entry, void* arg,
                                        const SchedulerState::BaseProfile* profile);
@@ -155,20 +153,6 @@ FFI_ALWAYS_INLINE Thread* cpp_thread_create_with_priority(const char* name,
                                                           thread_start_routine entry, void* arg,
                                                           int priority) {
   return Thread::Create(name, entry, arg, priority);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_fair(
-    ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, int priority, bool inheritable) {
-  out_profile->Initialize(SchedulerState::BaseProfile{priority, inheritable});
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_deadline(
-    ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, zx_duration_mono_t capacity_ns,
-    zx_duration_mono_t deadline_ns) {
-  out_profile->Initialize(SchedulerState::BaseProfile{
-      SchedDeadlineParams{SchedDuration{capacity_ns}, SchedDuration{deadline_ns}}});
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

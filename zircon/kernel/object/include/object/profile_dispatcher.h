@@ -9,27 +9,20 @@
 
 #include <lib/object-constants.h>
 #include <zircon/rights.h>
-#include <zircon/syscalls/profile.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
-#include <kernel/scheduler_state.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
 
-extern "C" {
-zx_status_t cpp_profile_dispatcher_create(
-    const zx_profile_info_t* info, ffi::Uninitialized<KernelHandle<ProfileDispatcher>>* handle_out);
-zx_status_t cpp_profile_dispatcher_validate_and_create_profile(
-    const zx_profile_info_t* info, ffi::Uninitialized<SchedulerState::BaseProfile>* profile_out);
-}
+class ProfileDispatcher;
 
-zx::result<SchedulerState::BaseProfile> validate_and_create_profile(const zx_profile_info_t& info);
+extern "C" zx_status_t cpp_profile_dispatcher_create(
+    void* parsed_info, ffi::Uninitialized<KernelHandle<ProfileDispatcher>>* handle_out);
 
 class ProfileDispatcher final : public Dispatcher {
  public:
-  explicit ProfileDispatcher(const zx_profile_info_t& info);
   ~ProfileDispatcher() final;
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PROFILE; }
@@ -47,6 +40,10 @@ class ProfileDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
+  friend zx_status_t cpp_profile_dispatcher_create(
+      void* parsed_info, ffi::Uninitialized<KernelHandle<ProfileDispatcher>>* handle_out);
+  explicit ProfileDispatcher(void* parsed_info);
+
   OpaqueStorage<kProfileDispatcherStateSize, kProfileDispatcherStateAlign> opaque_storage_;
 };
 

@@ -45,9 +45,6 @@ FFI_ALWAYS_INLINE void cpp_thread_lock_guard_destroy(ThreadLockGuard* guard);
 FFI_ALWAYS_INLINE void cpp_thread_current_migrate_to_cpu(cpu_num_t target_cpu);
 FFI_ALWAYS_INLINE cpu_mask_t cpp_scheduler_state_hard_affinity(const SchedulerState* state);
 FFI_ALWAYS_INLINE bool cpp_thread_preempt_is_enabled();
-FFI_ALWAYS_INLINE void cpp_scheduler_state_base_profile_init_deadline(
-    ffi::Uninitialized<SchedulerState::BaseProfile>* out_profile, zx_duration_mono_t capacity_ns,
-    zx_duration_mono_t deadline_ns);
 FFI_ALWAYS_INLINE void cpp_thread_set_base_profile(Thread* thread,
                                                    const SchedulerState::BaseProfile* profile);
 FFI_ALWAYS_INLINE void cpp_thread_forget(Thread* thread);
