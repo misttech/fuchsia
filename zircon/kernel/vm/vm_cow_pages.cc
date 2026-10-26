@@ -5674,12 +5674,13 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
 
   DEBUG_ASSERT(!is_hidden());
 
+  bool stopped = false;
   while (current_page_offset != end_page_offset) {
     // Attempt to process any pages we have first. Skip over anything that's not a page since the
     // lookup_fn only applies to actual pages.
     zx_status_t status = page_list_.ForEveryPageInRange(
-        [&lookup_fn, &current_page_offset, this](const VmPageOrMarker* page_or_marker,
-                                                 uint64_t offset) {
+        [&lookup_fn, &current_page_offset, &stopped, this](const VmPageOrMarker* page_or_marker,
+                                                           uint64_t offset) {
           // The offset can advance ahead if we encounter gaps or sparse intervals.
           if (offset != current_page_offset) {
             if (!page_or_marker->IsIntervalEnd() && !node_has_parent_content_markers()) {
@@ -5699,10 +5700,12 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
           if (!page_or_marker->IsPage()) {
             return ZX_ERR_NEXT;
           }
-          return lookup_fn(offset, page_or_marker->Page()->paddr());
+          zx_status_t lookup_status = lookup_fn(offset, page_or_marker->Page()->paddr());
+          stopped = lookup_status == ZX_ERR_STOP;
+          return lookup_status;
         },
         current_page_offset, end_page_offset);
-    if (status != ZX_OK) {
+    if (status != ZX_OK || stopped) {
       return status;
     }
 
@@ -5725,16 +5728,18 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
 
     // Iterate over any potential content.
     status = content.owner.locked_or(this).page_list_.ForEveryPageInRange(
-        [&lookup_fn, current_page_offset, &content](const VmPageOrMarker* page_or_marker,
-                                                    uint64_t offset) {
+        [&lookup_fn, current_page_offset, &content, &stopped](const VmPageOrMarker* page_or_marker,
+                                                              uint64_t offset) {
           if (!page_or_marker->IsPage()) {
             return ZX_ERR_NEXT;
           }
-          return lookup_fn(offset - content.owner_offset + current_page_offset,
-                           page_or_marker->Page()->paddr());
+          zx_status_t lookup_status = lookup_fn(offset - content.owner_offset + current_page_offset,
+                                                page_or_marker->Page()->paddr());
+          stopped = lookup_status == ZX_ERR_STOP;
+          return lookup_status;
         },
         content.owner_offset, content.owner_offset + owner_length);
-    if (status != ZX_OK) {
+    if (status != ZX_OK || stopped) {
       return status;
     }
 
