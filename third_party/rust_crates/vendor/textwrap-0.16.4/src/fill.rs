@@ -1,6 +1,9 @@
 //! Functions for filling text.
 
-use crate::{wrap, wrap_algorithms, Options, WordSeparator};
+use crate::{Options, WordSeparator, wrap, wrap_algorithms};
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Fill a line of text at a given width.
 ///
@@ -72,11 +75,11 @@ pub(crate) fn fill_slow_path(text: &str, options: Options<'_>) -> String {
 /// text remains untouched.
 ///
 /// Since we can only replace existing whitespace in the input with
-/// `'\n'` (there is no space for `"\r\n"`), we cannot do hyphenation
-/// nor can we split words longer than the line width. We also need to
-/// use `AsciiSpace` as the word separator since we need `' '`
-/// characters between words in order to replace some of them with a
-/// `'\n'`. Indentation is also ruled out. In other words,
+/// `'\n'` (there is no space for `"\r\n"`), we cannot perform
+/// hyphenation, nor can we split words longer than the line width. We
+/// also need to use `AsciiSpace` as the word separator since we need
+/// `' '` characters between words in order to replace some of them
+/// with a `'\n'`. Indentation is also ruled out. In other words,
 /// `fill_inplace(width)` behaves as if you had called [`fill()`] with
 /// these options:
 ///
@@ -97,7 +100,7 @@ pub(crate) fn fill_slow_path(text: &str, options: Options<'_>) -> String {
 /// `fill_inplace` is to get the string broken into newlines as fast
 /// as possible.
 ///
-/// A last difference is that (unlike [`fill()`]) `fill_inplace` can
+/// A final difference is that (unlike [`fill()`]) `fill_inplace` can
 /// leave trailing whitespace on lines. This is because we wrap by
 /// inserting a `'\n'` at the final whitespace in the input string:
 ///
@@ -115,7 +118,7 @@ pub(crate) fn fill_slow_path(text: &str, options: Options<'_>) -> String {
 ///
 /// In benchmarks, `fill_inplace` is about twice as fast as
 /// [`fill()`]. Please see the [`linear`
-/// benchmark](https://github.com/mgeisler/textwrap/blob/master/benchmarks/linear.rs)
+/// benchmark](https://github.com/mgeisler/textwrap/blob/main/benchmarks/linear.rs)
 /// for details.
 pub fn fill_inplace(text: &mut String, width: usize) {
     let mut indices = Vec::new();
@@ -145,7 +148,7 @@ pub fn fill_inplace(text: &mut String, width: usize) {
         offset += line.len() + 1;
     }
 
-    let mut bytes = std::mem::take(text).into_bytes();
+    let mut bytes = core::mem::take(text).into_bytes();
     for idx in indices {
         bytes[idx] = b'\n';
     }

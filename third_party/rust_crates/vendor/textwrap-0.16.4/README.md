@@ -1,14 +1,14 @@
 # Textwrap
 
 [![](https://github.com/mgeisler/textwrap/workflows/build/badge.svg)][build-status]
-[![](https://codecov.io/gh/mgeisler/textwrap/branch/master/graph/badge.svg)][codecov]
+[![](https://codecov.io/gh/mgeisler/textwrap/branch/main/graph/badge.svg)][codecov]
 [![](https://img.shields.io/crates/v/textwrap.svg)][crates-io]
 [![](https://docs.rs/textwrap/badge.svg)][api-docs]
 
 Textwrap is a library for wrapping and indenting text. It is most often used by
 command-line programs to format dynamic output nicely so it looks good in a
 terminal. You can also use Textwrap to wrap text set in a proportional font—such
-as text used to generate PDF files, or drawn on a
+as text used to generate PDF files, or drawn on an
 [HTML5 canvas using WebAssembly][wasm-demo].
 
 ## Usage
@@ -22,13 +22,15 @@ textwrap = "0.16"
 
 By default, this enables word wrapping with support for Unicode strings. Extra
 features can be enabled with Cargo features—and the Unicode support can be
-disabled if needed. This allows you slim down the library and so you will only
-pay for the features you actually use.
+disabled if needed. This allows you to slim down the library, so you only pay
+for the features you actually use.
 
-Please see the
-[_Cargo Features_ in the crate
-documentation](https://docs.rs/textwrap/#cargo-features) for a full list of the
-available features as well as their impact on the size of your binary.
+Textwrap supports `no_std` environments with an allocator. You can enable
+`unicode-width` for accurate character widths on embedded targets.
+
+Please see the [_Cargo Features_ in the crate documentation][cargo-features] for
+a full list of the available features as well as their impact on the size of
+your binary.
 
 ## Documentation
 
@@ -58,7 +60,7 @@ line?
 
 The explanation is that textwrap does not just wrap text one line at a time.
 Instead, it uses an optimal-fit algorithm which looks ahead and chooses line
-breaks which minimize the gaps left at ends of lines. This is controlled with
+breaks that minimize the gaps left at the ends of lines. This is controlled with
 the `smawk` Cargo feature, which is why the example is wrapped in the
 `cfg`-block.
 
@@ -79,14 +81,14 @@ assert_eq!(
 }
 ```
 
-The second line is now shorter and the text is more ragged. The kind of wrapping
-can be configured via `Options::wrap_algorithm`.
+The second line is now shorter and the text is more ragged. The wrapping
+algorithm can be configured via `Options::wrap_algorithm`.
 
 If you enable the `hyphenation` Cargo feature, you get support for automatic
 hyphenation for [about 70 languages][patterns] via high-quality TeX hyphenation
 patterns.
 
-Your program must load the hyphenation pattern and configure
+Your program must load the hyphenation patterns and configure
 `Options::word_splitter` to use it:
 
 ```rust
@@ -123,9 +125,8 @@ macros from the [`textwrap-macros` crate].
 
 ## Examples
 
-The library comes with
-[a collection](https://github.com/mgeisler/textwrap/tree/master/examples) of
-small example programs that shows various features.
+The library comes with [a collection][examples] of small example programs that
+show various features.
 
 If you want to see Textwrap in action right away, then take a look at
 [`examples/wasm/`], which shows how to wrap sans-serif, serif, and monospace
@@ -157,18 +158,18 @@ Textwrap can be distributed according to the [MIT license][mit]. Contributions
 will be accepted under the same license.
 
 [crates-io]: https://crates.io/crates/textwrap
-[build-status]: https://github.com/mgeisler/textwrap/actions?query=workflow%3Abuild+branch%3Amaster
+[build-status]: https://github.com/mgeisler/textwrap/actions?query=workflow%3Abuild+branch%3Amain
 [codecov]: https://codecov.io/gh/mgeisler/textwrap
 [wasm-demo]: https://mgeisler.github.io/textwrap/
+[cargo-features]: https://docs.rs/textwrap/#cargo-features
 [`textwrap-macros` crate]: https://crates.io/crates/textwrap-macros
-[`hyphenation` example]: https://github.com/mgeisler/textwrap/blob/master/examples/hyphenation.rs
-[`termwidth` example]: https://github.com/mgeisler/textwrap/blob/master/examples/termwidth.rs
 [patterns]: https://github.com/tapeinosyne/hyphenation/tree/master/patterns
 [en-us license]: https://github.com/hyphenation/tex-hyphen/blob/master/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-en-us.tex
 [bincode]: https://github.com/tapeinosyne/hyphenation/tree/master/dictionaries
-[`hyphenation` documentation]: http://docs.rs/hyphenation
-[`examples/wasm/`]: https://github.com/mgeisler/textwrap/tree/master/examples/wasm
-[`examples/interactive.rs`]: https://github.com/mgeisler/textwrap/tree/master/examples/interactive.rs
+[`hyphenation` documentation]: https://docs.rs/hyphenation
+[examples]: https://github.com/mgeisler/textwrap/tree/main/examples
+[`examples/wasm/`]: https://github.com/mgeisler/textwrap/tree/main/examples/wasm
+[`examples/interactive.rs`]: https://github.com/mgeisler/textwrap/blob/main/examples/interactive.rs
 [api-docs]: https://docs.rs/textwrap/
-[CHANGELOG file]: https://github.com/mgeisler/textwrap/blob/master/CHANGELOG.md
+[CHANGELOG file]: https://github.com/mgeisler/textwrap/blob/main/CHANGELOG.md
 [mit]: LICENSE

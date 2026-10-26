@@ -1,7 +1,10 @@
 //! Functionality for wrapping text into columns.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::core::display_width;
-use crate::{wrap, Options};
+use crate::{Options, wrap};
 
 /// Wrap text into columns with a given total width.
 ///
@@ -10,7 +13,7 @@ use crate::{wrap, Options};
 /// total width of all columns and all gaps is specified using the
 /// `total_width_or_options` argument. This argument can simply be an
 /// integer if you want to use default settings when wrapping, or it
-/// can be a [`Options`] value if you want to customize the wrapping.
+/// can be an [`Options`] value if you want to customize the wrapping.
 ///
 /// If the columns are narrow, it is recommended to set
 /// [`Options::break_words`] to `true` to prevent words from
@@ -30,7 +33,7 @@ use crate::{wrap, Options};
 /// ```
 ///
 /// The `text` is wrapped using [`wrap()`] and the given `options`
-/// argument, but the width is overwritten to the computed
+/// argument, but the width is overwritten with the computed
 /// `column_width`.
 ///
 /// # Panics
@@ -75,13 +78,9 @@ where
 
     let mut options: Options = total_width_or_options.into();
 
-    let inner_width = options
-        .width
-        .saturating_sub(display_width(left_gap))
-        .saturating_sub(display_width(right_gap))
-        .saturating_sub(display_width(middle_gap) * (columns - 1));
+    let inner_width = inner_width(options.width, columns, left_gap, middle_gap, right_gap);
 
-    let column_width = std::cmp::max(inner_width / columns, 1);
+    let column_width = core::cmp::max(inner_width / columns, 1);
     options.width = column_width;
     let last_column_padding = " ".repeat(inner_width % column_width);
     let wrapped_lines = wrap(text, options);
@@ -113,9 +112,30 @@ where
     lines
 }
 
+/// Compute the width left for the columns themselves, i.e., the total
+/// width minus the width of the gaps.
+///
+/// The multiplication is saturating because `columns` is unbounded and
+/// the combined width of the middle gaps can thus exceed `usize::MAX`.
+/// Nothing is lost by saturating: such a product is larger than
+/// `width`, so the subtraction saturates to zero either way.
+fn inner_width(
+    width: usize,
+    columns: usize,
+    left_gap: &str,
+    middle_gap: &str,
+    right_gap: &str,
+) -> usize {
+    width
+        .saturating_sub(display_width(left_gap))
+        .saturating_sub(display_width(right_gap))
+        .saturating_sub(display_width(middle_gap).saturating_mul(columns - 1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn wrap_columns_empty_text() {
@@ -153,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "unicode-width")]
+    #[cfg(all(feature = "unicode-width", feature = "smawk"))]
     fn wrap_columns_with_emojis() {
         assert_eq!(
             wrap_columns(
@@ -167,6 +187,26 @@ mod tests {
             vec![
                 "✨ Words      ⚽ wrapped in 👀",
                 "✨ and a few  ⚽ ⓶ columns  👀",
+                "✨ emojis 😍  ⚽            👀"
+            ]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "unicode-width", not(feature = "smawk")))]
+    fn wrap_columns_with_emojis_without_smawk() {
+        assert_eq!(
+            wrap_columns(
+                "Words and a few emojis 😍 wrapped in ⓶ columns",
+                2,
+                30,
+                "✨ ",
+                " ⚽ ",
+                " 👀"
+            ),
+            vec![
+                "✨ Words and  ⚽ wrapped in 👀",
+                "✨ a few      ⚽ ⓶ columns  👀",
                 "✨ emojis 😍  ⚽            👀"
             ]
         );
@@ -189,5 +229,20 @@ mod tests {
     #[should_panic]
     fn wrap_columns_panic_with_zero_columns() {
         wrap_columns("", 0, 10, "", "", "");
+    }
+
+    #[test]
+    fn inner_width_with_normal_gaps() {
+        // The gaps take up a total of 5 columns.
+        assert_eq!(inner_width(21, 4, "|", "|", "|"), 16);
+    }
+
+    #[test]
+    fn inner_width_with_huge_number_of_columns() {
+        // The combined width of the middle gaps overflows a `usize`,
+        // which leaves no room at all for the columns. The number of
+        // columns is chosen so that a wrapping multiplication would
+        // wrap all the way around to zero.
+        assert_eq!(inner_width(80, usize::MAX / 2 + 2, "", "xx", ""), 0);
     }
 }

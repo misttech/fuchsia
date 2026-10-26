@@ -1,4 +1,5 @@
-use std::cell::RefCell;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use crate::core::Fragment;
 
@@ -29,7 +30,7 @@ pub struct Penalties {
     ///
     /// With a default value of 50², every single character costs as
     /// much as leaving a gap of 50 characters behind. This is because
-    /// we assign as cost of `gap * gap` to a short line. When
+    /// we assign a cost of `gap * gap` to a short line. When
     /// wrapping monospace text, we can overflow the line by 1
     /// character in extreme cases:
     ///
@@ -69,10 +70,10 @@ pub struct Penalties {
     /// seen above.
     pub overflow_penalty: usize,
 
-    /// When should the a single word on the last line be considered
+    /// When should a single word on the last line be considered
     /// "too short"?
     ///
-    /// If the last line of the text consist of a single word and if
+    /// If the last line of the text consists of a single word and if
     /// this word is shorter than `1 / short_last_line_fraction` of
     /// the line width, then the final line will be considered "short"
     /// and `short_last_line_penalty` is added as an extra penalty.
@@ -155,7 +156,7 @@ impl Default for Penalties {
     }
 }
 
-/// Cache for line numbers. This is necessary to avoid a O(n**2)
+/// Cache for line numbers. This is necessary to avoid an O(n**2)
 /// behavior when computing line numbers in [`wrap_optimal_fit`].
 struct LineNumbers {
     line_numbers: RefCell<Vec<usize>>,
@@ -171,7 +172,7 @@ impl LineNumbers {
     }
 
     fn get<T>(&self, i: usize, minima: &[(usize, T)]) -> usize {
-        while self.line_numbers.borrow_mut().len() < i + 1 {
+        while self.line_numbers.borrow().len() < i + 1 {
             let pos = self.line_numbers.borrow().len();
             let line_number = 1 + self.get(minima[pos].0, minima);
             self.line_numbers.borrow_mut().push(line_number);
@@ -185,13 +186,13 @@ impl LineNumbers {
 #[derive(Debug, PartialEq, Eq)]
 pub struct OverflowError;
 
-impl std::fmt::Display for OverflowError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for OverflowError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "wrap_optimal_fit cost computation overflowed")
     }
 }
 
-impl std::error::Error for OverflowError {}
+impl core::error::Error for OverflowError {}
 
 /// Wrap abstract fragments into lines with an optimal-fit algorithm.
 ///
@@ -200,13 +201,13 @@ impl std::error::Error for OverflowError {}
 /// used to implement hanging indentation.
 ///
 /// The fragments must already have been split into the desired
-/// widths, this function will not (and cannot) attempt to split them
+/// widths. This function will not (and cannot) attempt to split them
 /// further when arranging them into lines.
 ///
 /// # Optimal-Fit Algorithm
 ///
 /// The algorithm considers all possible break points and picks the
-/// breaks which minimizes the gaps at the end of each line. More
+/// breaks that minimize the gaps at the end of each line. More
 /// precisely, the algorithm assigns a cost or penalty to each break
 /// point, determined by `cost = gap * gap` where `gap = target_width -
 /// line_width`. Shorter lines are thus penalized more heavily since
@@ -269,7 +270,7 @@ impl std::error::Error for OverflowError {}
 /// # Errors
 ///
 /// In case of an overflow during the cost computation, an `Err` is
-/// returned. Overflows happens when fragments or lines have infinite
+/// returned. Overflow happens when fragments or lines have infinite
 /// widths (`f64::INFINITY`) or if the widths are so large that the
 /// gaps at the end of lines have sizes larger than `f64::MAX.sqrt()`
 /// (approximately 1e154):
@@ -293,7 +294,7 @@ impl std::error::Error for OverflowError {}
 ///            Err(OverflowError));
 /// ```
 ///
-/// When using fragment widths and line widths which fit inside an
+/// When using fragment widths and line widths that fit inside a
 /// `u64`, overflows cannot happen. This means that fragments derived
 /// from a `&str` cannot cause overflows.
 ///
@@ -391,6 +392,7 @@ pub fn wrap_optimal_fit<'a, 'b, T: Fragment>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[derive(Debug, PartialEq)]
     struct Word(f64);

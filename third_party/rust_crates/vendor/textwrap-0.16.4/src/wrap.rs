@@ -1,14 +1,15 @@
 //! Functions for wrapping text.
 
-use std::borrow::Cow;
+use alloc::borrow::{Cow, ToOwned};
+use alloc::vec::Vec;
 
-use crate::core::{break_words, display_width, Word};
-use crate::word_splitters::split_words;
 use crate::Options;
+use crate::core::{Word, break_words, display_width};
+use crate::word_splitters::split_words;
 
 /// Wrap a line of text at a given width.
 ///
-/// The result is a vector of lines, each line is of type [`Cow<'_,
+/// The result is a vector of lines. Each line is of type [`Cow<'_,
 /// str>`](Cow), which means that the line will borrow from the input
 /// `&str` if possible. The lines do not have trailing whitespace,
 /// including a final `'\n'`. Please use [`fill()`](crate::fill()) if
@@ -49,7 +50,7 @@ use crate::Options;
 /// # Optimal-Fit Wrapping
 ///
 /// By default, `wrap` will try to ensure an even right margin by
-/// finding breaks which avoid short lines. We call this an
+/// finding breaks that avoid short lines. We call this an
 /// “optimal-fit algorithm” since the line breaks are computed by
 /// considering all possible line breaks. The alternative is a
 /// “first-fit algorithm” which simply accumulates words until they no
@@ -79,8 +80,8 @@ use crate::Options;
 /// “question” onto its own line.
 ///
 /// With the optimal-fit wrapping algorithm, the previous lines are
-/// shortened slightly in order to make the word “is” go into the
-/// second last line:
+/// shortened slightly in order to make the word “is” move onto the
+/// second to last line:
 ///
 /// ```
 /// # #[cfg(feature = "smawk")] {
@@ -105,8 +106,8 @@ use crate::Options;
 /// # Examples
 ///
 /// The returned iterator yields lines of type `Cow<'_, str>`. If
-/// possible, the wrapped lines will borrow from the input string. As
-/// an example, a hanging indentation, the first line can borrow from
+/// possible, the wrapped lines will borrow from the input string. For
+/// example, with hanging indentation, the first line can borrow from
 /// the input, but the subsequent lines become owned strings:
 ///
 /// ```
@@ -137,7 +138,7 @@ use crate::Options;
 /// As a rule, leading whitespace (indentation) is preserved and
 /// trailing whitespace is discarded.
 ///
-/// In more details, when wrapping words into lines, words are found
+/// In more detail, when wrapping words into lines, words are found
 /// by splitting the input text on space characters. One or more
 /// spaces (shown here as “␣”) are attached to the end of each word:
 ///
@@ -156,7 +157,7 @@ use crate::Options;
 /// assert_eq!(wrap("Foo   bar baz", 8), vec!["Foo", "bar baz"]);
 /// ```
 ///
-/// Notice how the trailing whitespace is removed in both case: in the
+/// Notice how the trailing whitespace is removed in both cases: in the
 /// first example, `"bar␣"` becomes `"bar"` and in the second case
 /// `"Foo␣␣␣"` becomes `"Foo"`.
 ///
@@ -203,7 +204,11 @@ pub(crate) fn wrap_single_line<'a>(
         options.subsequent_indent
     };
     if line.len() < options.width && indent.is_empty() {
-        lines.push(Cow::from(line.trim_end_matches(' ')));
+        if options.preserve_trailing_space {
+            lines.push(Cow::from(line));
+        } else {
+            lines.push(Cow::from(line.trim_end_matches(' ')));
+        }
     } else {
         wrap_single_line_slow_path(line, options, lines)
     }
@@ -260,8 +265,7 @@ pub(crate) fn wrap_single_line_slow_path<'a>(
         let len = words
             .iter()
             .map(|word| word.len() + word.whitespace.len())
-            .sum::<usize>()
-            - last_word.whitespace.len();
+            .sum::<usize>();
 
         // The result is owned if we have indentation, otherwise we
         // can simply borrow an empty string.
@@ -276,7 +280,11 @@ pub(crate) fn wrap_single_line_slow_path<'a>(
             Cow::from("")
         };
 
-        result += &line[idx..idx + len];
+        if last_word.penalty.is_empty() && options.preserve_trailing_space {
+            result += &line[idx..idx + len];
+        } else {
+            result += &line[idx..idx + len - last_word.whitespace.len()];
+        }
 
         if !last_word.penalty.is_empty() {
             result.to_mut().push_str(last_word.penalty);
@@ -287,7 +295,7 @@ pub(crate) fn wrap_single_line_slow_path<'a>(
         // Advance by the length of `result`, plus the length of
         // `last_word.whitespace` -- even if we had a penalty, we need
         // to skip over the whitespace.
-        idx += len + last_word.whitespace.len();
+        idx += len;
     }
 }
 
@@ -295,6 +303,8 @@ pub(crate) fn wrap_single_line_slow_path<'a>(
 mod tests {
     use super::*;
     use crate::{WordSeparator, WordSplitter, WrapAlgorithm};
+    #[cfg(not(feature = "std"))]
+    use alloc::{format, vec};
 
     #[cfg(feature = "hyphenation")]
     use hyphenation::{Language, Load, Standard};
@@ -367,6 +377,17 @@ mod tests {
     }
 
     #[test]
+    fn preserve_trailing_whitespace() {
+        let options = Options::new(5).preserve_trailing_space(true);
+        // Preserve the whitespace at the end of the line, allowing it
+        // to overflow if it is just whitespaces.
+        assert_eq!(
+            wrap("foo     bar     baz  ", &options),
+            vec!["foo     ", "bar     ", "baz  "]
+        );
+    }
+
+    #[test]
     fn issue_99() {
         // We did not reset the in_whitespace flag correctly and did
         // not handle single-character words after a line break.
@@ -405,6 +426,15 @@ mod tests {
             ),
             vec!["Ｈｅｌｌｏ, Ｗ", "ｏｒｌｄ!"]
         );
+    }
+
+    #[test]
+    #[cfg(feature = "unicode-width")]
+    fn wrap_wide_characters_unicode_width() {
+        // Wide characters occupy 2 columns each. This works in both std
+        // and no_std environments with the unicode-width feature.
+        let options = Options::new(8);
+        assert_eq!(wrap("안녕하세요", &options), vec!["안녕하세", "요"]);
     }
 
     #[test]
@@ -609,7 +639,7 @@ mod tests {
     fn borrowed_lines() {
         // Lines that end with an extra hyphen are owned, the final
         // line is borrowed.
-        use std::borrow::Cow::{Borrowed, Owned};
+        use alloc::borrow::Cow::{Borrowed, Owned};
         let dictionary = Standard::from_embedded(Language::EnglishUS).unwrap();
         let options = Options::new(10).word_splitter(WordSplitter::Hyphenation(dictionary));
         let lines = wrap("Internationalization", &options);
@@ -670,6 +700,27 @@ mod tests {
         assert_eq!(wrap("  ", 80), vec![""]);
         assert_eq!(wrap("  \n  ", 80), vec!["", ""]);
         assert_eq!(wrap("  \n \n  \n ", 80), vec!["", "", "", ""]);
+    }
+
+    #[test]
+    fn wrap_preserves_line_breaks_and_trailing_whitespace() {
+        let options = Options::new(80).preserve_trailing_space(true);
+        assert_eq!(wrap("  ", &options), vec!["  "]);
+        assert_eq!(wrap("  \n  ", &options), vec!["  ", "  "]);
+        assert_eq!(wrap("  \n \n  \n ", &options), vec!["  ", " ", "  ", " "]);
+    }
+
+    #[test]
+    fn preserve_trailing_space_borrows_spaces() {
+        use alloc::borrow::Cow::Owned;
+        let lines = wrap(
+            "foo bar baz",
+            Options::new(10).preserve_trailing_space(true),
+        );
+        assert_eq!(lines, vec!["foo bar ", "baz"]);
+        if let Owned(ref s) = lines[0] {
+            assert!(false, "should not have been owned: {:?}", s);
+        }
     }
 
     #[test]

@@ -2,6 +2,31 @@
 
 This file lists the most important changes made in each release of `textwrap`.
 
+## Version 0.16.4 (2026-09-13)
+
+- [#628](https://github.com/mgeisler/textwrap/pull/628): Reduce MSRV to 1.88.
+
+## Version 0.16.3 (2026-09-10)
+
+This release adds `no_std` support as well as optional support for wrapping
+complex Unicode scripts such as Khmer, Lao, Myanmar, and Thai. The minimum
+supported Rust version is now 1.90.
+
+- [#586](https://github.com/mgeisler/textwrap/pull/586): Make `Word::width`
+  public so it can be used without `Word::from`.
+- [#587](https://github.com/mgeisler/textwrap/pull/587): Add
+  `Options::preserve_trailing_space` to keep trailing whitespace when wrapping
+  text.
+- [#594](https://github.com/mgeisler/textwrap/pull/594): Add example showing how
+  one can use owned `Options`.
+- [#597](https://github.com/mgeisler/textwrap/pull/597): Add GitHub Sponsors
+  configuration.
+- [#608](https://github.com/mgeisler/textwrap/pull/608): Switch from
+  `unicode-linebreak` to `icu_segmenter`.
+- [#623](https://github.com/mgeisler/textwrap/pull/623): Avoid arithmetic
+  overflow in `wrap_columns`.
+- [#626](https://github.com/mgeisler/textwrap/pull/626): Add `no_std` support.
+
 ## Version 0.16.2 (2025-03-03)
 
 This release fixes an unnecessary `f64` cast, updates all dependencies, bumps

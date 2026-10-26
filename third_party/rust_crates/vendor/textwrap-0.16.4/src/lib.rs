@@ -17,8 +17,8 @@
 //! # }
 //! ```
 //!
-//! The [`wrap()`] function returns the individual lines, use
-//! [`fill()`] is you want the lines joined with `'\n'` to form a
+//! The [`wrap()`] function returns the individual lines. Use
+//! [`fill()`] if you want the lines joined with `'\n'` to form a
 //! `String`.
 //!
 //! If you enable the `hyphenation` Cargo feature, you can get
@@ -49,10 +49,10 @@
 //!
 //! ## Displayed Width vs Byte Size
 //!
-//! To word wrap text, one must know the width of each word so one can
-//! know when to break lines. This library will by default measure the
-//! width of text using the _displayed width_, not the size in bytes.
-//! The `unicode-width` Cargo feature controls this.
+//! To wrap text, the width of each word must be known in order to
+//! determine line breaks. By default, this library measures the width
+//! of text using the _displayed width_, not the size in bytes. The
+//! `unicode-width` Cargo feature controls this.
 //!
 //! This is important for non-ASCII text. ASCII characters such as `a`
 //! and `!` are simple and take up one column each. This means that
@@ -70,7 +70,7 @@
 //! # Indentation and Dedentation
 //!
 //! The textwrap library also offers functions for adding a prefix to
-//! every line of a string and to remove leading whitespace. As an
+//! every line of a string and removing leading whitespace. As an
 //! example, [`indent()`] allows you to turn lines of text into a
 //! bullet list:
 //!
@@ -113,21 +113,29 @@
 //! The full dependency graph, where dashed lines indicate optional
 //! dependencies, is shown below:
 //!
-//! <img src="https://raw.githubusercontent.com/mgeisler/textwrap/master/images/textwrap-0.16.2.svg">
+//! <img src="https://raw.githubusercontent.com/mgeisler/textwrap/main/images/textwrap-0.16.4.svg">
 //!
 //! ## Default Features
 //!
 //! These features are enabled by default:
 //!
+//! * `std`: enables standard library support. When disabled, textwrap
+//!   runs in `#![no_std]` mode, requiring only the `alloc` crate.
+//!
 //! * `unicode-linebreak`: enables finding words using the
-//!   [unicode-linebreak] crate, which implements the line breaking
+//!   [icu_segmenter] crate, which implements the line breaking
 //!   algorithm described in [Unicode Standard Annex
 //!   #14](https://www.unicode.org/reports/tr14/).
 //!
+//!   This feature provides line breaking without support for complex
+//!   scripts (Khmer, Lao, Myanmar, and Thai). See the
+//!   `unicode-linebreak-complex` feature below for complex script
+//!   support.
+//!
 //!   This feature can be disabled if you are happy to find words
 //!   separated by ASCII space characters only. People wrapping text
-//!   with emojis or East-Asian characters will want most likely want
-//!   to enable this feature. See [`WordSeparator`] for details.
+//!   with emojis or East Asian characters will most likely want to
+//!   enable this feature. See [`WordSeparator`] for details.
 //!
 //! * `unicode-width`: enables correct width computation of non-ASCII
 //!   characters via the [unicode-width] crate. Without this feature,
@@ -177,6 +185,11 @@
 //!
 //! These Cargo features enable new functionality:
 //!
+//! * `unicode-linebreak-complex`: enables finding words with support
+//!   for complex scripts (Khmer, Lao, Myanmar, and Thai). It uses the
+//!   [icu_segmenter] crate with full dictionary and neural network
+//!   models.
+//!
 //! * `terminal_size`: enables automatic detection of the terminal
 //!   width via the [terminal_size] crate. See
 //!   [`Options::with_termwidth()`] for details.
@@ -185,22 +198,24 @@
 //!   [hyphenation] crate. See the [`word_splitters::WordSplitter`]
 //!   trait for details.
 //!
-//! [unicode-linebreak]: https://docs.rs/unicode-linebreak/
+//! [icu_segmenter]: https://docs.rs/icu_segmenter/
 //! [unicode-width]: https://docs.rs/unicode-width/
 //! [smawk]: https://docs.rs/smawk/
-//! [binary-sizes demo]: https://github.com/mgeisler/textwrap/tree/master/examples/binary-sizes
+//! [binary-sizes demo]: https://github.com/mgeisler/textwrap/tree/main/examples/binary-sizes
 //! [textwrap-macros]: https://docs.rs/textwrap-macros/
 //! [terminal_size]: https://docs.rs/terminal_size/
 //! [hyphenation]: https://docs.rs/hyphenation/
 
-#![doc(html_root_url = "https://docs.rs/textwrap/0.16.2")]
+#![doc(html_root_url = "https://docs.rs/textwrap/0.16.4")]
 #![forbid(unsafe_code)] // See https://github.com/mgeisler/textwrap/issues/210
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
-#![allow(clippy::redundant_field_names)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 // Make `cargo test` execute the README doctests.
-#[cfg(doctest)]
+#[cfg(all(doctest, feature = "std"))]
 #[doc = include_str!("../README.md")]
 mod readme_doctest {}
 

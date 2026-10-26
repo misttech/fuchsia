@@ -2,7 +2,8 @@
 
 use crate::core::display_width;
 use crate::line_ending::NonEmptyLines;
-use crate::{fill, LineEnding, Options};
+use crate::{LineEnding, Options, fill};
+use alloc::string::String;
 
 /// Unpack a paragraph of already-wrapped text.
 ///
@@ -26,12 +27,12 @@ use crate::{fill, LineEnding, Options};
 /// ending among the lines.
 ///
 /// The prefix of the first line is returned in
-/// [`Options::initial_indent`] and the prefix (if any) of the the
+/// [`Options::initial_indent`] and the prefix (if any) of the
 /// other lines is returned in [`Options::subsequent_indent`].
 ///
-/// Line ending is returned in [`Options::line_ending`]. If line ending
-/// can not be confidently detected (mixed or no line endings in the
-/// input), [`LineEnding::LF`] will be returned.
+/// The line ending is returned in [`Options::line_ending`]. If the
+/// line ending cannot be confidently detected (mixed or no line
+/// endings in the input), [`LineEnding::LF`] will be returned.
 ///
 /// In addition to `' '`, the prefixes can consist of characters used
 /// for unordered lists (`'-'`, `'+'`, and `'*'`) and block quotes
@@ -64,7 +65,7 @@ pub fn unfill(text: &str) -> (String, Options<'_>) {
 
     let mut options = Options::new(0);
     for (idx, line) in text.lines().enumerate() {
-        options.width = std::cmp::max(options.width, display_width(line));
+        options.width = core::cmp::max(options.width, display_width(line));
         let without_prefix = line.trim_start_matches(prefix_chars);
         let prefix = &line[..line.len() - without_prefix.len()];
 
@@ -118,7 +119,7 @@ pub fn unfill(text: &str) -> (String, Options<'_>) {
 /// This function will first use [`unfill()`] to remove newlines from
 /// the text. Afterwards the text is filled again using [`fill()`].
 ///
-/// The `new_width_or_options` argument specify the new width and can
+/// The `new_width_or_options` argument specifies the new width and can
 /// specify other options as well — except for
 /// [`Options::initial_indent`] and [`Options::subsequent_indent`],
 /// which are deduced from `filled_text`.

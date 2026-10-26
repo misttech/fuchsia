@@ -5,22 +5,44 @@
 //! we need to define what a "word" is.
 //!
 //! A simple approach is to simply split the text on whitespace, but
-//! this does not work for East-Asian languages such as Chinese or
+//! this does not work for East Asian languages such as Chinese or
 //! Japanese where there are no spaces between words. Breaking a long
 //! sequence of emojis is another example where line breaks might be
-//! wanted even if there are no whitespace to be found.
+//! wanted even if there is no whitespace to be found.
 //!
 //! The [`WordSeparator`] enum is responsible for determining where
-//! there words are in a line of text. Please refer to the enum and
+//! the words are in a line of text. Please refer to the enum and
 //! its variants for more information.
 
+use alloc::boxed::Box;
+#[cfg(any(feature = "unicode-linebreak", test))]
+use alloc::vec::Vec;
+
+use crate::core::Word;
 #[cfg(feature = "unicode-linebreak")]
 use crate::core::skip_ansi_escape_sequence;
-use crate::core::Word;
+
+#[cfg(feature = "unicode-linebreak")]
+thread_local! {
+    static LINE_SEGMENTER: icu_segmenter::LineSegmenterBorrowed<'static> = {
+        use icu_segmenter::options::LineBreakOptions;
+        use icu_segmenter::LineSegmenter;
+
+        let options = LineBreakOptions::default();
+        #[cfg(feature = "unicode-linebreak-complex")]
+        {
+            LineSegmenter::new_auto(options)
+        }
+        #[cfg(not(feature = "unicode-linebreak-complex"))]
+        {
+            LineSegmenter::new_for_non_complex_scripts(options)
+        }
+    };
+}
 
 /// Describes where words occur in a line of text.
 ///
-/// The simplest approach is say that words are separated by one or
+/// The simplest approach is to say that words are separated by one or
 /// more ASCII spaces (`' '`). This works for Western languages
 /// without emojis. A more complex approach is to use the Unicode line
 /// breaking algorithm, which finds break points in non-ASCII text.
@@ -103,7 +125,7 @@ pub enum WordSeparator {
     /// ```
     ///
     /// The Unicode line breaking algorithm will also automatically
-    /// suppress break breaks around certain punctuation characters::
+    /// suppress line breaks around certain punctuation characters:
     ///
     /// ```
     /// #[cfg(feature = "unicode-linebreak")] {
@@ -118,7 +140,7 @@ pub enum WordSeparator {
     #[cfg(feature = "unicode-linebreak")]
     UnicodeBreakProperties,
 
-    /// Find words using a custom word separator
+    /// Find words using a custom word separator.
     Custom(fn(line: &str) -> Box<dyn Iterator<Item = Word<'_>> + '_>),
 }
 
@@ -193,7 +215,7 @@ fn find_words_ascii_space<'a>(line: &'a str) -> Box<dyn Iterator<Item = Word<'a>
     let mut in_whitespace = false;
     let mut char_indices = line.char_indices();
 
-    Box::new(std::iter::from_fn(move || {
+    Box::new(core::iter::from_fn(move || {
         for (idx, ch) in char_indices.by_ref() {
             if in_whitespace && ch != ' ' {
                 let word = Word::from(&line[start..idx]);
@@ -249,7 +271,7 @@ fn find_words_unicode_break_properties<'a>(
     // the original string.
     let mut last_stripped_idx = 0;
     let mut char_indices = line.char_indices();
-    let mut idx_map = std::iter::from_fn(move || match char_indices.next() {
+    let mut idx_map = core::iter::from_fn(move || match char_indices.next() {
         Some((orig_idx, ch)) => {
             let stripped_idx = last_stripped_idx;
             if !skip_ansi_escape_sequence(ch, &mut char_indices.by_ref().map(|(_, ch)| ch)) {
@@ -261,23 +283,27 @@ fn find_words_unicode_break_properties<'a>(
     });
 
     let stripped = strip_ansi_escape_sequences(line);
-    let mut opportunities = unicode_linebreak::linebreaks(&stripped)
-        .filter(|(idx, _)| {
-            #[allow(clippy::match_like_matches_macro)]
-            match &stripped[..*idx].chars().next_back() {
-                // We suppress breaks at ‘-’ since we want to control
-                // this via the WordSplitter.
-                Some('-') => false,
-                // Soft hyphens are currently not supported since we
-                // require all `Word` fragments to be continuous in
-                // the input string.
-                Some(SHY) => false,
-                // Other breaks should be fine!
-                _ => true,
-            }
-        })
-        .collect::<Vec<_>>()
-        .into_iter();
+    let opportunities_vec = LINE_SEGMENTER.with(|segmenter| {
+        segmenter
+            .segment_str(&stripped)
+            .filter(|&idx| idx > 0)
+            .filter(|&idx| {
+                #[allow(clippy::match_like_matches_macro)]
+                match &stripped[..idx].chars().next_back() {
+                    // We suppress breaks at ‘-’ since we want to control
+                    // this via the WordSplitter.
+                    Some('-') => false,
+                    // Soft hyphens are currently not supported since we
+                    // require all `Word` fragments to be continuous in
+                    // the input string.
+                    Some(SHY) => false,
+                    // Other breaks should be fine!
+                    _ => true,
+                }
+            })
+            .collect::<Vec<_>>()
+    });
+    let mut opportunities = opportunities_vec.into_iter();
 
     // Remove final break opportunity, we will add it below using
     // &line[start..]; This ensures that we correctly include a
@@ -285,8 +311,8 @@ fn find_words_unicode_break_properties<'a>(
     opportunities.next_back();
 
     let mut start = 0;
-    Box::new(std::iter::from_fn(move || {
-        for (idx, _) in opportunities.by_ref() {
+    Box::new(core::iter::from_fn(move || {
+        for idx in opportunities.by_ref() {
             if let Some((orig_idx, _)) = idx_map.find(|&(_, stripped_idx)| stripped_idx == idx) {
                 let word = Word::from(&line[start..orig_idx]);
                 start = orig_idx;
@@ -308,6 +334,7 @@ fn find_words_unicode_break_properties<'a>(
 mod tests {
     use super::WordSeparator::*;
     use super::*;
+    use alloc::vec;
 
     // Like assert_eq!, but the left expression is an iterator.
     macro_rules! assert_iter_eq {
@@ -429,7 +456,7 @@ mod tests {
     );
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "std"))]
     fn find_words_colored_text() {
         use termion::color::{Blue, Fg, Green, Reset};
 
@@ -453,6 +480,24 @@ mod tests {
         assert_iter_eq!(AsciiSpace.find_words(text), vec![Word::from(text)]);
 
         #[cfg(feature = "unicode-linebreak")]
+        assert_iter_eq!(
+            UnicodeBreakProperties.find_words(text),
+            vec![Word::from(text)]
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "unicode-linebreak")]
+    fn find_words_complex_scripts() {
+        let text = "ภาษาไทย"; // English: "Thai language"
+
+        #[cfg(feature = "unicode-linebreak-complex")]
+        assert_iter_eq!(
+            UnicodeBreakProperties.find_words(text),
+            vec![Word::from("ภาษา"), Word::from("ไทย")]
+        );
+
+        #[cfg(not(feature = "unicode-linebreak-complex"))]
         assert_iter_eq!(
             UnicodeBreakProperties.find_words(text),
             vec![Word::from(text)]

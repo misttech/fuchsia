@@ -1,7 +1,7 @@
 //! Building blocks for advanced wrapping functionality.
 //!
 //! The functions and structs in this module can be used to implement
-//! advanced wrapping functionality when [`wrap()`](crate::wrap())
+//! advanced wrapping functionality when [`wrap()`](crate::wrap()) or
 //! [`fill()`](crate::fill()) don't do what you want.
 //!
 //! In general, you want to follow these steps when wrapping
@@ -14,7 +14,7 @@
 //!
 //! 2. Potentially split your fragments into smaller pieces. This
 //!    allows you to implement things like hyphenation. If you use the
-//!    `Word` type, you can use [`WordSplitter`](crate::WordSplitter)
+//!    `Word` type, you can use the [`WordSplitter`](crate::WordSplitter)
 //!    enum for this.
 //!
 //! 3. Potentially break apart fragments that are still too large to
@@ -34,12 +34,14 @@
 //! the functionality here is not sufficient or if you have ideas for
 //! improving it. We would love to hear from you!
 
+use alloc::vec::Vec;
+
 /// The CSI or “Control Sequence Introducer” introduces an ANSI escape
 /// sequence. This is typically used for colored text and will be
 /// ignored when computing the text width.
 const CSI: (char, char) = ('\x1b', '[');
 /// The final bytes of an ANSI escape sequence must be in this range.
-const ANSI_FINAL_BYTE: std::ops::RangeInclusive<char> = '\x40'..='\x7e';
+const ANSI_FINAL_BYTE: core::ops::RangeInclusive<char> = '\x40'..='\x7e';
 
 /// Skip ANSI escape sequences.
 ///
@@ -96,11 +98,7 @@ const DOUBLE_WIDTH_CUTOFF: char = '\u{1100}';
 #[cfg(not(feature = "unicode-width"))]
 #[inline]
 fn ch_width(ch: char) -> usize {
-    if ch < DOUBLE_WIDTH_CUTOFF {
-        1
-    } else {
-        2
-    }
+    if ch < DOUBLE_WIDTH_CUTOFF { 1 } else { 2 }
 }
 
 /// Compute the display width of `text` while skipping over ANSI
@@ -119,8 +117,8 @@ fn ch_width(ch: char) -> usize {
 /// **Note:** When the `unicode-width` Cargo feature is disabled, the
 /// width of a `char` is determined by a crude approximation which
 /// simply counts chars below U+1100 as 1 column wide, and all other
-/// characters as 2 columns wide. With the feature enabled, function
-/// will correctly deal with [combining characters] in their
+/// characters as 2 columns wide. With the feature enabled, the
+/// function will correctly deal with [combining characters] in their
 /// decomposed form (see [Unicode equivalence]).
 ///
 /// An example of a decomposed character is “é”, which can be
@@ -183,13 +181,13 @@ fn ch_width(ch: char) -> usize {
 /// “👨” (U+1F468: Man), Zero Width Joiner (U+200D), and “🦰”
 /// (U+1F9B0: Red Hair). You can see them above in the test. With
 /// `unicode-width` enabled, the ZWJ is correctly seen as having zero
-/// width, without it is counted as a double-width character.
+/// width. Without it, it is counted as a double-width character.
 ///
 /// ## Terminal Support
 ///
 /// Modern browsers typically do a great job at combining characters
 /// as shown above, but terminals often struggle more. As an example,
-/// Gnome Terminal version 3.38.1, shows “❤️” as a big red heart, but
+/// Gnome Terminal version 3.38.1 shows “❤️” as a big red heart, but
 /// shows "👨‍🦰" as “👨🦰”.
 ///
 /// [combining characters]: https://en.wikipedia.org/wiki/Combining_character
@@ -218,8 +216,8 @@ pub fn display_width(text: &str) -> usize {
 /// For wrapping purposes, the precise content of the word, the
 /// whitespace, and the penalty is irrelevant. All we need to know is
 /// the displayed width of each part, which this trait provides.
-pub trait Fragment: std::fmt::Debug {
-    /// Displayed width of word represented by this fragment.
+pub trait Fragment: core::fmt::Debug {
+    /// Displayed width of the word represented by this fragment.
     fn width(&self) -> f64;
 
     /// Displayed width of the whitespace that must follow the word
@@ -243,11 +241,11 @@ pub struct Word<'a> {
     pub whitespace: &'a str,
     /// Penalty string to insert if the word falls at the end of a line.
     pub penalty: &'a str,
-    // Cached width in columns.
-    pub(crate) width: usize,
+    /// Cached width in columns.
+    pub width: usize,
 }
 
-impl std::ops::Deref for Word<'_> {
+impl core::ops::Deref for Word<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -271,7 +269,7 @@ impl<'a> Word<'a> {
     }
 
     /// Break this word into smaller words with a width of at most
-    /// `line_width`. The whitespace and penalty from this `Word` is
+    /// `line_width`. The whitespace and penalty from this `Word` are
     /// added to the last piece.
     ///
     /// # Examples
@@ -288,7 +286,7 @@ impl<'a> Word<'a> {
         let mut offset = 0;
         let mut width = 0;
 
-        std::iter::from_fn(move || {
+        core::iter::from_fn(move || {
             while let Some((idx, ch)) = char_indices.next() {
                 if skip_ansi_escape_sequence(ch, &mut char_indices.by_ref().map(|(_, ch)| ch)) {
                     continue;
@@ -297,7 +295,7 @@ impl<'a> Word<'a> {
                 if width > 0 && width + ch_width(ch) > line_width {
                     let word = Word {
                         word: &self.word[offset..idx],
-                        width: width,
+                        width,
                         whitespace: "",
                         penalty: "",
                     };
@@ -312,7 +310,7 @@ impl<'a> Word<'a> {
             if offset < self.word.len() {
                 let word = Word {
                     word: &self.word[offset..],
-                    width: width,
+                    width,
                     whitespace: self.whitespace,
                     penalty: self.penalty,
                 };
@@ -369,6 +367,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[cfg(feature = "unicode-width")]
     use unicode_width::UnicodeWidthChar;

@@ -4,13 +4,14 @@
 //! across lines. The [`WordSplitter`] enum defines this
 //! functionality.
 
-use crate::core::{display_width, Word};
+use crate::core::{Word, display_width};
+use alloc::vec::Vec;
 
 /// The `WordSplitter` enum describes where words can be split.
 ///
 /// If the textwrap crate has been compiled with the `hyphenation`
 /// Cargo feature enabled, you will find a
-/// [`WordSplitter::Hyphenation`] variant. Use this struct for
+/// [`WordSplitter::Hyphenation`] variant. Use this variant for
 /// language-aware hyphenation:
 ///
 /// ```
@@ -35,7 +36,7 @@ use crate::core::{display_width, Word};
 /// [hyphenation]: https://docs.rs/hyphenation/
 #[derive(Debug, Clone)]
 pub enum WordSplitter {
-    /// Use this as a [`Options.word_splitter`] to avoid any kind of
+    /// Use this as an [`Options.word_splitter`] to avoid any kind of
     /// hyphenation:
     ///
     /// ```
@@ -176,7 +177,7 @@ where
     words.into_iter().flat_map(move |word| {
         let mut prev = 0;
         let mut split_points = word_splitter.split_points(&word).into_iter();
-        std::iter::from_fn(move || {
+        core::iter::from_fn(move || {
             if let Some(idx) = split_points.next() {
                 let need_hyphen = !word[..idx].ends_with('-');
                 let w = Word {
@@ -208,6 +209,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     // Like assert_eq!, but the left expression is an iterator.
     macro_rules! assert_iter_eq {

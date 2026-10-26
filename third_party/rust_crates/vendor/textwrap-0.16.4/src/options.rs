@@ -20,16 +20,18 @@ pub struct Options<'a> {
     /// When set to `false`, some lines may be longer than
     /// `self.width`. See the [`Options::break_words`] method.
     pub break_words: bool,
-    /// Wrapping algorithm to use, see the implementations of the
-    /// [`WrapAlgorithm`] trait for details.
+    /// Wrapping algorithm to use, see the [`WrapAlgorithm`] enum for
+    /// details.
     pub wrap_algorithm: WrapAlgorithm,
     /// The line breaking algorithm to use, see the [`WordSeparator`]
-    /// trait for an overview and possible implementations.
+    /// enum for an overview and possible implementations.
     pub word_separator: WordSeparator,
     /// The method for splitting words. This can be used to prohibit
     /// splitting words on hyphens, or it can be used to implement
     /// language-aware machine hyphenation.
     pub word_splitter: WordSplitter,
+    /// Allow trailing spaces to be preserved at the end of the line.
+    pub preserve_trailing_space: bool,
 }
 
 impl<'a> From<&'a Options<'a>> for Options<'a> {
@@ -43,6 +45,7 @@ impl<'a> From<&'a Options<'a>> for Options<'a> {
             word_separator: options.word_separator,
             wrap_algorithm: options.wrap_algorithm,
             word_splitter: options.word_splitter.clone(),
+            preserve_trailing_space: options.preserve_trailing_space,
         }
     }
 }
@@ -66,6 +69,7 @@ impl<'a> Options<'a> {
     /// assert_eq!(options.initial_indent, "");
     /// assert_eq!(options.subsequent_indent, "");
     /// assert_eq!(options.break_words, true);
+    /// assert_eq!(options.preserve_trailing_space, false);
     ///
     /// #[cfg(feature = "unicode-linebreak")]
     /// assert_eq!(options.word_separator, WordSeparator::UnicodeBreakProperties);
@@ -81,7 +85,7 @@ impl<'a> Options<'a> {
     /// ```
     ///
     /// Note that the default word separator and wrap algorithms
-    /// changes based on the available Cargo features. The best
+    /// change based on the available Cargo features. The best
     /// available algorithms are used by default.
     pub const fn new(width: usize) -> Self {
         Options {
@@ -93,6 +97,7 @@ impl<'a> Options<'a> {
             word_separator: WordSeparator::new(),
             wrap_algorithm: WrapAlgorithm::new(),
             word_splitter: WordSplitter::HyphenSplitter,
+            preserve_trailing_space: false,
         }
     }
 
@@ -188,7 +193,7 @@ impl<'a> Options<'a> {
 
     /// Change [`self.break_words`]. This controls if words longer
     /// than `self.width` can be broken, or if they will be left
-    /// sticking out into the right margin.
+    /// protruding into the right margin.
     ///
     /// See [`Options::word_splitter`] instead if you want to control
     /// hyphenation.
@@ -218,7 +223,7 @@ impl<'a> Options<'a> {
 
     /// Change [`self.word_separator`].
     ///
-    /// See the [`WordSeparator`] trait for details on the choices.
+    /// See the [`WordSeparator`] enum for details on the choices.
     ///
     /// [`self.word_separator`]: #structfield.word_separator
     pub fn word_separator(self, word_separator: WordSeparator) -> Options<'a> {
@@ -230,7 +235,7 @@ impl<'a> Options<'a> {
 
     /// Change [`self.wrap_algorithm`].
     ///
-    /// See the [`WrapAlgorithm`] trait for details on the choices.
+    /// See the [`WrapAlgorithm`] enum for details on the choices.
     ///
     /// [`self.wrap_algorithm`]: #structfield.wrap_algorithm
     pub fn wrap_algorithm(self, wrap_algorithm: WrapAlgorithm) -> Options<'a> {
@@ -256,13 +261,13 @@ impl<'a> Options<'a> {
     /// assert_eq!(wrap("foo-bar-baz", &options),
     ///            vec!["foo-", "bar-", "baz"]);
     ///
-    /// // The word is now so long that break_words kick in:
+    /// // The word is now so long that break_words kicks in:
     /// let options = Options::new(5)
     ///     .word_splitter(WordSplitter::NoHyphenation);
     /// assert_eq!(wrap("foo-bar-baz", &options),
     ///            vec!["foo-b", "ar-ba", "z"]);
     ///
-    /// // If you want to breaks at all, disable both:
+    /// // If you want no breaks at all, disable both:
     /// let options = Options::new(5)
     ///     .break_words(false)
     ///     .word_splitter(WordSplitter::NoHyphenation);
@@ -274,6 +279,17 @@ impl<'a> Options<'a> {
     pub fn word_splitter(self, word_splitter: WordSplitter) -> Options<'a> {
         Options {
             word_splitter,
+            ..self
+        }
+    }
+
+    /// Change [`self.preserve_trailing_space`]. This controls if the
+    /// trailing spaces at the end of a line are preserved or trimmed.
+    ///
+    /// [`self.preserve_trailing_space`]: #structfield.preserve_trailing_space
+    pub fn preserve_trailing_space(self, preserve_trailing_space: bool) -> Options<'a> {
+        Options {
+            preserve_trailing_space,
             ..self
         }
     }
