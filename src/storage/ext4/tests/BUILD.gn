@@ -2,28 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components/fuchsia_unittest_package.gni")
-import("//build/rust/rustc_test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 import("//src/storage/ext4/ext4_to_pkg.gni")
 
 assert(is_fuchsia, "the tests are target-only")
 
-rustc_test("ext4_to_pkg_test") {
-  edition = "2024"
-  sources = [ "src/lib.rs" ]
-  deps = [ "//src/storage/ext4/lib/metadata" ]
-  test_deps = [ "//third_party/rust_crates:assert_matches" ]
-}
-
+# LINT.IfChange
 ext4_to_pkg("test_img") {
   input = "test.img"
   prefix = "data/test-image"
 }
 
-fuchsia_unittest_package("tests") {
-  package_name = "storage-ext4-tests"
-  deps = [
-    ":ext4_to_pkg_test",
-    ":test_img",
-  ]
+bazel_test_suite("tests") {
+  target_tests = [ "//src/storage/ext4/tests:tests" ]
 }
+# LINT.ThenChange(BUILD.bazel)

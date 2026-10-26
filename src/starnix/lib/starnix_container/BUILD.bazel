@@ -15,7 +15,7 @@ package(default_applicable_licenses = ["//:license"])
 # @bazel2gn:skip
 host_test_data_files(
     name = "test_ext4_image",
-    srcs = ["//src/storage/ext4:tests/test.img"],
+    srcs = ["//src/storage/ext4/tests:test.img"],
     dest_dir = "test_data/gen-starnix-container",
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )

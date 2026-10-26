@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "fuchsia_package_resource_group",
+)
+load("//build/bazel/rules:compiled_action.bzl", "compiled_action")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    ["test.img"],
+    visibility = ["//src/starnix/lib/starnix_container:__pkg__"],
+)
+
+# LINT.IfChange
+rustc_test(
+    name = "ext4_to_pkg_test",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/storage/ext4/lib/metadata",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+compiled_action(
+    name = "generate_test_img",
+    srcs = ["test.img"],
+    outs = [
+        "13",
+        "metadata.v1",
+    ],
+    args = [
+        "$(location test.img)",
+        "$(RULEDIR)",
+        "data/test-image",
+    ],
+    tool = "//src/storage/ext4/bin:ext4_to_pkg",
+)
+
+fuchsia_package_resource_group(
+    name = "test_img",
+    srcs = [":generate_test_img"],
+    basename_only = True,
+    dest = "data/test-image",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "tests",
+    package_name = "storage-ext4-tests",
+    resources = [":test_img"],
+    unit_tests = [":ext4_to_pkg_test"],
+)
+# LINT.ThenChange(BUILD.gn)

@@ -12,11 +12,6 @@ load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package
 
 package(default_applicable_licenses = ["//:license"])
 
-exports_files(
-    ["tests/test.img"],
-    visibility = ["//src/starnix/lib/starnix_container:__pkg__"],
-)
-
 rustc_library(
     name = "ext4-lib",
     srcs = [
