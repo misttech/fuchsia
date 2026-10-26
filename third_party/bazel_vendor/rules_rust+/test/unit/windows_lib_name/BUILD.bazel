@@ -1,3 +1,0 @@
-load(":windows_lib_name_test.bzl", "windows_lib_name_test_suite")
-
-windows_lib_name_test_suite(name = "windows_lib_name_test_suite")

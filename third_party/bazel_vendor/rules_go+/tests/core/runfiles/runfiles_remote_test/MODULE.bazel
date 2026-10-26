@@ -1,3 +1,0 @@
-module(name = "runfiles_remote_test")
-
-bazel_dep(name = "rules_go", version = "0.59.0", repo_name = "io_bazel_rules_go")

@@ -1,3 +1,0 @@
-load(":urllib_tests.bzl", "urllib_test_suite")
-
-urllib_test_suite(name = "urllib_tests")

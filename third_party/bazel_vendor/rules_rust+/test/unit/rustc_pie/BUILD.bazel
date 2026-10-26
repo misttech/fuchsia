@@ -1,3 +1,0 @@
-load(":rustc_pie_test.bzl", "rustc_pie_test_suite")
-
-rustc_pie_test_suite(name = "rustc_pie_test_suite")

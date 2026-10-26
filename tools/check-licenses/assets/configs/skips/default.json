@@ -26,19 +26,6 @@
         },
         {
             "paths": [
-                "third_party/bazel_vendor/rules_go+/tests",
-                "third_party/bazel_vendor/rules_python+/tests"
-            ],
-            "description": "Test directories under repos in bazel_vendor.\nThey don't have license files included."
-        },
-        {
-            "paths": [
-                "third_party/bazel_vendor/rules_go+/third_party"
-            ],
-            "description": "This directory contains patches for repositories declared\nby go_rules_dependencies.\nIt doesn't have license files included."
-        },
-        {
-            "paths": [
                 "third_party/bazel_vendor/rules_cc+/third_party"
             ],
             "description": "Contains config proto for rules_cc.\nIt uses Apache 2.0 in BUILD file and proto file header,\nbut does not have a LICENSE file in the directory."

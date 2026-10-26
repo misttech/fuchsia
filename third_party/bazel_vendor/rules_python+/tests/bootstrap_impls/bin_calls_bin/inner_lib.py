@@ -1,3 +1,0 @@
-# Rather than having a completely empty file...
-def confirm():
-    return "success"

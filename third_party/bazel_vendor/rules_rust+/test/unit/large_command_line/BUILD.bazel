@@ -1,3 +1,0 @@
-load(":large_command_line_test_suite.bzl", "large_command_line_test_suite")
-
-large_command_line_test_suite(name = "large_command_line_test_suite")

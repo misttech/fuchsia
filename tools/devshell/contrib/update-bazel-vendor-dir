@@ -63,8 +63,25 @@ readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registries/bcr.baz
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
 
 # Excludes:
+#   **/MODULE.bazel.lock: Bzlmod lockfiles inside vendored modules. Ignored by
+#     Bazel for non-root modules.
+#   rules_go+/tests: Upstream rules_go internal test suite (~3.1 MB). Unused by
+#     the build.
+#   rules_go+/third_party: Patch files (~7.3 MB, including a 6.1 MB patch
+#     deleting gopls from org_golang_x_tools) used only by legacy WORKSPACE
+#     go_rules_dependencies() for repositories that Fuchsia does not fetch.
+#   rules_python+/gazelle/python/testdata: Upstream gazelle plugin test data
+#     (~3.3 MB). Unused by the build.
+#   rules_python+/tests: Upstream rules_python internal test suite (~2.3 MB).
+#     Unused by the build.
 #   rules_rust+/*/cargo-bazel{,.exe}: Prebuilt crate_universe generator binaries
 #     (~185 MB) shipped in rules_rust release archives. Unused by the build.
+#   rules_rust+/crate_universe/test_data: Upstream crate_universe test fixtures
+#     (~12 MB). Unused by the build.
+#   rules_rust+/crate_universe/tests: Upstream crate_universe test suite
+#     (~4.2 MB). Unused by the build.
+#   rules_rust+/test: Upstream rules_rust internal test suite (~4.3 MB). Unused
+#     by the build.
 "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}"/build/bazel/scripts/update_bazel_vendor_dir.py \
     --workspace="$(fx-get-bazel-workspace)" \
     --bazel="$(fx-get-bazel)" \
@@ -89,5 +106,13 @@ readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registries/bcr.baz
     --stub-repo='@@apple_support+' \
     --stub-repo='@@bazel_tools+remote_coverage_tools_extension+remote_coverage_tools' \
     --stub-repo='@@rules_kotlin+' \
+    --exclude='**/MODULE.bazel.lock' \
+    --exclude='rules_go+/tests' \
+    --exclude='rules_go+/third_party' \
+    --exclude='rules_python+/gazelle/python/testdata' \
+    --exclude='rules_python+/tests' \
     --exclude='rules_rust+/*/cargo-bazel' \
-    --exclude='rules_rust+/*/cargo-bazel.exe'
+    --exclude='rules_rust+/*/cargo-bazel.exe' \
+    --exclude='rules_rust+/crate_universe/test_data' \
+    --exclude='rules_rust+/crate_universe/tests' \
+    --exclude='rules_rust+/test'

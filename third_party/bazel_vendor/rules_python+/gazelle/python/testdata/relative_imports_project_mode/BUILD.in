@@ -1,2 +1,0 @@
-# gazelle:resolve py resolved_package //package2:resolved_package
-# gazelle:python_generation_mode project
