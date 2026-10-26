@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "security_policy_test_util",
+    testonly = True,
+    srcs = ["lib.rs"],
+    crate_root = "lib.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/security_policy:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)

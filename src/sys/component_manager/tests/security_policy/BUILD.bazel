@@ -1,0 +1,15 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+exports_files(
+    [
+        "meta/cm_for_test.cml",
+        "meta/test.shard.cml",
+    ],
+    visibility = ["//src/sys/component_manager/tests/security_policy:__subpackages__"],
+)
+# LINT.ThenChange(BUILD.gn)

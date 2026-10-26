@@ -4,11 +4,16 @@
 
 import("//build/components.gni")
 
+# Retained in GN because //src/sys/component_manager:bin_with_tracing is
+# GN-only.
+# LINT.IfChange
 fuchsia_component("cm_for_test") {
   testonly = true
   deps = [ "//src/sys/component_manager:bin_with_tracing" ]
   manifest = "meta/cm_for_test.cml"
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 group("tests") {
   testonly = true

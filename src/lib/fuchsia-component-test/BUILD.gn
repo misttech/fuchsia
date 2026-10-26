@@ -82,6 +82,10 @@ rustc_library("fuchsia-component-test-lib") {
   ]
   crate_name = "fuchsia_component_test"
   edition = "2024"
+  visibility = [
+    ":*",
+    "//src/sys/component_manager/tests/security_policy/util:*",
+  ]
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
     "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
