@@ -1,0 +1,77 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/desc.rs",
+        "src/emulator_watcher.rs",
+        "src/error.rs",
+        "src/events.rs",
+        "src/fastboot_file_watcher.rs",
+        "src/gce_watcher.rs",
+        "src/instance_watcher.rs",
+        "src/lib.rs",
+        "src/merge.rs",
+        "src/query.rs",
+        "src/uart_watcher.rs",
+        "src/usb_vsock_watcher.rs",
+    ],
+    crate_name = "discovery",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx:__subpackages__",
+        "//src/developer/fuchsia-controller:__pkg__",
+        "//tools/funnel:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+        "//src/developer/fastboot:lib",
+        "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/lib/addr:lib",
+        "//src/developer/ffx/lib/emulator_instance:lib",
+        "//src/developer/ffx/lib/fastboot/transport/interface:lib",
+        "//src/developer/ffx/lib/fastboot_file_discovery:lib",
+        "//src/developer/ffx/lib/manual_targets:lib",
+        "//src/developer/ffx/lib/mdns_discovery:lib",
+        "//src/developer/ffx/lib/uart_driver_api:lib",
+        "//src/developer/ffx/lib/usb_driver_api:lib",
+        "//src/developer/ffx/lib/usb_fastboot_discovery:lib",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/fidl_message",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:nix",
+        "//third_party/rust_crates/vendor:notify",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:tokio",
+    ],
+)
+
+host_rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    crate_name = "discovery_lib_test",
+    edition = "2024",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
