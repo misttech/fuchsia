@@ -316,6 +316,7 @@ def run_mypy_checks(
             env={
                 "PYTHONPATH": os.pathsep.join(
                     [
+                        str(fuchsia_dir),
                         str(pylibs_dir / "mypy" / "src"),
                         str(pylibs_dir / "mypy_extensions" / "src"),
                         str(pylibs_dir / "typing_extensions" / "src" / "src"),
