@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# This is a FIDL library containing a bunch of declarations that are useful for
+# writing tests for FIDL bindings - especially how they map FIDL types to
+# target language types.
+fidl_library(
+    name = "test.types",
+    testonly = True,
+    srcs = ["types.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//sdk/lib/fidl/cpp/tests/coding:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/conversion:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/dispatcher:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/formatter:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/hlcpp_conversion:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/natural_ostream:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/natural_types:__pkg__",
+        "//src/lib/fidl/llcpp/tests/conformance:__pkg__",
+        "//src/lib/fidl/llcpp/tests/message_container:__pkg__",
+        "//src/lib/fidl/llcpp/tests/wire_types:__pkg__",
+    ],
+    deps = ["//zircon/vdso/zx"],
+)

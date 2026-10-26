@@ -1,0 +1,95 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "test_support",
+    testonly = True,
+    srcs = ["async_loop_for_test.cc"],
+    hdrs = ["async_loop_for_test.h"],
+    includes = ["../.."],
+    visibility = [
+        "//sdk/ctf/tests/pkg/fidl/cpp:__pkg__",
+        "//src/lib/fidl_codec:__pkg__",
+        "//src/sys/fuzzing/common/testing:__pkg__",
+        "//src/sys/fuzzing/libfuzzer/testing:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/async",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "test",
+    testonly = True,
+    srcs = [
+        "fidl_types.cc",
+        "frobinator_impl.cc",
+    ],
+    hdrs = [
+        "fidl_types.h",
+        "frobinator_impl.h",
+    ],
+    implementation_deps = ["//sdk/lib/fidl/hlcpp"],
+    includes = ["../.."],
+    public_configs = ["//sdk/config"],
+    visibility = [
+        "//sdk/ctf/tests/pkg/fidl/cpp:__pkg__",
+        "//src/lib/fidl_codec:__pkg__",
+    ],
+    deps = [":frobinator_hlcpp"],
+    alwayslink = True,
+)
+
+fidl_library(
+    name = "frobinator",
+    testonly = True,
+    srcs = ["frobinator.test.fidl"],
+    enable_hlcpp = True,
+    library_name = "fidl.test.frobinator",
+    visibility = ["//src/lib/fidl_codec:__pkg__"],
+    deps = ["//zircon/vdso/zx"],
+)
+
+fidl_library(
+    name = "fidl_test",
+    testonly = True,
+    srcs = ["fidl_test.test.fidl"],
+    enable_hlcpp = True,
+    library_name = "fidl.test.misc",
+    visibility = [
+        "//sdk/ctf/tests/fidl/fuchsia.element:__pkg__",
+        "//sdk/ctf/tests/fidl/fuchsia.hwinfo:__pkg__",
+        "//sdk/ctf/tests/fidl/fuchsia.settings:__pkg__",
+        "//sdk/ctf/tests/pkg/fidl/cpp:__pkg__",
+        "//src/lib/fidl/llcpp/tests/conformance:__pkg__",
+        "//src/lib/fidl/llcpp/tests/message_container:__pkg__",
+    ],
+)
+
+fidl_library(
+    name = "fidl_test_handles",
+    testonly = True,
+    srcs = ["fidl_test_handles.test.fidl"],
+    enable_hlcpp = True,
+    library_name = "fidl.test.handles",
+    visibility = ["//sdk/ctf/tests/pkg/fidl/cpp:__pkg__"],
+    deps = ["//zircon/vdso/zx"],
+)
+
+fidl_library(
+    name = "collision_test",
+    testonly = True,
+    srcs = ["collision.test.fidl"],
+    enable_hlcpp = True,
+    library_name = "fidl.test.collision",
+    visibility = ["//sdk/ctf/tests/pkg/fidl/cpp:__pkg__"],
+)

@@ -1,0 +1,77 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# This is a FIDL library containing protocol declarations that are useful for
+# writing unknown interaction tests for FIDL bindings.
+fidl_library(
+    name = "test.unknown.interactions",
+    testonly = True,
+    srcs = ["unknown_interactions.test.fidl"],
+    contains_drivers = True,
+    enable_hlcpp = True,
+    visibility = [
+        "//sdk/ctf/tests/pkg/fidl/cpp:__pkg__",
+        "//sdk/lib/fidl/cpp/tests/integration:__pkg__",
+        "//sdk/lib/fidl_driver/tests/transport:__pkg__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+        "//src/lib/fidl/rust/external_tests:__pkg__",
+    ],
+)
+
+fidl_library(
+    name = "test.protocol.connector",
+    testonly = True,
+    srcs = ["protocol_connector.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//sdk/lib/fidl/cpp/tests/hlcpp_conversion:__pkg__",
+        "//src/lib/fidl/contrib/tests/connection:__pkg__",
+        "//src/lib/fidl/rust/fidl-contrib:__pkg__",
+    ],
+)
+
+# A library containing just an empty protocol.
+fidl_library(
+    name = "test.empty.protocol",
+    testonly = True,
+    srcs = ["empty_protocol.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//src/lib/fidl/llcpp/tests/dispatcher:__pkg__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+    ],
+)
+
+# Methods returning application errors.
+fidl_library(
+    name = "test.error.methods",
+    testonly = True,
+    srcs = ["error_methods.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//sdk/lib/fidl/cpp/tests/integration:__pkg__",
+        "//src/lib/fidl/contrib/tests/fpromise:__pkg__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+    ],
+)
+
+# Simple one way/two way echo methods and events that test the basic operation
+# of client and server APIs.
+fidl_library(
+    name = "test.basic.protocol",
+    testonly = True,
+    srcs = ["basic_protocol.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//sdk/lib/fidl/cpp/tests/integration:__pkg__",
+        "//src/lib/fidl/contrib/tests/fpromise:__pkg__",
+        "//src/lib/fidl/llcpp/tests/dispatcher:__pkg__",
+        "//src/lib/fidl/llcpp/tests/integration:__pkg__",
+    ],
+    deps = ["//zircon/vdso/zx"],
+)
