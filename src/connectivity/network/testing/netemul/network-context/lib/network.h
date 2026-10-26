@@ -5,7 +5,6 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_TESTING_NETEMUL_NETWORK_CONTEXT_LIB_NETWORK_H_
 #define SRC_CONNECTIVITY_NETWORK_TESTING_NETEMUL_NETWORK_CONTEXT_LIB_NETWORK_H_
 
-#include <fuchsia/net/virtualization/cpp/fidl.h>
 #include <fuchsia/netemul/network/cpp/fidl.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <zircon/types.h>
@@ -39,8 +38,6 @@ class Network : public fuchsia::netemul::network::Network {
   zx_status_t AttachEndpoint(std::string name);
 
   // fidl interface implementations:
-  void AddPort(fidl::InterfaceHandle<::fuchsia::hardware::network::Port> port,
-               fidl::InterfaceRequest<fuchsia::net::virtualization::Interface> interface) override;
   void GetConfig(GetConfigCallback callback) override;
   void GetName(GetNameCallback callback) override;
   void SetConfig(fuchsia::netemul::network::NetworkConfig config,

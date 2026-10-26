@@ -5,7 +5,6 @@ library fuchsia.netemul.network;
 
 using fuchsia.device;
 using fuchsia.hardware.network;
-using fuchsia.net.virtualization;
 using fuchsia.net;
 using zx;
 
@@ -129,9 +128,6 @@ closed protocol FakeEndpoint {
 
 /// Virtual network.
 closed protocol Network {
-    // Allows guest VMs to interact with the [`Network`].
-    compose fuchsia.net.virtualization.Network;
-
     /// Gets network configuration.
     strict GetConfig() -> (struct {
         config NetworkConfig;

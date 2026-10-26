@@ -23,6 +23,5 @@ fidl_library(
         "//sdk/fidl/fuchsia.device",
         "//sdk/fidl/fuchsia.hardware.network",
         "//sdk/fidl/fuchsia.net",
-        "//sdk/fidl/fuchsia.net.virtualization",
     ],
 )
