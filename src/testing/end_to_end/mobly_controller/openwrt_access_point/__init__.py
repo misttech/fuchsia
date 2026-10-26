@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import logging
 import os
@@ -21,7 +20,9 @@ from typing import Any, Dict, List
 from honeydew.typing.custom_types import MacAddress
 from iperf.iperf_server import IPerfServerOverSsh
 from legacy_access_point.ap_lib import hostapd_constants
+from libs import ip_utils
 from libs.commands.tcpdump import LinuxTcpdumpCommand
+from libs.ip_utils import AddrType as AddrType
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
@@ -102,19 +103,6 @@ def get_info(objects: List[OpenWrtAP]) -> List[Json]:
 class Radio(StrEnum):
     RADIO_2G = "radio0"
     RADIO_5G = "radio1"
-
-
-class AddrType(StrEnum):
-    ipv4_private = "ipv4_private"
-    """Any 192.168, 172.16, 10, or 169.254 addresses"""
-    ipv4_public = "ipv4_public"
-    """Any IPv4 public addresses"""
-    ipv6_link_local = "ipv6_link_local"
-    """Any fe80:: addresses"""
-    ipv6_private_local = "ipv6_private_local"
-    """Any fd00:: addresses"""
-    ipv6_public = "ipv6_public"
-    """Any publicly routable addresses"""
 
 
 class InterfaceName(StrEnum):
@@ -1071,24 +1059,7 @@ class OpenWrtAP:
             TimeoutError: No address is available after timeout_sec.
             ValueError: Several addresses are available or unknown addr_type.
         """
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
-            addrs_dict = self.get_interface_ip_addresses(interface)
-            if addr_type not in addrs_dict:
-                raise ValueError(f"Unknown addr_type: {addr_type}")
-
-            ip_addrs = addrs_dict[addr_type]
-            if len(ip_addrs) > 1:
-                raise ValueError(
-                    f'Expected only one "{addr_type}" address, got {ip_addrs}'
-                )
-            elif len(ip_addrs) == 1:
-                return ip_addrs[0]
-            time.sleep(1)
-
-        raise TimeoutError(
-            f'No available "{addr_type}" address on {interface} after {timeout_sec}s'
-        )
+        return ip_utils.get_addr(self.ssh, interface, addr_type, timeout_sec)
 
     def get_interface_ip_addresses(
         self, interface: str
@@ -1106,51 +1077,7 @@ class OpenWrtAP:
                 ipv6_private_local: Any fd00:: addresses
                 ipv6_public: Any publicly routable addresses
         """
-        stdout = self.ssh.run(f"ip -o addr show {interface}").stdout.decode(
-            "utf-8"
-        )
-        addrs = [
-            line.replace("/", " ").split()[3]
-            for line in stdout.splitlines()
-            if len(line.split()) > 3
-        ]
-
-        ipv4_private_addresses: list[str] = []
-        ipv4_public_addresses: list[str] = []
-        ipv6_link_local_addresses: list[str] = []
-        ipv6_private_local_addresses: list[str] = []
-        ipv6_public_addresses: list[str] = []
-
-        for addr in addrs:
-            on_device_ip = ipaddress.ip_address(addr)
-            if on_device_ip.version == 4:
-                if on_device_ip.is_private:
-                    ipv4_private_addresses.append(str(on_device_ip))
-                elif on_device_ip.is_global or (
-                    # Carrier private doesn't have a property, so we check if
-                    # all other values are left unset.
-                    not on_device_ip.is_reserved
-                    and not on_device_ip.is_unspecified
-                    and not on_device_ip.is_link_local
-                    and not on_device_ip.is_loopback
-                    and not on_device_ip.is_multicast
-                ):
-                    ipv4_public_addresses.append(str(on_device_ip))
-            elif on_device_ip.version == 6:
-                if on_device_ip.is_link_local:
-                    ipv6_link_local_addresses.append(str(on_device_ip))
-                elif on_device_ip.is_private:
-                    ipv6_private_local_addresses.append(str(on_device_ip))
-                elif on_device_ip.is_global:
-                    ipv6_public_addresses.append(str(on_device_ip))
-
-        return {
-            AddrType.ipv4_private: ipv4_private_addresses,
-            AddrType.ipv4_public: ipv4_public_addresses,
-            AddrType.ipv6_link_local: ipv6_link_local_addresses,
-            AddrType.ipv6_private_local: ipv6_private_local_addresses,
-            AddrType.ipv6_public: ipv6_public_addresses,
-        }
+        return ip_utils.get_interface_ip_addresses(self.ssh, interface)
 
     def log_to_syslog(self, message: str) -> None:
         """Log a message to syslog on the access point.
