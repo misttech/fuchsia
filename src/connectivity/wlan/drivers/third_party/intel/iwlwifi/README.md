@@ -1,229 +1,145 @@
-# Intel WiFi driver (iwlwifi)
+# Intel WiFi Driver (`iwlwifi`)
 
 ## What is This?
 
-The modern Intel chipset integrates an on-chip WiFi feature in order to reduce
-the board size and power consumption. It can be accessed via the PCIe bus.
+Modern Intel chipsets integrate an on-chip WiFi feature accessed via the PCIe
+bus. The `iwlwifi` driver is the vendor SoftMAC driver for supported Intel
+wireless hardware on Fuchsia.
 
-There are some hardware variants on the different chipsets. Also there are
-different firmware variants. The iwlwifi driver is the one driver to rule
-them all. However, currently we only focus on the MVM firmware on the 7265D
-module (the one on the Eve).
-
-Note that on some Intel chipsets, the WiFi feature is co-existing with
-Bluetooth feature. But this driver will not handle the Bluetooth. Instead,
-the Bluetooth driver will handle it.
+On some Intel chipsets, the WiFi feature coexists with Bluetooth on the same
+physical module. A separate Bluetooth driver handles Bluetooth.
 
 ## Terminology
 
-- iwl-drv: the Intel WiFi driver. It supports all series of Intel WiFi chipsets.
-  However, an iwl-drv instance only maps to one firmware (opmode).
+- **`iwl-drv`**: The core Intel WiFi driver. An `iwl-drv` instance maps to a
+  single firmware operational mode (`opmode`).
+- **Firmware (`ucode`)**: Operational code running inside the wireless chipset.
+  Firmware variants include:
+  - **MVM**: SoftMAC firmware used by 7000, 8000, 9000 and 22000-series devices.
+  - **XVT, FMAC, DVM, TEST**: Other Intel opmodes (FMAC is FullMAC, DVM is the
+    legacy one). Fuchsia only builds MVM.
+- **`opmode`**: Operational mode mapped to loaded firmware. The opmode layer
+  provides a unified interface for the MLME so that upper layers do not need to
+  manage firmware-specific details.
+- **`wlansoftmac`**: The platform SoftMAC driver that manages IEEE 802.11 state
+  machines and interacts with `iwlwifi` over the `fuchsia.wlan.softmac`
+  protocol.
 
-- firmware (ucode): a piece of software code running inside the hardware.
-  This gives the hardware some flexibility to extend features or
-  fix/workaround bugs. So far we can tell from the driver source
-  code, the firmware variants include:
+## Driver Architecture (Driver Framework v2)
 
-  - MVM: a softmac implemention. This is used by the 7265/8265/9260 devices.
-  - XVT: a firmware used on virtualization environment.
-  - FMAC: a fullmac implemention.
-  - DVM:
-  - TEST: a special firmware to debug the firmware and hardware.
-
-- opmode: Each opmode is mapped to a firmware. For example, the MVM firmware
-  is an opmode. The opmode layer provides a unified interface for upper layer
-  (MLME) to call so that the upper layer doesn't need to know what exact the
-  firmware is. Note that the opmode is determined at the initialization stage.
-
-- MLME: a user of this softmac driver. It handles the all management packets,
-  for example, the scan, associate, and authenticate protocols.
-
-- mvm/mac80211.c: provides softmac functions like: add interface, scan, start
-  AP and tx packet.
-
-## The Driver Architecture
-
-Below is the brief illustration of how we map the iwlwifi driver onto Fuchsia:
+The `iwlwifi` driver is a Driver Framework v2 (DFv2) component:
 
 ```
-                 MLME
-                  |
-           --------------- wlan_phy_impl_protocol_ops_t / wlan_softmac_protocol_ops_t
-                  |
-     ^            |
-     |     +-------------+         +--------------+
-     |     |  opmodes[]  | <------ | iwl_drv      |
-     |     +-------------+         | calls opmode |
-     |            |                | to interact  |
-     |            |                | with mvm/.   |
-     |            |                +--------------+
-     |      +-----+-----+
-     |      |     |     |    opmode provides iwl_op_mode_ops callbacks for
-     |     xvt/  mvm/  FMAC  underlying layer to pass notifications from
-     |      |     |     |    firmware.
-iwl  |      +-----+-----+
-wifi |            |
-     |    ----------------- iwl_trans.h: the transportation layer provides
-drv  |            |         the upper layer the unified interface to access
-     |            |         the firmware/hardware.
-     |            |
-     |      +------------------+
-     |      |                  |          ^
-     |    PCIe            trans-sim.cc    | the
-     |    trans                |          | simulated
-     |      |             fake firmware   | environment
-     |      |                  |          | for
-     |      |              simulated      | testing
-     |      |             environment     v
-     v      |
-            |
-        --------- PCIe bus
-            |
-   real firmware/hardware
+               wlandevicemonitor / wlansoftmac
+                             |
+       +---------------------------------------------+
+       |   fuchsia.wlan.phy / fuchsia.wlan.softmac   |
+       +---------------------------------------------+
+                             |
+             platform/ (Fuchsia integration)
+      PcieIwlwifiDriver (fdf::DriverBase2)
+      WlanPhyDevice & WlanSoftmacDevice
+                             |
+                             v
+               +---------------------------+      +-------------------------+
+               |  MVM opmode (mvm/)        | <--- | iwl_drv (Core Driver)   |
+               +---------------------------+      | Loads fw & starts MVM   |
+                             |                    +-------------------------+
+            ----------------------------------- iwl_trans (Transport Layer)
+                             |
+              +--------------+--------------+
+              |                             |
+              v                             v
+      pcie/ (Real PCIe)              test/ (sim-trans.cc)
+              |                             |
+              v                             v
+      Hardware Bus / DMA             Simulated Firmware
 ```
 
-The highlevel initialization procedure is:
+### Driver Initialization Procedure
 
-- `iwlwifi.bind` matches the PCIe device ID and this driver.
+1. **Binding**: `platform/iwlwifi.bind` matches the PCIe vendor/device ID and
+   triggers driver loading by the driver manager.
+2. **DFv2 Driver Start**: The driver framework instantiates `PcieIwlwifiDriver`
+   (`platform/pcie-iwlwifi-driver.cc`), calling `DriverBase2::Start()`.
+3. **PCI Discovery**: `PcieIwlwifiDriver` connects to `fuchsia.hardware.pci`,
+   gets the BTI and the PCI device IDs, and finds the matching entry in the
+   device table.
+4. **Transport Setup**: `iwl_pci_probe()` sets up `struct iwl_trans` and the
+   device configuration (`struct iwl_cfg`), maps the device registers, sets up
+   the interrupt, and calls `iwl_drv_start()`.
+5. **Firmware Loading**: `iwl_drv_start()` (in `iwl-drv.c`) starts firmware
+   discovery via `iwl_load_firmware()`.
+6. **Opmode Startup**: `iwl_req_fw_callback()` parses the firmware image and
+   starts the MVM opmode. `iwl_op_mode_mvm_start()` runs the INIT ucode to read
+   the NVM, then stops the device until an interface is created.
+7. **PHY Exposure**: `PcieIwlwifiDriver` adds an `iwlwifi-wlanphy` child node
+   and serves `fuchsia.wlan.phy/Service` itself, since it is a `WlanPhyDevice`.
+   `wlandevicemonitor` uses it for PHY management.
+8. **Interface Creation**: When `wlandevicemonitor` calls `CreateIface`, the
+   driver creates a `WlanSoftmacDevice` (`platform/wlansoftmac-device.cc`),
+   which loads the runtime ucode. The driver then adds an `iwlwifi-wlansoftmac`
+   child node that offers `fuchsia.wlan.softmac/Service` to `wlansoftmac`.
 
-- `pcie/pcie_device.cc`: PcieDevice::DdkInit() is called due to the PCI binding (pcie/bind.cc).
+## Directory Structure
 
-- `PcieDevice::DdkInit()` then calls to `iwl_pci_probe()`, which is the Linux driver entry-point.
+### Root
+- `iwl-*.*`: Core driver files, adapted for Fuchsia coding styles and
+  concurrency models.
 
-- In `iwl_pci_probe()`, the transporation `iwl_trans` is prepared with PCI device info. The
-  `iwl_trans` also carries the chipset configuration (`struct iwl_cfg`), which is determined by
-  the PCIe device ID.
+### `platform/` (Fuchsia integration)
+- `iwlwifi.bind`: Composite bind rules with a PCI parent (Intel vendor ID and
+  the supported device IDs) and an optional ACPI parent.
+- `pcie-iwlwifi-driver.cc` / `.h`: `PcieIwlwifiDriver` implementing
+  `fdf::DriverBase2`.
+- `wlanphyimpl-device.cc` / `.h`: `WlanPhyDevice` implementing the
+  `fuchsia.wlan.phy.WlanPhy` protocol.
+- `wlansoftmac-device.cc` / `.h`: `WlanSoftmacDevice` implementing the
+  `fuchsia.wlan.softmac.WlanSoftmac` protocol.
+- `mvm-mlme.cc` / `.h`: Translates `WlanPhy` and `WlanSoftmac` calls into `mvm/`
+  operations.
+- `pci-fidl.cc` / `.h`: C wrappers around `fuchsia.hardware.pci` for `pcie/`.
+- `driver-inspector.cc` / `.h`: Owns the driver's Inspect tree and publishes
+  firmware core dumps to it.
 
-- Then `iwl_drv_start()` (in `iwl-drv.c`) kicks off `iwl_load_firmware()`, which uses `iwl_cfg`
-  to decide which firmware binary image file to load.
+### `pcie/`
+- Implements low-level PCIe transport (`drv.c`, `trans.c`, `rx.c`, `tx.c`,
+  `ctxt-info.c`). Manages PCIe RX/TX rings and DMA buffers.
 
-- Once the firmware is loaded, the corresponding opmode will be started off (`IWL_FW_MVM` for mvm).
+### `fw/`
+- Firmware loading routines, command definitions (`fw/api/commands.h`), firmware
+  file headers (`fw/file.h`), runtime state (`fw/runtime.h`), and memory paging
+  (`fw/paging.c`). `iwl_req_fw_callback()` parses the firmware image into host
+  memory (`drv->fw`), `iwl_op_mode_mvm_start()` links `mvm->fwrt` to `drv->fw`,
+  and `iwl_mvm_up()` loads the runtime ucode into the device with
+  `iwl_mvm_load_ucode_wait_alive()`.
 
-- `iwl_op_mode_mvm_start()` then takes over to download the ucode to hardware, start the firmware,
-  and initialize all variables.
+### `mvm/`
+- Implements the MVM operational mode:
+  - `mac80211.c`: Core interface for interface addition, scanning, and station
+    management.
+  - `fw.c`: Lifecycle and ucode execution management.
+  - `ops.c`: Handler table for notifications and responses from the firmware.
+  - `tx.c` / `rx.c`: Data-plane packet transmission and reception.
 
-- After the PCIe and mvm are ready, `::ddk::WlanPhyImpl*()` in device.cc also implement the callback
-  functions for WLAN core.  For example, the WLAN core can call `Device::WlanPhyImplCreateIface()`
-  to create a MAC interface for scan and association.
+### `cfg/`
+- Chipset configurations for supported hardware generations:
+  - `cfg/7000.c`: 7000-series chipsets.
+  - `cfg/8000.c`: 8000-series chipsets.
+  - `cfg/9000.c`: 9000-series chipsets.
+  - `cfg/22000.c`: 22000-series chipsets.
 
-- Now, the driver is ready to accept requests.
+### `test/`
+- Unit tests and simulation infrastructure:
+  - `sim-trans.cc` / `sim-trans.h`: Simulated PCIe transport layer.
+  - `sim-mvm.cc`: Simulated MVM firmware responding to commands.
+  - `single-ap-test.cc`: Base test fixture that starts the simulated transport
+    with a fake firmware image and defines one test AP (SSID and channel).
 
+## Build & Testing System
 
-## Files / Directories
-
-### ROOT
-
-- `iwl-*.*`: The code ported from the original driver. It could have been modified to be compiled
-             on Fuchsia and to follow the Fuchsia coding style.
-
-### fw/
-
-The firmware runtime related functions, constants, and data structure.
-
-Note that the firmware binary image file is parsed in `iwl_req_fw_callback()` after it is loaded
-into the host memory (`struct iwl_fw fw` in `struct iwl_drv`).
-
-The `drv->fw` then is passed into `iwl_op_mode_mvm_start()` (from `_iwl_op_mode_start()`).  The
-`iwl_fw_runtime_init()` then links `mvm->fwrt` with `drv->fw` in `iwl_fw_runtime_init()`.  Now the
-mvm driver has the firmware binary info and can download the ucode binary to the hardware via
-`iwl_init_paging()` (see `iwl_mvm_load_rt_fw()` which is used in `iwl_mvm_up()` procedure).
-
-
-- `fw/api/commands.h`: The command used by the firmware.
-
-- `fw/file.h.*`: The data structure describing the firmware binary file format.
-
-- `fw/img.h`: The placehold used by `iwl-drv` to hold the firmware info. Will be passed to an opmode
-  (e.g. mvm).
-
-- `fw/runtime.h`: Represents the generic firmware runtime data structure among opmodes (e.g. mvm).
-  Besides the firmware binary info, it also contains the transportation info talking to the actual
-  hardware (e.g. PCIe device info).
-
-- `fw/paging.c`: The memory paging technology used by driver to download firmware ucode binary to
-  the hardware. In Fuchsia, this is implemented by `io_buffer` DMA.
-
-
-### pcie/
-
-- `pcie/bind.cc`: implements the Fuchsia PCI binding mechanism.
-
-- `pcie/pcie_device.cc`: implements wlan::iwlwifi::Device.
-
-- `pcie/drv.c`: contains the PCIe device ID and configuration mappings.
-
-- `pcie/trans.c`: implements `struct iwl_trans_ops`.
-
-- `pcie/rx.c`: implements the PCIe RX ring.
-
-- `pcie/tx.c`: implements the PCIe TX ring.
-
-
-### mvm/
-
-Contains the core functions of the driver.
-
-- `mvm/mac80211.c`: the core file providing all MVM functions.
-- `mvm/fw.c`: controls the life cycle of the firmware (e.g. loading and kick-off).
-- `mvm/utils.c`: sends commands to firmware.
-- `mvm/ops.c`: implements `iwl_mvm_ops`. It also maintains a table `iwl_mvm_rx_handlers[]` that
-  handles all responses / notifications from the firmware (see `iwl_mvm_rx()`).
-- `mvm/tx.c`: `iwl_mvm_tx_mpdu()` to transmit data plane packets out.
-- `mvm/rx.c`: `iwl_mvm_rx_rx_mpdu()` to handle data plane packets.
-
-
-### cfg/
-
-Contains all the configurations of supported chipsets.
-
-- cfg/7000.c: 7000-series chipsets (e.g. Eve).
-- cfg/8000.c: 8000-series chipsets (e.g. NUC default adapter).
-- cfg/9000.c: 9000-series chipsets (e.g. Atlas).
-- cfg/22000.c: 22000-series chipsets. Not supported in Fuchsia yet.
-
-### test/
-
-Contains all testing related files.
-
-- `test/dummy_test.cc`: example code to create a new unit test.
-- `test/trans-sim.h`: the transportation that simulates the PCIe.
-- `test/sim-mvm.*`: the fake code that simulates the MVM firmware.
-- `test/single-ap-test.*`: a handy helper class for testing case to create a STA interface.
-- `test/sim-nvm.*`: fakes a non-volatile memory of adapter (MAC address ... etc).
-- `test/pcie_test.cc`: tests the code under pcie/.
-- `test/wlan-device_test.cc`: tests the code in wlan-device.c.
-- `test/*_test.cc`: test the MVM code.
-
-To run the test locally, try the below commands:
-
-  $ fx set --with-base //src/connectivity/wlan:tests
-  $ fx test iwlwifi_test
-
-## The Authenticate/Associate/Disassociate in Linux
-
-This [link](https://android.googlesource.com/kernel/msm/+/android-msm-marlin-3.18-nougat-dr1/Documentation/networking/mac80211-auth-assoc-deauth.txt)
-explains how the auth/assoc/disassoc are working in Linux.
-
-In the Fuchsia, we simulate the behavior by going through the STA state machine and change the MAC
-context in the firmware to indicate the interface is associated. See fxr/412251 for details.
-
-
-## The Testing Architecture
-
-In order to unittest the driver code, the first thing we do is fake the PCIe
-transportation layer so that the driver code can talk to the simulated
-transportation layer, the fake firmware and the simulated environment.
-
-The simulated environment is a library that the WLAN driver team creates to
-simulate the real-world WiFi environment. For example, a fake AP so that our
-driver can associate with it. The fake firmware can co-operate with it to
-return proper result back to the driver. An example is a scan command, the fake
-firmware can query how many APs are around in the simulated environment and
-return the scan result back to the driver.
-
-With mocking up the hardware, a test case now can test the driver behavior with
-meaningful environment setup.
-
-## Resources
-
-- https://wiki.gentoo.org/wiki/Iwlwifi
+Bazel builds the `iwlwifi` driver and its unit tests via `BUILD.bazel`:
+- **Driver Target**: `platform/BUILD.bazel` defines the `fuchsia_cc_driver`
+  target and packages it into `fuchsia_driver_component`.
+- **Test Package**: `test/BUILD.bazel` defines the `fuchsia_test_package`
+  target.
