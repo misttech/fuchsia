@@ -10,8 +10,6 @@ Interfaces directly with Linux USB device nodes (/dev/bus/usb/BBB/DDD or
 and bidirectional loopback transfers.
 """
 
-from __future__ import annotations
-
 import collections.abc
 import contextlib
 import ctypes

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Mobly logger extension for Fuchsia tests."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

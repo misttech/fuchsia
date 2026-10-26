@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Custom data types."""
 
-from __future__ import annotations
-
 import abc
 import builtins
 import enum

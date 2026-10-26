@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Abstract base class for FakeBattery affordance."""
 
-from __future__ import annotations
-
 import abc
 
 from honeydew.affordances import affordance

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Library for interacting with OpenWRT Access Points."""
 
-from __future__ import annotations
-
 import json
 import logging
 import os

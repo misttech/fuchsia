@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Abstract base class for Screenshot affordance."""
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 from importlib import resources as impresources

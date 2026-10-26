@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Data classes and enums for Wi-Fi Configuration."""
 
-from __future__ import annotations
-
 import dataclasses
 import enum
 import random

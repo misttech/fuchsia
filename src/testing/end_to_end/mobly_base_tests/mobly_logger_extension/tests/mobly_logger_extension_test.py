@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Unit tests for mobly_logger_extension module."""
 
-from __future__ import annotations
-
 import logging
 import tempfile
 import unittest

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Utilities for power-related operations on Fuchsia devices."""
 
-from __future__ import annotations
-
 import dataclasses
 import logging
 from datetime import timedelta

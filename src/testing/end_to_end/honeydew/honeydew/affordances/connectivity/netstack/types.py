@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Data types used by netstack affordance."""
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """PowerSource affordance implementation using Fuchsia Controller."""
 
-from __future__ import annotations
-
 import logging
 
 import fidl_fuchsia_hardware_power_source as f_power_source

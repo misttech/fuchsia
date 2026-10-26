@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """WLAN policy affordance implementation using Fuchsia Controller."""
 
-from __future__ import annotations
-
 import asyncio
 import inspect
 import logging

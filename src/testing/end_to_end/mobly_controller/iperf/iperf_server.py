@@ -6,7 +6,6 @@
 
 # Blanket ignores to enable mypy in Antlion
 # mypy: disable-error-code="no-untyped-def"
-from __future__ import annotations
 
 import json
 import logging

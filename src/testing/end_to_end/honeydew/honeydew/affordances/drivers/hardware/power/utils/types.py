@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Data types used by PowerSource affordance."""
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 

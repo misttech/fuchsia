@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """FakeBattery affordance implementation using FFX."""
 
-from __future__ import annotations
-
 import logging
 
 from honeydew import errors

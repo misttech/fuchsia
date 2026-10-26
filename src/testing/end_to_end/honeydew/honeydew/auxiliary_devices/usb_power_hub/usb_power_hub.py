@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Abstract base class for controlling usb power hub hardware."""
 
-from __future__ import annotations
-
 import abc
 import logging
 

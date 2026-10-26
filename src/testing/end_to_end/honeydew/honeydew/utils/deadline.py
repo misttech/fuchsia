@@ -18,8 +18,6 @@ as a deadline type in tests:
    with a "default" deadline.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import datetime, timedelta, timezone
 

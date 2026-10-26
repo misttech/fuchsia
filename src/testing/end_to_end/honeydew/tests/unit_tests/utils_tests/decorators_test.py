@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Unit tests for honeydew.utils.decorators."""
 
-from __future__ import annotations
-
 import asyncio
 import unittest
 

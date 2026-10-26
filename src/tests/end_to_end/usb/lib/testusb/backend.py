@@ -10,8 +10,6 @@ concrete backends (such as ioctl and mock backends), including lifecycle
 management, configuration switching, transfer operations, and device discovery.
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 import os

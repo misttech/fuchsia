@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Utility module that contains some useful decorators."""
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import logging

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Netstack affordance implementation using Fuchsia Controller."""
 
-from __future__ import annotations
-
 import asyncio
 import enum
 import logging

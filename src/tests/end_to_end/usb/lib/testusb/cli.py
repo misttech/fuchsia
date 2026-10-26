@@ -9,8 +9,6 @@ Provides argument parsing, test selection helpers, and the main() execution
 function for host-driven USB gadget testing.
 """
 
-from __future__ import annotations
-
 import argparse
 import collections.abc
 import json

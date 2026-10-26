@@ -9,8 +9,6 @@ Provides TestRunner to execute suites of test cases with loops, random
 ordering, and configuration switching, as well as text and JSON reporting.
 """
 
-from __future__ import annotations
-
 import collections.abc
 import logging
 import os

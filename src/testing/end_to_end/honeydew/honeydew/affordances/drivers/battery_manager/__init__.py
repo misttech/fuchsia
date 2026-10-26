@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Battery affordance implementation using Fuchsia Controller."""
 
-from __future__ import annotations
-
 import logging
 
 import fidl_fuchsia_hardware_power_battery as f_battery

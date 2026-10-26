@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Domain wrapper classes and testing utilities for wlanix E2E tests."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from collections.abc import Sequence

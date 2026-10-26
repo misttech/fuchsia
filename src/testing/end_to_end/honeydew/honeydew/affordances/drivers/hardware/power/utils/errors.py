@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Errors raised by PowerSource affordance."""
 
-from __future__ import annotations
-
 import fidl_fuchsia_hardware_power_source as f_power_source
 from honeydew import errors
 

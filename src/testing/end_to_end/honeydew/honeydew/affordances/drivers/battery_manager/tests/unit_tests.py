@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Unit tests for Battery affordance."""
 
-from __future__ import annotations
-
 import unittest
 from unittest import mock
 

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Async Fuchsia base test class."""
 
-from __future__ import annotations
-
 import enum
 import importlib
 import logging
