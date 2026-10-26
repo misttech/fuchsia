@@ -109,13 +109,13 @@ impl TryFromEnv for FhoEnvironment {
 /// ```rust
 /// #[derive(FfxTool)]
 /// struct Tool {
-///     daemon: fho::Deferred<fho::DaemonProxy>,
+///     rcs: fho::Deferred<fidl_fuchsia_developer_remotecontrol::RemoteControlProxy>,
 /// }
 /// impl fho::FfxMain for Tool {
 ///     type Writer = fho::SimpleWriter;
 ///     async fn main(self, _writer: fho::SimpleWriter) -> fho::Result<()> {
-///         let daemon = self.daemon.await?;
-///         writeln!(writer, "Loaded the daemon proxy!");
+///         let rcs = self.rcs.await?;
+///         writeln!(writer, "Loaded the remote control proxy!");
 ///     }
 /// }
 /// ```

@@ -177,13 +177,8 @@ def fuchsia_package_tasks(
         **kwargs):
     # Disable Bazel sandboxing when running tests to allow ffx run without
     # isolation.
-    # This is preferred over using ffx isolation as isolation would cause
-    # unfavorable interaction with existing daemons.
-    # Examples:
-    #  - Port :8083 collisions when a package server is already running under a
-    #    different deamon.
-    #  - Emulators running under --net user are not visible to ffx daemons
-    #    running within an isolate dir.
+    # This is preferred over using ffx isolation to avoid unfavorable
+    # interactions such as port collisions with already running services.
     if is_test:
         tags = tags + ["no-sandbox", "no-cache"]
     elif enumerate_test_components:

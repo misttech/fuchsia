@@ -13,7 +13,7 @@ pub enum FastbootInterface {
     Tcp,
 }
 
-/// Represents a target description, e.g. as produced in events within the daemon
+/// Represents a target description.
 #[derive(Debug, Default, Hash, Clone, PartialEq, Eq)]
 pub struct Description {
     pub nodename: Option<String>,

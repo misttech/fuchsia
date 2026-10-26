@@ -373,10 +373,7 @@ impl ConfigFile {
     fn save(&mut self) -> Result<(), StorageError> {
         log::debug!("Saving path {:?}", self.path);
 
-        // FIXME(81502): There is a race between the ffx CLI and the daemon service
-        // in updating the config. We can lose changes if both try to change the
-        // config at the same time. We can reduce the rate of races by only writing
-        // to the config if the value actually changed.
+        // Only write to the config if the value actually changed to reduce redundant disk writes.
         let ret = if self.is_dirty() {
             self.dirty = false;
             with_writer(

@@ -816,8 +816,7 @@ class FuchsiaDevice(
 
     def _check_connections(self) -> None:
         """Checks health of all device transports."""
-        # Note - FFX need to be invoked first before FC as FC depends on the daemon that
-        # will be created by FFX
+        # Note - FFX is invoked first to verify connectivity
         self.ffx.check_connection()
 
         self.fuchsia_controller.check_connection()

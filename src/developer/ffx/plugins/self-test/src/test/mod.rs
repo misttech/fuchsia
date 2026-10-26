@@ -91,16 +91,6 @@ pub async fn run(
                     writeln!(&mut writer, "{green}ok{nocol}",)?;
                 }
                 Err(err) => {
-                    // Unfortunately we didn't get a chance to get back any
-                    // Isolate the test may have used, which means we can't
-                    // clean up the daemon. The hope is that this is not a big
-                    // deal -- when the Isolate drops(), it will remove the
-                    // daemon.socket file which should cause the daemon to exit
-                    // anyway -- this code was just a backstop to improve our
-                    // chances of having it exit. Plus, the failure path is when
-                    // we error out, which is the unusual case (and honestly,
-                    // if we can't pass our self-test, there are no guarantees
-                    // about the behavior anyway.)
                     writeln!(&mut writer, "{red}not ok{nocol}:\n{err:?}\n",)?;
                     num_errs = num_errs + 1;
                 }

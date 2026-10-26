@@ -80,9 +80,9 @@ pub(crate) fn find_ffx(
 
 pub(crate) fn get_log_dir(log_dir_root: &TempDir) -> PathBuf {
     if let Ok(d) = std::env::var("FUCHSIA_TEST_OUTDIR") {
-        // If this is the daemon, and we use the same dir as the parent,
-        // the two daemons will race to write the same file. So instead let's
-        // always try to create a subdir when in the infra environment.
+        // If multiple processes use the same dir as the parent, they will race
+        // to write the same file. So instead let's always try to create a subdir
+        // when in the infra environment.
         // To do so, we take the tail of the tmpdir (which Path calls
         // file_name() even when actually a directory), and add it
         // to the end of FUCHSIA_TEST_OUTDIR, to give the new subdirectory.
@@ -177,8 +177,7 @@ impl Isolate {
     /// user level configuration that isolates the ascendd socket into a temporary
     /// directory. If $FUCHSIA_TEST_OUTDIR is set, then it is used to specify the log
     /// directory. The isolated environment is torn down when the Isolate is
-    /// dropped, which will attempt to terminate any running daemon and then
-    /// remove all isolate files.
+    /// dropped, which will remove all isolate files.
     ///
     /// Most of the time you'll want to use the appropriate convenience wrapper,
     /// [`Isolate::new_with_sdk`] or [`Isolate::new_in_test`].

@@ -25,7 +25,7 @@ struct RcsInfo {
     _rcs_proxy: RemoteControlProxy,
 }
 
-/// Represents a direct (no daemon) connection to a Fuchsia target.
+/// Represents a direct connection to a Fuchsia target.
 #[derive(Debug)]
 pub struct Connection {
     overnet: Option<OvernetClient>,

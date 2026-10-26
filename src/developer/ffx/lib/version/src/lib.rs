@@ -25,8 +25,7 @@ pub struct VersionInfo {
     /// means newer.
     /// Can be mapped to an abi_revision using //sdk/version_history.json.
     pub api_level: Option<u64>,
-    /// Path of the actual FFX executable. This allows us to make absolutely
-    /// sure commands match the daemon they're communicating with.
+    /// Path of the actual FFX executable.
     pub exec_path: Option<String>,
     /// Build ID of the FFX executable.
     pub build_id: Option<String>,

@@ -38,8 +38,7 @@ import (
 // - cd tools/fuzz && UNDERCOAT_E2E_TESTS=1 go test -run <test-name> -v -logtostderr
 
 // Note: The bulk of the testing is done in separate functions called by this
-// test, but for performance reasons (and because ffx uses a global daemon)
-// they currently all run serially on the same instance.
+// test, but for performance reasons they currently all run serially on the same instance.
 //
 // This has an added benefit of being closer to the actual behavior seen when
 // being called from ClusterFuzz, where the same instance is often re-used for

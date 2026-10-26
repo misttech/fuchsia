@@ -154,7 +154,7 @@ pub const BUG_REPORT_URL: &str =
 
 /// FfxTargetError is an error type that maps FIDL errors onto to an error type
 /// that can derive |thiserror::Error| for better error messages. These errors should
-/// be use for target based (include daemon) libraries.
+/// be used for target-based libraries.
 /// To expose these errors at a higher level with ffx subtools that are not interested
 /// in accessing the FIDL error, FfxTargetError should be transformed into FfxError using the
 /// Into trait.

@@ -151,8 +151,8 @@ class FuchsiaDevice(object):
     async def wait_online(self, timeout: int = TIMEOUTS["ONLINE"]) -> None:
         """Waits for the Fuchsia device to come online.
 
-        A device is considered online when it is connected to the remote control proxy in the ffx
-        daemon.
+        A device is considered online when it is connected to the remote control proxy on the
+        target.
 
         Args:
             timeout: Determines how long (in fractional seconds) to wait before considering this

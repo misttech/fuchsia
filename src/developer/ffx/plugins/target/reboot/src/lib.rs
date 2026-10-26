@@ -86,8 +86,7 @@ async fn reboot_direct_from_product(
     let options =
         ShutdownOptions { action: Some(action), reasons: Some(vec![reason]), ..Default::default() };
     // There are two errors: the outer error, which represents a FIDL failure, and the inner error
-    // which is the Shutdown() failure.  The daemon version ignores the shutdown failure, so so will
-    // we.
+    // which is the Shutdown() failure. We ignore the shutdown failure here.
     let _res = match admin_proxy.shutdown(&options).await {
         e @ Err(fidl::Error::ClientChannelClosed { protocol_name, .. }) => {
             // If the 'protocol_name' is 'fuchsia.hardware.power.statecontrol.Admin'
@@ -122,8 +121,6 @@ async fn reboot_direct_from_fastboot(
     context: &EnvironmentContext,
     target_state: TargetRebootState,
 ) -> Result<(), fho::Error> {
-    // TODO(473553526): refactor this and the equivalent code in
-    // daemon/protocols/target_collection/src/reboot.rs
     let mut fastboot_interface = ffx_fastboot_connection_factory::get_fastboot_interface(
         &fastboot_state,
         node_name,

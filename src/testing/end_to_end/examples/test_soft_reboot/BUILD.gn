@@ -30,7 +30,7 @@ python_mobly_test("soft_reboot_test") {
 }
 
 # Monitored soft reboot variant using FFX monitor session. Requires an active
-# ffx monitor daemon in the environment (use_monitor_state = true).
+# ffx monitor session in the environment (use_monitor_state = true).
 python_mobly_test("soft_reboot_test_with_ffx_monitor") {
   main_source = "test_soft_reboot.py"
   libraries = [

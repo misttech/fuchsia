@@ -154,9 +154,6 @@ import("//build/testing/host_test_data.gni")
 #         ffx = {
 #           timeout = 30
 #         }
-#         fuchsia-controller = {
-#           use_daemon = true
-#         }
 #       }
 #       affordances = {
 #         tracing = {

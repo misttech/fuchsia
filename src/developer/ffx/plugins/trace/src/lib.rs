@@ -626,8 +626,6 @@ impl TraceTool {
             };
         }
 
-        // For the background we need a background task, so still use the daemon.
-        // Otherwise use a direct connection.
         if opts.background {
             return match trace_proxy {
                 SessionManagerProxyType::Provisioner(_) => {
