@@ -187,7 +187,7 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         )
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
     async def setup_test(self) -> None:
         await super().setup_test()

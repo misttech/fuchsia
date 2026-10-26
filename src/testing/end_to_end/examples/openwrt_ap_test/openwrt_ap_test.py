@@ -32,18 +32,14 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
         self.log = logging.getLogger()
 
         if not self.fuchsia_devices:
-            raise signals.TestAbortClass(
-                "At least one Fuchsia device is required"
-            )
+            raise signals.TestError("At least one Fuchsia device is required")
         self.openwrt_aps: list[
             OpenWrtAP
         ] | None = await self.register_controller(openwrt_access_point)
         if not self.fuchsia_devices:
-            raise signals.TestAbortClass(
-                "At least one Fuchsia device is required"
-            )
+            raise signals.TestError("At least one Fuchsia device is required")
         if not self.openwrt_aps:
-            raise signals.TestAbortClass(
+            raise signals.TestError(
                 "At least one OpenWRT access point is required"
             )
 

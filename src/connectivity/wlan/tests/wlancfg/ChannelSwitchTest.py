@@ -80,7 +80,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.phy = await self.dut.wlan_core.ensure_single_phy()
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -145,7 +145,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 elif self.access_point:
                     ap_iface = self.access_point.wlan_2g
                 else:
-                    raise signals.TestAbortClass("No access point initialized")
+                    raise signals.TestError("No access point initialized")
             case Band.BAND_5G:
                 wlan_band = Band.BAND_5G
                 phy_mode = VhtMode(bw=20)
@@ -154,7 +154,7 @@ class ChannelSwitchTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 elif self.access_point:
                     ap_iface = self.access_point.wlan_5g
                 else:
-                    raise signals.TestAbortClass("No access point initialized")
+                    raise signals.TestError("No access point initialized")
 
         asserts.assert_true(
             self._channels_valid_for_band([current_channel], band),

@@ -48,7 +48,7 @@ class WlanMiscScenarioTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log = logging.getLogger()
 
         if not self.openwrt_aps and not self.access_points:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         if self.access_point:
             self.access_point.stop_all_aps()

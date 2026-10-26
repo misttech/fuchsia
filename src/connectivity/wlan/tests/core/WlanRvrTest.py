@@ -164,7 +164,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await super().setup_class()
 
         if self.openwrt_ap is None and self.access_point is None:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         self.phy = await self.dut.wlan_core.ensure_single_phy()
         await self.phy.set_country(
@@ -173,7 +173,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.iperf_server = await self.setup_iperf_server()
 
         if not self.attenuators:
-            raise signals.TestAbortClass("Requires at least one attenuator")
+            raise signals.TestError("Requires at least one attenuator")
 
         ap_controller_type = (
             "OpenWrtAP" if self.openwrt_ap is not None else "AccessPoint"

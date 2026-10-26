@@ -328,7 +328,7 @@ class SecurityTypeTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log = logging.getLogger(self.__class__.__name__)
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         await self.dut.wlan_policy.set_country_code(
             KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]

@@ -51,7 +51,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log = logging.getLogger()
 
         if not self.openwrt_aps and not self.access_points:
-            raise signals.TestAbortClass("Requires at least one access point.")
+            raise signals.TestError("Requires at least one access point.")
 
         # Start an AP with a hidden network
         # TODO(https://fxbug.dev/489256041): Delete references to old AP when OpenWRT migration

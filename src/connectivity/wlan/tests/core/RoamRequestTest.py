@@ -26,7 +26,6 @@ from legacy_access_point.ap_lib.hostapd_security import (
 )
 from mobly import signals, test_runner
 from mobly.asserts import (
-    abort_class_if,
     assert_equal,
     assert_not_equal,
     assert_true,
@@ -248,15 +247,13 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             hostapd_constants.BandType.BAND_5G,
         }
         actual_bands = {test_params.origin_band, test_params.target_band}
-        abort_class_if(
-            actual_bands != expected_bands,
-            f"Test expects one 2.4GHz AP and one 5GHz AP. Got origin: {test_params.origin_band}, target {test_params.target_band}",
-        )
+        if actual_bands != expected_bands:
+            raise signals.TestError(
+                f"Test expects one 2.4GHz AP and one 5GHz AP. Got origin: {test_params.origin_band}, target {test_params.target_band}"
+            )
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass(
-                "No access point configured for this test."
-            )
+            raise signals.TestError("No access point configured for this test.")
 
         # Setup 2.4GHz AP
         if self.openwrt_ap:
@@ -343,9 +340,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     ) -> None:
         iface = await self.phy.create_client_iface()
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass(
-                "No access point configured for this test."
-            )
+            raise signals.TestError("No access point configured for this test.")
         # Setup APs using test params
         roam_params = await self.setup_aps(test_params)
 

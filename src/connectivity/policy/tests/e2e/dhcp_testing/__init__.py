@@ -66,7 +66,7 @@ class DhcpHelper:
         self.access_point = access_point
         self.log_path = log_path
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
     def setup_ap(
         self,
@@ -156,7 +156,7 @@ class DhcpHelper:
                 network=network,
             )
         else:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
     async def get_device_ipv4_addr(
         self,
@@ -268,7 +268,7 @@ class DhcpHelper:
                     )
                     raise signals.TestFailure("DUT failed to get an IP address")
         else:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         dhcp_logs = self.get_dhcp_logs()
         discover_count = dhcp_logs.count("DHCPDISCOVER")

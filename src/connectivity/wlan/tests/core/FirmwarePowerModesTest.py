@@ -87,9 +87,7 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ),
             )
         else:
-            raise signals.TestAbortClass(
-                "No access point configured for this test."
-            )
+            raise signals.TestError("No access point configured for this test.")
 
         ps_resp = await self.phy.device_monitor.set_power_save_mode(
             req=fidl_device_svc.SetPowerSaveModeRequest(
@@ -119,9 +117,7 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ap_test_interface = self.access_point.wlan_2g
             ap_address = self.access_point.get_addr(ap_test_interface)
         else:
-            raise signals.TestAbortClass(
-                "No access point configured for this test."
-            )
+            raise signals.TestError("No access point configured for this test.")
 
         async with odpm_utils.record_odpm_metrics(
             self.dut.tracing,

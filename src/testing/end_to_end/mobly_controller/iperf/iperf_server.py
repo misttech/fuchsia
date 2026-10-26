@@ -533,7 +533,7 @@ class IPerfServerOverSsh(IPerfServerBase):
                 self._ssh_session, self.hostname
             )
             if control_interface == test_interface:
-                raise signals.TestAbortAll(
+                raise signals.TestError(
                     f"iperf server control interface ({control_interface}) cannot be the "
                     f"same as the test interface ({test_interface})."
                 )

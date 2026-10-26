@@ -61,7 +61,7 @@ class PolicyScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log = logging.getLogger()
 
         if not self.openwrt_aps and not self.access_points:
-            raise signals.TestAbortClass(
+            raise signals.TestError(
                 "Requires at least one access point and one Fuchsia device"
             )
 

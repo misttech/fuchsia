@@ -113,7 +113,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.ssid = AccessPointConfig.random_string(10)
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         await self.dut.wlan_policy.ensure_clean_state()
 
@@ -159,7 +159,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
             ap_bridges = self.access_point.interfaces.get_bridge_interface()
             if not ap_bridges:
-                raise signals.TestAbortClass(
+                raise signals.TestError(
                     f"Expected bridge interfaces on the AP, got {ap_bridges}"
                 )
             ap_bridge = ap_bridges[0]

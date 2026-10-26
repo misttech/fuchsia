@@ -7,7 +7,7 @@ from typing import Collection, Literal, Mapping, TypeGuard, TypeVar, overload
 from mobly import signals
 
 
-class ValidatorError(signals.TestAbortClass):
+class ValidatorError(signals.TestError):
     pass
 
 

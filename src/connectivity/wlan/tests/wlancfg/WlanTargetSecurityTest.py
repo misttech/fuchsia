@@ -62,7 +62,7 @@ class WlanTargetSecurityTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.access_point = self.access_points[0]
             self.access_point.stop_all_aps()
         else:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
     async def setup_test(self) -> None:
         await super().setup_test()

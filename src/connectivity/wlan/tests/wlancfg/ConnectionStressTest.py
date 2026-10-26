@@ -140,7 +140,7 @@ class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # The base class FuchsiaWlanBaseTest setup_class registers access_points
         # and openwrt_aps automatically.
         if not self.openwrt_aps and not self.access_points:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         # Since the base class setup_class does NOT call stop_all_aps on access_point,
         # let's preserve that setup behavior here:

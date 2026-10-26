@@ -167,7 +167,7 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.phy = await self.dut.wlan_core.ensure_single_phy()
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
     async def teardown_class(self) -> None:
         if self.access_point:

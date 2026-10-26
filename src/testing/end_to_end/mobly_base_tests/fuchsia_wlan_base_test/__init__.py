@@ -150,7 +150,7 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             interface name
 
         Raises:
-            TestAbortClass: Desired interface does not exist
+            TestError: Desired interface does not exist
         """
         interfaces: list[InterfaceProperties] = []
         end_time = time.time() + INTERFACE_TIMEOUT
@@ -160,6 +160,6 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                 if interface.port_class is port_class:
                     return interface.name
             await asyncio.sleep(1)  # Prevent denial-of-service
-        raise signals.TestAbortClass(
+        raise signals.TestError(
             f"Expected presence of a {port_class.name} interface, got {interfaces}"
         )

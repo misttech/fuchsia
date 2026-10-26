@@ -28,9 +28,7 @@ def require(command: _C) -> _C:
     """Require a command to be available."""
     if command.available():
         return command
-    raise signals.TestAbortClass(
-        f"Required command not found: {command.binary()}"
-    )
+    raise signals.TestError(f"Required command not found: {command.binary()}")
 
 
 def optional(command: _C) -> _C | None:

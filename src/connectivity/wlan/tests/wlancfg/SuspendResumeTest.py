@@ -86,7 +86,7 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await super().setup_class()
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point.")
+            raise signals.TestError("Requires at least one access point.")
 
         if self.access_point:
             self.access_point.stop_all_aps()
@@ -150,7 +150,7 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 self.access_point.wlan_2g,
             )
         else:
-            raise signals.TestAbortClass("Requires at least one access point.")
+            raise signals.TestError("Requires at least one access point.")
         logger.info(
             "Connecting DUT to AP (SSID: %s, Security: %s)...",
             ssid,

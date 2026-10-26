@@ -38,7 +38,7 @@ class StartStopClientConnectionsTest(
         await super().setup_class()
 
         if not self.openwrt_aps and not self.access_points:
-            raise signals.TestAbortClass("Requires at least one access point.")
+            raise signals.TestError("Requires at least one access point.")
 
         self.ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
@@ -93,7 +93,7 @@ class StartStopClientConnectionsTest(
                     e,
                 )
                 if attempt == max_attempts:
-                    raise signals.TestAbortClass(
+                    raise signals.TestError(
                         f"Failed to acquire WLAN policy client controller after {max_attempts} attempts: {e}."
                     )
 

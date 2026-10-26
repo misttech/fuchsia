@@ -66,7 +66,7 @@ class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         if self.access_point:
             self.access_point.stop_all_aps()

@@ -143,7 +143,7 @@ class WlanPhyComplianceABGTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await super().setup_class()
 
         if not self.openwrt_ap and not self.access_point:
-            raise signals.TestAbortClass("Requires at least one access point")
+            raise signals.TestError("Requires at least one access point")
 
         if self.access_point:
             self.access_point.stop_all_aps()
