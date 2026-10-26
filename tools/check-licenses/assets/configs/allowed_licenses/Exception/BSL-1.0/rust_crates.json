@@ -5,7 +5,7 @@
                 "bug": "TODO: b/missing",
                 "description": "",
                 "paths": [
-                    "third_party/rust_crates/vendor/ryu-1.0.22"
+                    "third_party/rust_crates/vendor/ryu-1.0.23"
                 ]
             }
         ]
