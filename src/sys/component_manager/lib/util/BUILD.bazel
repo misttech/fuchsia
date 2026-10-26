@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "util",
+    srcs = [
+        "src/abortable_scope.rs",
+        "src/channel.rs",
+        "src/io.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "cm_util",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:pin-project",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "cm_util_lib_test"
+rustc_test(
+    name = "util_test",
+    crate = ":util",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia-async"],
+)
+
+fx_unittest_package(
+    name = "component_manager_util_test",
+    unit_tests = [":util_test"],
+)
