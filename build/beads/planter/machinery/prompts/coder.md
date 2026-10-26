@@ -203,12 +203,26 @@ the Bazel test keeps the label).
 - **Host tests** GN ran on host: Rust `rustc_test` wrapped with `wrap_host_rust_test(name = "<crate>_host_test", binary_name = "<test>")` (or `host_rustc_test`);
   C++ `host_test(binary = ":<cc_test>")`; `host_py_test`, `host_go_test`
   (`//build/bazel/rules/host_tests:<rule>.bzl`).
-- **Export**: in BUILD.gn (above the sentinel if there is one), `import("//build/bazel/bazel_test_suite.gni")`
-  and `bazel_test_suite("bazel_tests")` (never reuse the name of a generated GN test target), with
-  absolute Bazel labels: `target_tests` only `fx_unittest_package`s / `fx_test`s, `host_tests` only
-  host tests (`:<crate>_host_test`, never `($host_toolchain)`); list it in `group("tests")`.
-  A package whose remaining GN content is only `bazel_test_suite`/`group("tests")` gets no
-  sentinel and no bazel2gn run.
+- **Export (Prefer Ancestor test_suite and Case 1 BUILD.gn Removal)**:
+  Fuchsia prefers flat, aggregated test suites at the area or subsystem level (e.g.
+  `//src/connectivity/wlan:target_tests`, `//tools:host_tests`, `//src/sys:target_tests`,
+  `//sdk/lib:target_tests`, `//src/storage:target_tests`).
+  1. **Ancestor test_suite discovery**: Check ancestor directories (`//src/<subsystem>`,
+     `//tools`, `//sdk/lib`, `//src`) for an existing `test_suite(name = "target_tests")`
+     (device tests) or `test_suite(name = "host_tests")` (host tests).
+  2. **Wire to ancestor suite**: When an ancestor `test_suite` exists, add the migrated test
+     target label (`"//<dir>:<test>"`) to that ancestor's `tests = [...]` list, and set
+     `visibility = ["//<ancestor_dir>:__pkg__"]` on the test target in `BUILD.bazel`.
+  3. **Delete BUILD.gn (Case 1)**: If all non-test targets in the package have migrated to Bazel
+     (or have no remaining GN consumers), and the tests are wired into an ancestor suite,
+     **DELETE `BUILD.gn` entirely** (`git rm <dir>/BUILD.gn`, Case 1 migration). Do NOT keep an
+     empty `BUILD.gn` just to declare a single-target `bazel_test_suite`.
+  4. **Fallback local bridge**: Only when no ancestor test suite exists in the hierarchy,
+     declare `bazel_test_suite("bazel_tests")` in `BUILD.gn` above the sentinel (never reuse
+     the name of a generated GN test target), with absolute Bazel labels: `target_tests` only
+     `fx_unittest_package`s / `fx_test`s, `host_tests` only host tests (`:<crate>_host_test`,
+     never `($host_toolchain)`); list it in `group("tests")`. A package whose remaining GN
+     content is only `bazel_test_suite`/`group("tests")` gets no sentinel and no bazel2gn run.
 - Only when Bazel cannot express the test yet (test spec fields other than `environments`,
   `build_only`, `log_settings` and `test_type`, e.g. timeouts; custom realms; e2e tests;
   `bootfs_test`; Ninja-generated inputs) keep that one test GN-only,
