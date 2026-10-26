@@ -80,7 +80,7 @@ impl KObjectStore {
         );
     }
 
-    fn fs(&self) -> &FileSystemHandle {
+    pub(super) fn fs(&self) -> &FileSystemHandle {
         self.fs.get().expect("sysfs should be initialized")
     }
 

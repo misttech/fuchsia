@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::device::DeviceMode;
-use crate::task::CurrentTask;
+use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
-use crate::vfs::pseudo::simple_directory::SimpleDirectory;
+use crate::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use crate::vfs::{
     FileObject, FileOps, FsNode, FsNodeOps, FsStr, FsString, PathBuilder, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir,
@@ -146,6 +146,13 @@ impl Device {
 
     pub fn dir(&self) -> Option<Arc<SimpleDirectory>> {
         self.dir.upgrade()
+    }
+
+    /// Modifies this device's sysfs directory if the device is still registered in sysfs.
+    pub fn edit_dir(&self, kernel: &Kernel, callback: impl FnOnce(&SimpleDirectoryMutator)) {
+        if let Some(dir) = self.dir.upgrade() {
+            dir.edit(kernel.device_registry.objects.fs(), callback);
+        }
     }
 
     /// Intermediate `<class>` directory name inserted under `parent` for `subsystem`, if any.

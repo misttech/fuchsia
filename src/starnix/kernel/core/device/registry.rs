@@ -1434,4 +1434,51 @@ mod tests {
         })
         .await;
     }
+
+    #[::fuchsia::test]
+    async fn device_edit_dir() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let registry = &kernel.device_registry;
+
+            let bus = registry.objects.get_or_create_bus("my-bus".into());
+            let bus_dev = registry.add_bus_device(
+                "my-device".into(),
+                /* parent = */ None,
+                bus,
+                build_device_directory,
+            );
+            assert!(registry.objects.root.lookup("devices/my-device/uevent".into()).is_some());
+            assert!(registry.objects.root.lookup("devices/my-device/extra_attr".into()).is_none());
+
+            bus_dev.edit_dir(kernel, |dir| {
+                dir.entry(
+                    "extra_attr",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/560216403")),
+                    mode!(IFREG, 0o444),
+                );
+            });
+            assert!(registry.objects.root.lookup("devices/my-device/extra_attr".into()).is_some());
+
+            bus_dev.edit_dir(kernel, |dir| {
+                dir.remove("extra_attr".into());
+            });
+            assert!(registry.objects.root.lookup("devices/my-device/extra_attr".into()).is_none());
+
+            let bus_dev_check = bus_dev.clone();
+            registry.remove_device(&current_task, bus_dev);
+            DelayedReleaser::default().apply(&current_task);
+
+            // Editing a removed device's directory is a no-op.
+            bus_dev_check.edit_dir(kernel, |dir| {
+                dir.entry(
+                    "extra_attr",
+                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/560216403")),
+                    mode!(IFREG, 0o444),
+                );
+            });
+            assert!(registry.objects.root.lookup("devices/my-device".into()).is_none());
+        })
+        .await;
+    }
 }
