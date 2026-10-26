@@ -401,6 +401,9 @@ impl Validate for ConstraintNode {
                 }
                 _ => {
                     stack_depth += 1;
+                    if stack_depth > BitStack::MAX_DEPTH {
+                        return Err(ValidateError::InvalidConstraintTermSequence);
+                    }
                 }
             }
         }
@@ -437,6 +440,48 @@ impl Constraint {
     }
 }
 
+/// Fixed-capacity boolean operand stack backed by a single `u64` bitmask.
+#[derive(Default)]
+struct BitStack {
+    bits: u64,
+    /// Expression term sequences are validated at policy load time by [`ConstraintNode::validate`],
+    /// so stack depth is only tracked in debug builds to avoid runtime underflow checks in `pop()`.
+    #[cfg(debug_assertions)]
+    len: u32,
+}
+
+impl BitStack {
+    const MAX_DEPTH: usize = u64::BITS as usize;
+
+    #[inline(always)]
+    fn push(&mut self, val: bool) {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!((self.len as usize) < Self::MAX_DEPTH);
+            self.len += 1;
+        }
+        self.bits = (self.bits << 1) | (val as u64);
+    }
+
+    #[inline(always)]
+    fn pop(&mut self) -> bool {
+        #[cfg(debug_assertions)]
+        {
+            debug_assert!(self.len > 0);
+            self.len -= 1;
+        }
+        let val = (self.bits & 1) != 0;
+        self.bits >>= 1;
+        val
+    }
+
+    #[cfg(debug_assertions)]
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
 /// Evaluates a postfix constraint expression for `source` and `target`.
 ///
 /// Assumes that `constraint_expr` was validated at policy load time by
@@ -446,22 +491,22 @@ fn evaluate_constraint(
     source: &SecurityContext,
     target: &SecurityContext,
 ) -> bool {
-    let mut stack: Vec<bool> = Vec::with_capacity(constraint_expr.len());
+    let mut stack = BitStack::default();
     for term in constraint_expr {
         match term {
             ConstraintTerm::Not => {
-                let arg = stack.last_mut().expect("validated constraint expression");
-                *arg = !*arg;
+                let arg = stack.pop();
+                stack.push(!arg);
             }
             ConstraintTerm::And => {
-                let right = stack.pop().expect("validated constraint expression");
-                let left = stack.last_mut().expect("validated constraint expression");
-                *left = *left && right;
+                let right = stack.pop();
+                let left = stack.pop();
+                stack.push(left && right);
             }
             ConstraintTerm::Or => {
-                let right = stack.pop().expect("validated constraint expression");
-                let left = stack.last_mut().expect("validated constraint expression");
-                *left = *left || right;
+                let right = stack.pop();
+                let left = stack.pop();
+                stack.push(left || right);
             }
             ConstraintTerm::UserAttributeOp(operator) => {
                 stack.push(evaluate_simple(source.user(), target.user(), *operator));
@@ -496,7 +541,8 @@ fn evaluate_constraint(
             }
         }
     }
-    let result = stack.pop().expect("validated constraint expression");
+    let result = stack.pop();
+    #[cfg(debug_assertions)]
     debug_assert!(stack.is_empty(), "validated term sequence leaves stack empty");
     result
 }
@@ -616,6 +662,42 @@ mod tests {
             0, 0, 0, 0, // unused operator_type
         ];
         let mut cursor = PolicyCursor::new(&invalid_data);
+        let node = ConstraintNode::parse(&mut cursor).unwrap();
+        assert_eq!(node.validate(&policy), Err(ValidateError::InvalidConstraintTermSequence));
+
+        // A valid sequence reaching `BitStack::MAX_DEPTH` (64 leaf terms + 63 AND terms)
+        let leaf_term = [
+            4, 0, 0, 0, // ATTR_EXPR
+            1, 0, 0, 0, // USER
+            1, 0, 0, 0, // EQ
+        ];
+        let and_term = [
+            2, 0, 0, 0, // AND
+            0, 0, 0, 0, // unused operand_type
+            0, 0, 0, 0, // unused operator_type
+        ];
+        let max_depth_count = (BitStack::MAX_DEPTH * 2 - 1) as u32;
+        let mut max_depth_data = max_depth_count.to_le_bytes().to_vec();
+        for _ in 0..BitStack::MAX_DEPTH {
+            max_depth_data.extend_from_slice(&leaf_term);
+        }
+        for _ in 0..(BitStack::MAX_DEPTH - 1) {
+            max_depth_data.extend_from_slice(&and_term);
+        }
+        let mut cursor = PolicyCursor::new(&max_depth_data);
+        let node = ConstraintNode::parse(&mut cursor).unwrap();
+        assert!(node.validate(&policy).is_ok());
+
+        // An invalid sequence exceeding `BitStack::MAX_DEPTH` (65 leaf terms + 64 AND terms)
+        let overflow_count = ((BitStack::MAX_DEPTH + 1) * 2 - 1) as u32;
+        let mut overflow_data = overflow_count.to_le_bytes().to_vec();
+        for _ in 0..=BitStack::MAX_DEPTH {
+            overflow_data.extend_from_slice(&leaf_term);
+        }
+        for _ in 0..BitStack::MAX_DEPTH {
+            overflow_data.extend_from_slice(&and_term);
+        }
+        let mut cursor = PolicyCursor::new(&overflow_data);
         let node = ConstraintNode::parse(&mut cursor).unwrap();
         assert_eq!(node.validate(&policy), Err(ValidateError::InvalidConstraintTermSequence));
     }
