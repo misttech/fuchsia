@@ -218,6 +218,22 @@ build_flags(
 )
 # LINT.ThenChange(BUILD.gn:rtti)
 
+# LINT.IfChange(default_include_dirs)
+build_flags(
+    name = "default_include_dirs",
+    # This target is intentionally empty in Bazel because:
+    #
+    # - Bazel already sets the top-level workspace directory
+    #   as default include directory, through the execroot.
+    #
+    # The root_gen_dir is a GN-specific concept with no Bazel
+    # equivalent, and is likely incorrect (GN targets should be
+    # fixed to not depend on this default path, and the entry
+    # removed from the list.
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.bazel:default_include_dirs)
+
 # LINT.IfChange(dwarf_version)
 # This uses a custom rule to extract the value of the
 # dwarf_version at analysis time and generate a target

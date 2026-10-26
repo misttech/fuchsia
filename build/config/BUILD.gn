@@ -416,12 +416,15 @@ config("no_rtti") {
 
 # LINT.ThenChange(BUILD.bazel:rtti)
 
+# LINT.IfChange(default_include_dirs)
 config("default_include_dirs") {
   include_dirs = [
     "//",
     root_gen_dir,
   ]
 }
+
+# LINT.ThenChange(BUILD.bazel:default_include_dirs)
 
 variant("linker_gc") {
   configs = [
