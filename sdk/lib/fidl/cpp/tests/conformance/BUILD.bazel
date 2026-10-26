@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "conformance_utils",
+    testonly = True,
+    hdrs = ["conformance_utils.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/fidl_base",
+        "//zircon/system/public",
+        "//zircon/system/ulib/zx",
+        "//zircon/system/ulib/zxtest",
+    ],
+    alwayslink = True,
+)
