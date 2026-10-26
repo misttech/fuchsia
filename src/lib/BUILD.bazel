@@ -18,6 +18,7 @@ test_suite(
         "//src/lib/go-benchmarking:go_benchmarking_test",
         "//src/lib/inet:libinet_host_test",
         "//src/lib/listnode:listnode_host_tests",
+        "//src/lib/transfer_manifest:transfer_manifest_test",
     ],
 )
 

@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "transfer_manifest",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/lib/pbms:__pkg__",
+        "//tools/pbtool:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:serde",
+    ],
+)
+
+host_rustc_test(
+    name = "transfer_manifest_test",
+    crate = ":transfer_manifest",
+    edition = "2024",
+    visibility = ["//src/lib:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:serde_json"],
+)
