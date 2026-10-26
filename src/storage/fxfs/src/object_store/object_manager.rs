@@ -417,7 +417,7 @@ impl Inner {
 
     // Returns the byte span of the journal that still contains unflushed mutations for any object.
     fn total_journal_usage(&self) -> u64 {
-        self.earliest_journal_offset().map_or(0, |o| self.last_end_offset - o)
+        self.earliest_journal_offset().map_or(0, |o| self.last_end_offset.saturating_sub(o))
     }
 
     // Returns the required reservation for child store `store_id`.
@@ -870,8 +870,12 @@ impl ObjectManager {
         inner.record_journal_usage(object_journal_usage, is_borrowed);
 
         if end_offset > inner.last_end_offset {
-            let txn_size = end_offset - std::mem::replace(&mut inner.last_end_offset, end_offset);
-            let txn_space = reserved_space_from_journal_usage(txn_size);
+            let old_last_end_offset = std::mem::replace(&mut inner.last_end_offset, end_offset);
+            let txn_space = inner.earliest_journal_offset().map_or(0, |min| {
+                reserved_space_from_journal_usage(
+                    end_offset.saturating_sub(std::cmp::max(old_last_end_offset, min)),
+                )
+            });
             match borrowed_metadata {
                 BorrowedMetadata::None => {
                     if let ReplayMetadataReservation::Reserved(ref mut reserved) =
@@ -932,8 +936,9 @@ impl ObjectManager {
         transaction: &mut Transaction<'_>,
         checkpoint: &JournalCheckpoint,
     ) -> Result<(), Error> {
-        // Record old value so we can see if anything changes as a result of this transaction.
+        // Record old values so we can see if anything changes as a result of this transaction.
         let old_amount = self.metadata_reservation().amount();
+        let old_required = self.inner.read().required_reservation();
 
         debug!(checkpoint = checkpoint.file_offset; "BEGIN TXN");
         let mutations = transaction.take_mutations();
@@ -944,11 +949,12 @@ impl ObjectManager {
         }
         debug!("END TXN");
 
-        // Non-borrowed transactions should have no impact on the metadata reservation.
-        debug_assert!(
-            transaction.metadata_reservation.is_borrowed()
-                || self.metadata_reservation().amount() == old_amount
-        );
+        if !transaction.metadata_reservation.is_borrowed() {
+            // This transaction should have had no impact on the metadata reservation or the
+            // amount we need to reserve.
+            debug_assert_eq!(self.metadata_reservation().amount(), old_amount);
+            debug_assert_eq!(self.inner.read().required_reservation(), old_required);
+        }
 
         Ok(())
     }
@@ -963,14 +969,19 @@ impl ObjectManager {
     ) {
         let reservation = self.metadata_reservation();
         let mut inner = self.inner.write();
-        let journal_usage = end_offset - std::mem::replace(&mut inner.last_end_offset, end_offset);
+        let old_last_end_offset = std::mem::replace(&mut inner.last_end_offset, end_offset);
+        let journal_usage = end_offset - old_last_end_offset;
 
         if journal_usage > inner.max_transaction_size.0 {
             inner.max_transaction_size.0 = journal_usage;
             inner.max_transaction_size.1.set(journal_usage);
         }
 
-        let txn_space = reserved_space_from_journal_usage(journal_usage);
+        let txn_space = inner.earliest_journal_offset().map_or(0, |min| {
+            reserved_space_from_journal_usage(
+                end_offset.saturating_sub(std::cmp::max(old_last_end_offset, min)),
+            )
+        });
         let is_borrowed = transaction.metadata_reservation.is_borrowed();
         match &mut transaction.metadata_reservation {
             MetadataReservation::Borrowed => {}
@@ -1468,8 +1479,15 @@ impl ObjectManager {
     /// checksums and padding, but if the journal has discarded a significant amount after a replay,
     /// we run the risk of there not being enough reserved.  To handle this, if the amount is
     /// significant, we force the journal to borrow the space (using a journal created transaction).
+    ///
+    /// We allow up to `BLOCK_SIZE + 64` bytes before borrowing to cover up to a full block of
+    /// padding (from `pad_to_block` or `skip_to_end_of_block`) plus any `RESET` version, `Discard`,
+    /// or `DidFlushDevice` records written in `pre_commit`.
     pub fn needs_borrow_for_journal(&self, checkpoint: u64) -> bool {
-        checkpoint.checked_sub(self.inner.read().last_end_offset).unwrap() > 256
+        let inner = self.inner.read();
+        !inner.journal_checkpoints.is_empty()
+            && checkpoint.checked_sub(inner.last_end_offset).unwrap()
+                > journal::BLOCK_SIZE.get() + 64
     }
 
     #[cfg(test)]
@@ -1521,14 +1539,14 @@ impl AssociatedObject for ReservationUpdate {
 
 #[cfg(test)]
 mod tests {
-    use super::ForceMajor;
+    use super::{ForceMajor, ObjectManager};
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::replace_child;
     use crate::object_store::journal::JournalOptions;
     use crate::object_store::transaction::{
-        LockKey, Mutation, Options, ReservationOptions, lock_keys,
+        AssocObj, AssociatedObject, LockKey, Mutation, Options, ReservationOptions, lock_keys,
     };
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
@@ -2257,5 +2275,161 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_required_reservation_earliest_offset_saturating_sub() {
+        struct CheckRequiredReservation;
+        impl AssociatedObject for CheckRequiredReservation {
+            fn will_apply_mutation(
+                &self,
+                _mutation: &Mutation,
+                _object_id: u64,
+                manager: &ObjectManager,
+            ) {
+                let earliest_offset = manager.inner.read().earliest_journal_offset().unwrap();
+                assert!(earliest_offset > manager.last_end_offset());
+                let _ = manager.borrowed_metadata_space();
+            }
+        }
+
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+
+        fs.journal().force_compact().await.expect("compact");
+        let allocator_id = fs.allocator().object_id();
+        assert!(!fs.object_manager().needs_flush(fs.root_store().store_object_id()));
+
+        // Clear allocator (5) from `journal_checkpoints` via BeginFlush + EndFlush (simulating a
+        // clean superblock with empty `journal_file_offsets`).
+        let txn_opts = Options {
+            skip_journal_checks: true,
+            reservation: ReservationOptions::Borrowed,
+            ..Default::default()
+        };
+        for mutation in [Mutation::BeginFlush, Mutation::EndFlush(0)] {
+            let mut transaction =
+                fs.root_store().new_transaction(lock_keys![], txn_opts).await.expect("new_txn");
+            transaction.add(allocator_id, mutation);
+            transaction.commit().await.expect("commit");
+        }
+        assert!(
+            !fs.object_manager().needs_flush(allocator_id),
+            "journal_checkpoints should now be completely empty"
+        );
+
+        // Pad the journal to the next 4 KiB block boundary via `sync()`. Because
+        // `journal_checkpoints` is empty, `needs_borrow_for_journal` must return `false` even
+        // when the checkpoint advances by more than a block, leaving `last_end_offset` prior to
+        // the padded block boundary (`checkpoint.file_offset > last_end_offset`).
+        let checkpoint_before_pad =
+            fs.journal().sync(SyncOptions::default()).await.expect("sync").unwrap();
+        let next_block_offset = checkpoint_before_pad.file_offset.next_multiple_of(4096);
+        assert!(
+            !fs.object_manager().needs_borrow_for_journal(next_block_offset + 8192),
+            "needs_borrow_for_journal should return false when journal_checkpoints is empty"
+        );
+
+        let reserved_before = fs.object_manager().metadata_reservation().amount();
+        let borrowed_before = fs.object_manager().borrowed_metadata_space();
+        let required_before = reserved_before + borrowed_before;
+
+        // Committing a transaction when `min > self.last_end_offset` must not underflow in
+        // `ObjectManager::Inner::total_journal_usage` and must only charge `txn_space` for journal
+        // bytes at or after `min`.
+        let check_obj = CheckRequiredReservation;
+        let mut transaction =
+            fs.root_store().new_transaction(lock_keys![], Options::default()).await.expect("txn");
+        let handle1 = ObjectStore::create_object(
+            &fs.root_store(),
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object");
+        let handle2 = ObjectStore::create_object(
+            &fs.root_store(),
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object");
+        let second_id = std::cmp::max(handle1.object_id(), handle2.object_id());
+        transaction.add_with_object(
+            fs.root_store().store_object_id(),
+            Mutation::merge_object(ObjectKey::object(second_id), ObjectValue::None),
+            AssocObj::Borrowed(&check_obj),
+        );
+        transaction.commit().await.expect("commit");
+
+        let reserved_after = fs.object_manager().metadata_reservation().amount();
+        let borrowed_after = fs.object_manager().borrowed_metadata_space();
+        let required_after = reserved_after + borrowed_after;
+        assert_eq!(
+            reserved_after - reserved_before,
+            required_after - required_before,
+            "Non-borrowed transaction should increase metadata_reservation by the exact increase in required_reservation"
+        );
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_sync_padding_paid_by_next_transaction() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        fs.journal().force_compact().await.expect("compact");
+
+        // Commit a small funded transaction so `root_store` has an active entry in
+        // `journal_checkpoints` and the journal writer is near the start of a 4 KiB block.
+        let mut transaction =
+            fs.root_store().new_transaction(lock_keys![], Options::default()).await.expect("txn");
+        let handle = ObjectStore::create_object(
+            &fs.root_store(),
+            &mut transaction,
+            HandleOptions::default(),
+            None,
+        )
+        .await
+        .expect("create_object");
+        transaction.commit().await.expect("commit");
+        let borrowed_before = fs.object_manager().borrowed_metadata_space();
+
+        // `sync()` pads the remainder of the 4 KiB journal block (> 256 bytes) and queues a
+        // `DidFlushDevice` record. The next funded transaction should pay for this padding and
+        // overhead rather than `pre_commit` borrowing it from `b_sys`.
+        let checkpoint_before_pad = fs
+            .journal()
+            .sync(SyncOptions { flush_device: true, ..Default::default() })
+            .await
+            .expect("sync")
+            .unwrap();
+        let padded_bytes = checkpoint_before_pad.file_offset.next_multiple_of(4096)
+            - checkpoint_before_pad.file_offset;
+        assert!(padded_bytes > 256, "expected > 256 bytes of block padding, got {padded_bytes}");
+
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(fs.root_store().store_object_id(), handle.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("txn");
+        transaction.add(
+            fs.root_store().store_object_id(),
+            Mutation::merge_object(ObjectKey::object(handle.object_id()), ObjectValue::None),
+        );
+        transaction.commit().await.expect("commit");
+
+        let borrowed_after = fs.object_manager().borrowed_metadata_space();
+        assert_eq!(
+            borrowed_after, borrowed_before,
+            "Funded transaction after sync() should pay for block padding rather than borrowing from metadata_reservation"
+        );
+
+        fs.close().await.expect("close failed");
     }
 }
