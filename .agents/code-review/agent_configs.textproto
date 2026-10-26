@@ -13,6 +13,25 @@
 # are being evaluated; subsystem-owned entries may be scoped to the fuchsia
 # project for their own paths.
 
+# Default multi-perspective review agent for fuchsia CLs. Mirrors the
+# "turquoise-code-review-agent" entry in vendor/google; ids
+# must be unique across all repositories on a host (turquoise-internal serves
+# both fuchsia and vendor/google).
+configs: {
+  id: "fuchsia-code-review-agent"
+  display_name: "Code Review Agent"
+  description: "Default multi-perspective review agent for fuchsia."
+  tags: "code-review-agent"
+  # Use the baseline gerrit_reviewer subagent bundled with CRACS. Because this
+  # entry lists no skills, CRACS also attaches the default review skill; the
+  # subsystem skill entries below still apply to matching files.
+  use_default_subagents: true
+  include_filters: {
+    project: "fuchsia"
+    path_regex: ".*"
+  }
+}
+
 configs: {
   id: "fuchsia-rust-best-practices"
   display_name: "Fuchsia Rust Best Practices"
