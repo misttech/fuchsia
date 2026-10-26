@@ -19,6 +19,11 @@ from shared.protocol.base import (
 )
 
 # isort: split
+from shared.protocol.aspace import (
+    AddressRegionEntry,
+    AspaceRequest,
+    AspaceResponse,
+)
 from shared.protocol.async_backtrace import (
     AsyncBacktraceRequest,
     AsyncBacktraceResponse,
@@ -36,7 +41,22 @@ from shared.protocol.get_state import (
     ThreadInfo,
     WatchpointInfo,
 )
+from shared.protocol.handles import (
+    HandleEntry,
+    HandlesRequest,
+    HandlesResponse,
+)
 from shared.protocol.hello import HelloRequest
+from shared.protocol.mem_read import (
+    MemoryRowEntry,
+    MemReadRequest,
+    MemReadResponse,
+)
+from shared.protocol.modules import (
+    ModuleEntry,
+    ModulesRequest,
+    ModulesResponse,
+)
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import (
@@ -54,7 +74,8 @@ from shared.protocol.wait_for_event import WaitForEventRequest
 from shared.protocol.watch_request import WatchRequest
 
 RequestType = Annotated[
-    AsyncBacktraceRequest
+    AspaceRequest
+    | AsyncBacktraceRequest
     | AttachRequest
     | BreakRequest
     | ConsoleRequest
@@ -63,7 +84,10 @@ RequestType = Annotated[
     | EvaluateRequest
     | FinishRequest
     | GetStateRequest
+    | HandlesRequest
     | HelloRequest
+    | MemReadRequest
+    | ModulesRequest
     | NextRequest
     | PauseRequest
     | StackTraceRequest
@@ -84,6 +108,10 @@ ResponseType = (
     | ThreadStackTraceResponse
     | ProcessStackTraceResponse
     | AsyncBacktraceResponse
+    | ModulesResponse
+    | AspaceResponse
+    | HandlesResponse
+    | MemReadResponse
     | dict[str, Any]
     | None
 )
@@ -99,6 +127,18 @@ __all__ = [
     "ThreadStackTraceResponse",
     "StackFrame",
     "AsyncBacktraceResponse",
+    "AddressRegionEntry",
+    "AspaceRequest",
+    "AspaceResponse",
+    "HandleEntry",
+    "HandlesRequest",
+    "HandlesResponse",
+    "MemoryRowEntry",
+    "MemReadRequest",
+    "MemReadResponse",
+    "ModuleEntry",
+    "ModulesRequest",
+    "ModulesResponse",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",

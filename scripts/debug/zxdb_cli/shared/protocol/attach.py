@@ -16,4 +16,8 @@ class AttachRequest(BaseRequest[dict[str, Any]]):
     # Place 'int' first in the Union to avoid Pydantic standard coercion of
     # PIDs to strings.
     filter: int | str
+    weak: bool = False
+    exact: bool = False
+    recursive: bool = False
+    job_only: bool = False
     response_type: ClassVar[Any] = dict[str, Any]

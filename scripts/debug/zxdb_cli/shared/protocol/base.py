@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-PROTOCOL_VERSION = 17
+PROTOCOL_VERSION = 18
 
 T_Resp = TypeVar("T_Resp")
 
@@ -67,7 +67,7 @@ def _get_response_adapter(resp_type: Any) -> TypeAdapter[Any]:
 def deserialize_response(
     line: str, req: BaseRequest[T_Resp]
 ) -> Response[T_Resp]:
-    """Deserialize and validate a raw JSON response string against req's response_type."""
+    """Deserialize and validate a raw JSON response against req's response_type."""
     return _get_response_adapter(req.response_type).validate_json(line.strip())
 
 

@@ -15,6 +15,7 @@ import package_server
 from async_utils.command import AsyncCommand
 from daemon.constants import UDS_PATH
 from daemon.handlers import (
+    aspace,
     async_backtrace,
     attach,
     break_req,
@@ -24,7 +25,10 @@ from daemon.handlers import (
     evaluate,
     finish,
     get_state,
+    handles,
     hello,
+    mem_read,
+    modules,
     next_req,
     pause,
     stack_trace,
@@ -209,6 +213,7 @@ class Daemon:
         self.connect_to_existing: bool | None = None
         self.processes: dict[int, Process] = {}
         self.threads: dict[int, Thread] = {}
+        self.next_target_id = 1
         self.dap_proc: AsyncCommand | None = None
         self.package_server_proc: Any = None
         self.repo_name: str | None = None
@@ -217,6 +222,7 @@ class Daemon:
         # Statically register handlers.
         handlers = [
             # keep-sorted start
+            aspace,
             async_backtrace,
             attach,
             break_req,
@@ -226,7 +232,10 @@ class Daemon:
             evaluate,
             finish,
             get_state,
+            handles,
             hello,
+            mem_read,
+            modules,
             next_req,
             pause,
             stack_trace,
@@ -594,10 +603,38 @@ class Daemon:
     def get_or_create_process(self, process_id: int, name: str = "") -> Process:
         """Retrieves an existing Process or registers a new one."""
         if process_id not in self.processes:
-            self.processes[process_id] = Process(id=process_id, name=name)
+            target_id = self.next_target_id
+            self.next_target_id += 1
+            self.processes[process_id] = Process(
+                id=process_id, name=name, target_id=target_id
+            )
         elif name:
             self.processes[process_id].name = name
         return self.processes[process_id]
+
+    def resolve_process_id(
+        self, pid: int | None
+    ) -> tuple[int | None, str | None]:
+        """Resolves and validates a target process KOID against `self.processes`."""
+        if pid is not None:
+            if pid not in self.processes:
+                return None, f"Process {pid} not found"
+            return pid, None
+        if len(self.processes) == 1:
+            return next(iter(self.processes.keys())), None
+        if len(self.processes) > 1:
+            return (
+                None,
+                "Multiple processes active; please specify a PID with"
+                " --pid / -p",
+            )
+        return None, None
+
+    def scope_console_command(self, command: str, pid: int | None) -> str:
+        """Prefixes `command` with `process <target_id>` when `pid` is known."""
+        if pid is not None and (proc := self.processes.get(pid)) is not None:
+            return f"process {proc.target_id} {command}"
+        return command
 
     def get_or_create_thread(
         self,
@@ -683,6 +720,7 @@ class Daemon:
         """Clears all cached process and thread state."""
         self.processes.clear()
         self.threads.clear()
+        self.next_target_id = 1
         self.active_watchpoints.clear()
         self.watchpoint_ids_by_bp_id.clear()
 

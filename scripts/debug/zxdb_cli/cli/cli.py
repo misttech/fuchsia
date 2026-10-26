@@ -9,6 +9,7 @@ import sys
 from typing import Any, Final
 
 from cli.commands import (
+    aspace,
     async_backtrace,
     attach,
     break_cmd,
@@ -18,6 +19,9 @@ from cli.commands import (
     evaluate,
     finish,
     get_state,
+    handles,
+    mem_read,
+    modules,
     next_cmd,
     pause,
     schema,
@@ -69,8 +73,9 @@ async def main(args: list[str]) -> int:
 
     # Statically register commands.
     commands: dict[str, type[BaseCommand]] = {}
-    command_classes = [
+    command_classes: list[type[BaseCommand]] = [
         # keep-sorted start
+        aspace.Command,
         async_backtrace.Command,
         attach.Command,
         break_cmd.Command,
@@ -80,6 +85,9 @@ async def main(args: list[str]) -> int:
         evaluate.Command,
         finish.Command,
         get_state.Command,
+        handles.Command,
+        mem_read.Command,
+        modules.Command,
         next_cmd.Command,
         pause.Command,
         schema.Command,
@@ -128,9 +136,11 @@ async def main(args: list[str]) -> int:
             data = json.loads(parsed_args.json)
             if not isinstance(data, dict):
                 raise ValueError("JSON payload must be an object")
+
             if "command" in data and data["command"] in alias_map:
                 data["command"] = alias_map[data["command"]]
             req = make_request(data)
+
             cmd_cls: type[BaseCommand] | None = commands.get(req.command)
             if cmd_cls is not None:
                 exit_code = await cmd_cls.execute(request_to_namespace(req))
@@ -145,6 +155,7 @@ async def main(args: list[str]) -> int:
             exit_code = await cmd_cls.execute(parsed_args)
             if exit_code is not None:
                 return exit_code
+
         try:
             args_dict = vars(parsed_args)
             if cmd_cls is not None and cmd_cls.COMMAND_NAME:

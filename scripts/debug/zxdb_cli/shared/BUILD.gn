@@ -22,6 +22,7 @@ if (is_host) {
     sources = [
       "__init__.py",
       "protocol/__init__.py",
+      "protocol/aspace.py",
       "protocol/async_backtrace.py",
       "protocol/attach.py",
       "protocol/base.py",
@@ -32,7 +33,10 @@ if (is_host) {
       "protocol/evaluate.py",
       "protocol/finish.py",
       "protocol/get_state.py",
+      "protocol/handles.py",
       "protocol/hello.py",
+      "protocol/mem_read.py",
+      "protocol/modules.py",
       "protocol/next_request.py",
       "protocol/pause.py",
       "protocol/stack_trace.py",
@@ -51,6 +55,11 @@ if (is_host) {
     ]
   }
 
+  group("pydantic_test_data") {
+    testonly = true
+    public_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
+  }
+
   python_host_test("protocol_test") {
     main_source = "tests/test_protocol.py"
     libraries = [ ":protocol_lib" ]
@@ -58,7 +67,7 @@ if (is_host) {
     # Explicitly depend on pydantic-core's test_data. This is to ensure that the
     # module's DSO is bundled together with our test so the top-level pydantic
     # module loads correctly.
-    test_data_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
+    test_data_deps = [ ":pydantic_test_data" ]
   }
 
   python_binary("generate_schema_bin") {

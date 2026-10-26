@@ -2,9 +2,82 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 17,
+    "version": 18,
     "requests": {
         "$defs": {
+            "AspaceRequest": {
+                "description": "Request the virtual address space map for a target process.",
+                "properties": {
+                    "command": {
+                        "const": "aspace",
+                        "default": "aspace",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "address": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Address"
+                    },
+                    "filter": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Filter"
+                    }
+                },
+                "title": "AspaceRequest",
+                "type": "object"
+            },
             "AsyncBacktraceRequest": {
                 "description": "Request asynchronous backtrace (async task tree) for a process.",
                 "properties": {
@@ -97,6 +170,26 @@
                             }
                         ],
                         "title": "Filter"
+                    },
+                    "weak": {
+                        "default": false,
+                        "title": "Weak",
+                        "type": "boolean"
+                    },
+                    "exact": {
+                        "default": false,
+                        "title": "Exact",
+                        "type": "boolean"
+                    },
+                    "recursive": {
+                        "default": false,
+                        "title": "Recursive",
+                        "type": "boolean"
+                    },
+                    "job_only": {
+                        "default": false,
+                        "title": "Job Only",
+                        "type": "boolean"
                     }
                 },
                 "required": [
@@ -477,6 +570,89 @@
                 "title": "GetStateRequest",
                 "type": "object"
             },
+            "HandlesRequest": {
+                "description": "Request the Zircon handle table for a target process.",
+                "properties": {
+                    "command": {
+                        "const": "handles",
+                        "default": "handles",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Type"
+                    },
+                    "koid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Koid"
+                    },
+                    "hex": {
+                        "default": true,
+                        "title": "Hex",
+                        "type": "boolean"
+                    },
+                    "detail": {
+                        "default": false,
+                        "title": "Detail",
+                        "type": "boolean"
+                    }
+                },
+                "title": "HandlesRequest",
+                "type": "object"
+            },
             "HelloRequest": {
                 "description": "Initial handshake request to verify protocol version.",
                 "properties": {
@@ -519,6 +695,150 @@
                     "version"
                 ],
                 "title": "HelloRequest",
+                "type": "object"
+            },
+            "MemReadRequest": {
+                "description": "Read memory from a target process or stack frame.",
+                "properties": {
+                    "command": {
+                        "const": "mem-read",
+                        "default": "mem-read",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "address": {
+                        "title": "Address",
+                        "type": "string"
+                    },
+                    "size": {
+                        "default": 64,
+                        "title": "Size",
+                        "type": "integer"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "thread_id": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Thread Id"
+                    },
+                    "frame_index": {
+                        "default": 0,
+                        "title": "Frame Index",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "address"
+                ],
+                "title": "MemReadRequest",
+                "type": "object"
+            },
+            "ModulesRequest": {
+                "description": "Request loaded modules and symbol status for a target process.",
+                "properties": {
+                    "command": {
+                        "const": "modules",
+                        "default": "modules",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "filter": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Filter"
+                    },
+                    "force_reload": {
+                        "default": false,
+                        "title": "Force Reload",
+                        "type": "boolean"
+                    }
+                },
+                "title": "ModulesRequest",
                 "type": "object"
             },
             "NextRequest": {
@@ -1164,6 +1484,7 @@
         },
         "discriminator": {
             "mapping": {
+                "aspace": "#/$defs/AspaceRequest",
                 "async-backtrace": "#/$defs/AsyncBacktraceRequest",
                 "attach": "#/$defs/AttachRequest",
                 "break": "#/$defs/BreakRequest",
@@ -1173,7 +1494,10 @@
                 "evaluate": "#/$defs/EvaluateRequest",
                 "finish": "#/$defs/FinishRequest",
                 "get-state": "#/$defs/GetStateRequest",
+                "handles": "#/$defs/HandlesRequest",
                 "hello": "#/$defs/HelloRequest",
+                "mem-read": "#/$defs/MemReadRequest",
+                "modules": "#/$defs/ModulesRequest",
                 "next": "#/$defs/NextRequest",
                 "pause": "#/$defs/PauseRequest",
                 "stack-trace": "#/$defs/StackTraceRequest",
@@ -1188,6 +1512,9 @@
             "propertyName": "command"
         },
         "oneOf": [
+            {
+                "$ref": "#/$defs/AspaceRequest"
+            },
             {
                 "$ref": "#/$defs/AsyncBacktraceRequest"
             },
@@ -1216,7 +1543,16 @@
                 "$ref": "#/$defs/GetStateRequest"
             },
             {
+                "$ref": "#/$defs/HandlesRequest"
+            },
+            {
                 "$ref": "#/$defs/HelloRequest"
+            },
+            {
+                "$ref": "#/$defs/MemReadRequest"
+            },
+            {
+                "$ref": "#/$defs/ModulesRequest"
             },
             {
                 "$ref": "#/$defs/NextRequest"
@@ -1252,6 +1588,157 @@
     },
     "responses": {
         "$defs": {
+            "AddressRegionEntry": {
+                "additionalProperties": false,
+                "description": "Information about a mapped VMAR or VMO region in the target process.",
+                "properties": {
+                    "start": {
+                        "title": "Start",
+                        "type": "string"
+                    },
+                    "end": {
+                        "title": "End",
+                        "type": "string"
+                    },
+                    "prot": {
+                        "title": "Prot",
+                        "type": "string"
+                    },
+                    "size": {
+                        "title": "Size",
+                        "type": "string"
+                    },
+                    "vmo_koid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Vmo Koid"
+                    },
+                    "vmo_offset": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Vmo Offset"
+                    },
+                    "committed_pages": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Committed Pages"
+                    },
+                    "name": {
+                        "title": "Name",
+                        "type": "string"
+                    },
+                    "depth": {
+                        "default": 0,
+                        "title": "Depth",
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "start",
+                    "end",
+                    "prot",
+                    "size",
+                    "name"
+                ],
+                "title": "AddressRegionEntry",
+                "type": "object"
+            },
+            "AspaceResponse": {
+                "additionalProperties": false,
+                "description": "Structured response for the aspace command.",
+                "properties": {
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "regions": {
+                        "items": {
+                            "$ref": "#/$defs/AddressRegionEntry"
+                        },
+                        "title": "Regions",
+                        "type": "array"
+                    },
+                    "page_size": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Page Size"
+                    },
+                    "total_mapped_bytes": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Total Mapped Bytes"
+                    },
+                    "total_committed_pages": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Total Committed Pages"
+                    },
+                    "total_committed_bytes": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Total Committed Bytes"
+                    }
+                },
+                "title": "AspaceResponse",
+                "type": "object"
+            },
             "AsyncBacktraceResponse": {
                 "description": "Response containing async tasks for a process.",
                 "properties": {
@@ -1445,6 +1932,303 @@
                     "threads"
                 ],
                 "title": "GetStateResponse",
+                "type": "object"
+            },
+            "HandleEntry": {
+                "additionalProperties": false,
+                "description": "Information about an open Zircon handle or mapped VMO.",
+                "properties": {
+                    "handle_value": {
+                        "title": "Handle Value",
+                        "type": "string"
+                    },
+                    "type": {
+                        "title": "Type",
+                        "type": "string"
+                    },
+                    "koid": {
+                        "title": "Koid",
+                        "type": "integer"
+                    },
+                    "related_koid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Related Koid"
+                    },
+                    "peer_owner_koid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Peer Owner Koid"
+                    },
+                    "rights": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Rights",
+                        "type": "array"
+                    },
+                    "vmo_name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Vmo Name"
+                    },
+                    "vmo_size_bytes": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Vmo Size Bytes"
+                    },
+                    "cache_policy": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Cache Policy"
+                    }
+                },
+                "required": [
+                    "handle_value",
+                    "type",
+                    "koid"
+                ],
+                "title": "HandleEntry",
+                "type": "object"
+            },
+            "HandlesResponse": {
+                "additionalProperties": false,
+                "description": "Structured response for the handles command.",
+                "properties": {
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "handles": {
+                        "items": {
+                            "$ref": "#/$defs/HandleEntry"
+                        },
+                        "title": "Handles",
+                        "type": "array"
+                    }
+                },
+                "title": "HandlesResponse",
+                "type": "object"
+            },
+            "MemReadResponse": {
+                "additionalProperties": false,
+                "description": "Structured response for the mem-read command.",
+                "properties": {
+                    "address": {
+                        "title": "Address",
+                        "type": "string"
+                    },
+                    "size": {
+                        "title": "Size",
+                        "type": "integer"
+                    },
+                    "hex_bytes": {
+                        "title": "Hex Bytes",
+                        "type": "string"
+                    },
+                    "u32_le": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "U32 Le",
+                        "type": "array"
+                    },
+                    "u64_le": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "U64 Le",
+                        "type": "array"
+                    },
+                    "rows": {
+                        "items": {
+                            "$ref": "#/$defs/MemoryRowEntry"
+                        },
+                        "title": "Rows",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "address",
+                    "size",
+                    "hex_bytes"
+                ],
+                "title": "MemReadResponse",
+                "type": "object"
+            },
+            "MemoryRowEntry": {
+                "additionalProperties": false,
+                "description": "A 16-byte row from a memory dump.",
+                "properties": {
+                    "address": {
+                        "title": "Address",
+                        "type": "string"
+                    },
+                    "bytes_hex": {
+                        "title": "Bytes Hex",
+                        "type": "string"
+                    },
+                    "ascii": {
+                        "title": "Ascii",
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "address",
+                    "bytes_hex",
+                    "ascii"
+                ],
+                "title": "MemoryRowEntry",
+                "type": "object"
+            },
+            "ModuleEntry": {
+                "additionalProperties": false,
+                "description": "Information about a loaded module (.so / binary) and symbol status.",
+                "properties": {
+                    "name": {
+                        "title": "Name",
+                        "type": "string"
+                    },
+                    "base": {
+                        "title": "Base",
+                        "type": "string"
+                    },
+                    "build_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Build Id"
+                    },
+                    "symbols_loaded": {
+                        "anyOf": [
+                            {
+                                "type": "boolean"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Symbols Loaded"
+                    },
+                    "symbol_file": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Symbol File"
+                    },
+                    "files_indexed": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Files Indexed"
+                    },
+                    "functions_indexed": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Functions Indexed"
+                    }
+                },
+                "required": [
+                    "name",
+                    "base"
+                ],
+                "title": "ModuleEntry",
+                "type": "object"
+            },
+            "ModulesResponse": {
+                "additionalProperties": false,
+                "description": "Structured response for the modules command.",
+                "properties": {
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    },
+                    "modules": {
+                        "items": {
+                            "$ref": "#/$defs/ModuleEntry"
+                        },
+                        "title": "Modules",
+                        "type": "array"
+                    }
+                },
+                "title": "ModulesResponse",
                 "type": "object"
             },
             "ProcessStackTraceResponse": {
@@ -1751,6 +2535,18 @@
                     },
                     {
                         "$ref": "#/$defs/AsyncBacktraceResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/ModulesResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/AspaceResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/HandlesResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/MemReadResponse"
                     },
                     {
                         "additionalProperties": true,

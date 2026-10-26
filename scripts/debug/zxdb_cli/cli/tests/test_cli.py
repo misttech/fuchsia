@@ -19,6 +19,7 @@ from daemon_manager.manager import (
     DaemonHandshakeError,
     DaemonStartupTimeoutError,
 )
+from shared.protocol.aspace import AspaceRequest
 from shared.protocol.async_backtrace import AsyncBacktraceRequest
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
@@ -27,6 +28,9 @@ from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
+from shared.protocol.handles import HandlesRequest
+from shared.protocol.mem_read import MemReadRequest
+from shared.protocol.modules import ModulesRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
@@ -93,6 +97,37 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         exit_code = await main(["attach", "my_process"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(AttachRequest(filter="my_process"))
+
+    @patch("cli.cli.send_command")
+    async def test_attach_command_flags(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "attach",
+                "driver_host",
+                "--weak",
+                "--exact",
+                "--recursive",
+                "--job-only",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(
+                filter="driver_host",
+                weak=True,
+                exact=True,
+                recursive=True,
+                job_only=True,
+            )
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(["attach", "driver_host", "-r"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(filter="driver_host", recursive=True)
+        )
 
     @patch("cli.cli.make_request")
     @patch("cli.cli.send_command")
@@ -1162,6 +1197,59 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
                 exit_code = await main(["--json", payload])
             self.assertEqual(exit_code, expected_code, f"Failed for: {payload}")
             mock_send.assert_not_called()
+
+    @patch("cli.cli.send_command")
+    async def test_process_inspection_commands(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+
+        exit_code = await main(
+            ["modules", "-p", "48291", "-f", "xhci", "--reload"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            ModulesRequest(pid=48291, filter="xhci", force_reload=True)
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["aspace", "0x530b010dc000", "-p", "48291", "-f", "mmio"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AspaceRequest(pid=48291, address="0x530b010dc000", filter="mmio")
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["handles", "-p", "48291", "--type", "interrupt", "--detail"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            HandlesRequest(pid=48291, type="interrupt", detail=True)
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["mem-read", "0x7ffee1234000", "-s", "32", "-p", "48291"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            MemReadRequest(address="0x7ffee1234000", size=32, pid=48291)
+        )
+
+        # Non-zero --frame-index without --thread-id is rejected.
+        mock_send.reset_mock()
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            exit_code = await main(
+                ["mem-read", "0x7ffee1234000", "--frame-index", "2"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn(
+            "--thread-id is required when specifying a non-zero --frame-index",
+            stderr.getvalue(),
+        )
+        mock_send.assert_not_called()
 
 
 class TestSendCommand(unittest.IsolatedAsyncioTestCase):

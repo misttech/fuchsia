@@ -11,6 +11,7 @@ from shared.protocol import (
     deserialize_response,
     make_request,
 )
+from shared.protocol.aspace import AspaceRequest, AspaceResponse
 from shared.protocol.async_backtrace import (
     AsyncBacktraceRequest,
     AsyncBacktraceResponse,
@@ -23,7 +24,10 @@ from shared.protocol.detach import DetachRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest, GetStateResponse
+from shared.protocol.handles import HandlesRequest, HandlesResponse
 from shared.protocol.hello import HelloRequest
+from shared.protocol.mem_read import MemReadRequest, MemReadResponse
+from shared.protocol.modules import ModulesRequest, ModulesResponse
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import (
@@ -166,6 +170,34 @@ class TestAttachRequestSchema(unittest.TestCase):
     def test_missing_filter(self) -> None:
         with self.assertRaises(ValidationError):
             AttachRequest()
+
+    def test_weak_and_exact_flags(self) -> None:
+        req = AttachRequest(
+            filter="xhci", weak=True, exact=True, recursive=True
+        )
+        self.assertTrue(req.weak)
+        self.assertTrue(req.exact)
+        self.assertTrue(req.recursive)
+
+    def test_process_inspection_schemas(self) -> None:
+        mod_req = ModulesRequest(pid=48291, filter="xhci", force_reload=True)
+        self.assertEqual(mod_req.command, "modules")
+        self.assertIsInstance(ModulesResponse(), ModulesResponse)
+
+        as_req = AspaceRequest(pid=48291, address="0x1000", filter="mmio")
+        self.assertEqual(as_req.command, "aspace")
+        self.assertIsInstance(AspaceResponse(), AspaceResponse)
+
+        h_req = HandlesRequest(pid=48291, type="interrupt", detail=True)
+        self.assertEqual(h_req.command, "handles")
+        self.assertIsInstance(HandlesResponse(), HandlesResponse)
+
+        mr_req = MemReadRequest(address="0x7ffee1234000", size=32, pid=48291)
+        self.assertEqual(mr_req.command, "mem-read")
+        self.assertIsInstance(
+            MemReadResponse(address="0x7ffee1234000", size=32, hex_bytes=""),
+            MemReadResponse,
+        )
 
 
 class TestWaitForEventRequestSchema(unittest.TestCase):

@@ -25,6 +25,7 @@ class Process:
 
     id: int
     name: str = field(default="", compare=False)
+    target_id: int = field(default=1, compare=False)
     threads: dict[int, Thread] = field(
         default_factory=dict, repr=False, compare=False
     )
