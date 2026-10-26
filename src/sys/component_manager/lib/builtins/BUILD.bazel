@@ -1,0 +1,119 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "builtins",
+    srcs = [
+        "src/arguments.rs",
+        "src/cpu_resource.rs",
+        "src/debug_resource.rs",
+        "src/debuglog_resource.rs",
+        "src/energy_info_resource.rs",
+        "src/factory_items.rs",
+        "src/hypervisor_resource.rs",
+        "src/info_resource.rs",
+        "src/iommu_resource.rs",
+        "src/ioport_resource.rs",
+        "src/irq_resource.rs",
+        "src/items.rs",
+        "src/kernel_stats.rs",
+        "src/lib.rs",
+        "src/mmio_resource.rs",
+        "src/msi_resource.rs",
+        "src/power_resource.rs",
+        "src/profile_resource.rs",
+        "src/root_job.rs",
+        "src/sampling_resource.rs",
+        "src/smc_resource.rs",
+        "src/stall_resource.rs",
+        "src/tracing_resource.rs",
+        "src/vmex_resource.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
+        "//sdk/rust/zx",
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/fuchsia-zbi",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "builtins_lib_test"
+rustc_test(
+    name = "builtins_test",
+    crate = ":builtins",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+fx_packaged_binary(
+    name = "builtins_test_packaged_bin",
+    testonly = True,
+    binary = ":builtins_test",
+    binary_name = "builtins_lib_test",
+)
+
+fx_component_manifest(
+    name = "test_component_manifest",
+    testonly = True,
+    component_name = "builtins_tests",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:create_raw_processes.shard.cml",
+    ],
+    manifest = "meta/test.cml",
+)
+
+fx_test_component(
+    name = "test_component",
+    compiled_manifest = ":test_component_manifest",
+    component_name = "builtins_tests",
+    test_type = "system",
+    deps = [":builtins_test_packaged_bin"],
+)
+
+fx_package(
+    name = "builtins_tests_package",
+    package_name = "builtins_tests",
+    test_components = [":test_component"],
+)
+
+fx_test(
+    name = "builtins_tests",
+    package = ":builtins_tests_package",
+)

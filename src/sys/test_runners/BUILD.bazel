@@ -11,6 +11,7 @@ exports_files(
     visibility = [
         "//src/lib/files:__pkg__",
         "//src/media/audio/lib/wav:__pkg__",
+        "//src/sys/component_manager/lib/builtins:__pkg__",
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-updater:__pkg__",
         "//src/sys/pkg/lib/eager-package-config:__pkg__",

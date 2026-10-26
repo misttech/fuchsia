@@ -8,6 +8,7 @@ package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     [
+        "create_raw_processes.shard.cml",
         "default.shard.cml",
         "next-vdso.shard.cml",
     ],
