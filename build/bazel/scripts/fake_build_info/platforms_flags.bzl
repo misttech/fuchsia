@@ -6,6 +6,9 @@
 
 # FAKE FILE FOR MINIMAL TEST WORKSPACE - DO NOT EDIT
 
+fuchsia_has_lto = False
+host_has_lto = False
+
 platform_flags_map = {
     "linux_x64": ["--cpu=x86_64"],
     "linux_arm64": ["--cpu=aarch64"],

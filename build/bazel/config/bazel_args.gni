@@ -63,10 +63,23 @@ _optimize_to_opt = [
   "size_thinlto_clang",
 ]
 
+_optimize_with_lto = [
+  "moderate_lto",
+  "moderate_thinlto",
+  "size_lto",
+  "size_thinlto",
+  "speed_lto",
+  "speed_thinlto",
+
+  # TODO(https://fxbug.dev/517626589): remove this when default is changed
+  "size_thinlto_clang",
+]
+
 # LINT.ThenChange(
 #   //build/bazel/config/select/optimize/BUILD.bazel:valid_optimize_values,
 #   //build/bazel/config/variables/BUILD.bazel:valid_optimize_values,
 #   //build/config/compilation_modes.gni:valid_optimize_values,
+#   //build/config/lto/BUILD.bazel:valid_optimize_values,
 # )
 
 _is_compilation_mode_dbg =
@@ -81,6 +94,10 @@ _is_compilation_mode_opt =
 # toolchain_variant.tags holds the active variant tags (equivalent to
 # fuchsia_toolchain_tags on Fuchsia and host_toolchain_tags on host).
 _tags = toolchain_variant.tags
+
+_has_lto =
+    _tags + [ "lto" ] - [ "lto" ] != _tags ||
+    _optimize_with_lto + [ optimize ] - [ optimize ] != _optimize_with_lto
 
 _has_asan = _tags + [ "asan" ] - [ "asan" ] != _tags
 _has_hwasan = _tags + [ "hwasan" ] - [ "hwasan" ] != _tags
@@ -207,5 +224,6 @@ bazel_args = {
   build = _build_args
   current_os = current_os
   current_cpu = current_cpu
+  has_lto = _has_lto
 }
 # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:bazel_args_json_schema)

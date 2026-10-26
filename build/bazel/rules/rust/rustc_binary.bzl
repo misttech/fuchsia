@@ -10,7 +10,13 @@ load(
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_stdlib_link_deps", "with_fuchsia_rust_tags", "with_fuchsia_rustc_flags")
+load(
+    "//build/bazel/rules/rust:common.bzl",
+    "with_fuchsia_rust_link_exec_properties",
+    "with_fuchsia_rust_stdlib_link_deps",
+    "with_fuchsia_rust_tags",
+    "with_fuchsia_rustc_flags",
+)
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
 def _rustc_binary_impl(
@@ -46,6 +52,7 @@ def _rustc_binary_impl(
         lint_config = lint_config,
         visibility = visibility,
         **(binary_kwargs | {
+            "exec_properties": with_fuchsia_rust_link_exec_properties(binary_kwargs.get("exec_properties")),
             "link_deps": with_fuchsia_rust_stdlib_link_deps(binary_kwargs.get("link_deps")),
         })
     )

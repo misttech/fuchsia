@@ -27,7 +27,7 @@
 
 load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("@fuchsia_build_info//:args.bzl", fuchsia_target_cpu = "target_cpu")
-load("@fuchsia_build_info//:platforms_flags.bzl", "platform_flags_map")
+load("@fuchsia_build_info//:platforms_flags.bzl", "fuchsia_has_lto", "host_has_lto", "platform_flags_map")
 
 # The platform_flags_map dictionary is generated from the content of
 # 'args.gn` and //build/bazel/config/bazel_args.gni and contains for
@@ -165,13 +165,36 @@ platform(
 # TODO(https://fxbug.dev/484422864): Use "host_*" for host platforms and use
 # "linux_*" other purposes, such as Starnix binaries. Consider renaming
 # "linux_*" to "starnix_linux_*" to avoid ambiguity.
+# @rules_cc rules (cc_binary, cc_test, cc_library) assign CppLink actions to
+# the "cpp_link" execution group (exec_group). Prefixing execution property
+# keys with "cpp_link." overrides those properties specifically for CppLink
+# actions while keeping CppCompile and other default-group actions on the
+# default RBE worker pool.
+#
+# When LTO or ThinLTO is enabled, link actions require significantly more
+# memory and can OOM on default RBE workers, so route them to the large RBE
+# worker pool (see https://fxbug.dev/575721833).
+#
+# Note: Bazel reads `exec_properties` from the *execution* platform
+# (`--host_platform=//build/bazel/platforms:host`, which resolves to
+# `:linux_x64`), not from the *target* platform (`--platforms=...`). Because
+# `:linux_x64` executes link actions for both Fuchsia and host targets,
+# enable the large worker pool when either `fuchsia_has_lto` or `host_has_lto`
+# is true.
+_linux_x64_exec_properties = build_config.rbe_remote_exec_properties | (
+    {
+        "cpp_link." + k: v
+        for k, v in build_config.rbe_large_exec_properties.items()
+    } if (fuchsia_has_lto or host_has_lto) else {}
+)
+
 platform(
     name = "linux_x64",
     constraint_values = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
-    exec_properties = build_config.rbe_remote_exec_properties,
+    exec_properties = _linux_x64_exec_properties,
     flags = _flags_for_linux_x64,
 )
 

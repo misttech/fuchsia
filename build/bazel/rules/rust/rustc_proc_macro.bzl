@@ -10,7 +10,12 @@ load(
     "wrap_rust_macro_args_with_build_flags",
 )
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
-load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_tags", "with_fuchsia_rustc_flags")
+load(
+    "//build/bazel/rules/rust:common.bzl",
+    "with_fuchsia_rust_link_exec_properties",
+    "with_fuchsia_rust_tags",
+    "with_fuchsia_rustc_flags",
+)
 load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
 def _rustc_proc_macro_impl(
@@ -45,7 +50,9 @@ def _rustc_proc_macro_impl(
         name = name,
         lint_config = lint_config,
         visibility = visibility,
-        **proc_macro_kwargs
+        **(proc_macro_kwargs | {
+            "exec_properties": with_fuchsia_rust_link_exec_properties(proc_macro_kwargs.get("exec_properties")),
+        })
     )
 
     if with_host_unit_tests or with_unit_tests:
