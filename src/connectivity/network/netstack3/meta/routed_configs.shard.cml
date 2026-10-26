@@ -75,7 +75,7 @@
         },
         {
             // Whether to enable TCP Generic Receive Offload (GRO).
-            // TODO(https://fxbug.dev/452980285): Remove this flag when enabled by
+            // TODO(https://fxbug.dev/573166201): Remove this flag when enabled by
             // default.
             config: "fuchsia.netstack3.TcpGroEnabled",
             from: "parent/netstack3-config",
