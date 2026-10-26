@@ -524,6 +524,25 @@ def _normalize_label(label: str) -> str:
     return label
 
 
+def _is_pic_compile_action(tokens: list[str]) -> bool:
+    """Returns True if a compile command outputs a .pic.o object file.
+
+    When the `supports_pic` feature is enabled on a Bazel C++ toolchain,
+    `cc_library` and `cc_binary` register two `CppCompile` actions per source
+    file in the action graph: one producing `<src>.pic.o` (with `-fPIC`, listed
+    first in `aquery`) and one producing `<src>.o` (without `-fPIC`, archived
+    into `lib<target>.a`).
+    """
+    for i, token in enumerate(tokens):
+        if token == "-o" and i + 1 < len(tokens):
+            return tokens[i + 1].endswith(".pic.o")
+        if token.startswith(("-o=", "--output=")):
+            return token.partition("=")[2].endswith(".pic.o")
+        if token.startswith("-o") and len(token) > 2:
+            return token[2:].endswith(".pic.o")
+    return False
+
+
 def query_bazel_commands(
     bazel_launcher: BazelLauncher,
     bazel_execroot: str | pathlib.Path,
@@ -620,6 +639,8 @@ def query_bazel_commands(
             norm_label = _normalize_label(label)
             actions = target_actions_map.get(norm_label, [])
             matched_cmd = None
+            fallback_cmd = None
+            expect_pic = "-shared)" in query.gn
 
             for action in actions:
                 full_args = list(action.env_vars) + action.args
@@ -632,8 +653,22 @@ def query_bazel_commands(
                     source_file=source_file,
                     tokens=full_args,
                 ):
-                    matched_cmd = cmd_str
-                    break
+                    if action_type in (
+                        ACTION_C_COMPILE,
+                        ACTION_CPP_COMPILE,
+                        ACTION_ASSEMBLE,
+                    ):
+                        if _is_pic_compile_action(full_args) == expect_pic:
+                            matched_cmd = cmd_str
+                            break
+                        if fallback_cmd is None:
+                            fallback_cmd = cmd_str
+                    else:
+                        matched_cmd = cmd_str
+                        break
+
+            if matched_cmd is None:
+                matched_cmd = fallback_cmd
 
             if matched_cmd:
                 result[query.bazel] = matched_cmd
