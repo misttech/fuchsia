@@ -323,7 +323,7 @@ _NORMAL_DEPENDENCIES = {
             "ansi_term": Label("//third_party/rust_crates/vendor/ansi_term-0.12.1:ansi_term"),
             "anyhow": Label("//third_party/rust_crates/vendor/anyhow-1.0.104:anyhow"),
             "arbitrary": Label("//third_party/rust_crates/vendor/arbitrary-1.5.0:arbitrary"),
-            "arc-swap": Label("//third_party/rust_crates/vendor/arc-swap-1.9.1:arc_swap"),
+            "arc-swap": Label("//third_party/rust_crates/vendor/arc-swap-1.9.2:arc_swap"),
             "argh": Label("//third_party/rust_crates/vendor/argh-0.1.19:argh"),
             "argh_complete": Label("//third_party/rust_crates/vendor/argh_complete-0.1.19:argh_complete"),
             "arrayref": Label("//third_party/rust_crates/vendor/arrayref-0.3.9:arrayref"),
