@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "ping",
+    srcs = [
+        "src/fuchsia.rs",
+        "src/lib.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/bringup/bin/netsvc/test/integration:__pkg__",
+        "//src/connectivity:__subpackages__",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:socket2",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+            "//src/lib/fuchsia-async",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "ping_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":ping",
+    deps = ["//src/connectivity/lib/net-declare"],
+)
+
+wrap_host_rust_test(
+    name = "ping_host_test",
+    binary_name = "ping_test",
+)
+
+fx_unittest_package(
+    name = "ping-tests",
+    unit_tests = [":ping_test"],
+)

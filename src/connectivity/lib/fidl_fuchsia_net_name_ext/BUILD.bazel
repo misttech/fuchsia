@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl_fuchsia_net_name_ext",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = ["//src/connectivity/lib:__pkg__"],
+    deps = ["//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust"],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_name_ext_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fidl_fuchsia_net_name_ext",
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-name-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_name_ext_test"],
+)

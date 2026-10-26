@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl_fuchsia_net_dhcpv6_ext",
+    srcs = ["src/lib.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/lib:__pkg__",
+        "//src/connectivity/network:__subpackages__",
+        "//src/connectivity/policy/netcfg:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net.dhcpv6:fuchsia.net.dhcpv6_rust",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
+        "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl_table_validation",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "fidl_fuchsia_net_dhcpv6_ext_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":fidl_fuchsia_net_dhcpv6_ext",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "fidl-fuchsia-net-dhcpv6-ext-tests",
+    unit_tests = [":fidl_fuchsia_net_dhcpv6_ext_test"],
+)
