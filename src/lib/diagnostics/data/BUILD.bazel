@@ -1,0 +1,16 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be found
+# in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "data",
+    actual = "//src/lib/diagnostics/data/rust",
+    visibility = [
+        "//src/developer/ffx/tools/power:__pkg__",
+        "//src/lib/diagnostics:__pkg__",
+        "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
+        "//src/sys/fuzzing/fuzzctl:__subpackages__",
+    ],
+)

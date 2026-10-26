@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fuchsia.examples.services",
+    srcs = ["account.test.fidl"],
+    enable_hlcpp = True,
+    visibility = [
+        "//examples/components/services/cpp:__pkg__",
+        "//examples/components/services/rust:__pkg__",
+        "//src/lib/fuchsia-component-test/tests:__pkg__",
+        "//src/sys/component_manager/testing/services_provider:__pkg__",
+        "//src/sys/component_manager/tests/services:__pkg__",
+    ],
+)

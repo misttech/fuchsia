@@ -2,14 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//tools/fidl/measure-tape/measure_tape.gni")
-
-measure_tape("rust_measure_tape_for_action") {
-  fidls = [ ":fuchsia.stresstest" ]
-  target_types = [ "fuchsia.stresstest/Action" ]
-  target_binding = "rust"
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -38,4 +30,13 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 fidl("fuchsia.stresstest") {
   sources = [ "actor.fidl" ]
   visibility = [ "*" ]
+}
+measure_tape("rust_measure_tape_for_action") {
+  fidls = [ ":fuchsia.stresstest" ]
+  target_binding = "rust"
+  target_types = [ "fuchsia.stresstest/Action" ]
+  visibility = [
+    ":*",
+    "//src/sys/test_runners/stress_test/actor:*",
+  ]
 }

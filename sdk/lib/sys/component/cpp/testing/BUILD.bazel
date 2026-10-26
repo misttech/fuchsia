@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp_library",
+    srcs = [
+        "internal/convert.cc",
+        "internal/errors.cc",
+        "internal/local_component_runner.cc",
+        "internal/realm.cc",
+        "realm_builder.cc",
+        "realm_builder_types.cc",
+        "scoped_child.cc",
+    ],
+    hdrs = [
+        "execution_controller.h",
+        "realm_builder.h",
+        "realm_builder_types.h",
+        "scoped_child.h",
+    ],
+    api_area = "Component Framework",
+    category = "partner",
+    hdrs_for_internal_use = [
+        "internal/convert.h",
+        "internal/errors.h",
+        "internal/local_component_runner.h",
+        "internal/realm.h",
+    ],
+    idk_name = "sys_component_cpp_testing",
+    include_base = "//sdk",
+    public_configs = ["//sdk/config"],
+    stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk:__pkg__",
+        "//sdk/lib/driver/devicetree/testing:__pkg__",
+        "//sdk/lib/driver_test_realm/realm_builder/cpp:__pkg__",
+        "//src/media/audio/drivers/tests:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_hlcpp",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_cpp",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
+        "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_hlcpp",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_hlcpp",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_hlcpp",
+        "//sdk/lib/component/outgoing/cpp",
+        "//sdk/lib/fdio",
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/sys/cpp",
+    ],
+)

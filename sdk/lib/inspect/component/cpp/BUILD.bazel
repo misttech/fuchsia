@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# `sdk_source_set` in GN adds `<dep>_sdk` for every entry in `deps`, which fails
+# for `expect_includes` targets, so GN uses `data_deps` while Bazel uses
+# `aspect_hints`.
+# @bazel2gn:raw_attribute:data_deps = [ "//sdk/lib/inspect:client_includes" ]
+idk_cc_source_library(
+    name = "cpp",
+    srcs = [
+        "component.cc",
+        "service.cc",
+        "testing.cc",
+    ],
+    hdrs = [
+        "component.h",
+        "service.h",
+        "testing.h",
+        "tree_handler_settings.h",
+    ],
+    api_area = "Diagnostics",
+    aspect_hints = ["//sdk/lib/inspect:client_includes"],  # @bazel2gn:skip
+    category = "partner",
+    idk_name = "inspect_component_cpp",
+    include_base = "//sdk",
+    public_configs = ["//sdk/config"],
+    stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_cpp",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//sdk/lib/component/outgoing/cpp",
+        "//sdk/lib/fidl/cpp",
+        "//zircon/system/ulib/inspect",
+        "//zircon/system/ulib/zx",
+    ],
+)

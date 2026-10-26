@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -12,4 +13,12 @@ fidl_library(
         "actor.fidl",
     ],
     visibility = ["//visibility:public"],
+)
+
+measure_tape(
+    name = "rust_measure_tape_for_action",
+    fidls = [":fuchsia.stresstest"],
+    target_binding = "rust",
+    target_types = ["fuchsia.stresstest/Action"],
+    visibility = ["//src/sys/test_runners/stress_test/actor:__pkg__"],
 )

@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "reader",
+    actual = "//src/lib/diagnostics/reader/rust",
+    visibility = [
+        "//examples/diagnostics/logs/rust:__pkg__",
+        "//src/connectivity/network/tests/integration/sys:__pkg__",
+        "//src/diagnostics:__subpackages__",
+        "//src/lib/diagnostics:__pkg__",
+        "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
+    ],
+)
