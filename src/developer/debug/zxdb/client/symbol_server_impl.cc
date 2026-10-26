@@ -5,6 +5,8 @@
 #include "src/developer/debug/zxdb/client/symbol_server_impl.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -231,8 +233,10 @@ void SymbolServerImpl::FetchWithCurl(const std::string& build_id, DebugSymbolFil
 
     if (std::filesystem::is_directory(path_obj, ec)) {
       // Download to a temporary file, so if we get cancelled (or we get sent a 404 page instead of
-      // the real symbols) we don't pollute the build ID folder.
-      std::string name = ToDebugFileName(build_id, file_type) + ".part";
+      // the real symbols) we don't pollute the build ID folder. The name must be unique because
+      // multiple processes may share a cache and fetch the same build ID concurrently. The
+      // rename() into the cache is atomic, so readers never see a partial file.
+      std::string name = ToDebugFileName(build_id, file_type) + ".part.XXXXXX";
 
       path = path_obj / name;
     }
@@ -252,17 +256,24 @@ void SymbolServerImpl::FetchWithCurl(const std::string& build_id, DebugSymbolFil
 
   // We don't have a folder specified where downloaded symbols go. We'll just drop it in tmp and at
   // least you'll be able to use them for this session.
-  if (path.empty()) {
-    path = "/tmp/zxdb_downloaded_symbolsXXXXXX\0";
-    int fd = mkstemp(path.data());
-    path.pop_back();
+  bool in_cache = !path.empty();
+  if (!in_cache) {
+    path = "/tmp/zxdb_downloaded_symbolsXXXXXX";
+  }
 
-    if (fd >= 0) {
-      // Ownership of the fd is absorbed by fdopen.
-      file = fdopen(fd, "wb");
+  if (int fd = mkstemp(path.data()); fd >= 0) {
+    // mkstemp() creates the file with mode 0600. Cached symbols are not secret and the cache may be
+    // shared, so make them world-readable.
+    if (in_cache) {
+      fchmod(fd, 0644);
     }
-  } else {
-    file = std::fopen(path.c_str(), "wb");
+    // fdopen() only takes ownership of the fd if it succeeds.
+    file = fdopen(fd, "wb");
+    if (!file) {
+      close(fd);
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
   }
 
   if (!file) {
@@ -274,13 +285,17 @@ void SymbolServerImpl::FetchWithCurl(const std::string& build_id, DebugSymbolFil
 
   auto cleanup = [file, path, cache_path, target_path,
                   target_name](const Err& in_err) -> ErrOr<std::string> {
-    fclose(file);
+    // fclose() flushes buffered data, so a failure here (e.g. ENOSPC) means the file is truncated.
+    bool close_failed = fclose(file) != 0;
 
     std::error_code ec;
-    if (in_err.has_error()) {
+    if (in_err.has_error() || close_failed) {
       // Need to cleanup the file in the error case.
       std::filesystem::remove(path, ec);
-      return in_err;  // Just forward the same error to the caller.
+      if (in_err.has_error()) {
+        return in_err;  // Just forward the same error to the caller.
+      }
+      return Err("Error writing downloaded symbols.");
     }
 
     if (cache_path.empty()) {
@@ -290,10 +305,12 @@ void SymbolServerImpl::FetchWithCurl(const std::string& build_id, DebugSymbolFil
     std::filesystem::create_directory(target_path, ec);
     if (std::filesystem::is_directory(target_path, ec)) {
       std::filesystem::rename(path, target_path / target_name, ec);
-      return std::string(target_path / target_name);
-    } else {
-      return Err("Could not move file in to cache.");
+      if (!ec) {
+        return std::string(target_path / target_name);
+      }
     }
+    std::filesystem::remove(path, ec);
+    return Err("Could not move file in to cache.");
   };
 
   curl->set_data_callback(
