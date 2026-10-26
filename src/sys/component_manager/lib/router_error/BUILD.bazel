@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "router_error",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/sys/component_manager:__subpackages__",
+        "//src/sys/lib/routing:__subpackages__",
+        "//src/sys/lib/runtime_capabilities:__subpackages__",
+        "//tools/lib/cm_fidl_analyzer:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/rust/zx-status",
+        "//src/sys/lib/moniker",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
