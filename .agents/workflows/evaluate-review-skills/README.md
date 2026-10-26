@@ -33,7 +33,9 @@ an adversarial cross-check pass.
      and align `AGENTIC_REVIEW` placement with `/review`'s upward ancestor
      directory traversal.
    - Measure actual commit volume (`git log --since=<since_date> --oneline`) on
-     the target paths against `min_commits`.
+     the target paths against `min_commits` (defaulting `since_date` to the past
+     2 months, i.e., `2026-08-26`, computed dynamically as 2 months prior to the
+     run date).
 3. **Adversarial Audit & Cross-Check**:
    Runs a critic/auditor agent over all parallel evaluations to reject false
    positives (such as generator skills or low-churn directories) and synthesize

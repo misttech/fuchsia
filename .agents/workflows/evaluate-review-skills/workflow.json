@@ -25,8 +25,8 @@
             },
             "since_date": {
                 "type": "string",
-                "default": "2025-01-01",
-                "description": "Start date (YYYY-MM-DD) for measuring git commit volume in target directories."
+                "default": "2026-08-26",
+                "description": "Start date (YYYY-MM-DD) for measuring git commit volume in target directories (defaults to the past 2 months, i.e., 2026-08-26)."
             },
             "min_commits": {
                 "type": "integer",

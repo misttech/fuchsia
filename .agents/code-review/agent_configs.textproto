@@ -102,6 +102,19 @@ configs: {
 }
 
 configs: {
+  id: "fuchsia-driver-developer-tools"
+  display_name: "Fuchsia Driver Developer Tools"
+  description: "In-driver fuchsia.driver.debug/Debug protocol and explore CLI tool conventions for DFv2 drivers."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/driver_developer_tools"
+  include_filters: {
+    project: "fuchsia"
+    project: "vendor/google"
+    path_regex: "src/devices/.*\\.(cml|rs|cc|h)"
+  }
+}
+
+configs: {
   id: "fuchsia-lacewing-e2e-tests"
   display_name: "Fuchsia Lacewing E2E Test Guidelines"
   description: "Timeouts, deadlines, cancellations, and exception handling in Lacewing end-to-end tests."
@@ -290,6 +303,18 @@ configs: {
   include_filters: {
     project: "fuchsia"
     path_regex: "zircon/.*\\.(rs|cc|h)"
+  }
+}
+
+configs: {
+  id: "fuchsia-zircon-cpp-to-rust-dispatcher"
+  display_name: "Fuchsia Zircon Dispatcher C++ to Rust Porting"
+  description: "Zircon kernel dispatcher facade objects, OpaqueRefCountedFacade, #[guarded] state, and FFI shim invariants."
+  tags: "code-review-agent"
+  skills: "zircon/skills/cpp-to-rust-dispatcher"
+  include_filters: {
+    project: "fuchsia"
+    path_regex: "zircon/kernel/(object|lib/syscalls)/.*"
   }
 }
 

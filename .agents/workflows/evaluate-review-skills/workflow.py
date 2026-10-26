@@ -18,6 +18,8 @@ Then runs an adversarial cross-check pass and outputs ready-to-apply
 AGENTIC_REVIEW stanzas and .agents/code-review/agent_configs.textproto entries.
 """
 
+import calendar
+import datetime
 import json
 import os
 import subprocess
@@ -48,6 +50,17 @@ def _discover_repo_files(repo_root, pattern):
     return sorted(set(tracked + untracked))
 
 
+def _default_since_date(today=None):
+    today = today or datetime.date.today()
+    year = today.year
+    month = today.month - 2
+    if month <= 0:
+        month += 12
+        year -= 1
+    max_day = calendar.monthrange(year, month)[1]
+    return datetime.date(year, month, min(today.day, max_day)).isoformat()
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: Discover Skills & Existing Review Configurations
 # ---------------------------------------------------------------------------
@@ -61,7 +74,7 @@ if not os.path.exists(os.path.join(workspace_root, ".git")):
 repo_arg = (args.get("repo") or "all").strip("/")
 path_prefix = (args.get("path_prefix") or "").strip("/")
 only_unregistered = bool(args.get("only_unregistered", True))
-since_date = args.get("since_date", "2025-01-01")
+since_date = args.get("since_date") or _default_since_date()
 min_commits = int(args.get("min_commits", 20))
 max_concurrency = int(args.get("max_concurrency", 6))
 report_path = args.get("report_path")
