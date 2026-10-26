@@ -101,7 +101,10 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
 ## Migrating Tests (`fx_test`, `host_*_test`, `bazel_test_suite`)
 Every test moves to Bazel: C++ and Rust device tests, and host tests. A Bazel test reaches
 `tests.json` (`fx test`, CQ) only through a GN `bazel_test_suite()` wired into
-`group("tests")`.
+`group("tests")`. The `tests_json_parity` check regenerates `<build dir>/tests.json` at
+`$PLANTER_CHANGE_BASE` and fails for every device or host test that is missing after the change,
+so keep device test package and component names (a host test may change its GN path as long as
+the Bazel test keeps the label).
 - **Tests of a dual-build library run in both build systems** (docs/development/build/bazel_concepts/tests.md,
   "Testing libraries in both build systems"). Define the test in Bazel and let bazel2gn
   generate the GN copy: do NOT put `# @bazel2gn:skip` on test rules or on the `with_unit_tests`,
