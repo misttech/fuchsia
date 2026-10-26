@@ -1,24 +1,14 @@
 use super::Adler32Imp;
 
-/// Resolves update implementation if CPU supports avx512f and avx512bw instructions.
+/// Resolves update implementation if CPU supports ssse3 instructions.
 pub fn get_imp() -> Option<Adler32Imp> {
   get_imp_inner()
 }
 
 #[inline]
-#[cfg(all(feature = "std", feature = "nightly", target_arch = "arm"))]
+#[cfg(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))]
 fn get_imp_inner() -> Option<Adler32Imp> {
-  if std::is_arm_feature_detected("neon") {
-    Some(imp::update)
-  } else {
-    None
-  }
-}
-
-#[inline]
-#[cfg(all(feature = "std", feature = "nightly", target_arch = "aarch64"))]
-fn get_imp_inner() -> Option<Adler32Imp> {
-  if std::is_aarch64_feature_detected("neon") {
+  if std::is_x86_feature_detected!("ssse3") {
     Some(imp::update)
   } else {
     None
@@ -27,9 +17,8 @@ fn get_imp_inner() -> Option<Adler32Imp> {
 
 #[inline]
 #[cfg(all(
-  feature = "nightly",
-  target_feature = "neon",
-  not(all(feature = "std", any(target_arch = "arm", target_arch = "aarch64")))
+  target_feature = "ssse3",
+  not(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))
 ))]
 fn get_imp_inner() -> Option<Adler32Imp> {
   Some(imp::update)
@@ -37,39 +26,34 @@ fn get_imp_inner() -> Option<Adler32Imp> {
 
 #[inline]
 #[cfg(all(
-  not(target_feature = "neon"),
-  not(all(
-    feature = "std",
-    feature = "nightly",
-    any(target_arch = "arm", target_arch = "aarch64")
-  ))
+  not(target_feature = "ssse3"),
+  not(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))
 ))]
 fn get_imp_inner() -> Option<Adler32Imp> {
   None
 }
 
 #[cfg(all(
-  feature = "nightly",
-  any(target_arch = "arm", target_arch = "aarch64"),
-  any(feature = "std", target_feature = "neon")
+  any(target_arch = "x86", target_arch = "x86_64"),
+  any(feature = "std", target_feature = "ssse3")
 ))]
 mod imp {
   const MOD: u32 = 65521;
   const NMAX: usize = 5552;
-  const BLOCK_SIZE: usize = 64;
+  const BLOCK_SIZE: usize = 32;
   const CHUNK_SIZE: usize = NMAX / BLOCK_SIZE * BLOCK_SIZE;
 
-  #[cfg(target_arch = "aarch64")]
-  use core::arch::aarch64::*;
-  #[cfg(target_arch = "arm")]
-  use core::arch::arm::*;
+  #[cfg(target_arch = "x86")]
+  use core::arch::x86::*;
+  #[cfg(target_arch = "x86_64")]
+  use core::arch::x86_64::*;
 
   pub fn update(a: u16, b: u16, data: &[u8]) -> (u16, u16) {
     unsafe { update_imp(a, b, data) }
   }
 
   #[inline]
-  #[target_feature(enable = "neon")]
+  #[target_feature(enable = "ssse3")]
   unsafe fn update_imp(a: u16, b: u16, data: &[u8]) -> (u16, u16) {
     let mut a = a as u32;
     let mut b = b as u32;
@@ -85,7 +69,6 @@ mod imp {
     (a as u16, b as u16)
   }
 
-  #[inline]
   unsafe fn update_chunk_block(a: &mut u32, b: &mut u32, chunk: &[u8]) {
     debug_assert_eq!(
       chunk.len(),
@@ -101,7 +84,6 @@ mod imp {
     *b %= MOD;
   }
 
-  #[inline]
   unsafe fn update_block(a: &mut u32, b: &mut u32, chunk: &[u8]) {
     debug_assert!(
       chunk.len() <= CHUNK_SIZE,
@@ -128,27 +110,32 @@ mod imp {
     let blocks = chunk.chunks_exact(BLOCK_SIZE);
     let blocks_remainder = blocks.remainder();
 
-    let one_v = _mm512_set1_epi16(1);
-    let zero_v = _mm512_setzero_si512();
-    let weights = get_weights();
+    let one_v = _mm_set1_epi16(1);
+    let zero_v = _mm_set1_epi16(0);
+    let weight_hi_v = get_weight_hi();
+    let weight_lo_v = get_weight_lo();
 
-    let p_v = (*a * blocks.len() as u32) as _;
-    let mut p_v = _mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, p_v);
-    let mut a_v = _mm512_setzero_si512();
-    let mut b_v = _mm512_set_epi32(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, *b as _);
+    let mut p_v = _mm_set_epi32(0, 0, 0, (*a * blocks.len() as u32) as _);
+    let mut a_v = _mm_set_epi32(0, 0, 0, 0);
+    let mut b_v = _mm_set_epi32(0, 0, 0, *b as _);
 
     for block in blocks {
       let block_ptr = block.as_ptr() as *const _;
-      let block = _mm512_loadu_si512(block_ptr);
+      let left_v = _mm_loadu_si128(block_ptr);
+      let right_v = _mm_loadu_si128(block_ptr.add(1));
 
-      p_v = _mm512_add_epi32(p_v, a_v);
+      p_v = _mm_add_epi32(p_v, a_v);
 
-      a_v = _mm512_add_epi32(a_v, _mm512_sad_epu8(block, zero_v));
-      let mad = _mm512_maddubs_epi16(block, weights);
-      b_v = _mm512_add_epi32(b_v, _mm512_madd_epi16(mad, one_v));
+      a_v = _mm_add_epi32(a_v, _mm_sad_epu8(left_v, zero_v));
+      let mad = _mm_maddubs_epi16(left_v, weight_hi_v);
+      b_v = _mm_add_epi32(b_v, _mm_madd_epi16(mad, one_v));
+
+      a_v = _mm_add_epi32(a_v, _mm_sad_epu8(right_v, zero_v));
+      let mad = _mm_maddubs_epi16(right_v, weight_lo_v);
+      b_v = _mm_add_epi32(b_v, _mm_madd_epi16(mad, one_v));
     }
 
-    b_v = _mm512_add_epi32(b_v, _mm512_slli_epi32(p_v, 6));
+    b_v = _mm_add_epi32(b_v, _mm_slli_epi32(p_v, 5));
 
     *a += reduce_add(a_v);
     *b = reduce_add(b_v);
@@ -157,40 +144,31 @@ mod imp {
   }
 
   #[inline(always)]
-  unsafe fn reduce_add(v: __m512i) -> u32 {
-    let v: [__m256i; 2] = core::mem::transmute(v);
-
-    reduce_add_256(v[0]) + reduce_add_256(v[1])
-  }
-
-  #[inline(always)]
-  unsafe fn reduce_add_256(v: __m256i) -> u32 {
-    let v: [__m128i; 2] = core::mem::transmute(v);
-    let sum = _mm_add_epi32(v[0], v[1]);
-    let hi = _mm_unpackhi_epi64(sum, sum);
-
-    let sum = _mm_add_epi32(hi, sum);
+  unsafe fn reduce_add(v: __m128i) -> u32 {
+    let hi = _mm_unpackhi_epi64(v, v);
+    let sum = _mm_add_epi32(hi, v);
     let hi = _mm_shuffle_epi32(sum, crate::imp::_MM_SHUFFLE(2, 3, 0, 1));
-
     let sum = _mm_add_epi32(sum, hi);
-    let sum = _mm_cvtsi128_si32(sum) as _;
 
-    sum
+    _mm_cvtsi128_si32(sum) as _
   }
 
   #[inline(always)]
-  unsafe fn get_weights() -> __m512i {
-    _mm512_set_epi8(
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-      24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-      45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
+  unsafe fn get_weight_lo() -> __m128i {
+    _mm_set_epi8(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+  }
+
+  #[inline(always)]
+  unsafe fn get_weight_hi() -> __m128i {
+    _mm_set_epi8(
+      17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
     )
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use rand::Rng;
+  use rand::{Rng, SeedableRng, rngs::SmallRng};
 
   #[test]
   fn zeroes() {
@@ -199,6 +177,8 @@ mod tests {
     assert_sum_eq(&[0, 0]);
     assert_sum_eq(&[0; 100]);
     assert_sum_eq(&[0; 1024]);
+    assert_sum_eq(&[0; 1024 - 5]);
+    #[cfg(not(miri))]
     assert_sum_eq(&[0; 1024 * 1024]);
   }
 
@@ -209,18 +189,22 @@ mod tests {
     assert_sum_eq(&[1, 1]);
     assert_sum_eq(&[1; 100]);
     assert_sum_eq(&[1; 1024]);
+    assert_sum_eq(&[1; 1024 - 5]); // non-power-of-2 to test remainder handling
+    #[cfg(not(miri))]
     assert_sum_eq(&[1; 1024 * 1024]);
   }
 
   #[test]
   fn random() {
-    let mut random = [0; 1024 * 1024];
-    rand::thread_rng().fill(&mut random[..]);
+    if super::get_imp().is_none() { return; } // don't do any work if we're not on this target
+    let mut random = [0; 1024 * 10];
+    SmallRng::from_entropy().fill(&mut random[..]);
 
     assert_sum_eq(&random[..1]);
     assert_sum_eq(&random[..100]);
     assert_sum_eq(&random[..1024]);
-    assert_sum_eq(&random[..1024 * 1024]);
+    assert_sum_eq(&random[..1024 - 5]); // non-power-of-2 to test remainder handling
+    assert_sum_eq(&random[..1024 * 10]);
   }
 
   /// Example calculation from https://en.wikipedia.org/wiki/Adler-32.
@@ -233,7 +217,7 @@ mod tests {
     if let Some(update) = super::get_imp() {
       let (a, b) = update(1, 0, data);
       let left = u32::from(b) << 16 | u32::from(a);
-      let right = adler::adler32_slice(data);
+      let right = adler2::adler32_slice(data);
 
       assert_eq!(left, right, "len({})", data.len());
     }

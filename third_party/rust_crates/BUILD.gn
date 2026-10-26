@@ -9373,7 +9373,7 @@ rustc_library("fdeflate-v0_3_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":simd-adler32-v0_3_7" ]
+  deps += [ ":simd-adler32-v0_3_10" ]
 
   rustenv = []
 
@@ -13913,7 +13913,7 @@ rustc_library("miniz_oxide-v0_8_9") {
 
   deps = []
   deps += [ ":adler2-v2_0_1" ]
-  deps += [ ":simd-adler32-v0_3_7" ]
+  deps += [ ":simd-adler32-v0_3_10" ]
 
   rustenv = []
 
@@ -22219,16 +22219,17 @@ rustc_library("signature-v3_0_0") {
   applicable_licenses = [ ":signature-v3_0_0.license" ]
 }
 
-license("simd-adler32-v0_3_7.license") {
+license("simd-adler32-v0_3_10.license") {
   public_package_name = "simd_adler32"
   license_files =
-      [ "//third_party/rust_crates/vendor/simd-adler32-0.3.7/LICENSE.md" ]
+      [ "//third_party/rust_crates/vendor/simd-adler32-0.3.10/LICENSE.md" ]
 }
 
-rustc_library("simd-adler32-v0_3_7") {
+rustc_library("simd-adler32-v0_3_10") {
   crate_name = "simd_adler32"
-  source_root = "//third_party/rust_crates/vendor/simd-adler32-0.3.7/src/lib.rs"
-  output_name = "simd_adler32-2da742c04b8b307e"
+  source_root =
+      "//third_party/rust_crates/vendor/simd-adler32-0.3.10/src/lib.rs"
+  output_name = "simd_adler32-ece15d2010190eb"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -22240,8 +22241,8 @@ rustc_library("simd-adler32-v0_3_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2da742c04b8b307e",
-    "-Cextra-filename=-2da742c04b8b307e",
+    "-Cmetadata=ece15d2010190eb",
+    "-Cextra-filename=-ece15d2010190eb",
     "--cfg=feature=\"const-generics\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -22249,7 +22250,7 @@ rustc_library("simd-adler32-v0_3_7") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":simd-adler32-v0_3_7.license" ]
+  applicable_licenses = [ ":simd-adler32-v0_3_10.license" ]
 }
 
 license("simdutf8-v0_1_5.license") {

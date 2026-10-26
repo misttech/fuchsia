@@ -82,6 +82,6 @@ rust_library(
     version = "0.8.9",
     deps = [
         "//third_party/rust_crates/vendor/adler2-2.0.1:adler2",
-        "//third_party/rust_crates/vendor/simd-adler32-0.3.7:simd_adler32",
+        "//third_party/rust_crates/vendor/simd-adler32-0.3.10:simd_adler32",
     ],
 )
