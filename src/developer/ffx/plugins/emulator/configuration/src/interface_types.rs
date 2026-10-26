@@ -60,9 +60,11 @@ pub trait EmulatorEngine: Send + Sync {
 
     /// Shut down a running emulator instance. The engine should have been instantiated from a saved
     /// and serialized instance, so no additional initialization should be needed. This function
-    /// will terminate a running emulator instance, which will be specified on the command line. It
-    /// may return an error if the instance doesn't exist or the shut down fails, but should succeed
-    /// if it's no longer running or gets successfully shut down.
+    /// will terminate a running emulator instance, which will be specified on the command line.
+    /// The QEMU-based engines (femu and qemu) also wait for the emulator's process to exit, so
+    /// that the instance can be started again as soon as this returns. It may return an error if
+    /// the instance doesn't exist or the shut down fails, but should succeed if it's no longer
+    /// running or gets successfully shut down.
     async fn stop(&mut self) -> Result<()> {
         let bt = Backtrace::force_capture();
         unimplemented!(

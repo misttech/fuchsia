@@ -239,6 +239,23 @@ pub(crate) struct PortPair {
     pub guest: u16,
     pub host: u16,
 }
+/// How long `QemuBasedEngine::stop_emulator()` waits for the emulator process to exit after it has
+/// been killed.
+const STOP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Waits for the process with the given pid to exit, for at most `timeout`. Returns whether it has
+/// exited.
+async fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while process::is_running(pid) {
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        Timer::new(Duration::from_millis(100)).await;
+    }
+    true
+}
+
 /// QemuBasedEngine collects the interface for
 /// emulator engine implementations that use
 /// QEMU as the emulator.
@@ -967,9 +984,21 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
 
     async fn stop_emulator(&mut self) -> Result<()> {
         if self.is_running().await {
-            log::info!("Terminating running instance {:?}", self.get_pid());
-            if let Some(terminate_error) = process::terminate(self.get_pid()).err() {
+            let pid = self.get_pid();
+            log::info!("Terminating running instance {pid}");
+            if let Some(terminate_error) = process::terminate(pid).err() {
                 log::warn!("Error encountered terminating process: {:?}", terminate_error);
+            }
+            // The process doesn't go away the moment it is killed: the kernel still has to release
+            // the guest's memory and the files which the emulator had open, which takes seconds
+            // for a large guest. Wait for that, so that the instance can be started again as soon
+            // as stop returns, as `ffx emu stop --persist && ffx emu start --reuse` does.
+            if !wait_for_exit(pid, STOP_TIMEOUT).await {
+                return_user_error!(
+                    "The emulator process (pid {pid}) was killed, but is still shutting down {} \
+                    seconds later. Wait for it to exit before starting the instance again.",
+                    STOP_TIMEOUT.as_secs()
+                );
             }
         }
         self.set_engine_state(EngineState::Staged);
@@ -1234,27 +1263,37 @@ pub(crate) mod tests {
     use tempfile::{TempDir, tempdir};
 
     #[derive(Default, Serialize)]
-    struct TestEngine {}
+    struct TestEngine {
+        pid: u32,
+        state: EngineState,
+    }
     impl QemuBasedEngine for TestEngine {
-        fn set_pid(&mut self, _pid: u32) {}
-        fn get_pid(&self) -> u32 {
-            todo!()
+        fn set_pid(&mut self, pid: u32) {
+            self.pid = pid;
         }
-        fn set_engine_state(&mut self, _state: EngineState) {}
+        fn get_pid(&self) -> u32 {
+            self.pid
+        }
+        fn set_engine_state(&mut self, state: EngineState) {
+            self.state = state;
+        }
         fn get_engine_state(&self) -> EngineState {
-            todo!()
+            self.state
         }
     }
     #[async_trait(?Send)]
     impl EmulatorEngine for TestEngine {
         fn engine_state(&self) -> EngineState {
-            EngineState::default()
+            self.state
         }
         fn engine_type(&self) -> EngineType {
             EngineType::default()
         }
         async fn is_running(&mut self) -> bool {
-            false
+            process::is_running(self.pid)
+        }
+        async fn save_to_disk(&self) -> Result<()> {
+            Ok(())
         }
     }
     const ORIGINAL: &str = "THIS_STRING";
@@ -2207,6 +2246,46 @@ pub(crate) mod tests {
         assert!(result.is_err());
 
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_exit() {
+        // A process which exits is waited for, and is gone afterwards.
+        let child = Command::new("sleep").arg("0.2").spawn().expect("spawn sleep");
+        let start = Instant::now();
+        assert!(wait_for_exit(child.id(), Duration::from_secs(30)).await);
+        assert!(start.elapsed() >= Duration::from_millis(200));
+        assert!(!process::is_running(child.id()));
+
+        // A process which keeps running is given up on when the timeout runs out.
+        let mut child = Command::new("sleep").arg("60").spawn().expect("spawn sleep");
+        let start = Instant::now();
+        assert!(!wait_for_exit(child.id(), Duration::from_millis(300)).await);
+        assert!(start.elapsed() >= Duration::from_millis(300));
+        assert!(process::is_running(child.id()));
+        child.kill().expect("kill sleep");
+        child.wait().expect("wait for sleep");
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_emulator_waits_for_exit() {
+        let child = Command::new("sleep").arg("60").spawn().expect("spawn sleep");
+        let mut engine = TestEngine { pid: child.id(), state: EngineState::Running };
+        assert!(engine.is_running().await);
+
+        engine.stop_emulator().await.expect("stop");
+
+        // The process has exited, rather than only having been signalled, when stop returns.
+        assert!(!process::is_running(child.id()));
+        assert!(!engine.is_running().await);
+        assert_eq!(engine.get_engine_state(), EngineState::Staged);
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_emulator_not_running() {
+        let mut engine = TestEngine { pid: 0, state: EngineState::Running };
+        engine.stop_emulator().await.expect("stop");
+        assert_eq!(engine.get_engine_state(), EngineState::Staged);
     }
 
     #[derive(Deserialize, Debug)]
