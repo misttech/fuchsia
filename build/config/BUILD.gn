@@ -392,6 +392,7 @@ config("no_exceptions") {
 
 # LINT.ThenChange(//build/config/BUILD.bazel:no_exceptions)
 
+# LINT.IfChange(rtti)
 config("rtti") {
   cflags_cc = [ "-frtti" ]
   cflags_objcc = cflags_cc
@@ -412,6 +413,8 @@ config("no_rtti") {
   cflags_objcc = cflags_cc
   ldflags = cflags_cc
 }
+
+# LINT.ThenChange(BUILD.bazel:rtti)
 
 config("default_include_dirs") {
   include_dirs = [

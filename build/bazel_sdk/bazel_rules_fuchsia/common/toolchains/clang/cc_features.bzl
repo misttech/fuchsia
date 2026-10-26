@@ -394,7 +394,6 @@ def get_default_compile_flags_feature(
 
     in_tree_remaining_ccflags = [
         default_system_flags,
-        _flag_configs.no_rtti,
         _flag_configs.symbol_visibility_hidden,
     ]
 
@@ -405,6 +404,7 @@ def get_default_compile_flags_feature(
         # -std=c++20 to avoid breaking petals.
         _flag_configs.language_cxx20,
         _flag_configs.no_exceptions,
+        _flag_configs.no_rtti,
         _flag_configs.no_template_backtrace_limit,
         _flag_configs.relpath_debug_info,
     ]
@@ -415,7 +415,6 @@ def get_default_compile_flags_feature(
         _flag_configs.color_diagnostics,
         _flag_configs.no_frame_pointers,
         _flag_configs.linker_gc,
-        _flag_configs.no_rtti,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
@@ -423,6 +422,7 @@ def get_default_compile_flags_feature(
     oot_only_ldflags = [] if use_default_build_flags else [
         _flag_configs.debuginfo,
         _flag_configs.no_exceptions,
+        _flag_configs.no_rtti,
         _flag_configs.icf,
         _flag_configs.pic,
         _flag_configs.relpath_debug_info,

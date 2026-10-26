@@ -200,6 +200,24 @@ build_flags(
 )
 # LINT.ThenChange(//build/config/BUILD.gn:no_exceptions)
 
+# LINT.IfChange(rtti)
+build_flags(
+    name = "rtti",
+    cflags_cc = ["-frtti"],
+    # cflags_objcc is not supported in Bazel.
+    ldflags = ["-frtti"],
+    visibility = ["//visibility:public"],
+)
+
+build_flags(
+    name = "no_rtti",
+    cflags_cc = ["-fno-rtti"],
+    # cflags_objcc is not supported in Bazel.
+    ldflags = ["-fno-rtti"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:rtti)
+
 # LINT.IfChange(dwarf_version)
 # This uses a custom rule to extract the value of the
 # dwarf_version at analysis time and generate a target
