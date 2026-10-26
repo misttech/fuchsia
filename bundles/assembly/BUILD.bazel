@@ -3624,7 +3624,7 @@ assembly_input_bundle(
         "eng",
     ],
     system_packages = [
-        "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache:disable-executability-restrictions",
+        "//src/sys/pkg/bin/pkg-cache:disable-executability-restrictions",
     ],
 )
 

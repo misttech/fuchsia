@@ -1221,7 +1221,7 @@ group("system_update_configurator") {
 }
 
 group("pkgfs_disable_executability_restrictions") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache:disable-executability-restrictions" ]
+  deps = []
 }
 
 group("virtualization_support") {

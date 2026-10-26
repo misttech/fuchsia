@@ -6,141 +6,14 @@ import("//build/assembly/bootfs_files_for_assembly.gni")
 import("//build/components.gni")
 import("//build/dist/component_manifest_resources.gni")
 import("//build/rust/rustc_library.gni")
-import("//build/rust/rustc_test.gni")
 import("//build/testing/environments.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 import("//src/sys/pkg/bin/grand-swd-binary/gsb.gni")
 
-# The binary is defined in BUILD.bazel. Its unit tests (`:bin_test`,
-# `:pkg-cache-test`, and `:pkg-cache-tests`) remain in GN above the sentinel
-# because `pkg-cache-tests` packages
-# `//src/storage/testing:storage_driver_test_realm` (which is GN-only).
-rustc_test("bin_test") {
-  output_name = "pkg_cache_bin_test"
-  edition = "2024"
-  source_root = "src/main.rs"
-
-  deps = [
-    ":config_lib",
-    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-    "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
-    "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
-    "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
-    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
-    "//sdk/fidl/fuchsia.pkg.http:fuchsia.pkg.http_rust",
-    "//sdk/fidl/fuchsia.pkg.internal:fuchsia.pkg.internal_rust",
-    "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution_rust",
-    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
-    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
-    "//sdk/rust/zx",
-    "//src/lib/async-utils",
-    "//src/lib/cobalt/rust/builders",
-    "//src/lib/collections/sorted-vec-map",
-    "//src/lib/diagnostics/inspect/contrib/rust",
-    "//src/lib/diagnostics/inspect/runtime/rust",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fidl/rust/fidl-contrib",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-fs",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/fuchsia-sync",
-    "//src/lib/fuchsia-url",
-    "//src/lib/http-uri-ext",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/versioning/version-history/rust",
-    "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
-    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
-    "//src/storage/lib/blob_pager_and_verifier",
-    "//src/storage/lib/vfs/rust:vfs",
-    "//src/sys/lib/fidl-connector",
-    "//src/sys/lib/fidl-fuchsia-pkg-ext",
-    "//src/sys/lib/fuchsia_backoff",
-    "//src/sys/pkg/lib/blobfs",
-    "//src/sys/pkg/lib/context-authenticator",
-    "//src/sys/pkg/lib/far/rust:fuchsia-archive",
-    "//src/sys/pkg/lib/fuchsia-hash",
-    "//src/sys/pkg/lib/fuchsia-merkle",
-    "//src/sys/pkg/lib/fuchsia-pkg",
-    "//src/sys/pkg/lib/fuchsia-pkg-testing",
-    "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
-    "//src/sys/pkg/lib/package-directory",
-    "//src/sys/pkg/lib/system-image",
-    "//src/sys/pkg/lib/work-queue",
-    "//src/sys/pkg/testing/blobfs-ramdisk",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:async-lock",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:http",
-    "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:maplit",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:scopeguard",
-    "//third_party/rust_crates:tempfile",
-    "//third_party/rust_crates:test-case",
-    "//third_party/rust_crates:thiserror",
-    "//third_party/rust_crates:typed-builder",
-  ]
-
-  sources = [
-    "src/base_package_resolver.rs",
-    "src/blob_fetcher.rs",
-    "src/blob_fetcher/retry.rs",
-    "src/cache_service.rs",
-    "src/cache_service/missing_blobs.rs",
-    "src/compat.rs",
-    "src/compat/pkgfs.rs",
-    "src/compat/pkgfs/validation.rs",
-    "src/component_resolver.rs",
-    "src/executability.rs",
-    "src/frozen_index.rs",
-    "src/full_package_resolver.rs",
-    "src/gc_service.rs",
-    "src/index.rs",
-    "src/index/package.rs",
-    "src/index/retained.rs",
-    "src/index/writing.rs",
-    "src/main.rs",
-    "src/ota_downloader.rs",
-    "src/ota_resolver.rs",
-    "src/package_fetcher.rs",
-    "src/required_blobs.rs",
-    "src/retained_packages_service.rs",
-    "src/root_dir.rs",
-    "src/test_utils.rs",
-    "src/upgradable_packages.rs",
-  ]
-
-  configs += [
-    "//build/config/rust/lints:clippy_warn_all",
-    "//build/config/rust:bootfs",
-  ]
-
-  # As this is a large binary that uses many resources to compile (and takes
-  # minutes when LTO is enabled, shift it to the large RBE worker pool)
-  _concurrent_jobs = concurrent_jobs.link_highmem
-  configs += _concurrent_jobs.configs
-  forward_variables_from(_concurrent_jobs.vars, "*")
-}
-
-# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
-# target, so that `:config_lib` refers to the same label in both builds.
-fuchsia_component_manifest("manifest") {
-  component_name = "pkg-cache"
-  manifest = "meta/pkg-cache.cml"
-}
-
 fuchsia_structured_config_values2("config_values_from_gn") {
   cm_label = ":manifest"
+  component_name = "pkg-cache"
   output_component_name = "pkg-cache-config"
   values = {
     # TODO(https://fxbug.dev/331302451) Populate this correctly.
@@ -151,11 +24,6 @@ fuchsia_structured_config_values2("config_values_from_gn") {
   visibility = [ ":*" ]
 }
 
-fuchsia_component("component") {
-  cm_label = ":manifest"
-  deps = [ ":bin" ]
-}
-
 group("production-component-and-config") {
   testonly = true
   public_deps = [
@@ -164,10 +32,18 @@ group("production-component-and-config") {
   ]
 }
 
+# Assembly consumes this package through its bazel_inputs export: a Bazel
+# package would ship the vfs Rust dylib, whose debug symbols the Bazel
+# build does not export yet.
 fuchsia_package("pkg-cache") {
   deps = [ ":component" ]
 }
 
+# The binary and its unit-test binary (`:bin_test`) are defined in
+# BUILD.bazel. Only the test component and package (`:pkg-cache-test` and
+# `:pkg-cache-tests`) remain in GN above the sentinel because
+# `pkg-cache-tests` packages `//src/storage/testing:storage_driver_test_realm`
+# (which is GN-only).
 fuchsia_component("pkg-cache-test") {
   testonly = true
   manifest = "meta/pkg-cache-bin-test.cml"
@@ -187,25 +63,6 @@ fuchsia_test_package("pkg-cache-tests") {
 group("hermetic_tests") {
   testonly = true
   public_deps = [ ":pkg-cache-tests" ]
-}
-
-# If the file in this resource is included in the system_image package, then
-# pkg-cache will *not* enforce executability restrictions.
-resource("disable-executability-restrictions-resource") {
-  sources = [ "disable_executability_restrictions" ]
-  outputs = [ "data/pkgfs_disable_executability_restrictions" ]
-  visibility = [ ":*" ]
-}
-
-fuchsia_system_package("disable-executability-restrictions") {
-  deps = [
-    ":disable-executability-restrictions-resource",
-    "//build/validate:non_production_tag",
-  ]
-  visibility = [
-    "//bundles/assembly/*",
-    "//src/sys/pkg:*",
-  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -334,7 +191,130 @@ rustc_binary("bin") {
   configs += _concurrent_jobs.configs
   forward_variables_from(_concurrent_jobs.vars, "*")
 }
+rustc_test("bin_test") {
+  sources = [
+    "src/base_package_resolver.rs",
+    "src/blob_fetcher.rs",
+    "src/blob_fetcher/retry.rs",
+    "src/cache_service.rs",
+    "src/cache_service/missing_blobs.rs",
+    "src/compat.rs",
+    "src/compat/pkgfs.rs",
+    "src/compat/pkgfs/validation.rs",
+    "src/component_resolver.rs",
+    "src/executability.rs",
+    "src/frozen_index.rs",
+    "src/full_package_resolver.rs",
+    "src/gc_service.rs",
+    "src/index.rs",
+    "src/index/package.rs",
+    "src/index/retained.rs",
+    "src/index/writing.rs",
+    "src/main.rs",
+    "src/ota_downloader.rs",
+    "src/ota_resolver.rs",
+    "src/package_fetcher.rs",
+    "src/required_blobs.rs",
+    "src/retained_packages_service.rs",
+    "src/root_dir.rs",
+    "src/test_utils.rs",
+    "src/upgradable_packages.rs",
+  ]
+  edition = "2024"
+  deps = [
+           ":config_lib",
+           "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+           "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
+           "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+           "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+           "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+           "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+           "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
+           "//sdk/fidl/fuchsia.pkg.http:fuchsia.pkg.http_rust",
+           "//sdk/fidl/fuchsia.pkg.internal:fuchsia.pkg.internal_rust",
+           "//sdk/fidl/fuchsia.pkg.resolution:fuchsia.pkg.resolution_rust",
+           "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+           "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+           "//sdk/rust/zx",
+           "//src/lib/async-utils",
+           "//src/lib/cobalt/rust/builders",
+           "//src/lib/collections/sorted-vec-map",
+           "//src/lib/diagnostics/inspect/contrib/rust",
+           "//src/lib/diagnostics/inspect/runtime/rust",
+           "//src/lib/diagnostics/inspect/rust",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fidl/rust/fidl-contrib",
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//src/lib/fuchsia-component",
+           "//src/lib/fuchsia-fs",
+           "//src/lib/fuchsia-runtime",
+           "//src/lib/fuchsia-sync",
+           "//src/lib/fuchsia-url",
+           "//src/lib/http-uri-ext",
+           "//src/lib/trace/rust:trace",
+           "//src/lib/trace/rust:trace-provider",
+           "//src/lib/versioning/version-history/rust",
+           "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
+           "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+           "//src/storage/lib/blob_pager_and_verifier",
+           "//src/storage/lib/vfs/rust:vfs",
+           "//src/sys/lib/fidl-connector",
+           "//src/sys/lib/fidl-fuchsia-pkg-ext",
+           "//src/sys/lib/fuchsia_backoff",
+           "//src/sys/pkg/lib/blobfs",
+           "//src/sys/pkg/lib/context-authenticator",
+           "//src/sys/pkg/lib/fuchsia-hash",
+           "//src/sys/pkg/lib/fuchsia-merkle",
+           "//src/sys/pkg/lib/metrics:cobalt_sw_delivery_registry_rustlib",
+           "//src/sys/pkg/lib/package-directory",
+           "//src/sys/pkg/lib/system-image",
+           "//src/sys/pkg/lib/work-queue",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:async-lock",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:http",
+           "//third_party/rust_crates:itertools",
+           "//third_party/rust_crates:log",
+           "//third_party/rust_crates:rand",
+           "//third_party/rust_crates:scopeguard",
+           "//third_party/rust_crates:thiserror",
+           "//third_party/rust_crates:typed-builder",
+         ] + [
+           "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+           "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+           "//src/sys/pkg/lib/fuchsia-pkg",
+           "//src/sys/pkg/lib/fuchsia-pkg-testing",
+           "//src/sys/pkg/testing/blobfs-ramdisk",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:maplit",
+           "//third_party/rust_crates:tempfile",
+           "//third_party/rust_crates:test-case",
+         ]
+  source_root = "src/main.rs"
+  configs += [ "//build/config/rust:bootfs" ]
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  output_name = "pkg_cache_bin_test"
+  _concurrent_jobs = concurrent_jobs.link_highmem
+  configs += _concurrent_jobs.configs
+  forward_variables_from(_concurrent_jobs.vars, "*")
+}
+fuchsia_component_manifest("manifest") {
+  component_name = "pkg-cache"
+  manifest = "meta/pkg-cache.cml"
+}
 fuchsia_structured_config_rust_lib("config_lib") {
   cm_label = ":manifest"
   name = "pkg_cache_config"
+}
+fuchsia_component("component") {
+  cm_label = ":manifest"
+  component_name = "pkg-cache"
+  visibility = [
+    ":*",
+    "//src/sys/pkg/lib/isolated-swd:*",
+    "//src/sys/pkg/tests/isolated-ota:*",
+    "//src/sys/pkg/tests/pkg-cache:*",
+  ]
+  deps = [ ":bin" ]
 }

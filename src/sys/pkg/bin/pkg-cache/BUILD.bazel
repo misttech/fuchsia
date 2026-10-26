@@ -3,14 +3,28 @@
 # found in the LICENSE file.
 
 load(
+    "@fuchsia_rules_common//packages:resources.bzl",
+    "resource",
+)
+load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
     "fx_component_manifest",
 )
 load(
     "//build/bazel/rules/components:structured_config.bzl",
     "fuchsia_structured_config_rust_lib",
 )
+load(
+    "//build/bazel/rules/packages:fx_package.bzl",
+    "fx_package",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -19,10 +33,6 @@ exports_files(
     visibility = ["//bundles/assembly:__subpackages__"],
 )
 
-# The unit tests (`:bin_test`, `:pkg-cache-test`, and `:pkg-cache-tests`)
-# remain in BUILD.gn above the sentinel because `pkg-cache-tests` packages
-# `//src/storage/testing:storage_driver_test_realm` (which is GN-only).
-#
 # As this is a large binary that uses many resources to compile (and takes
 # minutes when LTO is enabled, shift it to the large RBE worker pool)
 # @bazel2gn:raw_attribute:visibility = [ ":*", "//src/sys/pkg/bin/grand-swd-binary:*" ]
@@ -63,6 +73,7 @@ rustc_binary(
     crate_name = "pkg_cache",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
+    tags = ["manual"],
     deps = [
         ":config_lib",
         "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
@@ -125,11 +136,40 @@ rustc_binary(
     ],
 )
 
+# The binary is defined in BUILD.bazel. Its unit tests (`:bin_test`,
+# below) are defined here too, and bazel2gn generates their GN copy. Only
+# the test component and package (respectively
+# `:pkg-cache-test`, and `:pkg-cache-tests`) remain in GN above the sentinel
+# because `pkg-cache-tests` packages
+# `//src/storage/testing:storage_driver_test_realm` (which is GN-only).
+# `with_unit_tests` on `rustc_binary()` is not allowed in Bazel, so this is
+# a standalone `rustc_test()` keeping the output name that
+# `meta/pkg-cache-bin-test.cml` expects.
+# @bazel2gn:raw_attribute:output_name = "pkg_cache_bin_test"
+# @bazel2gn:raw_attribute:_concurrent_jobs = concurrent_jobs.link_highmem
+# @bazel2gn:raw_attribute:configs += _concurrent_jobs.configs
+# @bazel2gn:raw_attribute:forward_variables_from(_concurrent_jobs.vars, "*")
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust:bootfs"],
+    crate = ":bin",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing",
+        "//src/sys/pkg/testing/blobfs-ramdisk",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
 # The Bazel build defines an equivalent `fx_component_manifest("manifest")`
 # target, so that `:config_lib` refers to the same label in both builds.
-# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
-# above the bazel2gn sentinel in BUILD.gn instead.
-# @bazel2gn:skip
 fx_component_manifest(
     name = "manifest",
     component_name = "pkg-cache",
@@ -144,4 +184,43 @@ fuchsia_structured_config_rust_lib(
     name = "config_lib",
     cm_label = ":manifest",
     crate_name = "pkg_cache_config",
+)
+
+fx_packaged_binary(
+    name = "pkg_cache_packaged_bin",
+    binary = ":bin",
+    binary_name = "pkg_cache",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "pkg-cache",
+    visibility = [
+        "//src/sys/pkg/lib/isolated-swd:__pkg__",
+        "//src/sys/pkg/tests/isolated-ota:__pkg__",
+        "//src/sys/pkg/tests/pkg-cache:__pkg__",
+    ],
+    deps = [":pkg_cache_packaged_bin"],
+)
+
+# If the file in this resource is included in the system_image package, then
+# pkg-cache will *not* enforce executability restrictions.
+# Used only by the Bazel `disable-executability-restrictions` fx_package.
+# @bazel2gn:skip
+resource(
+    name = "disable-executability-restrictions-resource",
+    src = "disable_executability_restrictions",
+    dest = "data/pkgfs_disable_executability_restrictions",
+)
+
+# GN dependency //build/validate:non_production_tag has no Bazel equivalent:
+# the only consumer is the
+# //bundles/assembly:pkgfs_disable_executability_restrictions AIB, which sets
+# allowed_in = ["eng"], so assembly keeps it out of production builds.
+fx_package(
+    name = "disable-executability-restrictions",
+    package_name = "disable-executability-restrictions",
+    resources = [":disable-executability-restrictions-resource"],
+    visibility = ["//bundles/assembly:__subpackages__"],
 )

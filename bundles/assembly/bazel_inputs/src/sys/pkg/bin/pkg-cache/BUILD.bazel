@@ -4,17 +4,10 @@
 
 load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//bundles/assembly:__subpackages__"],
-)
-
-prebuilt_package(
-    name = "disable-executability-restrictions",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache:disable-executability-restrictions",
-)
+package(default_applicable_licenses = ["//:license"])
 
 prebuilt_package(
     name = "pkg-cache",
     archive = "@gn_targets//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-cache:pkg-cache",
+    visibility = ["//bundles/assembly:__subpackages__"],
 )

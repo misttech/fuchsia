@@ -4,10 +4,6 @@
 
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 
-export_fuchsia_package_to_bazel("disable-executability-restrictions") {
-  package = "//src/sys/pkg/bin/pkg-cache:disable-executability-restrictions"
-}
-
 export_fuchsia_package_to_bazel("pkg-cache") {
   package = "//src/sys/pkg/bin/pkg-cache"
 }
