@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "routing_integration_test_bin",
+    srcs = ["integration_test.rs"],
+    crate_name = "routing_integration_test",
+    crate_root = "integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+    ],
+)
+
+expect_includes(
+    name = "trigger_shard",
+    includes = ["meta/trigger.shard.cml"],
+)

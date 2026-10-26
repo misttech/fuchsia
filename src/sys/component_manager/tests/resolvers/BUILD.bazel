@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Binary that hosts the fidl.test.components.Trigger FIDL service.
+rustc_binary(
+    name = "trigger-bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "component_manager_test_trigger_bin",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/resolvers/custom:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "trigger-bin_packaged_bin",
+    testonly = True,
+    binary = ":trigger-bin",
+    binary_name = "component_manager_test_trigger_bin",
+)
+
+fx_component_manifest(
+    name = "trigger-cmp-manifest",
+    testonly = True,
+    component_name = "trigger",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/trigger.cml",
+)
+
+fx_component(
+    name = "trigger-cmp",
+    testonly = True,
+    compiled_manifest = ":trigger-cmp-manifest",
+    component_name = "trigger",
+    deps = [":trigger-bin_packaged_bin"],
+)

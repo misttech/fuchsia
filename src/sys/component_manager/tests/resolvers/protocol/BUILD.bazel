@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The test component and package (`:resolver-api-test-cmp` and
+# `:resolver-api-test`) stay in BUILD.gn because they use RealmBuilder and
+# `//src/lib/fuchsia-component-test/realm_builder_server` is not in Bazel.
+rustc_test(
+    name = "resolver-api-test-bin",
+    srcs = ["src/resolver_api_test.rs"],
+    crate_root = "src/resolver_api_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-sync",
+        "//src/sys/lib/cm_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)

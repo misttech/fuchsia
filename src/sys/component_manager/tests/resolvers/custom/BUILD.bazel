@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The binary for the test resolver.
+rustc_binary(
+    name = "resolver_bin",
+    testonly = True,
+    srcs = ["src/resolver.rs"],
+    crate_name = "component_manager_test_resolvers_resolver",
+    crate_root = "src/resolver.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/versioning/version-history/rust/data",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# The integration test binary.
+rustc_test(
+    name = "integration_test_bin",
+    srcs = ["src/integration_test.rs"],
+    crate_name = "component_manager_test_resolvers_integration_test",
+    crate_root = "src/integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+    ],
+)
