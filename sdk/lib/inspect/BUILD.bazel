@@ -52,6 +52,7 @@ cml_shard(
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
         "//src/sys/pkg/bin/system-update-committer:__pkg__",
         "//src/sys/pkg/bin/system-updater:__pkg__",
+        "//src/ui/bin/tiling_wm:__pkg__",
     ],
 )
 

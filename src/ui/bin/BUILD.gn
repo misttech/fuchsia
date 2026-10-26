@@ -21,6 +21,7 @@ group("tests") {
     "system_monitor:tests",
     "terminal:tests",
     "text:tests",
+    "tiling_wm:tests",
     "virtual_keyboard_manager:tests",
   ]
 }

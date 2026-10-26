@@ -1,0 +1,79 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "tiling_wm",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.session.scene:fuchsia.session.scene_rust",
+        "//sdk/fidl/fuchsia.session.window:fuchsia.session.window_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/ui/fuchsia-scenic",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "tiling_wm_bin_test"
+rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    edition = "2024",
+)
+
+fx_packaged_binary(
+    name = "bin_packaged",
+    binary = ":bin",
+    binary_name = "tiling_wm",
+)
+
+fx_component_manifest(
+    name = "tiling_wm_component_manifest",
+    component_name = "tiling_wm",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/tiling_wm.cml",
+)
+
+fx_component(
+    name = "tiling_wm_component",
+    compiled_manifest = ":tiling_wm_component_manifest",
+    deps = [":bin_packaged"],
+)
+
+fx_unittest_package(
+    name = "tiling_wm_tests",
+    unit_tests = [":bin_test"],
+)
