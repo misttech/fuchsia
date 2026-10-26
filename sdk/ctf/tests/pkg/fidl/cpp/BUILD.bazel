@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "union_migration_test_fidl",
+    testonly = True,
+    srcs = ["union_migration.test.fidl"],
+    enable_hlcpp = True,
+    excluded_checks = ["invalid-copyright-for-platform-source-library"],
+    library_name = "fidl.test.unionmigration",
+    visibility = ["//visibility:private"],
+)
+
+fx_cc_library(
+    name = "test_util",
+    testonly = True,
+    hdrs = ["test/test_util.h"],
+    includes = ["../../../../.."],
+    public_configs = ["//sdk/config"],  # For bazel2gn.
+    visibility = ["//visibility:private"],
+    deps = ["//sdk/lib/fidl/hlcpp:hlcpp_base"],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "handle_util",
+    testonly = True,
+    srcs = ["test/handle_util.cc"],
+    hdrs = ["test/handle_util.h"],
+    includes = ["../../../../.."],
+    public_configs = ["//sdk/config"],  # For bazel2gn.
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/lib/fidl/llcpp/tests/conformance:__pkg__",
+        "//src/tests/benchmarks/fidl/cpp:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_cpp:__pkg__",
+        "//src/tests/benchmarks/fidl/driver_llcpp:__pkg__",
+        "//src/tests/benchmarks/fidl/hlcpp:__pkg__",
+        "//src/tests/benchmarks/fidl/llcpp:__pkg__",
+    ],
+    deps = ["//zircon/system/ulib/zx"],
+    alwayslink = True,
+)
