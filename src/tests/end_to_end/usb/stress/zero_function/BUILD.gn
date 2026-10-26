@@ -29,6 +29,13 @@ if (is_host) {
       stress_duration_sec = 120
     }
     timeout_secs = 1800
+    honeydew_config = {
+      transports = {
+        adb = {
+          attempts = 1
+        }
+      }
+    }
   }
 }
 

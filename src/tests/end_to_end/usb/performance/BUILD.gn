@@ -5,15 +5,22 @@
 import("//build/testing/environments.gni")
 import("//build/testing/perf/test.gni")
 
-python_perf_test("adb_throughput_test") {
-  main_source = "test_adb_throughput.py"
-  honeydew_config = {
-    affordances = {
-      tracing = {
-        implementation = "ffx"
-      }
+_honeydew_config = {
+  affordances = {
+    tracing = {
+      implementation = "ffx"
     }
   }
+  transports = {
+    adb = {
+      attempts = 1
+    }
+  }
+}
+
+python_perf_test("adb_throughput_test") {
+  main_source = "test_adb_throughput.py"
+  honeydew_config = _honeydew_config
   expected_metric_names_filepaths = [
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.usb.adb.pull.txt",
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.usb.adb.pull_storage.txt",
@@ -38,13 +45,7 @@ python_perf_test("adb_throughput_test") {
 # Large variation with larger storage transfer size (500 MB)
 python_perf_test("adb_throughput_large_test") {
   main_source = "test_adb_throughput.py"
-  honeydew_config = {
-    affordances = {
-      tracing = {
-        implementation = "ffx"
-      }
-    }
-  }
+  honeydew_config = _honeydew_config
   expected_metric_names_filepaths = [
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.usb.adb.pull.txt",
     "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.usb.adb.pull_storage.txt",

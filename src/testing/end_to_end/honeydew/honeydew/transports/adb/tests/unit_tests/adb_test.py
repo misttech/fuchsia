@@ -1454,6 +1454,32 @@ class AdbTests(unittest.TestCase):
         )
         mock_sleep.assert_called_once_with(1.0)
 
+    @mock.patch.object(
+        host_shell,
+        "run",
+        side_effect=errors.HoneydewTimeoutError("timeout"),
+        autospec=True,
+    )
+    def test_custom_default_attempts_in_init(
+        self, mock_host_run: mock.Mock
+    ) -> None:
+        """Test Adb(..., attempts=1) defaults commands to 1 attempt without retries."""
+        with mock.patch.object(adb.Adb, "_cache_adbd_pid"):
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+                ffx_transport=self.mock_ffx,
+                run_isolated_server=False,
+                attempts=1,
+            )
+        try:
+            self.assertEqual(obj._attempts, 1)
+            with self.assertRaises(adb_errors.AdbTimeoutError):
+                obj.run(["shell", "echo", "hi"], timeout=10.0)
+            mock_host_run.assert_called_once()
+        finally:
+            obj.close()
+
 
 class ResolveVendorKeysPathTests(unittest.TestCase):
     """Unit tests for _resolve_vendor_keys_path."""

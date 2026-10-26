@@ -170,6 +170,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
         vendor_keys_path = None
         enabled = True
         output_dir: Path | str | None = None
+        attempts = adb_transport._DEFAULT_RUN_ATTEMPTS
 
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
@@ -177,6 +178,9 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             vendor_keys_path = adb_config.get("vendor_keys_path")
             enabled = adb_config.get("enabled", True)
             output_dir = adb_config.get("output_dir")
+            attempts = adb_config.get(
+                "attempts", adb_transport._DEFAULT_RUN_ATTEMPTS
+            )
 
         if not output_dir and self._ffx_config_data.logs_dir:
             ffx_logs_path = Path(self._ffx_config_data.logs_dir)
@@ -241,6 +245,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
             output_dir=output_dir,
             vendor_keys_path=vendor_keys_path,
             ffx_transport=self.ffx,
+            attempts=attempts,
         )
         # TODO(b/564946370): Remove temporary workaround once 'adb root' is
         # stable on USB connections.

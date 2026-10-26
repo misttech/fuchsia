@@ -320,6 +320,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 output_dir=Path("/tmp/logs/adb"),
                 vendor_keys_path=None,
                 ffx_transport=self.ad_obj.ffx,
+                attempts=adb_transport._DEFAULT_RUN_ATTEMPTS,
             )
         finally:
             self.ad_obj.__dict__.pop("adb", None)
@@ -348,6 +349,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 output_dir=Path("/tmp/test_run/adb"),
                 vendor_keys_path=None,
                 ffx_transport=self.ad_obj.ffx,
+                attempts=adb_transport._DEFAULT_RUN_ATTEMPTS,
             )
         finally:
             self.ad_obj.__dict__.pop("adb", None)
@@ -382,6 +384,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 output_dir="/custom/adb_logs",
                 vendor_keys_path=None,
                 ffx_transport=self.ad_obj.ffx,
+                attempts=adb_transport._DEFAULT_RUN_ATTEMPTS,
             )
         finally:
             self.ad_obj.__dict__.pop("adb", None)
@@ -410,10 +413,34 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 output_dir=None,
                 vendor_keys_path=None,
                 ffx_transport=self.ad_obj.ffx,
+                attempts=adb_transport._DEFAULT_RUN_ATTEMPTS,
             )
         finally:
             self.ad_obj.__dict__.pop("adb", None)
             self.ad_obj._ffx_config_data = orig_ffx_config_data
+            self.ad_obj._config = orig_config
+
+    @mock.patch.object(adb_transport, "Adb", autospec=True)
+    def test_adb_transport_custom_attempts_config(
+        self, mock_adb_cls: mock.Mock
+    ) -> None:
+        """Test case to verify honeydew_config.transports.adb.attempts is passed to Adb."""
+        orig_config = self.ad_obj._config
+        try:
+            self.ad_obj._config = {"transports": {"adb": {"attempts": 1}}}
+            _ = self.ad_obj.adb
+
+            mock_adb_cls.assert_called_once_with(
+                device_name=self.ad_obj.device_name,
+                serial_number=self.ad_obj._device_info.serial_number,
+                run_isolated_server=True,
+                output_dir=Path("/tmp/logs/adb"),
+                vendor_keys_path=None,
+                ffx_transport=self.ad_obj.ffx,
+                attempts=1,
+            )
+        finally:
+            self.ad_obj.__dict__.pop("adb", None)
             self.ad_obj._config = orig_config
 
     # TODO(b/564946370): Remove this test once 'adb root' is stable on USB.
