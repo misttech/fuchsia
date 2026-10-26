@@ -40,6 +40,7 @@ load(
 load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
 load("//build/testing/environments:device_types.bzl", "device_types")
 load(":fx_test_validation_tests.bzl", "fx_test_validation_tests")
+load(":gn_visibility_test.bzl", "gn_visibility_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -425,6 +426,7 @@ filegroup(
         ":example_component_unwrapped_cc_binary_failure_test",
         ":example_component_unwrapped_rust_binary_failure_test",
         ":example_conflicting_runners_failure_test",
+        ":example_dynamic_dictionaries_manifest",
         ":example_expect_includes_package",
         ":example_expect_includes_unittest_package",
         ":example_gtest_unittest_package",
@@ -435,6 +437,7 @@ filegroup(
         ":example_resource_from_filegroup",
         ":example_resource_packaged_binary_failure_test",
         ":example_resource_rust_binary_failure_test",
+        ":example_restricted_feature_not_allowed_failure_test",
         ":example_rust_dylib_unittest_package",
         ":example_rust_unittest_package",
         ":example_test",
@@ -444,7 +447,10 @@ filegroup(
         ":example_unittest_package",
         ":example_unittest_package_default_name",
         ":example_unittest_package_with_packaged_binary_resource",
+        ":example_unknown_restricted_feature_failure_test",
+        ":example_unsupported_restricted_feature_failure_test",
         ":example_zxtest_unittest_package",
+        ":gn_visibility_pattern_matches_test",
         ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
@@ -913,4 +919,60 @@ verify_fx_test_unstripped_binaries(
         "example_test_bin",
     ],
     test = ":example_unittest_package_with_packaged_binary_resource",
+)
+
+# Tests `fx_component_manifest(restricted_features = ...)`. `cmc compile` only
+# accepts the dynamic dictionary in this manifest with "dynamic_dictionaries",
+# which this package is allowlisted for in
+# //tools/cmc/build/restricted_features/allowlists.bzl.
+fx_component_manifest(
+    name = "example_dynamic_dictionaries_manifest",
+    manifest = "meta/example_dynamic_dictionary.cml",
+    restricted_features = ["dynamic_dictionaries"],
+)
+
+fx_component_manifest(
+    name = "example_unknown_restricted_feature_manifest",
+    manifest = "meta/example_helper.cml",
+    restricted_features = ["not_a_feature"],
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_unknown_restricted_feature_failure_test",
+    expected_message = "Unknown restricted CML feature \"not_a_feature\"",
+    target_under_test = ":example_unknown_restricted_feature_manifest",
+)
+
+# This package is in the allowlist for "dynamic_dictionaries", but only for
+# `:example_dynamic_dictionaries_manifest`, not this target.
+fx_component_manifest(
+    name = "example_restricted_feature_not_allowed_manifest",
+    manifest = "meta/example_helper.cml",
+    restricted_features = ["dynamic_dictionaries"],
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_restricted_feature_not_allowed_failure_test",
+    expected_message = "is not allowed to use the restricted CML feature \"dynamic_dictionaries\"",
+    target_under_test = ":example_restricted_feature_not_allowed_manifest",
+)
+
+# "allow_long_names" is known in GN but not yet supported in Bazel.
+fx_component_manifest(
+    name = "example_unsupported_restricted_feature_manifest",
+    manifest = "meta/example_helper.cml",
+    restricted_features = ["allow_long_names"],
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_unsupported_restricted_feature_failure_test",
+    expected_message = "not yet supported in Bazel; mirror its allowlist from BUILD.gn",
+    target_under_test = ":example_unsupported_restricted_feature_manifest",
+)
+
+gn_visibility_test(
+    name = "gn_visibility_pattern_matches_test",
 )

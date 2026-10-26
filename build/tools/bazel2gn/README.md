@@ -122,7 +122,8 @@ match its target name, because `tool_output_name` is not synced.
 `fx_component_manifest()` and `fx_component()` sync to GN
 `fuchsia_component_manifest()` and `fuchsia_component()`:
 
-*   `fx_component_manifest()` maps `manifest` to a GN path and omits `includes`
+*   `fx_component_manifest()` maps `manifest` to a GN path, passes
+    `restricted_features` through, and omits `includes`
     (which lists `.cml` shard inputs for the Bazel action sandbox; GN runs `cmc`
     with global include paths and a depfile instead). An
     `fx_component_manifest()` referenced via `compiled_manifest` only by

@@ -1,0 +1,20 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Declares a dynamic dictionary (a dictionary with a `path`), which `cmc` only
+// accepts with the "dynamic_dictionaries" restricted feature.
+{
+    capabilities: [
+        {
+            dictionary: "output",
+            path: "/svc/fuchsia.component.runtime.DictionaryRouter",
+        },
+    ],
+    expose: [
+        {
+            dictionary: "output",
+            from: "self",
+        },
+    ],
+}

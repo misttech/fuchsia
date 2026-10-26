@@ -26,6 +26,7 @@ var (
 		"manifest":               true,
 		"component_name":         true,
 		"includes":               true,
+		"restricted_features":    true,
 		"testonly":               true,
 		"visibility":             true,
 		"tags":                   true,

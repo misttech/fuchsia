@@ -425,6 +425,32 @@ fuchsia_structured_config_rust_lib("shared_config") {
 	cm_label = ":shared-manifest"
 }`,
 		},
+		{
+			name: "fx_component_manifest with restricted_features",
+			bazel: `fx_component_manifest(
+	name = "manifest",
+	component_name = "dispatcher",
+	manifest = "meta/dispatcher.cml",
+	restricted_features = ["dynamic_dictionaries"],
+)
+
+fx_component(
+	name = "component",
+	compiled_manifest = ":manifest",
+	component_name = "dispatcher",
+)`,
+			wantGN: `fuchsia_component_manifest("manifest") {
+	component_name = "dispatcher"
+	manifest = "meta/dispatcher.cml"
+	restricted_features = [
+		"dynamic_dictionaries",
+	]
+}
+fuchsia_component("component") {
+	cm_label = ":manifest"
+	component_name = "dispatcher"
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -455,7 +481,7 @@ func TestFxComponentErrors(t *testing.T) {
 			bazel: `fx_component_manifest(
 	name = "manifest",
 	manifest = "meta/foo.cml",
-	restricted_features = ["allow_non_hermetic_packages"],
+	required_offers = ["fuchsia.logger.LogSink"],
 )`,
 		},
 		{

@@ -29,6 +29,61 @@ load(
     "//build/bazel/rules/components:expect_includes.bzl",
     "FuchsiaExpectedIncludesInfo",
 )
+load(
+    "//tools/cmc/build/restricted_features:allowlists.bzl",
+    "RESTRICTED_FEATURE_ALLOWLISTS",
+)
+
+def gn_visibility_pattern_matches(pattern, label):
+    """Returns whether `label` matches a GN visibility `pattern`.
+
+    See //tools/cmc/build/restricted_features/allowlists.bzl for the supported
+    patterns.
+    """
+    if pattern == "*":
+        return True
+    if label.repo_name or not pattern.startswith("//"):
+        return False
+    if pattern.endswith("/*"):
+        prefix = pattern[2:-2]
+        return (not prefix or label.package == prefix or
+                label.package.startswith(prefix + "/"))
+    package, sep, name = pattern[2:].partition(":")
+    if not sep:
+        fail("Unsupported restricted feature allowlist pattern: {}".format(pattern))
+    return label.package == package and name in ("*", label.name)
+
+def _restricted_features_args(label, restricted_features):
+    """Returns the `--features` flags for `cmc compile` from `restricted_features`.
+
+    Fails if `label` isn't in the allowlist of any of `restricted_features`.
+    """
+    if not restricted_features:
+        return []
+
+    for feature in restricted_features:
+        if feature not in RESTRICTED_FEATURE_ALLOWLISTS:
+            fail(("Unknown restricted CML feature {} in `restricted_features` of {}. " +
+                  "Known features: {}").format(
+                repr(feature),
+                label,
+                ", ".join(sorted(RESTRICTED_FEATURE_ALLOWLISTS.keys())),
+            ))
+        allowlist = RESTRICTED_FEATURE_ALLOWLISTS[feature]
+        if allowlist == None:
+            fail(("Restricted CML feature {} in `restricted_features` of {} is not yet " +
+                  "supported in Bazel; mirror its allowlist from BUILD.gn.").format(
+                repr(feature),
+                label,
+            ))
+        if not any([gn_visibility_pattern_matches(p, label) for p in allowlist]):
+            fail(("{} is not allowed to use the restricted CML feature {}. See " +
+                  "//tools/cmc/build/restricted_features/README.md.").format(
+                label,
+                repr(feature),
+            ))
+
+    return ["--features"] + restricted_features
 
 # Maps `test_type` values to the realm moniker the test component runs in.
 # LINT.IfChange(type_moniker_map)
@@ -144,6 +199,7 @@ def _fx_component_manifest_impl(ctx):
         component_name = component_name,
         includes = includes.to_list(),
         include_paths = include_paths,
+        extra_args = _restricted_features_args(ctx.label, ctx.attr.restricted_features),
     ) + [
         _FxComponentManifestSourcesInfo(
             source_manifest = ctx.file.manifest,
@@ -171,6 +227,13 @@ and compile the input manifest file, including any specified dependency shards.
             doc = """Other manifest shard files (.shard.cml or .cml) to include during compilation.
 Explicitly setting this is necessary for sandboxed build action execution.""",
             allow_files = [".cml"],
+        ),
+        "restricted_features": attr.string_list(
+            doc = """The restricted CML features to allow, such as `"dynamic_dictionaries"`.
+
+Each feature has an allowlist of targets that may use it in
+//tools/cmc/build/restricted_features/allowlists.bzl (mirroring
+//tools/cmc/build/restricted_features/BUILD.gn).""",
         ),
         "_cmc_tool": attr.label(
             doc = "The path to the component manifest compiler (cmc) tool.",

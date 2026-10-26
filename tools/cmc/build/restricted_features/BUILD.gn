@@ -8,9 +8,12 @@ group("structured_config") {
   # Available to all components in fuchsia.git
 }
 
+# LINT.IfChange(dynamic_dictionaries)
 # The allowlist of components that can define dynamic dictionaries in CML.
 group("dynamic_dictionaries") {
   visibility = [
+    # Tests of the Bazel `fx_component_manifest(restricted_features = ...)`.
+    "//build/bazel/rules/packages/tests:example_dynamic_dictionaries_manifest",
     "//examples/components/dictionaries/*",
     "//src/bringup/bin/kernel-args-forwarder:*",
     "//src/diagnostics/archivist:*",
@@ -23,6 +26,8 @@ group("dynamic_dictionaries") {
     "//src/sys/pkg/tests/pkg-cache-as-base-resolver/as-a-component-resolver/*",
   ]
 }
+
+# LINT.ThenChange(//tools/cmc/build/restricted_features/allowlists.bzl:dynamic_dictionaries)
 
 # The allowlist of components that can use the "allow_long_names" feature in
 # CML.
