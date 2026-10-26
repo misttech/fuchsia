@@ -35,12 +35,10 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 
-# LINT.IfChange
 HEALTH_CHECK_FAILURE_MESSAGE = (
     "One or more FuchsiaDevice's health check failed in "
     "teardown_test. So failing the test case..."
 )
-# LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go)
 
 # How long to wait for FFX to reach a device before considering it unreachable
 # in teardown_class. A reachable device responds well within a second; this

@@ -810,11 +810,9 @@ class FuchsiaDevice(
             errors.HoneydewTimeoutError,
             errors.TransportConnectionError,
         ) as err:
-            # LINT.IfChange
             raise errors.HealthCheckError(
                 f"health check failed on '{self._device_info.name}'"
             ) from err
-            # LINT.ThenChange(//tools/testing/tefmocheck/check-configs.yaml)
 
     def _check_connections(self) -> None:
         """Checks health of all device transports."""

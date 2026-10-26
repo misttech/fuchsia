@@ -841,12 +841,6 @@ failure_mode_checks:
   attribute_to_test: true
   add_tag: true
 
-# For https://fxbug.dev/338520852 and similar issues.
-# This is caused by lacewing tests which fail to harness the device.
-- kind: "string_in_log"
-  string: "Termination Signal Type: FuchsiaDeviceError"
-  log_types: ["swarmingOutputType"]
-
 # For https://fxbug.dev/350541791
 # This is most often caused by a delay in ffx due to
 # I/O contention on the Cavium
@@ -863,22 +857,6 @@ failure_mode_checks:
   string: "failed to merge profiles"
   log_types: ["swarmingOutputType"]
   always_flake: true
-
-# LINT.IfChange
-- kind: "string_in_log"
-  string: "One or more FuchsiaDevice's health check failed in teardown_test. So failing the test case..."
-  log_types: ["swarmingOutputType"]
-# LINT.ThenChange(//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test/__init__.py)
-
-# LINT.IfChange
-- kind: "string_in_log"
-  string: "honeydew.errors.HealthCheckError: health check failed on"
-  log_types: ["swarmingOutputType"]
-  skip_passed_test: true
-  ignore_flakes: true
-  attribute_to_test: true
-  add_tag: true
-# LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py)
 
 - kind: "string_in_log"
   string: "botanist ERROR: failed to start ssh session"
