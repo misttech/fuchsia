@@ -28,7 +28,6 @@ source_set("vm") {
     "page_queues.cc",
     "page_source.cc",
     "page_source_ffi.cc",
-    "physical_page_borrowing_config.cc",
     "physical_page_provider.cc",
     "physmap_ffi.cc",
     "pinned_vm_object.cc",

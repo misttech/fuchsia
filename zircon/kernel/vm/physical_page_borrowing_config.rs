@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use boot_options::BootOptions;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -131,6 +132,21 @@ impl Drop for ScopedLoaningEnabled {
     }
 }
 
+fn ppb_init_func(_level: init::LkInitLevel) {
+    let boot_options = BootOptions::get();
+    let config = PhysicalPageBorrowingConfig::get();
+
+    // One option per potential borrowing site.
+    config.set_borrowing_on_mru_enabled(boot_options.ppb_borrow_on_mru);
+
+    // One option for whether decommit on contiguous VMO can work or returns ZX_ERR_NOT_SUPPORTED.
+    config.set_loaning_enabled(boot_options.ppb_loan);
+
+    config.set_replace_on_unloan_enabled(boot_options.ppb_replace_on_unloan);
+}
+
+init::lk_init_hook!(ppb_init, ppb_init_func, init::LK_INIT_LEVEL_VM);
+
 // C FFI exports
 
 #[unsafe(no_mangle)]
@@ -146,11 +162,6 @@ pub extern "C" fn rust_ppb_config_set_loaning_enabled(enabled: bool) {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_ppb_config_is_loaning_enabled() -> bool {
     PhysicalPageBorrowingConfig::get().is_loaning_enabled()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_set_replace_on_unloan_enabled(enabled: bool) {
-    PhysicalPageBorrowingConfig::get().set_replace_on_unloan_enabled(enabled);
 }
 
 #[cfg(ktest)]
