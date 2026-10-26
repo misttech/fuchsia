@@ -237,7 +237,7 @@ variables:
 
 - **Agent Environment Detection**: Query `is_invoked_by_agent()`, which checks the canonical agent
   environment variables defined in `AGENT_ENV_VARS` (`ANTIGRAVITY_AGENT`, `GEMINI_CLI`,
-  `ANTIGRAVITY_EDITOR_APP_ROOT`).
+  `ANTIGRAVITY_EDITOR_APP_ROOT`, `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`).
 
 When active runtime agent execution is detected:
 

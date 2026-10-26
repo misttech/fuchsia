@@ -74,5 +74,15 @@ mod tests {
         vars.insert("ANTIGRAVITY_EDITOR_APP_ROOT".into(), "1".into());
         let env = FakeEnv { vars };
         assert!(is_invoked_by_agent(&env));
+
+        let mut vars = HashMap::new();
+        vars.insert("CLAUDECODE".into(), "1".into());
+        let env = FakeEnv { vars };
+        assert!(is_invoked_by_agent(&env));
+
+        let mut vars = HashMap::new();
+        vars.insert("CLAUDE_CODE_SESSION_ID".into(), "1".into());
+        let env = FakeEnv { vars };
+        assert!(is_invoked_by_agent(&env));
     }
 }

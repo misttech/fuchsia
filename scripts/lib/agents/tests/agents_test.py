@@ -46,6 +46,8 @@ class TestAgents(unittest.TestCase):
         vars_list = agents_lib.get_agent_env_vars()
         self.assertIn("ANTIGRAVITY_AGENT", vars_list)
         self.assertIn("GEMINI_CLI", vars_list)
+        self.assertIn("CLAUDECODE", vars_list)
+        self.assertIn("CLAUDE_CODE_SESSION_ID", vars_list)
 
     def test_source_agents_txt_relative_path(self) -> None:
         """Verify the expected relative path from agents.py to agents.txt exists.
@@ -81,6 +83,8 @@ class TestAgents(unittest.TestCase):
                 vars_list = agents_lib.get_agent_env_vars()
                 self.assertIn("ANTIGRAVITY_AGENT", vars_list)
                 self.assertIn("GEMINI_CLI", vars_list)
+                self.assertIn("CLAUDECODE", vars_list)
+                self.assertIn("CLAUDE_CODE_SESSION_ID", vars_list)
 
     def test_get_agent_env_vars_missing_raises(self) -> None:
         """Verify get_agent_env_vars raises FileNotFoundError if agents.txt cannot be found."""
@@ -101,6 +105,12 @@ class TestAgents(unittest.TestCase):
         self.assertTrue(agents_lib.is_invoked_by_agent(env))
 
         env = {"GEMINI_CLI": "1"}
+        self.assertTrue(agents_lib.is_invoked_by_agent(env))
+
+        env = {"CLAUDECODE": "1"}
+        self.assertTrue(agents_lib.is_invoked_by_agent(env))
+
+        env = {"CLAUDE_CODE_SESSION_ID": "1"}
         self.assertTrue(agents_lib.is_invoked_by_agent(env))
 
 

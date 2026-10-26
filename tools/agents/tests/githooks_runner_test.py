@@ -32,6 +32,8 @@ class AgentDetectionTest(unittest.TestCase):
             "ANTIGRAVITY_AGENT",
             "GEMINI_CLI",
             "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
         ):
             self.assertTrue(runner.is_invoked_by_agent(env={var: "1"}))
 

@@ -382,6 +382,8 @@ class E2EGitHooksTest(unittest.TestCase):
             "ANTIGRAVITY_AGENT",
             "GEMINI_CLI",
             "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
             "GIT_CONFIG_PARAMETERS",
             "GIT_DIR",
             "GIT_WORK_TREE",

@@ -37,6 +37,8 @@ class BaseTestCase(unittest.TestCase):
             "ANTIGRAVITY_AGENT",
             "GEMINI_CLI",
             "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
         ):
             os.environ.pop(var, None)
 

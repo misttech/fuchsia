@@ -35,6 +35,8 @@ AGENT_ENV_VARS: tuple[str, ...] = (
     "ANTIGRAVITY_AGENT",
     "GEMINI_CLI",
     "ANTIGRAVITY_EDITOR_APP_ROOT",
+    "CLAUDECODE",
+    "CLAUDE_CODE_SESSION_ID",
 )
 
 _FALSY_VALUES: frozenset[str] = frozenset({"0", "false", "no", "n", "off", ""})

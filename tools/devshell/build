@@ -96,8 +96,8 @@
 ##
 ##   --no-status              Suppress dynamic terminal output. Use this for
 ##                            non-interactive shells. Set automatically if an
-##                            agentic runtime is detected by ANTIGRAVITY_AGENT,
-##                            ANTIGRAVITY_EDITOR_APP_ROOT, or GEMINI_CLI.
+##                            agentic runtime is detected (e.g. by
+##                            ANTIGRAVITY_AGENT, GEMINI_CLI, or CLAUDECODE).
 ##                            Currently only affects the Ninja build system.
 ##
 ##   --skip-auth-check        Bypass pre-flight build service authentication

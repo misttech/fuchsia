@@ -179,13 +179,17 @@ class TestArgs(unittest.TestCase):
         self.assertEqual(flags.status, False)
 
     def test_agent_detection(self) -> None:
-        # Ensure agent env vars are NOT set
-        env_without_agents = os.environ.copy()
-        for var in [
+        agent_vars = [
             "ANTIGRAVITY_AGENT",
             "ANTIGRAVITY_EDITOR_APP_ROOT",
             "GEMINI_CLI",
-        ]:
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
+        ]
+
+        # Ensure agent env vars are NOT set
+        env_without_agents = os.environ.copy()
+        for var in agent_vars:
             if var in env_without_agents:
                 del env_without_agents[var]
 
@@ -200,11 +204,7 @@ class TestArgs(unittest.TestCase):
             self.assertEqual(flags.quiet, True)
 
         # Test with each agent env var
-        for var in [
-            "ANTIGRAVITY_AGENT",
-            "ANTIGRAVITY_EDITOR_APP_ROOT",
-            "GEMINI_CLI",
-        ]:
+        for var in agent_vars:
             env_with_agent = env_without_agents.copy()
             env_with_agent[var] = "true"
             with mock.patch.dict(os.environ, env_with_agent, clear=True):
@@ -214,11 +214,7 @@ class TestArgs(unittest.TestCase):
                 self.assertEqual(flags.agent_output, True)
 
         # Test override with --no-simple
-        for var in [
-            "ANTIGRAVITY_AGENT",
-            "ANTIGRAVITY_EDITOR_APP_ROOT",
-            "GEMINI_CLI",
-        ]:
+        for var in agent_vars:
             env_with_agent = env_without_agents.copy()
             env_with_agent[var] = "true"
             with mock.patch.dict(os.environ, env_with_agent, clear=True):
@@ -227,11 +223,7 @@ class TestArgs(unittest.TestCase):
                 self.assertEqual(flags.simple, False)
 
         # Test override with --no-agent-output
-        for var in [
-            "ANTIGRAVITY_AGENT",
-            "ANTIGRAVITY_EDITOR_APP_ROOT",
-            "GEMINI_CLI",
-        ]:
+        for var in agent_vars:
             env_with_agent = env_without_agents.copy()
             env_with_agent[var] = "true"
             with mock.patch.dict(os.environ, env_with_agent, clear=True):
