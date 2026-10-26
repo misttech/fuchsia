@@ -591,7 +591,7 @@ func TestTestCaseProperties(t *testing.T) {
 	}
 	buildTags := []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}}
 
-	got, _ := testCaseProperties(testCase, detail, buildTags)
+	got, _ := testCaseProperties(testCase.Format, testCase.Tags, detail.Metadata.Owners, buildTags)
 
 	want := mustParseProperties(t, `{
 		"format": "Rust",
@@ -2464,5 +2464,64 @@ func TestTestToUploadRequests(t *testing.T) {
 		t.Errorf("parent/infra_and_test_std_and_klog.txt not found in request: %+v", parentInvArtifactsReq.Artifacts)
 	} else if artifact.GetFilePath() != parentLogFile {
 		t.Errorf("parent artifact FilePath = %q, want %q", artifact.GetFilePath(), parentLogFile)
+	}
+}
+
+func TestCasePropertyCacheWithTags(t *testing.T) {
+	detail := &runtests.TestDetails{
+		Name:        "fuchsia-pkg://fuchsia.com/my-pkg#meta/my_test.cm",
+		GNLabel:     "//src/foo:my_test(//build/toolchain:x64)",
+		SourceLabel: "//src/foo:my_test",
+		Status:      runtests.TestSuccess,
+		StartTime:   time.Now(),
+		Metadata:    metadata.TestMetadata{Owners: []string{"alice@example.com"}},
+	}
+	// Exercise repeated (Format, Tags) hits, distinct formats, and cache-cap overflow.
+	for i := 0; i < 20; i++ {
+		format := "Rust"
+		if i == 3 {
+			format = "FTF"
+		}
+		detail.Cases = append(detail.Cases, runtests.TestCaseResult{
+			DisplayName: fmt.Sprintf("suite/case_%d", i),
+			SuiteName:   "suite",
+			CaseName:    fmt.Sprintf("case_%d", i),
+			Status:      runtests.TestSuccess,
+			Format:      format,
+			Tags: []build.TestTag{
+				{Key: "test_outcome", Value: "PASSED"},
+				{Key: "idx", Value: fmt.Sprintf("val_%d", i%10)},
+			},
+		})
+	}
+	buildTags := []*resultpb.StringPair{{Key: "builder", Value: "core.x64-release"}}
+
+	results, _, _ := testCaseToResultSink(detail.Cases, buildTags, detail, t.TempDir())
+	if len(results) != len(detail.Cases) {
+		t.Fatalf("got %d results, want %d", len(results), len(detail.Cases))
+	}
+	sortTags := cmpopts.SortSlices(func(a, b *resultpb.StringPair) bool {
+		if a.Key != b.Key {
+			return a.Key < b.Key
+		}
+		return a.Value < b.Value
+	})
+	for i, tc := range detail.Cases {
+		wantProps, wantTags := testCaseProperties(tc.Format, tc.Tags, detail.Metadata.Owners, buildTags)
+		if diff := cmp.Diff(wantProps, results[i].Properties, protocmp.Transform()); diff != "" {
+			t.Errorf("case %d properties differ (-want +got):\n%s", i, diff)
+		}
+		if diff := cmp.Diff(wantTags, results[i].Tags, protocmp.Transform(), sortTags); diff != "" {
+			t.Errorf("case %d tags differ (-want +got):\n%s", i, diff)
+		}
+	}
+	if results[10].Properties != results[0].Properties {
+		t.Errorf("case 10 should reuse cached Properties pointer from case 0")
+	}
+	if results[13].Properties == results[3].Properties {
+		t.Errorf("case 13 (Rust) must not reuse cached Properties from case 3 (FTF)")
+	}
+	if results[18].Properties == results[8].Properties {
+		t.Errorf("case 18 should not hit cache after maxCachedPropsEntries overflow at case 8")
 	}
 }

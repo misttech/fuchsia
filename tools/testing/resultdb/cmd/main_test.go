@@ -212,8 +212,8 @@ func TestRunParent(t *testing.T) {
 		t.Errorf("got auth header %q, want %q", receivedAuthHeader, "ResultSink test-token")
 	}
 	if diff := cmp.Diff([]string{
-		"/prpc/luci.resultsink.v1.Sink/ReportTestResults",
 		"/prpc/luci.resultsink.v1.Sink/ReportInvocationLevelArtifacts",
+		"/prpc/luci.resultsink.v1.Sink/ReportTestResults",
 	}, receivedEndpoints); diff != "" {
 		t.Errorf("endpoints diff (-want +got):\n%s", diff)
 	}

@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -206,7 +208,7 @@ func TestSendData(t *testing.T) {
 	client.semaphore <- struct{}{}
 
 	payload := `{"testResults":[{"testId":"foo"}]}`
-	if err := client.SendData(payload, "ReportTestResults"); err != nil {
+	if err := client.SendData([]byte(payload), "ReportTestResults"); err != nil {
 		t.Fatalf("SendData failed: %v", err)
 	}
 
@@ -237,7 +239,7 @@ func TestSendDataError(t *testing.T) {
 	}
 	client.semaphore <- struct{}{}
 
-	if err := client.SendData(`{}`, "ReportTestResults"); err == nil {
+	if err := client.SendData([]byte(`{}`), "ReportTestResults"); err == nil {
 		t.Errorf("expected error for HTTP 400, got nil")
 	}
 }
@@ -426,5 +428,45 @@ func TestReportSummariesBatching(t *testing.T) {
 	wantExonerationBatches := []int{MaxBatchSize, MaxBatchSize, 10}
 	if diff := cmp.Diff(wantExonerationBatches, exonerationBatchSizes); diff != "" {
 		t.Errorf("exoneration batch sizes differ (-want +got):\n%s", diff)
+	}
+}
+
+func TestClientKeepAlive(t *testing.T) {
+	var newConns atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(")]}'\n{}\n"))
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	lucictxFile := filepath.Join(t.TempDir(), "lucictx.json")
+	if err := os.WriteFile(lucictxFile, []byte(fmt.Sprintf(`{
+		"result_sink": {
+			"address": "%s",
+			"auth_token": "test-token"
+		}
+	}`, srv.Listener.Addr().String())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LUCI_CONTEXT", lucictxFile)
+
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient failed: %s", err)
+	}
+	for i := 0; i < 20; i++ {
+		if err := client.SendData([]byte(`{}`), "ReportTestResults"); err != nil {
+			t.Fatalf("SendData(%d) failed: %s", i, err)
+		}
+	}
+	if got := newConns.Load(); got != 1 {
+		t.Errorf("sequential SendData opened %d TCP connections, want 1 reused keep-alive connection", got)
 	}
 }

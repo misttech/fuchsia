@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -586,15 +587,19 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 	metadataFields := resolveTestMetadataFields(testDetail)
 	startTime := timestamppb.New(testDetail.StartTime)
 
-	// Within a single TestDetails, almost all test cases share the same Format
-	// and have no per-case Tags, so their Properties and Tags are identical.
-	// Cache them by Format to avoid rebuilding a structpb.Struct and calling
-	// proto.Size on every test case.
+	// Within a single TestDetails, almost all test cases share only 1-2 unique
+	// (Format, Tags) combinations (for example, Fuchsia target tests attach
+	// test_outcome and use_ffx tags to every case), so their Properties and
+	// Tags are identical. Cache a small slice of unique combinations to avoid
+	// rebuilding a structpb.Struct and calling proto.Size on every test case.
 	type cachedPropsAndTags struct {
+		format     string
+		customTags []build.TestTag
 		properties *structpb.Struct
 		tags       []*resultpb.StringPair
 	}
-	var cachedByFormat map[string]cachedPropsAndTags
+	const maxCachedPropsEntries = 8
+	var propCache []cachedPropsAndTags
 
 	for _, testCase := range testCases {
 		testID := fmt.Sprintf("%s/%s:%s", testDetail.Name, testCase.SuiteName, testCase.CaseName)
@@ -606,18 +611,24 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 
 		var properties *structpb.Struct
 		var testCaseTags []*resultpb.StringPair
-		if len(testCase.Tags) == 0 {
-			if cached, ok := cachedByFormat[testCase.Format]; ok {
-				properties, testCaseTags = cached.properties, cached.tags
-			} else {
-				properties, testCaseTags = testCaseProperties(testCase, testDetail, tags)
-				if cachedByFormat == nil {
-					cachedByFormat = make(map[string]cachedPropsAndTags, 1)
-				}
-				cachedByFormat[testCase.Format] = cachedPropsAndTags{properties: properties, tags: testCaseTags}
+		foundCached := false
+		for i := range propCache {
+			if propCache[i].format == testCase.Format && slices.Equal(propCache[i].customTags, testCase.Tags) {
+				properties, testCaseTags = propCache[i].properties, propCache[i].tags
+				foundCached = true
+				break
 			}
-		} else {
-			properties, testCaseTags = testCaseProperties(testCase, testDetail, tags)
+		}
+		if !foundCached {
+			properties, testCaseTags = testCaseProperties(testCase.Format, testCase.Tags, testDetail.Metadata.Owners, tags)
+			if len(propCache) < maxCachedPropsEntries {
+				propCache = append(propCache, cachedPropsAndTags{
+					format:     testCase.Format,
+					customTags: slices.Clone(testCase.Tags),
+					properties: properties,
+					tags:       slices.Clip(testCaseTags),
+				})
+			}
 		}
 
 		fineName, caseName := testIdentifier(&testCase)
@@ -828,22 +839,24 @@ func testDetailProperties(testDetail *runtests.TestDetails, buildTags []*resultp
 }
 
 // testCaseProperties returns the properties and the legacy tags of a test case
-// result.
+// result. Accepting only format and customTags (rather than the full
+// TestCaseResult) ensures callers can safely cache results by (format,
+// customTags) within a TestDetails.
 //
 // buildTags is the build and environment metadata that applies to every test
 // result, such as the builder and the board.
-func testCaseProperties(testCase runtests.TestCaseResult, testDetail *runtests.TestDetails, buildTags []*resultpb.StringPair) (*structpb.Struct, []*resultpb.StringPair) {
+func testCaseProperties(format string, customTags []build.TestTag, owners []string, buildTags []*resultpb.StringPair) (*structpb.Struct, []*resultpb.StringPair) {
 	fields := map[string]any{
-		"format": testCase.Format,
+		"format": format,
 	}
 
 	// See the comment on is_top_level_test in testDetailProperties.
 	tags := []*resultpb.StringPair{
 		{Key: "is_test_case", Value: "true"},
-		{Key: "format", Value: testCase.Format},
+		{Key: "format", Value: format},
 	}
 
-	addCommonProperties(fields, &tags, testDetail.Metadata.Owners, testCase.Tags, buildTags)
+	addCommonProperties(fields, &tags, owners, customTags, buildTags)
 	return newProperties(fields), tags
 }
 

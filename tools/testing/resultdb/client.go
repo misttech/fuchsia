@@ -5,12 +5,13 @@
 package resultdb
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	resultpb "go.chromium.org/luci/resultdb/proto/v1"
 	sinkpb "go.chromium.org/luci/resultdb/sink/proto/v1"
@@ -54,7 +55,7 @@ func (c *Client) sendMessage(req proto.Message, endpoint string) error {
 	if err != nil {
 		return err
 	}
-	return c.SendData(string(data), endpoint)
+	return c.SendData(data, endpoint)
 }
 
 // ReportSummaries parses each summary.json file and streams test results and
@@ -128,26 +129,31 @@ func (c *Client) ReportInvocationLevelArtifacts(outputRoot string, invocationArt
 	return c.sendMessage(invocationRequest, "ReportInvocationLevelArtifacts")
 }
 
-// SendData sends raw json payload to the specified endpoint on ResultSink.
-func (c *Client) SendData(data, endpoint string) error {
+// SendData sends a raw JSON payload to the specified endpoint on ResultSink.
+func (c *Client) SendData(data []byte, endpoint string) error {
 	<-c.semaphore
 	defer func() { c.semaphore <- struct{}{} }()
 
 	url := fmt.Sprintf("http://%s/prpc/luci.resultsink.v1.Sink/%s", c.resultSink.ResultSinkAddr, endpoint)
-	req, err := http.NewRequest("POST", url, strings.NewReader(data))
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
 	// ResultSink HTTP authorization scheme is documented at
 	// https://fuchsia.googlesource.com/third_party/luci-go/+/HEAD/resultdb/sink/proto/v1/sink.proto#29
-	req.Header.Add("Authorization", fmt.Sprintf("ResultSink %s", c.resultSink.AuthToken))
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Content-Type", "application/json")
+	req.Header.Set("Authorization", "ResultSink "+c.resultSink.AuthToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	// Drain the response body before closing so net/http reuses the persistent
+	// loopback TCP connection across batches.
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("ResultDB Http Request errored with status code %s (%d)", http.StatusText(resp.StatusCode), resp.StatusCode)
 	}

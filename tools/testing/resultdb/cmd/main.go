@@ -97,7 +97,7 @@ func runPost() error {
 		return fmt.Errorf("failed to decode upload requests from stdin: %w", err)
 	}
 	for _, req := range requests {
-		if err := client.SendData(string(req.Data), req.Endpoint); err != nil {
+		if err := client.SendData(req.Data, req.Endpoint); err != nil {
 			return err
 		}
 	}
@@ -142,12 +142,15 @@ func runParent() error {
 		return err
 	}
 
-	allTestsSkipped, err := client.ReportSummaries(summaries, tagPairs, outputRoot)
-	if err != nil {
+	// Enqueue invocation-level artifacts (such as 100+ MB Swarming and device
+	// logs) before streaming summaries so ResultSink uploads them in the
+	// background while test results are converted.
+	if err := client.ReportInvocationLevelArtifacts(outputRoot, invocationArtifacts); err != nil {
 		return err
 	}
 
-	if err = client.ReportInvocationLevelArtifacts(outputRoot, invocationArtifacts); err != nil {
+	allTestsSkipped, err := client.ReportSummaries(summaries, tagPairs, outputRoot)
+	if err != nil {
 		return err
 	}
 
