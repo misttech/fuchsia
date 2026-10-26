@@ -8,7 +8,6 @@ import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_device_service as fidl_device_svc
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
-from antlion import utils
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from legacy_access_point.access_point import AccessPoint, setup_ap
 from legacy_access_point.ap_lib.hostapd_constants import (
@@ -118,9 +117,7 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             )
         elif isinstance(self.access_point, AccessPoint):
             ap_test_interface = self.access_point.wlan_2g
-            ap_address = utils.get_addr(
-                self.access_point.ssh, ap_test_interface
-            )
+            ap_address = self.access_point.get_addr(ap_test_interface)
         else:
             raise signals.TestAbortClass(
                 "No access point configured for this test."

@@ -22,6 +22,7 @@ from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from iperf import iperf_client, iperf_server
 from legacy_access_point.access_point import AccessPoint
+from libs.ip_utils import AddrType
 from libs.validation import MapValidator
 from mobly import logger, signals
 from openwrt_access_point import OpenWrtAP
@@ -615,7 +616,7 @@ class WmmTransceiver(object):
                 addresses = reserved_server.get_interface_ip_addresses(
                     self._test_interface
                 )
-                for addr in addresses["ipv4_private"]:
+                for addr in addresses[AddrType.ipv4_private]:
                     if ipaddress.ip_address(addr) in ipaddress.ip_network(
                         subnet
                     ):

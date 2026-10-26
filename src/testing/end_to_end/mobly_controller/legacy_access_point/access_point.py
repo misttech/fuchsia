@@ -36,6 +36,7 @@ from legacy_access_point.ap_lib.radvd_config import RadvdConfig
 from legacy_access_point.ap_lib.wireless_network_management import (
     BssTransitionManagementRequest,
 )
+from libs import ip_utils
 from libs.commands import (
     command,
     ip,
@@ -44,6 +45,7 @@ from libs.commands import (
 )
 from libs.commands.date import LinuxDateCommand
 from libs.commands.tcpdump import LinuxTcpdumpCommand
+from libs.ip_utils import AddrType as AddrType
 from libs.proc.runner import CalledProcessError
 from libs.ssh import connection, settings
 from libs.ssh.provider import SSHConfig, SSHProvider
@@ -713,6 +715,20 @@ class AccessPoint:
         self.ssh.run(
             f"ping -c {count} -W {timeout_sec} {dest_ip}",
             ignore_status=False,
+        )
+
+    def get_addr(
+        self,
+        interface: str,
+        addr_type: AddrType = AddrType.ipv4_private,
+        timeout_sec: int | None = None,
+    ) -> str:
+        """Get the requested type of IP address for an interface; if an address
+        is not available, retry until the timeout has been reached. See
+        ip_utils.get_addr.
+        """
+        return ip_utils.get_addr(
+            self.ssh, interface, addr_type=addr_type, timeout_sec=timeout_sec
         )
 
     def hard_power_cycle(

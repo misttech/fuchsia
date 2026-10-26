@@ -7,7 +7,6 @@ from datetime import timedelta
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.utils import get_addr
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
 from honeydew.transports.ffx import types as ffx_types
@@ -147,8 +146,7 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     password=password,
                 ),
             )
-            ap_address = get_addr(
-                self.access_point.ssh,
+            ap_address = self.access_point.get_addr(
                 self.access_point.wlan_2g,
             )
         else:

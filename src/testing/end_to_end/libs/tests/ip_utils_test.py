@@ -8,7 +8,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from antlion import utils
+from libs import ip_utils
 from libs.ssh.connection import SshConnection
 from libs.ssh.settings import SshSettings
 
@@ -19,23 +19,23 @@ MOCK_ENO1_IP_ADDRESSES = """2: eno1    inet 100.127.110.79/24 brd 100.127.110.25
 
 MOCK_WLAN1_IP_ADDRESSES = ""
 
-CORRECT_FULL_IP_LIST: dict[str, list[str]] = {
-    "ipv4_private": [],
-    "ipv4_public": ["100.127.110.79"],
-    "ipv6_link_local": ["fe80::c66d:3c75:2cec:1d72"],
-    "ipv6_private_local": [],
-    "ipv6_public": [
+CORRECT_FULL_IP_LIST: dict[ip_utils.AddrType, list[str]] = {
+    ip_utils.AddrType.ipv4_private: [],
+    ip_utils.AddrType.ipv4_public: ["100.127.110.79"],
+    ip_utils.AddrType.ipv6_link_local: ["fe80::c66d:3c75:2cec:1d72"],
+    ip_utils.AddrType.ipv6_private_local: [],
+    ip_utils.AddrType.ipv6_public: [
         "2401:fa00:480:7a00:8d4f:85ff:cc5c:787e",
         "2401:fa00:480:7a00:459:b993:fcbf:1419",
     ],
 }
 
-CORRECT_EMPTY_IP_LIST: dict[str, list[str]] = {
-    "ipv4_private": [],
-    "ipv4_public": [],
-    "ipv6_link_local": [],
-    "ipv6_private_local": [],
-    "ipv6_public": [],
+CORRECT_EMPTY_IP_LIST: dict[ip_utils.AddrType, list[str]] = {
+    ip_utils.AddrType.ipv4_private: [],
+    ip_utils.AddrType.ipv4_public: [],
+    ip_utils.AddrType.ipv6_link_local: [],
+    ip_utils.AddrType.ipv6_private_local: [],
+    ip_utils.AddrType.ipv6_public: [],
 }
 
 
@@ -53,7 +53,7 @@ class IpAddressUtilTest(unittest.TestCase):
             ),
         ]
         self.assertEqual(
-            utils.get_interface_ip_addresses(
+            ip_utils.get_interface_ip_addresses(
                 SshConnection(SshSettings("192.168.1.1", "root", "/dev/null")),
                 "eno1",
             ),
@@ -73,7 +73,7 @@ class IpAddressUtilTest(unittest.TestCase):
             ),
         ]
         self.assertEqual(
-            utils.get_interface_ip_addresses(
+            ip_utils.get_interface_ip_addresses(
                 SshConnection(SshSettings("192.168.1.1", "root", "/dev/null")),
                 "wlan1",
             ),

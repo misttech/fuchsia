@@ -11,6 +11,14 @@ python_host_test("exception_utils_test") {
   libraries = [ "//src/testing/end_to_end/libs:libs" ]
 }
 
+python_host_test("ip_utils_test") {
+  main_source = "ip_utils_test.py"
+  libraries = [
+    "//src/testing/end_to_end/libs:libs",
+    "//third_party/mobly",
+  ]
+}
+
 python_host_test("job_test") {
   main_source = "job_test.py"
   libraries = [
@@ -23,6 +31,7 @@ group("tests") {
   testonly = true
   deps = [
     ":exception_utils_test",
+    ":ip_utils_test",
     ":job_test",
   ]
 }

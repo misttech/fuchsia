@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import time
+from enum import StrEnum
 
 from libs.ssh.connection import SshConnection
 
@@ -16,10 +17,23 @@ from libs.ssh.connection import SshConnection
 DAD_TIMEOUT_SEC = 30
 
 
+class AddrType(StrEnum):
+    ipv4_private = "ipv4_private"
+    """Any 192.168, 172.16, 10, or 169.254 addresses"""
+    ipv4_public = "ipv4_public"
+    """Any IPv4 public addresses"""
+    ipv6_link_local = "ipv6_link_local"
+    """Any fe80:: addresses"""
+    ipv6_private_local = "ipv6_private_local"
+    """Any fd00:: addresses"""
+    ipv6_public = "ipv6_public"
+    """Any publicly routable addresses"""
+
+
 def get_interface_ip_addresses(
     comm_channel: SshConnection,
     interface: str,
-) -> dict[str, list[str]]:
+) -> dict[AddrType, list[str]]:
     """Gets all of the ip addresses, ipv4 and ipv6, associated with a
        particular interface name.
 
@@ -72,11 +86,11 @@ def get_interface_ip_addresses(
                 ipv6_public_addresses.append(str(on_device_ip))
 
     return {
-        "ipv4_private": ipv4_private_addresses,
-        "ipv4_public": ipv4_public_addresses,
-        "ipv6_link_local": ipv6_link_local_addresses,
-        "ipv6_private_local": ipv6_private_local_addresses,
-        "ipv6_public": ipv6_public_addresses,
+        AddrType.ipv4_private: ipv4_private_addresses,
+        AddrType.ipv4_public: ipv4_public_addresses,
+        AddrType.ipv6_link_local: ipv6_link_local_addresses,
+        AddrType.ipv6_private_local: ipv6_private_local_addresses,
+        AddrType.ipv6_public: ipv6_public_addresses,
     }
 
 
@@ -91,7 +105,7 @@ class MultipleAddresses(ValueError):
 def get_addr(
     comm_channel: SshConnection,
     interface: str,
-    addr_type: str = "ipv4_private",
+    addr_type: AddrType = AddrType.ipv4_private,
     timeout_sec: int | None = None,
 ) -> str:
     """Get the requested type of IP address for an interface; if an address is

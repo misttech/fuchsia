@@ -8,7 +8,6 @@ if (is_host) {
   python_host_test("iperf_server_test") {
     main_source = "iperf_server_test.py"
     libraries = [
-      "//src/testing/end_to_end/antlion",
       "//src/testing/end_to_end/mobly_controller/iperf",
       "//src/testing/end_to_end/libs",
       "//third_party/mobly:mobly",
@@ -20,7 +19,6 @@ if (is_host) {
   python_host_test("iperf_client_test") {
     main_source = "iperf_client_test.py"
     libraries = [
-      "//src/testing/end_to_end/antlion",
       "//src/testing/end_to_end/mobly_controller/iperf",
       "//src/testing/end_to_end/libs",
       "//third_party/mobly:mobly",

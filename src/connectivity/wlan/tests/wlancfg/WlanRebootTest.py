@@ -15,7 +15,6 @@ from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion import utils
 from antlion.controllers import pdu
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
@@ -27,6 +26,7 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
+from legacy_access_point.access_point import AddrType
 from legacy_access_point.ap_lib.hostapd_ap_preset import create_ap_preset
 from legacy_access_point.ap_lib.hostapd_constants import AP_SSID_LENGTH_2G
 from legacy_access_point.ap_lib.hostapd_security import (
@@ -298,14 +298,11 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 test_interface = self.access_point.wlan_5g
 
             if ip_version == IpVersionType.IPV4:
-                ap_address = utils.get_addr(
-                    self.access_point.ssh, test_interface
-                )
+                ap_address = self.access_point.get_addr(test_interface)
             elif ip_version == IpVersionType.IPV6:
-                ap_address = utils.get_addr(
-                    self.access_point.ssh,
+                ap_address = self.access_point.get_addr(
                     test_interface,
-                    addr_type="ipv6_link_local",
+                    addr_type=AddrType.ipv6_link_local,
                 )
             else:
                 raise TypeError(f"Invalid IP type: {ip_version}")

@@ -19,7 +19,7 @@ import threading
 import time
 from typing import IO
 
-from antlion import utils
+from libs import ip_utils
 from libs.commands import nmcli
 from libs.commands.command import (
     LinuxCommand,
@@ -553,7 +553,7 @@ class IPerfServerOverSsh(IPerfServerBase):
 
     def get_interface_ip_addresses(
         self, interface: str
-    ) -> dict[str, list[str]]:
+    ) -> dict[ip_utils.AddrType, list[str]]:
         """Gets all of the ip addresses, ipv4 and ipv6, associated with a
            particular interface name.
 
@@ -562,9 +562,9 @@ class IPerfServerOverSsh(IPerfServerBase):
 
         Returns:
             A list of dictionaries of the various IP addresses. See
-            utils.get_interface_ip_addresses.
+            ip_utils.get_interface_ip_addresses.
         """
-        return utils.get_interface_ip_addresses(self._get_ssh(), interface)
+        return ip_utils.get_interface_ip_addresses(self._get_ssh(), interface)
 
     def renew_test_interface_ip_address(self) -> None:
         """Renews the test interface's IPv4 address.
@@ -578,13 +578,18 @@ class IPerfServerOverSsh(IPerfServerBase):
         renew_linux_ip_address(self._get_ssh(), self.test_interface)
 
     def get_addr(
-        self, addr_type: str = "ipv4_private", timeout_sec: int | None = None
+        self,
+        addr_type: ip_utils.AddrType = ip_utils.AddrType.ipv4_private,
+        timeout_sec: int | None = None,
     ) -> str:
         """Wait until a type of IP address on the test interface is available
         then return it.
         """
-        return utils.get_addr(
-            self._get_ssh(), self.test_interface, addr_type, timeout_sec
+        return ip_utils.get_addr(
+            self._get_ssh(),
+            self.test_interface,
+            addr_type,
+            timeout_sec,
         )
 
     def _cleanup_iperf_port(self) -> None:

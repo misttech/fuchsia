@@ -323,7 +323,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await self._wait_for_dut_ip(ip_version)
         if self.openwrt_ap is None:
             self.iperf_server.renew_test_interface_ip_address()
-        iperf_server_ip_address = self.iperf_server.get_addr("ipv4_private")
+        iperf_server_ip_address = self.iperf_server.get_addr()
 
         results = await self.rvr_loop(
             iface=iface,

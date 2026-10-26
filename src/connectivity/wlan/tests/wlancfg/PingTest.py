@@ -17,12 +17,11 @@ from typing import Callable, NamedTuple
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion import utils
 from honeydew.affordances.connectivity.netstack.types import (
     PingResult,
     PortClass,
 )
-from legacy_access_point.access_point import setup_ap
+from legacy_access_point.access_point import AddrType, setup_ap
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
@@ -164,9 +163,9 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     f"Expected bridge interfaces on the AP, got {ap_bridges}"
                 )
             ap_bridge = ap_bridges[0]
-            self.ap_ipv4 = utils.get_addr(self.access_point.ssh, ap_bridge)
-            self.ap_ipv6 = utils.get_addr(
-                self.access_point.ssh, ap_bridge, addr_type="ipv6_link_local"
+            self.ap_ipv4 = self.access_point.get_addr(ap_bridge)
+            self.ap_ipv6 = self.access_point.get_addr(
+                ap_bridge, addr_type=AddrType.ipv6_link_local
             )
 
         self.log.info(
