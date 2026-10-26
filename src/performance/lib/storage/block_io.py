@@ -7,13 +7,15 @@ import json
 import logging
 import os
 import pathlib
+import typing
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
 
 from perf_publish import publish
 from reporting import metrics
+from trace_processing import trace_metrics, trace_model
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -25,11 +27,23 @@ _BLOCK_DRIVER_NODES: dict[str, str] = {
     "virtio-block": "virtio_block",
 }
 
+# (op_key, op_label) tuples for Inspect block operation counters and labels.
 _BLOCK_OPERATIONS: tuple[tuple[str, str], ...] = (
     ("read", "Read"),
     ("write", "Write"),
     ("flush", "Flush"),
     ("trim", "Trim"),
+)
+
+# Default block operations published as headline structured metrics
+# (fuchsiaperf.json). Headline metrics track write and flush operation rates
+# (ops/sec), which represent the primary indicators of flash wear, filesystem
+# journaling pressure, and sync latency. All operations (read, write, flush,
+# trim) across both ops/sec and bytes/sec continue to be recorded as freeform
+# metrics in storage_io.freeform.json.
+_DEFAULT_HEADLINE_OPERATIONS: tuple[tuple[str, str], ...] = (
+    ("write", "Write"),
+    ("flush", "Flush"),
 )
 
 STORAGE_INSPECT_SELECTORS: list[str] = [
@@ -345,24 +359,13 @@ def diff_inspect_entries(
     return delta_entries
 
 
-def extract_storage_io_metrics(
+def _extract_block_io_metrics(
     inspect_entries: Sequence[InspectEntry | Mapping[str, Any]],
-    label_prefix: str | None = None,
     *,
     baseline_entries: Sequence[InspectEntry | Mapping[str, Any]] | None = None,
-) -> list[metrics.TestCaseResult]:
-    """Extracts block/storage I/O rate metrics (`Block{Read,Write,Flush,Trim}{Bytes,Ops}PerSec`)
-    from hardware block driver Inspect entries (`ftl`, `sdmmc_core`, `ufs`,
-    `virtio_block`).
-
-    When `baseline_entries` is provided, computes per-interval delta rates
-    between `baseline_entries` and `inspect_entries` via `diff_inspect_entries`.
-    Otherwise, computes cumulative rates over device uptime.
-
-    Target devices have a single primary block storage driver. To guarantee
-    deterministic behavior independent of the input order in `inspect_entries`,
-    entries are sorted by `(name, moniker, timestamp_ns)` and any active block
-    driver with non-zero I/O operations takes precedence over idle instances.
+) -> dict[str, tuple[float, float]] | None:
+    """Selects the primary hardware block driver and extracts
+    `{op_label: (bytes_per_sec, ops_per_sec)}`.
     """
     if baseline_entries is not None:
         inspect_entries = diff_inspect_entries(
@@ -384,6 +387,160 @@ def extract_storage_io_metrics(
             rates = candidate
             break
 
+    return rates
+
+
+class StorageIoMetricsProcessor(trace_metrics.MetricsProcessor):
+    """Computes block/storage I/O rate metrics from Inspect data.
+
+    Publishes headline block write and flush operation rates
+    (`BlockWriteOpsPerSec` and `BlockFlushOpsPerSec`) as structured metrics for
+    regression detection, and all block operation rates (`read`, `write`,
+    `flush`, `trim` bytes/sec and ops/sec) as freeform metrics.
+    """
+
+    FREEFORM_METRICS_FILENAME = "storage_io"
+
+    def __init__(
+        self,
+        dut: InspectDataProvider | None = None,
+        *,
+        label_prefix: str | None = "Storage/System",
+        start_entries: Sequence[InspectEntry | Mapping[str, Any]] | None = None,
+        end_entries: Sequence[InspectEntry | Mapping[str, Any]] | None = None,
+    ) -> None:
+        self._dut = dut
+        self._label_prefix = label_prefix
+        self._start_entries: Sequence[
+            InspectEntry | Mapping[str, Any]
+        ] | None = start_entries
+        self._end_entries: Sequence[
+            InspectEntry | Mapping[str, Any]
+        ] | None = end_entries
+
+    @property
+    @typing.override
+    def event_patterns(self) -> set[str]:
+        return set()
+
+    def capture_start(
+        self, dut: InspectDataProvider | None = None
+    ) -> list[InspectEntry]:
+        """Captures baseline block driver Inspect entries before a test workload."""
+        target_dut = dut if dut is not None else self._dut
+        entries = load_inspect_entries(dut=target_dut)
+        self._start_entries = entries
+        self._end_entries = None
+        return entries
+
+    def capture_end(
+        self, dut: InspectDataProvider | None = None
+    ) -> list[InspectEntry]:
+        """Captures final block driver Inspect entries after a test workload."""
+        target_dut = dut if dut is not None else self._dut
+        entries = load_inspect_entries(dut=target_dut)
+        self._end_entries = entries
+        return entries
+
+    def __enter__(self) -> Self:
+        self.capture_start()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.capture_end()
+
+    async def __aenter__(self) -> Self:
+        self.capture_start()
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.capture_end()
+
+    def _compute_rates(
+        self,
+    ) -> tuple[dict[str, tuple[float, float]], bool] | None:
+        if self._end_entries is None and self._dut is not None:
+            self.capture_end()
+        entries: Sequence[InspectEntry | Mapping[str, Any]] | None
+        if self._end_entries is not None:
+            entries = self._end_entries
+            baseline = self._start_entries
+        else:
+            entries = self._start_entries
+            baseline = None
+        if not entries:
+            return None
+        rates = _extract_block_io_metrics(entries, baseline_entries=baseline)
+        if rates is None:
+            return None
+        return rates, baseline is not None
+
+    @typing.override
+    def process_metrics(
+        self, model: trace_model.Model | None = None
+    ) -> Sequence[metrics.TestCaseResult]:
+        computed = self._compute_rates()
+        if computed is None:
+            return []
+        rates, has_baseline = computed
+
+        prefix = f"{self._label_prefix}/" if self._label_prefix else ""
+        period_str = "interval" if has_baseline else "device uptime"
+        results: list[metrics.TestCaseResult] = []
+        for op_key, op_label in _DEFAULT_HEADLINE_OPERATIONS:
+            _, ops_per_sec = rates[op_label]
+            results.append(
+                metrics.TestCaseResult(
+                    label=f"{prefix}Block{op_label}OpsPerSec",
+                    unit=metrics.Unit.count,
+                    values=[ops_per_sec],
+                    doc=f"Block {op_key} operations per second of {period_str}.",
+                    direction=metrics.Direction.smallerIsBetter,
+                )
+            )
+        return results
+
+    @typing.override
+    def process_freeform_metrics(
+        self, model: trace_model.Model | None = None
+    ) -> tuple[str, metrics.JSON]:
+        computed = self._compute_rates()
+        if computed is None:
+            return self.FREEFORM_METRICS_FILENAME, {}
+        rates, _ = computed
+
+        breakdown: dict[str, metrics.JSON] = {
+            op_key: {
+                "bytes_per_sec": rates[op_label][0],
+                "ops_per_sec": rates[op_label][1],
+            }
+            for op_key, op_label in _BLOCK_OPERATIONS
+        }
+        return self.FREEFORM_METRICS_FILENAME, breakdown
+
+
+def extract_storage_io_metrics(
+    inspect_entries: Sequence[InspectEntry | Mapping[str, Any]],
+    label_prefix: str | None = None,
+    *,
+    baseline_entries: Sequence[InspectEntry | Mapping[str, Any]] | None = None,
+) -> list[metrics.TestCaseResult]:
+    """Extracts block/storage I/O rate metrics (`Block{Read,Write,Flush,Trim}{Bytes,Ops}PerSec`)
+    from hardware block driver Inspect entries (`ftl`, `sdmmc_core`, `ufs`,
+    `virtio_block`).
+
+    When `baseline_entries` is provided, computes per-interval delta rates
+    between `baseline_entries` and `inspect_entries` via `diff_inspect_entries`.
+    Otherwise, computes cumulative rates over device uptime.
+
+    Target devices have a single primary block storage driver. To guarantee
+    deterministic behavior independent of the input order in `inspect_entries`,
+    entries are sorted by `(name, moniker, timestamp_ns)` and any active block
+    driver with non-zero I/O operations takes precedence over idle instances.
+    """
+    rates = _extract_block_io_metrics(
+        inspect_entries, baseline_entries=baseline_entries
+    )
     if rates is None:
         return []
 

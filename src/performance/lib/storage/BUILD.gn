@@ -14,6 +14,7 @@ python_library("storage") {
   library_deps = [
     "//src/performance/lib/perf_publish",
     "//src/performance/lib/reporting",
+    "//src/performance/lib/trace_processing",
   ]
 }
 

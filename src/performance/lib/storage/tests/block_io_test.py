@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Unit tests for storage.block_io."""
 
+import asyncio
 import json
 import pathlib
 import tempfile
@@ -513,6 +514,221 @@ class BlockIoTest(unittest.TestCase):
                 trim_bytes=0.0,
                 trim_ops=0.0,
             ),
+        )
+
+    def test_storage_io_metrics_processor_structured_and_freeform(self) -> None:
+        start_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=100_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 500_000_000,
+                    "block.read.count": 20_000,
+                    "block.write.bytes": 200_000_000,
+                    "block.write.count": 10_000,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 500,
+                    "block.trim.bytes": 10_000_000,
+                    "block.trim.count": 100,
+                }
+            },
+        )
+        end_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=110_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 500_040_960,
+                    "block.read.count": 20_010,
+                    "block.write.bytes": 200_081_920,
+                    "block.write.count": 10_020,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 505,
+                    "block.trim.bytes": 10_010_000,
+                    "block.trim.count": 102,
+                }
+            },
+        )
+        processor = storage.StorageIoMetricsProcessor(
+            start_entries=[start_entry],
+            end_entries=[end_entry],
+        )
+        self.assertEqual(processor.event_patterns, set())
+        self.assertEqual(
+            processor.process_metrics(),
+            [
+                metrics.TestCaseResult(
+                    label="Storage/System/BlockWriteOpsPerSec",
+                    unit=metrics.Unit.count,
+                    values=(2.0,),
+                    doc="Block write operations per second of interval.",
+                    direction=metrics.Direction.smallerIsBetter,
+                ),
+                metrics.TestCaseResult(
+                    label="Storage/System/BlockFlushOpsPerSec",
+                    unit=metrics.Unit.count,
+                    values=(0.5,),
+                    doc="Block flush operations per second of interval.",
+                    direction=metrics.Direction.smallerIsBetter,
+                ),
+            ],
+        )
+        self.assertEqual(
+            processor.process_freeform_metrics(),
+            (
+                "storage_io",
+                {
+                    "read": {
+                        "bytes_per_sec": 4096.0,
+                        "ops_per_sec": 1.0,
+                    },
+                    "write": {
+                        "bytes_per_sec": 8192.0,
+                        "ops_per_sec": 2.0,
+                    },
+                    "flush": {
+                        "bytes_per_sec": 0.0,
+                        "ops_per_sec": 0.5,
+                    },
+                    "trim": {
+                        "bytes_per_sec": 1000.0,
+                        "ops_per_sec": 0.2,
+                    },
+                },
+            ),
+        )
+
+    def test_storage_io_metrics_processor_context_manager_with_dut(
+        self,
+    ) -> None:
+        start_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=100_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 1_000_000,
+                    "block.read.count": 100,
+                    "block.write.bytes": 2_000_000,
+                    "block.write.count": 200,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 50,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        end_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=105_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 1_020_000,
+                    "block.read.count": 105,
+                    "block.write.bytes": 2_050_000,
+                    "block.write.count": 215,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 55,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        dut = Mock()
+        with patch(
+            "storage.block_io.load_inspect_entries",
+            side_effect=[[start_entry], [end_entry]],
+        ) as mock_load:
+            with storage.StorageIoMetricsProcessor(dut) as processor:
+                pass
+
+        self.assertEqual(mock_load.call_count, 2)
+        self.assertEqual(
+            [m.values for m in processor.process_metrics()],
+            [(3.0,), (1.0,)],
+        )
+
+    def test_storage_io_metrics_processor_empty_end_entries(self) -> None:
+        start_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=100_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 1_000_000,
+                    "block.read.count": 100,
+                    "block.write.bytes": 2_000_000,
+                    "block.write.count": 200,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 50,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        processor = storage.StorageIoMetricsProcessor(
+            start_entries=[start_entry], end_entries=[]
+        )
+        self.assertEqual(processor.process_metrics(), [])
+        self.assertEqual(
+            processor.process_freeform_metrics(), ("storage_io", {})
+        )
+
+    def test_storage_io_metrics_processor_async_context_manager(
+        self,
+    ) -> None:
+        async def run_test() -> storage.StorageIoMetricsProcessor:
+            async with storage.StorageIoMetricsProcessor(dut) as p:
+                return p
+
+        start_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=100_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 1_000_000,
+                    "block.read.count": 100,
+                    "block.write.bytes": 2_000_000,
+                    "block.write.count": 200,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 50,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        end_entry = storage.InspectEntry(
+            moniker="bootstrap/boot-drivers:dev.ufs",
+            name="ufs",
+            timestamp_ns=105_000_000_000,
+            root={
+                "ufs": {
+                    "block.read.bytes": 1_020_000,
+                    "block.read.count": 105,
+                    "block.write.bytes": 2_050_000,
+                    "block.write.count": 215,
+                    "block.flush.bytes": 0,
+                    "block.flush.count": 55,
+                    "block.trim.bytes": 0,
+                    "block.trim.count": 0,
+                }
+            },
+        )
+        dut = Mock()
+        with patch(
+            "storage.block_io.load_inspect_entries",
+            side_effect=[[start_entry], [end_entry]],
+        ) as mock_load:
+            processor = asyncio.run(run_test())
+
+        self.assertEqual(mock_load.call_count, 2)
+        self.assertEqual(
+            [m.values for m in processor.process_metrics()],
+            [(3.0,), (1.0,)],
         )
 
 
