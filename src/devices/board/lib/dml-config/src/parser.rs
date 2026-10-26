@@ -291,8 +291,7 @@ impl Default for DmlParserConfig {
 }
 
 fn resolve_value(
-    _provider: &str,
-    provider_id: u32,
+    provider_id: Option<u32>,
     source: &ValueSource,
     res: &ResourceEntry,
     constraint: &fdr::Dictionary,
@@ -312,7 +311,7 @@ fn resolve_value(
         ValueSource::ResourceName => res.name.clone().map(ResolvedValue::String),
         ValueSource::ResourceNode => res.node.clone().map(ResolvedValue::String),
         ValueSource::Integer(i) => Some(ResolvedValue::Integer(*i)),
-        ValueSource::ProviderId => Some(ResolvedValue::Integer(provider_id)),
+        ValueSource::ProviderId => provider_id.map(ResolvedValue::Integer),
     }
 }
 
@@ -323,18 +322,15 @@ enum ResolvedValue {
 }
 
 fn apply_rule(
-    provider: &str,
-    provider_id: u32,
+    provider_id: Option<u32>,
     rule: &PropertyRule,
     res: &ResourceEntry,
     constraint: &fdr::Dictionary,
     bind_rules: &mut Vec<fdf_framework::BindRule2>,
     properties: &mut Vec<fdf_framework::NodeProperty2>,
 ) -> anyhow::Result<()> {
-    let resolved = rule
-        .sources
-        .iter()
-        .find_map(|source| resolve_value(provider, provider_id, source, res, constraint));
+    let resolved =
+        rule.sources.iter().find_map(|source| resolve_value(provider_id, source, res, constraint));
 
     let Some(val) = resolved else {
         return Ok(());
@@ -384,16 +380,16 @@ fn apply_rule(
 }
 
 pub fn generate_parent_spec_generic(
-    provider: &str,
-    provider_id: u32,
-    service_name: &str,
+    agg: &AggregateEntry,
     res: &ResourceEntry,
-    config: &DmlParserConfig,
+    provider_id: Option<u32>,
+    parser_config: &DmlParserConfig,
 ) -> anyhow::Result<Option<(fdf_framework::ParentSpec2, String)>> {
     let mut bind_rules = Vec::new();
     let mut properties = Vec::new();
 
-    let service_config = config
+    let service_name = agg.service.as_deref().unwrap_or("");
+    let service_config = parser_config
         .service_configs
         .get(service_name)
         .or_else(|| STANDARD_SERVICE_CONFIGS.get(service_name))
@@ -431,7 +427,7 @@ pub fn generate_parent_spec_generic(
         res.constraint.as_ref().ok_or_else(|| anyhow!("constraint is missing in ResourceEntry"))?;
 
     for rule in service_config.rules {
-        apply_rule(provider, provider_id, rule, res, constraint, &mut bind_rules, &mut properties)?;
+        apply_rule(provider_id, rule, res, constraint, &mut bind_rules, &mut properties)?;
     }
 
     if !properties.iter().any(|p| p.key == "fuchsia.NAME") {
@@ -449,36 +445,34 @@ pub fn generate_parent_spec_generic(
     }
 
     let resolved_key = service_config.parent_key_sources.iter().find_map(|source| {
-        match resolve_value(provider, provider_id, source, res, constraint) {
+        match resolve_value(provider_id, source, res, constraint) {
             Some(ResolvedValue::String(k)) => Some(k),
             _ => None,
         }
     });
 
-    let key = match resolved_key {
-        Some(k) => k,
-        None => {
-            bail!(
-                "Failed to resolve parent key for service {}. If this service should be ignored, add it to the config.",
-                service_name
-            );
-        }
-    };
+    let key = resolved_key.with_context(|| {
+        format!(
+            "Failed to resolve parent key for service {}. If this service should be ignored, add it to the config.",
+            service_name
+        )
+    })?;
 
     let parent = fdf_framework::ParentSpec2 { bind_rules, properties };
     Ok(Some((parent, key)))
 }
 
-fn get_aggregate_id(agg: &AggregateEntry, devices: &[Device], fallback_id: u32) -> u32 {
+/// Returns the ID of the provider of `agg` by looking it up in `devices`.
+///
+/// Returns [`None`] if the provider is not found in `devices` or does not have an ID.
+pub fn get_provider_id(agg: &AggregateEntry, devices: &[Device]) -> Option<u32> {
     let device = devices.iter().find(|d| d.name.as_deref() == agg.provider.as_deref());
-    let id = device.and_then(|d| d.id).unwrap_or(fallback_id);
+    let id = device.and_then(|d| d.id);
     log::debug!(
-        "get_aggregate_id: provider={:?}, device_found={}, device_id={:?}, final_id={}, fallback={}",
+        "get_provider_id: provider={:?}, device_found={}, device_id={:?}",
         agg.provider,
         device.is_some(),
-        device.and_then(|d| d.id),
         id,
-        fallback_id
     );
     id
 }
@@ -670,46 +664,34 @@ pub async fn publish_dml_devices(
 
         let mut resource_parents = Vec::new();
         let mut generated_keys = HashSet::new();
-        if let Some(aggregates) = &config.aggregates {
-            for (agg_idx, agg) in aggregates.iter().enumerate() {
-                if agg.provider.as_deref().is_some_and(|p| disabled_devices.contains(p)) {
-                    continue;
-                }
-                if let Some(resources) = &agg.resources {
-                    for res in resources {
-                        if res.node.as_deref() == dev.name.as_deref() {
-                            let parent_and_key = if (agg.service.as_deref()
-                                == Some("fuchsia.hardware.platform.device.Service")
-                                || agg.service.as_deref()
-                                    == Some("fuchsia.hardware.interrupt.ControllerRegistryService"))
-                                && dev.compatible.is_some()
-                            {
-                                None
-                            } else {
-                                generate_parent_spec_generic(
-                                    agg.provider.as_deref().unwrap_or(""),
-                                    get_aggregate_id(
-                                        agg,
-                                        config.devices.as_deref().unwrap_or(&[]),
-                                        agg_idx as u32,
-                                    ),
-                                    agg.service.as_deref().unwrap_or(""),
-                                    res,
-                                    parser_config,
-                                )?
-                            };
-                            if let Some((parent, key)) = parent_and_key {
-                                if generated_keys.insert(key) {
-                                    if matches!(
-                                        agg.provider.as_deref(),
-                                        Some("parent") | Some("pdev")
-                                    ) {
-                                        resource_parents.insert(0, parent);
-                                    } else {
-                                        resource_parents.push(parent);
-                                    }
-                                }
-                            }
+        for agg in config.aggregates.iter().flatten() {
+            if agg.provider.as_deref().is_some_and(|p| disabled_devices.contains(p)) {
+                continue;
+            }
+            if dev.compatible.is_some()
+                && matches!(
+                    agg.service.as_deref(),
+                    Some("fuchsia.hardware.platform.device.Service")
+                        | Some("fuchsia.hardware.interrupt.ControllerRegistryService")
+                )
+            {
+                continue;
+            }
+            let provider_id = get_provider_id(agg, devices);
+            for res in agg
+                .resources
+                .iter()
+                .flatten()
+                .filter(|res| res.node.as_deref() == dev.name.as_deref())
+            {
+                if let Some((parent, key)) =
+                    generate_parent_spec_generic(agg, res, provider_id, parser_config)?
+                {
+                    if generated_keys.insert(key) {
+                        if matches!(agg.provider.as_deref(), Some("parent") | Some("pdev")) {
+                            resource_parents.insert(0, parent);
+                        } else {
+                            resource_parents.push(parent);
                         }
                     }
                 }
@@ -910,15 +892,17 @@ mod tests {
             ..Default::default()
         };
 
-        let (parent, key) = generate_parent_spec_generic(
-            "pcie-c500000",
-            0,
-            "fuchsia.hardware.pci.Service",
-            &res,
-            &DEFAULT_DML_PARSER_CONFIG,
-        )
-        .expect("should succeed")
-        .expect("should return parent spec");
+        let agg = AggregateEntry {
+            provider: Some("pcie-c500000".to_string()),
+            service: Some("fuchsia.hardware.pci.Service".to_string()),
+            resources: Some(vec![res.clone()]),
+            ..Default::default()
+        };
+
+        let (parent, key) =
+            generate_parent_spec_generic(&agg, &res, None, &DEFAULT_DML_PARSER_CONFIG)
+                .expect("should succeed")
+                .expect("should return parent spec");
 
         assert_eq!(key, "pci");
         assert!(parent.bind_rules.iter().any(|r| r.key == "fuchsia.BIND_PCI_VID"
