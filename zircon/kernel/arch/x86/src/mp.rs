@@ -5,11 +5,16 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::ffi::{CStr, c_int};
+use core::ffi::CStr;
+#[cfg(console_enabled)]
+use core::ffi::c_int;
 use kprint::kprintln;
 use zr::OpaqueBytes;
+#[cfg(console_enabled)]
 use zx_status::Status;
-use zx_types::{ZX_OK, zx_duration_t};
+#[cfg(console_enabled)]
+use zx_types::ZX_OK;
+use zx_types::zx_duration_t;
 
 use super::feature::X86_MAX_CSTATES;
 use super::mp_ffi::{
@@ -19,8 +24,24 @@ use super::mp_ffi::{
     cpp_x86_idle_states_set_state_mask, cpp_x86_idle_states_states, cpp_x86_mp_ap_idle_states,
     cpp_x86_mp_bp_idle_states,
 };
+#[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 use crate::kernel::types::cpu_num_t;
+
+/// Forcibly stops all other CPUs except the current one and the BSP (which is cpu 0).
+///
+/// # Safety
+///
+/// Caller must ensure that:
+/// 1. The system is on a terminal halt or panic path where forcibly resetting other APs will not
+///    violate kernel invariants required by the remaining execution on this CPU.
+/// 2. Interrupts are disabled on the calling CPU so that it cannot migrate to another CPU while
+///    iterating over APs.
+#[inline]
+pub unsafe fn x86_force_halt_all_but_local_and_bsp() {
+    // SAFETY: Caller guarantees we are on a terminal halt/panic path with interrupts disabled.
+    unsafe { super::mp_ffi::x86_force_halt_all_but_local_and_bsp() };
+}
 
 /// Returns whether `MONITOR`/`MWAIT` idle states are enabled on the system.
 #[inline]
@@ -148,6 +169,7 @@ fn report_idlestates(cpu_num: cpu_num_t, idle_states: &X86IdleStates) {
 /// # Safety
 ///
 /// `argv` must point to a valid array of `CmdArgs` of length `argc`, with `argc >= 1`.
+#[cfg(console_enabled)]
 unsafe extern "C" fn cmd_idlestates(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
     // SAFETY: The console framework guarantees `argv` points to `argc` valid `CmdArgs` elements.
     let argv = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
@@ -191,6 +213,7 @@ unsafe extern "C" fn cmd_idlestates(argc: c_int, argv: *const CmdArgs, _flags: u
     usage()
 }
 
+#[cfg(console_enabled)]
 static_command!(
     CMD_IDLESTATES,
     c"idlestates".as_ptr(),

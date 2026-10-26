@@ -87,4 +87,7 @@ unsafe extern "C" {
     ///
     /// `states` must point to a valid, initialized `X86IdleStates`.
     pub(super) fn cpp_x86_idle_states_set_state_mask(states: *mut X86IdleStates, mask: u32);
+
+    /// Forcibly stops all other CPUs except the current one and the BSP (which is cpu 0).
+    pub(super) fn x86_force_halt_all_but_local_and_bsp();
 }

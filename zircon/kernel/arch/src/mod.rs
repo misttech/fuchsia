@@ -59,6 +59,13 @@ unsafe extern "C" {
     fn cpp_arch_set_blocking_disallowed(value: bool);
     fn cpp_arch_set_restricted_flag(restricted: bool);
     fn cpp_arch_get_curr_percpu() -> *const core::ffi::c_void;
+    #[cfg(not(target_arch = "riscv64"))]
+    #[link_name = "arch_mp_send_ipi"]
+    fn c_arch_mp_send_ipi(
+        target: crate::kernel::mp::MpIpiTarget,
+        mask: crate::kernel::mp::cpu_mask_t,
+        ipi: crate::kernel::mp::MpIpi,
+    );
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -395,4 +402,25 @@ pub unsafe fn arch_copy_to_user_capture_faults(
 #[inline(always)]
 pub fn set_blocking_disallowed(value: bool) {
     unsafe { cpp_arch_set_blocking_disallowed(value) }
+}
+
+/// Send inter processor interrupt, if supported.
+///
+/// Note: Calling with [`crate::kernel::mp::MpIpiTarget::AllButLocal`] requires interrupts to be
+/// disabled on the calling CPU.
+#[inline(always)]
+pub fn arch_mp_send_ipi(
+    target: crate::kernel::mp::MpIpiTarget,
+    mask: crate::kernel::mp::cpu_mask_t,
+    ipi: crate::kernel::mp::MpIpi,
+) {
+    #[cfg(target_arch = "riscv64")]
+    {
+        riscv64::mp::arch_mp_send_ipi(target, mask, ipi)
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        // SAFETY: Foreign function call into architecture-specific IPI dispatch.
+        unsafe { c_arch_mp_send_ipi(target, mask, ipi) }
+    }
 }

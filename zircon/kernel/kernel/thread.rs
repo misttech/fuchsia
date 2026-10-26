@@ -148,6 +148,7 @@ unsafe extern "C" {
     fn cpp_thread_get_list_lock() -> *mut ksync::KSpinlock<ThreadListLockClass>;
     fn cpp_thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> *mut Thread;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
+    fn cpp_thread_current_get_backtrace(out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
     fn cpp_thread_runtime(thread: *const Thread) -> DurationMono;
     fn cpp_thread_dump_tid(tid: zx_types::zx_koid_t, full: bool);
@@ -2304,6 +2305,16 @@ pub unsafe fn migrate_to_cpu(target_cpu: cpu_num_t) {
     // SAFETY: The caller guarantees `target_cpu` is active and that the calling context is a
     // normal thread context with no active `ChainLockTransaction` or spinlocks held.
     unsafe { cpp_thread_current_migrate_to_cpu(target_cpu) }
+}
+
+/// Generate a backtrace for the calling thread.
+///
+/// `out_bt` will be `reset()` prior to be filled in and if a backtrace cannot
+/// be obtained, it will be left empty.
+#[inline]
+pub fn current_get_backtrace(out_bt: &mut Backtrace) {
+    // SAFETY: `out_bt` is a valid, writable `Backtrace` on the current stack.
+    unsafe { cpp_thread_current_get_backtrace(out_bt) };
 }
 
 /// Unit tests for Thread Rust bindings.

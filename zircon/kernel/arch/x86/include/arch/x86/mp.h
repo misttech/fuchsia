@@ -201,7 +201,7 @@ void x86_ipi_halt_handler() __NO_RETURN;
 // Called from assembly.
 extern "C" void x86_secondary_entry(ktl::atomic<unsigned int>* aps_still_booting, Thread* thread);
 
-void x86_force_halt_all_but_local_and_bsp();
+extern "C" void x86_force_halt_all_but_local_and_bsp();
 
 // Setup the high-level percpu struct pointer for |cpu_num|.
 void arch_setup_percpu(cpu_num_t cpu_num, percpu* percpu);

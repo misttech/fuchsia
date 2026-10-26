@@ -220,3 +220,12 @@ pub unsafe fn write_msr_safe(msr_id: u32, val: u64) -> Result<(), Status> {
     let status = unsafe { ffi::write_msr_safe(msr_id, val) };
     Status::ok(status)
 }
+
+/// Halts the calling CPU until the next interrupt.
+#[inline]
+pub fn x86_hlt() {
+    // SAFETY: Executing `hlt` in ring 0 halts the processor until the next interrupt.
+    unsafe {
+        core::arch::asm!("hlt", options(nostack, preserves_flags));
+    }
+}

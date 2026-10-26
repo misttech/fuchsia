@@ -5,190 +5,42 @@
 // https://opensource.org/licenses/MIT
 //
 
-#include <lib/arch/intrin.h>
-#include <lib/backtrace.h>
-#include <lib/console.h>
-#include <lib/debuglog.h>
-#include <lib/jtrace/jtrace.h>
 #include <platform.h>
-#include <stdio.h>
-#include <string.h>
-#include <zircon/errors.h>
-
-#include <arch/mp.h>
-#include <arch/x86.h>
-#include <arch/x86/apic.h>
-#include <arch/x86/feature.h>
-#include <arch/x86/mp.h>
-#include <ktl/atomic.h>
-#include <platform/efi_bootbyte.h>
-#include <platform/pc/keyboard.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
 #include <ktl/enforce.h>
 
-namespace {
+extern "C" {
 
-// The I/O port to write to for QEMU debug exit.
-const uint16_t kQEMUDebugExitPort = 0xf4;
+void rust_platform_halt_cpu();
+bool rust_platform_supports_suspend_cpu();
+zx_status_t rust_platform_suspend_cpu(bool allow_domain);
+bool rust_platform_supports_suspend_system();
+zx_status_t rust_platform_suspend_system();
+void rust_platform_panic_start(bool halt_others);
+void rust_platform_specific_halt(platform_halt_action suggested_action,
+                                 zircon_crash_reason_t reason, bool halt_on_panic) __NO_RETURN;
 
-// The return code that we should propagate to QEMU on isa-debug-exit.
-// This number must be non-zero and odd, since QEMU calculates the return
-// code as (val << 1) | 1 where "val" is the value written to 0xf4.
-const uint8_t kQEMUExitCode = 0x1f;
-static_assert(kQEMUExitCode != 0 && kQEMUExitCode % 2 != 0,
-              "QEMU exit code must be non-zero and odd.");
+}  // extern "C"
 
-ktl::atomic<cpu_mask_t> halted_cpus(0);
+void platform_halt_cpu() { rust_platform_halt_cpu(); }
 
-// Records |reason| and then attempts to reset the system.
-//
-// Not all microarch configs reset the system when recording the reboot reason.
-// Configs using unknown_reboot_reason() (e.g. intel_default_config, used for
-// unrecognized Intel models) only write the reason to CMOS and return, so fall
-// back to the generic reset mechanisms. The reason has already been recorded
-// at that point, so the next boot still honors it.
-void reboot_with_reason(uint64_t reason) {
-  efi_bootbyte_set_reason(reason);
-  x86_reboot_reason_func_t reboot_reason = x86_get_microarch_config()->reboot_reason;
-  if (reboot_reason)
-    reboot_reason(reason);
-  // We fell through. Try normal reboot.
-  x86_get_microarch_config()->reboot_system();
-  // We fell through. Try rebooting via keyboard controller.
-  pc_keyboard_reboot();
-}
-
-void reboot() {
-  // select the default reboot reason
-  reboot_with_reason(0u);
-}
-
-void reboot_recovery() { reboot_with_reason(2u); }
-
-void reboot_bootloader() { reboot_with_reason(4u); }
-
-void halt_other_cpus() {
-  static ktl::atomic<int> halted(0);
-
-  if (halted.exchange(1) == 0) {
-    // This function may have been called early in the boot process, before the
-    // mp subsystem has been initialized or secondary CPUs have been brought
-    // online.  To avoid calling into the mp subsystem before it has been
-    // initialized, check the online mask.  If this CPU is the only one online,
-    // then simply return.
-    cpu_mask_t targets = mp_get_online_mask() & ~cpu_num_to_mask(arch_curr_cpu_num());
-    if (targets == 0) {
-      return;
-    }
-
-    // stop the other cpus
-    printf("stopping other cpus\n");
-    arch_mp_send_ipi(mp_ipi_target::ALL_BUT_LOCAL, 0, mp_ipi::HALT);
-
-    // spin for a while
-    // TODO: find a better way to spin at this low level
-    for (int i = 0; i < 100000000; ++i) {
-      if (halted_cpus.load() == targets) {
-        break;
-      }
-      arch::Yield();
-    }
-
-    // Don't send an INIT IPI to the BSP, since that may cause the system to
-    // reboot
-    x86_force_halt_all_but_local_and_bsp();
-  }
-}
-
-}  // namespace
-
-void platform_halt_cpu() {
-  // Signal that this CPU is in its halt loop
-  halted_cpus.fetch_or(cpu_num_to_mask(arch_curr_cpu_num()));
-}
-
-bool platform_supports_suspend_cpu() { return false; }
+bool platform_supports_suspend_cpu() { return rust_platform_supports_suspend_cpu(); }
 
 zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
-  return ZX_ERR_NOT_SUPPORTED;
+  return rust_platform_suspend_cpu(allow_domain == PlatformAllowDomainPowerDown::Yes);
 }
 
-bool platform_supports_suspend_system() { return false; }
+bool platform_supports_suspend_system() { return rust_platform_supports_suspend_system(); }
 
-zx_status_t platform_suspend_system() { return ZX_ERR_NOT_SUPPORTED; }
+zx_status_t platform_suspend_system() { return rust_platform_suspend_system(); }
 
-// TODO(https://fxbug.dev/42180675): Refactor platform_panic_start.
 void platform_panic_start(PanicStartHaltOtherCpus option) {
-  arch_disable_ints();
-  dlog_panic_start();
-
-  static ktl::atomic<int> panic_started(0);
-  if (panic_started.exchange(1) == 0) {
-    dlog_bluescreen_init();
-    // Attempt to dump the current debug trace buffer, if we have one.
-    jtrace_dump(jtrace::TraceBufferType::Current);
-  }
-
-  if (option == PanicStartHaltOtherCpus::Yes) {
-    halt_other_cpus();
-  }
+  rust_platform_panic_start(option == PanicStartHaltOtherCpus::Yes);
 }
-
-extern const char* manufacturer;
 
 void platform_specific_halt(platform_halt_action suggested_action, zircon_crash_reason_t reason,
                             bool halt_on_panic) {
-  printf("platform_halt suggested_action %d reason %d\n", suggested_action,
-         static_cast<int>(reason));
-
-  arch_disable_ints();
-
-  switch (suggested_action) {
-    case HALT_ACTION_SHUTDOWN:
-      if (strcmp("QEMU", manufacturer) == 0) {
-        outp(kQEMUDebugExitPort, (kQEMUExitCode >> 1));
-      }
-      printf("Power off failed, halting\n");
-      break;
-    case HALT_ACTION_REBOOT:
-      printf("Rebooting...\n");
-      reboot();
-      printf("Reboot failed, halting\n");
-      break;
-    case HALT_ACTION_HALT:
-      printf("Halting...\n");
-      halt_other_cpus();
-      break;
-    case HALT_ACTION_REBOOT_BOOTLOADER:
-      printf("Rebooting ... To Boot Loader\n");
-      reboot_bootloader();
-      // We fell through.
-      printf("platform_halt: Unsupported halt reason %d\n", suggested_action);
-      break;
-    case HALT_ACTION_REBOOT_RECOVERY:
-      printf("Rebooting ... To Recovery\n");
-      reboot_recovery();
-      // We fell through.
-      printf("platform_halt: Unsupported halt reason %d\n", suggested_action);
-      break;
-  }
-
-  if (reason == ZirconCrashReason::Panic) {
-    Backtrace bt;
-    Thread::Current::GetBacktrace(bt);
-    bt.Print();
-  }
-
-  if (!halt_on_panic) {
-    printf("Rebooting...\n");
-    reboot();
-  }
-
-  printf("Halted\n");
-
-  panic_shell_start();
-
-  for (;;) {
-    x86_hlt();
-  }
+  rust_platform_specific_halt(suggested_action, reason, halt_on_panic);
 }

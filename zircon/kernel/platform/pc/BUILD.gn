@@ -39,7 +39,6 @@ source_set("pc") {
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/fixed_point",
     "//zircon/kernel/lib/init",
-    "//zircon/kernel/lib/jtrace:headers",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/lockdep",
     "//zircon/kernel/lib/page",
@@ -92,6 +91,7 @@ kernel_rust_mod("platform_pc") {
     "memory.rs",
     "mod.rs",
     "pic.rs",
+    "power.rs",
     "smbios.rs",
   ]
   deps = [

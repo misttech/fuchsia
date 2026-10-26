@@ -24,9 +24,7 @@ pub mod lapic;
 pub mod mmu_mem_types;
 #[cfg(console_enabled)]
 mod mmu_mem_types_ffi;
-#[cfg(console_enabled)]
 pub mod mp;
-#[cfg(console_enabled)]
 mod mp_ffi;
 #[cfg(console_enabled)]
 pub mod msr_bench;

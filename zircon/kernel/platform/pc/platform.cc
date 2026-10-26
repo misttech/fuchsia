@@ -301,10 +301,8 @@ void platform_init(void) {
   platform_init_keyboard(&console_input_buf);
 #endif
 
-  // Initialize all PvEoi instances prior to starting secondary CPUs.
+  // Initialize all PvEoi instances and SMBIOS information prior to starting secondary CPUs.
   rust_pveoi_init_all();
-
-  platform_init_smp();
 
   pc_init_smbios();
 
@@ -318,6 +316,8 @@ void platform_init(void) {
     return ZX_OK;
   });
   printf("smbios: manufacturer=\"%s\" product=\"%s\"\n", manufacturer, product);
+
+  platform_init_smp();
 }
 
 zx::result<power_cpu_state> platform_get_cpu_state(cpu_num_t cpu_id) {
