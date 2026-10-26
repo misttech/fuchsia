@@ -353,6 +353,7 @@ kernel_rust_mod("arch-x86-rs") {
     "src/apic.rs",
     "src/arch.rs",
     "src/arch_ffi.rs",
+    "src/bootstrap16.rs",
     "src/cache.rs",
     "src/fake_msr_access.rs",
     "src/feature.rs",

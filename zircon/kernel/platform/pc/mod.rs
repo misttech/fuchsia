@@ -13,5 +13,6 @@ pub mod hpet;
 pub mod interrupt_manager;
 pub mod interrupts;
 pub mod keyboard;
+pub mod memory;
 pub mod pic;
 pub mod smbios;

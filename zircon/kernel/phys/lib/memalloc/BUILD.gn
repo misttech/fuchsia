@@ -30,6 +30,7 @@ kernel_bindgen_crate("bindings") {
   layout_tests = false
   explicit_padding = false
   use_core = true
+  raw_lines = [ "#![no_std]" ]
   type_allowlist = [
     "memalloc::Range",
     "memalloc::Type",

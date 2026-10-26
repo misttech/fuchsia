@@ -7,9 +7,7 @@
 #ifndef ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_MEMORY_H_
 #define ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_MEMORY_H_
 
-#include <sys/types.h>
-#include <zircon/compiler.h>
-#include <zircon/types.h>
+#include <stddef.h>
 
 #include <ktl/span.h>
 
@@ -18,6 +16,11 @@ namespace memalloc {
 struct Range;
 }
 
-void pc_mem_init(ktl::span<const memalloc::Range> ranges);
+// TODO(https://fxbug.dev/576428709): Remove FFI wrapper once platform.cc is ported to Rust.
+extern "C" void rust_pc_mem_init(const memalloc::Range* ranges, size_t count);
+
+inline void pc_mem_init(ktl::span<const memalloc::Range> ranges) {
+  rust_pc_mem_init(ranges.data(), ranges.size());
+}
 
 #endif  // ZIRCON_KERNEL_PLATFORM_PC_INCLUDE_PLATFORM_PC_MEMORY_H_

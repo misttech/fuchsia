@@ -614,6 +614,24 @@ pub const V2_TOPOLOGY_C: CpuidValue<0x1f, 0, ECX, TopologyEnumerationC> = CpuidV
 /// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
 pub const V2_TOPOLOGY_D: CpuidValue<0x1f, 0, EDX, TopologyEnumerationD> = CpuidValue::new();
 
+/// Leaf/Function 0x8000_0008, EAX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.4.7  Function 8000_0008h-Processor Capacity Parameters and
+/// Extended Feature Identification.
+pub const ADDRESS_SIZE_INFO: CpuidValue<0x8000_0008, 0, EAX, AddressSizeInfo> = CpuidValue::new();
+
+layout!({
+    /// The layout of EAX in [`ADDRESS_SIZE_INFO`].
+    pub struct AddressSizeInfo(u32);
+    {
+        let __ @ 31..24;
+        let guest_phys_addr_bits @ 23..16;
+        let linear_addr_bits @ 15..8;
+        let phys_addr_bits @ 7..0;
+    }
+});
+
 /// Performance timestamp counter size.
 #[bitfield_repr(u8)]
 #[derive(Clone, Copy)]
@@ -996,5 +1014,13 @@ mod tests {
             .set(VENDOR_STRING_D, 0x6974_6e65);
         let vendor_str = VendorString::from_cpuid(&cpuid);
         assert_eq!(vendor_str, VendorString::AMD);
+    }
+
+    #[test]
+    fn address_size_info() {
+        let info = AddressSizeInfo::from(0x002b_3027);
+        assert_eq!(info.phys_addr_bits(), 0x27);
+        assert_eq!(info.linear_addr_bits(), 0x30);
+        assert_eq!(info.guest_phys_addr_bits(), 0x2b);
     }
 }

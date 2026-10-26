@@ -216,6 +216,34 @@ pub fn print_physical_page_borrowing_stats() {
     );
 }
 
+/// Initializes the PMM with the provided, unnormalized and normalized memory
+/// ranges. This in particular initializes its arenas and wires any previously
+/// allocated special subranges or holes.
+///
+/// # Safety
+///
+/// Must only be called once during single-threaded early boot before the PMM is
+/// used, and `ranges` must accurately describe the system's physical memory
+/// map.
+pub unsafe fn init(ranges: &[memalloc::Range]) -> Result<(), Status> {
+    // SAFETY: Caller guarantees early-boot single-threaded preconditions and a valid physical
+    // memory map, and `ranges.as_ptr()` and `ranges.len()` describe a valid slice for the
+    // duration of the call.
+    let status = unsafe { bindings::cpp_pmm_init(ranges.as_ptr(), ranges.len()) };
+    Status::ok(status)
+}
+
+/// Should be called after the kernel command line has been parsed.
+///
+/// # Safety
+///
+/// Must only be called during early boot before concurrent access to the PMM
+/// checker occurs.
+pub unsafe fn pmm_checker_init_from_cmdline() {
+    // SAFETY: Caller guarantees early-boot single-threaded access to PMM checker state.
+    unsafe { bindings::cpp_pmm_checker_init_from_cmdline() };
+}
+
 /// Synchronously walk the PMM's free list and validate each page.  This is an incredibly expensive
 /// operation and should only be used for debugging purposes.
 pub fn pmm_checker_check_all_free_pages() {

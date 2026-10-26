@@ -9,6 +9,7 @@ pub mod apic;
 pub mod arch;
 #[cfg(any(console_enabled, ktest))]
 mod arch_ffi;
+pub mod bootstrap16;
 pub mod cache;
 pub mod fake_msr_access;
 pub mod feature;

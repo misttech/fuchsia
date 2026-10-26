@@ -65,10 +65,12 @@ struct __PACKED x86_ap_bootstrap_data {
 };
 
 // Initialize the bootstrap16 subsystem by giving it pages to work with.
-// |bootstrap_base| must refer to k_x86_boostrap16_buffer_size bytes of ram aligned
+// |bootstrap_base| must refer to k_x86_bootstrap16_buffer_size bytes of ram aligned
 // on a page boundary less than 1M that are available for the OS to use.
+// LINT.IfChange
 constexpr size_t k_x86_bootstrap16_buffer_size = 3UL * kPageSize;
-void x86_bootstrap16_init(paddr_t bootstrap_base);
+// LINT.ThenChange(//zircon/kernel/arch/x86/src/bootstrap16.rs)
+extern "C" void x86_bootstrap16_init(paddr_t bootstrap_base);
 
 // Upon success, returns a pointer to the virtual address of the bootstrap data, and the physical
 // address of the first instruction that should be executed in 16-bit mode.
