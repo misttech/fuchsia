@@ -13,14 +13,15 @@ use crate::lsm_tree::persistent_layer::PersistentLayerWriter;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{Item, ItemRef, Layer, LayerIterator, LayerWriter as _};
 use crate::lsm_tree::{LayerSet, Query, layer_from_handle};
+use crate::object_store::allocator::Reservation;
 use crate::object_store::extent_mapping_iterator::ExtentMappingIterator;
 use crate::object_store::extent_record::{ExtentMode, ExtentValue};
-use crate::object_store::object_manager::ReservationUpdate;
+use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
     AttributeKey, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
 };
 use crate::object_store::transaction::{
-    AssocObj, LockKey, Mutation, Options, ReservationOptions, lock_keys,
+    AssocObj, AssociatedObject, LockKey, Mutation, Options, ReservationOptions, lock_keys,
 };
 use crate::object_store::volume::{RootVolume, root_volume};
 use crate::object_store::{
@@ -31,6 +32,7 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::virtual_device::ReadOnlyDevice;
 use anyhow::{Context, Error, bail};
+use scopeguard::ScopeGuard;
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 
@@ -135,8 +137,6 @@ impl ObjectStore {
         extents: Vec<FileExtent>,
     ) -> Result<(), Error> {
         let fs = self.filesystem();
-        let keys = lock_keys![LockKey::flush(self.store_object_id())];
-        let _guard = Some(fs.lock_manager().write_lock(keys).await);
 
         // Step 1: Create a new object that owns the portions of the backing file that we want to
         // discard once the volume has been installed.
@@ -160,56 +160,31 @@ impl ObjectStore {
         let locked = (layer_with_metadata as Arc<dyn Layer<_, _>>).into();
         inner_layer_set.layers.push(locked);
 
-        let txn_options = Options {
-            skip_journal_checks: true,
-            reservation: ReservationOptions::Borrowed,
-            ..Default::default()
-        };
-
-        let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
-        transaction.add(self.store_object_id(), Mutation::BeginFlush);
-        transaction.commit().await?;
-
         // Step 2: Create an object for the new layer we will create for the installed volume.
-        // For this, we need two transactions: one to create the new layer (graveyarded so it's
-        // cleaned up if we crash), and another that atomically swaps in the new layer and
-        // graveyards the old ones.
-        let mut create_new_layer_txn = self.new_transaction(lock_keys![], txn_options).await?;
-        let reservation_update: ReservationUpdate; // Must outlive `activate_volume_txn`.
         let parent_store = self.parent_store.as_ref().unwrap();
-
-        let mut activate_volume_txn = root
-            .acquire_transaction_for_remove_volume(
-                dst,
-                [LockKey::object(
-                    parent_store.store_object_id(),
-                    self.store_info_handle_object_id().unwrap(),
-                )],
-                true,
-                txn_options,
-            )
-            .await?
-            .1;
-
         let new_layer = {
-            let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };
+            let mut create_new_layer_txn =
+                self.new_transaction(lock_keys![], Options::default()).await?;
             let new_layer = ObjectStore::create_object(
                 parent_store,
                 &mut create_new_layer_txn,
-                handle_options,
+                HandleOptions::default(),
                 None,
             )
             .await?;
             parent_store.add_to_graveyard(&mut create_new_layer_txn, new_layer.object_id());
-            parent_store.remove_from_graveyard(&mut activate_volume_txn, new_layer.object_id());
             create_new_layer_txn.commit().await?;
             new_layer
         };
+        let new_layer_object_id = new_layer.object_id();
+        let clean_up_new_layer = scopeguard::guard((), |_| {
+            fs.queue_tombstone_object(parent_store.store_object_id(), new_layer_object_id);
+        });
 
         // Step 3: Write out the new object tree layer but with remapped extent records.
         {
             let start_time = std::time::Instant::now();
-            let writer = DirectWriter::new(&new_layer, txn_options).await;
+            let writer = DirectWriter::new(&new_layer, Options::default()).await;
             // TODO(https://fxbug.dev/415300916): Our extent mapping iterator may emit more items
             // than are in the current layer set so `num_items` will likely be too small here. We
             // should calculate the correct amount ahead of time before emitting the object records.
@@ -230,16 +205,7 @@ impl ObjectStore {
             );
         }
 
-        // Move the old layers to the graveyard at the end.
-        let old_layers = self.tree.immutable_layer_set().layers;
-        for layer in &old_layers {
-            if let Some(handle) = layer.handle() {
-                parent_store.add_to_graveyard(&mut activate_volume_txn, handle.object_id());
-            }
-        }
-
         let total_layer_size = new_layer.get_size();
-        let new_layer_object_id = new_layer.object_id();
         let new_layers = vec![layer_from_handle(new_layer, None).await?];
 
         let old_store_info = inner_volume.store_info().unwrap();
@@ -250,15 +216,72 @@ impl ObjectStore {
             ..old_store_info
         };
 
+        let store_reservation_amount = fs
+            .ensure_local()
+            .object_manager()
+            .tree_reservation(self.store_object_id(), total_layer_size);
+        let reservation = fs
+            .ensure_local()
+            .allocator()
+            .reserve(None, store_reservation_amount)
+            .ok_or(FxfsError::NoSpace)?;
+        let reservation_update = InstallReservationUpdate { total_layer_size, reservation };
+
         // Step 4: Update the on-disk and in-memory state of the object store to be consistent with
         // the new object tree layer, and swap volumes atomically.
+        let mut activate_volume_txn = root
+            .acquire_transaction_for_remove_volume(
+                dst,
+                [
+                    LockKey::flush(self.store_object_id()),
+                    LockKey::object(
+                        parent_store.store_object_id(),
+                        self.store_info_handle_object_id().unwrap(),
+                    ),
+                ],
+                true,
+                Options { reservation: ReservationOptions::Borrowed, ..Default::default() },
+            )
+            .await?
+            .1;
+
+        parent_store.remove_from_graveyard(&mut activate_volume_txn, new_layer_object_id);
+
+        // Move the old layers to the graveyard at the end.
+        let old_layers = self.tree.immutable_layer_set().layers;
+        for layer in &old_layers {
+            if let Some(handle) = layer.handle() {
+                parent_store.add_to_graveyard(&mut activate_volume_txn, handle.object_id());
+            }
+        }
+
         self.write_store_info(&mut activate_volume_txn, &new_store_info).await?;
         let replaced_objects = root.replace_volume(&mut activate_volume_txn, src, dst).await?;
-        reservation_update = ReservationUpdate::new(total_layer_size);
+        // Unlike `ObjectStore::flush_unlocked` (which commits `BeginFlush` in a separate
+        // transaction at the start of the flush to snapshot `StoreInfo` and separate pre- and
+        // post-flush mutations), `install_volume_impl` replaces the store's entire tree and
+        // `StoreInfo` from `inner_volume` while the volume is not in use. Including both
+        // `BeginFlush` and `EndFlush` in `activate_volume_txn` is safe here because:
+        //   1. `Mutation::BeginFlush` sorts before `Mutation::EndFlush` in the transaction's
+        //      `BTreeSet`, so `BeginFlush` is written and applied before `EndFlush`.
+        //   2. On journal replay, `EndFlush` sets the replay starting offset for `self` to
+        //      `activate_volume_txn`'s offset + 1, skipping all mutations for `self` in
+        //      `activate_volume_txn` and earlier transactions while still replaying any subsequent
+        //      transactions (such as tombstoning `metadata_object_id` in Step 5). This is safe
+        //      because all other mutations in `activate_volume_txn` target `parent_store`,
+        //      `root_store`, or the allocator, never `self`.
+        activate_volume_txn.add(self.store_object_id(), Mutation::BeginFlush);
         activate_volume_txn.add_with_object(
             self.store_object_id(),
             Mutation::EndFlush(0),
             AssocObj::Borrowed(&reservation_update),
+        );
+        debug_assert!(
+            activate_volume_txn.mutations().iter().all(|m| {
+                m.object_id != self.store_object_id()
+                    || matches!(m.mutation, Mutation::BeginFlush | Mutation::EndFlush(_))
+            }),
+            "activate_volume_txn must not contain store mutations for the installed volume"
         );
         activate_volume_txn
             .commit_with_callback(|_| {
@@ -270,6 +293,7 @@ impl ObjectStore {
                 self.tree.set_layers(new_layers);
             })
             .await?;
+        ScopeGuard::into_inner(clean_up_new_layer);
 
         // Step 5: Delete (tombstone) everything we don't need to keep around anymore. Similar to
         // the logic we use when deleting volumes or flushing object stores however, we ensure
@@ -282,26 +306,34 @@ impl ObjectStore {
             let object_id = layer.handle().map(|h| h.object_id());
             layer.close_layer().await;
             if let Some(object_id) = object_id {
-                parent_store.tombstone_object(object_id, txn_options, None).await?;
+                fs.tombstone_object(parent_store.store_object_id(), object_id, None).await?;
             }
         }
 
         // Delete objects from the destination volume we replaced, if any.
-        // NOTE: The transactions here must skip journal checks since we hold flush locks, which
-        // journal compaction (needed to free journal space) would need to acquire.
         if let Some(replaced_objects) = replaced_objects {
+            let root_store_id = fs.ensure_local().root_store().store_object_id();
             for object_id in replaced_objects {
-                fs.ensure_local()
-                    .root_store()
-                    .tombstone_object(object_id, txn_options, None)
-                    .await?;
+                fs.tombstone_object(root_store_id, object_id, None).await?;
             }
         }
 
         // Delete the metadata ownership file.
-        self.tombstone_object(metadata_object_id, txn_options, None).await?;
+        fs.tombstone_object(self.store_object_id(), metadata_object_id, None).await?;
 
         Ok(())
+    }
+}
+
+struct InstallReservationUpdate {
+    total_layer_size: u64,
+    reservation: Reservation,
+}
+
+impl AssociatedObject for InstallReservationUpdate {
+    fn will_apply_mutation(&self, _mutation: &Mutation, object_id: u64, manager: &ObjectManager) {
+        self.reservation.move_to(manager.metadata_reservation(), self.reservation.amount());
+        manager.update_layer_size(object_id, self.total_layer_size);
     }
 }
 
@@ -627,15 +659,7 @@ mod tests {
             write_image_to_file(&src, &image, INSTALL_FILE).await;
             // We should see a different set of files before/after installation.
             verify_volume_contents(&root, DST_NAME, &existing_files).await;
-
-            // Reserve all remaining free space in the allocator to verify that `install_volume`
-            // (including tombstoning replaced volume objects) uses metadata reservations rather
-            // than requiring new allocator reservations.
-            let free_space = fs.allocator().get_disk_bytes() - fs.allocator().get_used_bytes().0;
-            let hold_all_free = fs.allocator().reserve(None, free_space).unwrap();
             ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
-            std::mem::drop(hold_all_free);
-
             assert!(root.volume_directory().lookup(SRC_NAME).await.unwrap().is_none());
             verify_volume_contents(&root, DST_NAME, &new_files).await;
             ensure_volume_graveyard_is_empty(&root, DST_NAME).await;
@@ -893,6 +917,237 @@ mod tests {
             assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::AccessDenied);
         };
 
+        fs.close().await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_install_volume_no_space_cleans_up_new_layer() {
+        use crate::object_store::transaction::TRANSACTION_METADATA_MAX_AMOUNT;
+
+        let files = [
+            ("file_1", "Hello, world!"),
+            ("file_2", "Goodbye, stranger!"),
+            ("file_3", "Its been nice..."),
+        ];
+        let image = create_test_filesystem(512, 4096, DST_NAME, &files).await;
+
+        let fs =
+            FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
+        {
+            let root = root_volume(fs.clone()).await.unwrap();
+            let src = root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
+            write_image_to_file(&src, &image, INSTALL_FILE).await;
+
+            // Leave just enough free space for `create_new_layer_txn` (Step 2) to succeed and
+            // create `new_layer` in `root_store`'s graveyard, but not enough for Step 3/4 to
+            // write `new_layer` and reserve `store_reservation_amount`.
+            let free_space = fs.allocator().get_disk_bytes() - fs.allocator().get_used_bytes().0;
+            let hold_free =
+                fs.allocator().reserve(None, free_space - TRANSACTION_METADATA_MAX_AMOUNT).unwrap();
+            let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
+                .await
+                .expect_err("install_volume should fail with NoSpace");
+            assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::NoSpace);
+            std::mem::drop(hold_free);
+
+            // Wait for the graveyard reaper to process queued tombstones and verify that
+            // `new_layer` was reaped from `root_store`'s graveyard without needing a remount.
+            fs.graveyard().flush().await;
+            let root_store = fs.root_store();
+            let layer_set = root_store.tree().layer_set();
+            let mut merger = layer_set.merger();
+            let iter = crate::object_store::Graveyard::iter(
+                root_store.graveyard_directory_object_id(),
+                &mut merger,
+            )
+            .await
+            .unwrap();
+            assert!(iter.get().is_none(), "root_store graveyard should be empty after error");
+
+            // Now that space is available, retrying `install_volume` should succeed.
+            ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
+            verify_volume_contents(&root, DST_NAME, &files).await;
+            ensure_volume_graveyard_is_empty(&root, DST_NAME).await;
+            do_fsck(&fs, DST_NAME).await;
+        }
+
+        fs.close().await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_install_volume_checks_journal_space() {
+        use crate::hooks::Hooks;
+        use crate::object_store::journal::JournalOptions;
+
+        // Create an image with fragmented metadata_object_id extents by interleaving files and
+        // deleted spacer objects.
+        let image = {
+            let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+            let fs = FxFilesystem::new_empty(device).await.unwrap();
+            {
+                let root = root_volume(fs.clone()).await.unwrap();
+                let volume =
+                    root.new_volume(DST_NAME, NewChildStoreOptions::default()).await.unwrap();
+                let dir =
+                    Directory::open(&volume, volume.root_directory_object_id()).await.unwrap();
+                let device = fs.device();
+                let buf = device.allocate_buffer(4096).await;
+                let mut spacer_ids = Vec::new();
+                for i in 0..1600 {
+                    let keys =
+                        lock_keys![LockKey::object(volume.store_object_id(), dir.object_id())];
+                    let mut transaction =
+                        volume.new_transaction(keys, Default::default()).await.unwrap();
+                    let file_name = format!("f_{i}");
+                    let h1 = dir.create_child_file(&mut transaction, &file_name).await.unwrap();
+                    let h2 = ObjectStore::create_object(
+                        &volume,
+                        &mut transaction,
+                        HandleOptions::default(),
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                    volume.add_to_graveyard(&mut transaction, h2.object_id());
+                    transaction.commit().await.unwrap();
+                    h1.write_or_append(Some(0), buf.as_ref()).await.unwrap();
+                    h2.write_or_append(Some(0), buf.as_ref()).await.unwrap();
+                    spacer_ids.push(h2.object_id());
+                }
+                for spacer_id in spacer_ids {
+                    fs.tombstone_object(volume.store_object_id(), spacer_id, None).await.unwrap();
+                }
+            }
+            fs.sync(SyncOptions { flush_device: true, ..Default::default() }).await.unwrap();
+            fs.close().await.unwrap();
+            let device = fs.take_device().await;
+            device.reopen(false);
+            device
+        };
+
+        let reclaim_size = 8192;
+        let device = DeviceHolder::new(FakeDevice::new(32768, 4096));
+        let (mut hooks, fs_hooks) = Hooks::new();
+        let fs = FxFilesystemBuilder::new()
+            .hooks(fs_hooks)
+            .journal_options(JournalOptions { reclaim_size, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .unwrap();
+
+        let root = root_volume(fs.clone()).await.unwrap();
+        let src = root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
+        write_image_to_file(&src, &image, INSTALL_FILE).await;
+
+        fs.journal().force_compact().await.unwrap();
+        fs.journal().pause_compactions().await;
+
+        // Dirty `src` slightly so it is in `journal_checkpoints` when compaction runs.
+        {
+            let mut transaction =
+                src.new_transaction(lock_keys![], Default::default()).await.unwrap();
+            let h =
+                ObjectStore::create_object(&src, &mut transaction, HandleOptions::default(), None)
+                    .await
+                    .unwrap();
+            src.add_to_graveyard(&mut transaction, h.object_id());
+            transaction.commit().await.unwrap();
+            fs.tombstone_object(src.store_object_id(), h.object_id(), None).await.unwrap();
+        }
+
+        let waited_for_journal_space = Arc::new(AtomicBool::new(false));
+        let waited_clone = waited_for_journal_space.clone();
+        let journal_clone = fs.journal().clone();
+        hooks.set_waiting_for_journal_space(move || {
+            waited_clone.store(true, Ordering::SeqCst);
+            journal_clone.resume_compactions();
+        });
+
+        ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
+
+        assert!(
+            waited_for_journal_space.load(Ordering::SeqCst),
+            "install_volume should check for journal space and trigger compaction when journal \
+             exceeds reclaim_size"
+        );
+        do_fsck(&fs, DST_NAME).await;
+        fs.close().await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_install_volume_large_layer_and_compaction() {
+        use crate::object_store::journal::JournalOptions;
+
+        // Create an image with 15,000 files so its object tree layer exceeds the 1 MiB initial
+        // metadata reservation size (RESERVED_SPACE).
+        let image = {
+            let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
+            let fs = FxFilesystem::new_empty(device).await.unwrap();
+            {
+                let root = root_volume(fs.clone()).await.unwrap();
+                let volume =
+                    root.new_volume(DST_NAME, NewChildStoreOptions::default()).await.unwrap();
+                let dir =
+                    Directory::open(&volume, volume.root_directory_object_id()).await.unwrap();
+                for batch in 0..150 {
+                    let keys =
+                        lock_keys![LockKey::object(volume.store_object_id(), dir.object_id())];
+                    let mut transaction =
+                        volume.new_transaction(keys, Default::default()).await.unwrap();
+                    for i in 0..100 {
+                        let name = format!("file_{}_{}", batch, i);
+                        dir.create_child_file(&mut transaction, &name).await.unwrap();
+                    }
+                    transaction.commit().await.unwrap();
+                }
+            }
+            fs.sync(SyncOptions { flush_device: true, ..Default::default() }).await.unwrap();
+            fs.close().await.unwrap();
+            let device = fs.take_device().await;
+            device.reopen(false);
+            device
+        };
+
+        let reclaim_size = 65536;
+        let device = DeviceHolder::new(FakeDevice::new(32768, 4096));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(JournalOptions { reclaim_size, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .unwrap();
+
+        let root = root_volume(fs.clone()).await.unwrap();
+        let src = root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
+        let other = root.new_volume("other", NewChildStoreOptions::default()).await.unwrap();
+        write_image_to_file(&src, &image, INSTALL_FILE).await;
+
+        // Populate `other` with objects so it requires metadata reservation during compaction.
+        {
+            let dir = Directory::open(&other, other.root_directory_object_id()).await.unwrap();
+            for batch in 0..20 {
+                let keys = lock_keys![LockKey::object(other.store_object_id(), dir.object_id())];
+                let mut transaction =
+                    other.new_transaction(keys, Default::default()).await.unwrap();
+                for i in 0..100 {
+                    let name = format!("other_{}_{}", batch, i);
+                    dir.create_child_file(&mut transaction, &name).await.unwrap();
+                }
+                transaction.commit().await.unwrap();
+            }
+        }
+
+        // Installing a volume whose layer exceeds RESERVED_SPACE should allocate from general free
+        // space and properly fund the store reservation instead of exhausting metadata_reservation.
+        ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
+
+        // Trigger a compaction and verify `other` flushes cleanly without running out of metadata
+        // reservation space.
+        fs.journal().force_compact().await.unwrap();
+
+        do_fsck(&fs, DST_NAME).await;
+        do_fsck(&fs, "other").await;
         fs.close().await.unwrap();
     }
 }
