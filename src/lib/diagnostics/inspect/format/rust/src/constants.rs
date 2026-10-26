@@ -11,13 +11,9 @@ pub const PAGE_SIZE_BYTES: usize = 4096;
 pub const HEADER_SIZE_BYTES: usize = 8;
 
 /// Magic number for the Header block. "INSP" in UTF-8 little-endian.
-pub const HEADER_MAGIC_NUMBER: u32 = u32::from_le_bytes(*b"INSP");
+pub const HEADER_MAGIC_NUMBER: u32 = 0x50534e49;
 
-/// Magic number for the Blob Header block. "BLOB" in UTF-8 little-endian.
-pub const BLOB_HEADER_MAGIC_NUMBER: u32 = u32::from_le_bytes(*b"BLOB");
-
-/// Version number for the Header block, shared by both regular Inspect ("INSP")
-/// and Blob ("BLOB") VMO headers.
+/// Version number for the Header block.
 pub const HEADER_VERSION_NUMBER: u32 = 2;
 
 /// Maximum number order of a block.

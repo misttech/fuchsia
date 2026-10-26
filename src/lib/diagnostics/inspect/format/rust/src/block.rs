@@ -26,7 +26,6 @@ pub use diagnostics_hierarchy::ArrayFormat;
 pub enum LinkNodeDisposition {
     Child = 0,
     Inline = 1,
-    Blob = 2,
 }
 
 /// Format in which the property will be read.
@@ -276,63 +275,6 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Array<Unknown>> {
 }
 
 impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Header> {
-    // =========================================================================
-    // Header parsing helpers
-    //
-    // Both regular Inspect VMOs ("INSP", `HEADER_MAGIC_NUMBER`) and Blob VMOs
-    // ("BLOB", `BLOB_HEADER_MAGIC_NUMBER`) begin with a 32-byte `Header` block
-    // at `BlockIndex::HEADER` that shares the same layout, version
-    // (`HEADER_VERSION_NUMBER`), seqlock generation count, and `vmo_size`
-    // fields, differing only in their 4-byte magic word.
-    //
-    // Handling their version and parsing together with shared logic avoids
-    // unnecessary complexity unless a future format evolution requires decoupling
-    // them. If in the future they diverge enough to warrant decoupling versioning
-    // and parsing, it should be easy to split this logic apart.
-    //
-    // `parse_header_with_magic` implements the shared validation, while
-    // `parse_inspect_header` and `parse_blob_header` specialize it for regular
-    // Inspect VMOs and Blob VMOs respectively.
-    // =========================================================================
-
-    /// Parses a HEADER block at `BlockIndex::HEADER` with the given `expected_magic` number.
-    ///
-    /// Returns `None` if the container is smaller than `MIN_ORDER_SIZE`, the block at
-    /// `BlockIndex::HEADER` is not of type `BlockType::Header`, the magic number does not
-    /// match `expected_magic`, or the version is not `HEADER_VERSION_NUMBER` (shared by
-    /// both regular Inspect and Blob headers).
-    pub fn parse_header_with_magic(container: T, expected_magic: u32) -> Option<Self> {
-        if container.len() < constants::MIN_ORDER_SIZE {
-            return None;
-        }
-        let block = Block::new(container, BlockIndex::HEADER);
-        if HeaderFields::block_type(&block) != BlockType::Header as u8 {
-            return None;
-        }
-        if block.magic_number() != expected_magic
-            || block.version() != constants::HEADER_VERSION_NUMBER
-        {
-            return None;
-        }
-        Some(block)
-    }
-
-    /// Parses a regular Inspect VMO HEADER block ("INSP", `HEADER_MAGIC_NUMBER`) at
-    /// `BlockIndex::HEADER`.
-    ///
-    /// Delegates to [`Self::parse_header_with_magic`] with `constants::HEADER_MAGIC_NUMBER`.
-    pub fn parse_inspect_header(container: T) -> Option<Self> {
-        Self::parse_header_with_magic(container, constants::HEADER_MAGIC_NUMBER)
-    }
-
-    /// Parses a Blob VMO HEADER block ("BLOB", `BLOB_HEADER_MAGIC_NUMBER`) at
-    /// `BlockIndex::HEADER`.
-    ///
-    /// Delegates to [`Self::parse_header_with_magic`] with `constants::BLOB_HEADER_MAGIC_NUMBER`.
-    pub fn parse_blob_header(container: T) -> Option<Self> {
-        Self::parse_header_with_magic(container, constants::BLOB_HEADER_MAGIC_NUMBER)
-    }
-
     /// Returns the magic number in a HEADER block.
     pub fn magic_number(&self) -> u32 {
         HeaderFields::header_magic(self)
@@ -348,12 +290,6 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Header> {
         PayloadFields::value(self)
     }
 
-    /// Returns the generation count if the HEADER block is unlocked (even generation count).
-    pub fn unlocked_generation_count(&self) -> Option<u64> {
-        let count = self.generation_count();
-        (count & 1 == 0).then_some(count)
-    }
-
     /// Returns the size of the part of the VMO that is currently allocated. The size
     /// is saved in a field in the HEADER block.
     pub fn vmo_size(&self) -> Result<Option<u32>, Error> {
@@ -363,11 +299,6 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Header> {
         let offset = (self.index + 1).offset();
         let value = self.container.get_value(offset).ok_or(Error::InvalidOffset(offset))?;
         Ok(Some(value))
-    }
-
-    /// True if the header is frozen (`generation_count == VMO_FROZEN`), false otherwise.
-    pub fn is_frozen(&self) -> bool {
-        self.generation_count() == constants::VMO_FROZEN
     }
 
     /// True if the header is locked, false otherwise.
@@ -693,25 +624,12 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
 }
 
 impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Block<T, Reserved> {
-    // =========================================================================
-    // Header initialization helpers
-    //
-    // `become_header_with_magic` initializes a 32-byte (`HEADER_ORDER = 1`)
-    // `Header` block at `BlockIndex::HEADER` with a caller-supplied magic word,
-    // `HEADER_VERSION_NUMBER`, generation 0, and `vmo_size = size`.
-    // `become_inspect_header` ("INSP") and `become_blob_header` ("BLOB")
-    // delegate to it.
-    // =========================================================================
-
-    fn become_header_with_magic(
-        mut self,
-        magic: u32,
-        size: usize,
-    ) -> Result<Block<T, Header>, Error> {
+    /// Initializes a HEADER block.
+    pub fn become_header(mut self, size: usize) -> Result<Block<T, Header>, Error> {
         self.index = BlockIndex::HEADER;
         HeaderFields::set_order(&mut self, constants::HEADER_ORDER);
         HeaderFields::set_block_type(&mut self, BlockType::Header as u8);
-        HeaderFields::set_header_magic(&mut self, magic);
+        HeaderFields::set_header_magic(&mut self, constants::HEADER_MAGIC_NUMBER);
         HeaderFields::set_header_version(&mut self, constants::HEADER_VERSION_NUMBER);
         PayloadFields::set_value(&mut self, 0);
         let mut this =
@@ -719,18 +637,6 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
         // Safety: a valid `size` is smaller than a u32
         this.set_vmo_size(size.try_into().unwrap())?;
         Ok(this)
-    }
-
-    /// Initializes a regular Inspect VMO HEADER block with the standard Inspect
-    /// magic number ("INSP", `HEADER_MAGIC_NUMBER`).
-    pub fn become_inspect_header(self, size: usize) -> Result<Block<T, Header>, Error> {
-        self.become_header_with_magic(constants::HEADER_MAGIC_NUMBER, size)
-    }
-
-    /// Initializes a Blob VMO HEADER block with the Blob magic number
-    /// ("BLOB", `BLOB_HEADER_MAGIC_NUMBER`).
-    pub fn become_blob_header(self, size: usize) -> Result<Block<T, Header>, Error> {
-        self.become_header_with_magic(constants::BLOB_HEADER_MAGIC_NUMBER, size)
     }
 
     /// Converts a block to an EXTENT block.
@@ -1325,12 +1231,11 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_become_inspect_header() {
+    fn test_become_header() {
         let (mut container, _storage) =
             Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let block = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
+        let block =
+            get_reserved(&mut container).become_header(constants::MIN_ORDER_SIZE * 2).unwrap();
         assert_eq!(block.block_type(), Some(BlockType::Header));
         assert_eq!(*block.index(), 0);
         assert_eq!(block.order(), constants::HEADER_ORDER);
@@ -1341,37 +1246,14 @@ mod tests {
         assert_8_bytes!(container, 8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 16, [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert!(Block::parse_inspect_header(&container).is_some());
-        assert!(Block::parse_blob_header(&container).is_none());
-    }
-
-    #[fuchsia::test]
-    fn test_become_blob_header() {
-        let (mut container, _storage) =
-            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let block =
-            get_reserved(&mut container).become_blob_header(constants::MIN_ORDER_SIZE * 2).unwrap();
-        assert_eq!(block.block_type(), Some(BlockType::Header));
-        assert_eq!(*block.index(), 0);
-        assert_eq!(block.order(), constants::HEADER_ORDER);
-        assert_eq!(block.magic_number(), constants::BLOB_HEADER_MAGIC_NUMBER);
-        assert_eq!(block.version(), constants::HEADER_VERSION_NUMBER);
-        assert_eq!(block.vmo_size().unwrap().unwrap() as usize, constants::MIN_ORDER_SIZE * 2);
-        assert_8_bytes!(container, 0, [0x01, 0x02, 0x02, 0x00, 0x42, 0x4c, 0x4f, 0x42]);
-        assert_8_bytes!(container, 8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert_8_bytes!(container, 16, [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert!(Block::parse_blob_header(&container).is_some());
-        assert!(Block::parse_inspect_header(&container).is_none());
     }
 
     #[fuchsia::test]
     fn test_header_without_size() {
         let (mut container, _storage) =
             Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let block = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
+        let block =
+            get_reserved(&mut container).become_header(constants::MIN_ORDER_SIZE * 2).unwrap();
         assert_eq!(block.order(), constants::HEADER_ORDER);
         assert!(block.vmo_size().unwrap().is_some());
 
@@ -1387,86 +1269,26 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_parse_header_short_container() {
-        let short_buf = [0u8; constants::MIN_ORDER_SIZE - 1];
-        assert!(Block::parse_inspect_header(&short_buf).is_none());
-        assert!(Block::parse_blob_header(&short_buf).is_none());
-    }
-
-    #[fuchsia::test]
-    fn test_parse_header_wrong_block_type() {
-        let (mut container, _storage) =
-            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let _ = get_reserved(&mut container);
-        assert!(Block::parse_inspect_header(&container).is_none());
-        assert!(Block::parse_blob_header(&container).is_none());
-    }
-
-    #[fuchsia::test]
-    fn test_parse_header_invalid_version() {
-        let (mut container, _storage) =
-            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let _ = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
-
-        // Version < HEADER_VERSION_NUMBER is rejected.
-        {
-            let mut block = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
-            HeaderFields::set_header_version(&mut block, constants::HEADER_VERSION_NUMBER - 1);
-        }
-        assert!(Block::parse_inspect_header(&container).is_none());
-
-        // Version > HEADER_VERSION_NUMBER is rejected.
-        {
-            let mut block = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
-            HeaderFields::set_header_version(&mut block, constants::HEADER_VERSION_NUMBER + 1);
-        }
-        assert!(Block::parse_inspect_header(&container).is_none());
-    }
-
-    #[fuchsia::test]
-    fn test_parse_header_invalid_magic() {
-        let (mut container, _storage) =
-            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let mut block = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
-        block.set_magic(0x1234_5678);
-        assert!(Block::parse_inspect_header(&container).is_none());
-        assert!(Block::parse_blob_header(&container).is_none());
-    }
-
-    #[fuchsia::test]
     fn test_freeze_thaw_header() {
         let (mut container, _storage) =
             Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let block = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
+        let block =
+            get_reserved(&mut container).become_header(constants::MIN_ORDER_SIZE * 2).unwrap();
         assert_eq!(block.block_type(), Some(BlockType::Header));
         assert_eq!(*block.index(), 0);
         assert_eq!(block.order(), constants::HEADER_ORDER);
         assert_eq!(block.magic_number(), constants::HEADER_MAGIC_NUMBER);
         assert_eq!(block.version(), constants::HEADER_VERSION_NUMBER);
-        assert!(!block.is_frozen());
-        assert_eq!(block.unlocked_generation_count(), Some(0));
         assert_8_bytes!(container, 0, [0x01, 0x02, 0x02, 0x00, 0x49, 0x4e, 0x53, 0x50]);
         assert_8_bytes!(container, 8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 16, [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 
         let old = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER).freeze();
-        let frozen_block = Block::parse_inspect_header(&container).unwrap();
-        assert!(frozen_block.is_frozen());
-        assert_eq!(frozen_block.unlocked_generation_count(), Some(constants::VMO_FROZEN));
         assert_8_bytes!(container, 8, [0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
         assert_8_bytes!(container, 16, [0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER).thaw(old);
-        let thawed_block = Block::parse_inspect_header(&container).unwrap();
-        assert!(!thawed_block.is_frozen());
-        assert_eq!(thawed_block.unlocked_generation_count(), Some(0));
         assert_8_bytes!(container, 8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 16, [0x020, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
@@ -1479,9 +1301,7 @@ mod tests {
 
         let (mut container, _storage) =
             Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        let _ = get_reserved(&mut container)
-            .become_inspect_header(constants::MIN_ORDER_SIZE * 2)
-            .unwrap();
+        let _ = get_reserved(&mut container).become_header(constants::MIN_ORDER_SIZE * 2).unwrap();
 
         let mut unaligned = Unaligned(0, [0; 32]);
         assert_eq!(unaligned.0, 0);
@@ -1543,7 +1363,6 @@ mod tests {
         let mut block = get_header(&mut container, constants::MIN_ORDER_SIZE * 2);
         block.lock();
         assert!(block.is_locked());
-        assert_eq!(block.unlocked_generation_count(), None);
         assert_eq!(block.generation_count(), 1);
         let header_bytes: [u8; 8] = [0x01, 0x02, 0x02, 0x00, 0x49, 0x4e, 0x53, 0x50];
         assert_8_bytes!(container, 0, header_bytes[..]);
@@ -1553,7 +1372,6 @@ mod tests {
         let mut block = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
         block.unlock();
         assert!(!block.is_locked());
-        assert_eq!(block.unlocked_generation_count(), Some(2));
         assert_eq!(block.generation_count(), 2);
         assert_8_bytes!(container, 0, header_bytes[..]);
         assert_8_bytes!(container, 8, [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
@@ -2112,15 +1930,6 @@ mod tests {
         assert_eq!(block.link_node_disposition(), Some(LinkNodeDisposition::Inline));
         assert_8_bytes!(container, 0, [0x01, 0x0c, 0x02, 0x00, 0x00, 0x01, 0x00, 0x00]);
         assert_8_bytes!(container, 8, [0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10]);
-
-        let block = get_reserved(&mut container).become_link(
-            BlockIndex::new(1),
-            BlockIndex::new(2),
-            BlockIndex::new(3),
-            LinkNodeDisposition::Blob,
-        );
-        assert_eq!(block.link_node_disposition(), Some(LinkNodeDisposition::Blob));
-        assert_8_bytes!(container, 8, [0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20]);
     }
 
     #[test]
@@ -2160,7 +1969,7 @@ mod tests {
     }
 
     fn get_header(container: &mut Container, size: usize) -> Block<&mut Container, Header> {
-        get_reserved(container).become_inspect_header(size).unwrap()
+        get_reserved(container).become_header(size).unwrap()
     }
 
     fn get_reserved(container: &mut Container) -> Block<&mut Container, Reserved> {

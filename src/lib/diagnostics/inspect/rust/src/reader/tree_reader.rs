@@ -148,13 +148,6 @@ fn expand_inner(
                     hierarchy.properties.extend(child_hierarchy.properties);
                     hierarchy.missing.extend(child_hierarchy.missing);
                 }
-                // TODO(https://fxbug.dev/573703359): Expand LinkNodeDisposition::Blob links into
-                // Property::Bytes by reading the external blob VMO via Tree.OpenBlobChild.
-                LinkNodeDisposition::Blob => {
-                    todo!(
-                        "https://fxbug.dev/573703359: Implement LinkNodeDisposition::Blob expansion"
-                    )
-                }
             },
         }
     }
