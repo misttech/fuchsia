@@ -1,0 +1,97 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "core",
+    srcs = [
+        "src/coding.rs",
+        "src/future_help.rs",
+        "src/handle_info.rs",
+        "src/labels.rs",
+        "src/lib.rs",
+        "src/peer/framed_stream.rs",
+        "src/peer/mod.rs",
+        "src/proxy/handle/channel.rs",
+        "src/proxy/handle/event_pair.rs",
+        "src/proxy/handle/mod.rs",
+        "src/proxy/handle/signals.rs",
+        "src/proxy/handle/socket.rs",
+        "src/proxy/mod.rs",
+        "src/proxy/run/main.rs",
+        "src/proxy/run/mod.rs",
+        "src/proxy/run/spawn.rs",
+        "src/proxy/run/xfer.rs",
+        "src/proxy/stream.rs",
+        "src/router/mod.rs",
+        "src/router/service_map.rs",
+        "src/test_util.rs",
+    ],
+    crate_name = "overnet_core",
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/overnet:__subpackages__",
+        "//src/developer/ffx/lib/target:__pkg__",
+        "//src/developer/remote-control:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol_rust",
+        "//sdk/rust/zx-status",
+        "//sdk/rust/zx-status-ext",
+        "//src/connectivity/overnet/lib/circuit",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-lock",
+        "//third_party/rust_crates/vendor:crc",
+        "//third_party/rust_crates/vendor:event-listener",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ] + select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "core_test",
+    args = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["--test-threads=1"],
+    }),
+    crate = ":core",
+    crate_name = "overnet_core_test",
+    edition = "2024",
+    deps = [
+        ":test.coding_rust",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fidl_library(
+    name = "test.coding",
+    testonly = True,
+    srcs = ["coding.test.fidl"],
+)
+
+fx_unittest_package(
+    name = "overnet-core-tests",
+    unit_tests = [":core_test"],
+)
+
+wrap_host_rust_test(
+    name = "core_host_test",
+    binary_name = "core_test",
+    test_args = ["--test-threads=1"],
+)
