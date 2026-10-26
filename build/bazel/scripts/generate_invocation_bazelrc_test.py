@@ -11,6 +11,7 @@ import unittest
 
 from build.bazel.scripts import bazel_invocation as bazel_inv
 from build.bazel.scripts import generate_invocation_bazelrc as gen
+from build.rbe import casfs
 from build.resultstore import related_invocations as rel_inv
 
 _TEST_RESULTS_URL = "http://go/test-rs"
@@ -176,6 +177,32 @@ class ServiceProxiesBazelrcTest(unittest.TestCase):
         )
         self.assertIn(
             "build:_resultstore --bes_proxy=unix:///tmp/fake-rs.sock", rc
+        )
+
+    def test_rbe_casfs_virtualize_enabled(self) -> None:
+        rc = set(
+            gen._service_proxies_bazelrc(
+                {
+                    casfs.ENV_CASFS_VIRTUALIZE: "1",
+                }
+            )
+        )
+        self.assertIn(
+            f"startup --unix_digest_hash_attribute_name={casfs.XATTR_RBE_ARI_BIN_HASH}",
+            rc,
+        )
+
+    def test_rbe_casfs_virtualize_disabled(self) -> None:
+        rc = set(
+            gen._service_proxies_bazelrc(
+                {
+                    casfs.ENV_CASFS_VIRTUALIZE: "0",
+                }
+            )
+        )
+        self.assertNotIn(
+            f"startup --unix_digest_hash_attribute_name={casfs.XATTR_RBE_ARI_BIN_HASH}",
+            rc,
         )
 
 

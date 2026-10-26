@@ -5,10 +5,13 @@
 
 """Unit-tests for casfs.py."""
 
+import builtins
 import contextlib
 import io
 import pathlib
+import tempfile
 import unittest
+from typing import Any
 from unittest import mock
 
 from build.rbe import casfs
@@ -99,6 +102,26 @@ class CasfsTest(unittest.TestCase):
                 )
             self.assertEqual(rc, 0)
             self.assertEqual(stdout.getvalue().strip(), "1")
+
+    def test_prefetch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            dep_abs = pathlib.Path(td) / "foo.o.d"
+            dep_abs.write_bytes(b"foo.o: foo.cc\n")
+
+            real_open = builtins.open
+            rb_opens: list[pathlib.Path] = []
+
+            def tracking_open(
+                file: Any, mode: str = "r", *args: Any, **kwargs: Any
+            ) -> Any:
+                if mode == "rb":
+                    rb_opens.append(pathlib.Path(file))
+                return real_open(file, mode, *args, **kwargs)
+
+            with mock.patch.object(builtins, "open", side_effect=tracking_open):
+                casfs.prefetch(dep_abs)
+
+            self.assertEqual(rb_opens, [dep_abs])
 
 
 if __name__ == "__main__":

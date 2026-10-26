@@ -20,7 +20,7 @@ from typing import Any
 
 import cl_utils
 import fuchsia
-import rbe_profile
+from build.rbe import rbe_profile
 
 _SCRIPT_BASENAME = Path(__file__).name
 _SCRIPT_DIR = Path(__file__).parent

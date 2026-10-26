@@ -12,8 +12,8 @@ from typing import Any
 from unittest import mock
 
 import cl_utils
-import rbe_profile
 import remotetool
+from build.rbe import rbe_profile
 
 
 class DictionaryDiffTests(unittest.TestCase):

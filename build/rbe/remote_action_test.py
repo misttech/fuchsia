@@ -24,11 +24,12 @@ import output_leak_scanner
 import remote_action
 import remotetool
 import textpb
-from build.rbe import rbe_profile
+from build.rbe import casfs, rbe_profile
 
 _temp_dir = None
 _orig_cwd = None
 _rbe_profile_patcher = None
+_casfs_patcher = None
 
 _FAKE_PROFILE = rbe_profile.fake(
     rbe_instance="projects/fake-rbe-instance/instances/default",
@@ -46,7 +47,7 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _casfs_patcher
     _orig_cwd = os.getcwd()
     _temp_dir = tempfile.TemporaryDirectory()
     os.chdir(_temp_dir.name)
@@ -56,10 +57,17 @@ def setUpModule() -> None:
     mock_rbe = _rbe_profile_patcher.start()
     mock_rbe.return_value = _FAKE_PROFILE
 
+    _casfs_patcher = mock.patch.object(
+        casfs, "load", return_value=casfs.CasfsConfig(virtualize=False)
+    )
+    _casfs_patcher.start()
+
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _casfs_patcher
+    if _casfs_patcher:
+        _casfs_patcher.stop()
     if _rbe_profile_patcher:
         _rbe_profile_patcher.stop()
     if _orig_cwd:
@@ -595,11 +603,16 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
         self._action_digest: str
         self._output_file_digests: dict[Path, str]
         self._output_directory_digests: dict[Path, str]
+        self._output_file_is_executable: dict[Path, bool]
         self._completion_status: str
         for k, v in kwargs.items():
             setattr(self, "_" + k, v)
         # init the dict members to empty dicts if not set.
-        for var_to_init in ["output_file_digests", "output_directory_digests"]:
+        for var_to_init in [
+            "output_file_digests",
+            "output_directory_digests",
+            "output_file_is_executable",
+        ]:
             if var_to_init not in kwargs:
                 setattr(self, "_" + var_to_init, {})
 
@@ -618,6 +631,10 @@ class FakeReproxyLogEntry(remote_action.ReproxyLogEntry):
     @property
     def output_directory_digests(self) -> dict[Path, str]:
         return self._output_directory_digests
+
+    @property
+    def output_file_is_executable(self) -> dict[Path, bool]:
+        return self._output_file_is_executable
 
     @property
     def completion_status(self) -> str:
@@ -3163,7 +3180,7 @@ remote_metadata: {
             build_id = "xyzzy"
             log_record = remote_action.ReproxyLogEntry.parse_action_log(rrpl)
             stub_infos = log_record.make_download_stubs(
-                files=[p], dirs=[], build_id=build_id
+                files=[p], dirs=[], build_id=build_id, casfs_virtualize=False
             )
             # `p` was an optional output that was not created by the action.
             self.assertEqual(stub_infos, {})
@@ -3190,7 +3207,7 @@ remote_metadata: {{
             build_id = "xyzzy"
             log_record = remote_action.ReproxyLogEntry.parse_action_log(rrpl)
             stub_infos = log_record.make_download_stubs(
-                files=[p], dirs=[], build_id=build_id
+                files=[p], dirs=[], build_id=build_id, casfs_virtualize=False
             )
 
             self.assertEqual(len(stub_infos), 1)
@@ -3241,7 +3258,7 @@ remote_metadata: {{
             build_id = "yzzyx"
             log_record = remote_action.ReproxyLogEntry.parse_action_log(rrpl)
             stub_infos = log_record.make_download_stubs(
-                files=[], dirs=[p], build_id=build_id
+                files=[], dirs=[p], build_id=build_id, casfs_virtualize=False
             )
             self.assertEqual(len(stub_infos), 1)
             stub_infos[p].create(tdp)
@@ -3524,6 +3541,8 @@ remote_metadata: {{
             files=[Path(output)],
             dirs=[],
             build_id=Path(logdir).name,
+            casfs_virtualize=False,
+            fallback_downloader=action.downloader,
         )
         mock_write_xattrs.assert_called()
 
@@ -3587,6 +3606,8 @@ remote_metadata: {{
             files=[Path(output)],
             dirs=[],
             build_id=Path(logdir).name,
+            casfs_virtualize=False,
+            fallback_downloader=action.downloader,
         )
         mock_stub.assert_called()
 
@@ -3869,7 +3890,7 @@ remote_metadata: {{
             # create a pre-existing stub-file with the same digest as the new output
             assert fake_log_record is not None
             old_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert old_stub_info is not None
             old_stub_info.create(self.working_dir)
@@ -3894,7 +3915,7 @@ remote_metadata: {{
             action, fake_log_record = self._setup_update_stub_test(Path(td))
             # create a pre-existing stub-file with a different digest as the new output
             old_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert old_stub_info is not None
             new_stub_info = copy.deepcopy(old_stub_info)
@@ -3930,7 +3951,7 @@ remote_metadata: {{
                 self.output
             )
             old_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert old_stub_info is not None
             old_stub_info.create(self.working_dir, dest=stub_location)
@@ -3962,7 +3983,7 @@ remote_metadata: {{
             # pre-existing output file's digest matches that from the remote
             # action, without backup download stub.
             old_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert old_stub_info is not None
 
@@ -3985,7 +4006,9 @@ remote_metadata: {{
             # Reference some path that is not among the recorded
             # output file/directory digests.
             stub_info = fake_log_record.make_download_stub_info(
-                Path("some/optional/output"), build_id="new-build-id"
+                Path("some/optional/output"),
+                build_id="new-build-id",
+                casfs_virtualize=False,
             )
             self.assertIsNone(stub_info)
 
@@ -4003,7 +4026,7 @@ remote_metadata: {{
                 self.output
             )
             old_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert old_stub_info is not None
             new_stub_info = copy.deepcopy(old_stub_info)
@@ -4038,7 +4061,7 @@ remote_metadata: {{
             # pre-existing output file's digest does not match that from the
             # remote action.
             new_stub_info = fake_log_record.make_download_stub_info(
-                self.output, build_id="new-build-id"
+                self.output, build_id="new-build-id", casfs_virtualize=False
             )
             assert new_stub_info is not None
             new_stub_info._blob_digest = "43218765/11"  # mismatched digest
@@ -4651,6 +4674,383 @@ class WriteOutputFileHashXattrsTests(unittest.TestCase):
                         remote_action._RBE_XATTR_HASH,
                         xattr_value.encode(),
                     )
+
+
+class CasfsVirtualizationTests(unittest.TestCase):
+    def test_auto_disables_download_outputs(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/path/to/rewrapper"),
+            command=["clang++", "-c", "foo.cc", "-o", "foo.o"],
+            rbe_profile=_FAKE_PROFILE,
+            exec_root=exec_root,
+            working_dir=working_dir,
+            output_files=[Path("foo.o"), Path("foo.o.d")],
+            use_xattr=False,
+            casfs_virtualize=True,
+        )
+        self.assertTrue(action.casfs_virtualize)
+        self.assertFalse(action.download_outputs)
+        self.assertIn("--download_outputs=false", action.options)
+        self.assertEqual(action.expected_downloads, [])
+
+    def test_remote_action_from_args_loads_casfs_config(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        p = remote_action._MAIN_ARG_PARSER
+        main_args, other = p.parse_known_args(
+            ["--disable-xattr", "--", "clang++", "-c", "foo.cc", "-o", "foo.o"]
+        )
+        with mock.patch.object(
+            casfs, "load", return_value=casfs.CasfsConfig(virtualize=True)
+        ):
+            action = remote_action.remote_action_from_args(
+                main_args,
+                remote_options=other,
+                exec_root=exec_root,
+                working_dir=working_dir,
+                output_files=[Path("foo.o")],
+            )
+        self.assertTrue(action.casfs_virtualize)
+        self.assertFalse(action.download_outputs)
+
+    def test_output_dirs_virtualizes_files_and_downloads_produced_dirs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            working_dir = tdp / "build-out"
+            working_dir.mkdir(parents=True, exist_ok=True)
+            out_file = Path("foo.rlib")
+            out_dir = Path("some_output_dir")
+            sha256 = "a" * 64
+            dir_digest = f"{'b' * 64}/256"
+
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["rustc", "foo.rs"],
+                download_outputs=True,
+                rbe_profile=_FAKE_PROFILE,
+                exec_root=tdp,
+                working_dir=working_dir,
+                output_files=[out_file],
+                output_dirs=[out_dir],
+                use_xattr=False,
+                casfs_virtualize=True,
+            )
+            self.assertTrue(action.casfs_virtualize)
+            self.assertFalse(action.download_outputs)
+
+            fake_log_record = FakeReproxyLogEntry(
+                completion_status="SUCCESS",
+                action_digest="act/1",
+                output_file_digests={out_file: f"{sha256}/4096"},
+                output_directory_digests={out_dir: dir_digest},
+            )
+            with (
+                mock.patch.object(
+                    remote_action.RemoteAction,
+                    "action_log_record",
+                    new_callable=mock.PropertyMock,
+                    return_value=fake_log_record,
+                ),
+                mock.patch.object(os, "setxattr") as mock_setxattr,
+                mock.patch.object(
+                    remote_action.RemoteAction,
+                    "downloader",
+                    return_value=_FAKE_DOWNLOADER,
+                ) as mock_downloader,
+                mock.patch.object(
+                    remotetool.RemoteTool,
+                    "download_dir",
+                    return_value=cl_utils.SubprocessResult(0),
+                ) as mock_dl_dir,
+            ):
+                action._process_download_stubs()
+
+            self.assertTrue((working_dir / out_file).exists())
+            mock_setxattr.assert_called_once_with(
+                working_dir / out_file,
+                casfs.XATTR_ARI_SIZE,
+                f"rbe:{sha256}:4096:4096".encode(),
+            )
+            mock_downloader.assert_called_once_with()
+            mock_dl_dir.assert_called_once_with(
+                path=working_dir / out_dir,
+                digest=dir_digest,
+                cwd=working_dir,
+            )
+
+            # Without a fallback_downloader, creating a directory stub raises ValueError.
+            dir_stub_no_dl = remote_action.CasfsDownloadStubInfo(
+                path=out_dir,
+                type="dir",
+                blob_digest=dir_digest,
+            )
+            with self.assertRaises(ValueError):
+                dir_stub_no_dl.create(working_dir)
+
+    def test_casfs_stub_equality(self) -> None:
+        p = Path("obj/foo.o")
+        digest = f"{'a' * 64}/100"
+        casfs_stub1 = remote_action.CasfsDownloadStubInfo(
+            path=p, type="file", blob_digest=digest, is_executable=False
+        )
+        casfs_stub2 = remote_action.CasfsDownloadStubInfo(
+            path=p, type="file", blob_digest=digest, is_executable=False
+        )
+        casfs_exec = remote_action.CasfsDownloadStubInfo(
+            path=p, type="file", blob_digest=digest, is_executable=True
+        )
+        ext4_stub = remote_action.Ext4DownloadStubInfo(
+            path=p,
+            type="file",
+            blob_digest=digest,
+            action_digest="act/1",
+            build_id="b1",
+        )
+        self.assertEqual(casfs_stub1, casfs_stub2)
+        self.assertNotEqual(casfs_stub1, casfs_exec)
+        self.assertNotEqual(casfs_stub1, ext4_stub)
+        self.assertNotEqual(ext4_stub, casfs_stub1)
+
+    def test_rejects_use_xattr_true(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        with self.assertRaises(ValueError):
+            remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["clang++", "-c", "foo.cc", "-o", "foo.o"],
+                rbe_profile=_FAKE_PROFILE,
+                exec_root=exec_root,
+                working_dir=working_dir,
+                output_files=[Path("foo.o")],
+                use_xattr=True,
+                casfs_virtualize=True,
+            )
+
+    def test_warns_and_ignores_download_regex(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        with mock.patch.object(remote_action, "msg") as mock_msg:
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["clang++", "-c", "foo.cc", "-o", "foo.o"],
+                download_regex="-.*\\.o$",
+                rbe_profile=_FAKE_PROFILE,
+                exec_root=exec_root,
+                working_dir=working_dir,
+                output_files=[Path("foo.o"), Path("foo.o.d")],
+                use_xattr=False,
+                casfs_virtualize=True,
+                verbose=True,
+            )
+        mock_msg.assert_called_once()
+        self.assertIsNone(action.download_regex)
+        self.assertFalse(action.download_outputs)
+        self.assertNotIn("--download_regex=-.*\\.o$", action.options)
+        self.assertIn("--download_outputs=false", action.options)
+        self.assertEqual(action.expected_downloads, [])
+
+    def test_create_casfs_stub_sets_ari_size_and_exec_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            p = Path("dir/bin.out")
+            sha256 = "a" * 64
+            digest = f"{sha256}/4096"
+            rrpl = tdp / "action_log.rrpl"
+            rrpl_contents = f"""
+command: {{
+}}
+result: {{
+}}
+remote_metadata: {{
+  action_digest: "feedfacefeedface/1337"
+  output_file_digests: {{
+    key: "{p}"
+    value: "{digest}"
+  }}
+  output_file_is_executable: {{
+    key: "{p}"
+    value: true
+  }}
+}}
+"""
+            _write_file_contents(rrpl, rrpl_contents)
+            log_record = remote_action.ReproxyLogEntry.parse_action_log(rrpl)
+            stub_infos = log_record.make_download_stubs(
+                files=[p], dirs=[], build_id="b1", casfs_virtualize=True
+            )
+            self.assertEqual(len(stub_infos), 1)
+            self.assertIsInstance(
+                stub_infos[p], remote_action.CasfsDownloadStubInfo
+            )
+            with mock.patch.object(os, "setxattr") as mock_setxattr:
+                stub_infos[p].create(tdp)
+
+            dest = tdp / p
+            self.assertTrue(dest.exists())
+            self.assertEqual(dest.stat().st_size, 0)
+            self.assertEqual(dest.stat().st_mode & 0o777, 0o755)
+            mock_setxattr.assert_called_once_with(
+                dest,
+                casfs.XATTR_ARI_SIZE,
+                f"rbe:{sha256}:4096:4096".encode(),
+            )
+
+    def test_update_stub_preserves_mtime_via_casfs_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            working_dir = tdp / "build-out"
+            working_dir.mkdir(parents=True, exist_ok=True)
+            out = Path("foo.o")
+            out_abs = working_dir / out
+            out_abs.write_bytes(b"x" * 33)
+            sha256 = "b" * 64
+            digest = f"{sha256}/33"
+
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["echo"],
+                options=["--preserve_unchanged_output_mtime"],
+                rbe_profile=_FAKE_PROFILE,
+                exec_root=tdp,
+                working_dir=working_dir,
+                output_files=[out],
+                use_xattr=False,
+                casfs_virtualize=True,
+            )
+            stub_info = remote_action.CasfsDownloadStubInfo(
+                path=out,
+                type="file",
+                blob_digest=digest,
+            )
+
+            with mock.patch.object(
+                os, "getxattr", return_value=sha256.encode()
+            ) as mock_getxattr:
+                with mock.patch.object(
+                    remote_action.CasfsDownloadStubInfo, "create"
+                ) as mock_create:
+                    action._update_stub(stub_info)
+            mock_getxattr.assert_called_once_with(
+                out_abs, casfs.XATTR_RBE_ARI_HASH
+            )
+            mock_create.assert_not_called()
+
+            # When executable mode differs, stub_info.create is called.
+            exec_stub_info = remote_action.CasfsDownloadStubInfo(
+                path=out,
+                type="file",
+                blob_digest=digest,
+                is_executable=True,
+            )
+            with mock.patch.object(
+                os, "getxattr", return_value=sha256.encode()
+            ):
+                with mock.patch.object(
+                    remote_action.CasfsDownloadStubInfo, "create"
+                ) as mock_create:
+                    action._update_stub(exec_stub_info)
+            mock_create.assert_called_once_with(
+                working_dir, use_xattr=action._use_xattr
+            )
+
+            # When digest differs, stub_info.create is called.
+            with mock.patch.object(
+                os, "getxattr", return_value=("c" * 64).encode()
+            ):
+                with mock.patch.object(
+                    remote_action.CasfsDownloadStubInfo, "create"
+                ) as mock_create:
+                    action._update_stub(stub_info)
+            mock_create.assert_called_once_with(
+                working_dir, use_xattr=action._use_xattr
+            )
+
+            # When reading the xattr raises OSError (e.g. existing regular
+            # file), stub_info.create is called without logging a warning.
+            with mock.patch.object(
+                os, "getxattr", side_effect=OSError("EOPNOTSUPP")
+            ):
+                with mock.patch.object(remote_action, "msg") as mock_msg:
+                    with mock.patch.object(
+                        remote_action.CasfsDownloadStubInfo, "create"
+                    ) as mock_create:
+                        action._update_stub(stub_info)
+            mock_msg.assert_not_called()
+            mock_create.assert_called_once_with(
+                working_dir, use_xattr=action._use_xattr
+            )
+
+    def test_on_success_skips_write_output_file_hash_xattrs(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        output = Path("out.o")
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/path/to/rewrapper"),
+            command=["echo"],
+            rbe_profile=_FAKE_PROFILE,
+            exec_root=exec_root,
+            working_dir=working_dir,
+            output_files=[output],
+            use_xattr=False,
+            casfs_virtualize=True,
+        )
+        with mock.patch.object(
+            remote_action.RemoteAction, "_process_download_stubs"
+        ) as mock_process_stubs:
+            with mock.patch.object(
+                remote_action.RemoteAction, "_write_output_file_hash_xattrs"
+            ) as mock_write_xattrs:
+                self.assertEqual(action._on_success(), 0)
+        mock_process_stubs.assert_called_once()
+        mock_write_xattrs.assert_not_called()
+
+    def test_on_success_allows_compare_with_local(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        output = Path("out.o")
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/path/to/rewrapper"),
+            command=["echo"],
+            rbe_profile=_FAKE_PROFILE,
+            exec_root=exec_root,
+            working_dir=working_dir,
+            output_files=[output],
+            compare_with_local=True,
+            use_xattr=False,
+            casfs_virtualize=True,
+        )
+        self.assertFalse(action.download_outputs)
+        with mock.patch.object(
+            remote_action.RemoteAction, "_process_download_stubs"
+        ) as mock_process_stubs:
+            with mock.patch.object(
+                remote_action.RemoteAction,
+                "_compare_against_local",
+                return_value=0,
+            ) as mock_compare:
+                self.assertEqual(action._on_success(), 0)
+        mock_process_stubs.assert_called_once()
+        mock_compare.assert_called_once()
+
+    def test_download_inputs_noop(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-out"
+        action = remote_action.RemoteAction(
+            rewrapper=Path("/path/to/rewrapper"),
+            command=["echo"],
+            rbe_profile=_FAKE_PROFILE,
+            exec_root=exec_root,
+            working_dir=working_dir,
+            inputs=[Path("in.o")],
+            output_files=[Path("out.o")],
+            use_xattr=False,
+            casfs_virtualize=True,
+        )
+        self.assertEqual(action.download_inputs(lambda p: True), {})
 
 
 if __name__ == "__main__":

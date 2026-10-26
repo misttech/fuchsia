@@ -17,13 +17,14 @@ import cl_utils
 import fuchsia
 import prebuilt_tool_remote_wrapper
 import remote_action
-from build.rbe import rbe_profile
+from build.rbe import casfs, rbe_profile
 from build.resultstore import rs_profile
 
 _temp_dir = None
 _orig_cwd = None
 _rbe_profile_patcher = None
 _rs_profile_patcher = None
+_casfs_patcher = None
 
 
 def setUpModule() -> None:
@@ -31,7 +32,7 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher, _casfs_patcher
     import tempfile
 
     _orig_cwd = os.getcwd()
@@ -60,15 +61,22 @@ def setUpModule() -> None:
         auth_type="fake-auth",
     )
 
+    _casfs_patcher = mock.patch.object(
+        casfs, "load", return_value=casfs.CasfsConfig(virtualize=False)
+    )
+    _casfs_patcher.start()
+
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher, _casfs_patcher
     if _orig_cwd:
         os.chdir(_orig_cwd)
     if _temp_dir:
         _temp_dir.cleanup()
 
+    if _casfs_patcher:
+        _casfs_patcher.stop()
     if _rbe_profile_patcher:
         _rbe_profile_patcher.stop()
     if _rs_profile_patcher:
