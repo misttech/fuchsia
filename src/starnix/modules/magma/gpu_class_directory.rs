@@ -490,7 +490,10 @@ impl GpuPowerDomain {
                 requires_level: Some(level),
                 ..Default::default()
             }]),
-            should_return_pending_lease: Some(false),
+            // Return the pending lease immediately so Android Power HAL hints (e.g.
+            // DISPLAY_UPDATE_IMMINENT -> GPUPowerOn) do not block NodeLooperThread on
+            // cross-process Power Broker -> GPU driver -> google-cpm transitions.
+            should_return_pending_lease: Some(true),
             ..Default::default()
         };
         match topology.lease(schema, fidl_deadline()) {
@@ -1110,6 +1113,7 @@ mod tests {
                 let mut stream = topology_server.into_stream();
                 while let Some(Ok(req)) = stream.next().await {
                     if let fpbroker::TopologyRequest::Lease { payload, responder } = req {
+                        assert_eq!(payload.should_return_pending_lease, Some(true));
                         if reject_leases {
                             let _ = responder.send(Err(fpbroker::LeaseError::Internal));
                             continue;
