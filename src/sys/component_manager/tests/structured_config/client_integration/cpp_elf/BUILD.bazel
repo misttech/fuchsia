@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# Kept in BUILD.gn because `:config_lib`
+# (`fuchsia_structured_config_cpp_elf_lib`), `:values`
+# (`fuchsia_structured_config_values`), `:bin` (which depends on `:config_lib`),
+# `:test_component`, and `:cpp_elf` are GN-only, and `:config_lib`, `:values`,
+# and `:test_component` call `get_target_outputs(":manifest")`.
+# LINT.IfChange
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "manifest",
+    testonly = True,
+    component_name = "cpp_elf_receiver",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/sys/testing:elf_test_runner.shard.cml",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/component_manager/tests/structured_config:all_config_types.shard.cml",
+    ],
+    manifest = "meta/test.cml",
+)
+# LINT.ThenChange(BUILD.gn)

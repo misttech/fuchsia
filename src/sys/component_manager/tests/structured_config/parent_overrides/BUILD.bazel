@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "test.config.parentoverrides",
+    testonly = True,
+    srcs = ["fidl/config_reporter.fidl"],
+)
+
+# The GN build uses the `fuchsia_component_manifest("config_receiver_manifest")`
+# target defined above the bazel2gn sentinel in BUILD.gn instead.
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "config_receiver_manifest",
+    component_name = "config_receiver",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/config_receiver.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "received_config",
+    testonly = True,
+    cm_label = ":config_receiver_manifest",
+)
+
+rustc_binary(
+    name = "config_receiver_bin",
+    testonly = True,
+    srcs = ["config_receiver.rs"],
+    crate_root = "config_receiver.rs",
+    edition = "2024",
+    deps = [
+        ":received_config",
+        ":test.config.parentoverrides_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

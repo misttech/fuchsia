@@ -49,6 +49,7 @@ cml_shard(
         "//src/connectivity/policy/http-client:__pkg__",
         "//src/connectivity/wlan:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
+        "//src/sys/component_manager/tests/structured_config/client_integration/cpp_elf:__pkg__",
         "//src/sys/pkg/bin/omaha-client:__pkg__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
