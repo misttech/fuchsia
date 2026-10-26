@@ -605,6 +605,22 @@ class PreemptionState {
   RelaxedAtomic<zx_instant_mono_t> timeslice_extension_deadline_{};
 };
 
+class TaskState;
+
+extern "C" {
+
+// Rust implementations of TaskState::Init, Join and TryWakeJoiners; the C++ methods of the same
+// name in TaskState are thin forwarders to these. Unlike the rust_thread_* accessor entries, the
+// last two deal with chain locks: Join is entered with the queue's lock and the current thread's
+// lock held and releases the queue's lock; TryWakeJoiners acquires (or backs off from) the queue's
+// lock itself.
+void rust_task_state_init(TaskState* task_state, thread_start_routine entry, void* arg);
+zx_status_t rust_task_state_join(TaskState* task_state, Thread* current_thread,
+                                 zx_instant_mono_t deadline);
+bool rust_task_state_try_wake_joiners(const TaskState* task_state, zx_status_t status);
+
+}  // extern "C"
+
 // TaskState is responsible for running the task defined by
 // |entry(arg)|, and reporting its value to any joining threads.
 //
@@ -613,17 +629,23 @@ class TaskState {
  public:
   TaskState() = default;
 
-  void Init(thread_start_routine entry, void* arg);
+  void Init(thread_start_routine entry, void* arg) { rust_task_state_init(this, entry, arg); }
 
   zx_status_t Join(Thread* current_thread, zx_instant_mono_t deadline) TA_REL(get_lock())
-      TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread));
+      TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread)) {
+    const zx_status_t status = rust_task_state_join(this, current_thread, deadline);
+    get_lock().MarkReleased();
+    return status;
+  }
 
   // Attempt to wake all of our joiners.  This operation might fail because of a
   // conflict while attempting to obtain the required locks, in which case the
   // caller needs to back off (drop all currently held chain locks) and try
-  // again..
+  // again.
   bool TryWakeJoiners(zx_status_t status)
-      TA_REQ(chainlock_transaction_token, preempt_disabled_token);
+      TA_REQ(chainlock_transaction_token, preempt_disabled_token) {
+    return rust_task_state_try_wake_joiners(this, status);
+  }
 
   thread_start_routine entry() const { return entry_; }
   void* arg() const { return arg_; }
@@ -737,6 +759,11 @@ void rust_thread_set_vcpu(const Thread* thread, bool value);
 const char* rust_thread_name(const Thread* thread);
 void rust_thread_set_name(Thread* thread, const char* name, size_t len);
 zx_status_t rust_thread_check_kill_or_suspend_signal(const Thread* thread);
+
+// The default trampoline used when running the Thread. This can be replaced by the
+// |alt_trampoline| parameter to Thread::CreateEtc(). It is entered with the previous and current
+// thread locks held and interrupts disabled (it releases both locks) and never returns.
+void rust_thread_trampoline() __NO_RETURN;
 
 }  // extern "C"
 
@@ -1354,10 +1381,6 @@ struct Thread : public ChainLockable {
   // Type used to select which operation (suspend or kill) we want during a call
   // to SuspendOrKillInternal.
   enum class SuspendOrKillOp { Suspend, Kill };
-
-  // The default trampoline used when running the Thread. This can be
-  // replaced by the |alt_trampoline| parameter to CreateEtc().
-  static void Trampoline() __NO_RETURN;
 
   // Dpc callback used for cleaning up a detached Thread's resources.
   static void FreeDpc(Dpc* dpc);

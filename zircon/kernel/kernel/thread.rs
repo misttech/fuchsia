@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::arch_rs::enable_ints;
 pub use crate::backtrace::Backtrace;
 use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::cell::UnsafeCell;
@@ -26,18 +27,22 @@ use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, zx_instant_mono_t, zx_koid_t, zx_status_t};
 
 use crate::kconcurrent::ChainLock;
+use crate::kernel::deadline::Deadline;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use crate::kernel::relaxed_atomic::{RelaxedAtomicI64, RelaxedAtomicU32, RelaxedAtomicU64};
 use crate::kernel::restricted_state::RestrictedState;
 use crate::kernel::scheduler;
 use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile, ThreadStateKind};
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
-use crate::kernel::wait_queue::{ThreadState, WaitQueue};
+use crate::kernel::wait_queue::{ResourceOwnership, ThreadState, WaitQueue, WaitQueueBase};
 use crate::ktrace_rs::InternedString;
 use crate::vm::vm_aspace::VmAspace;
 
 pub use crate::kconcurrent::CallsiteInfo as CltTag;
-use crate::kconcurrent::{ChainLockProof, ChainLocked, ClassedChainLock};
+use crate::kconcurrent::{
+    ChainLockProof, ChainLockTransaction, ChainLockTransactionToken, ChainLocked, ClassedChainLock,
+    OwnerGuard,
+};
 
 /// Lock class for data guarded by a [`Thread`]'s chain lock.
 ///
@@ -440,10 +445,15 @@ static_assert!(
 /// TODO: the detached state in Thread::flags_ probably belongs here.
 #[repr(C)]
 pub struct TaskState {
+    // Safety invariant: written once by `rust_task_state_init` before the owning `Thread` is
+    // published; never mutated afterwards.
     /// The Thread's entry point, and its argument.
     entry: Option<extern "C" fn(*mut c_void) -> i32>,
     arg: *mut c_void,
 
+    // Safety invariant: written by the exiting thread under its own lock (`Thread::Current::Exit`)
+    // and read by a joiner under the same lock after observing `THREAD_DEATH` (`Thread::Join`), so
+    // the thread's lock orders the two; see `retcode`.
     /// Storage for the return code.
     ///
     /// TODO: This is logically protected by our thread's lock.  What is a
@@ -452,6 +462,171 @@ pub struct TaskState {
 
     /// Other threads waiting to join this Thread.
     retcode_wait_queue: WaitQueue,
+}
+
+impl TaskState {
+    /// The thread's entry point; `None` for threads driven by an alternate trampoline, which
+    /// `CreateEtc` allows to be created without one.
+    #[inline]
+    pub(crate) fn entry(&self) -> Option<extern "C" fn(*mut c_void) -> i32> {
+        self.entry
+    }
+
+    /// The argument passed to the entry point.
+    #[inline]
+    pub(crate) fn arg(&self) -> *mut c_void {
+        self.arg
+    }
+
+    /// The thread's return code.
+    ///
+    /// # Safety
+    ///
+    /// The caller must exclude a concurrent write by the exiting thread (`Thread::Current::Exit`):
+    /// either it holds the owning thread's lock (the return code is written under that lock, and
+    /// `Thread::Join` reads it under the same lock after observing `THREAD_DEATH`), or the thread
+    /// has not started running yet.
+    #[inline]
+    pub unsafe fn retcode(&self) -> i32 {
+        // SAFETY: The caller excludes concurrent writers; no reference is formed.
+        unsafe { self.retcode.get().read() }
+    }
+
+    /// Records the thread's entry point and argument (`TaskState::Init`).
+    ///
+    /// Called from `CreateEtc` on a fully constructed but not yet published `Thread`, so the
+    /// fields are written through the raw pointer and no `&TaskState` is formed.
+    ///
+    /// # Safety
+    ///
+    /// `this` points to a valid `TaskState` not yet visible to any other thread, with no live Rust
+    /// reference to it.
+    #[inline]
+    pub(crate) unsafe fn init(
+        this: *mut Self,
+        entry: Option<extern "C" fn(*mut c_void) -> i32>,
+        arg: *mut c_void,
+    ) {
+        // SAFETY: The caller guarantees the pointer is valid for writes with no live Rust
+        // reference; projecting the fields through the raw pointer forms none.
+        unsafe {
+            (&raw mut (*this).entry).write(entry);
+            (&raw mut (*this).arg).write(arg);
+        }
+    }
+
+    /// Blocks `current_thread` in this thread's `retcode_wait_queue` until that thread exits or
+    /// `deadline` passes.
+    ///
+    /// The queue's lock is released by this call because the C++ is `TA_REL(get_lock())`;
+    /// `current_thread`'s lock stays held on return (`TA_REQ`).
+    ///
+    /// There is deliberately no `&self`: the target thread (and so its `TaskState`) may be torn
+    /// down while the joiner is blocked (`Detach` wakes joiners with `BAD_STATE` and a detached
+    /// target then exits and frees itself, possibly before the woken joiner runs), so no reference
+    /// into it may be live across `scheduler::block`. The `&WaitQueue` and its [`OwnerGuard`] are
+    /// scoped to [`WaitQueue::block_etc_preamble`], which releases the queue lock before the
+    /// thread blocks, and [`WaitQueueBase::block_etc_postamble`] dereferences the returned
+    /// `base_ptr` only once, before `scheduler::block`.
+    ///
+    /// # Safety
+    ///
+    /// - `this` points to a valid `TaskState` at the time of the call, and its
+    ///   `retcode_wait_queue` remains valid while `current_thread` remains blocked in it (and at
+    ///   least until both the queue lock and `current_thread`'s lock are released during the block
+    ///   operation).
+    /// - `current_thread.owner()` is the currently executing thread in `THREAD_RUNNING`, not queued
+    ///   in any wait queue, in a context where blocking is permitted (no spinlocks held, blocking
+    ///   not disallowed).
+    /// - The active transaction is finalized with `(*this).retcode_wait_queue`'s lock and
+    ///   `current_thread`'s lock as the only held chain locks, with no other guard or proof for
+    ///   the queue lock live; this call takes over releasing the queue lock.
+    pub unsafe fn join(
+        this: *const Self,
+        current_thread: &mut ChainLockProof<'_, Thread>,
+        deadline: InstantMono,
+        clt_token: &ChainLockTransactionToken,
+    ) -> Result<(), Status> {
+        let deadline = Deadline::no_slack(deadline.into());
+        // The `&WaitQueue` and its guard live only inside this block: `block_etc_preamble`
+        // releases the queue lock before the thread blocks, and only the raw `base_ptr` is passed
+        // to `block_etc_postamble`.
+        let base_ptr = {
+            // SAFETY: `this` is valid at the time of the call per the caller; projecting the field
+            // forms no reference to the `TaskState` itself, and the `&WaitQueue` does not outlive
+            // this block.
+            let queue = unsafe { &(*this).retcode_wait_queue };
+            // SAFETY: The queue's lock is held by the active transaction with no other guard or
+            // proof (precondition), and this guard takes over releasing it.
+            let guard = unsafe { OwnerGuard::adopt_unchecked(queue, clt_token) };
+            // SAFETY: `current_thread` is the running thread, not queued, in a context where
+            // blocking is permitted; `deadline` is monotonic; the active transaction is finalized
+            // with `guard`'s and `current_thread`'s locks as the only held chain locks; and the
+            // queue remains valid while `current_thread` is blocked in it.
+            unsafe {
+                WaitQueue::block_etc_preamble(
+                    guard,
+                    current_thread,
+                    &deadline,
+                    0,
+                    ResourceOwnership::Normal,
+                    Interruptible::No,
+                    clt_token,
+                )?
+            }
+        };
+        // SAFETY: `block_etc_preamble` returned `Ok(base_ptr)` with `current_thread` inserted in
+        // `base_ptr` and the queue lock released; `base_ptr` remains valid while `current_thread`
+        // is blocked in it; and `current_thread`'s lock is the only held chain lock in the
+        // finalized transaction.
+        unsafe {
+            WaitQueueBase::block_etc_postamble(
+                base_ptr,
+                current_thread.reborrow(),
+                &deadline,
+                clt_token,
+            )
+        }
+    }
+
+    /// Attempt to wake all of our joiners.  This operation might fail because of a
+    /// conflict while attempting to obtain the required locks, in which case the
+    /// caller needs to back off (drop all currently held chain locks) and try
+    /// again.
+    ///
+    /// `Thread::Current::Exit` restarts its finalized transaction before calling this in a loop
+    /// with its own lock held. On `true`, `wake_all_locked` finalizes the transaction and
+    /// `guard.release()` drops the queue lock (`ChainLock::release` does not require an
+    /// unfinalized transaction); on `false`, either `acquire_or_backoff` or `wake_all_locked`
+    /// backed off without finalizing.
+    ///
+    /// # Panics
+    ///
+    /// Debug-asserts (via `acquire_or_backoff` and `wake_all_locked`) that the active
+    /// transaction is not already finalized on entry.
+    pub fn try_wake_joiners(
+        &self,
+        status: impl Into<Result<(), Status>>,
+        clt_token: &ChainLockTransactionToken,
+        preempt_disabled_token: &PreemptDisabledToken,
+    ) -> bool {
+        // Attempt to lock the queue first.
+        let Some(mut guard) = OwnerGuard::acquire_or_backoff(&self.retcode_wait_queue, clt_token)
+        else {
+            core::hint::cold_path();
+            return false;
+        };
+
+        // Now, try to lock and wake all of our waiting threads.
+        let result = guard.proof().wake_all_locked(status, clt_token, preempt_disabled_token);
+
+        // No matter what just happened, we need to drop the queue's lock.
+        guard.release();
+
+        // If we got a result, then we succeeded in waking the threads we wanted to
+        // wake.
+        result.is_some()
+    }
 }
 
 // Compile-time layout assertions against <kernel/thread_layout.h>.
@@ -799,6 +974,12 @@ impl ksync::LockClass for ThreadListLockClass {
 impl Thread {
     /// The sampling session value of a thread not associated with any session.
     pub const INVALID_SAMPLING_SESSION: u64 = u64::MAX;
+
+    /// Returns a reference to the thread's `TaskState`.
+    #[inline]
+    pub(crate) fn task_state(&self) -> &TaskState {
+        &self.task_state
+    }
 
     /// Domain-specific conversion: returns raw pointer for [`Thread`].
     #[inline]
@@ -2741,6 +2922,144 @@ pub extern "C" fn rust_thread_check_kill_or_suspend_signal(thread: &Thread) -> z
     Status::result_into_raw(thread.check_kill_or_suspend_signal())
 }
 
+/// Forwards C++ `TaskState::Init`.
+///
+/// # Safety
+///
+/// `task_state` is a valid `TaskState` not yet visible to any other thread, with no live Rust
+/// reference to it (see [`TaskState::init`]).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_task_state_init(
+    task_state: *mut TaskState,
+    entry: Option<extern "C" fn(*mut c_void) -> i32>,
+    arg: *mut c_void,
+) {
+    // SAFETY: Forwarded from the C++ `TaskState::Init` caller, which upholds `init`'s contract.
+    unsafe { TaskState::init(task_state, entry, arg) };
+}
+
+/// Forwards C++ `TaskState::Join`.
+///
+/// # Safety
+///
+/// - A `ChainLockTransaction` must be active and finalized on this CPU (`assert_active` is
+///   debug-only; calling with no active transaction is UB in release).
+/// - `current_thread` must be the valid, currently executing `Thread` in `THREAD_RUNNING`, not
+///   queued in any wait queue, in a context where blocking is permitted (no spinlocks held,
+///   blocking not disallowed), with no Rust guard or proof for it live.
+/// - `*task_state` must be valid at the time of the call with no Rust guard or proof for its
+///   `retcode_wait_queue` live, and the queue must remain valid while `current_thread` remains
+///   blocked in it (and at least until both the queue lock and `current_thread`'s lock are
+///   released during the block operation); see [`TaskState::join`].
+/// - `task_state`'s queue lock and `current_thread`'s lock must be held by the active
+///   transaction's *current* token as the only held chain locks (both are debug-asserted).
+/// - The queue lock is released by this call (`TA_REL(get_lock())`) and must not be released
+///   again by the caller; `current_thread`'s lock is still held on return (`TA_REQ`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_task_state_join(
+    task_state: *mut TaskState,
+    current_thread: *mut Thread,
+    deadline: zx_instant_mono_t,
+) -> zx_status_t {
+    debug_assert!(!task_state.is_null());
+    debug_assert!(!current_thread.is_null());
+    // SAFETY: A transaction is active and finalized by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY:
+    // - `current_thread` is the valid current thread per caller contract, and it outlives the
+    //   call, so a `&Thread` may live across the block. Its lock is held by the active transaction
+    //   (`assert_held`, debug-only) with no other proof live, and a proof never releases the lock,
+    //   so the caller keeps that responsibility.
+    // - `task_state` is passed as a raw pointer: `TaskState::join` scopes the `&WaitQueue` and its
+    //   adopted guard to the preamble so that nothing into the (possibly freed) target is live
+    //   across `WaitQueueBase::block_etc_postamble`. All other blocking preconditions of
+    //   `TaskState::join` are upheld by the caller.
+    let res = unsafe {
+        let thread: &Thread = &*current_thread;
+        thread.lock().assert_held(&token);
+        let mut thread_proof = ChainLockProof::assume_held_unchecked(thread);
+        TaskState::join(task_state, &mut thread_proof, InstantMono(deadline), &token)
+    };
+    Status::result_into_raw(res)
+}
+
+/// Forwards C++ `TaskState::TryWakeJoiners`.
+///
+/// # Safety
+///
+/// - A `ChainLockTransaction` must be active and not finalized on this CPU (`assert_active` is
+///   debug-only; calling with no active transaction is UB in release).
+/// - Preemption must be disabled (`TA_REQ(preempt_disabled_token)`).
+/// - `task_state`'s queue lock must not already be held by this transaction.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_task_state_try_wake_joiners(
+    task_state: &TaskState,
+    status: zx_status_t,
+) -> bool {
+    // SAFETY: A transaction is active by precondition.
+    let token = unsafe { ChainLockTransaction::assert_active() };
+    // SAFETY: Preemption is disabled by precondition (`TA_REQ(preempt_disabled_token)`).
+    let preempt_disabled_token = unsafe { PreemptDisabledToken::new() };
+    task_state.try_wake_joiners(Status::ok(status), &token, &preempt_disabled_token)
+}
+
+/// The default trampoline used when running the Thread. This can be
+/// replaced by the `alt_trampoline` parameter to `CreateEtc()`.
+///
+/// `Thread::CreateEtc` and `Thread::ReviveIdlePowerThread` install this symbol directly as the
+/// thread's initial PC (`arch_thread_initialize`), so there is no intermediate frame.
+///
+/// Thread trampolines are always called with:
+///
+/// 1. The thread's lock held
+/// 2. interrupts disabled.
+///
+/// Implementers of trampolines must always remember to unconditionally release
+/// the current thread's lock, and *then* enable interrupts, before jumping to
+/// the thread's entry point.
+///
+/// Sadly, there does not seem to be a good way to statically annotate this.
+///
+/// # Safety
+///
+/// Must only be entered as the initial PC of a newly context-switched thread, with interrupts
+/// disabled and the `ChainLockTransaction` registered by `Scheduler::reschedule_common` still
+/// active and holding both the previous thread's lock and the current thread's lock under its
+/// reserved scheduler token.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_trampoline() -> ! {
+    // Handle the special case of starting a new thread for the first time,
+    // releasing the previous thread's lock as well as the current thread's lock
+    // in the process, before restoring interrupts and dropping into the thread's
+    // entry point.
+    //
+    // SAFETY: The caller guarantees this is the initial trampoline entry with interrupts disabled
+    // and the `reschedule_common` transaction active holding both locks with the reserved scheduler
+    // token.
+    unsafe { scheduler::trampoline_lock_handoff() };
+    enable_ints();
+
+    // Call into the thread's entry point, and call exit when finished.
+    let current = current_get();
+    // SAFETY: `current` is the valid, live current thread; projecting the field forms no
+    // reference, so no `&Thread` is live across the indirect call, and `entry`/`arg` were written
+    // once by `TaskState::init` before this thread was published.
+    let (entry, arg) = unsafe {
+        let task_state = &raw const (*current).task_state;
+        ((*task_state).entry, (*task_state).arg)
+    };
+    // `CreateEtc` installs this default trampoline only when no `alt_trampoline` is given, and
+    // every `CreateEtc` caller that passes a null `entry` supplies an `alt_trampoline`, so `entry`
+    // is non-null here; a null `entry` is a caller bug, so panic.
+    let entry =
+        entry.expect("the default trampoline is only installed for threads created with an entry");
+    // TODO(https://fxbug.dev/528405969): The C++ `thread_start_routine` typedef in
+    // `kernel/thread.h` is `[[clang::cfi_unchecked_callee]]`. Rust has no equivalent opt-out;
+    // revisit this indirect call if kernel Rust ever enables KCFI.
+    let ret = entry(arg);
+    current_exit(ret)
+}
+
 /// Unit tests for Thread Rust bindings.
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_rust")]
@@ -2766,7 +3085,7 @@ mod tests {
     };
     use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
     use core::ffi::{CStr, c_void};
-    use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+    use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
     use fbl::{WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable};
     use kprint::kprintln;
     use unittest::{
@@ -2774,7 +3093,7 @@ mod tests {
         expect_true, unwrap_ok,
     };
     use zx_status::Status;
-    use zx_types::{ZX_ERR_BAD_STATE, ZX_KOID_INVALID, ZX_MAX_NAME_LEN, ZX_OK, ZX_TIME_INFINITE};
+    use zx_types::{ZX_ERR_BAD_STATE, ZX_ERR_TIMED_OUT, ZX_KOID_INVALID, ZX_MAX_NAME_LEN, ZX_OK};
 
     // Wait for condition |cond| to become true, polling with slow exponential backoff
     // to avoid pegging the CPU.
@@ -3189,10 +3508,11 @@ mod tests {
     }
 
     /// Shared with a helper thread that waits on `event` until `deadline` (monotonic) and exits
-    /// with the raw status `wait` returned.
+    /// with `retcode`, or with the raw status `wait` returned on failure.
     struct WaitCtx {
         event: *const Event,
         deadline: InstantMono,
+        retcode: i32,
     }
 
     impl WaitCtx {
@@ -3202,6 +3522,7 @@ mod tests {
             Self {
                 event: core::ptr::from_ref(event),
                 deadline: InstantMono(current_mono_time().0 + 10 * 1_000_000_000),
+                retcode: zx_types::ZX_OK,
             }
         }
     }
@@ -3211,12 +3532,13 @@ mod tests {
         let ctx = unsafe { &*arg.cast::<WaitCtx>() };
         // SAFETY: As above for the event the context points at.
         let event = unsafe { &*ctx.event };
-        zx_status::Status::result_into_raw(
-            event.wait_deadline(ctx.deadline, super::Interruptible::No),
-        )
+        match event.wait_deadline(ctx.deadline, super::Interruptible::No) {
+            Ok(()) => ctx.retcode,
+            Err(status) => status.into_raw(),
+        }
     }
 
-    /// Waits for `waiter` to be blocked in the event's queue.
+    /// Waits for `waiter` to enter `THREAD_BLOCKED` in a wait queue.
     fn wait_until_blocked(waiter: super::ThreadPtr) -> bool {
         for _ in 0..5000 {
             // SAFETY: Callers have not joined `waiter` yet.
@@ -3254,11 +3576,18 @@ mod tests {
         }
 
         fn thread(&self) -> &super::Thread {
-            let thread =
-                self.thread.as_ref().expect("only `join` takes the thread, and it consumes self");
             // SAFETY: The waiter has not been joined (it is still in `self.thread`), so its
             // `Thread` is alive for as long as `self` is borrowed.
-            unsafe { &*thread.as_ptr() }
+            unsafe { &*self.ptr().as_ptr() }
+        }
+
+        fn ptr(&self) -> super::ThreadPtr {
+            self.thread.expect("only `join`/`joined_elsewhere` take the thread, consuming self")
+        }
+
+        /// Gives up the waiter without joining it, because some other thread already did.
+        fn joined_elsewhere(mut self) {
+            self.thread = None;
         }
 
         /// Opens the event and joins the waiter, returning its exit status.
@@ -3267,7 +3596,7 @@ mod tests {
             // SAFETY: `self.event` outlives `self`.
             unsafe { &*self.ctx.event }.signal();
             // SAFETY: The thread was taken out of `self.thread`, so it is joined exactly once.
-            unsafe { thread.join(InstantMono(ZX_TIME_INFINITE)) }
+            unsafe { thread.join(InstantMono::INFINITE) }
         }
     }
 
@@ -3277,7 +3606,7 @@ mod tests {
                 // SAFETY: `self.event` outlives `self`.
                 unsafe { &*self.ctx.event }.signal();
                 // SAFETY: The thread was taken out of `self.thread`, so it is joined exactly once.
-                let _ = unsafe { thread.join(InstantMono(ZX_TIME_INFINITE)) };
+                let _ = unsafe { thread.join(InstantMono::INFINITE) };
             }
         }
     }
@@ -3290,7 +3619,7 @@ mod tests {
     #[test]
     fn test_thread_flags() {
         pin_init::stack_pin_init!(let event = Event::init_unsignaled());
-        let ctx = WaitCtx { event: core::ptr::from_ref(&event), deadline: InstantMono::INFINITE };
+        let ctx = WaitCtx { deadline: InstantMono::INFINITE, ..WaitCtx::ten_seconds(&event) };
         let waiter = ParkedWaiter::spawn(&ctx);
         assert_true!(waiter.is_some(), "failed to spawn and park the waiter");
         let waiter = waiter.expect("checked above");
@@ -3487,6 +3816,139 @@ mod tests {
         expect_eq!(current.pid(), ZX_KOID_INVALID);
         // SAFETY: `current_ptr` points to the valid current thread.
         expect_eq!(current.pid(), unsafe { super::ThreadPtr::current().pid() });
+    }
+
+    /// Shared with a helper thread that joins `target` with `deadline` (monotonic) and exits with
+    /// the target's retcode, or with the raw status `join` returned on failure; `joined` records
+    /// whether the helper's join succeeded (and so consumed `target`).
+    struct JoinCtx {
+        target: super::ThreadPtr,
+        deadline: InstantMono,
+        joined: AtomicBool,
+    }
+
+    extern "C" fn join_entry(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` is the `JoinCtx` the spawning test keeps alive until it joins us.
+        let ctx = unsafe { &*arg.cast::<JoinCtx>() };
+        // SAFETY: The spawning test joins `target` itself only if `joined` stays false.
+        match unsafe { ctx.target.join(ctx.deadline) } {
+            Ok(retcode) => {
+                ctx.joined.store(true, Ordering::Release);
+                retcode
+            }
+            Err(status) => status.into_raw(),
+        }
+    }
+
+    extern "C" fn double_entry(arg: *mut c_void) -> i32 {
+        2 * (arg.addr() as i32)
+    }
+
+    /// Verifies a created thread's `TaskState` before it runs and its retcode after the trampoline.
+    #[test]
+    fn test_thread_spawn_and_join() {
+        // SAFETY: `double_entry` only uses the value of `arg`.
+        let thread = unsafe {
+            super::create(
+                c"thread_rust_double".as_ptr(),
+                double_entry,
+                core::ptr::without_provenance_mut(21),
+            )
+        };
+        assert_true!(thread.is_ok(), "failed to create the thread");
+        let thread = thread.expect("checked above");
+        {
+            // SAFETY: The thread is created but not resumed or joined, so its `Thread` is alive
+            // and nothing else touches its task state.
+            let task_state = unsafe { (*thread.as_ptr()).task_state() };
+            expect_true!(task_state.entry().is_some());
+            expect_eq!(task_state.arg().addr(), 21);
+            // SAFETY: The thread has not started running, so nothing writes the retcode.
+            expect_eq!(unsafe { task_state.retcode() }, 0);
+        }
+        // SAFETY: The thread has not been joined or destroyed.
+        unsafe { thread.resume() };
+        // SAFETY: The thread is joined exactly once.
+        let retcode = unsafe { thread.join(InstantMono::INFINITE) };
+        expect_eq!(retcode.unwrap_or(ZX_ERR_BAD_STATE), 42);
+    }
+
+    /// Verifies that a joiner blocked in `TaskState::join` is woken with the target's retcode.
+    #[test]
+    fn test_thread_join_wakes_joiner() {
+        pin_init::stack_pin_init!(let event = Event::init_unsignaled());
+        let ctx = WaitCtx { retcode: 7, ..WaitCtx::ten_seconds(&event) };
+        let target = ParkedWaiter::spawn(&ctx);
+        assert_true!(target.is_some(), "failed to spawn and park the target");
+        let target = target.expect("checked above");
+
+        let join_ctx = JoinCtx {
+            target: target.ptr(),
+            deadline: ctx.deadline,
+            joined: AtomicBool::new(false),
+        };
+        // SAFETY: `join_ctx` outlives the joiner, which is joined below before returning.
+        let joiner = unsafe {
+            super::spawn(
+                c"thread_rust_joiner".as_ptr(),
+                join_entry,
+                core::ptr::from_ref(&join_ctx).cast_mut().cast(),
+            )
+        };
+        assert_true!(joiner.is_ok(), "failed to spawn the joiner");
+        let joiner = joiner.expect("checked above");
+        // No early returns from here until the joiner is joined.
+        let joiner_blocked = wait_until_blocked(joiner);
+        // Let the target exit; its `Thread::Current::Exit` wakes the joiner with its retcode.
+        event.signal();
+        // SAFETY: The joiner is joined exactly once.
+        let joiner_retcode = unsafe { joiner.join(InstantMono::INFINITE) };
+        let target_joined = join_ctx.joined.load(Ordering::Acquire);
+        if target_joined {
+            target.joined_elsewhere();
+        }
+        expect_true!(joiner_blocked);
+        expect_eq!(joiner_retcode.unwrap_or(ZX_ERR_BAD_STATE), 7);
+        expect_true!(target_joined);
+    }
+
+    /// Verifies that `TaskState::join` with an already-past deadline fails with `ZX_ERR_TIMED_OUT`.
+    #[test]
+    fn test_thread_join_timeout() {
+        pin_init::stack_pin_init!(let event = Event::init_unsignaled());
+        let ctx = WaitCtx { retcode: 7, ..WaitCtx::ten_seconds(&event) };
+        let target = ParkedWaiter::spawn(&ctx);
+        assert_true!(target.is_some(), "failed to spawn and park the target");
+        let target = target.expect("checked above");
+
+        let join_ctx = JoinCtx {
+            target: target.ptr(),
+            deadline: InstantMono(current_mono_time().0 - 1),
+            joined: AtomicBool::new(false),
+        };
+        // SAFETY: `join_ctx` outlives the joiner, which is joined below before returning.
+        let joiner = unsafe {
+            super::spawn(
+                c"thread_rust_joiner".as_ptr(),
+                join_entry,
+                core::ptr::from_ref(&join_ctx).cast_mut().cast(),
+            )
+        };
+        assert_true!(joiner.is_ok(), "failed to spawn the joiner");
+        let joiner = joiner.expect("checked above");
+        // SAFETY: The joiner is joined exactly once.
+        let joiner_retcode = unsafe { joiner.join(InstantMono::INFINITE) };
+        let target_joined = join_ctx.joined.load(Ordering::Acquire);
+        // The target is normally still parked; release it and collect its retcode ourselves.
+        let target_retcode = if target_joined {
+            target.joined_elsewhere();
+            None
+        } else {
+            Some(target.join().unwrap_or(ZX_ERR_BAD_STATE))
+        };
+        expect_eq!(joiner_retcode.unwrap_or(ZX_ERR_BAD_STATE), ZX_ERR_TIMED_OUT);
+        expect_false!(target_joined);
+        expect_eq!(target_retcode.unwrap_or(ZX_ERR_BAD_STATE), 7);
     }
 }
 

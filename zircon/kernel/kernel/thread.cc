@@ -245,32 +245,6 @@ Thread::Thread(ktl::string_view name) {
 #endif
 }
 
-void TaskState::Init(thread_start_routine entry, void* arg) {
-  entry_ = entry;
-  arg_ = arg;
-}
-
-zx_status_t TaskState::Join(Thread* const current_thread, zx_instant_mono_t deadline) {
-  return retcode_wait_queue_.Block(current_thread, deadline, Interruptible::No);
-}
-
-bool TaskState::TryWakeJoiners(zx_status_t status) {
-  ktl::optional<uint32_t> result;
-
-  // Attempt to lock the queue first.
-  if (retcode_wait_queue_.get_lock().AcquireOrBackoff()) {
-    // Now, try to lock and wake all of our waiting threads.
-    result = retcode_wait_queue_.WakeAllLocked(status);
-
-    // No matter what just happened, we need to drop the queue's lock.
-    retcode_wait_queue_.get_lock().Release();
-  }
-
-  // If we got a result, then we succeeded in waking the threads we wanted to
-  // wake.
-  return result != ktl::nullopt;
-}
-
 static void free_thread_resources(Thread* t) {
   // Free the thread structure itself unless marked otherwise.  If not freeing
   // it, manually trigger the Thread destructor so that DEBUG_ASSERTs present
@@ -325,20 +299,6 @@ zx_status_t Thread::Current::SoftFaultInRange(vaddr_t va, uint flags, size_t len
 
 zx_status_t Thread::Current::AccessedFault(vaddr_t va) {
   return Fault(va, [va](VmAspace* aspace) { return aspace->AccessedFault(va); });
-}
-
-void Thread::Trampoline() {
-  // Handle the special case of starting a new thread for the first time,
-  // releasing the previous thread's lock as well as the current thread's lock
-  // in the process, before restoring interrupts and dropping into the thread's
-  // entry point.
-  Scheduler::TrampolineLockHandoff();
-  arch_enable_ints();
-
-  // Call into the thread's entry point, and call exit when finished.
-  const TaskState& task_state = Thread::Current::Get()->task_state_;
-  int ret = task_state.entry()(task_state.arg());
-  Thread::Current::Exit(ret);
 }
 
 /**
@@ -437,7 +397,7 @@ Thread* Thread::CreateEtc(Thread* t, ktl::string_view name, thread_start_routine
     t->flags_.store(flags, ktl::memory_order_relaxed);
 
     if (likely(alt_trampoline == nullptr)) {
-      alt_trampoline = &Thread::Trampoline;
+      alt_trampoline = &rust_thread_trampoline;
     }
 
     // set up the initial stack frame
@@ -2121,7 +2081,7 @@ void Thread::ReviveIdlePowerThread(cpu_num_t cpu_num) {
   DEBUG_ASSERT(thread->scheduler_state().hard_affinity() == cpu_num_to_mask(cpu_num));
   DEBUG_ASSERT(thread->task_state().entry() == IdlePowerThread::Run);
 
-  arch_thread_initialize(thread, reinterpret_cast<vaddr_t>(Thread::Trampoline));
+  arch_thread_initialize(thread, reinterpret_cast<vaddr_t>(rust_thread_trampoline));
   thread->preemption_state().Reset();
 }
 

@@ -9305,8 +9305,7 @@ pub unsafe extern "C" fn rust_kernel_scheduler_timer_tick(_now: SchedTime) {
 /// Must be called on thread trampoline entry with interrupts disabled and an
 /// active `ChainLockTransaction` holding both `previous_thread`'s and
 /// `current_thread`'s locks with the reserved scheduler token.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_kernel_scheduler_lock_handoff() {
+pub(crate) unsafe fn trampoline_lock_handoff() {
     // SAFETY: The thread trampoline runs with the transaction registered by the
     // reschedule that switched to this thread.
     let token = unsafe { ChainLockTransaction::assert_active() };
@@ -9355,6 +9354,18 @@ pub unsafe extern "C" fn rust_kernel_scheduler_lock_handoff() {
         // are finished.
         (*curr_lock).release(&token);
     }
+}
+
+/// Forwards C++ `Scheduler::TrampolineLockHandoff`.
+///
+/// # Safety
+/// Must be called on thread trampoline entry with interrupts disabled and an
+/// active `ChainLockTransaction` holding both `previous_thread`'s and
+/// `current_thread`'s locks with the reserved scheduler token.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_kernel_scheduler_lock_handoff() {
+    // SAFETY: Forwarded from C++ `Scheduler::TrampolineLockHandoff`.
+    unsafe { trampoline_lock_handoff() };
 }
 
 /// Indicates how to select the target CPU for the woken task. This flag is a
