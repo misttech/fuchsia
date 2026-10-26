@@ -297,14 +297,14 @@ impl FileOps for PerfEventFile {
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
+        security::check_perf_event_read_access(current_task, self)?;
+
         // Create/calculate and return the ReadFormatData object.
         // If we create it earlier we might want to change it and it's immutable once created.
         let read_format_data = {
             // Once we get the `value` or count from kernel, we can change this to a read()
             // call instead of write().
             let mut perf_event_file = self.perf_event_file.write();
-
-            security::check_perf_event_read_access(current_task, &self)?;
 
             let mut total_time_running_including_curr = perf_event_file.total_time_running;
 
@@ -373,7 +373,7 @@ impl FileOps for PerfEventFile {
             TODO("https://fxbug.dev/405463320"),
             "[perf_event_open] implement PERF_IOC_FLAG_GROUP"
         );
-        security::check_perf_event_write_access(current_task, &self)?;
+        security::check_perf_event_write_access(current_task, self)?;
         let mut perf_event_file = self.perf_event_file.write();
         match op {
             PERF_EVENT_IOC_ENABLE => {
@@ -455,6 +455,8 @@ impl FileOps for PerfEventFile {
             return error!(EINVAL);
         }
 
+        security::check_perf_event_read_access(current_task, self)?;
+
         self.seq_lock
             .get_or_init(|| {
                 let perf_event_file = self.perf_event_file.read();
@@ -470,7 +472,6 @@ impl FileOps for PerfEventFile {
             .map_err(|e| e.clone())?;
 
         // Write to a MemoryObject and return it (expected return type for get_memory()).
-        security::check_perf_event_read_access(current_task, &self)?;
         let perf_event_file = self.perf_event_file.read();
         match perf_event_file
             .perf_data_vmo
