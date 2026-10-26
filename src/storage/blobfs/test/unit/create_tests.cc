@@ -29,10 +29,18 @@ TEST(CreateTest, AllocNodeCountGreaterThanAllocated) {
   DeviceBlockRead(device.get(), block, sizeof(block), kSuperblockOffset);
   Superblock* info = reinterpret_cast<Superblock*>(block);
   info->alloc_inode_count++;
+  info->flags &= ~kBlobFlagClean;
   DeviceBlockWrite(device.get(), block, sizeof(block), kSuperblockOffset);
+
+  auto vmo = device->VmoChildReference();
+  ASSERT_TRUE(vmo.is_ok());
 
   BlobfsTestSetup setup;
   EXPECT_EQ(ZX_ERR_IO_OVERRUN, setup.Mount(std::move(device)));
+
+  // A failed mount must not write the clean flag back to the superblock.
+  ASSERT_EQ(vmo->read(block, kSuperblockOffset, sizeof(block)), ZX_OK);
+  EXPECT_EQ(info->flags & kBlobFlagClean, 0u);
 }
 
 }  // namespace

@@ -268,15 +268,15 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   // Sequentially migrates blobfs to the latest oldest_minor_version.
   // Performs zero or more passes which each migrate blobfs from oldest_minor_version N -> N+1 by
   // performing some reparative action. See MigrateToRevN.
-  zx_status_t Migrate();
+  void Migrate();
 
   // Repairs the Inode of the null blob (if present) to not have a zero-length extent.
   // NOP if oldest_minor_version >= kBlobfsMinorVersionHostToolHandlesNullBlobCorrectly.
-  zx_status_t MigrateToRev4();
+  void MigrateToRev4();
 
   // Migrates from V8Rev4 and V9Rev4 to V10Rev4 by inserting the blob layout format into each blob's
   // inode header..
-  zx_status_t MigrateToV10Rev4();
+  void MigrateToV10Rev4();
 
   // Walks all the extents of a given inode, updating |extents_per_blob| and |used_fragments|
   // metrics in |out_metrics|. If |out_stats| is provided, also records those values there.
@@ -300,6 +300,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
   std::unique_ptr<BlockDevice> block_device_;
   fuchsia_storage_block::wire::BlockInfo block_info_ = {};
   Writability writability_;
+  bool clean_unmount_on_reset_ = false;
 
   std::unique_ptr<Allocator> allocator_;
 
