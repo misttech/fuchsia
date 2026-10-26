@@ -78,6 +78,22 @@ build_flags(
 )
 # LINT.ThenChange(//build/config/BUILD.gn:debug)
 
+# LINT.IfChange(symbol_visibility_hidden)
+# NOTE: This assumes zircon_toolchain == false in Bazel.
+build_flags(
+    name = "symbol_visibility_hidden",
+    cflags = ["-fvisibility=hidden"],
+    # Disable libc++ visibility annotations to make sure that the compiler option
+    # has effect on symbols defined in libc++ headers. Note that we don't want to
+    # disable these annotations altogether to ensure that our toolchain is usable
+    # outside of our build since not every user uses hidden visibility by default.
+    defines = ["_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS"],
+    # NOTE: asmflags is not supported. Bazel passes cflags to assembly actions.
+    # asmflags = cflags
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:symbol_visibility_hidden)
+
 # LINT.IfChange(shared_library_config)
 build_flags(
     name = "shared_library_config",

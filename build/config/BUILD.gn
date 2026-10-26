@@ -1270,6 +1270,7 @@ config("Wno-newline-eof") {
   visibility = [ "//third_party/github.com/google/cppdap/*" ]
 }
 
+# LINT.IfChange(symbol_visibility_hidden)
 config("symbol_visibility_hidden") {
   # Disable libc++ visibility annotations to make sure that the compiler option
   # has effect on symbols defined in libc++ headers. Note that we don't want to
@@ -1282,6 +1283,8 @@ config("symbol_visibility_hidden") {
     cflags_cc = [ "-fvisibility-inlines-hidden" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:symbol_visibility_hidden)
 
 compiler_config("symbol_no_undefined") {
   linker_flags = [ "--no-undefined" ]
