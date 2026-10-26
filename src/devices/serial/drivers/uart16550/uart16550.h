@@ -31,6 +31,14 @@ namespace uart16550 {
 class Uart16550;
 using DeviceType = ddk::Device<Uart16550>;
 
+// Driver implementing the fuchsia.hardware.serialimpl protocol for 16550-compatible UART devices.
+//
+// Provides interrupt-driven serial communication on x86 platforms and the Fuchsia emulator (QEMU).
+// To prevent character loss and framing errors when incoming data arrives without an active client
+// FIDL Read request, this driver maintains an internal software RX buffer (up to 16KB).
+// Incoming bytes from the hardware FIFO are buffered asynchronously during RX interrupts; when the
+// buffer reaches capacity, RX interrupts are temporarily masked until client Read requests drain
+// the backlog.
 class Uart16550 : public DeviceType, public fdf::WireServer<fuchsia_hardware_serialimpl::Device> {
  public:
   Uart16550();
@@ -45,9 +53,21 @@ class Uart16550 : public DeviceType, public fdf::WireServer<fuchsia_hardware_ser
 
   zx_status_t Init();
 
+  // Maximum capacity of `rx_buffer_` (16 KiB). When this limit is reached, RX interrupts
+  // are disabled in the InterruptEnableRegister to prevent unhandled overrun errors until
+  // client Read calls consume buffered bytes.
+  static constexpr size_t kMaxRxBufferSize = 16384;
+
 #if UART16550_TESTING
   // test-use only
   zx_status_t Init(zx::interrupt interrupt, hwreg::Mock::RegisterIo port_mock);
+
+  // Returns the current number of buffered RX bytes waiting in the software queue.
+  // Thread-safe: acquires `device_mutex_`.
+  size_t RxBufferSize() {
+    std::lock_guard<std::mutex> lock(device_mutex_);
+    return rx_buffer_.size();
+  }
 #endif
 
   // test-use only
@@ -135,6 +155,10 @@ class Uart16550 : public DeviceType, public fdf::WireServer<fuchsia_hardware_ser
   bool enabled_ __TA_GUARDED(device_mutex_) = false;
 
   std::optional<ReadCompleter::Async> read_completer_ __TA_GUARDED(device_mutex_);
+
+  // Software buffer caching incoming serial bytes received when no client Read
+  // completer is waiting. Protected by `device_mutex_`.
+  std::vector<uint8_t> rx_buffer_ __TA_GUARDED(device_mutex_);
 
   std::vector<uint8_t> write_buffer_ __TA_GUARDED(device_mutex_);
   std::optional<WriteContext> write_context_ __TA_GUARDED(device_mutex_);

@@ -7,6 +7,10 @@
 #include <fidl/fuchsia.hardware.serialimpl/cpp/driver/wire.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
 
+#include <chrono>
+#include <thread>
+
+#include <hwreg/mock.h>
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -216,7 +220,8 @@ TEST_F(Uart16550Harness, Read) {
       .ExpectRead<uint8_t>(0xF0, 0)          // buffer[1]
       .ExpectRead<uint8_t>(0b0000'0001, 5)   // data ready
       .ExpectRead<uint8_t>(0x59, 0)          // buffer[2]
-      .ExpectRead<uint8_t>(0b0000'0000, 5);  // data ready
+      .ExpectRead<uint8_t>(0b0000'0000, 5)   // data ready
+      .ExpectRead<uint8_t>(0b0000'0001, 2);  // IIR no interrupt pending
 
   fdf::WireClient client = CreateDriverClient();
 
@@ -261,21 +266,22 @@ TEST_F(Uart16550Harness, Read) {
 
 TEST_F(Uart16550Harness, Write) {
   PortMock()
-      .ExpectWrite<uint8_t>(0b0000'0000, 1)   // disable interrupts
-      .ExpectWrite<uint8_t>(0b1000'0000, 3)   // divisor latch enable
-      .ExpectWrite<uint8_t>(0b1110'0111, 2)   // fifo control reset
-      .ExpectWrite<uint8_t>(0b0000'0000, 3)   // divisor latch disable
-      .ExpectWrite<uint8_t>(0b0000'1101, 1)   // enable interrupts
-      .ExpectRead<uint8_t>(0b0000'1101, 1)    // read interrupts
-      .ExpectWrite<uint8_t>(0b0000'1111, 1)   // write interrupts
-      .ExpectRead<uint8_t>(0b0100'0000, 5)    // tx empty
-      .ExpectWrite<uint8_t>(0xDE, 0)          // writable_buffer[0]
-      .ExpectWrite<uint8_t>(0xAD, 0)          // writable_buffer[1]
-      .ExpectWrite<uint8_t>(0xBE, 0)          // writable_buffer[2]
-      .ExpectWrite<uint8_t>(0xEF, 0)          // writable_buffer[3]
-      .ExpectRead<uint8_t>(0b0000'0010, 2)    // tx empty interrupt id
-      .ExpectRead<uint8_t>(0b0000'1111, 1)    // read interrupts
-      .ExpectWrite<uint8_t>(0b0000'1101, 1);  // write interrupts
+      .ExpectWrite<uint8_t>(0b0000'0000, 1)  // disable interrupts
+      .ExpectWrite<uint8_t>(0b1000'0000, 3)  // divisor latch enable
+      .ExpectWrite<uint8_t>(0b1110'0111, 2)  // fifo control reset
+      .ExpectWrite<uint8_t>(0b0000'0000, 3)  // divisor latch disable
+      .ExpectWrite<uint8_t>(0b0000'1101, 1)  // enable interrupts
+      .ExpectRead<uint8_t>(0b0000'1101, 1)   // read interrupts
+      .ExpectWrite<uint8_t>(0b0000'1111, 1)  // write interrupts
+      .ExpectRead<uint8_t>(0b0100'0000, 5)   // tx empty
+      .ExpectWrite<uint8_t>(0xDE, 0)         // writable_buffer[0]
+      .ExpectWrite<uint8_t>(0xAD, 0)         // writable_buffer[1]
+      .ExpectWrite<uint8_t>(0xBE, 0)         // writable_buffer[2]
+      .ExpectWrite<uint8_t>(0xEF, 0)         // writable_buffer[3]
+      .ExpectRead<uint8_t>(0b0000'0010, 2)   // tx empty interrupt id
+      .ExpectRead<uint8_t>(0b0000'1111, 1)   // read interrupts
+      .ExpectWrite<uint8_t>(0b0000'1101, 1)  // write interrupts
+      .ExpectRead<uint8_t>(0b0000'0001, 2);  // IIR no interrupt pending
 
   fdf::WireClient client = CreateDriverClient();
 
@@ -344,6 +350,124 @@ TEST_F(Uart16550Harness, ReadDataInFifo) {
   // There is already data in the FIFO, so our read request should be completed immediately without
   // involvement from the interrupt handler.
   Runtime().RunUntilIdle();
+}
+
+TEST_F(Uart16550Harness, ReadBufferedData) {
+  // Simulate interrupt with RX data available when no read is pending.
+  PortMock()
+      .ExpectRead<uint8_t>(0b0000'0100, 2)   // rx available interrupt id
+      .ExpectRead<uint8_t>(0b0000'0001, 5)   // data ready
+      .ExpectRead<uint8_t>(0x0F, 0)          // rx data
+      .ExpectRead<uint8_t>(0b0000'0001, 5)   // data ready
+      .ExpectRead<uint8_t>(0xF0, 0)          // rx data
+      .ExpectRead<uint8_t>(0b0000'0000, 5)   // data ready is 0 (fifo empty)
+      .ExpectRead<uint8_t>(0b0000'0001, 2);  // IIR no interrupt pending
+
+  // Trigger interrupt. This should drain the FIFO into rx_buffer_.
+  InterruptDriver();
+  Runtime().RunUntilIdle();
+
+  // Wait until the interrupt thread has drained the 2 bytes into rx_buffer_.
+  while (Device().RxBufferSize() < 2) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_EQ(Device().RxBufferSize(), 2);
+
+  // Now call Read. Because rx_buffer_ did not reach kMaxRxBufferSize, RX interrupts remain enabled
+  // and Read returns the buffered data immediately without touching IER.
+  PortMock().ExpectNoIo();
+
+  fdf::WireClient client = CreateDriverClient();
+  fdf::Arena arena('TEST');
+
+  const std::vector<uint8_t> expect_buffer{0x0F, 0xF0};
+
+  client.buffer(arena)->Read().ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    const std::vector actual_buffer(result->value()->data.cbegin(), result->value()->data.cend());
+    EXPECT_EQ(expect_buffer, actual_buffer);
+    Runtime().Quit();
+  });
+
+  Runtime().Run();
+}
+
+TEST_F(Uart16550Harness, RxBufferFullDisablesAndReenablesInterrupt) {
+  constexpr size_t kChunkSize = fuchsia_io::wire::kMaxBuf;
+  static_assert(uart16550::Uart16550::kMaxRxBufferSize == 2 * kChunkSize);
+
+  // First chunk of kChunkSize (8192) bytes drained on the first loop iteration of HandleInterrupts.
+  PortMock().ExpectRead<uint8_t>(0b0000'0100, 2);  // rx available interrupt id
+  for (size_t i = 0; i < kChunkSize; ++i) {
+    PortMock()
+        .ExpectRead<uint8_t>(0b0000'0001, 5)  // data ready
+        .ExpectRead<uint8_t>(0xAA, 0);        // rx data
+  }
+  PortMock().ExpectRead<uint8_t>(0b0000'0001, 5);  // trailing LSR read when buffer span is full
+
+  // Second loop iteration drains another kChunkSize (8192) bytes, reaching kMaxRxBufferSize (16384)
+  // and disabling rx_available in IER.
+  PortMock().ExpectRead<uint8_t>(0b0000'0100, 2);  // rx available interrupt id
+  for (size_t i = 0; i < kChunkSize; ++i) {
+    PortMock()
+        .ExpectRead<uint8_t>(0b0000'0001, 5)  // data ready
+        .ExpectRead<uint8_t>(0xBB, 0);        // rx data
+  }
+  PortMock()
+      .ExpectRead<uint8_t>(0b0000'0001, 5)   // trailing LSR read when buffer span is full
+      .ExpectRead<uint8_t>(0b0000'1101, 1)   // read IER
+      .ExpectWrite<uint8_t>(0b0000'1100, 1)  // write IER with rx_available = false
+      .ExpectRead<uint8_t>(0b0000'0001, 2);  // IIR no interrupt pending
+
+  InterruptDriver();
+  Runtime().RunUntilIdle();
+
+  while (Device().RxBufferSize() < uart16550::Uart16550::kMaxRxBufferSize) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_EQ(Device().RxBufferSize(), uart16550::Uart16550::kMaxRxBufferSize);
+  PortMock().VerifyAndClear();
+
+  fdf::WireClient client = CreateDriverClient();
+  fdf::Arena arena('TEST');
+
+  // Disabling and re-enabling the device while rx_buffer_ is full should keep rx_available
+  // disabled (0b0000'1100 instead of 0b0000'1101).
+  PortMock()
+      .ExpectWrite<uint8_t>(0b0000'0000, 1)   // disable interrupts
+      .ExpectWrite<uint8_t>(0b1000'0000, 3)   // divisor latch enable
+      .ExpectWrite<uint8_t>(0b1110'0111, 2)   // fifo control reset
+      .ExpectWrite<uint8_t>(0b0000'0000, 3)   // divisor latch disable
+      .ExpectWrite<uint8_t>(0b0000'1100, 1);  // enable interrupts with rx_available = false
+
+  client.buffer(arena)->Enable(false).ThenExactlyOnce([](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+  });
+  client.buffer(arena)->Enable(true).ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result->is_ok());
+    Runtime().Quit();
+  });
+  Runtime().Run();
+  Runtime().ResetQuit();
+  PortMock().VerifyAndClear();
+
+  // Read consumes the entire rx_buffer_ (kMaxRxBufferSize bytes) at once and re-enables
+  // rx_available in IER.
+  PortMock()
+      .ExpectRead<uint8_t>(0b0000'1100, 1)    // read IER
+      .ExpectWrite<uint8_t>(0b0000'1101, 1);  // write IER with rx_available = true
+
+  client.buffer(arena)->Read().ThenExactlyOnce([&](auto& result) {
+    ASSERT_TRUE(result.ok());
+    ASSERT_TRUE(result->is_ok());
+    EXPECT_EQ(result->value()->data.size(), uart16550::Uart16550::kMaxRxBufferSize);
+    Runtime().Quit();
+  });
+  Runtime().Run();
+  PortMock().VerifyAndClear();
 }
 
 }  // namespace

@@ -326,7 +326,7 @@ zx_status_t Uart16550::Enable(bool enable) {
       ResetFifosLocked();
       InterruptEnableRegister::Get()
           .FromValue(0)
-          .set_rx_available(true)
+          .set_rx_available(rx_buffer_.size() < kMaxRxBufferSize)
           .set_line_status(true)
           .set_modem_status(true)
           .set_tx_empty(false)
@@ -359,6 +359,16 @@ void Uart16550::Read(fdf::Arena& arena, ReadCompleter::Sync& completer) {
     // Per the serialimpl protocol, ZX_ERR_ALREADY_BOUND should be returned if the client makes a
     // read request when one was already in progress.
     return completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_BOUND);
+  }
+
+  if (!rx_buffer_.empty()) {
+    if (rx_buffer_.size() >= kMaxRxBufferSize) {
+      InterruptEnableRegister::Get().ReadFrom(&port_io_).set_rx_available(true).WriteTo(&port_io_);
+    }
+
+    completer.buffer(arena).ReplySuccess(fidl::VectorView<uint8_t>::FromExternal(rx_buffer_));
+    rx_buffer_.clear();
+    return;
   }
 
   auto lcr = LineStatusRegister::Get().ReadFrom(&port_io_);
@@ -505,74 +515,99 @@ void Uart16550::HandleInterrupts() {
 
     fdf::Arena arena('UART');
 
-    const auto identifier = InterruptIdentRegister::Get().ReadFrom(&port_io_).interrupt_id();
-
-    switch (identifier) {
-      case InterruptType::kNone:
-        break;
-      case InterruptType::kRxLineStatus: {
-        // Clear the interrupt.
-        const auto lsr = LineStatusRegister::Get().ReadFrom(&port_io_);
-        if (lsr.overrun_error()) {
-          zxlogf(ERROR, "%s: overrun error (OE) detected", __func__);
-        }
-        if (lsr.parity_error()) {
-          zxlogf(ERROR, "%s: parity error (PE) detected", __func__);
-        }
-        if (lsr.framing_error()) {
-          zxlogf(ERROR, "%s: framing error (FE) detected", __func__);
-        }
-        if (lsr.break_interrupt()) {
-          zxlogf(ERROR, "%s: break interrupt (BI) detected", __func__);
-        }
-        if (lsr.error_in_rx_fifo()) {
-          zxlogf(ERROR, "%s: error in rx fifo detected", __func__);
-        }
+    // The 16550 InterruptIdentRegister (IIR) is priority-encoded and reports only the single
+    // highest-priority pending interrupt per read (e.g., kRxDataAvailable takes precedence over
+    // kTxEmpty). Drain all pending interrupt conditions until IIR reports kNone before waiting on
+    // the interrupt handle again, as a lower-priority condition that remains asserted will not
+    // generate a new interrupt edge to wake interrupt_.wait().
+    while (true) {
+      const auto identifier = InterruptIdentRegister::Get().ReadFrom(&port_io_).interrupt_id();
+      if (identifier == InterruptType::kNone) {
         break;
       }
-      case InterruptType::kRxDataAvailable:  // In both cases, there is data ready in the rx fifo.
-      case InterruptType::kCharTimeout:
-        if (read_completer_) {
-          uint8_t buf[fuchsia_io::wire::kMaxBuf];
-          size_t actual = DrainRxFifo({buf, std::size(buf)});
-          read_completer_->buffer(arena).ReplySuccess(
-              fidl::VectorView<uint8_t>::FromExternal(buf, actual));
-          read_completer_.reset();
+
+      switch (identifier) {
+        case InterruptType::kRxLineStatus: {
+          // Clear the interrupt.
+          const auto lsr = LineStatusRegister::Get().ReadFrom(&port_io_);
+          if (lsr.overrun_error()) {
+            zxlogf(ERROR, "%s: overrun error (OE) detected", __func__);
+          }
+          if (lsr.parity_error()) {
+            zxlogf(ERROR, "%s: parity error (PE) detected", __func__);
+          }
+          if (lsr.framing_error()) {
+            zxlogf(ERROR, "%s: framing error (FE) detected", __func__);
+          }
+          if (lsr.break_interrupt()) {
+            zxlogf(ERROR, "%s: break interrupt (BI) detected", __func__);
+          }
+          if (lsr.error_in_rx_fifo()) {
+            zxlogf(ERROR, "%s: error in rx fifo detected", __func__);
+          }
+          break;
         }
-        break;
-      case InterruptType::kTxEmpty: {
-        if (write_context_) {
-          if (write_context_->data.empty()) {
-            // No more data to write, complete the request and disable the TX empty interrupt.
-            write_context_->completer.buffer(arena).ReplySuccess();
-            write_context_.reset();
-          } else {
-            write_context_->data = FillTxFifo(write_context_->data);
-            // There is still data that needs to be written -- break early to keep the TX empty
-            // interrupt enabled.
+        case InterruptType::kRxDataAvailable:  // In both cases, there is data ready in the rx fifo.
+        case InterruptType::kCharTimeout: {
+          if (read_completer_) {
+            uint8_t buf[fuchsia_io::wire::kMaxBuf];
+            size_t actual = DrainRxFifo({buf, std::size(buf)});
+            read_completer_->buffer(arena).ReplySuccess(
+                fidl::VectorView<uint8_t>::FromExternal(buf, actual));
+            read_completer_.reset();
             break;
           }
-        }
 
-        InterruptEnableRegister::Get().ReadFrom(&port_io_).set_tx_empty(false).WriteTo(&port_io_);
-        break;
-      }
-      case InterruptType::kModemStatus: {
-        // Clear the interrupt.
-        const auto msr = ModemStatusRegister::Get().ReadFrom(&port_io_);
-        if (msr.clear_to_send()) {
-          zxlogf(INFO, "%s: clear to send (CTS) detected", __func__);
+          uint8_t buf[fuchsia_io::wire::kMaxBuf];
+          const size_t max_to_drain =
+              rx_buffer_.size() < kMaxRxBufferSize
+                  ? std::min(std::size(buf), kMaxRxBufferSize - rx_buffer_.size())
+                  : 0;
+          size_t actual = DrainRxFifo({buf, max_to_drain});
+          rx_buffer_.insert(rx_buffer_.end(), buf, buf + actual);
+          if (rx_buffer_.size() >= kMaxRxBufferSize) {
+            InterruptEnableRegister::Get().ReadFrom(&port_io_).set_rx_available(false).WriteTo(
+                &port_io_);
+            zxlogf(WARNING, "%s: RX buffer full, disabling RX interrupt", __func__);
+          }
+          break;
         }
-        if (msr.data_set_ready()) {
-          zxlogf(INFO, "%s: data set ready (DSR) detected", __func__);
+        case InterruptType::kTxEmpty: {
+          if (write_context_) {
+            if (write_context_->data.empty()) {
+              // No more data to write, complete the request and disable the TX empty interrupt.
+              write_context_->completer.buffer(arena).ReplySuccess();
+              write_context_.reset();
+            } else {
+              write_context_->data = FillTxFifo(write_context_->data);
+              // There is still data that needs to be written -- break early to keep the TX empty
+              // interrupt enabled.
+              break;
+            }
+          }
+
+          InterruptEnableRegister::Get().ReadFrom(&port_io_).set_tx_empty(false).WriteTo(&port_io_);
+          break;
         }
-        if (msr.ring_indicator()) {
-          zxlogf(INFO, "%s: ring indicator (RI) detected", __func__);
+        case InterruptType::kModemStatus: {
+          // Clear the interrupt.
+          const auto msr = ModemStatusRegister::Get().ReadFrom(&port_io_);
+          if (msr.clear_to_send()) {
+            zxlogf(INFO, "%s: clear to send (CTS) detected", __func__);
+          }
+          if (msr.data_set_ready()) {
+            zxlogf(INFO, "%s: data set ready (DSR) detected", __func__);
+          }
+          if (msr.ring_indicator()) {
+            zxlogf(INFO, "%s: ring indicator (RI) detected", __func__);
+          }
+          if (msr.data_carrier_detect()) {
+            zxlogf(INFO, "%s: data carrier (DCD) detected", __func__);
+          }
+          break;
         }
-        if (msr.data_carrier_detect()) {
-          zxlogf(INFO, "%s: data carrier (DCD) detected", __func__);
-        }
-        break;
+        default:
+          ZX_PANIC("Unknown interrupt type: %u", static_cast<uint8_t>(identifier));
       }
     }
   }
