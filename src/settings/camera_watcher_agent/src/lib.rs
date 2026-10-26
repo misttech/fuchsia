@@ -261,6 +261,24 @@ mod tests {
     }
 
     #[fuchsia::test(allow_stalls = false)]
+    async fn event_handler_forwards_first_unmuted_event_and_dedups() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut event_handler = EventHandler::new(vec![tx], 1);
+
+        // The first resolved state is forwarded even when it is `false`.
+        event_handler.handle_event(0, false);
+        assert_eq!(rx.next().await, Some(false));
+
+        // An identical follow-up event is not forwarded.
+        event_handler.handle_event(0, false);
+        assert!(rx.try_recv().is_err());
+
+        // A change is forwarded.
+        event_handler.handle_event(0, true);
+        assert_eq!(rx.next().await, Some(true));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
     async fn event_handler_handles_camera_disconnect() {
         let (tx, mut rx) = mpsc::unbounded();
         let mut event_handler = EventHandler::new(vec![tx], 2);

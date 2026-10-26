@@ -85,6 +85,13 @@ impl TestInputEnvironmentBuilder {
         self
     }
 
+    pub(crate) fn add_agent(mut self, agent: AgentType) -> Self {
+        if !self.agents.contains(&agent) {
+            self.agents.push(agent);
+        }
+        self
+    }
+
     pub(crate) async fn build(mut self) -> TestInputEnvironment {
         let service_registry = ServiceRegistry::create();
         let storage_factory = Rc::new(if let Some(info) = self.starting_input_info_sources {

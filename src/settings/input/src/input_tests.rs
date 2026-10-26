@@ -18,6 +18,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::pin_mut;
 use futures::stream::StreamExt;
 use futures::task::Poll;
+use settings_common::config::AgentType;
 use settings_media_buttons::MediaButtonsEventBuilder;
 use settings_test_common::helpers::{
     clone_media_buttons_event_without_wake_lease, move_executor_forward,
@@ -515,6 +516,53 @@ async fn test_camera3_sw_change() {
 
     set_camera_disable(&input_proxy, true).await;
     assert!(env.camera3_service.lock().await.camera_sw_muted());
+}
+
+// Watches until the camera state reports disabled = [expected_disabled]. Only the opposite state
+// may be observed while waiting.
+async fn watch_until_camera_disabled(input_proxy: &InputProxy, expected_disabled: bool) {
+    let flags_for = |disabled: bool| {
+        ToggleStateFlags::from_bits(if disabled { MUTED_BITS } else { AVAILABLE_BITS })
+    };
+    loop {
+        let settings = input_proxy.watch().await.expect("watch completed");
+        let flags = settings
+            .devices
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|x| x.device_type == Some(DeviceType::Camera))
+            .expect("Device not found in results")
+            .state
+            .as_ref()
+            .and_then(|state| state.toggle_flags);
+        if flags == flags_for(expected_disabled) {
+            return;
+        }
+        assert_eq!(flags, flags_for(!expected_disabled));
+    }
+}
+
+// Test to ensure camera sw state changes made on the camera3 api outside of the settings service,
+// including right after startup, are reflected in watch results.
+#[fuchsia::test]
+async fn test_camera3_external_sw_change() {
+    let env = TestInputEnvironmentBuilder::new()
+        .set_input_device_config(default_mic_cam_config())
+        .add_agent(AgentType::CameraWatcher)
+        .build()
+        .await;
+    let input_proxy = env.input_service.clone();
+
+    // Another client mutes the camera right after startup.
+    env.camera3_service.lock().await.set_camera_sw_muted(true);
+    watch_until_camera_disabled(&input_proxy, true).await;
+    assert!(env.camera3_service.lock().await.camera_sw_muted());
+
+    // Another client unmutes the camera.
+    env.camera3_service.lock().await.set_camera_sw_muted(false);
+    watch_until_camera_disabled(&input_proxy, false).await;
+    assert!(!env.camera3_service.lock().await.camera_sw_muted());
 }
 
 // Test that when either hardware or software is muted, the service
