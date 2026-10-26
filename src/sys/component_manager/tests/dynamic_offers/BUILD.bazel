@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "dynamic_offers_bin",
+    srcs = ["integration_test.rs"],
+    crate_name = "dynamic_offers",
+    crate_root = "integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-fs",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "elf_runner_test_bin",
+    srcs = ["elf_runner_test.rs"],
+    crate_name = "elf_runner_test",
+    crate_root = "elf_runner_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "args_reporter_bin",
+    srcs = ["args_reporter.rs"],
+    binary_name = "args_reporter",
+    crate_root = "args_reporter.rs",
+    edition = "2024",
+)
+
+rustc_binary(
+    name = "no_args_reporter_bin",
+    srcs = ["no_args_reporter.rs"],
+    binary_name = "no_args_reporter",
+    crate_root = "no_args_reporter.rs",
+    edition = "2024",
+)

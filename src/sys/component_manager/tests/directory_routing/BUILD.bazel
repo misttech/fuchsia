@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "directory_routing_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "directory_routing",
+    crate_root = "src/main.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-fs",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)

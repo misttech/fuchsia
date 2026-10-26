@@ -1,0 +1,162 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "echo_reporter_bin",
+    testonly = True,
+    srcs = ["scoped/echo_reporter.rs"],
+    crate_name = "scoped_echo_reporter",
+    crate_root = "scoped/echo_reporter.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "nested_reporter_bin",
+    testonly = True,
+    srcs = ["nested/reporter.rs"],
+    crate_name = "nested_reporter",
+    crate_root = "nested/reporter.rs",
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "async_reporter_bin",
+    testonly = True,
+    srcs = ["async/reporter.rs"],
+    crate_name = "async_reporter",
+    crate_root = "async/reporter.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test:lib
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "echo_server_for_events_bin",
+    testonly = True,
+    srcs = ["scoped/echo_server.rs"],
+    crate_name = "scoped_echo_server",
+    crate_root = "scoped/echo_server.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "stub_component_bin",
+    testonly = True,
+    srcs = ["stub/component.rs"],
+    crate_name = "stub_component",
+    crate_root = "stub/component.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "realm_offered_nested",
+    testonly = True,
+    srcs = ["realm_offered/nested.rs"],
+    crate_root = "realm_offered/nested.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "realm_offered_bin",
+    testonly = True,
+    srcs = ["realm_offered/reporter.rs"],
+    crate_name = "realm_offered_reporter",
+    crate_root = "realm_offered/reporter.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "capability_requested_root_bin",
+    testonly = True,
+    srcs = ["capability_requested/root.rs"],
+    crate_name = "capability_requested_root",
+    crate_root = "capability_requested/root.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:futures-util",
+    ],
+)
+
+rustc_binary(
+    name = "capability_requested_child_bin",
+    testonly = True,
+    srcs = ["capability_requested/child.rs"],
+    crate_name = "capability_requested_child",
+    crate_root = "capability_requested/child.rs",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager/tests/events:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)

@@ -1,0 +1,42 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "exit_with_code",
+    srcs = ["exit_with_code.cc"],
+    visibility = ["//src/sys/lib/elf_runner:__pkg__"],
+    deps = ["//src/lib/fxl"],
+)
+
+fx_cc_binary(
+    name = "exit_with_code_from_env",
+    srcs = ["exit_with_code_from_env.cc"],
+    visibility = ["//src/sys/lib/elf_runner:__pkg__"],
+    deps = ["//src/lib/fxl"],
+)
+
+rustc_test(
+    name = "exit_code_integration_test_bin",
+    srcs = ["integration_test.rs"],
+    crate_name = "exit_code_integration_test",
+    crate_root = "integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
