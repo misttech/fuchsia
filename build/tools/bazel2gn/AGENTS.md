@@ -61,7 +61,8 @@ motivation, and comment annotations.
     (`CondExpr`), and `+` list concatenations into GN `if / else if / else`
     statements.
 -   [`tags.go`](./tags.go): Extracts `assert_no_deps=<label>` from Bazel `tags`
-    into GN `assert_no_deps`.
+    into GN `assert_no_deps`, preserving comments so `# @bazel2gn:path_overwrite:`
+    and `# @bazel2gn:raw_overwrite:` work on tags.
 -   [`transformers.go`](./transformers.go): Attribute value transformers
     (`bazelVisibilityToGN`, `bazelCOptToGNConfig`, `bazelDepToGN`,
     `bazelFilePathsToGN`, `bazelLdflagsToGN`, `bazelExprToGNList`) and inline

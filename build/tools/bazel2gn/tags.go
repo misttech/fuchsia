@@ -11,6 +11,10 @@ import (
 	"go.starlark.net/syntax"
 )
 
+// assertNoDepsTagPrefix is the prefix of Bazel tags listing labels the target
+// must not depend on, see //build/bazel/aspects/assert_no_deps.bzl.
+const assertNoDepsTagPrefix = "assert_no_deps="
+
 // tagsToGN converts Bazel tags attribute to GN assignments if known syncable tags are found.
 func tagsToGN(expr syntax.Expr) ([]string, error) {
 	// Currently only list literals are supported, i.e. select is not supported yet.
@@ -27,20 +31,26 @@ func tagsToGN(expr syntax.Expr) ([]string, error) {
 		}
 		// lit.Raw is quoted, so unquote.
 		val := lit.Raw[1 : len(lit.Raw)-1]
-		if strings.HasPrefix(val, "assert_no_deps=") {
-			label := strings.TrimPrefix(val, "assert_no_deps=")
-			// Requote the label for bazelDepToGN.
-			depLit := &syntax.Literal{Raw: fmt.Sprintf(`"%s"`, label)}
-			transformedDep, err := bazelDepToGN(depLit)
-			if err != nil {
-				return nil, fmt.Errorf("transforming assert_no_deps label %q: %v", label, err)
-			}
-			transformedDep, err = bazelVisibilityToGN(transformedDep)
-			if err != nil {
-				return nil, fmt.Errorf("transforming assert_no_deps wildcard %q: %v", label, err)
-			}
-			assertNoDeps = append(assertNoDeps, transformedDep)
+		label, ok := strings.CutPrefix(val, assertNoDepsTagPrefix)
+		if !ok {
+			continue
 		}
+		// Requote the label for bazelDepToGN, preserving comments so
+		// @bazel2gn:path_overwrite and @bazel2gn:raw_overwrite work on tags.
+		depLit := &syntax.Literal{Raw: fmt.Sprintf(`"%s"`, label)}
+		if c := lit.Comments(); c != nil {
+			depLit.AllocComments()
+			*depLit.Comments() = *c
+		}
+		transformedDep, err := bazelDepToGN(depLit)
+		if err != nil {
+			return nil, fmt.Errorf("transforming assert_no_deps label %q: %v", label, err)
+		}
+		transformedDep, err = bazelVisibilityToGN(transformedDep)
+		if err != nil {
+			return nil, fmt.Errorf("transforming assert_no_deps wildcard %q: %v", label, err)
+		}
+		assertNoDeps = append(assertNoDeps, transformedDep)
 	}
 
 	if len(assertNoDeps) == 0 {

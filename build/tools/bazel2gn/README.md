@@ -178,6 +178,39 @@ so `bazel2gn` translates test rules too:
 *   `wrap_host_rust_test()`, explicit `fx_package()` / `fx_test()` chains, and
     the other `host_*_test()` rules have no GN equivalent and are ignored.
 
+#### Tags
+
+Most Bazel `tags` have no GN equivalent and are ignored, except:
+
+*   `assert_no_deps=<label>` is converted to GN `assert_no_deps`, see
+    [`assert_no_deps.bzl`](/build/bazel/aspects/assert_no_deps.bzl).
+    Comment annotations such as `# @bazel2gn:path_overwrite:` and
+    `# @bazel2gn:raw_overwrite:` are forwarded onto the generated GN
+    dependencies, allowing toolchain qualifiers (e.g. `($current_toolchain)`).
+
+```bzl
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    tags = [
+        "assert_no_deps=//third_party/rust_crates/vendor:regex",
+        "assert_no_deps=//third_party/rust_crates/vendor:serde_json5",  # @bazel2gn:path_overwrite://third_party/rust_crates:serde_json5($current_toolchain)
+    ],
+)
+```
+
+is synced to:
+
+```gn
+rustc_binary("bin") {
+  sources = [ "src/main.rs" ]
+  assert_no_deps = [
+    "//third_party/rust_crates:regex",
+    "//third_party/rust_crates:serde_json5($current_toolchain)",
+  ]
+}
+```
+
 ### Starlark vs GN
 
 [Starlark][starlark] is the language of Bazel for defining build targets, while

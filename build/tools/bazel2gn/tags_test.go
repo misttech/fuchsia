@@ -115,6 +115,25 @@ func TestTagsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "sync assert_no_deps with path_overwrite comment",
+			bazel: `rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    tags = [
+        "assert_no_deps=//third_party/rust_crates/vendor:serde_json5",  # @bazel2gn:path_overwrite://third_party/rust_crates:serde_json5($current_toolchain)
+    ],
+)
+`,
+			wantGN: `rustc_library("lib") {
+	sources = [
+		"src/lib.rs",
+	]
+	assert_no_deps = [
+		"//third_party/rust_crates:serde_json5($current_toolchain)",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
