@@ -7,6 +7,6 @@
      <!-- Firmware prebuilts for vim3 -->
     <package name="fuchsia/prebuilt/third_party/firmware/vim3"
              path="prebuilt/third_party/firmware/vim3"
-             version="u-boot:7963bb3826b86b0192a024876a33d3a62dc18c7e"/>
+             version="u-boot:8e7ac1835c7d1d9a54fca2fa5b4a3a139b887fd6"/>
   </packages>
 </manifest>
