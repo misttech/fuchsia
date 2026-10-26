@@ -51,7 +51,6 @@ hlcpp_bindings_libraries_visibility = [
     "//src/lib/intl/examples:__pkg__",
     "//src/lib/intl/intl_property_provider_impl:__pkg__",
     "//src/lib/intl/lookup/rust:__pkg__",
-    "//src/lib/ui/input-synthesis:__pkg__",
     "//src/power/fidl/testing:__pkg__",
     "//src/sys/component_manager/tests/structured_config/fidl:__pkg__",
     "//src/sys/fuzzing/fidl:__pkg__",

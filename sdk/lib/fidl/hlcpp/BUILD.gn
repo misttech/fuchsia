@@ -80,7 +80,6 @@ hlcpp_bindings_libraries_visibility = [
   "//src/lib/intl/examples:*",
   "//src/lib/intl/intl_property_provider_impl:*",
   "//src/lib/intl/lookup/rust:*",
-  "//src/lib/ui/input-synthesis:*",
   "//src/power/fidl/testing:*",
   "//src/sys/component_manager/tests/structured_config/fidl:*",
   "//src/sys/fuzzing/fidl:*",
