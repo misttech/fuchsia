@@ -339,6 +339,10 @@ def maybe_refresh_origin_main(parent_sha):
     if os.environ.get("PLANTER_SKIP_FETCH", "").strip() not in ("", "0"):
         return
     origin_sha = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+    # If a local origin/main ref exists, use it offline without network latency,
+    # unless PLANTER_FORCE_FETCH=1 is explicitly requested.
+    if origin_sha and os.environ.get("PLANTER_FORCE_FETCH", "").strip() not in ("1", "true"):
+        return
     stamp_name = (
         "planter-origin-main-fetch-"
         + hashlib.sha256(workdir.encode("utf-8")).hexdigest()[:16]
