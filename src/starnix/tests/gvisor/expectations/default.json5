@@ -256,17 +256,6 @@
                 // the final node a symlink which breaks this test.
                 "ExecveatTest.SymlinkNoFollowIgnoreSymlinkAncestor",
 
-                // This test attempts to open `/bin` with read permissions.
-                //
-                // On the Android system image, this points to `/system/bin` which
-                // has `0751` mode permission bits (`drwxr-x--x`).
-                //
-                // A non-root user cannot read the contents of this directory.
-                //
-                // Even if the test were to be running under the root user, the `echo` file inside
-                // is a symlink that points to `toybox`, meaning that using NOFOLLOW will fail.
-                "ExecveatTest.SymlinkNoFollowWithNormalFile",
-
                 // TODO(https://fxbug.dev/297434895) These tests call exec from a process with
                 // multiple threads. Starnix doesn't yet support this.
                 "ExecTest.FromSiblingThread",
@@ -394,7 +383,6 @@
                 // iptables_test
                 "IPTablesBasic.GetRevision",
                 "IPTablesBasic.CTTargetGetRevision",
-                "IPTablesBasic.OriginalDstErrors",
 
                 // TODO(https://fxbug.dev/572922779): Allow netfilter getsockopt on non-raw sockets and return ENOENT for nonexistent tables.
                 "IPTablesBasic.GetInfoShortBuffer",
@@ -405,9 +393,10 @@
                 // ip6tables_test
                 "IP6TablesBasic.GetRevision",
 
-                // TODO(https://fxbug.dev/572922779): Allow netfilter getsockopt on non-raw sockets.
+                // TODO(https://fxbug.dev/572922779): Allow netfilter getsockopt on non-raw sockets and return ENOENT for nonexistent tables.
                 "IP6TablesBasic.GetEntriesShortBuffer",
                 "IP6TablesBasic.GetInfoShortBuffer",
+                "IP6TablesBasic.MissingTable",
 
                 // socket_ipv4_datagram_based_socket_unbound_loopback_test
                 // Multicast support is not implemented for ICMP sockets.
@@ -492,6 +481,12 @@
                 "MountTest.MountWithStrictAtime",
                 "MountTest.OverlayfsDirectoryRenameInUserNamespace",
 
+                // TODO(https://fxbug.dev/578126744): Apply clone_private_mount checks to overlay layers.
+                "MountTest.LockedMountStopsOverlayLowerdir",
+                "MountTest.LockedMountStopsOverlayOfSysfs",
+                "MountTest.LockedMountStopsOverlayUpperdir",
+                "MountTest.OverlayRefusesLayerFromAnotherMountNamespace",
+
                 // TODO(https://fxbug.dev/565372315): Starnix tmpfs rejects mode=1777 and overlayfs lacks stacking limits.
                 "MountTest.OverlayfsRejectedAsUpperdir",
                 "MountTest.OverlayfsStackingDepthLimit",
@@ -564,6 +559,10 @@
                 "NetworkNamespaceTest.LoopbackExists",
                 "NetworkNamespaceTest.Setns",
 
+                // open_create_test
+                // TODO(https://fxbug.dev/578125840): Return ENOENT when creating a file in a deleted directory.
+                "CreateTest.CreateInDeletedDirFails",
+
                 // packet_socket_dgram_test
                 "AllInetTests/CookedPacketTest.BindDrop/*",
                 "AllInetTests/CookedPacketTest.ReceiveOutbound/*",
@@ -630,6 +629,10 @@
                 // TODO(https://fxbug.dev/572922747): Implement /proc/sys/fs/file-nr and /proc/sys/fs/file-max.
                 "ProcSysFsFileNr.TracksOpenFiles",
                 "ProcSysFsFileNr.MaxMatchesFileMax",
+
+                // TODO(https://fxbug.dev/578125841): Reject noncanonical fd and invalid task directory names.
+                "ProcSelfFd.NoncanonicalNames",
+                "ProcTask.InvalidTaskNames",
 
                 // TODO(https://fxbug.dev/564605906)
                 "ProcSelfAuxv.EntryPresence",
@@ -896,6 +899,22 @@
                 "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.NewRouteLowestIndex/*",
                 "NetworkNamespaceTest.CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin",
 
+                // TODO(https://fxbug.dev/578125962): Support RTNLGRP address/route notifications and route type validation.
+                "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.AddressMulticastGroup/*",
+                "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.AddressPrefixRouteMulticastGroup/*",
+                "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.RouteMulticastGroup/*",
+                "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.RouteMulticastGroupReplace/*",
+                "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.RouteMulticastGroupSameDestination/*",
+                "NetlinkRouteTest.DeleteIpv6RouteIgnoresType",
+                "NetlinkRouteTest.NewRouteDestinationFamily",
+                "NetlinkRouteTest.NewRouteDestinationShorterThanPrefix",
+                "NetlinkRouteTest.NewRouteRejectTypeWithNexthop",
+                "NetlinkRouteTest.NewRouteTypeOutOfRange",
+                "NetlinkRouteTest.NewRouteUnspecType",
+                "NetlinkRouteTest.NewRouteUnsupportedType",
+                "NetlinkRouteTest.NewRouteWithDestinationGatewayFamily",
+                "NetlinkRouteTest.NewRouteWithDestinationUnsupportedFamily",
+
                 // socket_netlink_uevent
                 "NetlinkUeventTest.AttachFilter",
                 "NetlinkUeventTest.DetachNoFilter",
@@ -939,6 +958,7 @@
                 // All TuntapTest fails because Starnix doesn't have /dev/net/tun.
                 "TuntapStaticTest.NetTunExists",
                 "TuntapTest.*",
+                "Netlink/TuntapMTUTest.ChangeMTULimits/*",
 
                 // semaphore_test
                 "SemaphoreTest.*",
@@ -997,6 +1017,11 @@
                 "AllInetTests/RawPacketTest.GetSocketDetachFilter/*",
                 "AllInetTests/RawPacketTest.SetSocketRecvBufAboveMax/*",
                 "AllInetTests/RawPacketTest.SetSocketRecvBufBelowMin/*",
+
+                // uidgid_test
+                // TODO(https://fxbug.dev/578126238): Support setfsuid/setfsgid and reset fsuid/fsgid on setuid/setgid.
+                "UidGidRootTest.SetgidResetsFsgid",
+                "UidGidRootTest.SetuidResetsFsuid",
 
                 // wait_test - https://fxbug.dev/297461294
                 "Waiters/WaitAnyChildTest.IgnoredChildRusage/*",
@@ -1401,6 +1426,9 @@
                 "PtraceTest.AccessVmUsesAttachCreds_CapDroppedAfterAttach",
                 "PtraceTest.AccessVmUsesAttachCreds_CapGainedAfterAttach",
                 "PtraceTest.TracemeNonDumpableInUserns",
+
+                // TODO(https://fxbug.dev/578126238): Times out waiting on /dev/fuse when second fstatat is not rejected with EACCES.
+                "FuseTest.RequestUsesFilesystemIDs",
             ],
         },
     ],
