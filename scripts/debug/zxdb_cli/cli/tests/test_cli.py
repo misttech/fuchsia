@@ -1251,6 +1251,19 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
         mock_send.assert_not_called()
 
+    @patch("cli.cli.send_command")
+    async def test_extended_break_commands(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            ["break", "-f", "usb_xhci::UsbXhci::Init", "-c", "status != 0"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            BreakRequest(
+                function="usb_xhci::UsbXhci::Init", condition="status != 0"
+            )
+        )
+
 
 class TestSendCommand(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.UDS_PATH")

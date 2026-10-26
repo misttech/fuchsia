@@ -46,6 +46,7 @@ class GetStateResponse(BaseModel):
     processes: dict[int, str] | None = None
     breakpoints: dict[str, list[int]] | None = None
     watchpoints: dict[str, WatchpointInfo] | None = None
+    function_breakpoints: list[str] | None = None
 
 
 class GetStateRequest(BaseRequest[GetStateResponse]):

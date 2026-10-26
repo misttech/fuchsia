@@ -200,6 +200,30 @@ class TestAttachRequestSchema(unittest.TestCase):
         )
 
 
+class TestBreakRequestSchema(unittest.TestCase):
+    def test_valid_source_breakpoint(self) -> None:
+        req = BreakRequest(file="src/foo.cc", line=42, condition="x > 0")
+        self.assertEqual(req.file, "src/foo.cc")
+        self.assertEqual(req.line, 42)
+        self.assertEqual(req.condition, "x > 0")
+
+    def test_valid_function_breakpoint(self) -> None:
+        req = BreakRequest(
+            function="usb_xhci::UsbXhci::Init", condition="i == 1"
+        )
+        self.assertEqual(req.function, "usb_xhci::UsbXhci::Init")
+        self.assertIsNone(req.file)
+        self.assertIsNone(req.line)
+
+    def test_invalid_multiple_modes(self) -> None:
+        with self.assertRaises(ValidationError):
+            BreakRequest(file="src/foo.cc", line=42, function="bar")
+
+    def test_invalid_incomplete_source(self) -> None:
+        with self.assertRaises(ValidationError):
+            BreakRequest(file="src/foo.cc")
+
+
 class TestWaitForEventRequestSchema(unittest.TestCase):
     def test_valid(self) -> None:
         req = WaitForEventRequest(last_seen_seq=10, timeout=5)

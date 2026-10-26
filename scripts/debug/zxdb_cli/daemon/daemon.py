@@ -194,6 +194,8 @@ class Daemon:
         # every setDataBreakpoints call, so this is rebuilt from each response.
         # Used to route async `breakpoint` events; not exposed to clients.
         self.watchpoint_ids_by_bp_id: dict[int, str] = {}
+        self.breakpoint_conditions: dict[tuple[str, int], str] = {}
+        self.active_function_breakpoints: dict[str, str | None] = {}
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()

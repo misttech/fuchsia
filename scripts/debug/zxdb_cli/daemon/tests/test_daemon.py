@@ -3170,6 +3170,41 @@ class TestDaemonStart(unittest.IsolatedAsyncioTestCase):
             "thread_id is required when specifying a non-zero frame_index",
         )
 
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_break_function(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(48291, name="driver_host:pdev")
+
+        mock_fn_resp = Mock(
+            success=True,
+            body=Mock(
+                breakpoints=[Mock(id=201, verified=True)],
+                dump_dap=lambda: {
+                    "breakpoints": [{"id": 201, "verified": True}]
+                },
+            ),
+        )
+        mock_dap_client.set_function_breakpoints = AsyncMock(
+            return_value=mock_fn_resp
+        )
+
+        resp = await daemon.registry.handle(
+            "break",
+            BreakRequest(
+                function="usb_xhci::UsbXhci::Init", condition="status != 0"
+            ),
+        )
+        self.assertTrue(resp.success)
+        self.assertEqual(
+            daemon.active_function_breakpoints["usb_xhci::UsbXhci::Init"],
+            "status != 0",
+        )
+        mock_dap_client.set_function_breakpoints.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

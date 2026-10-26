@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 18,
+    "version": 19,
     "requests": {
         "$defs": {
             "AspaceRequest": {
@@ -199,7 +199,7 @@
                 "type": "object"
             },
             "BreakRequest": {
-                "description": "Request to set or delete a breakpoint at a file and line.\n\nThe file path must be fully qualified from the workspace root, an absolute\npath, or exist relative to the current working directory.\nTo delete a breakpoint, set delete=True and ensure the file and line match\nan existing breakpoint.\nTo view currently installed breakpoints, use the get-state command.",
+                "description": "Request to set or delete a source or function breakpoint.\n\nExactly one target mode must be specified:\n1. Source breakpoint: both `file` and `line` are set.\n2. Function breakpoint: `function` is set.",
                 "properties": {
                     "command": {
                         "const": "break",
@@ -232,12 +232,52 @@
                         "title": "Ack Seq"
                     },
                     "file": {
-                        "title": "File",
-                        "type": "string"
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "File"
                     },
                     "line": {
-                        "title": "Line",
-                        "type": "integer"
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Line"
+                    },
+                    "function": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Function"
+                    },
+                    "condition": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Condition"
                     },
                     "delete": {
                         "default": false,
@@ -245,10 +285,6 @@
                         "type": "boolean"
                     }
                 },
-                "required": [
-                    "file",
-                    "line"
-                ],
                 "title": "BreakRequest",
                 "type": "object"
             },
@@ -1926,6 +1962,21 @@
                         ],
                         "default": null,
                         "title": "Watchpoints"
+                    },
+                    "function_breakpoints": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Function Breakpoints"
                     }
                 },
                 "required": [
