@@ -128,7 +128,7 @@ half = "2.7.1"
 handlebars = "6.4.4"
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more", "serde", "default-hasher"] }
 heck = { package = "heck", version = "0.5" }
-heck-0_3 = { package = "heck", version = "=0.3.1" }
+heck-0_3 = { package = "heck", version = "=0.3.3" }
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.13.0"
 hkdf_0_12 = { package = "hkdf", version = "0.12.4" }
@@ -760,7 +760,7 @@ license_files = ["LICENSE-APACHE"]
 # pest relies on this being set to find the grammar file
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-6.4.4" ]
 
-[gn.package.heck."0.3.1"]
+[gn.package.heck."0.3.3"]
 group_name = "heck-0_3"
 # TODO(https://fxbug.dev/402302539) starnix tests rely on the older semantics of to_camel_case()
 visibility = [

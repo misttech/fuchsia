@@ -824,11 +824,11 @@ group("hashbrown-0.17.1") {
 }
 
 group("heck-0_3") {
-  public_deps = [ ":heck-v0_3_1" ]
+  public_deps = [ ":heck-v0_3_3" ]
 }
 
-group("heck-0.3.1") {
-  public_deps = [ ":heck-v0_3_1" ]
+group("heck-0.3.3") {
+  public_deps = [ ":heck-v0_3_3" ]
 }
 
 group("heck") {
@@ -11198,19 +11198,19 @@ rustc_library("hashbrown-v0_17_1") {
   applicable_licenses = [ ":hashbrown-v0_17_1.license" ]
 }
 
-license("heck-v0_3_1.license") {
+license("heck-v0_3_3.license") {
   public_package_name = "heck"
   license_files = [
-    "//third_party/rust_crates/vendor/heck-0.3.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/heck-0.3.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/heck-0.3.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/heck-0.3.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("heck-v0_3_1") {
+rustc_library("heck-v0_3_3") {
   crate_name = "heck"
-  source_root = "//third_party/rust_crates/vendor/heck-0.3.1/src/lib.rs"
-  output_name = "heck-e3dad0497ab5b0fe"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/heck-0.3.3/src/lib.rs"
+  output_name = "heck-1dfcfabbaed7871b"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -11222,8 +11222,8 @@ rustc_library("heck-v0_3_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=e3dad0497ab5b0fe",
-    "-Cextra-filename=-e3dad0497ab5b0fe",
+    "-Cmetadata=1dfcfabbaed7871b",
+    "-Cextra-filename=-1dfcfabbaed7871b",
   ]
 
   visibility = []
@@ -11231,7 +11231,7 @@ rustc_library("heck-v0_3_1") {
   visibility += [ "//src/sys/test_runners/starnix:*" ]
   visibility += [ "//third_party/rust_crates:*" ]
 
-  applicable_licenses = [ ":heck-v0_3_1.license" ]
+  applicable_licenses = [ ":heck-v0_3_3.license" ]
 }
 
 license("heck-v0_4_1.license") {

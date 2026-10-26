@@ -399,7 +399,7 @@ _NORMAL_DEPENDENCIES = {
             "handlebars": Label("//third_party/rust_crates/vendor/handlebars-6.4.4:handlebars"),
             "hashbrown": Label("//third_party/rust_crates/vendor/hashbrown-0.17.1:hashbrown"),
             "heck": Label("//third_party/rust_crates/vendor/heck-0.5.0:heck"),
-            "heck_0_3": Label("//third_party/rust_crates/vendor/heck-0.3.1:heck"),
+            "heck_0_3": Label("//third_party/rust_crates/vendor/heck-0.3.3:heck"),
             "hex": Label("//third_party/rust_crates/vendor/hex-0.4.3:hex"),
             "hkdf": Label("//third_party/rust_crates/vendor/hkdf-0.13.0:hkdf"),
             "hkdf_0_12": Label("//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf"),
@@ -643,7 +643,7 @@ _NORMAL_DEPENDENCIES = {
 _NORMAL_ALIASES = {
     "third_party/rust_crates": {
         _COMMON_CONDITION: {
-            Label("//third_party/rust_crates/vendor/heck-0.3.1:heck"): "heck_0_3",
+            Label("//third_party/rust_crates/vendor/heck-0.3.3:heck"): "heck_0_3",
             Label("//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf"): "hkdf_0_12",
             Label("//third_party/rust_crates/vendor/hmac-0.12.1:hmac"): "hmac_0_12",
             Label("//third_party/rust_crates/vendor/p256-0.11.1:p256"): "p256_0_11",

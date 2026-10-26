@@ -1180,20 +1180,20 @@ alias(
 )
 
 alias(
-    name = "heck-0.3.1",
-    actual = "//third_party/rust_crates/vendor/heck-0.3.1:heck",
+    name = "heck-0.3.3",
+    actual = "//third_party/rust_crates/vendor/heck-0.3.3:heck",
     tags = ["manual"],
 )
 
 alias(
-    name = "heck_0_3-0.3.1",
-    actual = "//third_party/rust_crates/vendor/heck-0.3.1:heck",
+    name = "heck_0_3-0.3.3",
+    actual = "//third_party/rust_crates/vendor/heck-0.3.3:heck",
     tags = ["manual"],
 )
 
 alias(
     name = "heck_0_3",
-    actual = "//third_party/rust_crates/vendor/heck-0.3.1:heck",
+    actual = "//third_party/rust_crates/vendor/heck-0.3.3:heck",
     tags = ["manual"],
 )
 

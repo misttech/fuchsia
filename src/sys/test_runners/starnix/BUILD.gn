@@ -39,7 +39,7 @@ rustc_binary("bin") {
     "//src/virtualization/lib/guest_interaction:fuchsia.virtualization.guest.interaction_rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:heck-v0_3_1",
+    "//third_party/rust_crates:heck-0_3",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
