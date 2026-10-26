@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "mediasession_cli_tool_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "mediasession_cli_tool",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.media.sessions2:fuchsia.media.sessions2_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
