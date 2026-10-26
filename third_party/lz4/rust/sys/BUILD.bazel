@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lz4-sys",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    link_deps = [
+        "//third_party/lz4",
+    ],
+    visibility = [
+        "//third_party/lz4/rust:__pkg__",
+        "//zircon/kernel/vm:__pkg__",
+    ],
+)
+
+host_rustc_test(
+    name = "lz4-sys_test",
+    crate = ":lz4-sys",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)

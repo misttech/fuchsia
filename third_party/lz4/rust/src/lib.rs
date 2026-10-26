@@ -2,31 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use lz4_sys::{
+    LZ4_compress_default, LZ4_compress_HC, LZ4_compressBound, LZ4_decompress_safe,
+    LZ4HC_CLEVEL_DEFAULT, LZ4HC_CLEVEL_MAX, LZ4HC_CLEVEL_MIN, LZ4HC_CLEVEL_OPT_MIN,
+};
 use std::num::NonZero;
 use std::os::raw::{c_char, c_int};
-
-unsafe extern "C" {
-    fn LZ4_compress_default(
-        src: *const c_char,
-        dst: *mut c_char,
-        srcSize: c_int,
-        dstCapacity: c_int,
-    ) -> c_int;
-    fn LZ4_decompress_safe(
-        src: *const c_char,
-        dst: *mut c_char,
-        compressedSize: c_int,
-        dstCapacity: c_int,
-    ) -> c_int;
-    fn LZ4_compressBound(inputSize: c_int) -> c_int;
-    fn LZ4_compress_HC(
-        src: *const c_char,
-        dst: *mut c_char,
-        srcSize: c_int,
-        dstCapacity: c_int,
-        compressionLevel: c_int,
-    ) -> c_int;
-}
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum Error {
@@ -104,10 +85,10 @@ pub fn decompress_into(data: &[u8], destination: &mut [u8]) -> Result<usize, Err
 pub struct HcCompressionLevel(i32);
 
 impl HcCompressionLevel {
-    pub const MIN: Self = Self(2);
-    pub const DEFAULT: Self = Self(9);
-    pub const OPT_MIN: Self = Self(10);
-    pub const MAX: Self = Self(12);
+    pub const MIN: Self = Self(LZ4HC_CLEVEL_MIN);
+    pub const DEFAULT: Self = Self(LZ4HC_CLEVEL_DEFAULT);
+    pub const OPT_MIN: Self = Self(LZ4HC_CLEVEL_OPT_MIN);
+    pub const MAX: Self = Self(LZ4HC_CLEVEL_MAX);
 
     pub fn custom(level: i32) -> Self {
         Self(level)

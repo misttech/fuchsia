@@ -4,7 +4,10 @@
 
 group("tests") {
   testonly = true
-  deps = [ ":lz4_test($host_toolchain)" ]
+  deps = [
+    ":lz4_test($host_toolchain)",
+    "sys:tests",
+  ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -35,7 +38,6 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 rustc_library("lz4") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
-  link_deps = [ "//third_party/lz4" ]
   visibility = [
     ":*",
     "//src/devices/bin/driver-index:*",
@@ -43,5 +45,8 @@ rustc_library("lz4") {
     "//src/storage/lib/delivery_blob:*",
   ]
   with_unit_tests = true
-  deps = [ "//third_party/rust_crates:thiserror" ]
+  deps = [
+    "//third_party/lz4/rust/sys:lz4-sys",
+    "//third_party/rust_crates:thiserror",
+  ]
 }

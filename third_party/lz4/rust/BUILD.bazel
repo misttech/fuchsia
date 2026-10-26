@@ -10,9 +10,6 @@ rustc_library(
     name = "lz4",
     srcs = ["src/lib.rs"],
     edition = "2024",
-    link_deps = [
-        "//third_party/lz4",
-    ],
     visibility = [
         "//src/devices/bin/driver-index:__pkg__",
         "//src/storage/erofs:__pkg__",
@@ -21,6 +18,7 @@ rustc_library(
     # TODO(https://b/566963647): Use `with_unit_tests = "both"`.
     with_host_unit_tests = True,
     deps = [
+        "//third_party/lz4/rust/sys:lz4-sys",
         "//third_party/rust_crates/vendor:thiserror",
     ],
 )

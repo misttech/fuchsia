@@ -69,6 +69,6 @@ fx_cc_library(
     # lz4hc.c does `#include "lz4.c"`, so lz4.c must also be a declared input
     # of the (sandboxed) compile actions.
     textual_hdrs = ["src/lib/lz4.c"],
-    visibility = ["//third_party/lz4/rust:__pkg__"],
+    visibility = ["//third_party/lz4/rust/sys:__pkg__"],
 )
 # LINT.ThenChange(BUILD.gn)
