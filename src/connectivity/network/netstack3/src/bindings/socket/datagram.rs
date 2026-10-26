@@ -40,7 +40,6 @@ use netstack3_core::socket::{
     NotDualStackCapableError, ReusePortOption, SetDualStackEnabledError,
     SetMulticastMembershipError, SharingDomain, ShutdownType, SocketCookie, SocketInfo,
 };
-use netstack3_core::sync::Mutex as CoreMutex;
 use netstack3_core::trace::trace_duration;
 use netstack3_core::udp::UdpPacketMeta;
 use netstack3_core::{IpExt, icmp, udp};
@@ -53,6 +52,7 @@ use crate::bindings::error::Error;
 use crate::bindings::socket::event_pair::SocketEventPair;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace, QueueReadableListener as _};
 use crate::bindings::socket::worker::{self, SocketWorker};
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{
     DeviceNotFoundError, ErrnoResultExt as _, IntoCore as _, IntoFidl, OpAndAddr,
     RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _, TryFromFidlWithContext,

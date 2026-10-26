@@ -18,9 +18,9 @@ use futures::future::FusedFuture as _;
 use futures::{FutureExt, StreamExt as _, TryStreamExt as _};
 use itertools::Itertools;
 use log::{debug, warn};
-use netstack3_core::sync::Mutex;
 use thiserror::Error;
 
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::ErrorLogExt;
 
 #[derive(Debug, Error)]
@@ -153,7 +153,7 @@ pub(crate) trait WatcherInterest<E>: Debug {
 #[derivative(Clone(bound = ""))]
 #[derivative(Default(bound = ""))]
 pub(crate) struct UpdateDispatcher<E: WatcherEvent, WI>(
-    std::sync::Arc<Mutex<UpdateDispatcherInner<E, WI>>>,
+    std::sync::Arc<CoreMutex<UpdateDispatcherInner<E, WI>>>,
 );
 
 // The inner representation of a `UpdateDispatcher` holding state for the

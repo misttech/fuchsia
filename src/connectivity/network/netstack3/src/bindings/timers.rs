@@ -12,8 +12,8 @@ use async_utils::futures::YieldToExecutorOnce;
 use fuchsia_async as fasync;
 use futures::{FutureExt, StreamExt as _};
 use log::{trace, warn};
-use netstack3_core::sync::Mutex as CoreMutex;
 
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{NeedsDataNotifier, NeedsDataWatcher, ScopeExt as _};
 
 pub(crate) use scheduled_instant::ScheduledInstant;

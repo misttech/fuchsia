@@ -10,20 +10,21 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use netstack3_core::sync::{LockGuard, Mutex};
+
+use crate::bindings::sync::{CoreMutex, CoreMutexGuard};
 
 /// An RCU (Read-Copy-Update) data structure that uses a `Mutex` to synchronize
 /// writers.
 #[derive(Default)]
 pub struct SynchronizedWriterRcu<T> {
-    lock: Mutex<()>,
+    lock: CoreMutex<()>,
     data: ArcSwap<T>,
 }
 
 impl<T> SynchronizedWriterRcu<T> {
     /// Creates a new `SingleWriterRcu` with `value`.
     pub fn new(value: T) -> Self {
-        Self { lock: Mutex::new(()), data: ArcSwap::new(Arc::new(value)) }
+        Self { lock: CoreMutex::new(()), data: ArcSwap::new(Arc::new(value)) }
     }
 
     /// Acquires a read guard on the RCU.
@@ -83,7 +84,7 @@ pub struct WriteGuard<'a, T>(ManuallyDrop<WriteGuardInner<'a, T>>);
 struct WriteGuardInner<'a, T> {
     copy: T,
     data: &'a ArcSwap<T>,
-    lock_guard: LockGuard<'a, ()>,
+    lock_guard: CoreMutexGuard<'a, ()>,
 }
 
 impl<'a, T> Deref for WriteGuard<'a, T> {

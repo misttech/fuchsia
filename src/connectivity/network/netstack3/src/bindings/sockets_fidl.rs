@@ -18,7 +18,6 @@ use futures::channel::mpsc;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netstack3_core::socket::{IpSocketMatcher, SocketTransportProtocolMatcher};
-use netstack3_core::sync::Mutex;
 use netstack3_core::tcp::{
     CongestionControlState, TcpSocketDestructionContext, TcpSocketDiagnostics, TcpSocketInfo,
     TcpSocketState,
@@ -26,6 +25,7 @@ use netstack3_core::tcp::{
 use netstack3_core::udp::{UdpSocketDiagnosticTuple, UdpSocketDiagnostics};
 use netstack3_core::{Instant as _, MatcherBindingsTypes, SocketDiagnosticsSeed};
 
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::time::StackTime;
 use crate::bindings::util::{
     IntoCore as _, IntoFidl, IntoFidlExtender, ScopeExt as _, TryFromFidl, TryIntoFidl,
@@ -234,7 +234,7 @@ pub(crate) async fn serve_watcher(
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct SocketDestructionDispatcher(Arc<Mutex<SocketDestructionDispatcherInner>>);
+pub(crate) struct SocketDestructionDispatcher(Arc<CoreMutex<SocketDestructionDispatcherInner>>);
 
 impl SocketDestructionDispatcher {
     pub(crate) fn add_client(

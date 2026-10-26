@@ -46,6 +46,7 @@ mod socket;
 mod sockets_fidl;
 mod stack_fidl_worker;
 mod stats_sampler;
+mod sync;
 mod time;
 mod timers;
 mod util;
@@ -98,6 +99,7 @@ use crate::bindings::socket::queue::NoSpace;
 
 use crate::bindings::sockets_fidl::SocketDestructionDispatcher;
 use crate::bindings::stats_sampler::StatsSampler;
+use crate::bindings::sync::CoreRwLock;
 use crate::bindings::time::{AtomicStackTime, StackTime};
 use crate::bindings::util::{ScopeExt as _, fidl_mark_domain_to_core};
 use net_types::SpecifiedAddr;
@@ -123,15 +125,13 @@ use netstack3_core::ip::{
     MarkDomain, MarksBindingsContext, RouterAdvertisementEvent,
 };
 use netstack3_core::routes::RawMetric;
-use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::udp::{
     ReceiveUdpError, UdpBindingsTypes, UdpPacketMeta, UdpReceiveBindingsContext, UdpSocketId,
 };
 use netstack3_core::{
-    BindingsSyncTypes, CoreTxMetadata, DeferredResourceRemovalContext, EventContext,
-    InstantBindingsTypes, InstantContext, IpExt, MatcherBindingsTypes, RngContext, StackState,
-    StackStateBuilder, TimerBindingsTypes, TimerContext, TimerId, TxMetadataBindingsTypes,
-    neighbor,
+    CoreTxMetadata, DeferredResourceRemovalContext, EventContext, InstantBindingsTypes,
+    InstantContext, IpExt, MatcherBindingsTypes, RngContext, StackState, StackStateBuilder,
+    TimerBindingsTypes, TimerContext, TimerId, TxMetadataBindingsTypes, neighbor,
 };
 
 pub(crate) use inspect::InspectPublisher;
@@ -483,12 +483,6 @@ where
     fn get_binding_id(&self, core_id: DeviceId<BindingsCtx>) -> BindingId {
         core_id.bindings_id().id
     }
-}
-
-impl BindingsSyncTypes for BindingsCtx {
-    type Mutex = netstack3_core::sync::lock_impl::RawMutex;
-    type RwLock = netstack3_core::sync::lock_impl::RawRwLock;
-    type Once = netstack3_core::sync::lock_impl::Once;
 }
 
 impl InstantBindingsTypes for BindingsCtx {

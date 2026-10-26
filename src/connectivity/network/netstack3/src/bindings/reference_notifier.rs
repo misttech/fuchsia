@@ -134,7 +134,9 @@ mod tests {
     use std::sync::Arc;
     use std::task::Poll;
 
-    use netstack3_core::sync::{Mutex, PrimaryRc};
+    use netstack3_core::sync::PrimaryRc;
+
+    use crate::bindings::sync::CoreMutex;
 
     use super::*;
 
@@ -153,7 +155,7 @@ mod tests {
     }
 
     #[derive(Clone, Default)]
-    struct TestDeferRemovalContext(Arc<Mutex<Option<ReferenceReceiver<Resource>>>>);
+    struct TestDeferRemovalContext(Arc<CoreMutex<Option<ReferenceReceiver<Resource>>>>);
 
     impl TestDeferRemovalContext {
         fn take(&self) -> Option<ReferenceReceiver<Resource>> {

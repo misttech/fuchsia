@@ -7,7 +7,8 @@
 use std::sync::Arc;
 
 use futures::Future;
-use netstack3_core::sync::Mutex;
+
+use crate::bindings::sync::CoreMutex;
 
 /// A guard that holds system suspension while held.
 #[cfg_attr(test, derive(Debug))]
@@ -133,7 +134,7 @@ impl SuspensionBlockControl {
     /// Creates a new suspension block controller.
     pub(crate) fn new() -> Self {
         Self(Arc::new(Inner {
-            state: Mutex::new(State { allow_guards: true, guards: 0 }),
+            state: CoreMutex::new(State { allow_guards: true, guards: 0 }),
             event: event_listener::Event::new(),
         }))
     }
@@ -196,7 +197,7 @@ impl SuspensionBlockControl {
 #[cfg_attr(test, derive(Debug))]
 struct Inner {
     /// Mutable suspension blocking state.
-    state: Mutex<State>,
+    state: CoreMutex<State>,
     /// Holds the wakers for changes to the state.
     event: event_listener::Event,
 }

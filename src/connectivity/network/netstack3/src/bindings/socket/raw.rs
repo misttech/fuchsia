@@ -22,7 +22,6 @@ use netstack3_core::ip::{
     RawIpSocketsBindingsTypes, ReceivePacketError,
 };
 use netstack3_core::socket::StrictlyZonedAddr;
-use netstack3_core::sync::Mutex;
 use packet::Buf;
 use packet_formats::ip::IpPacket as _;
 use zerocopy::SplitByteSlice;
@@ -31,6 +30,7 @@ use zx::Peered;
 use crate::bindings::settings::IpLayerSettings;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
 use crate::bindings::socket::{ErrnoError, IntoErrno, IpSockAddrExt, SockAddr};
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{
     AllowBindingIdFromWeak, DataNotifier, DeviceNotFoundError, ErrnoResultExt as _, IntoCore,
     IntoFidl, IntoFidlWithContext as _, OpAndAddr, RemoveResourceResultExt, ResultExt as _,
@@ -68,7 +68,7 @@ impl<I: IpExt> RawIpSocketsBindingsContext<I, DeviceId> for BindingsCtx {
 #[derive(Debug)]
 pub struct SocketState<I: Ip> {
     /// The received IP packets for the socket.
-    rx_queue: Mutex<MessageQueue<ReceivedIpPacket<I>, zx::EventPair>>,
+    rx_queue: CoreMutex<MessageQueue<ReceivedIpPacket<I>, zx::EventPair>>,
 }
 
 impl<I: IpExt> SocketState<I> {
@@ -78,7 +78,7 @@ impl<I: IpExt> SocketState<I> {
         settings: &IpLayerSettings,
     ) -> Self {
         SocketState {
-            rx_queue: Mutex::new(MessageQueue::new(
+            rx_queue: CoreMutex::new(MessageQueue::new(
                 event,
                 notifier,
                 settings.raw_receive_buffer.default(),

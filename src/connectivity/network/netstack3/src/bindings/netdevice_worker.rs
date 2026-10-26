@@ -26,7 +26,6 @@ use netstack3_core::device::{
     PureIpWeakDeviceId, RecvEthernetFrameMeta,
 };
 use netstack3_core::routes::RawMetric;
-use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use netstack3_core::{
     ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, GsoInfo,
@@ -37,6 +36,7 @@ use thiserror::Error;
 use crate::bindings::devices::{NetdeviceAllocator, StaticCommonInfo, TxTask};
 use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_route_tables};
 use crate::bindings::stats_sampler::{InterfaceStatusBufferedState, InterfaceStatusSampler};
+use crate::bindings::sync::CoreRwLock;
 use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
 use crate::bindings::{
     BindingId, BindingsCtx, Ctx, DEFAULT_INTERFACE_METRIC, DeviceId, GlobalConfig, Netstack,

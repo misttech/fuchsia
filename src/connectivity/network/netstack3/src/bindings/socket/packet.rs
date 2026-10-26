@@ -28,7 +28,6 @@ use netstack3_core::device_socket::{
     SendFrameErrorReason, SentFrame, SocketId, SocketInfo, TargetDevice,
 };
 use netstack3_core::ip::{DeviceIpLayerMetadata, Marks};
-use netstack3_core::sync::{Mutex, RwLock};
 use packet::Buf;
 use packet_formats::ethernet::EtherType;
 
@@ -40,6 +39,7 @@ use crate::bindings::errno::ErrnoError;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
 use crate::bindings::socket::worker::{self, CloseResponder, SocketWorker};
 use crate::bindings::socket::{IntoErrno, SocketWorkerProperties, ZXSIO_SIGNAL_OUTGOING};
+use crate::bindings::sync::{CoreMutex, CoreRwLock};
 use crate::bindings::util::{
     DeviceNotFoundError, ErrnoResultExt as _, IntoCore as _, IntoFidl as _,
     RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _, TryFromFidl,
@@ -50,9 +50,9 @@ use crate::bindings::{BindingsCtx, Ctx};
 
 #[derive(Debug)]
 enum Queue {
-    MessageQueue(Mutex<MessageQueue<Message, zx::EventPair>>),
+    MessageQueue(CoreMutex<MessageQueue<Message, zx::EventPair>>),
     RollingPcap {
-        ring_buffer: Mutex<RingBuffer>,
+        ring_buffer: CoreMutex<RingBuffer>,
         snap_len: usize,
         start_system_time: std::time::SystemTime,
         start_boot_time: zx::BootInstant,
@@ -60,7 +60,7 @@ enum Queue {
 }
 
 impl Queue {
-    fn unwrap_message_queue(&self) -> &Mutex<MessageQueue<Message, zx::EventPair>> {
+    fn unwrap_message_queue(&self) -> &CoreMutex<MessageQueue<Message, zx::EventPair>> {
         let Queue::MessageQueue(mq) = self else {
             panic!("queue type must be message queue when backing socket");
         };
@@ -86,7 +86,7 @@ impl Queue {
 pub(crate) struct SocketState {
     queue: Queue,
     kind: fppacket::Kind,
-    bpf_filter: RwLock<Option<SocketFilterProgram>>,
+    bpf_filter: CoreRwLock<Option<SocketFilterProgram>>,
 }
 
 impl SocketState {
@@ -100,13 +100,13 @@ impl SocketState {
     ) -> Self {
         Self {
             queue: Queue::RollingPcap {
-                ring_buffer: Mutex::new(ring_buffer),
+                ring_buffer: CoreMutex::new(ring_buffer),
                 snap_len,
                 start_system_time,
                 start_boot_time,
             },
             kind,
-            bpf_filter: RwLock::new(bpf_filter),
+            bpf_filter: CoreRwLock::new(bpf_filter),
         }
     }
 
@@ -363,13 +363,13 @@ impl BindingData {
         let notifier_is_some = notifier.is_some();
 
         let state = SocketState {
-            queue: Queue::MessageQueue(Mutex::new(MessageQueue::new(
+            queue: Queue::MessageQueue(CoreMutex::new(MessageQueue::new(
                 local_event,
                 notifier,
                 ctx.bindings_ctx().settings.device.read().packet_receive_buffer.default(),
             ))),
             kind,
-            bpf_filter: RwLock::new(None),
+            bpf_filter: CoreRwLock::new(None),
         };
         let id = ctx.api().device_socket().create(state);
         if let Some(group) = wake_group

@@ -31,7 +31,6 @@ use netstack3_core::filter::{
 use netstack3_core::ip::{Mark, Marks};
 use netstack3_core::{GsoInfo, NetworkSerializationContext};
 
-use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
 use packet::{Buf, FragmentedByteSlice, LayoutBufferAlloc, PartialSerializeResult};
 use packet_formats::ethernet::EtherType;
@@ -41,6 +40,8 @@ use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
+
+use crate::bindings::sync::{CoreMutex, CoreRwLock};
 
 fn packet_type_to_raw(packet_type: PacketType) -> u32 {
     match packet_type {
@@ -748,7 +749,7 @@ impl MapReference for CachedMapRef {
 /// only once per process.
 #[derive(Default)]
 pub(crate) struct EbpfMapCache {
-    maps: Mutex<HashMap<MapId, Weak<CachedMapRefInner>>>,
+    maps: CoreMutex<HashMap<MapId, Weak<CachedMapRefInner>>>,
 }
 
 impl EbpfMapCache {
@@ -842,7 +843,7 @@ struct EbpfManagerState {
 /// Holds state of eBPF programs attached in this process.
 #[derive(Default)]
 pub(crate) struct EbpfManager {
-    state: RwLock<EbpfManagerState>,
+    state: CoreRwLock<EbpfManagerState>,
     maps_cache: Arc<EbpfMapCache>,
 }
 

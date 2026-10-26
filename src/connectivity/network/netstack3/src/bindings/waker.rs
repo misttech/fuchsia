@@ -14,8 +14,8 @@ use fuchsia_async as fasync;
 use futures::TryStreamExt as _;
 use futures::future::FutureExt as _;
 use log::{debug, info, warn};
-use netstack3_core::sync::Mutex;
 
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _};
 
 /// The signal we raise to signal the other side to resume when data is available.
@@ -31,7 +31,7 @@ const WAITER_ASLEEP_SIGNAL: zx::Signals =
     zx::Signals::from_bits(fnet_power::WAITER_ASLEEP_SIGNAL).unwrap();
 
 #[derive(Default, Clone)]
-pub(crate) struct WakeGroups(Arc<Mutex<WakeGroupsInner>>);
+pub(crate) struct WakeGroups(Arc<CoreMutex<WakeGroupsInner>>);
 
 #[derive(Default)]
 struct WakeGroupsInner {

@@ -26,11 +26,11 @@ use vfs::file::File as _;
 use crate::bindings::bpf::{SocketFilterProgram, ValidVerifiedProgram};
 use crate::bindings::devices::HasDeviceName as _;
 use crate::bindings::socket::packet::SocketState;
+use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{ErrorLogExt as _, RemoveResourceResultExt as _, ResultExt as _};
 use crate::bindings::{BindingId, BindingsCtx, Ctx};
 use netstack3_core::device::DeviceId;
 use netstack3_core::device_socket::{Protocol, SocketId, TargetDevice};
-use netstack3_core::sync::Mutex;
 
 const TIMEOUT: std::time::Duration = std::time::Duration::from_mins(30);
 
@@ -124,12 +124,12 @@ impl RollingCaptureState {
 }
 
 pub(crate) struct PacketCaptures {
-    state: Mutex<RollingCaptureState>,
+    state: CoreMutex<RollingCaptureState>,
 }
 
 impl Default for PacketCaptures {
     fn default() -> Self {
-        Self { state: Mutex::new(RollingCaptureState::Empty) }
+        Self { state: CoreMutex::new(RollingCaptureState::Empty) }
     }
 }
 

@@ -23,7 +23,6 @@ use netstack3_core::device::{
     BatchSize, DeviceBufferBindingsTypes, DeviceClassMatcher, DeviceId, DeviceIdAndNameMatcher,
     DeviceSendFrameError, EthernetLinkDevice, LoopbackDeviceId, PureIpDevice, TxBufferAllocator,
 };
-use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use netstack3_core::types::WorkQueueReport;
 use thiserror::Error;
@@ -33,6 +32,7 @@ use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use crate::bindings::power::TransmitSuspensionHandler;
 use crate::bindings::routes::interface_local::LocalRouteTables;
 use crate::bindings::stats_sampler::InterfaceStatusSampler;
+use crate::bindings::sync::CoreRwLock;
 use crate::bindings::util::NeedsDataNotifier;
 use crate::bindings::{
     BindingsCtx, Ctx, InterfaceEventProducer, interfaces_admin, neighbor_worker, netdevice_worker,
