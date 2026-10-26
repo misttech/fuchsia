@@ -1,0 +1,68 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "unreliable_echo_server_bin",
+    testonly = True,
+    srcs = ["unreliable_echo_server.rs"],
+    crate_name = "unreliable_echo_server",
+    crate_root = "unreliable_echo_server.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+rustc_binary(
+    name = "unreliable_echo_client_bin",
+    testonly = True,
+    srcs = ["unreliable_echo_client.rs"],
+    crate_name = "unreliable_echo_client",
+    crate_root = "unreliable_echo_client.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+rustc_binary(
+    name = "actor-bin",
+    testonly = True,
+    srcs = [
+        "actor/main.rs",
+        "actor/stressor.rs",
+    ],
+    crate_name = "cm_actor",
+    crate_root = "actor/main.rs",
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/lib/moniker",
+        "//src/sys/test_runners/stress_test/actor",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
