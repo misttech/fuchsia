@@ -8,15 +8,33 @@ use attribution_processing::{AttributionDataProvider, ProcessedAttributionData, 
 use fuchsia_async::WakeupTime;
 use fuchsia_inspect::{ArrayProperty, Node, StringProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use fuchsia_trace::duration;
+use fuchsia_trace::{category_enabled, duration};
+use fuchsia_trace_observer::TraceObserver;
 use futures::{TryFutureExt, join, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
 use stalls::refaults::PageFaultProvider;
-use traces::CATEGORY_MEMORY_CAPTURE;
+use std::future::Future;
+use traces::{CATEGORY_MEMORY_CAPTURE, CATEGORY_MEMORY_SUPPRESS_PERIODIC};
 
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_metrics as fmetrics;
+
+/// Waits while periodic monitoring is suppressed (`is_suppressed() == true`), awaiting
+/// `on_state_changed()` between checks. Breaks out and falls through if `on_state_changed()`
+/// returns an error.
+async fn wait_while_periodic_suppressed<Fut, T, E>(
+    mut is_suppressed: impl FnMut() -> bool,
+    mut on_state_changed: impl FnMut() -> Fut,
+) where
+    Fut: Future<Output = Result<T, E>>,
+{
+    while is_suppressed() {
+        if on_state_changed().await.is_err() {
+            break;
+        }
+    }
+}
 
 /// Periodically collect and report memory attribution data.
 ///
@@ -37,7 +55,15 @@ pub async fn periodic_monitoring(
     let mut bucket_list_node = std::cell::OnceCell::new();
     let bucket_names = std::cell::OnceCell::new();
     let bucket_codes = cobalt::prepare_bucket_codes(bucket_definitions);
+    let trace_observer = TraceObserver::new();
     loop {
+        // Defer periodic collection while a trace session with `memory:suppress_periodic` is
+        // actively recording so the expensive VMO/VMAR walk does not perturb traced benchmarks.
+        wait_while_periodic_suppressed(
+            || category_enabled(CATEGORY_MEMORY_SUPPRESS_PERIODIC),
+            || trace_observer.on_state_changed(),
+        )
+        .await;
         {
             duration!(CATEGORY_MEMORY_CAPTURE, c"periodic_monitoring");
             let timestamp = zx::BootInstant::get();
@@ -481,5 +507,48 @@ mod tests {
             },
         });
         Ok(())
+    }
+
+    #[test]
+    fn test_wait_while_periodic_suppressed_defers_while_category_enabled() {
+        use futures::StreamExt;
+        use std::cell::{Cell, RefCell};
+
+        let mut exec = fuchsia_async::TestExecutor::new();
+        let is_suppressed = Cell::new(true);
+        let (tx, rx) = futures::channel::mpsc::unbounded::<Result<(), zx::Status>>();
+        let rx = RefCell::new(rx);
+
+        {
+            let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
+                || is_suppressed.get(),
+                || async { rx.borrow_mut().next().await.unwrap_or(Err(zx::Status::PEER_CLOSED)) },
+            ));
+
+            // While `memory:suppress_periodic` is enabled, the future stays pending.
+            assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+
+            // A state change notification while `memory:suppress_periodic` is still enabled
+            // keeps waiting.
+            tx.unbounded_send(Ok(())).unwrap();
+            assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+
+            // Once the trace stops (or `memory:suppress_periodic` is disabled) and the observer
+            // signals, the wait completes.
+            is_suppressed.set(false);
+            tx.unbounded_send(Ok(())).unwrap();
+            assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+        }
+
+        // If `on_state_changed` returns an error while suppressed, `wait_while_periodic_suppressed`
+        // breaks out of the loop and completes instead of busy-waiting.
+        is_suppressed.set(true);
+        let mut wait_fut = std::pin::pin!(wait_while_periodic_suppressed(
+            || is_suppressed.get(),
+            || async { rx.borrow_mut().next().await.unwrap_or(Err(zx::Status::PEER_CLOSED)) },
+        ));
+        assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
+        tx.unbounded_send(Err(zx::Status::BAD_STATE)).unwrap();
+        assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
     }
 }

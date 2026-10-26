@@ -208,6 +208,7 @@ rustc_library("periodic_monitoring") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
     "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-observer",
     "//src/performance/memory/attribution/processing",
     "//src/performance/memory/scudo:rust",
     "//third_party/rust_crates:anyhow",

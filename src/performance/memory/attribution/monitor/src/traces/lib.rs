@@ -6,3 +6,4 @@ pub mod kernel;
 use std::ffi::CStr;
 
 pub const CATEGORY_MEMORY_CAPTURE: &'static CStr = c"memory:capture";
+pub const CATEGORY_MEMORY_SUPPRESS_PERIODIC: &'static CStr = c"memory:suppress_periodic";
