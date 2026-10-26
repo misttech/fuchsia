@@ -8,18 +8,13 @@
 This module can be imported as a library by other Python scripts,
 or run directly as a standalone CLI tool with subcommands.
 """
-# Add our active parent directory to sys.path to enable flat, direct imports of sister modules
-import pathlib
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-
 import argparse
 import json
+import pathlib
+import sys
 from typing import Any, TextIO
 
-import apt
-import gcloud
+from build.auth import apt, gcloud
 
 # Type alias representing a parsed JSON dictionary.
 JsonDict = dict[str, Any]
