@@ -1,0 +1,103 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "runtime_capabilities",
+    srcs = [
+        "src/capability.rs",
+        "src/connector.rs",
+        "src/data.rs",
+        "src/dictionary.rs",
+        "src/dir_connector.rs",
+        "src/fidl/capability.rs",
+        "src/fidl/connector.rs",
+        "src/fidl/connector_router.rs",
+        "src/fidl/data.rs",
+        "src/fidl/data_router.rs",
+        "src/fidl/dictionary.rs",
+        "src/fidl/dictionary_router.rs",
+        "src/fidl/dir_connector.rs",
+        "src/fidl/dir_connector_router.rs",
+        "src/fidl/handle.rs",
+        "src/fidl/instance_token.rs",
+        "src/fidl/mod.rs",
+        "src/fidl/receiver.rs",
+        "src/fidl/router.rs",
+        "src/fidl/store.rs",
+        "src/handle.rs",
+        "src/instance_token.rs",
+        "src/lib.rs",
+        "src/receiver.rs",
+        "src/router.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/fidl/registry.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = [
+        "//src/security/lib/scrutiny/frontend:__pkg__",
+        "//src/sys/component_manager:__subpackages__",
+        "//src/sys/lib/routing:__pkg__",
+        "//tools/lib/cm_fidl_analyzer:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/from-enum",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/component_manager/lib/router_error",
+        "//src/sys/lib/capability_source",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:flyweights",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+            "//sdk/rust/zx",
+            "//src/lib/fuchsia-async",
+            "//src/storage/lib/vfs/rust:vfs",
+            "//third_party/rust_crates/vendor:log",
+            "//third_party/rust_crates/vendor:scopeguard",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "runtime_capabilities_test",
+    crate = ":runtime_capabilities",
+    edition = "2024",
+    deps = [
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/sandbox",
+        "//src/lib/test_util",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "runtime_capabilities-unittests",
+    unit_tests = [":runtime_capabilities_test"],
+)
