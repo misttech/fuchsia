@@ -2,7 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -35,4 +45,107 @@ rustc_library(
         "//third_party/rust_crates/vendor:bitflags",
         "//third_party/rust_crates/vendor:thiserror",
     ],
+)
+
+rustc_library(
+    name = "fdio_zxio",
+    srcs = [
+        "src/fdio_sys.rs",
+        "src/fdio_zxio.rs",
+        "src/zxio_sys.rs",
+    ],
+    crate_root = "src/fdio_zxio.rs",
+    edition = "2024",
+    link_deps = ["//sdk/lib/zxio"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    test_deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:libc",
+    ],
+    version = "0.1.0",
+    visibility = ["//src/diagnostics/archivist:__pkg__"],
+    with_unit_tests = True,
+    deps = ["//sdk/rust/zx"],
+)
+
+rustc_binary(
+    name = "spawn_test_target",
+    srcs = ["test/spawn_test_target.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = "test/spawn_test_target.rs",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    version = "0.2.0",
+)
+
+rustc_binary(
+    name = "spawn_builder_test_target",
+    srcs = ["test/spawn_builder_test_target.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = "test/spawn_builder_test_target.rs",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "fdio_test_packaged_bin",
+    testonly = True,
+    binary = ":fdio_test",
+    binary_name = "fdio_lib_test",
+)
+
+fx_packaged_binary(
+    name = "spawn_test_target_packaged_bin",
+    testonly = True,
+    binary = ":spawn_test_target",
+    binary_name = "spawn_test_target",
+)
+
+fx_packaged_binary(
+    name = "spawn_builder_test_target_packaged_bin",
+    testonly = True,
+    binary = ":spawn_builder_test_target",
+    binary_name = "spawn_builder_test_target",
+)
+
+fx_component_manifest(
+    name = "test-component-manifest",
+    testonly = True,
+    component_name = "fdio_lib_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fdio_lib_test.cml",
+)
+
+fx_test_component(
+    name = "test-component",
+    compiled_manifest = ":test-component-manifest",
+    component_name = "fdio_lib_test",
+    deps = [
+        ":fdio_test_packaged_bin",
+        ":spawn_builder_test_target_packaged_bin",
+        ":spawn_test_target_packaged_bin",
+    ],
+)
+
+fx_unittest_component(
+    name = "fdio_zxio_test_component",
+    binary = ":fdio_zxio_test",
+    component_name = "fdio_zxio_test",
+)
+
+fx_package(
+    name = "test-package",
+    package_name = "fdio-rust-tests",
+    test_components = [
+        ":fdio_zxio_test_component",
+        ":test-component",
+    ],
+)
+
+fx_test(
+    name = "fdio-rust-tests",
+    package = ":test-package",
 )
