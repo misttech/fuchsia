@@ -16,7 +16,7 @@
 #include <kernel/deadline.h>
 #include <kernel/ffi.h>
 #include <ktl/span.h>
-#include <object/fifo_dispatcher.h>
+#include <object/channel_dispatcher.h>
 #include <object/handle.h>
 #include <object/io_buffer_dispatcher.h>
 #include <object/job_dispatcher.h>
@@ -24,7 +24,6 @@
 #include <object/socket_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <pretty/cpp/sizes.h>
-#include <vm/fault.h>
 
 #include <ktl/enforce.h>
 
@@ -1086,15 +1085,5 @@ FFI_ALWAYS_INLINE void cpp_dump_process_memory_usage(const char* prefix, size_t 
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_dump_handles_for_koid(zx_koid_t id) { DumpHandlesForKoid(id); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE size_t cpp_handle_diagnostics_outstanding_handles() {
-  return Handle::diagnostics::OutstandingHandles();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_handle_diagnostics_dump_table_info() {
-  Handle::diagnostics::DumpTableInfo();
-}
 
 }  // extern "C"

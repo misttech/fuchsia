@@ -32,8 +32,10 @@ use super::diagnostics_ffi::{
     dump_job_policies, dump_orphaned_mapped_vmos, dump_orphaned_slices,
     dump_peer_dispatchers_by_koid, dump_process_address_space, dump_process_handles,
     dump_process_list, dump_process_memory_usage, dump_process_vm_objects, dump_vm_object_cow_tree,
-    handle_diagnostics_dump_table_info, handle_diagnostics_outstanding_handles, kill_process,
+    kill_process,
 };
+#[cfg(console_enabled)]
+use super::handle::HandleTableArena;
 #[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 #[cfg(console_enabled)]
@@ -446,8 +448,8 @@ fn dump_address_space(arg: &CmdArgs) {
 
 #[cfg(console_enabled)]
 fn dump_handle_table() {
-    kprintln!("outstanding handles: {}", handle_diagnostics_outstanding_handles());
-    handle_diagnostics_dump_table_info();
+    kprintln!("outstanding handles: {}", HandleTableArena::diagnostic_count());
+    HandleTableArena::dump();
 }
 
 #[cfg(console_enabled)]
@@ -455,7 +457,7 @@ extern "C" fn hwd_thread(_arg: *mut c_void) -> i32 {
     static PREVIOUS_HANDLE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     loop {
-        let handle_count = handle_diagnostics_outstanding_handles();
+        let handle_count = HandleTableArena::diagnostic_count();
         let prev = PREVIOUS_HANDLE_COUNT.load(Ordering::Relaxed);
         if handle_count != prev {
             let limit = HWD_LIMIT.load(Ordering::Relaxed);

@@ -4,12 +4,15 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_OBJECT__TEST_FAKE_DISPATCHER_H_
-#define ZIRCON_KERNEL_OBJECT__TEST_FAKE_DISPATCHER_H_
+#ifndef ZIRCON_KERNEL_OBJECT_TEST_FAKE_DISPATCHER_H_
+#define ZIRCON_KERNEL_OBJECT_TEST_FAKE_DISPATCHER_H_
+
+#include <lib/unittest/unittest.h>
+#include <stdint.h>
 
 #include <fbl/alloc_checker.h>
+#include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
-#include <object/dispatcher.h>
 
 // A Dispatcher-like class that tracks the number of calls to on_zero_handles()
 // for testing purposes.
@@ -49,4 +52,4 @@ class FakeDispatcher : public FakeDispatcherBase {
   FakeDispatcher() = default;
 };
 
-#endif  // ZIRCON_KERNEL_OBJECT__TEST_FAKE_DISPATCHER_H_
+#endif  // ZIRCON_KERNEL_OBJECT_TEST_FAKE_DISPATCHER_H_

@@ -6,11 +6,8 @@
 
 #include "object/dispatcher.h"
 
-#include <inttypes.h>
 #include <lib/counters.h>
-#include <lib/ktrace.h>
 
-#include <arch/ops.h>
 #include <kernel/koid.h>
 #include <kernel/mutex.h>
 #include <ktl/atomic.h>

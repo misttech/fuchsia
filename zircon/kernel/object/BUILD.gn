@@ -36,7 +36,6 @@ source_set("object") {
     "guest_dispatcher.cc",
     "guest_dispatcher_ffi.cc",
     "handle.cc",
-    "handle_table.cc",
     "interrupt_dispatcher_ffi.cc",
     "io_buffer_dispatcher.cc",
     "io_buffer_dispatcher_ffi.cc",
@@ -119,7 +118,7 @@ source_set("object") {
 library_headers("headers") {
   headers = []
   public_deps = [
-    # <object/message_packet.h> has #include <ktl/unique_ptr.h>.
+    # <object/dispatcher.h> has #include <ktl/unique_ptr.h>.
     "//zircon/kernel/lib/ktl:headers",
 
     # <object/port_dispatcher.h> has <lib/object_cache.h>

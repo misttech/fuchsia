@@ -23,8 +23,6 @@ unsafe extern "C" {
     fn cpp_dump_process_address_space(id: zx_koid_t);
     fn cpp_dump_process_memory_usage(prefix: *const c_char, min_bytes: usize);
     fn cpp_dump_handles_for_koid(id: zx_koid_t);
-    fn cpp_handle_diagnostics_outstanding_handles() -> usize;
-    fn cpp_handle_diagnostics_dump_table_info();
 }
 
 /// Dumps all processes in the system to the kernel console.
@@ -117,16 +115,4 @@ pub(super) fn dump_process_memory_usage(prefix: &CStr, min_bytes: usize) {
 pub(super) fn dump_handles_for_koid(id: zx_koid_t) {
     // SAFETY: Takes only a scalar koid and synchronizes process/handle-table access internally.
     unsafe { cpp_dump_handles_for_koid(id) };
-}
-
-/// Returns the number of outstanding handles in the global handle table arena.
-pub(super) fn handle_diagnostics_outstanding_handles() -> usize {
-    // SAFETY: Takes no pointers and queries atomic/locked arena diagnostic state internally.
-    unsafe { cpp_handle_diagnostics_outstanding_handles() }
-}
-
-/// Dumps diagnostic information about the global handle table arena.
-pub(super) fn handle_diagnostics_dump_table_info() {
-    // SAFETY: Takes no pointers and synchronizes arena diagnostic access internally.
-    unsafe { cpp_handle_diagnostics_dump_table_info() };
 }

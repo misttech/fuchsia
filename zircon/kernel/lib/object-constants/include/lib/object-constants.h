@@ -40,10 +40,6 @@ constexpr size_t kChannelDispatcherStateSize = 112;
 constexpr size_t kChannelDispatcherStateAlign = 8;
 constexpr size_t kChannelDispatcherStateOffset = 48;
 
-// Size and alignment for MessageWaiter.
-constexpr size_t kMessageWaiterSize = 136;
-constexpr size_t kMessageWaiterAlign = 8;
-
 // Size, alignment, and offset for CounterDispatcherState.
 constexpr size_t kCounterDispatcherStateSize = 64;
 constexpr size_t kCounterDispatcherStateAlign = 8;

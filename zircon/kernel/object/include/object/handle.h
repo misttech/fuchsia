@@ -21,8 +21,6 @@
 class Dispatcher;
 class Handle;
 
-constexpr uint32_t kHandleReservedBits = 2;
-
 template <typename T>
 class KernelHandle;
 
@@ -37,12 +35,8 @@ size_t cpp_handle_arena_diagnostic_count();
 void cpp_handle_arena_dump();
 
 zx_status_t rust_handle_init();
-Handle* rust_handle_from_u32(uint32_t value);
 Handle* rust_handle_make(Dispatcher* dispatcher, zx_rights_t rights);
-Handle* rust_handle_dup(const Handle* source, zx_rights_t rights);
 void rust_handle_destroy(Handle* handle);
-size_t rust_handle_diagnostic_count();
-void rust_handle_dump_table_info();
 int64_t rust_handle_get_alloc_failed_count();
 }
 
@@ -63,13 +57,6 @@ class Handle final {
   // Returns the Dispatcher to which this instance points.
   const fbl::RefPtr<Dispatcher>& dispatcher() const { return dispatcher_; }
 
-  // Returns the handle table that owns this instance. Used to guarantee
-  // that a process may only access handles in its own handle table.
-  zx_koid_t handle_table_id() const { return handle_table_id_.load(ktl::memory_order_relaxed); }
-
-  // Sets the value returned by handle_table_id().
-  void set_handle_table_id(zx_koid_t pid);
-
   // Returns the |rights| parameter that was provided when this instance
   // was created.
   uint32_t rights() const { return rights_; }
@@ -77,49 +64,18 @@ class Handle final {
   // Returns true if this handle has all of the desired rights bits set.
   bool HasRights(zx_rights_t desired) const { return (rights_ & desired) == desired; }
 
-  // Returns a value that can be decoded by Handle::FromU32() to derive a
-  // pointer to this instance.  ProcessDispatcher will XOR this with its
-  // |handle_rand_| to create the zx_handle_t value that user space sees.
-  uint32_t base_value() const { return base_value_; }
-
   // To be called once during bring up.
   static void Init();
-
-  // Maps an integer obtained by Handle::base_value() back to a Handle.
-  static Handle* FromU32(uint32_t value);
 
   // Get the number of outstanding handles for a given dispatcher.
   static uint32_t Count(const Dispatcher&);
 
-  // Should only be called by diagnostics.cpp.
-  struct diagnostics {
-    // Dumps internal details of the handle table using printf().
-    static void DumpTableInfo();
-
-    // Returns the number of outstanding handles.
-    static size_t OutstandingHandles();
-  };
-
-  // Handle should never be created by anything other than Make or Dup.
+  // Handle should never be created by anything other than Make.
   static HandleOwner Make(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights);
   static HandleOwner Make(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rights);
-  static HandleOwner Dup(const Handle& source, zx_rights_t rights);
-
-  // Use a manually declared linked list node state instead of inheriting so that the early
-  // memory of the class can be used by the members we want to preserve, and our NodeState can
-  // be placed later.
-  using NodeState = fbl::DoublyLinkedListNodeState<Handle*>;
-  struct NodeListTraits {
-    static NodeState& node_state(Handle& h) { return h.node_state_; }
-  };
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(Handle);
-
-  // Called only by Make.
-  Handle(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights, uint32_t base_value);
-  // Called only by Dup.
-  Handle(const Handle& rhs, zx_rights_t rights, uint32_t base_value);
 
   // Handle should never be destroyed by anything other than rust_handle_destroy.
   ~Handle() = default;
@@ -144,7 +100,10 @@ class Handle final {
   // PreserveSize.
   friend struct HandleLayoutCheck;
 
-  NodeState node_state_;
+  // Use a manually declared linked list node state instead of inheriting so that the early
+  // memory of the class can be used by the members we want to preserve, and our node state can
+  // be placed later.
+  fbl::DoublyLinkedListNodeState<Handle*> node_state_;
 };
 
 // Owns the GPArena backing all Handles. Allocation, construction and destruction of Handles is

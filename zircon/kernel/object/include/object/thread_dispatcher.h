@@ -27,7 +27,6 @@
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
 #include <ktl/string_view.h>
-#include <object/channel_dispatcher.h>
 #include <object/dispatcher.h>
 #include <object/exceptionate.h>
 #include <object/futex_context.h>

@@ -4,9 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-const LOCAL_TRACE: u32 = 0;
-
 use super::DispatcherOps;
+use super::channel_dispatcher::ChannelDispatcher;
 use super::dispatcher::Dispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use crate::counters::define_kcounter;
@@ -185,11 +184,13 @@ impl Handle {
         self.handle_table_id.load()
     }
 
-    /// Sets the owning handle table KOID and propagates it to the dispatcher.
+    /// Sets the owning handle table KOID and propagates it to the dispatcher if applicable.
     #[inline]
     pub fn set_handle_table_id(&self, pid: zx_koid_t) {
         self.handle_table_id.store(pid);
-        self.dispatcher.set_owner(pid);
+        if let Some(channel) = self.dispatcher.downcast::<ChannelDispatcher>() {
+            channel.set_owner(pid);
+        }
     }
 
     /// Returns the rights mask associated with this handle.
@@ -374,7 +375,7 @@ impl<const DURATION: i64> EventLimiter<DURATION> {
 static HANDLE_COUNT_HIGH_LOG: EventLimiter<1_000_000_000> = EventLimiter::new();
 
 /// Arena allocator managing memory slots for all `Handle` objects in the kernel.
-struct HandleTableArena;
+pub(super) struct HandleTableArena;
 
 impl HandleTableArena {
     /// Initializes the handle table arena.
@@ -482,19 +483,16 @@ impl HandleTableArena {
         }
     }
 
-    /// Deletes a handle, running its destructor and returning its memory slot to the arena.
-    fn delete(handle: *mut Handle) {
-        Handle::delete(handle);
-    }
-
     /// Returns the number of currently allocated handles in the arena.
-    fn diagnostic_count() -> usize {
+    #[cfg(console_enabled)]
+    pub(super) fn diagnostic_count() -> usize {
         // SAFETY: Safe to query diagnostic handle count from global arena.
         unsafe { cpp_handle_arena_diagnostic_count() }
     }
 
     /// Dumps arena diagnostic information.
-    fn dump() {
+    #[cfg(console_enabled)]
+    pub(super) fn dump() {
         // SAFETY: Safe to dump arena diagnostic info.
         unsafe { cpp_handle_arena_dump() };
     }
@@ -901,6 +899,7 @@ unsafe extern "C" {
     fn cpp_handle_arena_confine(addr: usize) -> usize;
     fn cpp_handle_arena_base() -> *mut core::ffi::c_void;
     fn cpp_handle_arena_diagnostic_count() -> usize;
+    #[cfg(console_enabled)]
     fn cpp_handle_arena_dump();
 }
 
@@ -913,16 +912,6 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_handle_init() -> zx_types::zx_status_t {
     Status::result_into_raw(Handle::init_global_arena())
-}
-
-/// Maps a 32-bit handle base value back to a raw `Handle` pointer.
-///
-/// # Safety
-/// Caller must ensure the returned pointer is only accessed if non-null and within appropriate
-/// lifetime and locking constraints.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_from_u32(value: u32) -> *mut Handle {
-    Handle::from_u32(value).unwrap_or_default()
 }
 
 /// Allocates and creates a new `Handle` pointing to `dispatcher` with the specified `rights`.
@@ -961,22 +950,6 @@ pub unsafe extern "C" fn rust_handle_make(
     }
 }
 
-/// Duplicates an existing handle with the specified rights.
-///
-/// # Safety
-/// `source` must be a valid, non-null pointer to an existing `Handle` or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_dup(
-    source: *const Handle,
-    rights: zx_rights_t,
-) -> *mut Handle {
-    if source.is_null() {
-        return core::ptr::null_mut();
-    }
-    // SAFETY: source is a valid non-null pointer to Handle.
-    HandleOwner::release_opt(Handle::dup(unsafe { &*source }, rights))
-}
-
 /// Destroys a handle and returns its memory to the handle table arena.
 ///
 /// # Safety
@@ -988,24 +961,6 @@ pub unsafe extern "C" fn rust_handle_destroy(handle: *mut Handle) {
     if let Some(owner) = unsafe { HandleOwner::from_raw(handle) } {
         drop(owner);
     }
-}
-
-/// Returns the number of currently allocated handles in the arena.
-///
-/// # Safety
-/// Safe to call concurrently from any context.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_diagnostic_count() -> usize {
-    HandleTableArena::diagnostic_count()
-}
-
-/// Dumps diagnostic information about the handle table arena to the debug log.
-///
-/// # Safety
-/// Safe to call from any context.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_dump_table_info() {
-    HandleTableArena::dump();
 }
 
 /// Returns the number of handle allocations that have failed since boot (`handles.alloc.failed`).

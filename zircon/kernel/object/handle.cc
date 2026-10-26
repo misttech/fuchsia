@@ -6,11 +6,8 @@
 
 #include "object/handle.h"
 
-#include <zircon/rights.h>
-
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
-#include <object/process_dispatcher.h>
 
 HandleTableArena gHandleTableArena;
 
@@ -45,11 +42,6 @@ struct HandleLayoutCheck {
 
 void Handle::Init() { rust_handle_init(); }
 
-void Handle::set_handle_table_id(zx_koid_t pid) {
-  handle_table_id_.store(pid, ktl::memory_order_relaxed);
-  dispatcher_->set_owner(pid);
-}
-
 HandleOwner Handle::Make(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights) {
   Handle* h = rust_handle_make(dispatcher.get(), rights);
   if (!h) {
@@ -71,17 +63,7 @@ HandleOwner Handle::Make(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rig
   return HandleOwner(h);
 }
 
-HandleOwner Handle::Dup(const Handle& source, zx_rights_t rights) {
-  return HandleOwner(rust_handle_dup(&source, rights));
-}
-
-Handle* Handle::FromU32(uint32_t value) { return rust_handle_from_u32(value); }
-
 uint32_t Handle::Count(const Dispatcher& dispatcher) { return dispatcher.current_handle_count(); }
-
-size_t Handle::diagnostics::OutstandingHandles() { return rust_handle_diagnostic_count(); }
-
-void Handle::diagnostics::DumpTableInfo() { rust_handle_dump_table_info(); }
 
 int64_t HandleTableArena::get_alloc_failed_count() { return rust_handle_get_alloc_failed_count(); }
 

@@ -53,7 +53,6 @@ bool cpp_dispatcher_is_waitable(const Dispatcher* disp);
 void cpp_dispatcher_cancel(Dispatcher* disp, const void* handle);
 bool cpp_dispatcher_cancel_by_key(Dispatcher* disp, const void* handle, const void* port,
                                   uint64_t key);
-void cpp_dispatcher_set_owner(Dispatcher* disp, zx_koid_t new_owner);
 }
 
 template <typename T>
@@ -314,11 +313,6 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
       return obj.deleter_ll_;
     }
   };
-
-  // Called whenever the object is bound to a new process. The |new_owner| is
-  // the koid of the new process. It is only overridden for objects where a single
-  // owner makes sense.
-  virtual void set_owner(zx_koid_t new_owner) {}
 
   // Poll the currently active signals on this object.
   //

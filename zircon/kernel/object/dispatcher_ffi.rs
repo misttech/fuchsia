@@ -99,8 +99,4 @@ unsafe extern "C" {
         key: u64,
         port: *const PortDispatcher,
     ) -> zx_types::zx_status_t;
-    pub(crate) fn cpp_dispatcher_set_owner(
-        dispatcher: *const Dispatcher,
-        new_owner: zx_types::zx_koid_t,
-    );
 }

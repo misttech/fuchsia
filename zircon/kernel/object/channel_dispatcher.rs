@@ -35,7 +35,6 @@ use fbl::{
 use ksync::{KMutex, PhantomMutex, RawCriticalMutex, guarded, kcell_init};
 use object_constants_rs::{
     kChannelDispatcherStateAlign, kChannelDispatcherStateOffset, kChannelDispatcherStateSize,
-    kMessageWaiterAlign, kMessageWaiterSize,
 };
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -1030,8 +1029,6 @@ pub struct MessageWaiter {
     signaled: UnsafeCell<bool>,
     txid: UnsafeCell<zx_txid_t>,
 }
-
-zr::static_assert_size_and_align!(MessageWaiter, kMessageWaiterSize, kMessageWaiterAlign);
 
 impl MessageWaiter {
     /// In-place initialization for `MessageWaiter` called during `ThreadDispatcher` construction.

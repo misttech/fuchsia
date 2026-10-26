@@ -28,8 +28,6 @@ void cpp_kill_process(zx_koid_t id);
 void cpp_dump_process_address_space(zx_koid_t id);
 void cpp_dump_process_memory_usage(const char* prefix, size_t min_bytes);
 void cpp_dump_handles_for_koid(zx_koid_t id);
-size_t cpp_handle_diagnostics_outstanding_handles();
-void cpp_handle_diagnostics_dump_table_info();
 }  // extern "C"
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_DIAGNOSTICS_H_

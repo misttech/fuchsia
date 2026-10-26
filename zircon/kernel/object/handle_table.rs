@@ -30,8 +30,6 @@ use zx_types::{
     zx_koid_t, zx_rights_t,
 };
 
-const LOCAL_TRACE: u32 = 0;
-
 /// Maps a Handle's base value and mixer to a user-visible handle value.
 fn map_handle_to_value(base_value: u32, mixer: u32) -> zx_handle_t {
     // The base_value is masked to only include the index and generation.
@@ -378,11 +376,6 @@ impl HandleTable {
             .get_handle_write_locked(Some(caller), handle_value.raw_value(), guard)?
             .as_non_null();
         Some(HandleEntry { table: self, ptr, guard })
-    }
-
-    /// Returns the KOID of this handle table.
-    pub fn koid(&self) -> zx_koid_t {
-        self.koid
     }
 
     /// Returns the KOID of this handle table.
@@ -1009,24 +1002,6 @@ pub unsafe extern "C" fn rust_handle_table_get_handle_locked(
         .map_or(core::ptr::null_mut(), |r| r.as_ptr() as *mut Handle)
 }
 
-/// Returns the KOID of the given `HandleTable`.
-///
-/// # Safety
-/// `table` must be a valid reference to an initialized `HandleTable`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_get_koid(table: &HandleTable) -> zx_koid_t {
-    table.koid()
-}
-
-/// Returns the random value mixer of the given `HandleTable`.
-///
-/// # Safety
-/// `table` must be a valid reference to an initialized `HandleTable`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_random_value(table: &HandleTable) -> u32 {
-    table.random_value()
-}
-
 /// Returns the current number of handles in `table`.
 ///
 /// # Safety
@@ -1048,50 +1023,6 @@ pub unsafe extern "C" fn rust_handle_table_add_handle(table: &HandleTable, handl
     }
 }
 
-/// Adds a raw `Handle` pointer to `table` when the caller already holds the write lock.
-///
-/// # Safety
-/// The table's write lock must be held by the current thread.
-/// `handle` must point to a valid, unowned `Handle` allocated in the arena.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_add_handle_locked(
-    table: &HandleTable,
-    handle: *mut Handle,
-) {
-    // SAFETY: The caller guarantees `handle` is non-null and points to a valid, unowned `Handle`
-    // allocated from the arena.
-    if let Some(owner) = unsafe { HandleOwner::from_raw(handle) } {
-        // SAFETY: The C++ caller must be holding `table`'s write lock (annotated with
-        // TA_REQ(table->get_lock())), so the minted token stands for `table.lock`.
-        unsafe {
-            let mut token = ksync::LockToken::new();
-            table.add_handle_locked(&mut token, owner);
-        }
-    }
-}
-
-/// Removes a handle from `table` by handle pointer when caller already holds the write lock.
-///
-/// # Safety
-/// The table's write lock must be held by the current thread.
-/// `handle` must be null or point to a valid `Handle` present in `table`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_remove_handle_ptr_locked(
-    table: &HandleTable,
-    handle: *mut Handle,
-) -> *mut Handle {
-    if handle.is_null() {
-        return core::ptr::null_mut();
-    }
-    // SAFETY: The C++ caller must be holding `table`'s write lock (annotated with
-    // TA_REQ(table->get_lock())), so the minted token stands for `table.lock`.
-    let mut token = unsafe { ksync::LockToken::new() };
-    // SAFETY: See above; `token` belongs to `table.lock`.
-    let mut guard = unsafe { table.guard_write_lock(&mut token) };
-    // SAFETY: Caller guarantees `handle` is a valid `Handle` present in `table`.
-    unsafe { table.remove_handle_ptr_locked(handle, &mut guard).release().as_ptr() }
-}
-
 /// Removes a handle from `table` by user handle value, returning ownership to the caller.
 ///
 /// # Safety
@@ -1103,25 +1034,6 @@ pub unsafe extern "C" fn rust_handle_table_remove_handle_val(
     handle_value: zx_handle_t,
 ) -> *mut Handle {
     HandleOwner::release_opt(table.remove_handle(caller, handle_value))
-}
-
-/// Removes a handle from `table` by handle value when caller already holds the write lock.
-///
-/// # Safety
-/// The table's write lock must be held by the current thread.
-/// `caller` must be a valid reference to a `ProcessDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_remove_handle_val_locked(
-    table: &HandleTable,
-    caller: &ProcessDispatcher,
-    handle_value: zx_handle_t,
-) -> *mut Handle {
-    // SAFETY: The C++ caller must be holding `table`'s write lock (annotated with
-    // TA_REQ(table->get_lock())), so the minted token stands for `table.lock`.
-    let mut token = unsafe { ksync::LockToken::new() };
-    // SAFETY: See above; `token` belongs to `table.lock`.
-    let mut guard = unsafe { table.guard_write_lock(&mut token) };
-    HandleOwner::release_opt(table.remove_handle_val_locked(Some(caller), handle_value, &mut guard))
 }
 
 /// Cleans and invalidates all handles in `table`.
@@ -1160,24 +1072,6 @@ pub unsafe extern "C" fn rust_handle_table_for_each_handle(
     Status::result_into_raw(res)
 }
 
-/// Iterates over all handles in `table` in batches to reduce lock contention and invokes `cb`.
-///
-/// # Safety
-/// `cb` must be a valid function pointer. `ctx` is passed directly to `cb`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_table_for_each_handle_batched(
-    table: &HandleTable,
-    cb: HandleTableForEachCallback,
-    ctx: *mut c_void,
-) -> zx_types::zx_status_t {
-    let res = table.for_each_handle_batched(|handle, rights, disp| {
-        // SAFETY: `cb` is a valid callback function pointer.
-        let s = unsafe { cb(handle, rights, disp as *const Dispatcher, ctx) };
-        Status::ok(s)
-    });
-    Status::result_into_raw(res)
-}
-
 /// Unit tests for HandleTable.
 #[cfg(ktest)]
 #[unittest::suite(name = "handle_table_rust")]
@@ -1196,7 +1090,7 @@ mod tests {
     fn test_handle_table_create_and_count() {
         let table = HandleTable::create().expect("failed to create handle table");
         expect_eq!(table.handle_count(), 0);
-        expect_true!(table.koid() != 0);
+        expect_true!(table.get_koid() != 0);
     }
 
     /// Tests adding and removing a handle from the table.
@@ -1222,7 +1116,7 @@ mod tests {
         let removed = {
             ksync::lock!(let mut guard = table.write_lock());
             let mut token_guard = guard.as_mut().as_token_guard_mut();
-            let handle_ptr = map_value_to_handle(val, table.random_value()).unwrap();
+            let handle_ptr = map_value_to_handle(val, table.random_value).unwrap();
             // SAFETY: `handle_ptr` was added to `table` and is currently linked in `table`.
             unsafe { table.remove_handle_ptr_locked(handle_ptr, &mut token_guard) }
         };

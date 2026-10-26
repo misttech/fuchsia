@@ -524,66 +524,6 @@ impl Drop for MessagePacketPtr {
     }
 }
 
-/// Creates a `MessagePacket` with kernel payload data and space for `num_handles` handles.
-///
-/// # Safety
-///
-/// - If `data` is non-null and `data_size > 0`, `data` must point to `data_size` valid bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_message_packet_create_kernel(
-    data: *const u8,
-    data_size: usize,
-    num_handles: usize,
-    out: &mut *mut MessagePacket,
-) -> zx_types::zx_status_t {
-    let payload = if data.is_null() || data_size == 0 {
-        &[]
-    } else {
-        // SAFETY: Caller guarantees `data` points to `data_size` valid bytes in kernel memory.
-        unsafe { slice::from_raw_parts(data, data_size) }
-    };
-    match MessagePacket::create_from_kernel(payload, num_handles) {
-        Ok(packet) => {
-            *out = packet.into_raw();
-            zx_types::ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
-/// Destroys and frees a `MessagePacket`.
-///
-/// # Safety
-///
-/// `packet` must be null or a valid, uniquely owned pointer returned by
-/// `rust_message_packet_create_kernel`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_message_packet_delete(packet: *mut MessagePacket) {
-    if !packet.is_null() {
-        // SAFETY: Caller guarantees `packet` is a valid, uniquely owned MessagePacket pointer.
-        unsafe {
-            drop(MessagePacketPtr::from_raw(packet));
-        }
-    }
-}
-
-/// Returns a mutable pointer to the attached handle pointers.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_message_packet_get_mutable_handles(
-    packet: &mut MessagePacket,
-) -> *mut *mut c_void {
-    packet.handles_mut()
-}
-
-/// Sets whether this packet owns its attached handles.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_message_packet_set_owns_handles(
-    packet: &mut MessagePacket,
-    owns_handles: bool,
-) {
-    packet.set_owns_handles(owns_handles);
-}
-
 /// In-tree kernel unit tests for `MessagePacket`.
 #[cfg(ktest)]
 #[unittest::suite(name = "message_packet_rust")]

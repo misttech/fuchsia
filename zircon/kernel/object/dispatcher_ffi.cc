@@ -152,9 +152,4 @@ FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_make_port_observer(Dispatcher* disp
   return disp->MakePortObserver(options, static_cast<const Handle*>(handle), signals, key, port);
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_dispatcher_set_owner(Dispatcher* disp, zx_koid_t new_owner) {
-  disp->set_owner(new_owner);
-}
-
 }  // extern "C"

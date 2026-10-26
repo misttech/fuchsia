@@ -12,10 +12,9 @@ use super::dispatcher_ffi::{
     cpp_dispatcher_increment_handle_count, cpp_dispatcher_is_waitable,
     cpp_dispatcher_make_port_observer, cpp_dispatcher_notify_observers_locked,
     cpp_dispatcher_on_zero_handles, cpp_dispatcher_raise_signals_locked, cpp_dispatcher_recycle,
-    cpp_dispatcher_remove_observer, cpp_dispatcher_set_name, cpp_dispatcher_set_owner,
-    cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
-    cpp_dispatcher_update_state_locked, cpp_dispatcher_user_signal_peer,
-    cpp_dispatcher_user_signal_self,
+    cpp_dispatcher_remove_observer, cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked,
+    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_user_signal_peer, cpp_dispatcher_user_signal_self,
 };
 use super::handle::HandleRef;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
@@ -603,12 +602,6 @@ impl Dispatcher {
     pub fn cancel_raw(&self, handle: *const core::ffi::c_void) {
         // SAFETY: self is a valid Dispatcher reference.
         unsafe { cpp_dispatcher_cancel(self, handle) };
-    }
-
-    /// Sets the owner PID for this dispatcher.
-    pub fn set_owner(&self, new_owner: zx_types::zx_koid_t) {
-        // SAFETY: self is a valid Dispatcher reference.
-        unsafe { cpp_dispatcher_set_owner(self, new_owner) };
     }
 
     /// Like [`Self::cancel`], but issued via `zx_port_cancel()`.

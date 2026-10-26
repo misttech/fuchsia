@@ -10,7 +10,6 @@
 
 #include <fbl/alloc_checker.h>
 #include <kernel/ffi.h>
-#include <object/channel_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/thread_dispatcher.h>
 
@@ -18,9 +17,6 @@ KCOUNTER(thread_legacy_yield, "thread.legacy_yield")
 
 static_assert(sizeof(ThreadDispatcher::CoreThreadObservation) == 2 * sizeof(uintptr_t));
 static_assert(alignof(ThreadDispatcher::CoreThreadObservation) == alignof(uintptr_t));
-
-static_assert(sizeof(ChannelDispatcher::MessageWaiter) == kMessageWaiterSize);
-static_assert(alignof(ChannelDispatcher::MessageWaiter) == kMessageWaiterAlign);
 
 // The blocked reason crosses the FFI as a raw uint32_t in both directions (SetBlockedReason and
 // rust_thread_dispatcher_set_blocked_reason), and the mapping to zx_thread_state_t lives on the

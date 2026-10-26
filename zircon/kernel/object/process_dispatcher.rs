@@ -298,7 +298,7 @@ impl ProcessDispatcher {
     /// Returns the KOID of this process's handle table.
     #[inline]
     pub fn handle_table_koid(&self) -> zx_types::zx_koid_t {
-        self.handle_table().koid()
+        self.handle_table().get_koid()
     }
 
     /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this process's
