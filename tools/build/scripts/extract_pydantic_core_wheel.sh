@@ -65,8 +65,6 @@ INIT_FILE="${DEST_DIR}/${CHECK_FILE}"
 TEMP_INIT="${INIT_FILE}.tmp"
 
 cat > "${TEMP_INIT}" <<EOF
-from __future__ import annotations
-
 import os
 import sys
 from importlib.abc import Loader
