@@ -20,6 +20,7 @@ rustc_library(
     visibility = [
         "//src/storage/benchmarks/fuchsia:__pkg__",
         "//src/storage/ext4:__pkg__",
+        "//src/storage/fxfs/platform:__pkg__",
         "//src/storage/gpt/component:__pkg__",
         "//src/storage/lib/fs_management/rust:__pkg__",
         "//src/storage/lib/storage_device:__pkg__",

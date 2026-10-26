@@ -100,6 +100,7 @@ if (is_fuchsia) {
       ":*",
       "//src/storage/benchmarks/fuchsia:*",
       "//src/storage/ext4:*",
+      "//src/storage/fxfs/platform:*",
       "//src/storage/gpt/component:*",
       "//src/storage/lib/fs_management/rust:*",
       "//src/storage/lib/storage_device:*",
