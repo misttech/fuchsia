@@ -231,47 +231,50 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
             (current_meta_offset + required_meta_bytes).next_multiple_of(INODE_SIZE);
     }
 
-    // 2. Build directory blocks now that all NIDs are assigned, and allocate data blocks.
+    // 2. Build directory blocks first now that all NIDs are assigned, then allocate file and
+    // symlink data blocks so directory lookups do not sit adjacent to file data blocks.
     let data_start_block = current_meta_offset.div_ceil(BLOCK_SIZE) as u32;
     let mut next_free_block = std::cmp::max(2, data_start_block);
 
     for i in 0..nodes.len() {
-        match &nodes[i].contents {
-            FlatNodeContents::Directory { entries, .. } => {
-                let blocks = pack_directory_blocks(entries, &nodes);
-                nodes[i].data_block = next_free_block;
-                nodes[i].size = (blocks.len() * BLOCK_SIZE) as u64;
-                next_free_block += blocks.len() as u32;
-                if let FlatNodeContents::Directory { blocks: dst_blocks, .. } =
-                    &mut nodes[i].contents
-                {
-                    *dst_blocks = blocks;
-                }
+        if let FlatNodeContents::Directory { entries, .. } = &nodes[i].contents {
+            let blocks = pack_directory_blocks(entries, &nodes);
+            nodes[i].data_block = next_free_block;
+            nodes[i].size = (blocks.len() * BLOCK_SIZE) as u64;
+            next_free_block += blocks.len() as u32;
+            if let FlatNodeContents::Directory { blocks: dst_blocks, .. } = &mut nodes[i].contents {
+                *dst_blocks = blocks;
             }
+        }
+    }
+
+    for node in &mut nodes {
+        match &node.contents {
+            FlatNodeContents::Directory { .. } => {}
             FlatNodeContents::File { data } => {
                 let len = data.len() as u64;
-                nodes[i].size = len;
-                let data_blocks = if nodes[i].is_inline {
+                node.size = len;
+                let data_blocks = if node.is_inline {
                     (len / BLOCK_SIZE as u64) as u32
                 } else {
                     len.div_ceil(BLOCK_SIZE as u64) as u32
                 };
                 if data_blocks > 0 {
-                    nodes[i].data_block = next_free_block;
+                    node.data_block = next_free_block;
                     next_free_block += data_blocks;
                 } else {
-                    nodes[i].data_block = 0;
+                    node.data_block = 0;
                 }
             }
             FlatNodeContents::Symlink { target } => {
                 let len = target.len() as u64;
-                nodes[i].size = len;
+                node.size = len;
                 if len > 0 {
-                    nodes[i].data_block = next_free_block;
+                    node.data_block = next_free_block;
                     let blocks_needed = len.div_ceil(BLOCK_SIZE as u64);
                     next_free_block += blocks_needed as u32;
                 } else {
-                    nodes[i].data_block = 0;
+                    node.data_block = 0;
                 }
             }
         }
@@ -601,5 +604,57 @@ mod tests {
         let root = fs.root_node();
         assert_eq!(root.size(), (2 * BLOCK_SIZE) as u64);
         assert_dir_recursive(&fs, &entries, &root, root.nid());
+    }
+
+    #[fuchsia::test]
+    fn test_directory_blocks_precede_file_data_blocks() {
+        let tree = vec![
+            SerializerNode::Directory {
+                name: "a_dir".to_string(),
+                entries: vec![SerializerNode::File {
+                    name: "first_file".to_string(),
+                    data: patterned_bytes(1, BLOCK_SIZE),
+                }],
+            },
+            SerializerNode::Directory {
+                name: "z_dir".to_string(),
+                entries: vec![SerializerNode::File {
+                    name: "second_file".to_string(),
+                    data: patterned_bytes(2, BLOCK_SIZE),
+                }],
+            },
+        ];
+
+        let image = serialize(&tree);
+        let fs = ErofsFilesystem::new(Arc::new(VecReader::new(image))).unwrap();
+        let root = fs.root_node();
+
+        let mut root_entries = vec![erofs::DirectoryEntry::default(); 16];
+        let count = fs.read_directory(&root, 0, &mut root_entries).unwrap();
+        let find_child = |entries: &[erofs::DirectoryEntry], name: &str| {
+            entries.iter().find(|e| e.name == name).unwrap().nid
+        };
+
+        let a_dir = match fs.node(find_child(&root_entries[..count], "a_dir")).unwrap() {
+            Node::Directory(d) => d,
+            _ => panic!("expected directory"),
+        };
+        let z_dir = match fs.node(find_child(&root_entries[..count], "z_dir")).unwrap() {
+            Node::Directory(d) => d,
+            _ => panic!("expected directory"),
+        };
+
+        let mut a_entries = vec![erofs::DirectoryEntry::default(); 16];
+        let a_count = fs.read_directory(&a_dir, 0, &mut a_entries).unwrap();
+        let first_file = match fs.node(find_child(&a_entries[..a_count], "first_file")).unwrap() {
+            Node::File(f) => f,
+            _ => panic!("expected file"),
+        };
+
+        assert!(
+            z_dir.blkaddr_offset(BLOCK_SIZE as u64, 0).unwrap()
+                < first_file.blkaddr_offset(BLOCK_SIZE as u64, 0).unwrap(),
+            "all directory blocks must be placed before file data blocks"
+        );
     }
 }

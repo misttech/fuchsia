@@ -35,20 +35,10 @@ const RNG_SEED: u64 = 0xda782a0c3ce1819a;
 const EROFS_FILE_OFFSET: usize = 4096;
 const IMAGE_INODE_NUM: u64 = 3;
 const IO_FILE_SIZE: usize = 8 * 1024 * 1024;
-const LARGE_FILE_SIZE: usize = 2 * 1024 * 1024;
-const SMALL_FILE_COUNT: usize = 64;
-const SMALL_PLAIN_FILE_SIZE: usize = 4096;
-const TAIL_ONLY_FILE_SIZE: usize = 512;
-const BLOCK_AND_TAIL_FILE_SIZE: usize = 4096 + 512;
+const COLD_PAGE_FAULT_SIZES: [usize; 3] = [1024, 4096, 131072];
 const STAT_OPEN_FILE_COUNT: usize = 100;
 const NESTED_FILE_COUNT: usize = 100;
 const NESTED_DEPTH: usize = 5;
-
-fn create_incompressible_bytes(size: usize, rng: &mut XorShiftRng) -> Vec<u8> {
-    let mut data = vec![0u8; size];
-    rng.fill(data.as_mut_slice());
-    data
-}
 
 fn create_compressible_bytes(size: usize, rng: &mut XorShiftRng) -> Vec<u8> {
     const RUN_RANGE: Range<usize> = 2..8;
@@ -104,7 +94,7 @@ fn serialize_into_delivery_blob(nodes: &[SerializerNode], mode: CompressionMode)
     DeliveryBlob::new(blob_bytes, mode)
 }
 
-fn build_compressed_erofs_blob() -> DeliveryBlob {
+fn build_erofs_blob() -> DeliveryBlob {
     let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
 
     let io_dir = SerializerNode::Directory {
@@ -115,35 +105,17 @@ fn build_compressed_erofs_blob() -> DeliveryBlob {
         }],
     };
 
-    let large_file = SerializerNode::File {
-        name: "large_file".to_string(),
-        data: create_compressible_bytes(LARGE_FILE_SIZE, &mut rng),
+    let cold_page_fault_entries = COLD_PAGE_FAULT_SIZES
+        .into_iter()
+        .map(|size| SerializerNode::File {
+            name: format!("file_{size}"),
+            data: create_compressible_bytes(size, &mut rng),
+        })
+        .collect();
+    let cold_page_fault_dir = SerializerNode::Directory {
+        name: "cold_page_fault".to_string(),
+        entries: cold_page_fault_entries,
     };
-
-    let small_plain_entries = (0..SMALL_FILE_COUNT)
-        .map(|i| SerializerNode::File {
-            name: format!("file_{i:02}"),
-            data: create_compressible_bytes(SMALL_PLAIN_FILE_SIZE, &mut rng),
-        })
-        .collect();
-    let small_plain_dir =
-        SerializerNode::Directory { name: "small_plain".to_string(), entries: small_plain_entries };
-
-    let inline_tail_entries = (0..SMALL_FILE_COUNT)
-        .map(|i| {
-            let size = if i < SMALL_FILE_COUNT / 2 {
-                TAIL_ONLY_FILE_SIZE
-            } else {
-                BLOCK_AND_TAIL_FILE_SIZE
-            };
-            SerializerNode::File {
-                name: format!("file_{i:02}"),
-                data: create_compressible_bytes(size, &mut rng),
-            }
-        })
-        .collect();
-    let inline_tail_dir =
-        SerializerNode::Directory { name: "inline_tail".to_string(), entries: inline_tail_entries };
 
     let stat_open_entries = (0..STAT_OPEN_FILE_COUNT)
         .map(|i| SerializerNode::File { name: format!("file-{i:03}.txt"), data: vec![b'x'; 64] })
@@ -167,56 +139,8 @@ fn build_compressed_erofs_blob() -> DeliveryBlob {
     };
 
     serialize_into_delivery_blob(
-        &[
-            io_dir,
-            large_file,
-            small_plain_dir,
-            inline_tail_dir,
-            stat_open_dir,
-            nested_dir,
-            walk_tree_dir,
-            git_tree_dir,
-        ],
+        &[io_dir, cold_page_fault_dir, stat_open_dir, nested_dir, walk_tree_dir, git_tree_dir],
         CompressionMode::Always,
-    )
-}
-
-fn build_uncompressed_erofs_blob() -> DeliveryBlob {
-    let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
-
-    let large_file = SerializerNode::File {
-        name: "large_file".to_string(),
-        data: create_incompressible_bytes(LARGE_FILE_SIZE, &mut rng),
-    };
-
-    let small_plain_entries = (0..SMALL_FILE_COUNT)
-        .map(|i| SerializerNode::File {
-            name: format!("file_{i:02}"),
-            data: create_incompressible_bytes(SMALL_PLAIN_FILE_SIZE, &mut rng),
-        })
-        .collect();
-    let small_plain_dir =
-        SerializerNode::Directory { name: "small_plain".to_string(), entries: small_plain_entries };
-
-    let inline_tail_entries = (0..SMALL_FILE_COUNT)
-        .map(|i| {
-            let size = if i < SMALL_FILE_COUNT / 2 {
-                TAIL_ONLY_FILE_SIZE
-            } else {
-                BLOCK_AND_TAIL_FILE_SIZE
-            };
-            SerializerNode::File {
-                name: format!("file_{i:02}"),
-                data: create_incompressible_bytes(size, &mut rng),
-            }
-        })
-        .collect();
-    let inline_tail_dir =
-        SerializerNode::Directory { name: "inline_tail".to_string(), entries: inline_tail_entries };
-
-    serialize_into_delivery_blob(
-        &[large_file, small_plain_dir, inline_tail_dir],
-        CompressionMode::Never,
     )
 }
 
@@ -401,14 +325,12 @@ async fn main() {
         .expect("failed to open or create test partition in GPT");
 
     let fs = Arc::new(Fxblob::new().start_filesystem(&partition).await);
-    let compressed_blob = build_compressed_erofs_blob();
-    let uncompressed_blob = build_uncompressed_erofs_blob();
-    fs.write_blob(&compressed_blob).await;
-    fs.write_blob(&uncompressed_blob).await;
+    let erofs_blob = build_erofs_blob();
+    fs.write_blob(&erofs_blob).await;
 
     // Warm up decompression threads once before benchmarks begin.
     {
-        let vmo = fs.get_vmo(&compressed_blob.name).await;
+        let vmo = fs.get_vmo(&erofs_blob.name).await;
         let mut buf = [0u8; 1];
         vmo.read(&mut buf, 0).expect("warm-up read failed");
     }
@@ -417,16 +339,10 @@ async fn main() {
     let debug_proxy = fs.connect_to_debug();
     let scope = ExecutionScope::new();
     let erofs_blobs_dir = vfs::pseudo_directory! {
-        "compressed" => ErofsBlobSubdir::new(
-            fs.clone(),
-            debug_proxy.clone(),
-            compressed_blob.name,
-            metadata_bytes.clone(),
-        ),
-        "uncompressed" => ErofsBlobSubdir::new(
+        "bundle" => ErofsBlobSubdir::new(
             fs.clone(),
             debug_proxy,
-            uncompressed_blob.name,
+            erofs_blob.name,
             metadata_bytes,
         ),
     };

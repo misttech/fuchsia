@@ -20,8 +20,6 @@ rustc_binary("host-storage-benchmarks") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:libc",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:rand_xorshift",
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:tempfile",
   ]

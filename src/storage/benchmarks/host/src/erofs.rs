@@ -3,11 +3,6 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use rand::SeedableRng as _;
-use rand::distr::Distribution as _;
-use rand::distr::weighted::WeightedIndex;
-use rand::seq::SliceRandom as _;
-use rand_xorshift::XorShiftRng;
 use std::ffi::CString;
 use std::fs::File;
 use std::os::fd::AsRawFd as _;
@@ -26,13 +21,7 @@ use storage_benchmarks::{
 };
 use tempfile::TempDir;
 
-const RNG_SEED: u64 = 0xda782a0c3ce1819a;
-const PAGE_SIZE: usize = 4096;
-const LARGE_FILE_SIZE: usize = 2 * 1024 * 1024;
-const SMALL_FILE_COUNT: usize = 64;
-const SMALL_PLAIN_FILE_SIZE: usize = 4096;
-const TAIL_ONLY_FILE_SIZE: usize = 512;
-const BLOCK_AND_TAIL_FILE_SIZE: usize = 4096 + 512;
+const COLD_PAGE_FAULT_SIZES: [usize; 3] = [1024, 4096, 131072];
 
 const LOOP_SET_FD: libc::c_ulong = 0x4C00;
 const LOOP_CLR_FD: libc::c_ulong = 0x4C01;
@@ -224,126 +213,43 @@ impl Drop for MappedFile {
     }
 }
 
-fn sequential_page_iter(file_size: usize) -> Vec<usize> {
-    (0..file_size).step_by(PAGE_SIZE).collect()
-}
-
-fn random_page_iter(file_size: usize, rng: &mut XorShiftRng) -> Vec<usize> {
-    const RUN_LENGTHS: [usize; 6] = [1, 3, 15, 40, 60, 80];
-    const WEIGHTS: [usize; 6] = [25, 15, 40, 10, 6, 4];
-    let distribution = WeightedIndex::new(WEIGHTS).unwrap();
-    let total_pages = (0..file_size).step_by(PAGE_SIZE).len();
-    let pages_to_read = if total_pages < 5 { total_pages } else { total_pages / 5 * 3 };
-
-    let mut taken_pages = 0;
-    let mut page_runs = Vec::new();
-    while taken_pages < pages_to_read {
-        let index = distribution.sample(rng);
-        let run_length = std::cmp::min(RUN_LENGTHS[index], pages_to_read - taken_pages);
-        let start = taken_pages * PAGE_SIZE;
-        let end = (taken_pages + run_length) * PAGE_SIZE;
-        taken_pages += run_length;
-        page_runs.push((start..end).step_by(PAGE_SIZE));
-    }
-
-    page_runs.shuffle(rng);
-    page_runs.into_iter().flatten().collect()
-}
-
-#[derive(Clone, Copy)]
-enum PageOrder {
-    Sequential,
-    Random,
-}
-
 #[derive(Clone)]
-pub struct PageInLargeFileBenchmark {
-    name: &'static str,
-    order: PageOrder,
+pub struct ColdPageFaultBenchmark {
+    size: usize,
 }
 
-impl PageInLargeFileBenchmark {
-    fn new(name: &'static str, order: PageOrder) -> Self {
-        Self { name, order }
+impl ColdPageFaultBenchmark {
+    pub fn new(size: usize) -> Self {
+        Self { size }
     }
 }
 
 #[async_trait]
-impl Benchmark<ErofsFilesystemInstance> for PageInLargeFileBenchmark {
+impl Benchmark<ErofsFilesystemInstance> for ColdPageFaultBenchmark {
     async fn run(&self, fs: &mut ErofsFilesystemInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!("benchmark", self.name);
-        let mut rng = XorShiftRng::seed_from_u64(RNG_SEED);
-        let page_iter = match self.order {
-            PageOrder::Sequential => sequential_page_iter(LARGE_FILE_SIZE),
-            PageOrder::Random => random_page_iter(LARGE_FILE_SIZE, &mut rng),
-        };
-
-        let file = File::open(fs.benchmark_dir().join("large_file")).expect("open large_file");
-        let mapped = MappedFile::new(&file, LARGE_FILE_SIZE);
-        let ptr = mapped.as_ptr();
-        let mut durations = Vec::with_capacity(page_iter.len());
-        for offset in page_iter {
-            storage_trace::duration!("benchmark", "page_in", "offset" => offset);
-            let timer = OperationTimer::start();
-            let val = unsafe { std::ptr::read_volatile(ptr.add(offset)) };
-            std::hint::black_box(val);
-            durations.push(timer.stop());
-        }
-        durations
-    }
-
-    fn name(&self) -> String {
-        self.name.to_string()
-    }
-}
-
-#[derive(Clone)]
-pub struct PageInSmallFilesBenchmark {
-    name: &'static str,
-    inline_tails: bool,
-}
-
-impl PageInSmallFilesBenchmark {
-    pub fn new_plain(name: &'static str) -> Self {
-        Self { name, inline_tails: false }
-    }
-
-    pub fn new_inline_tail(name: &'static str) -> Self {
-        Self { name, inline_tails: true }
-    }
-}
-
-#[async_trait]
-impl Benchmark<ErofsFilesystemInstance> for PageInSmallFilesBenchmark {
-    async fn run(&self, fs: &mut ErofsFilesystemInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!("benchmark", self.name);
-        let mut durations = Vec::with_capacity(SMALL_FILE_COUNT * 2);
-
-        for i in 0..SMALL_FILE_COUNT {
-            let size = if !self.inline_tails {
-                SMALL_PLAIN_FILE_SIZE
-            } else if i < SMALL_FILE_COUNT / 2 {
-                TAIL_ONLY_FILE_SIZE
-            } else {
-                BLOCK_AND_TAIL_FILE_SIZE
-            };
-            let path = fs.benchmark_dir().join(format!("file_{i:02}"));
-            let file = File::open(&path).expect("open small file");
-            let mapped = MappedFile::new(&file, size);
+        storage_trace::duration!("benchmark", "ColdPageFault", "size" => self.size);
+        const SAMPLES: usize = 20;
+        let file_name = format!("file_{}", self.size);
+        let mut durations = Vec::with_capacity(SAMPLES);
+        for i in 0..SAMPLES {
+            fs.clear_cache().await;
+            let file = File::open(fs.benchmark_dir().join(&file_name)).expect("open file");
+            let mapped = MappedFile::new(&file, self.size);
             let ptr = mapped.as_ptr();
-            for offset in (0..size).step_by(PAGE_SIZE) {
-                storage_trace::duration!("benchmark", "page_in", "file" => i, "offset" => offset);
+            let duration = {
+                storage_trace::duration!("benchmark", "page_in", "iteration" => i);
                 let timer = OperationTimer::start();
-                let val = unsafe { std::ptr::read_volatile(ptr.add(offset)) };
+                let val = unsafe { std::ptr::read_volatile(ptr) };
                 std::hint::black_box(val);
-                durations.push(timer.stop());
-            }
+                timer.stop()
+            };
+            durations.push(duration);
         }
         durations
     }
 
     fn name(&self) -> String {
-        self.name.to_string()
+        format!("ColdPageFault/{}", self.size)
     }
 }
 
@@ -351,13 +257,12 @@ pub fn build_erofs_benchmark_set(erofs_blob_dir: PathBuf, filesystem_name: Strin
     const OP_SIZE: usize = 8 * 1024;
     const OP_COUNT: usize = 1024;
 
-    let compressed_dir = erofs_blob_dir.join("compressed");
-    let uncompressed_dir = erofs_blob_dir.join("uncompressed");
+    let bundle_dir = erofs_blob_dir.join("bundle");
 
     let mut benchmark_set = BenchmarkSet::new();
 
     // 1. Read-only I/O benchmarks (8 MiB file in `io/file`).
-    let io_fs = ErofsFilesystem::new(compressed_dir.clone(), Some("io"), filesystem_name.clone());
+    let io_fs = ErofsFilesystem::new(bundle_dir.clone(), Some("io"), filesystem_name.clone());
     benchmark_set
         .add_benchmark(ReadSequentialCold::new_read_only(OP_SIZE, OP_COUNT), io_fs.clone());
     benchmark_set
@@ -367,12 +272,12 @@ pub fn build_erofs_benchmark_set(erofs_blob_dir: PathBuf, filesystem_name: Strin
 
     // 2. Read-only directory and metadata benchmarks.
     let stat_open_fs =
-        ErofsFilesystem::new(compressed_dir.clone(), Some("stat_open"), filesystem_name.clone());
+        ErofsFilesystem::new(bundle_dir.clone(), Some("stat_open"), filesystem_name.clone());
     benchmark_set.add_benchmark(StatPath::new_read_only(), stat_open_fs.clone());
     benchmark_set.add_benchmark(OpenFile::new_read_only(), stat_open_fs);
 
     let nested_fs =
-        ErofsFilesystem::new(compressed_dir.clone(), Some("nested"), filesystem_name.clone());
+        ErofsFilesystem::new(bundle_dir.clone(), Some("nested"), filesystem_name.clone());
     benchmark_set.add_benchmark(OpenDeeplyNestedFile::new_read_only(), nested_fs);
 
     let dts = DirectoryTreeStructure {
@@ -381,55 +286,21 @@ pub fn build_erofs_benchmark_set(erofs_blob_dir: PathBuf, filesystem_name: Strin
         max_depth: 5,
     };
     let walk_fs =
-        ErofsFilesystem::new(compressed_dir.clone(), Some("walk_tree"), filesystem_name.clone());
+        ErofsFilesystem::new(bundle_dir.clone(), Some("walk_tree"), filesystem_name.clone());
     benchmark_set.add_benchmark(WalkDirectoryTreeCold::new_read_only(dts, 20), walk_fs.clone());
     benchmark_set.add_benchmark(WalkDirectoryTreeWarm::new_read_only(dts, 20), walk_fs);
 
     let git_fs =
-        ErofsFilesystem::new(compressed_dir.clone(), Some("git_tree"), filesystem_name.clone());
+        ErofsFilesystem::new(bundle_dir.clone(), Some("git_tree"), filesystem_name.clone());
     benchmark_set.add_benchmark(GitStatus::new_read_only(), git_fs);
 
-    // 3. Large file (2 MiB) mmap page-in benchmarks.
-    let large_uncompressed_fs =
-        ErofsFilesystem::new(uncompressed_dir.clone(), None, filesystem_name.clone());
-    let large_compressed_fs =
-        ErofsFilesystem::new(compressed_dir.clone(), None, filesystem_name.clone());
-    benchmark_set.add_benchmark(
-        PageInLargeFileBenchmark::new("PageInSequentialUncompressed", PageOrder::Sequential),
-        large_uncompressed_fs,
-    );
-    benchmark_set.add_benchmark(
-        PageInLargeFileBenchmark::new("PageInSequentialCompressed", PageOrder::Sequential),
-        large_compressed_fs.clone(),
-    );
-    benchmark_set.add_benchmark(
-        PageInLargeFileBenchmark::new("PageInRandomCompressed", PageOrder::Random),
-        large_compressed_fs,
-    );
-
-    // 4. Small FlatPlain files (64 x 4 KiB sharing 32 KiB compressed blob chunks).
-    benchmark_set.add_benchmark(
-        PageInSmallFilesBenchmark::new_plain("PageInSmallFilesUncompressed"),
-        ErofsFilesystem::new(
-            uncompressed_dir.clone(),
-            Some("small_plain"),
-            filesystem_name.clone(),
-        ),
-    );
-    benchmark_set.add_benchmark(
-        PageInSmallFilesBenchmark::new_plain("PageInSmallFilesCompressed"),
-        ErofsFilesystem::new(compressed_dir.clone(), Some("small_plain"), filesystem_name.clone()),
-    );
-
-    // 5. FlatInline files (32 x 512 B tail-only + 32 x 4,608 B block+tail).
-    benchmark_set.add_benchmark(
-        PageInSmallFilesBenchmark::new_inline_tail("PageInInlineTailFilesUncompressed"),
-        ErofsFilesystem::new(uncompressed_dir, Some("inline_tail"), filesystem_name.clone()),
-    );
-    benchmark_set.add_benchmark(
-        PageInSmallFilesBenchmark::new_inline_tail("PageInInlineTailFilesCompressed"),
-        ErofsFilesystem::new(compressed_dir, Some("inline_tail"), filesystem_name),
-    );
+    // 3. Cold page fault benchmarks across representative file sizes (1 KiB FlatInline,
+    //    4 KiB single-block FlatPlain, and 128 KiB multi-block FlatPlain).
+    let cold_page_fault_fs =
+        ErofsFilesystem::new(bundle_dir, Some("cold_page_fault"), filesystem_name);
+    for size in COLD_PAGE_FAULT_SIZES {
+        benchmark_set.add_benchmark(ColdPageFaultBenchmark::new(size), cold_page_fault_fs.clone());
+    }
 
     benchmark_set
 }
