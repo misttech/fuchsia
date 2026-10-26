@@ -24,6 +24,7 @@ rustc_library("paver-core") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
@@ -34,6 +35,8 @@ rustc_library("paver-core") {
     "src/boot_manager.rs",
     "src/data_sink.rs",
     "src/lib.rs",
+    "src/partition.rs",
+    "src/partition_io.rs",
     "src/paver.rs",
     "src/sysconfig.rs",
   ]

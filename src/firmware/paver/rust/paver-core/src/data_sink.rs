@@ -7,9 +7,9 @@ use anyhow::{Context as _, Error};
 use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_mem as fmem;
 use fidl_next_fuchsia_paver as fpaver;
-use fidl_next_fuchsia_paver::{data_sink, dynamic_data_sink, partition_io};
+use fidl_next_fuchsia_paver::{data_sink, dynamic_data_sink};
 
-/// `DataSink` / `PartitionIo` / `DynamicDataSink` implementation.
+/// Legacy `DataSink` / `DynamicDataSink` implementation.
 #[derive(Debug, Default)]
 pub struct DataSink;
 
@@ -17,33 +17,6 @@ impl DataSink {
     /// Creates a new [`DataSink`] instance.
     pub fn new() -> Self {
         Self
-    }
-
-    /// Returns the total size in bytes of `partition`.
-    pub async fn get_partition_size(&mut self, _partition: &str) -> Result<u64, zx::Status> {
-        Err(zx::Status::NOT_SUPPORTED)
-    }
-
-    /// Reads `size` bytes from `partition` starting at byte `offset` into a newly allocated VMO.
-    pub async fn read_partition(
-        &mut self,
-        _partition: &str,
-        _offset: u64,
-        _size: u64,
-    ) -> Result<zx::Vmo, zx::Status> {
-        Err(zx::Status::NOT_SUPPORTED)
-    }
-
-    /// Writes `payload` to `partition` starting at byte `offset`, handling bytes past the written
-    /// range according to `trailing`.
-    pub async fn write_partition(
-        &mut self,
-        _partition: &str,
-        _offset: u64,
-        _payload: zx::Vmo,
-        _trailing: fpaver::TrailingBehavior,
-    ) -> Result<(), zx::Status> {
-        Err(zx::Status::NOT_SUPPORTED)
     }
 
     /// Reads the boot `asset` (kernel ZBI or verified boot metadata) for `configuration`.
@@ -179,42 +152,6 @@ impl fpaver::DataSinkLocalServerHandler for DataSink {
     }
 }
 
-impl fpaver::PartitionIoLocalServerHandler for DataSink {
-    async fn get_partition_size(
-        &mut self,
-        request: Request<partition_io::GetPartitionSize>,
-        responder: Responder<partition_io::GetPartitionSize>,
-    ) {
-        let res = self.get_partition_size(&request.payload().partition).await;
-        responder.send_result(res).await;
-    }
-
-    async fn read_partition(
-        &mut self,
-        request: Request<partition_io::ReadPartition>,
-        responder: Responder<partition_io::ReadPartition>,
-    ) {
-        let req = request.payload();
-        let res = self.read_partition(&req.partition, req.offset, req.size).await;
-        responder.send_result(res).await;
-    }
-
-    async fn write_partition(
-        &mut self,
-        request: Request<partition_io::WritePartition>,
-        responder: Responder<partition_io::WritePartition>,
-    ) {
-        let req = request.payload();
-        let res = self.write_partition(&req.partition, req.offset, req.payload, req.trailing).await;
-        responder.send_result(res).await;
-    }
-
-    async fn flush(&mut self, responder: Responder<partition_io::Flush>) {
-        let res = self.flush().await;
-        responder.send_result(res).await;
-    }
-}
-
 impl fpaver::DynamicDataSinkLocalServerHandler for DataSink {
     async fn read_asset(
         &mut self,
@@ -308,18 +245,6 @@ pub async fn serve_data_sink(
         .await
         .map(|_| ())
         .context("serving DataSink")
-}
-
-/// Serves the `fuchsia.paver.PartitionIo` FIDL protocol over `server_end` using `sink`.
-pub async fn serve_partition_io(
-    sink: DataSink,
-    server_end: fidl_next::ServerEnd<fpaver::PartitionIo>,
-) -> Result<(), Error> {
-    fidl_next::ServerDispatcher::new(server_end)
-        .run_local(sink)
-        .await
-        .map(|_| ())
-        .context("serving PartitionIo")
 }
 
 /// Serves the `fuchsia.paver.DynamicDataSink` FIDL protocol over `server_end` using `sink`.

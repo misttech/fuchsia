@@ -4,6 +4,8 @@
 
 pub mod boot_manager;
 pub mod data_sink;
+pub mod partition;
+pub mod partition_io;
 pub mod paver;
 pub mod sysconfig;
 
