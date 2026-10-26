@@ -18,7 +18,7 @@ from trace_processing.metrics import odpm_power
 
 _LOGGER = logging.getLogger(__name__)
 
-ODPM_MONIKER = "bootstrap/base-drivers:odpm-5228000"
+ODPM_MONIKER = "bootstrap/boot-drivers:odpm-5228000"
 ODPM_WLAN_RAIL = "wlan_bt"
 ODPM_TRACE_CATEGORIES = ["kernel:meta", "power"]
 # Number of hardware polls the ODPM driver accumulates and averages before
