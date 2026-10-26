@@ -12,7 +12,7 @@ pub struct SetupInfo {
 }
 
 impl Nameable for SetupInfo {
-    const NAME: &'static str = "setup";
+    const NAME: &str = "Setup";
 }
 
 bitflags! {
