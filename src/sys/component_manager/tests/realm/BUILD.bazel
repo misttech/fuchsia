@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "realm_integration_test_bin",
+    srcs = ["src/integration_test.rs"],
+    crate_root = "src/integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+    ],
+)
+
+rustc_test(
+    name = "realm_namespace_test_bin",
+    srcs = ["src/namespace_test.rs"],
+    crate_root = "src/namespace_test.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+    ],
+)
+
+fx_component_manifest(
+    name = "no_program-manifest",
+    testonly = True,
+    component_name = "no_program",
+    manifest = "meta/no_program.cml",
+)
+
+fx_component(
+    name = "no_program",
+    testonly = True,
+    compiled_manifest = ":no_program-manifest",
+    component_name = "no_program",
+)

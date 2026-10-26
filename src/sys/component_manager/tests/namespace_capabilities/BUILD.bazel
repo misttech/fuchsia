@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "trigger_bin",
+    srcs = ["trigger.rs"],
+    crate_name = "namespace_capabilities_trigger",
+    crate_root = "trigger.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "trigger_bin_packaged_bin",
+    binary = ":trigger_bin",
+    binary_name = "namespace_capabilities_trigger",
+)
+
+fx_component_manifest(
+    name = "trigger-manifest",
+    testonly = True,
+    component_name = "trigger",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/trigger.cml",
+)
+
+fx_component(
+    name = "trigger",
+    testonly = True,
+    compiled_manifest = ":trigger-manifest",
+    component_name = "trigger",
+    deps = [":trigger_bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "integration_test_bin",
+    srcs = ["integration_test.rs"],
+    crate_name = "namespace_capabilities_integration_test",
+    crate_root = "integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "integration_test_root_bin",
+    testonly = True,
+    srcs = ["integration_test_root.rs"],
+    crate_name = "namespace_capabilities_integration_test_root",
+    crate_root = "integration_test_root.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
