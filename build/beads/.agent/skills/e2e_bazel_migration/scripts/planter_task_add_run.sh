@@ -45,6 +45,9 @@ Optional:
                        Used to queue several tasks for \`planter fleet\`.
   -h, --help           Show this help.
 
+The task is added with \`planter add-task --check-gerrit\`, so it fails if an
+open Gerrit CL already claims one of the target directories.
+
 Environment:
   FUCHSIA_DIR          Fuchsia checkout (default: \$HOME/fuchsia).
   DRY_RUN              If set, print the planter command instead of running it.
@@ -127,8 +130,10 @@ printf 'Commit message (Planter appends Test:, TAG: and Change-Id):\n\n%s\n\n' \
   "$TITLE"
 [[ -z "$DESC" ]] || printf '%s\n\n' "$DESC"
 
+# --check-gerrit (the default, passed explicitly): Planter refuses to add the
+# task if an open Gerrit CL already claims one of the target directories.
 add_cmd=("$PLANTER" add-task --workdir="$FUCHSIA_DIR" --id="$TASK_ID"
-         --target-dir="$TARGET_DIR" --title="$TITLE")
+         --target-dir="$TARGET_DIR" --title="$TITLE" --check-gerrit)
 [[ -z "$DESC" ]] || add_cmd+=(--desc="$DESC")
 # Step 1, no --gerrit: Planter migrates the directory, runs the checks and the
 # review panel, and stops in UPLOADING without committing or pushing.
