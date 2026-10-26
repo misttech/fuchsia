@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 //
 #include <lib/zx/socket.h>
+#include <lib/zx/vmo.h>
 
+#include <array>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -79,4 +81,35 @@ TEST(BufferForwarderTest, SocketBackpressureThreshold) {
   ASSERT_EQ(actual_read, bytes_to_write);
 
   ASSERT_FALSE(forwarder.IsSocketBackpressureExceeded());
+}
+
+TEST(BufferForwarderTest, WriteChunkOffsetAbove4GiB) {
+  zx::socket ep0, ep1;
+  ASSERT_EQ(zx::socket::create(0, &ep0, &ep1), ZX_OK);
+  tracing::BufferForwarder forwarder(std::move(ep1));
+
+  // VMO pages are committed lazily, so this only allocates the pages we write.
+  const uint64_t page_size = zx_system_get_page_size();
+  constexpr uint64_t k4GiB = uint64_t{1} << 32;
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(k4GiB + 2 * page_size, 0u, &vmo), ZX_OK);
+
+  // Put distinct data at the same in-page offset below and above 4 GiB so that truncating the
+  // upper 32 bits of the offset would forward the wrong bytes.
+  constexpr uint64_t kInPageOffset = 128;
+  constexpr std::array<uint64_t, 2> kLowWords = {0x1111111111111111ULL, 0x2222222222222222ULL};
+  constexpr std::array<uint64_t, 2> kHighWords = {0x3333333333333333ULL, 0x4444444444444444ULL};
+  ASSERT_EQ(vmo.write(kLowWords.data(), kInPageOffset, sizeof(kLowWords)), ZX_OK);
+  const uint64_t high_offset = k4GiB + kInPageOffset;
+  ASSERT_EQ(vmo.write(kHighWords.data(), high_offset, sizeof(kHighWords)), ZX_OK);
+
+  ASSERT_EQ(forwarder.WriteChunkBy(tracing::BufferForwarder::ForwardStrategy::Size, vmo,
+                                   high_offset, sizeof(kHighWords)),
+            tracing::TransferStatus::kComplete);
+
+  std::array<uint64_t, 2> actual_words{};
+  size_t actual_read = 0;
+  ASSERT_EQ(ep0.read(0, actual_words.data(), sizeof(actual_words), &actual_read), ZX_OK);
+  EXPECT_EQ(actual_read, sizeof(kHighWords));
+  EXPECT_EQ(actual_words, kHighWords);
 }
