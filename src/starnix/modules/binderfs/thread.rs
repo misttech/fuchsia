@@ -7,14 +7,12 @@ use crate::process::{BinderProcess, BinderProcessGuard};
 
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
-use starnix_core::task::{
-    EventHandler, Kernel, Pid, SimpleWaiter, Task, WaitCanceler, WaitQueue, Waiter,
-};
+use starnix_core::task::{EventHandler, Kernel, Pid, Task, WaitCanceler, WaitQueue, Waiter};
 
 use starnix_logging::{log_trace, log_warn};
 use starnix_sync::{
-    BinderThreadRequeueEventLock, BinderThreadStateLock, InterruptibleEvent, LockDepGuard,
-    LockDepMutex, ordered_lock,
+    BinderThreadStateLock, EventWaitGuard, InterruptibleEvent, LockDepGuard, LockDepMutex,
+    ordered_lock,
 };
 use starnix_uapi::vfs::FdEvents;
 
@@ -65,25 +63,32 @@ impl From<Command> for QueuedCommand {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct CommandQueueWithWaitQueue {
     pub commands: VecDeque<QueuedCommand>,
-    /// The owning thread, while it is blocked in `handle_thread_read` waiting for work.
+    /// Event notified when the owning thread is blocked in `handle_thread_read` waiting for work.
     ///
-    /// Only these waiters make the thread available for work (see
-    /// `BinderThreadState::is_available`), and they are woken one at a time.
-    pub waiters: WaitQueue,
+    /// Only an active wait on `command_event` makes the thread available for work (see
+    /// `BinderThreadState::is_available`).
+    pub command_event: Arc<InterruptibleEvent>,
     /// FD event waiters (poll, select, epoll) on the binder file for the owning thread.
     ///
-    /// These are kept separate from `waiters` because a thread that polls the binder file is not
-    /// blocked waiting for work: it must not be considered available, and it must not consume a
-    /// wake-up meant for a thread blocked in `handle_thread_read`. A poll registration can also
-    /// stay in the queue after its handler has fired, e.g. when the registration's
-    /// process-level waiter fired first. All these waiters are notified on every new command.
+    /// These are kept separate from `command_event` because a thread that polls the binder file is
+    /// not blocked waiting for work: it must not be considered available, and it must not consume
+    /// a wake-up meant for a thread blocked in `handle_thread_read`. A poll registration can also
+    /// stay in the queue after its handler has fired, e.g. when the registration's process-level
+    /// waiter fired first. All these waiters are notified on every new command.
     pub poll_waiters: WaitQueue,
 }
 
 impl CommandQueueWithWaitQueue {
+    /// Creates a command queue backed by `command_event`, which must be a clone of the owning
+    /// [`BinderThread::command_event`] so that process-level notifications (e.g. `close`,
+    /// `kick_all_threads`, and `wake_process_and_available_thread`) reach the blocked thread.
+    pub fn new(command_event: Arc<InterruptibleEvent>) -> Self {
+        Self { commands: VecDeque::new(), command_event, poll_waiters: WaitQueue::default() }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }
@@ -106,7 +111,7 @@ impl CommandQueueWithWaitQueue {
     pub fn push_back(&mut self, command: QueuedCommand) {
         crate::trace::on_command_enqueued(&command.command, command.trace_id);
         self.commands.push_back(command);
-        self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
+        self.command_event.notify();
         self.poll_waiters.notify_fd_events(FdEvents::POLLIN);
     }
 
@@ -134,12 +139,7 @@ impl CommandQueueWithWaitQueue {
 
     /// Whether the owning thread is blocked waiting for work. FD event waiters are not counted.
     pub fn has_waiters(&self) -> bool {
-        !self.waiters.is_empty()
-    }
-
-    /// Registers the owning thread, blocking in `handle_thread_read`, as waiting for work.
-    pub fn wait_async_simple(&self, waiter: &mut SimpleWaiter) {
-        self.waiters.wait_async_simple(waiter);
+        self.command_event.is_waiting()
     }
 
     /// Registers an FD event waiter (poll, select, epoll) for new commands.
@@ -229,9 +229,10 @@ pub struct BinderThread {
     /// state protected by the lock.
     pub registration: AtomicU8,
 
-    /// A reference to the wait queue for the command queue. This allows other threads to notify
-    /// this thread without acquiring the lock.
-    pub command_queue_waiters: WaitQueue,
+    /// Event notified when this thread is blocked in `handle_thread_read` waiting for commands.
+    /// Allows other threads to wake or assign PI ownership to this thread without acquiring
+    /// `state`.
+    pub command_event: Arc<InterruptibleEvent>,
 
     /// A reference to the FD event wait queue for the command queue. This allows other threads to
     /// notify pollers of this thread without acquiring the lock.
@@ -239,17 +240,16 @@ pub struct BinderThread {
 
     /// A shared queue of available threads for the `BinderProcess`.
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
-
-    /// The event that this thread is currently blocked on when waiting for an unscheduled
-    /// transaction, if any. This allows dequeuing worker threads to inspect and requeue the
-    /// event to inherit priority without acquiring `state`.
-    pub requeue_event: LockDepMutex<Option<Arc<InterruptibleEvent>>, BinderThreadRequeueEventLock>,
 }
 
 impl BinderThread {
     pub fn new(binder_proc: &BinderProcess, tid: Pid, thread: Arc<zx::Thread>) -> OwnedRef<Self> {
-        let inner_state = BinderThreadState::new(tid.clone(), binder_proc.identifier());
-        let command_queue_waiters = inner_state.command_queue.waiters.clone();
+        let command_event = InterruptibleEvent::new();
+        let inner_state = BinderThreadState::new(
+            tid.clone(),
+            binder_proc.identifier(),
+            Arc::clone(&command_event),
+        );
         let command_queue_poll_waiters = inner_state.command_queue.poll_waiters.clone();
         let available_threads = binder_proc.available_threads.clone();
         let state = inner_state.into();
@@ -260,11 +260,17 @@ impl BinderThread {
             thread,
             state,
             registration: AtomicU8::new(RegistrationState::Unregistered.to_u8()),
-            command_queue_waiters,
+            command_event,
             command_queue_poll_waiters,
             available_threads,
-            requeue_event: LockDepMutex::new(None),
         })
+    }
+
+    /// Assigns `worker_thread` as the PI owner of `command_event` if this thread is currently
+    /// waiting in [`BinderThreadGuard::begin_wait_requeueable`] on an unscheduled process-queue
+    /// transaction.
+    pub fn try_assign_owner(&self, worker_thread: &Arc<zx::Thread>) {
+        let _ = self.command_event.assign_new_owner(worker_thread);
     }
 
     /// Acquire the lock to the binder thread's mutable state.
@@ -284,25 +290,6 @@ impl BinderThread {
     /// table.
     pub fn get_task(&self) -> Option<Arc<Task>> {
         self.tid.get_task().ok().filter(|task| task.is_running() && task.files().is_ok())
-    }
-}
-
-/// An RAII registration that associates an `InterruptibleEvent` with a `BinderThread` while waiting.
-///
-/// Note: This does NOT hold a lock while alive. It only sets the event upon creation and
-/// clears it back to `None` on drop.
-pub struct RequeueEventRegistration<'a>(&'a BinderThread);
-
-impl<'a> RequeueEventRegistration<'a> {
-    pub fn new(thread: &'a BinderThread, event: Arc<InterruptibleEvent>) -> Self {
-        *thread.requeue_event.lock() = Some(event);
-        Self(thread)
-    }
-}
-
-impl Drop for RequeueEventRegistration<'_> {
-    fn drop(&mut self) {
-        *self.0.requeue_event.lock() = None;
     }
 }
 
@@ -344,6 +331,41 @@ pub struct BinderThreadGuard<'a> {
     thread: &'a BinderThread,
 }
 
+impl<'a> BinderThreadGuard<'a> {
+    /// Initiates a non-requeueable wait on this thread's `command_event` while holding
+    /// `BinderThreadGuard`, so dropping the guard immediately afterward observes the waiting state
+    /// and registers the thread in `available_threads` if eligible.
+    ///
+    /// Calls to [`BinderThread::try_assign_owner`] during this wait are rejected, preserving any
+    /// known PI owner passed to `block_until`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a previous [`EventWaitGuard`] for this `BinderThread`'s `command_event` has not
+    /// yet been dropped. In production, at most one wait is active per `BinderThread` because
+    /// `BinderThread` instances are keyed by the calling task's `tid` and only that task calls
+    /// `handle_thread_read`.
+    pub fn begin_wait(&self) -> EventWaitGuard<'a> {
+        self.thread.command_event.begin_wait()
+    }
+
+    /// Initiates a requeueable wait on this thread's `command_event` while holding
+    /// `BinderThreadGuard`, allowing a worker thread that dequeues this thread's unscheduled
+    /// process-queue transaction to dynamically assign itself as PI owner via
+    /// [`BinderThread::try_assign_owner`].
+    ///
+    /// Requeue eligibility is part of `command_event`'s futex state and is cleared automatically
+    /// when the returned [`EventWaitGuard`] is dropped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a previous [`EventWaitGuard`] for this `BinderThread`'s `command_event` has not
+    /// yet been dropped (see [`Self::begin_wait`]).
+    pub fn begin_wait_requeueable(&self) -> EventWaitGuard<'a> {
+        self.thread.command_event.begin_wait_requeueable()
+    }
+}
+
 impl Deref for BinderThreadGuard<'_> {
     type Target = BinderThreadState;
 
@@ -371,13 +393,13 @@ impl Drop for BinderThreadGuard<'_> {
 }
 
 impl BinderThreadState {
-    pub fn new(tid: Pid, process_identifier: u64) -> Self {
+    pub fn new(tid: Pid, process_identifier: u64, command_event: Arc<InterruptibleEvent>) -> Self {
         Self {
             tid,
             process_identifier,
             registration: RegistrationState::default(),
             transactions: Default::default(),
-            command_queue: Default::default(),
+            command_queue: CommandQueueWithWaitQueue::new(command_event),
             request_kick: false,
             available: false,
             extended_error: None,

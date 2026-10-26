@@ -8,25 +8,26 @@ use std::sync::atomic::Ordering;
 
 /// A blocking object that can either be notified normally or interrupted.
 ///
-/// To block using an `InterruptibleEvent`, first call [`Self::begin_wait`]. At this point, the
-/// event is in the "waiting" state, and future calls to [`Self::notify`] or [`Self::interrupt`]
-/// will terminate the wait.
+/// To block using an `InterruptibleEvent`, first call [`Self::begin_wait`] (or
+/// [`Self::begin_wait_requeueable`] if the wait should allow dynamic PI owner assignment). At this
+/// point, the event is in a waiting state, and future calls to [`Self::notify`] or
+/// [`Self::interrupt`] will terminate the wait.
 ///
-/// After `begin_wait` returns, call [`EventWaitGuard::block_until`] on the returned guard to block
-/// the current thread until one of the following conditions occurs:
+/// After `begin_wait` (or `begin_wait_requeueable`) returns, call [`EventWaitGuard::block_until`]
+/// on the returned guard to block the current thread until one of the following conditions occurs:
 ///
 ///  1. The given deadline expires.
-///  2. At least one of the `notify` or `interrupt` functions was called after `begin_wait`.
+///  2. At least one of the `notify` or `interrupt` functions was called after the wait began.
 ///
 /// Alternatively, dropping the [`EventWaitGuard`] without calling `block_until` cancels the wait
 /// and resets the event back to the ready state.
 ///
 /// It's safe to call `notify` or `interrupt` at any time. However, only one wait cycle can be
-/// active at a time: `begin_wait` cannot be called again until the [`EventWaitGuard`] it returns
-/// is consumed by `block_until` or dropped. When an `InterruptibleEvent` is reused across multiple
-/// wait cycles, `notify`, `interrupt`, and [`Self::assign_new_owner`] are not bound to a specific
-/// cycle; see [`Self::begin_wait`] and [`Self::assign_new_owner`] for cross-cycle concurrency
-/// considerations.
+/// active at a time: `begin_wait` or `begin_wait_requeueable` cannot be called again until the
+/// [`EventWaitGuard`] it returns is consumed by `block_until` or dropped. When an
+/// `InterruptibleEvent` is reused across multiple wait cycles, `notify`, `interrupt`, and
+/// [`Self::assign_new_owner`] are not bound to a specific cycle token; see [`Self::begin_wait`] and
+/// [`Self::assign_new_owner`] for cross-cycle concurrency considerations.
 ///
 /// `InterruptibleEvent` uses two-phase waiting so that clients can register for notification,
 /// perform some related work, and then start blocking. This approach ensures that clients do not
@@ -36,13 +37,16 @@ use std::sync::atomic::Ordering;
 /// # Priority Inheritance and Dynamic Futex Owner Assignment
 ///
 /// `InterruptibleEvent` supports Zircon Priority Inheritance (PI). If the target owner thread is
-/// known at wait time, it can be passed directly to `block_until` / `zx_futex_wait`.
+/// known at wait time, initiate the wait with [`Self::begin_wait`] and pass the owner thread
+/// directly to `block_until` / `zx_futex_wait`.
 ///
 /// When the owner thread is not known when waiting begins (for example, when a transaction is
-/// queued to a process-wide worker pool), `assign_new_owner` can be called by the worker thread
-/// that later dequeues the work item. `assign_new_owner` uses `zx_futex_requeue` to atomically
-/// transfer waiting threads to a secondary `requeue_target` futex while designating the worker
-/// thread as the futex PI owner.
+/// queued to a process-wide worker pool), initiate the wait with [`Self::begin_wait_requeueable`];
+/// [`Self::assign_new_owner`] can then be called by the worker thread that later dequeues the work
+/// item. `assign_new_owner` uses `zx_futex_requeue` to atomically transfer waiting threads to a
+/// secondary `requeue_target` futex while designating the worker thread as the futex PI owner.
+/// Waits started with [`Self::begin_wait`] reject `assign_new_owner` so a known PI owner cannot be
+/// overridden.
 ///
 /// TODO(https://fxbug.dev/542307988): The long-term solution is a dedicated Zircon syscall (such as
 /// `zx_futex_assign_owner`) to assign or update the PI owner of an existing futex without
@@ -59,10 +63,11 @@ pub struct InterruptibleEvent {
     ///     Zircon's `FutexWait` (`ResetOwnerIfNoWaiters`) clears `requeue_target`'s kernel owner
     ///     before returning `ZX_ERR_TIMED_OUT`; re-waiting on `requeue_target` must pass the owner
     ///     handle again to preserve PI for the rest of the wait.
-    ///  2. If `assign_new_owner` is called after `begin_wait` but before the waiting thread enters
-    ///     `zx_futex_wait` in the kernel (or if a spurious wakeup occurs), `zx_futex_requeue` moves
-    ///     0 kernel waiters, and a subsequent `requeue_target.wait(WAITING, None, ...)` would
-    ///     overwrite `requeue_target`'s kernel owner with `None`.
+    ///  2. If `assign_new_owner` is called after `begin_wait_requeueable` but before the waiting
+    ///     thread enters `zx_futex_wait` in the kernel (or if a spurious wakeup occurs),
+    ///     `zx_futex_requeue` moves 0 kernel waiters, and a subsequent
+    ///     `requeue_target.wait(WAITING, None, ...)` would overwrite `requeue_target`'s kernel
+    ///     owner with `None`.
     ///  3. Holding an `Arc<zx::Thread>` guarantees the underlying `zx_handle_t` stays open until
     ///     `reset()`, avoiding `zx_handle_duplicate` syscalls and `ZX_POL_BAD_HANDLE` policy
     ///     exceptions if the worker thread exits during the wait.
@@ -71,14 +76,15 @@ pub struct InterruptibleEvent {
 
 /// The initial state when no wait cycle is active.
 ///
-///  * Transitions to `WAITING` after `begin_wait`.
+///  * Transitions to `WAITING` after `begin_wait`, or `WAITING_REQUEUEABLE` after
+///    `begin_wait_requeueable`.
 const READY: i32 = 0;
 
-/// The event is waiting for a notification or an interruption.
+/// The event is waiting for a notification or an interruption, and does not allow dynamic PI
+/// owner assignment via `assign_new_owner` (also used on `requeue_target` after requeuing).
 ///
 ///  * Transitions to `NOTIFIED` after `notify`.
 ///  * Transitions to `INTERRUPTED` after `interrupt`.
-///  * Transitions to `REQUEUED` after `assign_new_owner` (on the primary `futex`).
 ///  * Transitions to `READY` when `EventWaitGuard` is dropped (either at the end of `block_until`
 ///    or if dropped early).
 const WAITING: i32 = 1;
@@ -97,6 +103,17 @@ const INTERRUPTED: i32 = 3;
 ///
 ///  * Transitions to `READY` when `EventWaitGuard` is dropped.
 const REQUEUED: i32 = 4;
+
+/// The event is waiting on the primary `futex` and allows dynamic PI owner assignment via
+/// `assign_new_owner`.
+///
+///  * Transitions to `NOTIFIED` after `notify`.
+///  * Transitions to `INTERRUPTED` after `interrupt`.
+///  * Transitions to `REQUEUED` after `assign_new_owner` (on the primary `futex`; `requeue_target`
+///    then transitions to `WAITING`).
+///  * Transitions to `READY` when `EventWaitGuard` is dropped (either at the end of `block_until`
+///    or if dropped early).
+const WAITING_REQUEUEABLE: i32 = 5;
 
 /// A guard object to enforce that clients call `begin_wait` before `block_until`.
 ///
@@ -197,72 +214,96 @@ impl InterruptibleEvent {
         self.load_state().futex.get_owner()
     }
 
-    /// Called to initiate a wait cycle.
+    /// Called to initiate a wait cycle that does not allow dynamic PI owner assignment via
+    /// [`Self::assign_new_owner`].
     ///
     /// Calls to [`Self::notify`] or [`Self::interrupt`] after this function returns, and before the
     /// returned [`EventWaitGuard`] is dropped, will cause the event to wake up. Calls that complete
     /// while the event is idle (before `begin_wait` or after the previous `EventWaitGuard` has been
     /// dropped) are ignored.
     ///
-    /// When reusing an `InterruptibleEvent` across multiple wait cycles, `notify`, `interrupt`, and
-    /// [`Self::assign_new_owner`] are not tied to a specific wait cycle: an in-flight call intended
-    /// for cycle `N` that races with cycle `N`'s guard drop and cycle `N + 1`'s `begin_wait` can
-    /// apply to cycle `N + 1`. Callers reusing an event must tolerate spurious wakeups from a late
-    /// `notify` (or late `interrupt`), and must serialize [`Self::assign_new_owner`] against
-    /// wait-cycle turnover.
+    /// Calls to [`Self::assign_new_owner`] during a wait started with `begin_wait` fail with
+    /// `Err(zx::Status::BAD_STATE)`, preserving any PI owner passed directly to
+    /// [`EventWaitGuard::block_until`]. Use [`Self::begin_wait_requeueable`] when dynamic PI owner
+    /// assignment is needed.
     ///
-    /// Once called, this function cannot be called again until the returned [`EventWaitGuard`] is
-    /// consumed by [`EventWaitGuard::block_until`] or dropped.
+    /// When reusing an `InterruptibleEvent` across multiple wait cycles, `notify` and `interrupt`
+    /// are not tied to a specific wait cycle: an in-flight call intended for cycle `N` that races
+    /// with cycle `N`'s guard drop and cycle `N + 1`'s `begin_wait` can apply to cycle `N + 1`.
+    /// Callers reusing an event must tolerate spurious wakeups from a late `notify` (or late
+    /// `interrupt`).
+    ///
+    /// Once called, neither `begin_wait` nor `begin_wait_requeueable` can be called again until the
+    /// returned [`EventWaitGuard`] is consumed by [`EventWaitGuard::block_until`] or dropped.
     ///
     /// # Panics
     ///
     /// Panics if a previous [`EventWaitGuard`] for this event has not yet been dropped.
     pub fn begin_wait(&self) -> EventWaitGuard<'_> {
+        self.begin_wait_with_state(WAITING)
+    }
+
+    /// Called to initiate a wait cycle that allows dynamic PI owner assignment via
+    /// [`Self::assign_new_owner`].
+    ///
+    /// Behaves like [`Self::begin_wait`], except [`Self::assign_new_owner`] can dynamically requeue
+    /// the wait to assign a PI owner once during this wait cycle. Requeue eligibility is cleared
+    /// automatically when the returned [`EventWaitGuard`] is dropped (or once `assign_new_owner`,
+    /// `notify`, or `interrupt` transitions the event out of `WAITING_REQUEUEABLE`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a previous [`EventWaitGuard`] for this event has not yet been dropped.
+    pub fn begin_wait_requeueable(&self) -> EventWaitGuard<'_> {
+        self.begin_wait_with_state(WAITING_REQUEUEABLE)
+    }
+
+    fn begin_wait_with_state(&self, initial_state: i32) -> EventWaitGuard<'_> {
         self.requeue_target.store(READY, Ordering::Relaxed);
         self.futex
-            .compare_exchange(READY, WAITING, Ordering::AcqRel, Ordering::Relaxed)
+            .compare_exchange(READY, initial_state, Ordering::AcqRel, Ordering::Relaxed)
             .expect("Tried to begin waiting on an event when not ready.");
         EventWaitGuard { event: self }
     }
 
     /// Assigns `new_owner` as the Priority Inheritance (PI) owner for waiting thread(s).
     ///
-    /// If threads are currently waiting on `futex`, this dynamically requeues them to
-    /// `requeue_target`, designating `new_owner` as the futex PI owner.
+    /// If the event is in a requeueable wait (started via [`Self::begin_wait_requeueable`]), this
+    /// dynamically requeues any threads waiting on `futex` to `requeue_target`, designating
+    /// `new_owner` as the futex PI owner.
     ///
     /// This establishes Zircon Priority Inheritance (PI) from the waiting thread(s) to
-    /// `new_owner` when the owner was not known at `begin_wait` time.
+    /// `new_owner` when the owner was not known when waiting began.
     ///
-    /// Note: This can only be called once per `begin_wait` cycle (while the event is in the
-    /// `WAITING` state). If the event is not waiting or has already been requeued/notified,
-    /// this returns `Err(zx::Status::BAD_STATE)`.
+    /// Note: This can only succeed once per [`Self::begin_wait_requeueable`] cycle (while `futex`
+    /// is `WAITING_REQUEUEABLE`). Waits started with [`Self::begin_wait`], idle events, and events
+    /// that have already been requeued or woken return `Err(zx::Status::BAD_STATE)`.
     ///
     /// # Event Reuse and Cycle Turnover
     ///
-    /// `assign_new_owner` is not bound to a specific wait-cycle token. If an `InterruptibleEvent`
-    /// is reused across multiple wait cycles, an in-flight `assign_new_owner` intended for cycle
-    /// `N` that races with cycle `N`'s [`EventWaitGuard`] drop and cycle `N + 1`'s `begin_wait`
-    /// can succeed against cycle `N + 1`, causing cycle `N + 1`'s own `assign_new_owner` to fail
-    /// with `BAD_STATE` and overriding any `new_owner` passed directly to
-    /// [`EventWaitGuard::block_until`]. Callers that reuse an `InterruptibleEvent` with
-    /// `assign_new_owner` must serialize `assign_new_owner` against wait-cycle turnover so a call
-    /// from an earlier cycle cannot straddle into the next `begin_wait`.
+    /// `assign_new_owner` is not bound to a specific wait-cycle token. Waits started with
+    /// [`Self::begin_wait`] use `WAITING` rather than `WAITING_REQUEUEABLE`, so an in-flight
+    /// `assign_new_owner` from an earlier cycle cannot requeue them or override a known `new_owner`
+    /// passed to [`EventWaitGuard::block_until`]. However, if an `InterruptibleEvent` is reused
+    /// across consecutive [`Self::begin_wait_requeueable`] cycles, an in-flight `assign_new_owner`
+    /// from cycle `N` that races with cycle `N`'s [`EventWaitGuard`] drop and cycle `N + 1`'s
+    /// `begin_wait_requeueable` can still succeed against cycle `N + 1`.
     ///
     /// TODO(https://fxbug.dev/542307988): Replace this requeue pattern with a dedicated Zircon
     /// syscall to assign a new owner to a futex with waiting threads once available.
     pub fn assign_new_owner(&self, new_owner: &Arc<zx::Thread>) -> Result<(), zx::Status> {
-        if self.futex.load(Ordering::Relaxed) != WAITING {
+        if self.futex.load(Ordering::Relaxed) != WAITING_REQUEUEABLE {
             return Err(zx::Status::BAD_STATE);
         }
-        // Hold `requeue_owner` across the `WAITING -> REQUEUED` transition, `zx_futex_requeue`,
-        // and `requeue_target` initialization so that any thread in `block_until` or `reset` that
-        // observes `futex == REQUEUED` and locks `requeue_owner` is serialized after the requeue
-        // completes (with kernel Priority Inheritance from `fuchsia_sync::Mutex` if
-        // `assign_new_owner` was preempted).
+        // Hold `requeue_owner` across the `WAITING_REQUEUEABLE -> REQUEUED` transition,
+        // `zx_futex_requeue`, and `requeue_target` initialization so that any thread in
+        // `block_until` or `reset` that observes `futex == REQUEUED` and locks `requeue_owner` is
+        // serialized after the requeue completes (with kernel Priority Inheritance from
+        // `fuchsia_sync::Mutex` if `assign_new_owner` was preempted).
         let mut requeue_owner = self.requeue_owner.lock();
         if self
             .futex
-            .compare_exchange(WAITING, REQUEUED, Ordering::AcqRel, Ordering::Relaxed)
+            .compare_exchange(WAITING_REQUEUEABLE, REQUEUED, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
             *requeue_owner = Some(Arc::clone(new_owner));
@@ -278,36 +319,35 @@ impl InterruptibleEvent {
         }
     }
 
-    /// Returns whether `begin_wait` has been called and the event has not yet been notified,
-    /// interrupted, or reset.
+    /// Returns whether `begin_wait` or `begin_wait_requeueable` has been called and the event has
+    /// not yet been notified, interrupted, or reset.
     pub fn is_waiting(&self) -> bool {
         let LoadedState { state, is_requeued, .. } = self.load_state();
         // Treat `READY && is_requeued` as waiting: `assign_new_owner` has already claimed `futex`
         // (`REQUEUED`) and is in the middle of transferring waiters before storing `WAITING` into
         // `requeue_target`.
-        state == WAITING || (state == READY && is_requeued)
+        matches!(state, WAITING | WAITING_REQUEUEABLE) || (state == READY && is_requeued)
     }
 
     fn reset(&self) {
         // `reset()` is only called when dropping `EventWaitGuard` (either at the end of
         // `block_until` or if the guard is dropped before blocking), which is the unique guard
-        // created by `begin_wait` (when `futex == READY`). Because `futex` is not set back to
-        // `READY` until the end of this function, at most one thread can execute `reset()` at a
-        // time.
+        // created by `begin_wait` / `begin_wait_requeueable` (when `futex == READY`). Because
+        // `futex` is not set back to `READY` until the end of this function, at most one thread can
+        // execute `reset()` at a time.
         //
-        // On normal non-requeued wakeups where `futex` is already `NOTIFIED` or `INTERRUPTED`,
-        // `assign_new_owner` cannot transition `futex` to `REQUEUED` and `requeue_target` is
-        // already `READY`, so we only need to serialize against `assign_new_owner` when `futex` is
-        // `WAITING` or `REQUEUED`.
+        // `assign_new_owner` can only transition `futex` to `REQUEUED` from `WAITING_REQUEUEABLE`,
+        // so we only need to serialize against `assign_new_owner` when `futex` is
+        // `WAITING_REQUEUEABLE` or `REQUEUED`.
         let observed = self.futex.load(Ordering::Relaxed);
-        if observed == WAITING || observed == REQUEUED {
+        if matches!(observed, WAITING_REQUEUEABLE | REQUEUED) {
             if self.futex.swap(NOTIFIED, Ordering::AcqRel) == REQUEUED {
                 *self.requeue_owner.lock() = None;
             }
             self.requeue_target.store(READY, Ordering::Relaxed);
         }
         // Use `Ordering::Release` so clearing `requeue_owner` and resetting `requeue_target`
-        // happen-before a subsequent `begin_wait()`'s `AcqRel` CAS from `READY` to `WAITING`.
+        // happen-before a subsequent `begin_wait*()`'s `AcqRel` CAS from `READY`.
         self.futex.store(READY, Ordering::Release);
     }
 
@@ -322,21 +362,21 @@ impl InterruptibleEvent {
         let mut clean_deadline = crate::initial_clean_deadline(deadline, clean_delay);
         loop {
             let LoadedState { futex: target_futex, state, is_requeued } = self.load_state();
-            match state {
+            let expected_state = match state {
+                WAITING | WAITING_REQUEUEABLE => state,
                 // If `assign_new_owner()` set `futex = REQUEUED` before `requeue_target` was
                 // initialized to `WAITING`, `state` briefly reads `READY`; locking `requeue_owner`
                 // below serializes behind `assign_new_owner()` completing the transition.
-                WAITING => {}
-                READY if is_requeued => {}
+                READY if is_requeued => WAITING,
                 NOTIFIED => return Ok(()),
                 INTERRUPTED => return Err(WakeReason::Interrupted),
                 other => panic!("Unexpected event state: {other}"),
-            }
+            };
 
             let requeued_owner = if is_requeued { self.requeue_owner.lock().clone() } else { None };
             let effective_owner = if is_requeued { requeued_owner.as_deref() } else { new_owner };
 
-            match target_futex.wait(WAITING, effective_owner, clean_deadline) {
+            match target_futex.wait(expected_state, effective_owner, clean_deadline) {
                 // The deadline expired while we were sleeping.
                 Err(zx::Status::TIMED_OUT) => {
                     if clean_deadline < deadline {
@@ -356,22 +396,23 @@ impl InterruptibleEvent {
 
     /// Wake up the event normally.
     ///
-    /// If this function completes while no wait cycle is active (before `begin_wait` or after the
-    /// [`EventWaitGuard`] is dropped), this notification is ignored; when an event is reused, an
-    /// in-flight call racing with cycle turnover may wake the next wait cycle. Calling this
-    /// function repeatedly within a cycle has no additional effect. If both `notify` and
-    /// `interrupt` are called, the state observed by `block_until` is a race.
+    /// If this function completes while no wait cycle is active (before `begin_wait` /
+    /// `begin_wait_requeueable` or after the [`EventWaitGuard`] is dropped), this notification is
+    /// ignored; when an event is reused, an in-flight call racing with cycle turnover may wake the
+    /// next wait cycle. Calling this function repeatedly within a cycle has no additional effect.
+    /// If both `notify` and `interrupt` are called, the state observed by `block_until` is a race.
     pub fn notify(&self) {
         self.wake(NOTIFIED);
     }
 
     /// Wake up the event because of an interruption.
     ///
-    /// If this function completes while no wait cycle is active (before `begin_wait` or after the
-    /// [`EventWaitGuard`] is dropped), this interruption is ignored; when an event is reused, an
-    /// in-flight call racing with cycle turnover may interrupt the next wait cycle. Calling this
-    /// function repeatedly within a cycle has no additional effect. If both `notify` and
-    /// `interrupt` are called, the state observed by `block_until` is a race.
+    /// If this function completes while no wait cycle is active (before `begin_wait` /
+    /// `begin_wait_requeueable` or after the [`EventWaitGuard`] is dropped), this interruption is
+    /// ignored; when an event is reused, an in-flight call racing with cycle turnover may interrupt
+    /// the next wait cycle. Calling this function repeatedly within a cycle has no additional
+    /// effect. If both `notify` and `interrupt` are called, the state observed by `block_until` is
+    /// a race.
     pub fn interrupt(&self) {
         self.wake(INTERRUPTED);
     }
@@ -390,9 +431,14 @@ impl InterruptibleEvent {
                 NOTIFIED | INTERRUPTED => return,
                 READY if !is_requeued => return,
                 READY => std::thread::yield_now(),
-                WAITING => {
+                WAITING | WAITING_REQUEUEABLE => {
                     if futex
-                        .compare_exchange(WAITING, state, Ordering::Release, Ordering::Acquire)
+                        .compare_exchange(
+                            current_state,
+                            state,
+                            Ordering::Release,
+                            Ordering::Acquire,
+                        )
                         .is_ok()
                     {
                         futex.wake_all();
@@ -521,7 +567,7 @@ mod test {
             });
             tx.send(thread_handle).unwrap();
             let event = event_for_blocked_thread;
-            let guard = event.begin_wait();
+            let guard = event.begin_wait_requeueable();
             guard.block_until(None, zx::MonotonicInstant::INFINITE).unwrap();
         });
 
@@ -563,11 +609,11 @@ mod test {
             let thread_handle = Arc::clone(&root_thread_handle);
 
             let waiter = std::thread::spawn(move || {
-                let guard = event_waiter.begin_wait();
+                let guard = event_waiter.begin_wait_requeueable();
                 let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
             });
 
-            while event.futex.load(Ordering::Relaxed) != WAITING {
+            while event.futex.load(Ordering::Relaxed) != WAITING_REQUEUEABLE {
                 std::thread::yield_now();
             }
 
@@ -602,13 +648,13 @@ mod test {
         let (ready_tx, ready_rx) = std::sync::mpsc::channel();
         let (go_tx, go_rx) = std::sync::mpsc::channel();
         let blocked_thread = std::thread::spawn(move || {
-            let guard = event_for_blocked_thread.begin_wait();
+            let guard = event_for_blocked_thread.begin_wait_requeueable();
             ready_tx.send(()).unwrap();
             go_rx.recv().unwrap();
             guard.block_until(None, zx::MonotonicInstant::INFINITE).unwrap();
         });
 
-        // Call `assign_new_owner` after `begin_wait()`, before the thread calls `block_until()`.
+        // Call `assign_new_owner` after `begin_wait_requeueable()`, before `block_until()`.
         ready_rx.recv().unwrap();
         event.assign_new_owner(&root_thread_handle).unwrap();
         go_tx.send(()).unwrap();
@@ -675,7 +721,7 @@ mod test {
             let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
                 thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
             });
-            let guard = event_for_blocked_thread.begin_wait();
+            let guard = event_for_blocked_thread.begin_wait_requeueable();
             ready_tx.send(thread_handle).unwrap();
             go_rx.recv().unwrap();
             guard
@@ -687,7 +733,7 @@ mod test {
                 .unwrap();
         });
 
-        // Assign PI ownership after `begin_wait()` before `blocked_thread` enters
+        // Assign PI ownership after `begin_wait_requeueable()` before `blocked_thread` enters
         // `block_until_with_clean_delay`, so the 25ms `clean_deadline` cannot expire before
         // `assign_new_owner` runs even on a loaded bot.
         let blocked_thread_handle = ready_rx.recv().unwrap();
@@ -738,7 +784,7 @@ mod test {
         let event = InterruptibleEvent::new();
         assert!(!event.is_waiting());
 
-        let guard = event.begin_wait();
+        let guard = event.begin_wait_requeueable();
         assert!(event.is_waiting());
 
         // Simulate the mid-transition window in `assign_new_owner` where `futex` has transitioned
@@ -781,7 +827,7 @@ mod test {
         assert_eq!(Arc::strong_count(&owner), 1);
 
         {
-            let _guard = event.begin_wait();
+            let _guard = event.begin_wait_requeueable();
             event.assign_new_owner(&owner).unwrap();
             assert!(event.is_waiting());
             assert_eq!(Arc::strong_count(&owner), 2);
@@ -833,7 +879,7 @@ mod test {
             let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
                 thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
             });
-            let guard = event_for_waiter.begin_wait();
+            let guard = event_for_waiter.begin_wait_requeueable();
             thread_tx.send(thread_handle).unwrap();
             guard.block_until(None, zx::MonotonicInstant::INFINITE)
         });
@@ -862,7 +908,7 @@ mod test {
             let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
                 thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
             });
-            let guard = event_for_waiter.begin_wait();
+            let guard = event_for_waiter.begin_wait_requeueable();
             thread_tx.send(thread_handle).unwrap();
             guard.block_until(None, zx::MonotonicInstant::INFINITE)
         });
@@ -913,7 +959,7 @@ mod test {
         assert!(!event.is_waiting());
 
         // Cycle 2: Timeout on requeued wait releases `requeue_owner`.
-        let guard = event.begin_wait();
+        let guard = event.begin_wait_requeueable();
         event.assign_new_owner(&owner).unwrap();
         assert_eq!(Arc::strong_count(&owner), 2);
         assert_eq!(
@@ -1017,7 +1063,8 @@ mod test {
                 done.store(true, Ordering::Relaxed);
             }
             for i in 0..REUSE_ITERATIONS {
-                let guard = event.begin_wait();
+                let guard =
+                    if i % 2 == 0 { event.begin_wait_requeueable() } else { event.begin_wait() };
                 if i % 4 == 0 {
                     drop(guard);
                 } else {
@@ -1035,5 +1082,67 @@ mod test {
 
         drop(stop_tx);
         owner_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_non_requeueable_wait_rejects_assign_new_owner() {
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
+
+        let event = InterruptibleEvent::new();
+        let (known_owner, known_owner_koid) = fuchsia_runtime::with_thread_self(|thread| {
+            (
+                Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                thread.koid().unwrap(),
+            )
+        });
+
+        let (other_owner_tx, other_owner_rx) = std::sync::mpsc::channel();
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+        let other_owner_thread = std::thread::spawn(move || {
+            let handle = fuchsia_runtime::with_thread_self(|thread| {
+                Arc::new(thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            });
+            other_owner_tx.send(handle).unwrap();
+            let _ = stop_rx.recv();
+        });
+        let other_owner = other_owner_rx.recv().unwrap();
+
+        // Cycle 1: Start and drop a requeueable wait so we also verify requeue eligibility does not
+        // persist into a subsequent `begin_wait()` cycle.
+        drop(event.begin_wait_requeueable());
+
+        // Cycle 2: Standard `begin_wait()` with a known PI owner rejects `assign_new_owner` and
+        // preserves `known_owner`.
+        std::thread::scope(|s| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let event_ref = &event;
+            let known_owner_ref = &known_owner;
+            s.spawn(move || {
+                let guard = event_ref.begin_wait();
+                let waiter_handle = fuchsia_runtime::with_thread_self(|thread| {
+                    thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
+                });
+                tx.send(waiter_handle).unwrap();
+                guard.block_until(Some(known_owner_ref), zx::MonotonicInstant::INFINITE).unwrap();
+            });
+            scopeguard::defer! {
+                event.notify();
+            }
+
+            let waiter_handle = rx.recv().unwrap();
+            while waiter_handle.info().unwrap().state
+                != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+            {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            assert_eq!(event.get_owner(), Some(known_owner_koid));
+
+            assert_eq!(event.assign_new_owner(&other_owner), Err(zx::Status::BAD_STATE));
+            assert_eq!(Arc::strong_count(&other_owner), 1);
+            assert_eq!(event.get_owner(), Some(known_owner_koid));
+        });
+
+        drop(stop_tx);
+        other_owner_thread.join().unwrap();
     }
 }

@@ -17,8 +17,8 @@ pub mod tests {
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
         BinderThread, BinderThreadState, Command, QueuedCommand, RegistrationState,
-        RequeueEventRegistration, TransactionError, TransactionRole, TransactionSender,
-        WeakBinderPeer, generate_dead_replies_for_transactions,
+        TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
+        generate_dead_replies_for_transactions,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
@@ -38,14 +38,13 @@ pub mod tests {
         DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
         ProtectionFlags,
     };
-    use starnix_core::task::{CurrentTask, EventHandler, ExitStatus, Kernel, SimpleWaiter, Waiter};
+    use starnix_core::task::{CurrentTask, EventHandler, ExitStatus, Kernel, Waiter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{
         Anon, FdFlags, FdNumber, FileHandle, FileObject, FileSystemOptions, VecOutputBuffer,
         WhatToMount, anon_fs,
     };
     use starnix_logging::log_warn;
-    use starnix_sync::InterruptibleEvent;
     use starnix_types::convert::IntoFidl;
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
@@ -3088,12 +3087,11 @@ pub mod tests {
             }
 
             // Pretend the client thread is waiting for commands, so that it can be scheduled commands.
-            let fake_waiter = Waiter::new();
-            {
+            let _fake_waiter = {
                 let mut state = client.thread.lock();
                 state.registration = RegistrationState::Main;
-                state.command_queue.waiters.wait_async(&fake_waiter);
-            }
+                state.begin_wait()
+            };
 
             // Now the owner process dies.
             std::mem::drop(owner);
@@ -4212,12 +4210,11 @@ pub mod tests {
 
             // Make the receiver thread look eligible for transactions.
             // Pretend the client thread is waiting for commands, so that it can be scheduled commands.
-            let fake_waiter = Waiter::new();
-            {
+            let fake_waiter = {
                 let mut thread_state = receiver.thread.lock();
                 thread_state.registration = RegistrationState::Main;
-                thread_state.command_queue.waiters.wait_async(&fake_waiter);
-            }
+                thread_state.begin_wait()
+            };
 
             // Submit the transaction.
             device
@@ -4246,6 +4243,7 @@ pub mod tests {
                     &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
                 )
                 .expect("read command");
+            drop(fake_waiter);
 
             // The thread should now have an empty command list and an ongoing transaction.
             assert!(receiver.thread.lock().command_queue.is_empty());
@@ -4294,12 +4292,11 @@ pub mod tests {
 
             // Make the receiver thread look eligible for transactions.
             // Pretend the client thread is waiting for commands, so that it can be scheduled commands.
-            let fake_waiter = Waiter::new();
-            {
+            let _fake_waiter = {
                 let mut thread_state = receiver.thread.lock();
                 thread_state.registration = RegistrationState::Main;
-                thread_state.command_queue.waiters.wait_async(&fake_waiter);
-            }
+                thread_state.begin_wait()
+            };
 
             // Submit the transaction.
             device
@@ -4452,12 +4449,11 @@ pub mod tests {
                 .expect("register looper thread");
 
             // Make looper_thread registered as Auxiliary looper and waiting for commands.
-            let looper_waiter = Waiter::new();
-            {
+            let looper_waiter = {
                 let mut looper_state = looper_thread.lock();
                 looper_state.registration = RegistrationState::Auxiliary;
-                looper_state.command_queue.waiters.wait_async(&looper_waiter);
-            }
+                looper_state.begin_wait()
+            };
 
             // 1. proc_a.thread (main thread) sends synchronous transaction to proc_b.
             let transaction_to_b = binder_transaction_data_sg {
@@ -4551,6 +4547,7 @@ pub mod tests {
                 "The process queue command should be successfully handled and drained by the looper thread!"
             );
 
+            drop(looper_waiter);
             looper_thread.release(current_task.kernel());
         })
         .await;
@@ -4864,12 +4861,11 @@ pub mod tests {
             // Make the receiver thread look eligible for transactions.
             // Pretend the client thread is waiting for commands, so that it can be scheduled
             // commands.
-            let fake_waiter = Waiter::new();
-            {
+            let _fake_waiter = {
                 let mut thread_state = receiver.thread.lock();
                 thread_state.registration = RegistrationState::Main;
-                thread_state.command_queue.waiters.wait_async(&fake_waiter);
-            }
+                thread_state.begin_wait()
+            };
 
             // Submit the transaction.
             device
@@ -5113,12 +5109,11 @@ pub mod tests {
             }
 
             // Pretend the client thread is waiting for commands, so that it can be scheduled commands.
-            let fake_waiter = Waiter::new();
-            {
+            let _fake_waiter = {
                 let mut state = client.thread.lock();
                 state.registration = RegistrationState::Main;
-                state.command_queue.waiters.wait_async(&fake_waiter);
-            }
+                state.begin_wait()
+            };
 
             owner.proc.freeze_state.lock().freeze();
 
@@ -5284,13 +5279,11 @@ pub mod tests {
                 .insert_for_transaction(guard, &mut RefCountActions::default_released());
 
             // Make the receiver thread available for transactions.
-            let event = InterruptibleEvent::new();
-            let (mut fake_waiter, _guard) = SimpleWaiter::new(&event);
-            {
+            let _fake_waiter = {
                 let mut thread_state = receiver.thread.lock();
                 thread_state.registration = RegistrationState::Main;
-                thread_state.command_queue.waiters.wait_async_simple(&mut fake_waiter);
-            }
+                thread_state.begin_wait()
+            };
 
             // Construct a synchronous transaction to send from the sender to the receiver.
             const FIRST_TRANSACTION_CODE: u32 = 42;
@@ -5329,7 +5322,7 @@ pub mod tests {
             let proc_a = BinderProcessFixture::new_current(current_task, &device);
 
             let proc_b = BinderProcessFixture::new_current(current_task, &device);
-            let event = InterruptibleEvent::new();
+            let event = proc_b.thread.command_event.clone();
             let event_clone = event.clone();
 
             let proc_a_thread_handle =
@@ -5337,19 +5330,15 @@ pub mod tests {
             let (tx, rx) = std::sync::mpsc::channel();
 
             let blocked_thread = std::thread::spawn(move || {
-                let (fake_waiter, guard) = SimpleWaiter::new(&event_clone);
-                tx.send(fake_waiter).unwrap();
+                let guard = event_clone.begin_wait();
+                tx.send(()).unwrap();
                 guard
                     .block_until(Some(&proc_a_thread_handle), zx::MonotonicInstant::INFINITE)
                     .unwrap();
             });
 
-            let mut fake_waiter = rx.recv().unwrap();
-            {
-                let mut thread_state = proc_b.thread.lock();
-                thread_state.registration = RegistrationState::Main;
-                thread_state.command_queue.waiters.wait_async_simple(&mut fake_waiter);
-            }
+            rx.recv().unwrap();
+            proc_b.thread.lock().registration = RegistrationState::Main;
 
             let transaction = binder_transaction_data_sg {
                 transaction_data: binder_transaction_data {
@@ -5477,53 +5466,120 @@ pub mod tests {
                 .handle_transaction(&proc_a.context(current_task), &mut Vec::new(), transaction)
                 .expect("A sends transaction to B");
 
-            // 2. proc_a.thread sets its requeue_event as it prepares to wait for the reply.
-            let event = InterruptibleEvent::new();
-            let _requeue_registration =
-                RequeueEventRegistration::new(&proc_a.thread, event.clone());
-
-            // Simulate proc_a starting to wait.
-            let (tx, rx) = std::sync::mpsc::channel();
-            let event_clone = event.clone();
-            let blocked_thread = std::thread::spawn(move || {
-                let (thread_handle, _) = fuchsia_runtime::with_thread_self(|thread| {
-                    (
-                        thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-                        thread.koid().unwrap(),
-                    )
+            // 2. Simulate proc_a.thread starting to wait for the reply via
+            //    `BinderThreadGuard::begin_wait_requeueable`.
+            let event = &proc_a.thread.command_event;
+            std::thread::scope(|s| {
+                let sender_thread = &proc_a.thread;
+                let (tx, rx) = std::sync::mpsc::channel();
+                s.spawn(move || {
+                    let guard = sender_thread.lock().begin_wait_requeueable();
+                    let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                        thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
+                    });
+                    tx.send(thread_handle).unwrap();
+                    let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
                 });
-                tx.send(thread_handle).unwrap();
-                let guard = event_clone.begin_wait();
-                let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
+                scopeguard::defer! {
+                    event.notify();
+                }
+
+                // Wait until the sender thread is actively sleeping in the kernel on zx_futex_wait.
+                let blocked_thread_handle = rx.recv().unwrap();
+                while blocked_thread_handle.info().unwrap().state
+                    != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+
+                // Verify before requeue that the event has no owner.
+                assert_eq!(event.get_owner(), None);
+
+                // 3. proc_b.thread (the worker thread) calls handle_thread_read to dequeue the
+                //    transaction from the process queue.
+                let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+                device
+                    .handle_thread_read(
+                        &proc_b.context(current_task),
+                        &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                    )
+                    .expect("B reads transaction");
+
+                // 4. Verify that Zircon Futex Priority Inheritance ownership was transferred
+                //    synchronously to proc_b.thread!
+                let worker_koid = proc_b.thread.thread.koid().unwrap();
+                assert_eq!(event.get_owner(), Some(worker_koid));
             });
+        })
+        .await;
+    }
 
-            // Wait until blocked_thread is actively sleeping in the kernel on zx_futex_wait.
-            let blocked_thread_handle = rx.recv().unwrap();
-            while blocked_thread_handle.info().unwrap().state
-                != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
-            {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+    #[fuchsia::test]
+    async fn non_requeueable_wait_is_not_requeued_by_worker_thread() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let proc_a = BinderProcessFixture::new(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(current_task, &device);
 
-            // Verify before requeue that the event has no owner.
-            assert_eq!(event.get_owner(), None);
+            let transaction = binder_transaction_data_sg {
+                transaction_data: binder_transaction_data {
+                    target: binder_transaction_data__bindgen_ty_1 { handle: 0 },
+                    code: 42,
+                    ..binder_transaction_data::default()
+                },
+                buffers_size: 0,
+            };
 
-            // 3. proc_b.thread (the worker thread) calls handle_thread_read to dequeue the transaction from process queue.
-            let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+            let context_manager =
+                BinderObject::new_context_manager_marker(&proc_b.proc, BinderObjectFlags::empty());
+            *device.context_manager.lock() = Some(context_manager);
+
+            // End an earlier requeueable wait cycle first to verify requeue eligibility does not
+            // leak across wait cycles into a subsequent non-requeueable wait.
+            drop(proc_a.thread.lock().begin_wait_requeueable());
+
+            // 1. proc_a sends synchronous transaction to proc_b (queued on process queue).
             device
-                .handle_thread_read(
-                    &proc_b.context(current_task),
-                    &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
-                )
-                .expect("B reads transaction");
+                .handle_transaction(&proc_a.context(current_task), &mut Vec::new(), transaction)
+                .expect("A sends transaction to B");
 
-            // 4. Verify that Zircon Futex Priority Inheritance ownership was transferred synchronously to proc_b.thread!
-            let worker_koid = proc_b.thread.thread.koid().unwrap();
-            assert_eq!(event.get_owner(), Some(worker_koid));
+            // 2. proc_a.thread blocks via non-requeueable `begin_wait()` (e.g. a known-target wait)
+            //    while its earlier transaction is still on proc_b's process queue.
+            let event = &proc_a.thread.command_event;
+            std::thread::scope(|s| {
+                let sender_thread = &proc_a.thread;
+                let (tx, rx) = std::sync::mpsc::channel();
+                s.spawn(move || {
+                    let guard = sender_thread.lock().begin_wait();
+                    let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                        thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
+                    });
+                    tx.send(thread_handle).unwrap();
+                    let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
+                });
+                scopeguard::defer! {
+                    event.notify();
+                }
 
-            // Clean up: notify event and join blocked thread.
-            event.notify();
-            blocked_thread.join().unwrap();
+                let blocked_thread_handle = rx.recv().unwrap();
+                while blocked_thread_handle.info().unwrap().state
+                    != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+
+                // 3. proc_b.thread dequeues the transaction from the process queue and calls
+                //    `try_assign_owner`, which must be rejected because the wait is not requeueable.
+                let read_buffer_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+                device
+                    .handle_thread_read(
+                        &proc_b.context(current_task),
+                        &UserBuffer { address: read_buffer_addr, length: *PAGE_SIZE as usize },
+                    )
+                    .expect("B reads transaction");
+
+                assert_eq!(event.get_owner(), None);
+            });
         })
         .await;
     }
@@ -7725,9 +7781,7 @@ pub mod tests {
 
             // The thread then blocks in `handle_thread_read` while its poll registration is still
             // in place, which makes it available.
-            let event = InterruptibleEvent::new();
-            let (mut reader_waiter, reader_guard) = SimpleWaiter::new(&event);
-            receiver.thread.lock().command_queue.wait_async_simple(&mut reader_waiter);
+            let reader_guard = receiver.thread.lock().begin_wait();
             assert!(receiver.thread.lock().is_available());
 
             // Work scheduled on the thread must wake the blocked reader, rather than being absorbed

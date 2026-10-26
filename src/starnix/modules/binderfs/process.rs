@@ -493,7 +493,7 @@ impl BinderProcess {
         if !state.closed {
             state.closed = true;
             for thread in self.thread_pool.lock().values() {
-                thread.command_queue_waiters.notify_all();
+                thread.command_event.notify();
                 thread.command_queue_poll_waiters.notify_all();
             }
             self.process_waiters.notify_all();
@@ -506,7 +506,7 @@ impl BinderProcess {
         log_trace!("kicking threads for BinderProcess id={}", self.identifier());
         for thread in self.thread_pool.lock().values() {
             thread.lock().request_kick = true;
-            thread.command_queue_waiters.notify_all();
+            thread.command_event.notify();
             thread.command_queue_poll_waiters.notify_all();
         }
     }
@@ -615,9 +615,7 @@ impl BinderProcess {
             if let Some(thread) = weak_thread.upgrade() {
                 let thread_guard = thread.lock();
                 if thread_guard.is_available() {
-                    thread
-                        .command_queue_waiters
-                        .notify_fd_events_count(starnix_uapi::vfs::FdEvents::POLLIN, 1);
+                    thread.command_event.notify();
                     return true;
                 }
             }

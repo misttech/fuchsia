@@ -17,7 +17,7 @@ use crate::resource_accessor::{
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
 use crate::thread::{
     BinderThread, BinderThreadGuard, BinderThreadState, Command, QueuedCommand, RegistrationState,
-    RequeueEventRegistration, TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
+    TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
 };
 use crate::user_memory_cursor::UserMemoryCursor;
 use fidl::endpoints::ClientEnd;
@@ -36,9 +36,7 @@ use crate::trace::{
 use starnix_core::security;
 #[cfg(test)]
 use starnix_core::task::Task;
-use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, Pid, SimpleWaiter, WaitCanceler, Waiter,
-};
+use starnix_core::task::{CurrentTask, EventHandler, Kernel, Pid, WaitCanceler, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     FdFlags, FdNumber, FileObject, FileObjectState, FileOps, FsStr, FsString, NamespaceNode,
@@ -46,8 +44,7 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{log_error, log_trace, log_warn, track_stub, with_zx_name};
 use starnix_sync::{
-    BinderContextManagerLevel, BinderProcsLevel, InterruptibleEvent, LockDepMutex, LockDepRwLock,
-    ordered_lock_vec,
+    BinderContextManagerLevel, BinderProcsLevel, LockDepMutex, LockDepRwLock, ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -1440,9 +1437,7 @@ impl BinderDriver {
                 on_command_dequeued(&queued.command, queued.trace_id);
                 if let Command::Transaction { sender, .. } = &queued.command {
                     if let Some((_proc, sender_thread)) = sender.upgrade() {
-                        if let Some(event) = &*sender_thread.requeue_event.lock() {
-                            let _ = event.assign_new_owner(worker_thread);
-                        }
+                        sender_thread.try_assign_owner(worker_thread);
                     }
                 }
                 DequeueResult::Command { queued, from_process_queue: true }
@@ -1763,10 +1758,10 @@ impl BinderDriver {
                 return if bytes_read > 0 { Ok(bytes_read) } else { error!(EBADF) };
             }
             // `kick_all_threads` only locks `thread_pool` (not `proc_state`), so it can set
-            // `request_kick` and notify `command_queue_waiters` while `thread_state` is
-            // temporarily dropped in `try_cancel_transient_refcount` above, before
-            // `wait_async_simple` registers `waiter`. Re-check `request_kick` before setting up
-            // the waiter so the kick is not missed.
+            // `request_kick` and notify `command_event` while `thread_state` is temporarily
+            // dropped in `try_cancel_transient_refcount` above, before `begin_wait` transitions
+            // `command_event` to `WAITING`. Re-check `request_kick` before setting up the wait so
+            // the kick is not missed.
             if thread_state.request_kick {
                 thread_state.request_kick = false;
                 return Ok(bytes_read);
@@ -1775,27 +1770,23 @@ impl BinderDriver {
             // No commands readily available to read. Wait for work. The thread will wait on both
             // the thread queue and the process queue, and loop back to check whether some work is
             // available.
-            let target_thread = thread_state
-                .transactions
-                .iter()
-                .rev()
-                .find_map(|t| match t {
-                    // Only look for the most recently sent transaction, even if it doesn't have a
-                    // target_thread set. Earlier transactions (if any) won't unblock this thread
-                    // any sooner by inheriting increased priority.
-                    TransactionRole::Sender(sender) => Some(sender),
-                    _ => None,
-                })
-                .and_then(|s| s.target_thread_handle.clone());
+            let latest_sender = thread_state.transactions.iter().rev().find_map(|t| match t {
+                // Only look for the most recently sent transaction, even if it doesn't have a
+                // target_thread set. Earlier transactions (if any) won't unblock this thread
+                // any sooner by inheriting increased priority.
+                TransactionRole::Sender(sender) => Some(sender),
+                _ => None,
+            });
+            let target_thread = latest_sender.and_then(|s| s.target_thread_handle.clone());
 
-            let event = InterruptibleEvent::new();
-            let _requeue_registration = if target_thread.is_none() {
-                Some(RequeueEventRegistration::new(context.binder_thread, event.clone()))
+            // Only allow dynamic PI owner assignment when waiting on an unscheduled sent
+            // transaction (`latest_sender` is present with `target_thread == None`). Known-target
+            // waits and idle worker waits use `begin_wait()`, which rejects `assign_new_owner`.
+            let guard = if latest_sender.is_some() && target_thread.is_none() {
+                thread_state.begin_wait_requeueable()
             } else {
-                None
+                thread_state.begin_wait()
             };
-            let (mut waiter, guard) = SimpleWaiter::new(&event);
-            thread_state.command_queue.wait_async_simple(&mut waiter);
 
             // Drop locks before sleeping. Order matters: thread_state first, then proc_state
             // because dropping thread_state registers it in available_threads. If we drop
