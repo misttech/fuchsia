@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl",
+    srcs = ["src/lib.rs"],
+    crate_name = "libasync_fidl",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    version = "0.1.0",
+    visibility = [
+        "//examples:__subpackages__",
+        "//sdk/lib/async/rust:__subpackages__",
+        "//sdk/lib/driver:__subpackages__",
+        "//src/ui/lib/input_pipeline:__subpackages__",
+        "//vendor:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async/rust",
+        "//sdk/lib/async/rust/sys",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust_next/fidl_next",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
