@@ -1,0 +1,193 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = ["test"],
+    features = [
+        "testutils",
+        "instrumented",
+    ],
+)
+
+_COMMON_SRCS = [
+    "src/api.rs",
+    "src/arp.rs",
+    "src/base.rs",
+    "src/blackhole.rs",
+    "src/config.rs",
+    "src/ethernet.rs",
+    "src/gro.rs",
+    "src/id.rs",
+    "src/lib.rs",
+    "src/loopback.rs",
+    "src/pure_ip.rs",
+    "src/queue.rs",
+    "src/queue/api.rs",
+    "src/queue/fifo.rs",
+    "src/queue/rx.rs",
+    "src/queue/tx.rs",
+    "src/socket.rs",
+    "src/state.rs",
+]
+
+_COMMON_BUILD_FLAGS = [
+    ":check_cfg_flags",
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network/netstack3:netstack3_configs",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_PROC_MACRO_DEPS = ["//third_party/rust_crates/vendor:derivative"]
+
+# @bazel2gn:transformer=deps
+_TESTUTILS_PROC_MACRO_DEPS = [
+    "//src/connectivity/network/netstack3/core/macros:netstack3-macros",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//src/connectivity/lib/internet-checksum",
+    "//src/connectivity/lib/net-types",
+    "//src/connectivity/lib/packet-formats",
+    "//src/connectivity/network/netstack3/core/hashmap",
+    "//src/connectivity/network/netstack3/core/lock-order",
+    "//src/lib/network/packet",
+    "//third_party/rust_crates/vendor:assert_matches",
+    "//third_party/rust_crates/vendor:log",
+    "//third_party/rust_crates/vendor:ref-cast",
+    "//third_party/rust_crates/vendor:static_assertions",
+]
+
+rustc_library(
+    name = "netstack3-device",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-device-testutils",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = [
+        "testutils",
+        "instrumented",
+    ],
+    crate_name = "netstack3_device",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-device-benchmarks",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + ["//src/connectivity/network/netstack3/core:benchmark"],
+    crate_features = ["testutils"],
+    crate_name = "netstack3_device",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-device-instrumented",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = ["instrumented"],
+    crate_name = "netstack3_device",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    visibility = ["//src/connectivity/network/netstack3/core:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-instrumented",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-instrumented",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+    ],
+)
+
+rustc_library(
+    name = "netstack3-device-loom",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + ["//src/connectivity/network/netstack3/core:loom"],
+    crate_features = [
+        "testutils",
+        "instrumented",
+    ],
+    crate_name = "netstack3_device",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/network/netstack3/core:__pkg__"],
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-loom",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-loom",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-loom",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-loom",
+    ],
+)
+
+# Cannot attach to `:netstack3-device-instrumented` via `crate` because unit
+# tests require `netstack3-base-testutils`, `netstack3-filter-testutils`,
+# `netstack3-ip-testutils`, and `netstack3-trace-testutils`.
+rustc_test(
+    name = "netstack3-device-instrumented_test",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS,
+    crate_features = ["instrumented"],
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS,
+    deps = _COMMON_DEPS + [
+        "//src/connectivity/lib/net-declare",
+        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "netstack3-device-host-test",
+    binary_name = "netstack3-device-instrumented_test",
+)
+
+fx_unittest_package(
+    name = "netstack3-core-device-test",
+    unit_tests = [":netstack3-device-instrumented_test"],
+)
