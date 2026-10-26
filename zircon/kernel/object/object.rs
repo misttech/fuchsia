@@ -182,7 +182,7 @@ pub use root_job_observer::RootJobObserver;
 pub use root_job_observer_ffi::start_root_job_observer;
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
-pub use stream_dispatcher::*;
+pub use stream_dispatcher::{StreamDispatcher, StreamOptions};
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use thread_dispatcher::{AutoBlocked, Blocked, CurrentMessageWaiter, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;

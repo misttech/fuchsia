@@ -36,8 +36,6 @@ layout!({
         let write @ 1;
         /// Append mode is enabled.
         let append @ 2;
-        /// Resizing the VMO is permitted.
-        let can_resize_vmo @ 3;
     }
 });
 
@@ -563,12 +561,6 @@ impl StreamDispatcher {
     pub fn is_in_append_mode(&self) -> bool {
         ksync::lock!(let guard = self.state().lock_lock());
         guard.fields().options.append()
-    }
-
-    /// Returns whether the stream can resize the underlying VMO.
-    pub fn can_resize_vmo(&self) -> bool {
-        ksync::lock!(let guard = self.state().lock_lock());
-        guard.fields().options.can_resize_vmo()
     }
 
     /// Returns diagnostic information about the stream.

@@ -8,36 +8,28 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_STREAM_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <lib/user_copy/user_iovec.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_counted.h>
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/opaque_storage.h>
-#include <object/vm_object_dispatcher.h>
 
 class StreamDispatcher;
 class VmObjectDispatcher;
 class VmObjectPaged;
 class StreamSizeManager;
-template <typename T>
-class KernelHandle;
 
 extern "C" {
 zx_status_t cpp_stream_dispatcher_create(
     uint32_t options, const VmObjectDispatcher* vmo_dispatcher, zx_off_t seek,
     ffi::Uninitialized<KernelHandle<StreamDispatcher>>* handle_out);
 
-void rust_stream_dispatcher_state_init(void* state, void* dispatcher, uint32_t options,
-                                       zx_off_t seek, VmObjectPaged* vmo,
-                                       StreamSizeManager* stream_size_manager);
+void rust_stream_dispatcher_state_init(void* state, uint32_t options, zx_off_t seek,
+                                       VmObjectPaged* vmo, StreamSizeManager* stream_size_manager);
 void rust_stream_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_stream_dispatcher_state_get_lock(const void* state);
-bool rust_stream_dispatcher_is_in_append_mode(const StreamDispatcher* dispatcher);
-void rust_stream_dispatcher_set_append_mode(const StreamDispatcher* dispatcher, bool value);
 }
 
 class StreamDispatcher final : public Dispatcher {
@@ -51,12 +43,6 @@ class StreamDispatcher final : public Dispatcher {
   zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final;
   zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
     return ZX_ERR_NOT_SUPPORTED;
-  }
-
-  bool IsInAppendMode() const { return rust_stream_dispatcher_is_in_append_mode(this); }
-  zx_status_t SetAppendMode(bool value) {
-    rust_stream_dispatcher_set_append_mode(this, value);
-    return ZX_OK;
   }
 
  protected:

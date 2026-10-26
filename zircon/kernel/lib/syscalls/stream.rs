@@ -10,8 +10,8 @@ use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::Status;
 use zx_types::{
-    ZX_RIGHT_READ, ZX_RIGHT_RESIZE, ZX_RIGHT_WRITE, ZX_STREAM_APPEND, ZX_STREAM_CREATE_MASK,
-    zx_iovec_t, zx_off_t, zx_stream_seek_origin_t,
+    ZX_RIGHT_READ, ZX_RIGHT_WRITE, ZX_STREAM_APPEND, ZX_STREAM_CREATE_MASK, zx_iovec_t, zx_off_t,
+    zx_stream_seek_origin_t,
 };
 
 const LOCAL_TRACE: u32 = 0;
@@ -27,11 +27,11 @@ pub fn sys_stream_create(
         return Err(Status::INVALID_ARGS);
     }
 
-    let (mut stream_options, desired_vmo_rights) =
+    let (stream_options, desired_vmo_rights) =
         StreamDispatcher::parse_create_syscall_flags(options)?;
 
-    let (vmo_disp, actual_vmo_rights) = ProcessDispatcher::with_current(|up| {
-        up.handle_table().get_dispatcher_with_rights_and_actual::<VmObjectDispatcher>(
+    let vmo_disp = ProcessDispatcher::with_current(|up| {
+        up.handle_table().get_dispatcher_with_rights::<VmObjectDispatcher>(
             up,
             vmo_handle,
             desired_vmo_rights,
@@ -41,15 +41,6 @@ pub fn sys_stream_create(
     // Cannot create a stream from a physical or contiguous VMO.
     if !vmo_disp.vmo().is_paged() || vmo_disp.vmo().is_contiguous() {
         return Err(Status::WRONG_TYPE);
-    }
-
-    // Remember whether this stream can resize the underlying VMO when required. Note that it
-    // might be possible for stream writes / appends to proceed by manipulating only the stream
-    // size, without having to change the VMO size. This flag will be checked only for stream
-    // operations that would require manipulating the VMO size, more specifically when expanding
-    // the VMO size if the requested stream size needs to surpass the current VMO size.
-    if (actual_vmo_rights & ZX_RIGHT_RESIZE) != 0 {
-        stream_options.set_can_resize_vmo(true);
     }
 
     let (kernel_handle, rights) = StreamDispatcher::create(stream_options, &vmo_disp, seek)?;

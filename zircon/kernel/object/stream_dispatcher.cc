@@ -6,8 +6,6 @@
 
 #include "object/stream_dispatcher.h"
 
-#include <lib/user_copy/user_iovec.h>
-
 #include <fbl/ref_ptr.h>
 #include <vm/stream_size_manager.h>
 #include <vm/vm_object_paged.h>
@@ -17,8 +15,7 @@ StreamDispatcher::StreamDispatcher(uint32_t options, fbl::RefPtr<VmObjectPaged> 
                                    zx_off_t seek)
     : Dispatcher(options) {
   DISPATCHER_VERIFY_OFFSET(StreamDispatcher, kStreamDispatcherStateOffset);
-  rust_stream_dispatcher_state_init(&opaque_storage_, this, options, seek,
-                                    fbl::ExportToRawPtr(&vmo),
+  rust_stream_dispatcher_state_init(&opaque_storage_, options, seek, fbl::ExportToRawPtr(&vmo),
                                     fbl::ExportToRawPtr(&stream_size_manager));
 }
 

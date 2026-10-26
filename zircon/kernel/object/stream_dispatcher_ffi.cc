@@ -6,7 +6,6 @@
 
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
-#include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
