@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "signal_then_hang_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "signal_then_hang",
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+fx_packaged_binary(
+    name = "signal_then_hang_packaged_bin",
+    binary = ":signal_then_hang_bin",
+    binary_name = "signal_then_hang",
+)
+
+fx_component_manifest(
+    name = "signal_then_hang-manifest",
+    component_name = "signal-then-hang",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/signal_then_hang.cml",
+)
+
+fx_component(
+    name = "signal_then_hang",
+    compiled_manifest = ":signal_then_hang-manifest",
+    component_name = "signal-then-hang",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+    deps = [":signal_then_hang_packaged_bin"],
+)

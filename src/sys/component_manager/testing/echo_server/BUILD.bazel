@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "echo_server_testing",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "echo_server_testing_packaged_bin",
+    testonly = True,
+    binary = ":echo_server_testing",
+    binary_name = "echo_server_testing",
+)
+
+fx_component_manifest(
+    name = "echo_server-manifest",
+    testonly = True,
+    component_name = "echo_server",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/echo_server.cml",
+)
+
+fx_component(
+    name = "echo_server",
+    testonly = True,
+    compiled_manifest = ":echo_server-manifest",
+    component_name = "echo_server",
+    visibility = ["//:__subpackages__"],
+    deps = [":echo_server_testing_packaged_bin"],
+)
