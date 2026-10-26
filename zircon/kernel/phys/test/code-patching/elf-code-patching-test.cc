@@ -34,10 +34,13 @@ constexpr ktl::string_view kMultiply = "multiply_by_factor";
 // The BOOTFS namespace under which kAddOne and kMultiply live.
 constexpr ktl::string_view kNamespace = "elf-code-patching-test-data";
 
-// We need space for 5 modules: this test, and the patched and unpatched
-// versions of kAddOne and kMultiply. Keep it as a global so references to
-// this storage can persist outside TestMain.
-ktl::array<const ElfImage*, 5> modules;
+// Symbolizer module IDs for the loaded test modules (module 0 is this test).
+enum ModuleId : unsigned int {
+  kUnpatchedAddOne = 1,
+  kPatchedAddOne,
+  kMultiplyBy2,
+  kMultiplyBy10,
+};
 
 }  // namespace
 
@@ -63,8 +66,6 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
 
   symbolize.Context();
 
-  symbolize.EnableModuleLoading(Symbolize::ModuleList(ktl::span(modules)));
-
   constexpr uint64_t kValue = 42;
 
   // Test that unpatched add-one loads and behaves as expected.
@@ -81,7 +82,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
     }
 
     add_one->AssertInterpMatchesBuildId(kAddOne, symbolize.build_id());
-    unpatched = add_one->Load(memalloc::Type::kPhysElf, {}, false);
+    unpatched = add_one->Load(memalloc::Type::kPhysElf, ModuleId::kUnpatchedAddOne, {}, false);
     add_one->Relocate();
 
     printf("%s: Calling %p...", symbolize.name(), add_one->ImageEntry<TestFn>());
@@ -102,7 +103,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
     }
 
     add_one->AssertInterpMatchesBuildId(kAddOne, symbolize.build_id());
-    patched = add_one->Load(memalloc::Type::kPhysElf, {}, false);
+    patched = add_one->Load(memalloc::Type::kPhysElf, ModuleId::kPatchedAddOne, {}, false);
     add_one->Relocate();
 
     enum class ExpectedCase : uint32_t { kAddOne = kAddOneCaseId };
@@ -139,7 +140,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
     }
 
     multiply->AssertInterpMatchesBuildId(kMultiply, symbolize.build_id());
-    patched_stub2 = multiply->Load(memalloc::Type::kPhysElf, {}, false);
+    patched_stub2 = multiply->Load(memalloc::Type::kPhysElf, ModuleId::kMultiplyBy2, {}, false);
     multiply->Relocate();
 
     enum class ExpectedCase : uint32_t { kMultiply = kMultiplyByFactorCaseId };
@@ -177,7 +178,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
     }
 
     multiply->AssertInterpMatchesBuildId(kMultiply, symbolize.build_id());
-    patched_stub10 = multiply->Load(memalloc::Type::kPhysElf, {}, false);
+    patched_stub10 = multiply->Load(memalloc::Type::kPhysElf, ModuleId::kMultiplyBy10, {}, false);
     multiply->Relocate();
 
     enum class ExpectedCase : uint32_t { kMultiply = kMultiplyByFactorCaseId };

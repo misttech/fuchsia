@@ -108,8 +108,6 @@ void Symbolize::InitSelf() {
 
   ZX_DEBUG_ASSERT(!self_);
   self_ = gSelfImage.get();
-  ReplaceModulesStorage(ModuleList{ktl::span{&self_, 1}});
-  OnLoad(*self_);
 
   static constexpr Stack<BootStack> kBootStacks[] = {
       {boot_stack, "boot"},
@@ -132,20 +130,6 @@ void Symbolize::InitSelf() {}
 
 #endif  // __ELF__
 
-void Symbolize::ReplaceModulesStorage(ModuleList modules) {
-  ModuleList old = ktl::exchange(modules_, ktl::move(modules));
-  modules_.clear();
-  for (const ElfImage* module : old) {
-    AddModule(module);
-  }
-}
-
-void Symbolize::AddModule(const ElfImage* module) {
-  auto diag = PanicDiagnostics(name_);
-  [[maybe_unused]] bool ok = modules_.push_back(diag, "too many modules loaded", module);
-  ZX_DEBUG_ASSERT(ok);
-}
-
 const char* ProgramName() {
   if (gSymbolize) {
     return gSymbolize->name();
@@ -167,12 +151,15 @@ void Symbolize::Printf(const char* fmt, ...) {
 }
 
 void Symbolize::ContextAlways(FILE* log) {
+  // Non-ELF (i.e., EFI) builds carry no self image and no context to emit.
+#ifndef __ELF__
+  return;
+#endif
+  ZX_DEBUG_ASSERT(self_);
   decltype(writer_) log_writer{{log}};
   auto& writer = log ? log_writer : writer_;
   writer.Prefix(name_).Reset().Newline();
-  for (size_t i = 0; i < modules_.size(); ++i) {
-    modules_[i]->SymbolizerContext(writer, static_cast<unsigned int>(i), name_);
-  }
+  self_->SymbolizerContext(writer, 0, name_);
 }
 
 void Symbolize::Context() {
@@ -186,11 +173,6 @@ void Symbolize::ModuleContext(const ElfImage& loaded, unsigned int module_id, bo
   if (context_done_) {
     loaded.SymbolizerContext(writer_, module_id, name_, physical);
   }
-}
-
-void Symbolize::OnLoad(const ElfImage& loaded) {
-  ModuleContext(loaded, static_cast<unsigned int>(modules_.size()));
-  AddModule(&loaded);
 }
 
 void Symbolize::BackTraceFrame(unsigned int n, uintptr_t pc, bool interrupt) {

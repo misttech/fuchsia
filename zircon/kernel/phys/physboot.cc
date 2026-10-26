@@ -43,8 +43,14 @@ PhysBootTimes gBootTimes;
 
 namespace {
 
-// physboot itself and the kernel.
-constexpr size_t kMaxModules = 2;
+enum ModuleId : unsigned int {
+  kKernel = 1,
+
+  // When in verbose mode, it is useful to log the kernel as another module with
+  // the same segments at their physical addresses too so code that runs at the
+  // physical address (e.g. secondary CPU startup) can also be symbolized.
+  kKernelPhysAddressed,
+};
 
 constexpr ktl::string_view kElfPhysKernel = "vmzircon";
 
@@ -108,17 +114,16 @@ void RelocateElfKernel(ElfImage& kernel) {
   }
 
   // Use the putative eventual virtual address to relocate the kernel.
-  Allocation loaded_kernel = kernel.Load(memalloc::Type::kKernel, kHandoffVirtualAddress);
+  Allocation loaded_kernel =
+      kernel.Load(memalloc::Type::kKernel, ModuleId::kKernel, kHandoffVirtualAddress);
 
   const ArchPatchInfo patch_info = ArchPreparePatchInfo();
   PatchElfKernel(kernel, patch_info);
 
   RelocateElfKernel(kernel);
 
-  // When verbose, also log the kernel as being another module with the same
-  // segments at their physical addresses too so code that runs at the physical
-  // address (e.g. secondary CPU startup) can also be symbolized.
-  gSymbolize->ModuleContext(kernel, static_cast<unsigned int>(gSymbolize->modules().size()), true);
+  // See ModuleId::kKernelPhysAddressed.
+  gSymbolize->ModuleContext(kernel, ModuleId::kKernelPhysAddressed, true);
 
   if (kernel.memory_image().size_bytes() > KERNEL_IMAGE_MAX_SIZE) {
     ZX_PANIC(
@@ -186,10 +191,6 @@ void RelocateElfKernel(ElfImage& kernel) {
   KernelStorage kernel_storage;
   kernel_storage.Init(zbitl::View{zbi_storage});
   kernel_storage.GetTimes(gBootTimes);
-
-  // Provide space for loading modules.
-  ktl::array<const ElfImage*, kMaxModules> modules_storage;
-  symbolize.EnableModuleLoading(Symbolize::ModuleList(modules_storage));
 
   BootZircon(GetUartDriver(), ktl::move(kernel_storage));
 }

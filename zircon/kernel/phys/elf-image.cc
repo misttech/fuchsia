@@ -161,17 +161,18 @@ ktl::span<ktl::byte> ElfImage::GetBytesToPatch(const code_patching::Directive& p
   return file.subspan(static_cast<size_t>(patch.range_start - image_.base()), patch.range_size);
 }
 
-Allocation ElfImage::Load(memalloc::Type type, ktl::optional<uint64_t> relocation_address,
-                          bool in_place_ok) {
+Allocation ElfImage::Load(memalloc::Type type, unsigned int module_id,
+                          ktl::optional<uint64_t> relocation_address, bool in_place_ok) {
   auto endof = [](const auto& last) { return last.offset() + last.filesz(); };
   const uint64_t load_size = ktl::visit(endof, load_info_.segments().back());
 
-  auto update_load_address_and_symbolize = fit::defer([relocation_address, this]() {
-    // Update the load address before having emitting otherwise-misleading
-    // markup.
-    set_load_address(relocation_address.value_or(physical_load_address()));
-    gSymbolize->OnLoad(*this);
-  });
+  auto update_load_address_and_symbolize =
+      fit::defer([module_id = module_id, relocation_address, this]() {
+        // Update the load address before having emitting otherwise-misleading
+        // markup.
+        set_load_address(relocation_address.value_or(physical_load_address()));
+        gSymbolize->ModuleContext(*this, module_id);
+      });
 
   if (in_place_ok && CanLoadInPlace()) {
     // TODO(https://fxbug.dev/42065186): Could have a memalloc::Pool feature to

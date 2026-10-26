@@ -9,7 +9,6 @@
 
 #include <lib/arch/backtrace.h>
 #include <lib/elfldltl/note.h>
-#include <lib/elfldltl/preallocated-vector.h>
 #include <lib/symbolizer-markup/writer.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -54,8 +53,6 @@ class Symbolize {
   };
   using FramePointerBacktrace = arch::FramePointerBacktrace<IsOnStackFunction>;
 
-  using ModuleList = elfldltl::PreallocatedVector<const ElfImage*>;
-
   Symbolize() = delete;
   Symbolize(const Symbolize&) = delete;
 
@@ -63,17 +60,11 @@ class Symbolize {
 
   const char* name() const { return name_; }
 
-  auto modules() const { return modules_.as_span(); }
-
   // The running phys executable's own image.
   const ElfImage& self() const { return *self_; }
 
   // Return the ELF build ID note for the currently executing module.
   elfldltl::ElfNote build_id() const;
-
-  // Provide storage for the module list so that additional modules (e.g. the
-  // kernel) can be loaded and symbolized.
-  void EnableModuleLoading(ModuleList modules) { ReplaceModulesStorage(ktl::move(modules)); }
 
   void set_stacks(ktl::span<const Stack<BootStack>> stacks) { stacks_ = stacks; }
 
@@ -91,7 +82,7 @@ class Symbolize {
     return FramePointerBacktrace::BackTrace(fp);
   }
 
-  // Print the contextual markup elements describing each loaded module.
+  // Print the contextual markup elements describing the main module.
   void ContextAlways(FILE* log = nullptr);
 
   // Same, but idempotent: the first call prints and others do nothing.
@@ -99,10 +90,6 @@ class Symbolize {
 
   // Print one module's context if Context() has already printed.
   void ModuleContext(const ElfImage& loaded, unsigned int module_id, bool physical = false);
-
-  // Adds the new module to the list.  If Context() has run, then emit context
-  // for the new module.
-  void OnLoad(const ElfImage& loaded);
 
   // Print the presentation markup element for one frame of a backtrace.
   void BackTraceFrame(unsigned int n, uintptr_t pc, bool interrupt = false);
@@ -158,20 +145,11 @@ class Symbolize {
   // a no-op in non-ELF (i.e. EFI) environments.
   void InitSelf();
 
-  // This reads the existing modules to the new storage and then
-  // replaces it as the storage to be used by future OnLoad calls.
-  void ReplaceModulesStorage(ModuleList modules);
-
-  void AddModule(const ElfImage* module);
-
   const char* name_;
   FILE* output_;
-  ModuleList modules_;
   ktl::span<const Stack<BootStack>> stacks_;
   ktl::span<const Stack<BootShadowCallStack>> shadow_call_stacks_;
   FileMarkupWriter writer_;
-  // This doubles as the initial one-element module list storage until
-  // EnableModuleLoading() provides more.
   const ElfImage* self_ = nullptr;
   bool context_done_ = false;
 };

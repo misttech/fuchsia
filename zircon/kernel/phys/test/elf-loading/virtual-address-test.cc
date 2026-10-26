@@ -42,6 +42,9 @@ constexpr ktl::string_view kNamespace = "virtual-address-loading-test-data";
 // (i.e., as we would in production).
 constexpr uint64_t kLoadAddress = 0xffff'ffff'0000'0000;
 
+// Symbolizer module ID for kGetInt (module 0 is this test).
+constexpr unsigned int kGetIntModuleId = 1;
+
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
@@ -70,9 +73,6 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
     bootfs = ktl::move(result).value();
   }
 
-  ktl::array<const ElfImage*, 2> modules;
-  symbolize.EnableModuleLoading(Symbolize::ModuleList(ktl::span(modules)));
-
   printf("Loading %.*s...\n", static_cast<int>(kGetInt.size()), kGetInt.data());
   ElfImage elf;
   if (auto result = elf.Init(bootfs, kGetInt, true); result.is_error()) {
@@ -86,7 +86,7 @@ int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTi
   printf("Verifying PT_INTERP matches test build ID...\n");
   elf.AssertInterpMatchesBuildId(kGetInt, symbolize.build_id());
 
-  Allocation loaded = elf.Load(memalloc::Type::kPhysElf, kLoadAddress);
+  Allocation loaded = elf.Load(memalloc::Type::kPhysElf, kGetIntModuleId, kLoadAddress);
   elf.Relocate();
 
   // TODO(https://fxbug.dev/42172722): Set up C++ ABI support and map and jump into a
