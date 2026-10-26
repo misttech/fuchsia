@@ -2,9 +2,247 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/wlancfg.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/access_point/mod.rs",
+        "src/access_point/state_machine.rs",
+        "src/access_point/types.rs",
+        "src/client/connection_selection/bss_selection.rs",
+        "src/client/connection_selection/fut_manager.rs",
+        "src/client/connection_selection/mod.rs",
+        "src/client/connection_selection/network_selection.rs",
+        "src/client/connection_selection/scoring_functions.rs",
+        "src/client/mod.rs",
+        "src/client/roaming/lib.rs",
+        "src/client/roaming/local_roam_manager/mod.rs",
+        "src/client/roaming/mod.rs",
+        "src/client/roaming/roam_monitor/default_monitor.rs",
+        "src/client/roaming/roam_monitor/mod.rs",
+        "src/client/roaming/roam_monitor/stationary_monitor.rs",
+        "src/client/scan/fidl_conversion.rs",
+        "src/client/scan/mod.rs",
+        "src/client/scan/queue.rs",
+        "src/client/state_machine.rs",
+        "src/client/types.rs",
+        "src/config_management/config_manager.rs",
+        "src/config_management/mod.rs",
+        "src/config_management/network_config.rs",
+        "src/config_management/stash_conversion.rs",
+        "src/legacy/deprecated_client.rs",
+        "src/legacy/deprecated_configuration.rs",
+        "src/legacy/mod.rs",
+        "src/lib.rs",
+        "src/mode_management/device_monitor.rs",
+        "src/mode_management/iface_manager.rs",
+        "src/mode_management/iface_manager_api.rs",
+        "src/mode_management/iface_manager_types.rs",
+        "src/mode_management/mod.rs",
+        "src/mode_management/phy_manager.rs",
+        "src/mode_management/recovery.rs",
+        "src/regulatory_manager.rs",
+        "src/telemetry/convert.rs",
+        "src/telemetry/mod.rs",
+        "src/telemetry/windowed_stats.rs",
+        "src/tests/access_point_e2e.rs",
+        "src/tests/client_e2e.rs",
+        "src/tests/mod.rs",
+        "src/util/fuse_pending.rs",
+        "src/util/future_with_metadata.rs",
+        "src/util/listener/access_point.rs",
+        "src/util/listener/client.rs",
+        "src/util/listener/generic.rs",
+        "src/util/listener/mod.rs",
+        "src/util/mod.rs",
+        "src/util/pseudo_energy.rs",
+        "src/util/state_machine.rs",
+        "src/util/testing/async_stream.rs",
+        "src/util/testing/fakes.rs",
+        "src/util/testing/generate_struct.rs",
+        "src/util/testing/mod.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "wlancfg_lib",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+        "//third_party/rust_crates/vendor:paste",
+    ],
+    deps = [
+        ":wlan_metrics_registry_rustlib",
+        "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
+        "//sdk/fidl/fuchsia.location.sensor:fuchsia.location.sensor_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//sdk/fidl/fuchsia.wlan.policy:measure_tape_for_scan_result",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedclient:fuchsia.wlan.product.deprecatedclient_rust",
+        "//sdk/fidl/fuchsia.wlan.product.deprecatedconfiguration:fuchsia.wlan.product.deprecatedconfiguration_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//sdk/fidl/fuchsia.wlan.stats:fuchsia.wlan.stats_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/power_manager",
+        "//src/connectivity/wlan/lib/storage:wlan-storage",
+        "//src/connectivity/wlan/lib/telemetry:wlan-telemetry",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:arbitrary",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# `wlancfg_lib_test`, `wlancfg_bin_test`, and `wlancfg-tests` remain in
+# `BUILD.gn` above the sentinel because `wlancfg-tests` packages
+# `//src/sys/stash:stash_secure_v2`, which is not built by Bazel yet.
+rustc_test(
+    name = "lib_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":lib",
+    crate_name = "wlancfg_lib_lib_test",
+    proc_macro_deps = [
+        "//src/connectivity/wlan/wlancfg/src/util/testing/macros:proc_macros",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
+        "//src/connectivity/wlan/lib/ieee80211-testutils",
+        "//src/connectivity/wlan/lib/power_manager:power_manager_testing",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+        "//src/lib/test_util",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:regex",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    binary_name = "wlancfg",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        ":lib",
+        ":wlancfg-config",
+        "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/power_manager",
+        "//src/connectivity/wlan/lib/trace:wlan-trace",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    crate_name = "wlancfg_bin_test",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    deps = [
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_packaged_binary(
+    name = "wlancfg_packaged_bin",
+    binary = ":bin",
+    binary_name = "wlancfg",
+)
+
+fx_component_manifest(
+    name = "wlancfg-manifest",
+    component_name = "wlancfg",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/wlancfg.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "wlancfg-config",
+    cm_label = ":wlancfg-manifest",
+)
+
+fx_component(
+    name = "service",
+    compiled_manifest = ":wlancfg-manifest",
+    deps = [":wlancfg_packaged_bin"],
+)
+
+metrics_registry(
+    name = "wlan_metrics_registry",
+    generate_rust = True,  # Generates a rust target with '_rustlib' appended
+    # This must match the ID of our Cobalt project as specified in:
+    # //third_party/cobalt_config/projects.yaml
+    project_id = 3708719327,
 )

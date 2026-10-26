@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -25,4 +26,12 @@ fidl_library(
         "//sdk/fidl/fuchsia.wlan.ieee80211",
         "//zircon/vdso/zx",
     ],
+)
+
+measure_tape(
+    name = "measure_tape_for_scan_result",
+    fidls = ["//sdk/fidl/fuchsia.wlan.policy"],
+    target_binding = "rust",
+    target_types = ["fuchsia.wlan.policy/ScanResult"],
+    visibility = ["//src/connectivity/wlan/wlancfg:__pkg__"],
 )
