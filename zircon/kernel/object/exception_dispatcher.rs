@@ -166,7 +166,7 @@ impl ExceptionDispatcher {
     ///
     /// `report` and `arch_context` must remain valid until [`Self::clear`] is called or the
     /// returned `ExceptionDispatcher` is destroyed.
-    pub unsafe fn create(
+    pub(super) unsafe fn create(
         thread: RefPtr<ThreadDispatcher>,
         exception_type: zx_excp_type_t,
         report: *const zx_exception_report_t,

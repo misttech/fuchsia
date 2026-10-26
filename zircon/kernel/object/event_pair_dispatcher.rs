@@ -25,7 +25,7 @@ use zx_types::{
     ZX_OBJ_TYPE_EVENTPAIR, ZX_USER_SIGNAL_ALL, zx_rights_t,
 };
 
-pub const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL | ZX_EVENT_SIGNALED;
+const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL | ZX_EVENT_SIGNALED;
 
 zr::static_assert_size_and_align!(
     EventPairDispatcherState,
@@ -72,10 +72,6 @@ impl_peered_dispatcher_facade_with_state!(
 );
 
 impl EventPairDispatcher {
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_EVENTPAIR_RIGHTS
-    }
-
     /// Creates a new EventPairDispatcher pair and returns their kernel handles and rights.
     pub fn create() -> Result<(KernelHandle<Self>, KernelHandle<Self>, zx_rights_t), Status> {
         let holder0 = PeerHolder::<Self>::create().map_err(|_| Status::NO_MEMORY)?;

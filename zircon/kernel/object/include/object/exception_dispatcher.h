@@ -48,16 +48,12 @@ void rust_exception_dispatcher_on_zero_handles(ExceptionDispatcher* disp);
 
 class ExceptionDispatcher final : public Dispatcher {
  public:
-  static constexpr zx_rights_t default_rights() {
-    return ZX_DEFAULT_EXCEPTION_RIGHTS;  // NOLINT(bugprone-signed-bitwise)
-  }
-
   ~ExceptionDispatcher() final;
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_EXCEPTION; }
   zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
   bool is_waitable() const final {
-    return (default_rights() & ZX_RIGHT_WAIT) != 0;  // NOLINT(bugprone-signed-bitwise)
+    return (ZX_DEFAULT_EXCEPTION_RIGHTS & ZX_RIGHT_WAIT) != 0;  // NOLINT(bugprone-signed-bitwise)
   }
 
   zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {

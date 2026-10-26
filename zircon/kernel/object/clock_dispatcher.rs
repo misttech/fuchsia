@@ -761,7 +761,7 @@ impl ClockDispatcher {
     pub const MAPPED_SIZE: u64 = PAGE_SIZE as u64;
 
     /// Returns the default rights for a clock handle.
-    pub const fn default_rights() -> zx_rights_t {
+    const fn default_rights() -> zx_rights_t {
         ZX_DEFAULT_CLOCK_RIGHTS
     }
 

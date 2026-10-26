@@ -52,8 +52,6 @@ zx_status_t rust_vm_object_dispatcher_stream_size_manager(
 zx_status_t rust_vm_object_dispatcher_create_child(
     const VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size,
     bool copy_name, ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo);
-zx_status_t rust_vm_object_dispatcher_set_stream_size(VmObjectDispatcher* disp,
-                                                      uint64_t stream_size);
 uint64_t rust_vm_object_dispatcher_get_stream_size(const VmObjectDispatcher* disp);
 }
 
@@ -98,10 +96,6 @@ class VmObjectDispatcher final : public Dispatcher, public VmObjectChildObserver
 
   zx_status_t CreateChild(uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
                           fbl::RefPtr<VmObject>* child_vmo) const;
-
-  zx_status_t SetStreamSize(uint64_t stream_size) {
-    return rust_vm_object_dispatcher_set_stream_size(this, stream_size);
-  }
 
   // Returns the number of bytes in the data stream stored within the VMO.
   //

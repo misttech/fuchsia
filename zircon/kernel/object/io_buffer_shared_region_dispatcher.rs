@@ -116,11 +116,6 @@ unsafe extern "C" {
 }
 
 impl IoBufferSharedRegionDispatcher {
-    /// Returns default rights for `IoBufferSharedRegionDispatcher`.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS
-    }
-
     /// Creates a new `IoBufferSharedRegionDispatcher`.
     pub fn create(size: u64) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let vmo = VmObjectPaged::create(

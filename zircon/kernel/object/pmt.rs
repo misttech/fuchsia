@@ -32,12 +32,6 @@ fbl::impl_opaque_ref_counted_facade!(
 );
 
 impl Pmt {
-    /// Returns a raw pointer to this PMT for FFI calls.
-    #[inline]
-    pub fn as_ffi(&self) -> *const Self {
-        self as *const Self
-    }
-
     /// Returns a mutable raw pointer to this PMT for FFI calls.
     #[inline]
     pub fn as_ffi_mut(&self) -> *mut Self {
@@ -76,11 +70,5 @@ impl Pmt {
     pub fn on_dispatcher_zero_handles(&self) {
         // SAFETY: `self` is a valid `Pmt` facade.
         unsafe { cpp_pmt_on_dispatcher_zero_handles(self.as_ffi_mut()) }
-    }
-
-    /// Returns the size in bytes of the pinned VMO.
-    pub fn size(&self) -> u64 {
-        // SAFETY: `self` is a valid `Pmt` facade.
-        unsafe { cpp_pmt_size(self.as_ffi()) }
     }
 }

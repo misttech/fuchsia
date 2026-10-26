@@ -26,7 +26,6 @@ void cpp_pmt_recycle(iommu::Pmt* pmt);
 void* cpp_pmt_get_ref_counted(const iommu::Pmt* pmt);
 void cpp_pmt_release_pinned_memory(iommu::Pmt* pmt);
 void cpp_pmt_on_dispatcher_zero_handles(iommu::Pmt* pmt);
-uint64_t cpp_pmt_size(const iommu::Pmt* pmt);
 zx_status_t cpp_pmt_query_address(iommu::Pmt* pmt, uint64_t query_offset, size_t query_size,
                                   ffi::Uninitialized<iommu::QueryAddressResult>* out_result);
 }

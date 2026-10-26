@@ -17,7 +17,7 @@ unsafe extern "C" {
     ///
     /// `thread` must be a valid owning raw pointer exported from `fbl::RefPtr<ThreadDispatcher>`,
     /// and `report` and `arch_context` must remain valid until `clear()` is called.
-    pub(crate) fn cpp_exception_dispatcher_create(
+    pub(super) fn cpp_exception_dispatcher_create(
         thread: *mut ThreadDispatcher,
         exception_type: zx_excp_type_t,
         report: *const zx_exception_report_t,

@@ -190,15 +190,6 @@ pub unsafe extern "C" fn rust_vm_object_dispatcher_create_child(
     }
 }
 
-/// Sets the stream size of `disp` from C++.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_vm_object_dispatcher_set_stream_size(
-    disp: &VmObjectDispatcher,
-    stream_size: u64,
-) -> zx_status_t {
-    Status::result_into_raw(disp.set_stream_size(stream_size))
-}
-
 /// Returns the stream size of `disp` from C++.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_vm_object_dispatcher_get_stream_size(disp: &VmObjectDispatcher) -> u64 {

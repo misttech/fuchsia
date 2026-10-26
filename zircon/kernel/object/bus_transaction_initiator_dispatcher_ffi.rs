@@ -25,16 +25,6 @@ unsafe extern "C" {
     pub(crate) fn cpp_bti_pmo_count(bti: *const Bti) -> u64;
     pub(crate) fn cpp_bti_quarantine_count(bti: *const Bti) -> u64;
     pub(crate) fn cpp_bti_in_fault_state(bti: *const Bti) -> bool;
-    pub(crate) fn cpp_bti_bti_id(bti: *const Bti) -> u64;
-    pub(crate) fn cpp_bti_set_name(
-        bti: *mut Bti,
-        name: *const core::ffi::c_char,
-        len: usize,
-    ) -> zx_status_t;
-    pub(crate) fn cpp_bti_get_name(
-        bti: *const Bti,
-        out_name: *mut core::ffi::c_char,
-    ) -> zx_status_t;
 
     pub(crate) fn cpp_bus_transaction_initiator_dispatcher_create(
         iommu: *const Iommu,

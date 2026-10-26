@@ -6,13 +6,9 @@
 
 #include "object/vm_object_dispatcher.h"
 
-#include <lib/object-constants.h>
 #include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/types.h>
 
 #include <fbl/alloc_checker.h>
-#include <kernel/ffi.h>
 #include <ktl/utility.h>
 #include <vm/vm_object.h>
 

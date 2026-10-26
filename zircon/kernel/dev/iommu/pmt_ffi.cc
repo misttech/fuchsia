@@ -31,9 +31,6 @@ FFI_ALWAYS_INLINE void cpp_pmt_on_dispatcher_zero_handles(iommu::Pmt* pmt) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint64_t cpp_pmt_size(const iommu::Pmt* pmt) { return pmt->size(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t
 cpp_pmt_query_address(iommu::Pmt* pmt, uint64_t query_offset, size_t query_size,
                       ffi::Uninitialized<iommu::QueryAddressResult>* out_result) {

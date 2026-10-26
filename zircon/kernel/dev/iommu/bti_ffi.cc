@@ -56,20 +56,6 @@ FFI_ALWAYS_INLINE bool cpp_bti_in_fault_state(const iommu::Bti* bti) {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint64_t cpp_bti_bti_id(const iommu::Bti* bti) { return bti->bti_id(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_bti_set_name(iommu::Bti* bti, const char* name, size_t len) {
-  return bti->set_name(name, len);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_bti_get_name(const iommu::Bti* bti,
-                                               char out_name[ZX_MAX_NAME_LEN]) {
-  return bti->get_name(*reinterpret_cast<char (*)[ZX_MAX_NAME_LEN]>(out_name));
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_bti_map(iommu::Bti* bti, PinnedVmObject* pinned_vmo,
                                           uint32_t perms, bool require_contiguous,
                                           ffi::Uninitialized<fbl::RefPtr<iommu::Pmt>>* pmt_out) {

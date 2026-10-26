@@ -39,9 +39,6 @@ uint64_t cpp_bti_aspace_size(const iommu::Bti* bti);
 uint64_t cpp_bti_pmo_count(const iommu::Bti* bti);
 uint64_t cpp_bti_quarantine_count(const iommu::Bti* bti);
 bool cpp_bti_in_fault_state(const iommu::Bti* bti);
-uint64_t cpp_bti_bti_id(const iommu::Bti* bti);
-zx_status_t cpp_bti_set_name(iommu::Bti* bti, const char* name, size_t len);
-zx_status_t cpp_bti_get_name(const iommu::Bti* bti, char out_name[ZX_MAX_NAME_LEN]);
 zx_status_t cpp_bti_map(iommu::Bti* bti, PinnedVmObject* pinned_vmo, uint32_t perms,
                         bool require_contiguous,
                         ffi::Uninitialized<fbl::RefPtr<iommu::Pmt>>* pmt_out);

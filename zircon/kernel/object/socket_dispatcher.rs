@@ -31,7 +31,7 @@ use zx_types::{
     ZX_USER_SIGNAL_ALL, zx_info_socket_t, zx_rights_t, zx_signals_t,
 };
 
-pub const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL;
+const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL;
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -178,11 +178,6 @@ impl_peered_dispatcher_facade_with_state!(
 );
 
 impl SocketDispatcher {
-    /// Returns default rights for a SocketDispatcher.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_SOCKET_RIGHTS
-    }
-
     /// Creates a new SocketDispatcher pair and returns their kernel handles and rights.
     pub fn create(
         flags: u32,

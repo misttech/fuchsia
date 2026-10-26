@@ -99,11 +99,6 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl PinnedMemoryTokenDispatcher {
-    /// Returns the default rights for a PinnedMemoryTokenDispatcher handle.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_PMT_RIGHTS
-    }
-
     /// Creates a new `PinnedMemoryTokenDispatcher` representing pinned pages in `pinned_vmo`.
     ///
     /// Sets the permissions of `pinned_vmo`'s pinned range to `perms` on behalf of `bti`.
@@ -157,12 +152,6 @@ impl PinnedMemoryTokenDispatcher {
         ksync::lock!(let guard = self.state().lock_lock());
         let pmt = guard.fields().pmt.as_ref().expect("PMT must be initialized");
         pmt.query_address(offset, size)
-    }
-
-    /// Returns the number of bytes pinned by the PMT.
-    pub fn size(&self) -> u64 {
-        ksync::lock!(let guard = self.state().lock_lock());
-        guard.fields().pmt.as_ref().expect("PMT must be initialized").size()
     }
 
     /// Callback invoked when all handles to this dispatcher are closed.

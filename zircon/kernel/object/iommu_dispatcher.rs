@@ -77,11 +77,6 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl IommuDispatcher {
-    /// Returns default rights for an IommuDispatcher handle.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_IOMMU_RIGHTS
-    }
-
     /// Creates a new IommuDispatcher and returns its kernel handle and rights.
     pub fn create(
         type_param: u32,

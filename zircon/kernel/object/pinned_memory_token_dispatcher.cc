@@ -7,13 +7,8 @@
 #include "object/pinned_memory_token_dispatcher.h"
 
 #include <lib/object-constants.h>
-#include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/types.h>
 
-#include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
-#include <ktl/utility.h>
 #include <object/bus_transaction_initiator_dispatcher.h>
 
 PinnedMemoryTokenDispatcher::PinnedMemoryTokenDispatcher(

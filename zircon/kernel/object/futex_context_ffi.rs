@@ -93,9 +93,3 @@ pub unsafe extern "C" fn rust_futex_context_init(
     let ctx = unsafe { Pin::new_unchecked(ctx) };
     Status::result_into_raw(ctx.init(process_type))
 }
-
-/// Shrinks the `FutexState` free pool by two states.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_futex_context_shrink_pool(ctx: &FutexContext) {
-    ctx.shrink_futex_state_pool();
-}

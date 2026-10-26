@@ -9,7 +9,6 @@ use super::pmt::Pmt;
 use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_status::Status;
-use zx_types::ZX_MAX_NAME_LEN;
 
 pub const IOMMU_FLAG_PERM_READ: u32 = 1 << 0;
 pub const IOMMU_FLAG_PERM_WRITE: u32 = 1 << 1;
@@ -75,34 +74,6 @@ impl Bti {
     pub fn in_fault_state(&self) -> bool {
         // SAFETY: `self` is a valid `Bti` facade.
         unsafe { cpp_bti_in_fault_state(self.as_ffi()) }
-    }
-
-    /// Returns the hardware transaction ID represented by this BTI.
-    pub fn bti_id(&self) -> u64 {
-        // SAFETY: `self` is a valid `Bti` facade.
-        unsafe { cpp_bti_bti_id(self.as_ffi()) }
-    }
-
-    /// Sets the debug name of this BTI.
-    pub fn set_name(&self, name: &[u8]) -> Result<(), Status> {
-        // SAFETY: `self` is a valid `Bti` facade, and `name` is a valid slice of bytes.
-        let status = unsafe {
-            cpp_bti_set_name(
-                self.as_ffi_mut(),
-                name.as_ptr().cast::<core::ffi::c_char>(),
-                name.len(),
-            )
-        };
-        Status::ok(status)
-    }
-
-    /// Gets the debug name of this BTI.
-    pub fn get_name(&self, out_name: &mut [u8; ZX_MAX_NAME_LEN]) -> Result<(), Status> {
-        // SAFETY: `self` is a valid `Bti` facade, and `out_name` is a valid output buffer.
-        let status = unsafe {
-            cpp_bti_get_name(self.as_ffi(), out_name.as_mut_ptr().cast::<core::ffi::c_char>())
-        };
-        Status::ok(status)
     }
 
     /// Grant the device access to the range of pages represented by `pinned_vmo`.

@@ -100,7 +100,7 @@ unsafe impl Sync for ResourceStorage {}
 
 impl ResourceStorage {
     /// In-place initializer for `ResourceStorage`.
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    pub(super) fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
             mu: KMutex::new(PhantomMutex),
             resource_list <- kcell_init(DoublyLinkedList::new()),
@@ -109,7 +109,7 @@ impl ResourceStorage {
     }
 
     /// Returns a reference to the global static storage.
-    pub fn get() -> &'static Self {
+    fn get() -> &'static Self {
         // SAFETY: `STATIC_STORAGE` is initialized during early boot via `lk_init_hook` at
         // `LK_INIT_LEVEL_PLATFORM_EARLY`, before any concurrent access or dispatcher creation.
         unsafe { &*ptr::addr_of!(STATIC_STORAGE).cast::<ResourceStorage>() }
@@ -117,7 +117,7 @@ impl ResourceStorage {
 
     /// Returns the count of tracked active resources in this storage.
     #[cfg(ktest)]
-    pub fn resource_count(&self) -> usize {
+    fn resource_count(&self) -> usize {
         lock!(let mut guard = ResourcesLock::lock());
         // SAFETY: `ResourcesLock` is the singleton lock synchronizing `ResourceStorage`.
         let storage_guard = unsafe { self.guard_mu(guard.as_mut().token_mut()) };
@@ -311,11 +311,6 @@ struct ResourceParams<'a> {
 }
 
 impl ResourceDispatcher {
-    /// Default rights for resources.
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_RESOURCE_RIGHTS
-    }
-
     /// Creates a ResourceDispatcher object representing access rights to a given region of address
     /// space from a particular address space allocator.
     pub fn create(
@@ -331,7 +326,8 @@ impl ResourceDispatcher {
     }
 
     /// Creates a ResourceDispatcher object in a specific `ResourceStorage` instance.
-    pub fn create_with_storage(
+    #[cfg(ktest)]
+    pub(super) fn create_with_storage(
         kind: zx_rsrc_kind_t,
         base: u64,
         size: usize,
@@ -403,7 +399,8 @@ impl ResourceDispatcher {
     }
 
     /// Creates a ranged root ResourceDispatcher object in a specific `ResourceStorage` instance.
-    pub fn create_ranged_root_with_storage(
+    #[cfg(ktest)]
+    pub(super) fn create_ranged_root_with_storage(
         kind: zx_rsrc_kind_t,
         name: &[u8],
         storage: &ResourceStorage,
@@ -487,7 +484,8 @@ impl ResourceDispatcher {
     }
 
     /// Initializes the allocator for a specified resource kind in a specific `ResourceStorage`.
-    pub fn initialize_allocator_with_storage(
+    #[cfg(ktest)]
+    pub(super) fn initialize_allocator_with_storage(
         kind: zx_rsrc_kind_t,
         base: u64,
         size: usize,

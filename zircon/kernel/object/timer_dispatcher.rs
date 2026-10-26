@@ -122,10 +122,6 @@ pub enum OnTimerFiredAction {
 }
 
 impl TimerDispatcher {
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_TIMER_RIGHTS
-    }
-
     /// Creates a new TimerDispatcher via C++ and returns its kernel handle and rights.
     pub fn create(
         options: u32,

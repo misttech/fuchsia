@@ -31,7 +31,7 @@ use zx_types::{
     ZX_FIFO_WRITABLE, ZX_OBJ_TYPE_FIFO, ZX_USER_SIGNAL_ALL, zx_rights_t,
 };
 
-pub const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL;
+const ALLOWED_SIGNALS: u32 = ZX_USER_SIGNAL_ALL;
 
 zr::static_assert_size_and_align!(
     FifoDispatcherState,
@@ -106,10 +106,6 @@ impl_peered_dispatcher_facade_with_state!(
 );
 
 impl FifoDispatcher {
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_FIFO_RIGHTS
-    }
-
     /// Creates a new FifoDispatcher pair and returns their kernel handles and rights.
     pub fn create(
         count: usize,

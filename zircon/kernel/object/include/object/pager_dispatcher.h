@@ -15,9 +15,9 @@
 #include <object/handle.h>
 #include <object/opaque_storage.h>
 #include <object/pager_proxy.h>
-#include <object/port_dispatcher.h>
 
 class PagerDispatcher;
+class PortDispatcher;
 
 extern "C" {
 zx_status_t cpp_pager_dispatcher_create(
@@ -29,8 +29,6 @@ const void* cpp_pager_proxy_get_dll_node(const PagerProxy* proxy);
 zx_status_t cpp_pager_proxy_create(PagerDispatcher* dispatcher, PortDispatcher* port, uint64_t key,
                                    uint32_t options, PagerProxy** out_proxy);
 zx_status_t cpp_pager_proxy_create_page_source(PagerProxy* proxy, PageSource** out_src);
-void cpp_pager_proxy_set_page_source_unchecked(PagerProxy* proxy, PageSource* src);
-void cpp_pager_proxy_on_dispatcher_close(PagerProxy* proxy);
 
 void rust_pager_dispatcher_state_init(void* state, const PagerDispatcher* disp);
 void rust_pager_dispatcher_state_destroy(void* state);

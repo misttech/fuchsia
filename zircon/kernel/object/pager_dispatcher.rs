@@ -34,7 +34,7 @@ use super::pager_dispatcher_ffi::{
 use super::port_dispatcher::PortDispatcher;
 
 /// Default rights assigned to a `PagerDispatcher` handle (`ZX_DEFAULT_PAGER_RIGHTS`).
-pub const DEFAULT_RIGHTS: zx_rights_t =
+const DEFAULT_RIGHTS: zx_rights_t =
     ZX_RIGHT_INSPECT | ZX_RIGHT_TRANSFER | ZX_RIGHT_ATTACH_VMO | ZX_RIGHT_MANAGE_VMO;
 
 zr::static_assert_size_and_align!(
@@ -185,11 +185,6 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl PagerDispatcher {
-    /// Returns the default rights for a `PagerDispatcher` handle.
-    pub fn default_rights() -> zx_rights_t {
-        DEFAULT_RIGHTS
-    }
-
     /// Creates a new `PagerDispatcher` and returns its kernel handle and default rights.
     pub fn create() -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         // SAFETY: `cpp_pager_dispatcher_create` initializes `out` on `ZX_OK`.

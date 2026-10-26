@@ -6,20 +6,9 @@
 
 #include "object/bus_transaction_initiator_dispatcher.h"
 
-#include <align.h>
 #include <lib/object-constants.h>
-#include <lib/page/size.h>
-#include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/types.h>
 
-#include <new>
-
-#include <dev/iommu/iommu.h>
 #include <kernel/ffi.h>
-#include <object/pinned_memory_token_dispatcher.h>
-#include <vm/pinned_vm_object.h>
-#include <vm/vm_object.h>
 
 BusTransactionInitiatorDispatcher::BusTransactionInitiatorDispatcher(fbl::RefPtr<Bti> bti)
     : Dispatcher(0u) {
