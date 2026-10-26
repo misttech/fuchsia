@@ -36,7 +36,23 @@ import subprocess
 import sys
 
 workdir = os.path.abspath(sys.argv[1])
-target_pkg = sys.argv[2].strip().strip("/")
+
+
+def normalize_target_pkg(raw_dir, base_workdir):
+    d = raw_dir.strip()
+    if d.startswith("//"):
+        d = d[2:]
+    elif os.path.isabs(d):
+        rel = os.path.relpath(os.path.abspath(d), base_workdir)
+        if rel != ".." and not rel.startswith("../"):
+            d = rel
+    while d.startswith("./"):
+        d = d[2:]
+    d = d.strip("/")
+    return "" if d == "." else d
+
+
+target_pkg = normalize_target_pkg(sys.argv[2], workdir)
 default_target = os.path.basename(target_pkg)
 
 bazel_file = os.path.join(workdir, target_pkg, "BUILD.bazel")
@@ -49,6 +65,8 @@ testonly_targets = set()
 alias_map = {}
 
 BAZEL_NON_GN_SYNCED_RULES = {
+    "cc_test",
+    "fx_cc_test",
     "fx_packaged_binary",
     "fx_test_component",
     "fx_unittest_component",
@@ -56,9 +74,11 @@ BAZEL_NON_GN_SYNCED_RULES = {
     "fx_unittest_package",
     "test_suite",
     "rustc_test",
+    "host_cc_test",
     "host_rustc_test",
     "host_go_test",
     "host_py_test",
+    "host_shac_test",
     "host_test",
     "host_test_data_files",
     "host_test_data_map",
@@ -231,115 +251,124 @@ def discover_git_repos():
     return repos
 
 
-# Discover all build files mentioning target_pkg across all repos and ancestor BUILD.gn files
+# Discover all build files mentioning target_pkg across all repos and ancestor BUILD.gn files.
+# Using git grep per repository avoids false-empty results when workdir is a git worktree under
+# .jiri_root/worktrees/<slot> (where the parent checkout's .gitignore ignores /.jiri_root/) or
+# when sub-repositories are listed in the root .gitignore.
 def discover_referencing_build_files(pkg_path):
     label_prefix = f"//{pkg_path}"
     found = []
     repos = discover_git_repos()
-    rg_bin = shutil.which("rg")
-    used_rg = False
-    if rg_bin:
-        rg_globs = [
-            "-g",
+    change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+    used_git_grep = False
+    for repo in repos:
+        if not os.path.exists(os.path.join(repo, ".git")):
+            continue
+        grep_cmd = [
+            "git",
+            "-C",
+            repo,
+            "grep",
+            "--untracked",
+            "-l",
+            "--fixed-strings",
+            label_prefix,
+            "--",
             "*BUILD.gn",
-            "-g",
             "*BUILD.bazel",
-            "-g",
             "*.gni",
-            "-g",
             "*.bzl",
-            "-g",
-            "!out/**",
         ]
-        if ".jiri_root" not in workdir:
-            rg_globs.extend(["-g", "!.jiri_root/**"])
-        rg_cmd = (
-            [
-                rg_bin,
-                "-l",
-                "--no-ignore-parent",
-                "--fixed-strings",
-                label_prefix,
-            ]
-            + rg_globs
-            + repos
-        )
         try:
             proc = subprocess.run(
-                rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+                grep_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
             )
-            if proc.returncode == 0 and proc.stdout.strip():
-                used_rg = True
-                found = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+            if proc.returncode in (0, 1):
+                used_git_grep = True
+            for line in proc.stdout.splitlines():
+                if line.strip():
+                    found.append(os.path.join(repo, line.strip()))
         except OSError:
             pass
-    if not used_rg:
-        change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
-        for repo in repos:
-            if not os.path.exists(os.path.join(repo, ".git")):
-                continue
-            grep_cmd = [
+        # Include untracked and modified build files not indexed by git grep
+        for diff_cmd in (
+            ["git", "-C", repo, "diff", "--name-only", change_base],
+            ["git", "-C", repo, "diff", "--cached", "--name-only"],
+            [
                 "git",
                 "-C",
                 repo,
-                "grep",
-                "-l",
-                "--fixed-strings",
-                label_prefix,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
                 "--",
-                "*BUILD.gn",
                 "*BUILD.bazel",
+                "*BUILD.gn",
                 "*.gni",
                 "*.bzl",
+            ],
+        ):
+            try:
+                out = subprocess.check_output(
+                    diff_cmd, stderr=subprocess.DEVNULL, text=True
+                )
+                for line in out.splitlines():
+                    rel_line = line.strip()
+                    if not rel_line:
+                        continue
+                    direct_cand = os.path.join(repo, rel_line)
+                    if rel_line.endswith(("BUILD.bazel", "BUILD.gn", ".gni", ".bzl")) and os.path.isfile(direct_cand):
+                        found.append(direct_cand)
+                    d = os.path.dirname(rel_line)
+                    for bname in ("BUILD.bazel", "BUILD.gn"):
+                        cand = os.path.join(repo, d, bname) if d else os.path.join(repo, bname)
+                        if os.path.isfile(cand):
+                            found.append(cand)
+            except Exception:
+                pass
+    if not used_git_grep:
+        rg_bin = shutil.which(
+            "rg",
+            path=os.environ.get("PATH", "") + os.pathsep + os.path.expanduser("~/.cargo/bin"),
+        )
+        if rg_bin:
+            rg_globs = [
+                "-g",
+                "*BUILD.gn",
+                "-g",
+                "*BUILD.bazel",
+                "-g",
+                "*.gni",
+                "-g",
+                "*.bzl",
+                "-g",
+                "!out/**",
             ]
+            if ".jiri_root" not in workdir:
+                rg_globs.extend(["-g", "!.jiri_root/**"])
+            rg_cmd = (
+                [
+                    rg_bin,
+                    "-l",
+                    "--no-ignore-parent",
+                    "--no-require-git",
+                    "--fixed-strings",
+                    label_prefix,
+                ]
+                + rg_globs
+                + repos
+            )
             try:
                 proc = subprocess.run(
-                    grep_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
+                    rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
                 )
-                for line in proc.stdout.splitlines():
-                    if line.strip():
-                        found.append(os.path.join(repo, line.strip()))
+                if proc.returncode in (0, 1):
+                    found.extend(line.strip() for line in proc.stdout.splitlines() if line.strip())
             except OSError:
                 pass
-            # Include untracked and modified build files not indexed by git grep
-            for diff_cmd in (
-                ["git", "-C", repo, "diff", "--name-only", change_base],
-                ["git", "-C", repo, "diff", "--cached", "--name-only"],
-                [
-                    "git",
-                    "-C",
-                    repo,
-                    "ls-files",
-                    "--others",
-                    "--exclude-standard",
-                    "--",
-                    "*BUILD.bazel",
-                    "*BUILD.gn",
-                    "*.gni",
-                    "*.bzl",
-                ],
-            ):
-                try:
-                    out = subprocess.check_output(
-                        diff_cmd, stderr=subprocess.DEVNULL, text=True
-                    )
-                    for line in out.splitlines():
-                        rel_line = line.strip()
-                        if not rel_line:
-                            continue
-                        direct_cand = os.path.join(repo, rel_line)
-                        if rel_line.endswith(("BUILD.bazel", "BUILD.gn", ".gni", ".bzl")) and os.path.isfile(direct_cand):
-                            found.append(direct_cand)
-                        d = os.path.dirname(rel_line)
-                        for bname in ("BUILD.bazel", "BUILD.gn"):
-                            cand = os.path.join(repo, d, bname) if d else os.path.join(repo, bname)
-                            if os.path.isfile(cand):
-                                found.append(cand)
-                except Exception:
-                    pass
     pkg_parts = pkg_path.split("/")
     for i in range(1, len(pkg_parts)):
         anc_gn = os.path.join(workdir, "/".join(pkg_parts[:i]), "BUILD.gn")
@@ -354,19 +383,35 @@ abs_label_re = re.compile(r'"//' + re.escape(target_pkg) + r'(?::([A-Za-z0-9_.-]
 
 true_rdep_packages = set()
 visibility_only_packages = set()
+gn_only_ref_packages = set()
 excluded_gn_only_references = set()
 per_target_rdeps = {t: set() for t in bazel_targets}
 
+
+# Map referenced GN/Bazel target labels to their owning BUILD.bazel target
 def owning_bazel_target(sub):
-    # Rules such as fidl_library emit sub-targets named '<name>_<suffix>' (e.g. '<fidl>_rust',
-    # '<fidl>_cpp') that share the visibility of '<name>'; attribute them to the longest match.
     if sub in per_target_rdeps:
         return sub
+    norm_sub = sub.replace("-", "_")
+    for t in bazel_targets:
+        if t.replace("-", "_") == norm_sub:
+            return t
     best = None
     for t in bazel_targets:
-        if sub.startswith(t + "_") and (best is None or len(t) > len(best)):
+        norm_t = t.replace("-", "_")
+        if (sub.startswith(t + "_") or norm_sub.startswith(norm_t + "_")) and (
+            best is None or len(t) > len(best)
+        ):
             best = t
-    return best
+    if best is not None:
+        return best
+    if default_target and sub == default_target:
+        primary = [
+            t for t in bazel_targets if t not in non_gn_synced_targets and t != "headers"
+        ]
+        if len(primary) == 1:
+            return primary[0]
+    return None
 
 
 # Check whether a .gn/.gni reference targets a GN-only, non-synced, or # @bazel2gn:skip target
@@ -463,6 +508,7 @@ for fpath in sorted(set(files)):
         sub = m.group(1) or default_target
         if sub in gn_only_targets and sub not in bazel_targets:
             excluded_gn_only_references.add(f"//{pkg} (:{sub})")
+            gn_only_ref_packages.add(pkg)
             continue
         is_pkg_target = sub in package_targets or (
             sub == default_target and len(bazel_targets) == 1 and bazel_targets[0] in package_targets
@@ -472,6 +518,7 @@ for fpath in sorted(set(files)):
             owner = bazel_targets[0]
         if is_gn_only_target_ref(rel, pkg, sub, owner, is_pkg_target):
             excluded_gn_only_references.add(f"//{pkg} (:{sub})")
+            gn_only_ref_packages.add(pkg)
             continue
         caller_pkg = (
             "bundles/assembly"
@@ -489,6 +536,7 @@ for alias_name, actual_name in alias_map.items():
         per_target_rdeps[actual_name] = set(combined)
 
 visibility_only_packages -= true_rdep_packages
+gn_only_ref_packages -= true_rdep_packages
 
 BANNED_UMBRELLA_AREAS = {
     "src/lib",
@@ -509,9 +557,6 @@ def get_pkg_area(p):
 def get_distinct_areas(rdep_pkgs):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     return sorted({f"//{get_pkg_area(p)}" for p in pkgs if get_pkg_area(p)})
-
-VG_ROOT = "vendor/" + "google"
-VG_SUBPKGS = "//" + VG_ROOT + ":__subpackages__"
 
 def sanitize_rdep_pkg(p):
     p = p.strip("/")
@@ -650,10 +695,172 @@ def collapse_src_rollup_visibility(rdep_pkgs):
         res.add("//src:__subpackages__")
     return sorted(res)
 
-def recommend_visibility(rdep_pkgs, is_test_support=False):
+BANNED_TOP_LEVEL_SUBPKGS = {
+    "src",
+    "sdk",
+    "build",
+    "zircon",
+    "third_party",
+}
+
+def get_orig_gn_visibility_scopes(pkg_path):
+    """Returns {target_name: [(scope_pkg, 'pkg'|'subpackages'), ...]} for targets in the pre-migration
+    BUILD.gn (above BAZEL2GN SENTINEL) that had an explicit non-wildcard visibility = [...] restriction."""
+    gn_rel = f"{pkg_path}/BUILD.gn" if pkg_path else "BUILD.gn"
+    change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+
+    def parse_gn_vis_list(vis_body):
+        if "$" in vis_body:
+            return None
+        pats = re.findall(r'"([^"]+)"', vis_body)
+        if not pats:
+            return None
+        scopes = []
+        for pat in pats:
+            if pat == "//*":
+                return None
+            if pat.startswith(":"):
+                scopes.append((pkg_path, "pkg"))
+                continue
+            m_gn = re.match(r"^//([^:*]*?)/?(\*|:.*)?$", pat)
+            if not m_gn:
+                return None
+            sp = m_gn.group(1).strip("/")
+            suffix = m_gn.group(2) or ""
+            scopes.append((sp, "subpackages" if suffix == "*" else "pkg"))
+        return scopes
+
+    out = {}
+    target_re = re.compile(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{')
+    for ref in dict.fromkeys(["origin/main", "HEAD~1", change_base, "HEAD"]):
+        if not ref:
+            continue
+        try:
+            gn_src = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{ref}:{gn_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            continue
+        # Split on BAZEL2GN SENTINEL before stripping '#' comments so targets
+        # generated below the sentinel comment are never mistaken for hand-written
+        # pre-migration GN targets.
+        raw_above = (
+            gn_src.split("BAZEL2GN SENTINEL")[0]
+            if "BAZEL2GN SENTINEL" in gn_src
+            else gn_src
+        )
+        above_sentinel = re.sub(r"#[^\n]*", "", raw_above)
+        for m in target_re.finditer(above_sentinel):
+            tname = m.group(2)
+            if tname in out:
+                continue
+            depth, in_str, i, n = 0, False, m.end() - 1, len(above_sentinel)
+            while i < n:
+                c = above_sentinel[i]
+                if in_str:
+                    if c == "\\":
+                        i += 2
+                        continue
+                    if c == '"':
+                        in_str = False
+                elif c == '"':
+                    in_str = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            tbody = above_sentinel[m.end() : i]
+            if re.search(r"\bvisibility\s*\+=", tbody):
+                continue
+            vm = re.search(r"\bvisibility\s*=\s*\[([^\]]*)\]", tbody)
+            if vm:
+                scopes = parse_gn_vis_list(vm.group(1))
+                if scopes:
+                    out[tname] = scopes
+    return out
+
+
+orig_gn_vis_map = get_orig_gn_visibility_scopes(target_pkg)
+
+
+def get_preserved_gn_visibility(tname, rdep_pkgs):
+    if not tname or tname in non_gn_synced_targets:
+        return None
+    gn_scopes = orig_gn_vis_map.get(tname)
+    if not gn_scopes:
+        return None
+    pkgs = sorted(
+        set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg)
+    )
+    has_vg = any(p == VG_ROOT or p.startswith(VG_ROOT + "/") for p in pkgs)
+    valid_scopes = []
+    for sp, kind in gn_scopes:
+        if sp == target_pkg and kind == "pkg":
+            continue
+        if sp == VG_ROOT or sp.startswith(VG_ROOT + "/"):
+            if has_vg:
+                valid_scopes.append((VG_ROOT, "subpackages"))
+            continue
+        if kind == "subpackages":
+            if not sp or sp in BANNED_TOP_LEVEL_SUBPKGS or sp in BANNED_UMBRELLA_AREAS:
+                return None
+            parts = sp.split("/")
+            if len(parts) == 2 and parts[0] in ("src", "sdk"):
+                if not (target_pkg == sp or target_pkg.startswith(sp + "/")):
+                    return None
+            if not os.path.isdir(os.path.join(workdir, sp)):
+                continue
+            valid_scopes.append((sp, "subpackages"))
+        else:
+            if (
+                not sp
+                or not os.path.isdir(os.path.join(workdir, sp))
+                or sp in visibility_only_packages
+                or sp in gn_only_ref_packages
+            ):
+                continue
+            valid_scopes.append((sp, "pkg"))
+    if not valid_scopes:
+        return None
+    sub_roots = {sp for sp, k in valid_scopes if k == "subpackages"}
+    preserved = set()
+    for sp, kind in valid_scopes:
+        if kind == "subpackages":
+            if any(sp != o and sp.startswith(o + "/") for o in sub_roots):
+                continue
+            preserved.add(VG_SUBPKGS if sp == VG_ROOT else f"//{sp}:__subpackages__")
+        else:
+            if any(sp == o or sp.startswith(o + "/") for o in sub_roots):
+                continue
+            preserved.add(f"//{sp}:__pkg__")
+    uncovered = [
+        r
+        for r in pkgs
+        if not any(
+            r == gsp or (gk == "subpackages" and (gsp == "" or r.startswith(gsp + "/")))
+            for gsp, gk in valid_scopes
+        )
+    ]
+    if uncovered:
+        preserved.update(recommend_narrow_visibility(uncovered))
+    if not preserved or len(preserved) > 15:
+        return None
+    return sorted(preserved)
+
+
+def recommend_visibility(rdep_pkgs, is_test_support=False, target_name=None):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     narrow = recommend_narrow_visibility(pkgs)
     globally_used = is_globally_used_target(pkgs)
+    if target_name and not globally_used:
+        preserved = get_preserved_gn_visibility(target_name, pkgs)
+        if preserved:
+            return preserved
     if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs)
         distinct_areas = get_distinct_areas(pkgs)
@@ -675,7 +882,11 @@ print(json.dumps({
     "true_rdep_packages": sorted({f"//{sanitize_rdep_pkg(p)}" for p in true_rdep_packages}),
     "distinct_rdep_areas": get_distinct_areas(true_rdep_packages),
     "is_globally_used": is_globally_used_target(true_rdep_packages),
-    "recommended_visibility": recommend_visibility(true_rdep_packages, is_test_support=is_test_pkg or any(t in testonly_targets for t in bazel_targets)),
+    "recommended_visibility": recommend_visibility(
+        true_rdep_packages,
+        is_test_support=is_test_pkg or any(t in testonly_targets for t in bazel_targets),
+        target_name=default_target if default_target in orig_gn_vis_map else None,
+    ),
     "per_target_rdeps": {
         t: sorted({f"//{sanitize_rdep_pkg(p)}" for p in rset}) for t, rset in per_target_rdeps.items()
     },
@@ -683,7 +894,8 @@ print(json.dumps({
         t: is_globally_used_target(rset) for t, rset in per_target_rdeps.items()
     },
     "per_target_recommended_visibility": {
-        t: recommend_visibility(rset, is_test_support=is_test_pkg or t in testonly_targets) for t, rset in per_target_rdeps.items()
+        t: recommend_visibility(rset, is_test_support=is_test_pkg or t in testonly_targets, target_name=t)
+        for t, rset in per_target_rdeps.items()
     },
     "per_target_area_rollup_visibility": {
         t: recommend_area_rollup_visibility(rset) for t, rset in per_target_rdeps.items()

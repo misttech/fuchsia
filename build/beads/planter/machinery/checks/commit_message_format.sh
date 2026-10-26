@@ -87,14 +87,43 @@ if head and base_rev and head != base_rev:
     changed = [f for f in git("diff", "--name-only", base_rev, head).splitlines() if f]
 
     # Subsystem tags used by earlier commits touching the directory.
+    # Ignore cross-cutting language/sweep tags unless the tag is itself a
+    # path segment of the migrated directory.
+    sweep_tags = {
+        "bazel_migration", "bazel", "bazel2gn", "build", "gn", "roll", "release",
+        "rust", "rs", "cpp", "c++", "cxx", "go", "py", "python", "fidl",
+        "clippy", "rustfmt", "clang", "lint", "format", "cleanup", "refactor",
+        "flake", "fix", "trivial",
+    }
+    dir_segments = {seg.lower() for d in dirs for seg in d.split("/") if seg}
+    generic_segments = {
+        "src", "sdk", "lib", "libs", "bin", "bins", "tools", "testing", "tests",
+        "test", "fidl", "service", "services", "client", "server", "common",
+        "util", "utils", "internal", "sys", "developer", "bringup", "zircon",
+        "products", "bundles", "boards", "examples", "third_party",
+    }
+    leaves = [d.rsplit("/", 1)[-1] for d in dirs]
+    ancestor_subsystems = {
+        seg.lower()
+        for d in dirs
+        for seg in d.split("/")[:-1]
+        if seg and seg.lower() not in generic_segments
+    }
     tags = collections.Counter()
     if dirs:
         log = git("log", "-n", "200", "--format=%s", base_rev, "--", *dict.fromkeys(raw_dirs + dirs))
         for s in log.splitlines():
             for t in re.findall(r"\[([A-Za-z0-9_.\-]+)\]", s):
-                if t.lower() not in ("bazel_migration", "bazel", "build", "gn", "roll", "release"):
-                    tags[t] += 1
-    common = [t for t, n in tags.most_common() if n >= 2]
+                tl = t.lower()
+                if tl in ("bazel_migration", "bazel", "bazel2gn", "build", "gn", "roll", "release"):
+                    continue
+                if tl in sweep_tags and tl not in dir_segments:
+                    continue
+                tags[t] += 1
+    common = sorted(
+        [t for t, n in tags.most_common() if n >= 2],
+        key=lambda t: (t.lower() not in ancestor_subsystems, -tags[t]),
+    )
     shown = " ".join(dict.fromkeys(raw_dirs[:1] + dirs[:1])) or "<dir>"
     hint = (f"Tags used for this directory in `git log --format=%s -- {shown}`: "
             + ", ".join(f"[{t}]" for t in common[:5]) + ".") if common else (
@@ -104,7 +133,6 @@ if head and base_rev and head != base_rev:
         hint += (" GN overlay directories migrate to the directory they overlay (gn_secondary_tree): "
                  + ", ".join(moved) + ".")
 
-    leaves = [d.rsplit("/", 1)[-1] for d in dirs]
     non_leaf_common = [t for t in common if t not in leaves]
     subj_path = (
         subject.split(" //", 1)[1].split(":", 1)[0].strip("/")
@@ -147,6 +175,24 @@ if head and base_rev and head != base_rev:
             f"Use `{pref_subj}` (omit `[<subsystem>]` when adding it would push the full "
             f"`//{first}` subject over 65 characters).",
             severity="error",
+        )
+    elif (
+        m_tag
+        and m_tag.group(1).lower() in sweep_tags
+        and m_tag.group(1).lower() not in dir_segments
+    ):
+        rec_subj = (
+            f"[bazel_migration][{non_leaf_common[0]}] //{first}"
+            if non_leaf_common
+            else f"[bazel_migration] //{first}"
+        )
+        add(
+            "commit_subject_sweep_tag",
+            1,
+            f"Commit subject tag [{m_tag.group(1)}] is a cross-cutting "
+            "language/chore tag from tree-wide sweeps rather than the "
+            f"subsystem tag for `//{first}`.",
+            f"Use '{rec_subj}' instead. {hint}",
         )
     elif m_tag and m_tag.group(1) in leaves and not non_leaf_common:
         add("commit_subject_leaf_tag", 1,
@@ -195,6 +241,61 @@ if head and base_rev and head != base_rev:
                 "Name the test target: `fx bazel test --config=fuchsia_platform @//<dir>:<test>` if it runs, else "
                 "`fx bazel build ...`; add `fx bazel test --config=host @//<dir>:<test>` when the target can build "
                 "for host (no target_compatible_with restriction).")
+        # Check that `fx test` footers do not pass a GN `group("tests")` label (`//<dir>:tests`),
+        # which is not a leaf test entry in `tests.json` and fails `fx test --dry`.
+        if re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", cmd):
+            for pkg_d, t_name in re.findall(r"(?<![@\w])//([\w./\-]+):([\w.\-]+)", cmd):
+                pkg_d = pkg_d.strip("/")
+                try:
+                    with open(f"{workdir}/{pkg_d}/BUILD.gn") as fh:
+                        gn_txt = fh.read()
+                except OSError:
+                    continue
+                if t_name == "tests" and re.search(r'\bgroup\(\s*"tests"\s*\)', gn_txt):
+                    add(
+                        "test_footer_gn_tests_group_label",
+                        ln,
+                        f"`Test:` footer `{cmd}` passes GN `group(\"tests\")` label "
+                        f"`//{pkg_d}:tests` to `fx test`, which fails `fx test --dry` "
+                        "because `<build dir>/tests.json` only indexes leaf test targets, "
+                        "not GN groups.",
+                        f"Use `Test: fx test //{pkg_d}:<test_target>` or "
+                        f"`Test: fx test //{pkg_d}` (without `:tests`), which selects "
+                        "both the Bazel `bazel_test_suite` test and the GN test.",
+                        severity="error",
+                    )
+                    continue
+                if pkg_d not in dirs:
+                    continue
+                try:
+                    with open(f"{workdir}/{pkg_d}/BUILD.bazel") as fh:
+                        bz_txt = fh.read()
+                except OSError:
+                    bz_txt = ""
+                in_bazel = bool(
+                    re.search(r'\bname\s*=\s*"' + re.escape(t_name) + r'"', bz_txt)
+                    or re.search(r'"//' + re.escape(f"{pkg_d}:{t_name}") + r'"', gn_txt)
+                    or (
+                        t_name.endswith("_test")
+                        and re.search(r'\bname\s*=\s*"' + re.escape(t_name[:-5]) + r'"', bz_txt)
+                    )
+                )
+                if (
+                    not in_bazel
+                    and re.search(r'\bgroup\(\s*"tests"\s*\)', gn_txt)
+                    and re.search(r"\bbazel_test_suite\(", gn_txt)
+                    and re.search(r'\(\s*"' + re.escape(t_name) + r'"\s*\)', gn_txt)
+                ):
+                    add(
+                        "test_footer_gn_only_test_label",
+                        ln,
+                        f"`Test:` footer `{cmd}` passes the GN-only test target "
+                        f"`//{pkg_d}:{t_name}` rather than `//{pkg_d}`, "
+                        "which only selects the GN test in `BUILD.gn`.",
+                        f"Use `Test: fx test //{pkg_d}` (without `:tests`) so `fx test` "
+                        "selects all tests under the package in `tests.json` (both "
+                        "`bazel_test_suite` and GN tests).",
+                    )
     # Test footers: prefer an ancestor test_suite() that includes the migrated tests.
     suites, has_tests = [], False
     for d in dirs:
@@ -223,8 +324,8 @@ if head and base_rev and head != base_rev:
         a, n = suites[-1]
         add("test_footer_not_ancestor_suite", test_lines[0][0],
             f"`Test:` footers run the migrated tests directly, but the ancestor `test_suite()` //{a}:{n} includes them.",
-            f"Prefer the higher-level suite, e.g. `Test: fx bazel test --config=host @//{a}:{n}`, or the GN group that "
-            "depends on it through a `bazel_test_suite` (e.g. `Test: fx test --host //<pkg>:tests`), which also runs "
+            f"Prefer the higher-level suite, e.g. `Test: fx bazel test --config=host @//{a}:{n}`, or `fx test` on the "
+            "package directory (e.g. `Test: fx test --host //<pkg>`), which also runs "
             "remaining GN tests. Use it only after verifying the new tests run as a result, and state the dependency "
             "chain in the body before the footers.")
     if dirs and has_tests and not suites:
@@ -248,7 +349,9 @@ if head and base_rev and head != base_rev:
         r"|^@?//[\w./\-]+\.?$"
         r"|^(?:this\s+(?:cl|change|commit|patch)\s+)?migrates?\s+(?:the\s+)?(?:@?//)?[\w./\-]+"
         r"(?:\s+(?:and\s+(?:its\s+)?(?:unit\s+)?tests?|targets?|package|library|binary))?"
-        r"(?:\s+from\s+GN)?(?:\s+to\s+Bazel)?\.?$",
+        r"(?:\s+from\s+GN)?(?:\s+to\s+Bazel)?"
+        r"(?:,?\s+and\s+(?:generates?|regenerates?|updates?|removes?|deletes?)\s+.*"
+        r"(?:BUILD\.gn|GN\s+targets?|bazel2gn))?\.?$",
         re.I,
     )
 
@@ -519,38 +622,95 @@ if head and base_rev and head != base_rev:
             )
             add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
 
-    # Check body line length (wrap at 72 chars) starting from line 3 (if body exists),
-    # matching //scripts/shac/commit_msg_checker.py and the Fuchsia commit style guide.
-    body_url_re = re.compile(r"https?://[^\s]+")
-    body_footer_re = re.compile(
-        r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Change-Id|Cq-Include-Trybots|"
-        r"Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|"
-        r"No-Try|TAG|CONV|Skip-Readme-Check|Reviewed-on|Reviewed-by|Commit-Queue)[:=]"
+    # Check that any pre-existing source bitrot compile fix is explained in the commit body.
+    source_suffixes = (".rs", ".cc", ".cpp", ".c", ".h", ".hpp")
+    bitrot_reason_re = re.compile(
+        r"\b(bitrot|unbuilt|not\s+built|disconnected|pre-existing|compile|build\s+error"
+        r"|type\s+error|syntax|E0\d{3})\b",
+        re.I,
     )
 
-    def check_body_line_length(msg_lines):
-        for idx, raw in enumerate(msg_lines[2:], start=3):
-            if len(raw) <= 72:
+    def check_source_bitrot_explanation():
+        for f in changed:
+            if not f.endswith(source_suffixes):
                 continue
-            if body_url_re.search(raw):
-                continue
-            if body_footer_re.match(raw.strip()):
-                continue
-            if raw.startswith(("    ", "\t", ">", "#", "```")):
-                continue
-            add(
-                "commit_msg_body_line_length",
-                idx,
-                f"Line {idx} exceeds 72 characters ({len(raw)} chars). Wrap body text at 72 characters.",
-                "Wrap body text paragraphs at 72 characters to conform with Fuchsia Git commit "
-                "message style guidelines and pass the shac commit_msg_checker presubmit check.",
-                severity="error",
-            )
+            base_name = f.rsplit("/", 1)[-1]
+            rel_names = [f, base_name]
+            for d in dirs:
+                if f.startswith(d + "/"):
+                    rel_names.append(f[len(d) + 1:])
+            mentioned = any(n in body for n in rel_names)
+            has_reason = bool(bitrot_reason_re.search(body))
+            if not (mentioned and has_reason):
+                msg_text = (
+                    f"The change modifies source file `{f}` (allowed by `build_only_scope` "
+                    "only to repair pre-existing compile bitrot in an unbuilt GN package), "
+                    "but the commit body does not mention the file and explain the "
+                    "pre-existing compile errors, making the source diff appear unrelated "
+                    "to the Bazel migration during review."
+                )
+                rem_text = (
+                    f"Explain the `{f}` compile fixes in the commit body (naming `{base_name}` "
+                    "and stating that the package was disconnected from the GN build graph and "
+                    "had pre-existing compile errors that prevented the migrated Bazel target "
+                    "from compiling). Keep the source diff strictly minimal (e.g. changing a "
+                    "misplaced `///` doc comment inside a closure to `//` or moving it without "
+                    "unrelated reformatting, and fixing only broken types/APIs)."
+                )
+                add("commit_body_unmentioned_source_fix", 1, msg_text, rem_text)
 
     check_redundant_body_title(lines)
     check_checkout_relative_paths(lines)
     check_subject_partial_directory(subject)
-    check_body_line_length(lines)
+    check_source_bitrot_explanation()
+
+    # Check subject and body line lengths (mirroring scripts/shac/commit_msg_checker.py).
+    exempt_subject_re = re.compile(r"^(?:Revert(?:\^\d+)?|Reland|fixup!|squash!|amend!) ")
+    exempt_footer_re = re.compile(
+        r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Skip-Readme-Check|Change-Id|"
+        r"Cq-Include-Trybots|Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|"
+        r"Exempt|No-Tree-Checks|No-Presubmit|No-Try|TAG|CONV|Reviewed-on|Reviewed-by|"
+        r"Commit-Queue|Presubmit-Verified|API-Review)[:=]"
+    )
+
+    def check_line_lengths(msg_lines):
+        if msg_lines:
+            subj = msg_lines[0]
+            if len(subj) > 65 and not exempt_subject_re.match(subj):
+                msg_text = (
+                    f"Commit subject line exceeds 65 characters ({len(subj)} chars): "
+                    f"{subj!r} (triggers shac `commit_msg` warning)."
+                )
+                rem_text = (
+                    "Shorten the commit subject line to at most 65 characters "
+                    "(recommended <= 50; abbreviate long middle path segments with "
+                    "`//.../<leaf>` when needed while keeping the full target label "
+                    "in `Bazel-Migration-Target:`)."
+                )
+                add("commit_subject_too_long", 1, msg_text, rem_text, severity="error")
+        for idx, raw in enumerate(msg_lines[2:], start=3):
+            if len(raw) <= 72:
+                continue
+            if re.search(r"https?://[^\s]+", raw):
+                continue
+            if exempt_footer_re.match(raw.strip()) or footer_line_re.match(raw.strip()):
+                continue
+            if raw.startswith(("    ", "\t", ">", "#", "```")):
+                continue
+            msg_text = (
+                f"Commit message line {idx} exceeds 72 characters ({len(raw)} chars): "
+                f"`{raw}` (triggers shac `commit_msg` warning: "
+                f"`Line {idx} exceeds 72 characters ({len(raw)} chars). "
+                "Wrap body text at 72 characters.`)."
+            )
+            rem_text = (
+                "Wrap commit message body lines at 72 characters or fewer "
+                "(only URL lines, indented code blocks, and single-line footers "
+                "such as `Test:` and `Bazel-Migration-Target:` may exceed 72 characters)."
+            )
+            add("commit_body_line_too_long", idx, msg_text, rem_text, severity="error")
+
+    check_line_lengths(lines)
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -774,6 +934,9 @@ if head and base_rev and head != base_rev:
                 "`Bazel-Migration-Target:` lines may exceed 72 characters), "
                 f"e.g. {example_bmt}.",
             )
+        build_file_bmt_re = re.compile(
+            r"(?:^|/|:)(?:BUILD(?:\.gn|\.bazel)?|[\w.\-]+\.(?:gn|gni|bazel|bzl))$"
+        )
         for ln, l in bmt_lines:
             val = l.split(":", 1)[1].strip()
             canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
@@ -782,17 +945,29 @@ if head and base_rev and head != base_rev:
                 and bool(lines[ln].strip())
                 and not re.match(r"^[A-Za-z0-9\-]+\s*:", lines[ln])
             )
-            if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
+            leaf_tok = val.split(":", 1)[-1].rsplit("/", 1)[-1]
+            is_build_filename = leaf_tok in ("BUILD.gn", "BUILD.bazel", "BUILD")
+            if build_file_bmt_re.search(val) or is_build_filename:
+                add(
+                    "bazel_migration_target_footer_format",
+                    ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` names a build "
+                    f"file (`{val}`) rather than a migrated target label.",
+                    "Replace the file path with one "
+                    "`Bazel-Migration-Target: //<dir>:<target>` line per "
+                    f"migrated target, e.g. {example_bmt}.",
+                )
+            elif not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
                 add(
                     "bazel_migration_target_footer_format",
                     ln,
                     f"`Bazel-Migration-Target:` footer `{l}` must specify a "
-                    "single canonical `//<dir>:<target>` (or `//<dir>`) label "
-                    "on one unwrapped line (without a leading `@`).",
+                    "single canonical `//<dir>:<target>` (or `//<dir>`) target label "
+                    "on one unwrapped line (without a leading `@` or `/BUILD.gn` suffix).",
                     "Write one unwrapped line per migrated target (may exceed "
                     f"72 characters), e.g. {example_bmt}.",
                 )
-            elif ":" in val and canon_val in excluded_bmt:
+            elif canon_val in excluded_bmt:
                 add(
                     "bazel_migration_target_not_migrated",
                     ln,
@@ -918,7 +1093,6 @@ if head and base_rev and head != base_rev:
                 f"Files under `{cand}` were modified without modifying `{readme}`, which fails the CQ `third_party_readme_update` shac check unless waived by a `Skip-Readme-Check:` footer.",
                 "Because GN-to-Bazel migrations must not modify `README.fuchsia` (`build_only_scope`), add `Skip-Readme-Check: No version change, Bazel build files only.` to the contiguous footer block at the bottom of the commit message (before `TAG:`/`Change-Id:`).",
                 severity="error")
-
         # Build-Only footer check: fxr/1913427 (Bug 576757166) allows `Build-Only: true` on
         # [bazel_migration] CLs that touch BUILD.gn and BUILD.bazel files exclusively,
         # skipping device/emulator tests in CQ to accelerate presubmit turnaround.
@@ -958,6 +1132,53 @@ if head and base_rev and head != base_rev:
                 "Consider adding `Build-Only: true` to the contiguous footer block to skip device/emulator presubmit testing in CQ and accelerate landing turnaround.",
                 severity="info")
 
+        # Check for unwarranted Cq-Include-Trybots: footers when migrated build files
+        # have no architecture-specific conditionals matching the requested trybot
+        # and no source files were modified for bitrot repair.
+        def check_cq_include_trybots(msg_lines):
+            if any(f.endswith(source_suffixes) for f in changed):
+                return
+            cq_lines = [
+                (i + 1, l)
+                for i, l in enumerate(msg_lines)
+                if re.match(r"^Cq-Include-Trybots\s*:", l, re.I)
+            ]
+            if not cq_lines:
+                return
+            build_blobs = []
+            for d in dirs:
+                for fn in ("BUILD.bazel", "BUILD.gn"):
+                    p = os.path.join(workdir, d, fn)
+                    if os.path.isfile(p):
+                        try:
+                            build_blobs.append(open(p, encoding="utf-8").read())
+                        except OSError:
+                            pass
+            combined_builds = "\n".join(build_blobs)
+            for ln, l in cq_lines:
+                arch_tokens = re.findall(r"\b(riscv64|arm64|x64)\b", l)
+                if not arch_tokens or not all(
+                    re.search(r"\b" + re.escape(tok) + r"\b", combined_builds)
+                    for tok in arch_tokens
+                ):
+                    msg_text = (
+                        f"Commit message includes `{l}`, which specifies extra trybot(s) not "
+                        "motivated by architecture-specific conditions in the migrated build files."
+                    )
+                    rem_text = (
+                        "Remove the `Cq-Include-Trybots:` footer line from the commit message; "
+                        "default CQ presubmit builders already cover standard GN-to-Bazel "
+                        "migrations."
+                    )
+                    add(
+                        "unnecessary_cq_include_trybots_footer",
+                        ln,
+                        msg_text,
+                        rem_text,
+                        severity="error",
+                    )
+
+        check_cq_include_trybots(lines)
         nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
         if nonempty_idxs:
             final_start = nonempty_idxs[-1]

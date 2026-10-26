@@ -611,6 +611,18 @@ def commit_msg_only_since_upload():
         ).strip()
         if not up_tree or up_tree != head_tree:
             return False
+        # Folding an unmerged ancestor commit into HEAD (`git reset --soft <base> && git commit --amend`)
+        # preserves HEAD^{tree} while changing HEAD~1; treat parent changes as full file changes.
+        up_parent = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "--verify", "--quiet", f"{uploaded_commit}~1^{{commit}}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        head_parent = subprocess.check_output(
+            ["git", "-C", workdir, "rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if up_parent != head_parent:
+            return False
         diff_wt = subprocess.check_output(
             ["git", "-C", workdir, "diff", "--name-only", "HEAD", "--"],
             stderr=subprocess.DEVNULL, text=True,
@@ -660,8 +672,9 @@ def find_planter_bin():
 # Downgrade false-positive review_diff attribute_alignment warnings on
 # rustc_check_cfg_build_flags targets (which bazel2gn natively converts to GN config()
 # with --check-cfg rustflags), output_name carried via @bazel2gn:raw_overwrite or
-# crate_name, and dep_alignment warnings caused by multi-line wrapped `deps =\n _VAR + ...`
-# assignments in BUILD.gn or third_party_target_map.json mappings.
+# crate_name, GN test_specs.log_settings.max_severity carried via max_log_severity on
+# fx_test / fx_unittest_package, and dep_alignment warnings caused by multi-line wrapped
+# `deps =\n _VAR + ...` assignments in BUILD.gn or third_party_target_map.json mappings.
 def downgrade_check_cfg_diff_findings(findings):
     check_cfg_locs = {
         (f["file"], f["line"])
@@ -766,6 +779,18 @@ def downgrade_check_cfg_diff_findings(findings):
             if "max_log_severity" in bz_txt:
                 f["severity"] = "INFO"
         elif (
+            f["category"] == "attribute_alignment"
+            and "args in GN not carried over to Bazel" in f["message"]
+            and f["file"].endswith("BUILD.bazel")
+        ):
+            bz_path = os.path.join(workdir, f["file"])
+            try:
+                bz_txt = open(bz_path, encoding="utf-8").read()
+            except OSError:
+                bz_txt = ""
+            if "args =" in bz_txt or "test_args =" in bz_txt:
+                f["severity"] = "INFO"
+        elif (
             f["category"] == "dep_alignment"
             and "unmatched in GN: [//third_party/googletest:" in f["message"]
             and "unmatched in Bazel: [@com_google_googletest//:gtest" in f["message"]
@@ -796,6 +821,26 @@ def downgrade_check_cfg_diff_findings(findings):
                 gn_set = {_slash_norm_lbl(x) for x in gn_m.group(1).split(",") if x.strip()}
                 bz_set = {_slash_norm_lbl(x) for x in bz_m.group(1).split(",") if x.strip()}
                 if gn_set and gn_set == bz_set:
+                    f["severity"] = "INFO"
+        elif (
+            f["category"] == "dep_alignment"
+            and "unmatched in GN: [" in f["message"]
+            and "unmatched in Bazel:" not in f["message"]
+            and f["file"].endswith("BUILD.bazel")
+        ):
+            # Downgrade dep_alignment warnings when unmatched GN test-package deps
+            # (e.g. expect_includes shard targets) are placed in aspect_hints of
+            # the test binaries in BUILD.bazel.
+            import re as _re
+            gn_m = _re.search(r"unmatched in GN: \[([^\]]+)\]", f["message"])
+            bz_path = os.path.join(workdir, f["file"])
+            try:
+                bz_txt = open(bz_path, encoding="utf-8").read()
+            except OSError:
+                bz_txt = ""
+            if gn_m and "aspect_hints" in bz_txt:
+                unmatched_lbls = [x.strip().strip('"') for x in gn_m.group(1).split(",") if x.strip()]
+                if unmatched_lbls and all(f'"{lbl}"' in bz_txt for lbl in unmatched_lbls):
                     f["severity"] = "INFO"
         elif (
             f["category"] == "dep_alignment"
@@ -966,6 +1011,18 @@ def downgrade_check_cfg_diff_findings(findings):
                     )
                 ):
                     f["severity"] = "INFO"
+        elif (
+            f["category"] == "dropped_comment"
+            and "dropped comment from BUILD.gn:" in f["message"]
+        ):
+            import re as _re
+            _, _, dropped_txt = f["message"].partition("dropped comment from BUILD.gn:")
+            if _re.match(
+                r'^\s*#\s*["\']((?://|:|@)[^"\'\s]+|[A-Za-z0-9_./-]+\.'
+                r'(?:rs|cc|cpp|c|h|hpp|py|go|fidl|cml|json\d*))["\']\s*,?\s*(?:#.*)?$',
+                dropped_txt.strip(),
+            ):
+                f["severity"] = "INFO"
 
 
 def run_review_diff(existing_findings):
@@ -1229,7 +1286,10 @@ if blocking_findings:
         f"from {', '.join(sources)}."
     )
 else:
-    print("RESULT: PASS: no blocking findings.")
+    print(
+        "RESULT: PASS: no blocking findings "
+        "(set disputed_findings to [] in CoderReport; any entry triggers machinery_conflict)."
+    )
 if only:
     print("NOTE: only some checks ran (--only). Run all of them before reporting.")
 if any(f["category"] == "build_skipped" for f in all_findings):

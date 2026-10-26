@@ -35,7 +35,9 @@ set -euo pipefail
 #      Bazel may become an empty `group` for soft transitions (while keeping
 #      `bazel_input_file` for a Bazel-migrated/`bazel_host_tool` generator or
 #      leaving `@gn_targets//.../<pkg>` references under `build/bazel/` is an
-#      error).
+#      error). A pure single-target forwarding `group("<outer>")` whose sole
+#      same-package convertible target `:<inner>` has no external callers may
+#      also fold `:<inner>` directly into `<tmpl>("<outer>")`.
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -130,6 +132,101 @@ def is_testonly_target(gn_text, name):
         if re.search(r"\btestonly\s*=\s*true\b", body):
             return True
     return False
+
+
+# Check whether any build file outside `pkg` still references `//<pkg>:<target_name>`.
+def has_external_target_refs(pkg, target_name):
+    pkg_base = os.path.basename(pkg)
+    try:
+        out = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                workdir,
+                "grep",
+                "-l",
+                "-F",
+                f"{pkg_base}:{target_name}",
+                "--",
+                "BUILD.gn",
+                "BUILD.bazel",
+                "*.gni",
+                "*.bzl",
+                "**/BUILD.gn",
+                "**/BUILD.bazel",
+            ],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return False
+    pat = re.compile(
+        r'"@?(?://'
+        + re.escape(pkg)
+        + r"|(?:[^\"\s:]*/)*"
+        + re.escape(pkg_base)
+        + r"):"
+        + re.escape(target_name)
+        + r'(?:["(])'
+    )
+    for rel in out.splitlines():
+        rel = rel.strip().strip("/")
+        if not rel or rel == pkg or rel.startswith(pkg + "/"):
+            continue
+        txt = new_text(rel) or ""
+        if pat.search(blank_comments(txt)):
+            return True
+    return False
+
+
+# Identify pure single-target forwarding `group("<outer>")` targets in `before` whose
+# same-package convertible target `:<inner>` was folded directly into `<outer>`.
+def find_folded_forwarding_groups(gn_text, old_map, new_map, bazel_names, pkg):
+    folded_from_group = {}
+    folded_into_group = {}
+    if not gn_text:
+        return folded_from_group, folded_into_group
+    code = blank_comments(gn_text)
+    allowed_group_attrs = {"public_deps", "deps", "visibility", "testonly"}
+    convertible = GN_CONVERTIBLE_SYMMETRY_TEMPLATES | {"rustc_library_with_features"}
+    for m in GN_TARGET.finditer(code):
+        tmpl, outer = m.group(1), m.group(2)
+        if tmpl != "group" or old_map.get(outer, (set(), 0))[0] != {"group"}:
+            continue
+        body = code[m.end() - 1 : call_end(code, m.end() - 1)][1:-1]
+        attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*[+-]?=", body))
+        if not attrs or not (attrs <= allowed_group_attrs):
+            continue
+        deps = []
+        for dm in re.finditer(
+            r"(?<![\w.])(?:public_deps|deps)\s*\+?=\s*\[([^\]]*)\]", body
+        ):
+            deps.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+        if len(deps) != 1 or "(" in deps[0]:
+            continue
+        dep = deps[0].strip()
+        if dep.startswith(":"):
+            inner = dep[1:]
+        elif dep.startswith(f"//{pkg}:"):
+            inner = dep[len(f"//{pkg}:") :]
+        else:
+            continue
+        if inner == outer or inner not in old_map:
+            continue
+        inner_types = old_map[inner][0]
+        if not (inner_types <= convertible):
+            continue
+        if is_testonly_target(gn_text, outer) != is_testonly_target(gn_text, inner):
+            continue
+        if inner in new_map or inner in bazel_names:
+            continue
+        if outer not in new_map and outer not in bazel_names:
+            continue
+        if has_external_target_refs(pkg, inner):
+            continue
+        folded_from_group[outer] = inner
+        folded_into_group[inner] = outer
+    return folded_from_group, folded_into_group
 
 
 def bazel_input_generator_migrated(gn_text, name, pkg, bazel_names, new_map):
@@ -399,7 +496,15 @@ for pkg in sorted(candidate_dirs):
     cc_libs = bazel_cc_libraries(bazel_text) if bazel_text else {}
     has_bazel_host_tool = any("bazel_host_tool" in t for t, _ in new.values())
     had_bazel_input = any(t & GN_BAZEL_INPUT_TEMPLATES for t, _ in old.values())
+    folded_from_group, folded_into_group = find_folded_forwarding_groups(
+        before, old, new, bazel_names, pkg
+    )
     for name, (old_types, _) in sorted(old.items()):
+        if name in folded_into_group:
+            continue
+        orig_name = folded_from_group.get(name, name)
+        if name in folded_from_group:
+            old_types = old[orig_name][0]
         label = f"//{pkg}:{name}"
         if name in new:
             new_types, line = new[name]
@@ -450,7 +555,11 @@ for pkg in sorted(candidate_dirs):
             is_feature_set_expansion = False
             if old_types == {"rustc_library_with_features"} and new_types == {"rustc_library"}:
                 code_before = blank_comments(before)
-                pat = re.compile(r'\brustc_library_with_features\(\s*"' + re.escape(name) + r'"\s*\)\s*\{')
+                pat = re.compile(
+                    r'\brustc_library_with_features\(\s*"'
+                    + re.escape(orig_name)
+                    + r'"\s*\)\s*\{'
+                )
                 variant_names = set()
                 for fm in pat.finditer(code_before):
                     fbody = code_before[fm.end() - 1 : call_end(code_before, fm.end() - 1)]

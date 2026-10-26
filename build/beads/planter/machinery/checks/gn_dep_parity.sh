@@ -413,7 +413,41 @@ for pkg in sorted(candidate_dirs):
     }
     package_now = set().union(*[set().union(*t["deps"].values()) for t in new_targets.values() if t["deps"]])
 
+    # Identify pure single-target forwarding `group("<outer>")` targets in `old_targets`
+    # whose same-package target `:<inner>` was folded directly into `<outer>` in `new_targets`.
+    folded_from_group = {}
+    folded_into_group = {}
+    for outer, old_g in sorted(old_targets.items()):
+        if old_g["tmpl"] != "group" or outer not in new_targets:
+            continue
+        if new_targets[outer]["tmpl"] == "group":
+            continue
+        g_body = "\n".join(old_g["bodies"])
+        g_attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*[+-]?=", g_body))
+        if not g_attrs or not (g_attrs <= FORWARDING_ONLY_ATTRS):
+            continue
+        if any(re.search(r"(?<![\w.])%s\s*\+?=" % a, g_body) for a in LINK_ATTRS):
+            continue
+        raw_lists = gn_lists(g_body, ("public_deps", "deps"), old_g.get("vars"))
+        raw_deps = [s for items in raw_lists.values() for s in items]
+        if len(raw_deps) != 1 or "(" in raw_deps[0]:
+            continue
+        norm_dep = normalize(raw_deps[0], pkg)
+        if not norm_dep:
+            continue
+        dep_pkg, inner = split(norm_dep)
+        if dep_pkg != pkg or inner == outer or inner not in old_targets or inner in new_targets:
+            continue
+        if old_targets[inner]["tmpl"] != new_targets[outer]["tmpl"]:
+            continue
+        folded_from_group[outer] = inner
+        folded_into_group[inner] = outer
+
     for name, old_t in sorted(old_targets.items()):
+        if name in folded_into_group:
+            continue
+        if name in folded_from_group:
+            old_t = old_targets[folded_from_group[name]]
         # Skip targets replaced by a Bazel host binary or test suite bridge in GN.
         if name not in new_targets or new_targets[name]["tmpl"] in (
             "bazel_host_tool",
