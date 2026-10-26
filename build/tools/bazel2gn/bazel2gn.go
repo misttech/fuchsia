@@ -567,6 +567,28 @@ func disableInstrumentationToGN(expr syntax.Expr) ([]string, error) {
 	}
 }
 
+// execPropertiesToGN converts a Bazel `exec_properties` attribute to GN.
+//
+// Only `exec_properties = RBE_USE_LARGE_WORKER` on Rust targets is supported,
+// which becomes `rustHighmemGN`. Other values are an error, because GN
+// templates don't accept `exec_properties`.
+func execPropertiesToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, error) {
+	if _, ok := overwrittenRaw(expr); ok {
+		return nil, fmt.Errorf("%q is not supported on %s; use %q and %q instead", rawOverwriteAnnotationPrefix, execPropertiesAttr, skipAnnotation, rawAttributeAnnotationPrefix)
+	}
+	if !rustHighmemGNTemplates[bazelRuleToGNTemplate[bazelRule]] {
+		return nil, fmt.Errorf("bazel2gn only supports %s on Rust binary, library, and test rules, got %s; use %q and %q instead", execPropertiesAttr, bazelRule, skipAnnotation, rawAttributeAnnotationPrefix)
+	}
+	ident, ok := unwrapParenExpr(expr.Y).(*syntax.Ident)
+	if !ok {
+		return nil, fmt.Errorf("bazel2gn only supports `%s = %s`, got %T; use %q and %q instead", execPropertiesAttr, rbeUseLargeWorker, expr.Y, skipAnnotation, rawAttributeAnnotationPrefix)
+	}
+	if ident.Name != rbeUseLargeWorker {
+		return nil, fmt.Errorf("bazel2gn only supports `%s = %s`, got %s; use %q and %q instead", execPropertiesAttr, rbeUseLargeWorker, ident.Name, skipAnnotation, rawAttributeAnnotationPrefix)
+	}
+	return slices.Clone(rustHighmemGN), nil
+}
+
 // reorderAspectHints moves `aspect_hints` to immediately follow the last other
 // attribute that converts to `deps` in GN, if any such attribute exists.
 // Returns the reordered slice, whether `aspect_hints` should use `+=`, and
@@ -676,6 +698,12 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		return nil, fmt.Errorf("expecting an identifier on the left hand side of attribute assignment, got %T", expr.X)
 	}
 	attrName := convertAttrName(lhs.Name, bazelRule)
+
+	// `exec_properties` has no GN equivalent attribute and must never be
+	// emitted verbatim, even with an overwrite annotation.
+	if lhs.Name == execPropertiesAttr {
+		return execPropertiesToGN(expr, bazelRule)
+	}
 
 	// First, handle overwrite annotations for the entire right hand side.
 	//

@@ -152,6 +152,11 @@ When adding support for a Bazel rule or attribute, check all five touchpoints:
     `reorderAspectHints` moves `aspect_hints` after other `deps`-mapped
     attributes and uses `+=` (emitting `deps = []` first if earlier `deps`
     assignments are conditional).
+-   **`exec_properties` is Bazel-only**: GN templates don't accept it, so
+    `execPropertiesToGN` maps `exec_properties = RBE_USE_LARGE_WORKER` on Rust
+    rules to `concurrent_jobs.rust_highmem` (via a `_concurrent_jobs`
+    variable, because GN rejects nested scope access like `a.b.c`) and fails on
+    anything else. Never emit `exec_properties` verbatim.
 -   **Top-level variable assignments**: `assignStmtToGN` emits `not_needed([
     "<var>" ])` immediately after each top-level assignment so GN does not fail
     with `"Assignment had no effect"` when variables are only referenced inside

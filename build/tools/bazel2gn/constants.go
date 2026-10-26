@@ -617,6 +617,38 @@ const disableInstrumentationAttr = "disable_instrumentation"
 // `disable_instrumentation = True`.
 const disableInstrumentationGN = `exclude_toolchain_tags = [ "instrumented" ]`
 
+// execPropertiesAttr is the name of the common Bazel attribute setting
+// execution properties (e.g. the RBE worker pool) of the actions of a target.
+// It is never emitted verbatim in GN, see `execPropertiesToGN()`.
+const execPropertiesAttr = "exec_properties"
+
+// rbeUseLargeWorker is the name of the `exec_properties` value defined in
+// //build/bazel/rbe:rbe.bzl that runs the actions of a target on large RBE
+// workers.
+const rbeUseLargeWorker = "RBE_USE_LARGE_WORKER"
+
+// rustHighmemGN are the GN statements equivalent to
+// `exec_properties = RBE_USE_LARGE_WORKER` on Rust targets: a large RBE worker
+// when Rust RBE is enabled, or the local high memory pool otherwise. See
+// //build/toolchain/concurrent_jobs.gni, which is imported by
+// bazel_migration.gni.
+//
+// GN doesn't support nested scope access such as `a.b.c` in one expression,
+// so the scope is assigned to a variable first.
+var rustHighmemGN = []string{
+	"_concurrent_jobs = concurrent_jobs.rust_highmem",
+	"configs += _concurrent_jobs.configs",
+	`forward_variables_from(_concurrent_jobs.vars, "*")`,
+}
+
+// rustHighmemGNTemplates are the GN templates that accept the `configs` and
+// `pool` set by `rustHighmemGN`.
+var rustHighmemGNTemplates = map[string]bool{
+	"rustc_binary":  true,
+	"rustc_library": true,
+	"rustc_test":    true,
+}
+
 // goThirdPartyAggregateDeps lists known third-party GN targets that include sources of multiple Go
 // libraries in a single target. These deps need to be handled specially because in Bazel we have a
 // 1:1 mapping between go_library targets and Go libraries.

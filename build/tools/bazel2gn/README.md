@@ -117,6 +117,39 @@ annotation. `args` only support `$(location <file>)`, `$(execpath <file>)`, and
 `$(RULEDIR)`; any other substitution is an error. The GN tool's output name must
 match its target name, because `tool_output_name` is not synced.
 
+#### Large RBE workers
+
+Rust targets that need a lot of memory to compile run on large RBE workers with
+`exec_properties = RBE_USE_LARGE_WORKER` (from `//build/bazel/rbe:rbe.bzl`) in
+Bazel, and use `concurrent_jobs.rust_highmem` (a large RBE worker, or the local
+high memory pool without RBE) in GN:
+
+```bzl
+load("//build/bazel/rbe:rbe.bzl", "RBE_USE_LARGE_WORKER")
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    exec_properties = RBE_USE_LARGE_WORKER,
+)
+```
+
+is synced to:
+
+```gn
+rustc_binary("bin") {
+  sources = [ "src/main.rs" ]
+  _concurrent_jobs = concurrent_jobs.rust_highmem
+  configs += _concurrent_jobs.configs
+  forward_variables_from(_concurrent_jobs.vars, "*")
+}
+```
+
+`exec_properties` is never emitted verbatim. Other values, other rules (only
+`rustc_binary()`, `rustc_library()`, `rustc_test()` and their aliases are
+supported), and overwrite annotations on `exec_properties` are errors; use `#
+@bazel2gn:skip` and `# @bazel2gn:raw_attribute:` instead.
+
 #### Components
 
 `fx_component_manifest()`, `fx_compiled_manifest()`, and `fx_component()` sync

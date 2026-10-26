@@ -55,6 +55,7 @@ host_go_test(
         "bazel2gn_test.go",
         "compiled_action_test.go",
         "constants_test.go",
+        "exec_properties_test.go",
         "fx_component_test.go",
         "genrule_test.go",
         "rust_check_cfg_test.go",
