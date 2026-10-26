@@ -4,20 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/boot-options/boot-options.h>
-#include <lib/debuglog.h>
-#include <lib/ktrace.h>
-#include <lib/object-constants.h>
-#include <lib/page/size.h>
-
-#include <kernel/ffi.h>
-#include <object/memory_watchdog.h>
-#include <platform/halt_helper.h>
-#include <vm/evictor.h>
-#include <vm/page_queues.h>
-#include <vm/pmm.h>
-#include <vm/pmm_node.h>
-#include <vm/vm.h>
+#include "object/memory_watchdog.h"
 
 static_assert(sizeof(MemoryWatchdog) == kMemoryWatchdogStateSize);
 static_assert(alignof(MemoryWatchdog) == kMemoryWatchdogStateAlign);

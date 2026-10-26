@@ -1475,11 +1475,7 @@ impl PortDispatcher {
     /// `handle` is an opaque identity token that is compared, never dereferenced: C++ callers
     /// such as `TrapMap` pass a non-`Handle` pointer, so this takes a raw pointer; Rust callers
     /// should use [`Self::cancel_queued`] or [`Self::cancel_queued_handle`].
-    pub(crate) fn cancel_queued_handle_key(
-        &self,
-        handle: *const core::ffi::c_void,
-        key: u64,
-    ) -> bool {
+    fn cancel_queued_handle_key(&self, handle: *const core::ffi::c_void, key: u64) -> bool {
         self.state().canary.assert();
 
         stack_pin_init!(let free_list = DoublyLinkedList::<*mut PortPacket>::new());
@@ -1714,7 +1710,7 @@ mod tests {
 
     /// Creates an event with a real `Handle` so a `PortObserver` can be registered on it.
     fn make_event_handle() -> HandleOwner {
-        let (event, rights) = EventDispatcher::create(0).unwrap();
+        let (event, rights) = EventDispatcher::create().unwrap();
         HandleOwner::make(event, rights).unwrap()
     }
 

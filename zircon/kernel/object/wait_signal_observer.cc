@@ -4,13 +4,34 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include "object/wait_signal_observer.h"
-
+#include <lib/object-constants.h>
 #include <stddef.h>
+#include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <object/signal_observer.h>
 
 #include <ktl/enforce.h>
+
+class OwnedWaitQueue;
+
+// Helper class for Waiting on the wait_one and wait_many syscalls.
+// Delegates business logic to its Rust state stored in opaque_storage_.
+class WaitSignalObserver final : public SignalObserver {
+ public:
+  WaitSignalObserver();
+  ~WaitSignalObserver() final;
+
+  // |SignalObserver| implementation.
+  void OnMatch(zx_signals_t signals, OwnedWaitQueue* queue_to_own) final;
+  void OnCancel(zx_signals_t signals) final;
+
+ private:
+  WaitSignalObserver(const WaitSignalObserver&) = delete;
+  WaitSignalObserver& operator=(const WaitSignalObserver&) = delete;
+
+  OpaqueStorage<kWaitSignalObserverStorageSize, kWaitSignalObserverStorageAlign> opaque_storage_;
+};
 
 static_assert(sizeof(WaitSignalObserver) == kWaitSignalObserverSize);
 static_assert(alignof(WaitSignalObserver) == kWaitSignalObserverAlign);

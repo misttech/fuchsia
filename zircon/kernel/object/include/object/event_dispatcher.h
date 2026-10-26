@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EVENT_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
@@ -21,7 +20,7 @@ class EventDispatcher;
 
 extern "C" {
 zx_status_t cpp_event_dispatcher_create(
-    uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
+    ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
 zx_status_t cpp_memory_stall_event_dispatcher_create(
     uint32_t kind, ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle);
 }
@@ -43,8 +42,8 @@ class EventDispatcher : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
   friend zx_status_t cpp_event_dispatcher_create(
-      uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
-  explicit EventDispatcher(uint32_t options);
+      ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
+  EventDispatcher();
 
  private:
   OpaqueStorage<kEventDispatcherStateSize, kEventDispatcherStateAlign> opaque_storage_;

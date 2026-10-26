@@ -16,7 +16,8 @@ use crate::kernel::event::Event;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 
 use super::dispatcher::Dispatcher;
-use super::{HandleRef, HandleTableLockClass};
+use super::handle::HandleRef;
+use super::handle_table::HandleTableLockClass;
 use ksync::LockToken;
 use object_constants_rs as object_constants;
 
@@ -198,22 +199,6 @@ impl WaitSignalObserver {
     #[inline]
     fn as_mut_ptr(&mut self) -> *mut c_void {
         self.storage.to_mut_ptr().cast()
-    }
-
-    #[inline]
-    fn as_ptr(&self) -> *const c_void {
-        self.storage.to_mut_ptr().cast::<c_void>() as *const c_void
-    }
-
-    #[inline]
-    fn state(&self) -> &WaitSignalObserverState {
-        // SAFETY: `self.as_ptr()` points to an initialized C++ `WaitSignalObserver` whose
-        // `opaque_storage_` is located at offset `kWaitSignalObserverStorageOffset`.
-        unsafe {
-            let state_ptr =
-                self.as_ptr().cast::<u8>().add(object_constants::kWaitSignalObserverStorageOffset);
-            &*state_ptr.cast::<WaitSignalObserverState>()
-        }
     }
 
     #[inline]

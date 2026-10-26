@@ -6,8 +6,6 @@
 
 #include "object/event_dispatcher.h"
 
-#include <zircon/errors.h>
-#include <zircon/rights.h>
 #include <zircon/types.h>
 
 extern "C" {
@@ -18,7 +16,7 @@ void rust_memory_stall_event_dispatcher_state_init(void* state, uint32_t kind);
 void rust_memory_stall_event_dispatcher_state_destroy(void* state);
 }  // extern "C"
 
-EventDispatcher::EventDispatcher(uint32_t options) : Dispatcher(0u) {
+EventDispatcher::EventDispatcher() : Dispatcher(0u) {
   DISPATCHER_VERIFY_OFFSET(EventDispatcher, kEventDispatcherStateOffset);
   rust_event_dispatcher_state_init(&opaque_storage_, this);
 }
@@ -30,7 +28,7 @@ zx_status_t EventDispatcher::user_signal_self(uint32_t clear_mask, uint32_t set_
   return UserSignalSelfSolo(this, clear_mask, set_mask, ZX_EVENT_SIGNALED);
 }
 
-MemoryStallEventDispatcher::MemoryStallEventDispatcher(uint32_t kind) : EventDispatcher(0) {
+MemoryStallEventDispatcher::MemoryStallEventDispatcher(uint32_t kind) : EventDispatcher() {
   DISPATCHER_VERIFY_OFFSET(MemoryStallEventDispatcher, kMemoryStallEventDispatcherStateOffset);
   rust_memory_stall_event_dispatcher_state_init(&opaque_storage_, kind);
 }

@@ -10,9 +10,9 @@
 extern "C" {
 
 zx_status_t cpp_event_dispatcher_create(
-    uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out) {
+    ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out) {
   fbl::AllocChecker ac;
-  auto disp = fbl::AdoptRef(new (&ac) EventDispatcher(options));
+  auto disp = fbl::AdoptRef(new (&ac) EventDispatcher());
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }

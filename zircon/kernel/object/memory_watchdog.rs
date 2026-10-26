@@ -806,7 +806,7 @@ impl MemoryWatchdogState {
             let events = &mut *self.mem_pressure_events.get();
             for (i, event) in events.iter_mut().enumerate().take(NUM_LEVELS) {
                 let level = PressureLevel::try_from(i as u8).unwrap();
-                let handle = match EventDispatcher::create(0) {
+                let handle = match EventDispatcher::create() {
                     Ok((h, _rights)) => h,
                     Err(status) => {
                         panic!(

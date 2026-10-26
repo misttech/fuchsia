@@ -7,9 +7,8 @@
 use super::dispatcher::Dispatcher;
 use super::handle::{Handle, HandleRef, KernelHandle};
 use super::port_dispatcher::{
-    PortAllocator, PortDispatcher, PortDispatcherState, PortObserver, PortPacket, RawPortPacket,
+    PortAllocator, PortDispatcher, PortDispatcherState, PortObserver, PortPacket,
 };
-use crate::kernel::deadline::Deadline;
 use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
@@ -117,39 +116,6 @@ pub unsafe extern "C" fn rust_port_dispatcher_queue_and_remove_observer(
     })
 }
 
-/// Queues a user packet to the port dispatcher.
-///
-/// `packet` is the caller's `zx_port_packet_t` viewed as a `RawPortPacket` (identical
-/// layout) because its `type` is user-controlled and need not be a valid `zx_packet_type_t`.
-///
-/// # Safety
-///
-/// `disp` must be a valid, initialized `PortDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_port_dispatcher_queue_user(
-    disp: &PortDispatcher,
-    packet: &RawPortPacket,
-) -> zx_status_t {
-    zx_status::Status::result_into_raw(disp.queue_user(packet))
-}
-
-/// Dequeues a packet from the port dispatcher.
-///
-/// `packet` is the caller's `zx_port_packet_t` out-parameter viewed as a `RawPortPacket`
-/// (identical layout); it is only written on success.
-///
-/// # Safety
-///
-/// `disp` must be a valid, initialized `PortDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_port_dispatcher_dequeue(
-    disp: &PortDispatcher,
-    deadline: &Deadline,
-    packet: &mut MaybeUninit<RawPortPacket>,
-) -> zx_status_t {
-    zx_status::Status::result_into_raw(disp.dequeue(deadline, packet))
-}
-
 /// Reaps an observer from the port dispatcher.
 ///
 /// # Safety
@@ -196,20 +162,6 @@ pub unsafe extern "C" fn rust_port_dispatcher_make_observer(
     ))
 }
 
-/// Cancels a queued packet matching handle and key.
-///
-/// # Safety
-///
-/// `disp` must be a valid, initialized `PortDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_port_dispatcher_cancel_queued_handle_key(
-    disp: &PortDispatcher,
-    handle: *const core::ffi::c_void,
-    key: u64,
-) -> bool {
-    disp.cancel_queued_handle_key(handle, key)
-}
-
 /// Cancels a specific queued port packet.
 ///
 /// # Safety
@@ -237,14 +189,4 @@ pub unsafe extern "C" fn rust_port_dispatcher_cancel_key(
     key: u64,
 ) -> zx_status_t {
     zx_status::Status::result_into_raw(disp.cancel_key(key))
-}
-
-/// Checks whether the port can bind to an interrupt.
-///
-/// # Safety
-///
-/// `disp` must be a valid, initialized `PortDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_port_dispatcher_can_bind_to_interrupt(disp: &PortDispatcher) -> bool {
-    disp.can_bind_to_interrupt()
 }

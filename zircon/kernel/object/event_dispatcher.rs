@@ -71,15 +71,10 @@ crate::object::dispatcher::impl_dispatcher_facade_with_state!(
 );
 
 impl EventDispatcher {
-    pub fn default_rights() -> zx_rights_t {
-        ZX_DEFAULT_EVENT_RIGHTS
-    }
-
     /// Creates a new EventDispatcher via C++ and returns its kernel handle and rights.
-    pub fn create(options: u32) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
+    pub fn create() -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         // SAFETY: `cpp_event_dispatcher_create` initializes `handle` on success.
-        let handle =
-            unsafe { KernelHandle::create(|out| cpp_event_dispatcher_create(options, out)) }?;
+        let handle = unsafe { KernelHandle::create(|out| cpp_event_dispatcher_create(out)) }?;
         Ok((handle, ZX_DEFAULT_EVENT_RIGHTS))
     }
 

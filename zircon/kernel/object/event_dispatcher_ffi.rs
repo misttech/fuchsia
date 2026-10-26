@@ -19,7 +19,6 @@ unsafe extern "C" {
     ///
     /// `handle_out` must point to uninitialized memory for a `KernelHandle<EventDispatcher>`.
     pub(crate) fn cpp_event_dispatcher_create(
-        options: u32,
         handle_out: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
     ) -> zx_status_t;
 

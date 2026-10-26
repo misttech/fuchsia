@@ -22,7 +22,7 @@ pub fn sys_event_create(options: u32, out: &mut HandleValue) -> Result<(), Statu
 
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_EVENT))?;
 
-    let (kernel_handle, rights) = EventDispatcher::create(options)?;
+    let (kernel_handle, rights) = EventDispatcher::create()?;
     let user_handle = kernel_handle.make_and_add_handle(rights)?;
     *out = user_handle;
     Ok(())

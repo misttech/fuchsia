@@ -6,6 +6,7 @@
 
 #include <bits.h>
 #include <lib/fit/defer.h>
+#include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/ktrace.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/hypervisor.h>
