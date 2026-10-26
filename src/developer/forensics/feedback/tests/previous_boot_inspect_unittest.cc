@@ -5,6 +5,8 @@
 #include "src/developer/forensics/feedback/attachments/previous_boot_inspect.h"
 
 #include <fcntl.h>
+#include <fidl/fuchsia.diagnostics.persistence/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/fdio/fd.h>
 #include <lib/fpromise/result.h>
@@ -31,28 +33,22 @@ class PreviousBootDataProviderClosesConnectionThenReturnsData
     : public stubs::PreviousBootDataProviderBase {
  public:
   explicit PreviousBootDataProviderClosesConnectionThenReturnsData(
-      fuchsia::diagnostics::persistence::PreviousBootData data)
-      : data_(std::move(data)) {}
+      fuchsia_diagnostics_persistence::PreviousBootData data)
+      : has_closed_(false), data_(std::move(data)) {}
 
-  void WatchPreviousBootData(
-      fuchsia::diagnostics::persistence::PreviousBootDataProviderOptions options,
-      WatchPreviousBootDataCallback callback) override {
+  void WatchPreviousBootData(WatchPreviousBootDataRequest& request,
+                             WatchPreviousBootDataCompleter::Sync& completer) override {
     if (!has_closed_) {
       has_closed_ = true;
-      CloseConnection();
+      CloseConnection(ZX_ERR_PEER_CLOSED);
       return;
     }
-    fuchsia::diagnostics::persistence::PreviousBootDataProvider_WatchPreviousBootData_Response
-        response;
-    response.data = std::move(data_);
-    callback(
-        fuchsia::diagnostics::persistence::PreviousBootDataProvider_WatchPreviousBootData_Result::
-            WithResponse(std::move(response)));
+    completer.Reply(std::move(data_));
   }
 
  private:
-  bool has_closed_ = false;
-  fuchsia::diagnostics::persistence::PreviousBootData data_;
+  bool has_closed_;
+  fuchsia_diagnostics_persistence::PreviousBootData data_;
 };
 
 class PreviousBootInspectTest : public UnitTestFixture {
@@ -69,14 +65,14 @@ class PreviousBootInspectTest : public UnitTestFixture {
     }
   }
 
-  fidl::InterfaceHandle<fuchsia::io::File> CreateFileHandle(const std::string& content) {
+  fidl::ClientEnd<fuchsia_io::File> CreateFileHandle(const std::string& content) {
     std::string path;
     dir_.NewTempFileWithData(content, &path);
     int fd = open(path.c_str(), O_RDONLY);
     FX_CHECK(fd >= 0);
     zx_handle_t handle = ZX_HANDLE_INVALID;
     FX_CHECK(fdio_fd_transfer(fd, &handle) == ZX_OK);
-    return fidl::InterfaceHandle<fuchsia::io::File>(zx::channel(handle));
+    return fidl::ClientEnd<fuchsia_io::File>(zx::channel(handle));
   }
 
   AttachmentData Run(::fpromise::promise<AttachmentData> promise) {
@@ -111,8 +107,8 @@ class PreviousBootInspectTest : public UnitTestFixture {
 
 TEST_F(PreviousBootInspectTest, SucceedsReturnsInspectData) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -125,8 +121,8 @@ TEST_F(PreviousBootInspectTest, SucceedsReturnsInspectData) {
 
 TEST_F(PreviousBootInspectTest, CachesInspectDataOnDisk) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -141,7 +137,7 @@ TEST_F(PreviousBootInspectTest, CachesInspectDataOnDisk) {
 }
 
 TEST_F(PreviousBootInspectTest, FailsMissingInspect) {
-  fuchsia::diagnostics::persistence::PreviousBootData data;
+  fuchsia_diagnostics_persistence::PreviousBootData data;
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -173,8 +169,8 @@ TEST_F(PreviousBootInspectTest, ReconnectsOnConnectionClosed) {
 
 TEST_F(PreviousBootInspectTest, ReconnectsReturnsDataAfterRetry) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<PreviousBootDataProviderClosesConnectionThenReturnsData>(std::move(data)));
 
@@ -197,8 +193,8 @@ TEST_F(PreviousBootInspectTest, ReconnectsReturnsDataAfterRetry) {
 
 TEST_F(PreviousBootInspectTest, CachedResultMultipleGets) {
   const std::string kInspectData = "[{\"root\": {\"value\": 456}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -244,8 +240,8 @@ TEST_F(PreviousBootInspectTest, RedactsWithJsonReplacers) {
       "\"11:22:33:44:55:66\",\n"
       "1234567890abcdefABCDEF0123456789,\n"  // Long Hex numbers are not redacted
       "\"106986199446298680449\"]";          // Obfuscated Gaia IDs are not redacted
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -278,8 +274,8 @@ TEST_F(PreviousBootInspectTest, CachesRedactedInspectDataOnDisk) {
       "\"11:22:33:44:55:66\",\n"
       "1234567890abcdefABCDEF0123456789,\n"  // Long Hex numbers are not redacted
       "\"106986199446298680449\"]";          // Obfuscated Gaia IDs are not redacted
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -326,8 +322,8 @@ TEST_F(PreviousBootInspectTest, FileAlreadyExistsDoesNotFetchFromPersistence) {
 
 TEST_F(PreviousBootInspectTest, FileWriteFailure) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -343,8 +339,8 @@ TEST_F(PreviousBootInspectTest, FileWriteFailure) {
 
 TEST_F(PreviousBootInspectTest, FileDeletedAfterBeingCached) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
@@ -376,8 +372,8 @@ TEST_F(PreviousBootInspectTest, FileDeletedAfterBeingCached) {
 
 TEST_F(PreviousBootInspectTest, ProvidedPathIsDirectory) {
   const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
-  fuchsia::diagnostics::persistence::PreviousBootData data;
-  data.set_inspect(CreateFileHandle(kInspectData));
+  fuchsia_diagnostics_persistence::PreviousBootData data;
+  data.inspect(CreateFileHandle(kInspectData));
   SetUpDataProviderServer(
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 

@@ -5,50 +5,52 @@
 #ifndef SRC_DEVELOPER_FORENSICS_TESTING_STUBS_PREVIOUS_BOOT_DATA_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_TESTING_STUBS_PREVIOUS_BOOT_DATA_PROVIDER_H_
 
-#include <fuchsia/diagnostics/persistence/cpp/fidl.h>
-#include <fuchsia/diagnostics/persistence/cpp/fidl_test_base.h>
+#include <fidl/fuchsia.diagnostics.persistence/cpp/fidl.h>
+#include <fidl/fuchsia.diagnostics.persistence/cpp/test_base.h>
+#include <zircon/errors.h>
 
 #include <utility>
+#include <vector>
 
-#include "src/developer/forensics/testing/stubs/fidl_server_hlcpp.h"
+#include "src/developer/forensics/testing/stubs/fidl_server.h"
 
 namespace forensics::stubs {
 
-namespace fpersistence = fuchsia::diagnostics::persistence;
-
 class PreviousBootDataProviderBase
-    : public SINGLE_BINDING_STUB_FIDL_SERVER(fuchsia::diagnostics::persistence,
-                                             PreviousBootDataProvider) {};
+    : public SingleBindingFidlServer<fuchsia_diagnostics_persistence::PreviousBootDataProvider> {};
 
 class PreviousBootDataProviderReturnsData : public PreviousBootDataProviderBase {
  public:
-  explicit PreviousBootDataProviderReturnsData(fpersistence::PreviousBootData data)
+  explicit PreviousBootDataProviderReturnsData(
+      fuchsia_diagnostics_persistence::PreviousBootData data)
       : data_(std::move(data)) {}
 
-  void WatchPreviousBootData(fpersistence::PreviousBootDataProviderOptions options,
-                             WatchPreviousBootDataCallback callback) override {
-    fpersistence::PreviousBootDataProvider_WatchPreviousBootData_Response response;
-    response.data = std::move(data_);
-    callback(fpersistence::PreviousBootDataProvider_WatchPreviousBootData_Result::WithResponse(
-        std::move(response)));
+  void WatchPreviousBootData(WatchPreviousBootDataRequest& request,
+                             WatchPreviousBootDataCompleter::Sync& completer) override {
+    completer.Reply(std::move(data_));
   }
 
  private:
-  fpersistence::PreviousBootData data_;
+  fuchsia_diagnostics_persistence::PreviousBootData data_;
 };
 
 class PreviousBootDataProviderClosesConnection : public PreviousBootDataProviderBase {
  public:
-  void WatchPreviousBootData(fpersistence::PreviousBootDataProviderOptions options,
-                             WatchPreviousBootDataCallback callback) override {
-    CloseConnection();
+  void WatchPreviousBootData(WatchPreviousBootDataRequest& request,
+                             WatchPreviousBootDataCompleter::Sync& completer) override {
+    CloseConnection(ZX_ERR_PEER_CLOSED);
   }
 };
 
 class PreviousBootDataProviderNeverReturns : public PreviousBootDataProviderBase {
  public:
-  void WatchPreviousBootData(fpersistence::PreviousBootDataProviderOptions options,
-                             WatchPreviousBootDataCallback callback) override {}
+  void WatchPreviousBootData(WatchPreviousBootDataRequest& request,
+                             WatchPreviousBootDataCompleter::Sync& completer) override {
+    completers_.push_back(completer.ToAsync());
+  }
+
+ private:
+  std::vector<WatchPreviousBootDataCompleter::Async> completers_;
 };
 
 }  // namespace forensics::stubs

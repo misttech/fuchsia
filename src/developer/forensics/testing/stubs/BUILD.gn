@@ -214,8 +214,8 @@ source_set("previous_boot_data_provider") {
   sources = [ "previous_boot_data_provider.h" ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_cpp",
   ]
 }
 
