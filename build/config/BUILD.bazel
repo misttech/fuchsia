@@ -94,6 +94,37 @@ build_flags(
 )
 # LINT.ThenChange(BUILD.gn:symbol_visibility_hidden)
 
+# LINT.IfChange(symbol_no_undefined)
+compiler_build_flags(
+    name = "symbol_no_undefined",
+    # Because of its interaction with build variants (host sanitizer builds
+    # must not pass --no-undefined when linking shared libraries), the
+    # --no-undefined flag is handled directly in the Bazel C++ toolchain
+    # configuration (cc_features.bzl) and cannot be added here.
+    #
+    # Consequently, `disable_build_flags = ["//build/config:symbol_no_undefined"]`
+    # has no effect in Bazel; use `build_flags = ["//build/config:symbol_allow_undefined"]`
+    # instead, and restrict visibility here to @fuchsia_build_info to prevent
+    # accidental misuse.
+    # linker_flags = [ "--no-undefined" ],
+    visibility = ["@fuchsia_build_info//:__subpackages__"],
+)
+
+# Allow undefined symbols when linking shared libraries, overriding the default
+# -Wl,--no-undefined injected by the C++ toolchain configuration.
+compiler_build_flags(
+    name = "symbol_allow_undefined",
+    linker_flags = [
+        "-z",
+        "undefs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# LINT.ThenChange(
+#   BUILD.gn:symbol_no_undefined,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:symbol_no_undefined,
+# )
 # LINT.IfChange(shared_library_config)
 build_flags(
     name = "shared_library_config",

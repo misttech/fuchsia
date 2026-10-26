@@ -500,6 +500,7 @@ def get_default_compile_flags_feature(
                     ]) if target_os == "fuchsia" else []
                 ),
             ),
+            # LINT.IfChange(symbol_no_undefined)
             # This is subtle, normally all binaries (executables and
             # shared libraries) should be linked with --no-undefined.
             #
@@ -513,12 +514,17 @@ def get_default_compile_flags_feature(
             # otherwise. The two following flag_set() deal with this special
             # case.
 
-            # Apply --no-undefined unconditionally to executables.
+            # Apply --no-undefined to executables in OOT builds.
+            # In-tree, GN default_executable_configs does not include
+            # symbol_no_undefined, as ELF linkers already disallow undefined
+            # symbols in executables by default.
             flag_set(
                 actions = [ACTION_NAMES.cpp_link_executable],
-                flag_groups = _iter_ldflags([
-                    _flag_configs.symbol_no_undefined,
-                ]),
+                flag_groups = _iter_ldflags(
+                    [] if use_default_build_flags else [
+                        _flag_configs.symbol_no_undefined,
+                    ],
+                ),
             ),
             # Apply --no-undefined to shared libraries only when no
             # clang sanitizers are used on the host.
@@ -536,6 +542,10 @@ def get_default_compile_flags_feature(
                     ),
                 ] if is_host else [],
             ),
+            # LINT.ThenChange(
+            #   //build/config/BUILD.bazel:symbol_no_undefined,
+            #   //build/config/BUILD.gn:symbol_no_undefined,
+            # )
             # See https://fxbug.dev/542560456: Linking Rust binaries when
             # Asan is enabled fails surprisingly with undefined symbols
             # __cxa_begin_catch, std::terminate() and __gxx_personality_v0

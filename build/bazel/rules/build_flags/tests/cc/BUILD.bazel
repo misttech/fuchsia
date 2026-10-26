@@ -5,6 +5,7 @@
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/host_tests:host_test.bzl", "host_test")
@@ -292,4 +293,24 @@ build_flags_cc_binary_host_test(
     srcs = ["check_cflags_cpp.cc"],
     build_flags = [":flags1"],
     data = [":shared_lib_ignoring_exec_link_deps"],
+)
+
+# A shared library that directly depends on undefined_symbol_lib and uses
+# //build/config:symbol_allow_undefined to override the default -Wl,--no-undefined.
+fx_cc_binary(
+    name = "shared_lib_with_symbol_allow_undefined",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [
+        ":flags1",
+        "//build/config:symbol_allow_undefined",
+    ],
+    linkshared = True,
+    deps = [":undefined_symbol_lib"],
+)
+
+build_flags_cc_binary_host_test(
+    name = "check_shared_library_symbol_allow_undefined",
+    srcs = ["check_cflags_cpp.cc"],
+    build_flags = [":flags1"],
+    data = [":shared_lib_with_symbol_allow_undefined"],
 )

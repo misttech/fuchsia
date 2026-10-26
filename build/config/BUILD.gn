@@ -1286,9 +1286,28 @@ config("symbol_visibility_hidden") {
 
 # LINT.ThenChange(BUILD.bazel:symbol_visibility_hidden)
 
+# LINT.IfChange(symbol_no_undefined)
 compiler_config("symbol_no_undefined") {
   linker_flags = [ "--no-undefined" ]
 }
+
+# Allow undefined symbols when linking shared libraries, overriding
+# //build/config:symbol_no_undefined (which is in
+# default_shared_library_configs). Prefer adding this config over `configs -= [
+# "//build/config:symbol_no_undefined" ]` for compatibility with Bazel, where
+# --no-undefined is injected by the C++ toolchain configuration rather than a
+# build_flags() target.
+compiler_config("symbol_allow_undefined") {
+  linker_flags = [
+    "-z",
+    "undefs",
+  ]
+}
+
+# LINT.ThenChange(
+#   BUILD.bazel:symbol_no_undefined,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/cc_features.bzl:symbol_no_undefined,
+# )
 
 # LINT.IfChange(shared_library_config)
 config("shared_library_config") {
