@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "input_injection",
+    hdrs = ["injector_manager.h"],
+    implementation_deps = ["//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp"],
+    visibility = [
+        "//src/ui/a11y/lib/input_injection/tests/mocks:__pkg__",
+        "//src/ui/a11y/lib/screen_reader:__pkg__",
+        "//src/ui/a11y/lib/view:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)

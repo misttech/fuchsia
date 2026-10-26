@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "gesture_util_v2",
+    srcs = [
+        "util.cc",
+    ],
+    hdrs = [
+        "util.h",
+    ],
+    implementation_deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+    visibility = [
+        "//src/ui/a11y/lib/gesture_manager/recognizers_v2:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.math:fuchsia.math_hlcpp",
+        "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_hlcpp",
+    ],
+    alwayslink = True,
+)
