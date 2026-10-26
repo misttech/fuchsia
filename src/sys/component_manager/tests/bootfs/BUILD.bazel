@@ -1,0 +1,70 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "bin",
+    srcs = ["src/lib.rs"],
+    crate_name = "bootfs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "bootfs",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    testonly = True,
+    component_name = "bootfs",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/bootfs.cml",
+)
+
+fx_test_component(
+    name = "component",
+    compiled_manifest = ":component-manifest",
+    component_name = "bootfs",
+    test_type = "system",
+    deps = [":bin_packaged_bin"],
+)
+
+# Run with `fx test bootfs-tests`.
+fx_package(
+    name = "package",
+    package_name = "bootfs-tests",
+    test_components = [":component"],
+)
+
+fx_test(
+    name = "bootfs-tests",
+    package = ":package",
+)

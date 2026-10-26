@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "builtin_dispatcher_component_bin",
+    srcs = ["builtin_dispatcher_component.rs"],
+    crate_name = "builtin_dispatcher_component_test",
+    crate_root = "builtin_dispatcher_component.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

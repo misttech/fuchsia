@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(109696): Add this test to CTF by following the guide at
+# https://fuchsia.dev/fuchsia-src/development/testing/ctf/contributing_tests.
+rustc_test(
+    name = "collections_integration_test_bin",
+    srcs = ["integration_test.rs"],
+    crate_name = "collections_integration_test",
+    crate_root = "integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+rustc_binary(
+    name = "write_startup_socket_bin",
+    testonly = True,
+    srcs = ["write_startup_socket.rs"],
+    crate_name = "write_startup_socket",
+    crate_root = "write_startup_socket.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+fx_packaged_binary(
+    name = "write_startup_socket_bin_packaged_bin",
+    testonly = True,
+    binary = ":write_startup_socket_bin",
+    binary_name = "write_startup_socket",
+)
+
+fx_component_manifest(
+    name = "write_startup_socket-manifest",
+    testonly = True,
+    component_name = "write_startup_socket",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/write_startup_socket.cml",
+)
+
+fx_component(
+    name = "write_startup_socket",
+    testonly = True,
+    compiled_manifest = ":write_startup_socket-manifest",
+    component_name = "write_startup_socket",
+    deps = [":write_startup_socket_bin_packaged_bin"],
+)

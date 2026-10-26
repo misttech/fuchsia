@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "component-time-test",
+    srcs = ["src/test.rs"],
+    crate_root = "src/test.rs",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = ["//src/lib/fuchsia"],
+)
+
+# Run with `fx test component-v1-time-unittests`.
+fx_unittest_package(
+    name = "component-v1-time-unittests",
+    unit_tests = [":component-time-test"],
+)

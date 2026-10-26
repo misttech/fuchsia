@@ -1,0 +1,23 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "integration_test_bin",
+    srcs = ["src/integration_test.rs"],
+    crate_name = "capability_provider_vfs_compliance_test",
+    crate_root = "src/integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

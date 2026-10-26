@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "builtin_runner_test_bin",
+    srcs = ["builtin_runner_test.rs"],
+    crate_name = "builtin_runner_test",
+    crate_root = "builtin_runner_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "simple_elf_program_bin",
+    srcs = ["simple_elf_program.rs"],
+    crate_name = "simple_elf_program",
+    crate_root = "simple_elf_program.rs",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+fx_packaged_binary(
+    name = "simple_elf_program_bin_packaged_bin",
+    binary = ":simple_elf_program_bin",
+    binary_name = "simple_elf_program",
+)
+
+fx_component_manifest(
+    name = "simple_elf_program_packaged_elf_runner-manifest",
+    testonly = True,
+    component_name = "simple_elf_program_packaged_elf_runner",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/simple_elf_program_packaged_elf_runner.cml",
+)
+
+fx_component(
+    name = "simple_elf_program_packaged_elf_runner",
+    testonly = True,
+    compiled_manifest = ":simple_elf_program_packaged_elf_runner-manifest",
+    component_name = "simple_elf_program_packaged_elf_runner",
+    deps = [":simple_elf_program_bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "simple_elf_program_builtin_elf_runner-manifest",
+    testonly = True,
+    component_name = "simple_elf_program_builtin_elf_runner",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/simple_elf_program_builtin_elf_runner.cml",
+)
+
+fx_component(
+    name = "simple_elf_program_builtin_elf_runner",
+    testonly = True,
+    compiled_manifest = ":simple_elf_program_builtin_elf_runner-manifest",
+    component_name = "simple_elf_program_builtin_elf_runner",
+    deps = [":simple_elf_program_bin_packaged_bin"],
+)

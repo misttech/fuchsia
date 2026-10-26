@@ -26,6 +26,8 @@ rustc_library(
     crate_name = "fuchsia_component_test",
     edition = "2024",
     visibility = [
+        "//src/sys/component_manager/tests/builtin_dispatcher_component:__pkg__",
+        "//src/sys/component_manager/tests/builtin_runner:__pkg__",
         "//src/sys/component_manager/tests/namespace_capabilities:__pkg__",
         "//src/sys/component_manager/tests/ota_health_verification:__pkg__",
         "//src/sys/component_manager/tests/pkg_from_framework:__pkg__",

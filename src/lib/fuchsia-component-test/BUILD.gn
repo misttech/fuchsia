@@ -84,6 +84,8 @@ rustc_library("fuchsia-component-test-lib") {
   edition = "2024"
   visibility = [
     ":*",
+    "//src/sys/component_manager/tests/builtin_dispatcher_component:*",
+    "//src/sys/component_manager/tests/builtin_runner:*",
     "//src/sys/component_manager/tests/namespace_capabilities:*",
     "//src/sys/component_manager/tests/ota_health_verification:*",
     "//src/sys/component_manager/tests/pkg_from_framework:*",
