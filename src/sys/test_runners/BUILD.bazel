@@ -28,5 +28,8 @@ exports_files(
 expect_includes(
     name = "tmp_storage",
     includes = ["tmp_storage.shard.cml"],
-    visibility = ["//src/sys/time/timekeeper/persistence:__pkg__"],
+    visibility = [
+        "//src/sys/lib/routing:__pkg__",
+        "//src/sys/time/timekeeper/persistence:__pkg__",
+    ],
 )

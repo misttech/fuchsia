@@ -67,7 +67,6 @@ rustc_library("cm_rust") {
   } else {
     features = []
   }
-  crate_name = "cm_rust"
   edition = "2024"
   proc_macro_deps = [
     ":cm_rust_derive",
@@ -102,14 +101,20 @@ rustc_library("cm_rust") {
     ]
   }
 }
-rustc_macro("cm_rust_derive") {
-  sources = [ "src/macro.rs" ]
-  source_root = "src/macro.rs"
-  edition = "2024"
-  deps = [
-    "//third_party/rust_crates:darling",
-    "//third_party/rust_crates:proc-macro2",
-    "//third_party/rust_crates:quote",
-    "//third_party/rust_crates:syn",
-  ]
+if (is_host) {
+  rustc_macro("cm_rust_derive") {
+    sources = [ "src/macro.rs" ]
+    source_root = "src/macro.rs"
+    edition = "2024"
+    visibility = [
+      ":*",
+      "//src/sys/lib/routing:*",
+    ]
+    deps = [
+      "//third_party/rust_crates:darling",
+      "//third_party/rust_crates:proc-macro2",
+      "//third_party/rust_crates:quote",
+      "//third_party/rust_crates:syn",
+    ]
+  }
 }

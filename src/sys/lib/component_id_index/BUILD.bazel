@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "component_id_index",
+    srcs = [
+        "src/fidl_convert.rs",
+        "src/instance_id.rs",
+        "src/lib.rs",
+    ],
+    # Some host tools use serde to serialize/deserialize component_id_index types.
+    # This dependency is guarded in code via #[cfg(feature = "serde")] and
+    # #[cfg_attr(feature = "serde", ...)] to avoid deriving serde traits for error
+    # types for non-host builds.
+    crate_features = select({
+        "//build/bazel/platforms:is_host_os": ["serde"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    visibility = [
+        "//src/diagnostics:__subpackages__",
+        "//src/lib/assembly/component_id_index:__pkg__",
+        "//src/security:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//tools/component_id_index:__pkg__",
+        "//tools/lib/cm_fidl_analyzer:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
+        "//src/lib/error/clonable_error",
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/lib/moniker",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//third_party/rust_crates/vendor:serde",
+            "//third_party/rust_crates/vendor:serde_json5",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "component_id_index_test",
+    crate = ":component_id_index",
+    crate_features = select({
+        "//build/bazel/platforms:is_host_os": ["serde"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:proptest",
+        "//third_party/rust_crates/vendor:test-case",
+    ] + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//third_party/rust_crates/vendor:tempfile",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+wrap_host_rust_test(
+    name = "component_id_index_host_test",
+    binary_name = "component_id_index_test",
+)
+
+fx_unittest_package(
+    name = "component-id-index-tests",
+    unit_tests = [":component_id_index_test"],
+)
