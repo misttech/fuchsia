@@ -150,11 +150,6 @@ init::lk_init_hook!(ppb_init, ppb_init_func, init::LK_INIT_LEVEL_VM);
 // C FFI exports
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_ppb_config_set_borrowing_on_mru_enabled(enabled: bool) {
-    PhysicalPageBorrowingConfig::get().set_borrowing_on_mru_enabled(enabled);
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn rust_ppb_config_set_loaning_enabled(enabled: bool) {
     PhysicalPageBorrowingConfig::get().set_loaning_enabled(enabled);
 }

@@ -13,6 +13,7 @@ use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
+use kprint::kprint;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
@@ -183,6 +184,36 @@ pub fn node() -> &'static PmmNode {
 #[inline]
 pub fn count_total_bytes() -> u64 {
     node().count_total_bytes()
+}
+
+/// Prints physical page borrowing related stats to the console.
+pub fn print_physical_page_borrowing_stats() {
+    const MB: u64 = 1024 * 1024;
+    const PAGE_SIZE: u64 = page::SIZE as u64;
+    let free_pages = node().count_free_pages();
+    let loaned_free_pages = node().count_loaned_free_pages();
+    let loaned_pages = node().count_loaned_pages();
+    let loan_cancelled_pages = node().count_loan_cancelled_pages();
+    let total_bytes = count_total_bytes();
+    let used_loaned_pages = node().count_loaned_not_free_pages();
+    kprint!(
+        "PPB stats:\n  free pages: {} free MiB: {}\n  loaned free pages: {} loaned free MiB: {}\n  \
+         loaned pages: {} loaned MiB: {}\n  used loaned pages: {} used loaned MiB: {}\n  \
+         loan cancelled pages: {} loan cancelled MIB: {}\n  \
+         total physical pages: {} total MiB: {}\n",
+        free_pages,
+        free_pages * PAGE_SIZE / MB,
+        loaned_free_pages,
+        loaned_free_pages * PAGE_SIZE / MB,
+        loaned_pages,
+        loaned_pages * PAGE_SIZE / MB,
+        used_loaned_pages,
+        used_loaned_pages * PAGE_SIZE / MB,
+        loan_cancelled_pages,
+        loan_cancelled_pages * PAGE_SIZE / MB,
+        total_bytes / PAGE_SIZE,
+        total_bytes / MB
+    );
 }
 
 /// Synchronously walk the PMM's free list and validate each page.  This is an incredibly expensive

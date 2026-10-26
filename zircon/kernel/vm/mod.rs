@@ -31,6 +31,8 @@ pub mod pmm;
 pub mod pmm_arena;
 pub mod pmm_checker;
 pub mod pmm_node;
+#[cfg(console_enabled)]
+mod ppb_command;
 pub mod scanner;
 pub mod slot_page_storage;
 pub mod stream_size_manager;

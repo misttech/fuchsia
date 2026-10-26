@@ -140,6 +140,4 @@ void pmm_checker_check_all_free_pages();
 // incredibly expensive operation and should be used with care.
 void pmm_asan_poison_all_free_pages();
 
-void pmm_print_physical_page_borrowing_stats();
-
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_H_

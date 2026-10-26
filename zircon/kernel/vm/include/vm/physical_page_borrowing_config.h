@@ -13,7 +13,6 @@
 
 __BEGIN_CDECLS
 
-void rust_ppb_config_set_borrowing_on_mru_enabled(bool enabled);
 void rust_ppb_config_set_loaning_enabled(bool enabled);
 bool rust_ppb_config_is_loaning_enabled(void);
 
@@ -32,12 +31,6 @@ class PhysicalPageBorrowingConfig {
   static PhysicalPageBorrowingConfig& Get() {
     static PhysicalPageBorrowingConfig config;
     return config;
-  }
-
-  // true - allow page borrowing when a page is logically moved to MRU queue
-  // false - disallow page borrowing when a page is logically moved to MRU queue
-  void set_borrowing_on_mru_enabled(bool enabled) {
-    rust_ppb_config_set_borrowing_on_mru_enabled(enabled);
   }
 
   // true - decommitted contiguous VMO pages will decommit+loan the pages.
