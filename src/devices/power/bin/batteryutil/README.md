@@ -15,9 +15,9 @@ under `/svc/`. If multiple instances are present:
 - `get`, `battery get`, and `charger get` query and report telemetry for all discovered instances.
 - `watch`, `battery watch`, and `charger watch` multiplex real-time streaming updates across all
   discovered instances.
-- Charger control subcommands (`charger mode`, `charger charge-current`, `charger float-voltage`,
-  `charger term-current`, `charger top-off`, `charger clear`) select the first discovered instance
-  and warn if multiple are present.
+- Charger control subcommands (`charger mode`, `charger charge-current`, `charger input-current`,
+  `charger float-voltage`, `charger term-current`, `charger top-off`, `charger clear`) select the
+  first discovered instance and warn if multiple are present.
 
 To target a specific battery or charger instance directly, pass the `-p` / `--path` option before
 the command:
@@ -184,6 +184,9 @@ Supported limit and reset controls:
 - `batteryutil charger charge-current <limit | auto>`: sets or clears the sticky fast charge
   current limit (`charge_current_limit_ua`, e.g. `2.5A`, `2500mA`, `2500000uA`, `2500000`, or
   `auto`; bare numbers without a unit suffix are in microamps, `uA`)
+- `batteryutil charger input-current <limit | auto>`: sets or clears the sticky input current
+  limit (`input_current_limit_ua`, e.g. `1.5A`, `1500mA`, `1500000uA`, `1500000`, or `auto`; bare
+  numbers without a unit suffix are in microamps, `uA`)
 - `batteryutil charger float-voltage <limit | auto>`: sets or clears the sticky battery float
   voltage limit (`float_voltage_uv`, e.g. `4.35V`, `4350mV`, `4350000uV`, `4350000`, or `auto`;
   bare numbers without a unit suffix are in microvolts, `uV`)
@@ -218,6 +221,12 @@ Successfully set charger fast charge current limit to 2.500 A via fuchsia.hardwa
 
 $ batteryutil charger charge-current auto
 Successfully cleared charger fast charge current limit override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger input-current 1.5A
+Successfully set charger input current limit to 1.500 A via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger input-current auto
+Successfully cleared charger input current limit override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
 
 $ batteryutil charger float-voltage 4.35V
 Successfully set charger float voltage to 4.350 V via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)

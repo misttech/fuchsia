@@ -626,14 +626,14 @@ impl std::str::FromStr for ModeArg {
     }
 }
 
-/// Argument for `batteryutil charger charge-current`: a fast charge current limit in microamps, or
-/// `auto` to clear the fast charge current limit override applied through the charger
-/// `DebugService`.
+/// Argument for `batteryutil charger charge-current` and `batteryutil charger input-current`: a
+/// current limit in microamps, or `auto` to clear the matching override applied through the
+/// charger `DebugService`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CurrentLimitArg {
-    /// Applies a sticky fast charge current limit (in `uA`) through the charger `DebugService`.
+    /// Applies a sticky current limit (in `uA`) through the charger `DebugService`.
     Set(u32),
-    /// Clears the fast charge current limit override applied through the charger `DebugService`.
+    /// Clears the current limit override applied through the charger `DebugService`.
     Auto,
 }
 
@@ -644,7 +644,7 @@ impl std::str::FromStr for CurrentLimitArg {
             return Ok(Self::Auto);
         }
         parse_micro_value(s, "A").map(Self::Set).map_err(|e| {
-            format!("Invalid charge current '{s}' ({e}). Use e.g. 2.5A, 2500mA, 2500000, or auto.")
+            format!("Invalid current '{s}' ({e}). Use e.g. 2.5A, 2500mA, 2500000, or auto.")
         })
     }
 }
@@ -742,6 +742,33 @@ pub(crate) async fn clear_charge_current_override(path: Option<&str>) -> Result<
         &options,
         "charger charge-current auto",
         "charger fast charge current limit override",
+    )
+    .await
+}
+
+/// Applies a sticky input current limit (in `uA`) through the charger `DebugService`.
+pub async fn set_input_current(path: Option<&str>, current_ua: u32) -> Result<()> {
+    let instance = resolve_debug_instance(path, "charger input-current")?;
+    let options =
+        fcharger::ControlOptions { input_current_limit_ua: Some(current_ua), ..Default::default() };
+    let target = set_debug_control(&instance, &options).await?;
+    println!(
+        "Successfully set charger input current limit to {} via {target}",
+        MicroUnit(current_ua, "A")
+    );
+    Ok(())
+}
+
+/// Withdraws the sticky input current limit override applied through the charger `DebugService`,
+/// leaving any other debug overrides intact.
+pub(crate) async fn clear_input_current_override(path: Option<&str>) -> Result<()> {
+    let options =
+        fcharger::ControlOptions { input_current_limit_ua: Some(0), ..Default::default() };
+    clear_charger_overrides(
+        path,
+        &options,
+        "charger input-current auto",
+        "charger input current limit override",
     )
     .await
 }
@@ -1099,6 +1126,38 @@ mod tests {
         debug_server.await;
     }
 
+    /// Verifies that an input current limit override is sent as `input_current_limit_ua` alone.
+    #[fuchsia::test]
+    async fn test_set_debug_control_sends_input_current() {
+        let (debug_proxy, mut debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
+        let debug_server = fuchsia_async::Task::local(async move {
+            let Some(Ok(fcharger::DebugRequest::SetControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected a SetControl request");
+            };
+            assert_eq!(
+                options,
+                fcharger::ControlOptions {
+                    input_current_limit_ua: Some(1_500_000),
+                    ..Default::default()
+                }
+            );
+            responder.send(Ok(())).expect("send SetControl response");
+        });
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions {
+                input_current_limit_ua: Some(1_500_000),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set input current succeeded");
+        debug_server.await;
+    }
+
     /// Verifies that a termination current override is sent as `charge_term_current_ua` alone.
     #[fuchsia::test]
     async fn test_set_debug_control_sends_term_current() {
@@ -1302,6 +1361,18 @@ mod tests {
             else {
                 panic!("expected sixth ClearControl request");
             };
+            assert!(options.input_current_limit_ua.is_some());
+            assert!(options.operating_mode.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            assert!(options.top_off_duration.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected seventh ClearControl request");
+            };
             assert_eq!(options, fcharger::ControlOptions::default());
             responder.send(Ok(())).expect("send ClearControl response");
         });
@@ -1331,6 +1402,11 @@ mod tests {
         clear_debug_overrides_with_proxy(&debug_proxy, &top_off_mask)
             .await
             .expect("clear top-off duration override succeeded");
+        let icl_mask =
+            fcharger::ControlOptions { input_current_limit_ua: Some(0), ..Default::default() };
+        clear_debug_overrides_with_proxy(&debug_proxy, &icl_mask)
+            .await
+            .expect("clear input current override succeeded");
         clear_debug_overrides_with_proxy(&debug_proxy, &fcharger::ControlOptions::default())
             .await
             .expect("clear all overrides succeeded");

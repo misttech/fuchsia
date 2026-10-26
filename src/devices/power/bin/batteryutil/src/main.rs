@@ -91,6 +91,7 @@ pub enum ChargerSubcommand {
     Watch(ChargerWatchCommand),
     Mode(ModeCommand),
     ChargeCurrent(ChargeCurrentCommand),
+    InputCurrent(InputCurrentCommand),
     FloatVoltage(FloatVoltageCommand),
     TermCurrent(TermCurrentCommand),
     TopOff(TopOffCommand),
@@ -123,6 +124,15 @@ pub struct ChargeCurrentCommand {
     #[argh(positional)]
     /// charge current limit (e.g. 2.5A, 2500mA, uA) or auto (clear current limit override)
     pub current: CurrentLimitArg,
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "input-current")]
+/// set charger input current limit (e.g. 1.5A, 1500mA, 1500000, or auto)
+pub struct InputCurrentCommand {
+    #[argh(positional)]
+    /// input current limit (e.g. 1.5A, 1500mA, uA) or auto (clear input current limit override)
+    current: CurrentLimitArg,
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
@@ -179,6 +189,10 @@ async fn main() -> Result<()> {
             Some(ChargerSubcommand::ChargeCurrent(cmd)) => match cmd.current {
                 CurrentLimitArg::Set(ua) => charger::set_charge_current(path, ua).await,
                 CurrentLimitArg::Auto => charger::clear_charge_current_override(path).await,
+            },
+            Some(ChargerSubcommand::InputCurrent(cmd)) => match cmd.current {
+                CurrentLimitArg::Set(ua) => charger::set_input_current(path, ua).await,
+                CurrentLimitArg::Auto => charger::clear_input_current_override(path).await,
             },
             Some(ChargerSubcommand::FloatVoltage(cmd)) => match cmd.voltage {
                 VoltageLimitArg::Set(uv) => charger::set_float_voltage(path, uv).await,
@@ -384,6 +398,28 @@ mod tests {
             args.command,
             Some(Subcommand::Charger(ChargerCommand {
                 command: Some(ChargerSubcommand::ChargeCurrent(ChargeCurrentCommand {
+                    current: CurrentLimitArg::Auto
+                }))
+            }))
+        );
+
+        let args =
+            Args::from_args(&["batteryutil"], &["charger", "input-current", "1.5A"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::InputCurrent(InputCurrentCommand {
+                    current: CurrentLimitArg::Set(1_500_000)
+                }))
+            }))
+        );
+
+        let args =
+            Args::from_args(&["batteryutil"], &["charger", "input-current", "auto"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::InputCurrent(InputCurrentCommand {
                     current: CurrentLimitArg::Auto
                 }))
             }))
