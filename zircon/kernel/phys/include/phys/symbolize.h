@@ -68,10 +68,6 @@ class Symbolize {
   // Return the ELF build ID note for the currently executing module.
   elfldltl::ElfNote build_id() const;
 
-  // This reads the existing modules to the new storage and then
-  // replaces it as the storage to be used by future OnLoad calls.
-  void ReplaceModulesStorage(ModuleList modules);
-
   void set_stacks(ktl::span<const Stack<BootStack>> stacks) { stacks_ = stacks; }
 
   void set_shadow_call_stacks(ktl::span<const Stack<BootShadowCallStack>> stacks) {
@@ -143,16 +139,15 @@ class Symbolize {
   PHYS_SINGLETHREAD void PrintException(uint64_t vector, const char* vector_name,
                                         const PhysExceptionState& regs);
 
-  // The arguments must be a subrange of the main module's final segment's
+  // The arguments must be a subrange of the self image's final segment's
   // runtime vaddr bounds (i.e. a range of data + bss addresses).  That tail
   // should no longer be considered part of the segment's or module's bounds.
-  void PruneFromMainModule(uint64_t start, uint64_t end);
+  void PruneFromSelf(uint64_t start, uint64_t end);
 
  protected:
-  void set_main_module(const ElfImage& main) {
-    ZX_DEBUG_ASSERT(!main_module_);
-    main_module_ = &main;
-  }
+  // This reads the existing modules to the new storage and then
+  // replaces it as the storage to be used by future OnLoad calls.
+  void ReplaceModulesStorage(ModuleList modules);
 
   const ElfImage* self_ = nullptr;
 
@@ -167,8 +162,6 @@ class Symbolize {
   ktl::span<const Stack<BootStack>> stacks_;
   ktl::span<const Stack<BootShadowCallStack>> shadow_call_stacks_;
   FileMarkupWriter writer_;
-  // The currently executing module.
-  const ElfImage* main_module_ = nullptr;
   bool context_done_ = false;
 };
 
@@ -179,8 +172,11 @@ class MainSymbolize : public Symbolize {
  public:
   explicit MainSymbolize(const char* name, FILE* f = stdout);
 
-  void set_self(const ElfImage* self);
+  // Registers the running executable's own image as the first module.
+  void set_self(const ElfImage& self);
 
+  // Provide storage for the module list so that additional modules (e.g. the
+  // kernel) can be loaded and symbolized.
   void EnableModuleLoading(ModuleList modules) { ReplaceModulesStorage(ktl::move(modules)); }
 };
 

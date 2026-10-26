@@ -39,7 +39,7 @@ void InitSelf(MainSymbolize& main) {
   static fbl::NoDestructor<ElfImage> gSelfImage;
   gSelfImage->InitSelf(main.name(), memory, bias, load_segment,
                        {__start_note_gnu_build_id, __stop_note_gnu_build_id});
-  main.set_self(gSelfImage.get());
+  main.set_self(*gSelfImage);
 
   static constexpr Symbolize::Stack<BootStack> kBootStacks[] = {
       {boot_stack, "boot"},
@@ -66,10 +66,13 @@ void InitSelf(MainSymbolize& main) {}
 
 #endif  // __ELF__
 
-void MainSymbolize::set_self(const ElfImage* self) {
+void MainSymbolize::set_self(const ElfImage& self) {
+  ZX_DEBUG_ASSERT(!self_);
+  self_ = &self;
+  // The self_ member doubles as the initial one-element module list storage
+  // until EnableModuleLoading() provides more.
   ReplaceModulesStorage(ModuleList{ktl::span{&self_, 1}});
-  OnLoad(*self);
-  set_main_module(*self);
+  OnLoad(self);
 }
 
 MainSymbolize::MainSymbolize(const char* name, FILE* f) : Symbolize(name, f) {

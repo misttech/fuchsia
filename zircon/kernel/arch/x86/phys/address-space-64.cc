@@ -73,10 +73,10 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
   // will still be free RAM in the pool that can be used for any kind of future
   // allocation.  That includes ElfImage::Load and the like; those allocations'
   // vaddr ranges will become the new ElfImage vaddr ranges.  But those are
-  // still inside the .bss region of the main module!  The ElfImage and
+  // still inside the .bss region of this executable!  The ElfImage and
   // Symbolize bookkeeping does not expect overlapping modules.  So trim the
-  // module's vaddr size (and final segment) to omit what's being taken here.
-  gSymbolize->PruneFromMainModule(bootstrap_start, bootstrap_end);
+  // self image's vaddr size (and final segment) to omit what's being taken here.
+  gSymbolize->PruneFromSelf(bootstrap_start, bootstrap_end);
 
   aspace.SetPageTableAllocationBounds(bootstrap_start, bootstrap_end);
   SetUpAddressSpace(aspace);

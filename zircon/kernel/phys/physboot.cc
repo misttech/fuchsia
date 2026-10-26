@@ -43,8 +43,8 @@ PhysBootTimes gBootTimes;
 
 namespace {
 
-// physboot, EL2, kernel
-constexpr size_t kMaxModules = 3;
+// physboot itself and the kernel.
+constexpr size_t kMaxModules = 2;
 
 constexpr ktl::string_view kElfPhysKernel = "vmzircon";
 

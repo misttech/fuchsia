@@ -59,7 +59,7 @@ void PruneSegment(LoadInfo::DataWithZeroFillSegment& segment, size_type memsz) {
 void PruneSegment(auto& segment, size_type memsz) {
   // The final segment being pruned should only ever be either
   // DataWithZeroFillSegment or pure ZeroFillSegment.
-  ZX_PANIC("impossible segment type for Symbolize::PruneFromMainModule!");
+  ZX_PANIC("impossible segment type for Symbolize::PruneFromSelf!");
 }
 
 }  // namespace
@@ -88,9 +88,9 @@ const char* ProgramName() {
 }
 
 elfldltl::ElfNote Symbolize::build_id() const {
-  ZX_DEBUG_ASSERT(main_module_);
-  ZX_DEBUG_ASSERT(main_module_->build_id());
-  return main_module_->build_id().value();
+  ZX_DEBUG_ASSERT(self_);
+  ZX_DEBUG_ASSERT(self_->build_id());
+  return self_->build_id().value();
 }
 
 void Symbolize::Printf(const char* fmt, ...) {
@@ -213,14 +213,14 @@ arch::ShadowCallStackBacktrace Symbolize::GetShadowCallStackBacktrace(uintptr_t 
   return backtrace;
 }
 
-void Symbolize::PruneFromMainModule(uint64_t start, uint64_t end) {
+void Symbolize::PruneFromSelf(uint64_t start, uint64_t end) {
   // Modify the ZeroFillSegment or DataWithZeroFillSegment to prune the range.
   auto adjust_memsz = [start, end, this](auto& segment) {
-    [[maybe_unused]] auto abs = segment.vaddr() + main_module_->load_bias();
+    [[maybe_unused]] auto abs = segment.vaddr() + self_->load_bias();
     ZX_DEBUG_ASSERT(start >= abs);
     ZX_DEBUG_ASSERT(end >= start);
     ZX_DEBUG_ASSERT(end - abs <= segment.memsz());
-    auto rel_end = static_cast<size_type>(start - main_module_->load_bias());
+    auto rel_end = static_cast<size_type>(start - self_->load_bias());
     size_type new_memsz = rel_end - segment.vaddr();
     ZX_DEBUG_ASSERT(new_memsz >= segment.filesz());
     PruneSegment(segment, new_memsz);
@@ -228,7 +228,7 @@ void Symbolize::PruneFromMainModule(uint64_t start, uint64_t end) {
 
   // Adjusting the last segment in LoadInfo is actually done by removing the
   // existing segment and then adding back its replacement.
-  auto& load_info = const_cast<ElfImage*>(main_module_)->load_info();
+  auto& load_info = const_cast<ElfImage*>(self_)->load_info();
   auto segment = load_info.RemoveLastSegment();
   ktl::visit(adjust_memsz, segment);
   auto diag = PanicDiagnostics(name_);
