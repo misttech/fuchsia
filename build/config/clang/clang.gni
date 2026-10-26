@@ -19,6 +19,10 @@ declare_args() {
   # clang.
   clang_enable_error_reproducers = false
 
+  # LINT.IfChange(clang_ml_inliner)
+
   # Controls whether to use the ML inliner in Clang to reduce size.
   clang_ml_inliner = true
+
+  # LINT.ThenChange(//build/bazel/BUILD.gn:clang_ml_inliner)
 }

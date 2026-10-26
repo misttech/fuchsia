@@ -459,6 +459,7 @@ config("default_linker_gc") {
   configs = [ ":linker_gc" ]
 }
 
+# LINT.IfChange(linker_string_merging)
 compiler_config("linker_string_merging") {
   if (is_pecoff) {
     linker_flags = [ "/opt:lldtailmerge" ]
@@ -467,10 +468,14 @@ compiler_config("linker_string_merging") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:linker_string_merging)
+
 # Temporary placeholder to allow for a soft-transition.
 config("no_remote_link") {
   configs = [ "//build/config/rbe:no_remote_link" ]
 }
+
+# LINT.IfChange(optimize_configs)
 
 # Each 'optimize_$optimize' config below corresponds to a single setting that's
 # controlled by a 'foo_optimize' argument. The 'default_optimize' level is set
@@ -580,6 +585,8 @@ config("optimize_size_thinlto_clang") {
   }
 }
 
+# LINT.ThenChange(BUILD.bazel:optimize_configs)
+
 # LINT.IfChange(optimize_sanitizer)
 config("optimize_sanitizer") {
   # Instrumentation adds overhead that is greatly improved by optimization.
@@ -590,13 +597,18 @@ config("optimize_sanitizer") {
   rustflags = [ "-Copt-level=1" ]
 }
 
-# LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
+# LINT.ThenChange(
+#   BUILD.bazel:optimize_sanitizer,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:clang_sanitizer)
 
+# LINT.IfChange(optimize_profile)
 config("optimize_profile") {
   cflags = [ "-O1" ]
   ldflags = cflags
   rustflags = [ "-Copt-level=1" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:optimize_profile)
 
 # LINT.IfChange(optimize_coverage)
 config("optimize_coverage") {
@@ -606,6 +618,7 @@ config("optimize_coverage") {
 }
 
 # LINT.ThenChange(
+#   BUILD.bazel:optimize_coverage,
 #   //build/bazel/templates/template.bazelrc:rust_coverage,
 #   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/toolchain_utils.bzl:coverage,
 # )
@@ -1656,10 +1669,13 @@ config("standalone") {
 
 # LINT.ThenChange(BUILD.bazel:standalone)
 
+# LINT.IfChange(bp_compression_sort)
 # Enable LLD's balanced partitioning for ordering function sections.
 compiler_config("bp-compression-sort") {
   linker_flags = [ "--bp-compression-sort=function" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:bp_compression_sort)
 
 # Set __GNUC__ and related predefines as GCC does.  This doesn't control what
 # features Clang actually supports, just the predefines.  Clang doesn't support
