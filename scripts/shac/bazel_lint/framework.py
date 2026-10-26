@@ -4,8 +4,6 @@
 
 """Core AST traversal, semantic hooks, and span emission for Bazel lint checks."""
 
-from __future__ import annotations
-
 import ast
 import dataclasses
 import enum

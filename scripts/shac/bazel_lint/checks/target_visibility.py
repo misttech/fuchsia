@@ -4,8 +4,6 @@
 
 """Checks target visibility in BUILD.bazel and .bzl files."""
 
-from __future__ import annotations
-
 from framework import (
     BazelCheck,
     FileContext,

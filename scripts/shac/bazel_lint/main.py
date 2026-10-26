@@ -5,8 +5,6 @@
 
 """CLI entrypoint for AST-based Bazel lint checks."""
 
-from __future__ import annotations
-
 import argparse
 import importlib
 import json

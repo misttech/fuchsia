@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Unit tests for logging_utils module."""
 
-from __future__ import annotations
-
 import io
 import logging
 import tempfile

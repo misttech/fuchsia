@@ -4,8 +4,6 @@
 
 """Shared visibility constants and helper functions for Bazel lint checks."""
 
-from __future__ import annotations
-
 import ast
 
 from framework import CallInfo

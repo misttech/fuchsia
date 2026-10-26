@@ -4,8 +4,6 @@
 
 """Allowlist loading, schema validation, and matching for Bazel lint checks."""
 
-from __future__ import annotations
-
 import dataclasses
 import json
 import re

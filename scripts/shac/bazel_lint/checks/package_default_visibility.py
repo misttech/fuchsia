@@ -4,8 +4,6 @@
 
 """Checks that BUILD.bazel files avoid default_visibility in package()."""
 
-from __future__ import annotations
-
 import ast
 
 from framework import (

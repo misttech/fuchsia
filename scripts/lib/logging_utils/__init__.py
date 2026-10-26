@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Generic logging utilities with ANSI color support."""
 
-from __future__ import annotations
-
 import logging
 import os
 import re

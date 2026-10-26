@@ -9,8 +9,6 @@ summary JSON of test execution (including both host and device tests),
 as well as tracking per-test and build log artifact paths.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from dataclasses import field
 import json

@@ -4,8 +4,6 @@
 
 """Checks load visibility() declarations in .bzl files."""
 
-from __future__ import annotations
-
 import ast
 from pathlib import PurePosixPath
 
