@@ -5,11 +5,12 @@
 // https://opensource.org/licenses/MIT
 
 mod asid_allocator;
-mod asid_allocator_ffi;
 pub mod cache;
 mod crashlog;
 mod feature;
 mod fpu;
+mod mmu;
+mod mmu_ffi;
 mod mp;
 mod periphmap;
 mod registers;

@@ -191,7 +191,7 @@ zx_status_t GetBacktraceFromDapState(const arm64_dap_processor_state& state, Bac
   }
 
   // And is it mapped?
-  paddr_t pa_unused;
+  paddr_t pa_unused = 0;
   zx_status_t status = arm64_mmu_translate(scsp, &pa_unused, /*user=*/false, /*write=*/false);
   if (status != ZX_OK) {
     return status;

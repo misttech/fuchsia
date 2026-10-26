@@ -408,28 +408,8 @@
 #include <zircon/compiler.h>
 
 #include <arch/arm64.h>
-#include <ktl/tuple.h>
 
 using pte_t = uint64_t;
-
-#define ARM64_TLBI_NOADDR(op)        \
-  ({                                 \
-    __asm__ volatile("tlbi " #op::); \
-    __isb(ARM_MB_SY);                \
-  })
-
-#define ARM64_TLBI(op, val)                                      \
-  ({                                                             \
-    __asm__ volatile("tlbi " #op ", %0" ::"r"((uint64_t)(val))); \
-    __isb(ARM_MB_SY);                                            \
-  })
-
-#define ARM64_TLBI_ASID(op, val)                         \
-  ({                                                     \
-    uint64_t v = val;                                    \
-    __asm__ volatile("tlbi " #op ", %0" ::"r"(v << 48)); \
-    __isb(ARM_MB_SY);                                    \
-  })
 
 // dedicated address space ids
 const uint16_t MMU_ARM64_UNUSED_ASID = 0;
@@ -458,7 +438,7 @@ extern paddr_t root_lower_page_table_phys;
 // the physical address of a virtual address
 extern "C" zx_status_t arm64_mmu_translate(vaddr_t va, paddr_t* pa, bool user, bool write);
 
-void arm64_mmu_early_init();
+extern "C" void arm64_mmu_early_init();
 
 #endif  // __ASSEMBLER__
 

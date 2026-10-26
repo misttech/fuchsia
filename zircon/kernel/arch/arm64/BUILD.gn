@@ -100,7 +100,6 @@ if (toolchain_environment == "kernel.phys" ||
       "exceptions_c.cc",
       "fpu_asm.S",
       "handoff.cc",
-      "mmu.cc",
       "mp.cc",
       "perf_mon.cc",
       "registers.cc",
@@ -130,7 +129,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/instrumentation",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/page",
-      "//zircon/kernel/lib/page_cache",
       "//zircon/kernel/lib/perfmon",
       "//zircon/kernel/lib/syscalls",
       "//zircon/kernel/lib/thread-stack",
@@ -173,24 +171,57 @@ if (toolchain_environment == "kernel.phys" ||
   kernel_bindgen_crate("arch-arm64-aspace-bindings") {
     headers = [
       "include/arch/kernel_aspace.h",
+      "include/arch/arm64/aspace-constants.h",
+      "include/arch/arm64/hypervisor/el2_state.h",
       "include/arch/arm64/mmu.h",
+      "include/arch/aspace.h",
+      "../../phys/handoff/include/phys/handoff/handoff.h",
+      "../../vm/include/vm/physmap.h",
     ]
     cpp = true
     non_rust_deps = [
       ":headers",
       "//zircon/kernel/lib/ktl:headers",
+      "//zircon/kernel/phys/handoff:headers",
+      "//zircon/kernel/vm:headers",
     ]
     raw_lines = [ "#![no_std]" ]
+    function_allowlist = [ "arm64_el2_tlbi_.*" ]
+    type_allowlist = [
+      "ArmAspaceRole",
+      "ArmAspaceType",
+    ]
+
+    # `ArmAspaceRole` is internal to Rust; `ArmAspaceType` crosses FFI only in
+    # `rust_arm64_aspace_construct` from the C++ constructor's typed enum
+    # parameter (`kUser`, `kKernel`, `kGuest`).
+    rustified_enum = [
+      "ArmAspaceRole",
+      "ArmAspaceType",
+    ]
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
     var_allowlist = [
       "KERNEL_ASPACE_BASE",
       "KERNEL_ASPACE_SIZE",
-      "MMU_ARM64_FIRST_USER_ASID",
-      "MMU_ARM64_MAX_USER_ASID_16",
-      "MMU_ARM64_MAX_USER_ASID_8",
-      "MMU_GUEST_SIZE_SHIFT",
+      "MMU_.*",
       "USER_ASPACE_BASE",
       "USER_ASPACE_SIZE",
       "USER_RESTRICTED_ASPACE_SIZE",
+      "gPhysmapSize",
+      "kArm64ArchVmAspaceStateAlign",
+      "kArm64ArchVmAspaceStateSize",
+      "kArm64VmICacheConsistencyManagerStateAlign",
+      "kArm64VmICacheConsistencyManagerStateSize",
+      "kHandoffVirtualAddress",
+      "kMmu.*",
+    ]
+    expect_lints = [
+      "non_camel_case_types",
+      "non_upper_case_globals",
     ]
     notice_year = 2026
   }
@@ -317,11 +348,12 @@ if (toolchain_environment == "kernel.phys" ||
     source_root = "src/mod.rs"
     sources = [
       "src/asid_allocator.rs",
-      "src/asid_allocator_ffi.rs",
       "src/cache.rs",
       "src/crashlog.rs",
       "src/feature.rs",
       "src/fpu.rs",
+      "src/mmu.rs",
+      "src/mmu_ffi.rs",
       "src/mod.rs",
       "src/mp.rs",
       "src/periphmap.rs",
@@ -347,18 +379,22 @@ if (toolchain_environment == "kernel.phys" ||
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//src/lib/kprint",
+      "//src/lib/ksync",
       "//src/lib/lazy_init:lazy_init_rs",
       "//src/lib/lockdep/rust:lockdep",
       "//src/lib/regio",
       "//third_party/rust_crates:pin-init",
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
+      "//zircon/kernel/lib/boot-options:boot-options-rs",
       "//zircon/kernel/lib/debug",
       "//zircon/kernel/lib/id_allocator:id-allocator-rs",
       "//zircon/kernel/lib/init:init_rust",
       "//zircon/kernel/lib/libc:rust",
+      "//zircon/kernel/lib/page:page-rs",
       "//zircon/kernel/lib/user_copy",
       "//zircon/kernel/phys/handoff:handoff-rs",
+      "//zircon/system/ulib/fbl/rust:fbl",
       "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs",
     ]
     test_deps = [
@@ -367,19 +403,7 @@ if (toolchain_environment == "kernel.phys" ||
     ]
   }
 
-  source_set("tests") {
-    testonly = true
-    sources = [ "mmu_tests.cc" ]
-    deps = [
-      "//zircon/kernel/lib/arch",
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/unittest",
-      "//zircon/kernel/vm",
-    ]
-  }
-
   group("kernel-tests") {
     testonly = true
-    deps = [ ":tests" ]
   }
 }
