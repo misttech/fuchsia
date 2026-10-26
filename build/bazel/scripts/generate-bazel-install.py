@@ -5,8 +5,6 @@
 """Create a directory that contains a Bazel binary, its extracted install_base
 files as well as a wrapper script named 'bazel'."""
 
-from __future__ import annotations
-
 import argparse
 import os
 import shutil

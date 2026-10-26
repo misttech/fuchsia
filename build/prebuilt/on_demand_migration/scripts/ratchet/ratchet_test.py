@@ -4,8 +4,6 @@
 # found in the LICENSE file.
 """Unit tests for ratchet.py."""
 
-from __future__ import annotations
-
 import contextlib
 import io
 import json

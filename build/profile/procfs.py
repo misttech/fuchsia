@@ -5,8 +5,6 @@
 
 """Linux procfs (/proc) parsing and process inspection utilities."""
 
-from __future__ import annotations
-
 import os
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field

@@ -3,7 +3,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Clone the content of a git repository, then apply a git bundle to it."""
-from __future__ import annotations
 
 import argparse
 import os

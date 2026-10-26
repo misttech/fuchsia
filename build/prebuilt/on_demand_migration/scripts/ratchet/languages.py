@@ -4,8 +4,6 @@
 # found in the LICENSE file.
 """Language-family definitions and syntax scanners for direct prebuilt detection."""
 
-from __future__ import annotations
-
 import dataclasses
 import pathlib
 import re

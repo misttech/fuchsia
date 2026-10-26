@@ -4,8 +4,6 @@
 # found in the LICENSE file.
 """Unit tests for languages.py."""
 
-from __future__ import annotations
-
 import unittest
 from collections.abc import Sequence
 

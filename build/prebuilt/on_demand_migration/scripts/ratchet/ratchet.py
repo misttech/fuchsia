@@ -4,8 +4,6 @@
 # found in the LICENSE file.
 """Checks affected files for direct //prebuilt references outside allowed rules."""
 
-from __future__ import annotations
-
 import argparse
 import dataclasses
 import json
