@@ -12,9 +12,8 @@
 
 namespace storage_watchdog {
 
-// Returns whether |process| has any mappings backed by a userspace pager (such as package blobs).
-// Bootfs processes like fxfs.cm and critical-services.cm do not.
-bool HasPagerBackedMappings(const zx::process& process);
+// Whether |process| runs any code from a pager-backed VMO (a package blob rather than bootfs).
+bool HasPagerBackedCode(const zx::process& process);
 
 // Writes |reason| and backtraces of the storage stack (fxfs, busy driver host and Starnix threads,
 // and every thread blocked on a pager) to the debuglog as symbolizer markup. Then dies as

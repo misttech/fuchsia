@@ -83,7 +83,8 @@ std::string GetName(zx_handle_t handle) {
 
 // ZX_PROP_NAME is writable by any process with ZX_RIGHT_SET_PROPERTY on its own thread or process
 // handle (including sandboxed processes), so verify that the caller is either critical-services
-// itself (for SimulateStall) or a bootfs fxfs.cm holding a kernel pager object.
+// itself (for SimulateStall) or a bootfs fxfs.cm holding a kernel pager object. fxfs maps some of
+// the pager-backed VMOs it serves, so only its code has to come from bootfs.
 bool IsTrustedCaller(const zx::process& process) {
   const zx_koid_t koid = GetKoid(process.get());
   if (koid != ZX_KOID_INVALID && koid == GetKoid(zx::process::self()->get())) {
@@ -98,7 +99,7 @@ bool IsTrustedCaller(const zx::process& process) {
       stats.handle_count[ZX_OBJ_TYPE_PAGER] == 0) {
     return false;
   }
-  return !HasPagerBackedMappings(process);
+  return !HasPagerBackedCode(process);
 }
 
 }  // namespace

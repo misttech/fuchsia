@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -126,7 +127,8 @@ struct Process {
   zx::process handle;
   std::string name;
   std::vector<Thread> threads;
-  bool pager_backed = false;
+  // Whether it runs code from a package blob rather than bootfs.
+  bool pager_backed_code = false;
 };
 
 // Picks the threads worth a backtrace: all of fxfs, any thread blocked on a pager, and the non-idle
@@ -196,9 +198,13 @@ class Mappings {
     }
   }
 
-  bool any_pager_backed() const {
+  // Whether any executable mapping is pager-backed, i.e. the process runs code from a package
+  // blob rather than from bootfs.
+  bool any_pager_backed_code() const {
     return std::ranges::any_of(maps_, [this](const zx_info_maps_t& map) {
-      return map.type == ZX_INFO_MAPS_TYPE_MAPPING && paged_vmos_.contains(map.u.mapping.vmo_koid);
+      return map.type == ZX_INFO_MAPS_TYPE_MAPPING &&
+             (map.u.mapping.mmu_flags & ZX_VM_PERM_EXECUTE) &&
+             paged_vmos_.contains(map.u.mapping.vmo_koid);
     });
   }
 
@@ -215,6 +221,29 @@ class Mappings {
       }
     }
     return {0, 0};
+  }
+
+  // For an executable, non-pager-backed (bootfs) mapping holding |pc|: the mapping of the same VMO
+  // at offset 0, where that module's ELF headers are. Otherwise nullptr.
+  const zx_info_maps_t* BootfsModuleHeaders(uint64_t pc) const {
+    const zx_info_maps_t* code = nullptr;
+    for (const zx_info_maps_t& map : maps_) {
+      if (map.type == ZX_INFO_MAPS_TYPE_MAPPING && pc - map.base < map.size) {
+        code = &map;
+        break;
+      }
+    }
+    if (!code || !(code->u.mapping.mmu_flags & ZX_VM_PERM_EXECUTE) ||
+        paged_vmos_.contains(code->u.mapping.vmo_koid)) {
+      return nullptr;
+    }
+    for (const zx_info_maps_t& map : maps_) {
+      if (map.type == ZX_INFO_MAPS_TYPE_MAPPING &&
+          map.u.mapping.vmo_koid == code->u.mapping.vmo_koid && map.u.mapping.vmo_offset == 0) {
+        return &map;
+      }
+    }
+    return nullptr;
   }
 
  private:
@@ -296,6 +325,100 @@ std::optional<std::vector<uint64_t>> SampleThread(const zx::process& process, co
   return UnwindFromStack(process, maps, regs);
 }
 
+// Formats the {{{module}}} and {{{mmap}}} markup for one module loaded at |bias|.
+std::string ModuleMarkup(unsigned int id, std::string_view name, std::span<const uint8_t> build_id,
+                         uint64_t bias, std::span<const Elf64_Phdr> phdrs) {
+  const uint64_t page_size = zx_system_get_page_size();
+  char buf[160];
+  std::string text = "{{{module:" + std::to_string(id) + ":" + std::string(name) + ":elf:";
+  for (uint8_t byte : build_id) {
+    snprintf(buf, sizeof(buf), "%02x", byte);
+    text += buf;
+  }
+  text += "}}}\n";
+  for (const Elf64_Phdr& phdr : phdrs) {
+    if (phdr.p_type == PT_LOAD) {
+      const uint64_t start = phdr.p_vaddr & -page_size;
+      const uint64_t end = (phdr.p_vaddr + phdr.p_memsz + page_size - 1) & -page_size;
+      snprintf(buf, sizeof(buf),
+               "{{{mmap:0x%" PRIx64 ":0x%" PRIx64 ":load:%u:%s%s%s:0x%" PRIx64 "}}}\n",
+               bias + start, end - start, id, (phdr.p_flags & PF_R) ? "r" : "",
+               (phdr.p_flags & PF_W) ? "w" : "", (phdr.p_flags & PF_X) ? "x" : "", start);
+      text += buf;
+    }
+  }
+  return text;
+}
+
+// The module markup for |pcs| in a process whose code is all from bootfs. It reads ELF headers
+// only from the bootfs mapping that holds them, so it never waits on a pager. elf_search would
+// also read the start of every other read-only mapping, and fxfs maps pager-backed VMOs whose
+// pager is the storage driver, so with storage stuck that blocks.
+std::string BootfsModuleContext(const zx::process& process, const Mappings& maps,
+                                std::span<const uint64_t> pcs) {
+  constexpr size_t kMaxPhdrs = 32;
+  constexpr size_t kMaxNotes = 1024;
+  const uint64_t page_size = zx_system_get_page_size();
+  std::string text;
+  std::vector<zx_koid_t> seen;
+  unsigned int id = 0;
+  for (uint64_t pc : pcs) {
+    const zx_info_maps_t* headers = maps.BootfsModuleHeaders(pc);
+    if (!headers || std::ranges::contains(seen, headers->u.mapping.vmo_koid)) {
+      continue;
+    }
+    seen.push_back(headers->u.mapping.vmo_koid);
+    auto read = [&](uint64_t addr, void* buf, size_t size) {
+      size_t actual = 0;
+      return addr - headers->base < headers->size && size <= headers->base + headers->size - addr &&
+             process.read_memory(addr, buf, size, &actual) == ZX_OK && actual == size;
+    };
+    Elf64_Ehdr ehdr;
+    if (!read(headers->base, &ehdr, sizeof(ehdr)) || memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0 ||
+        ehdr.e_ident[EI_CLASS] != ELFCLASS64 || ehdr.e_phentsize != sizeof(Elf64_Phdr) ||
+        ehdr.e_phnum == 0 || ehdr.e_phnum > kMaxPhdrs) {
+      continue;
+    }
+    Elf64_Phdr phdr_buf[kMaxPhdrs];
+    if (!read(headers->base + ehdr.e_phoff, phdr_buf, ehdr.e_phnum * sizeof(Elf64_Phdr))) {
+      continue;
+    }
+    const std::span<const Elf64_Phdr> phdrs(phdr_buf, ehdr.e_phnum);
+    auto first_load = std::ranges::find(phdrs, PT_LOAD, &Elf64_Phdr::p_type);
+    if (first_load == phdrs.end()) {
+      continue;
+    }
+    const uint64_t bias = headers->base - (first_load->p_vaddr & -page_size);
+    std::vector<uint8_t> build_id;
+    for (const Elf64_Phdr& phdr : phdrs) {
+      uint8_t notes[kMaxNotes];
+      if (phdr.p_type != PT_NOTE || phdr.p_filesz > sizeof(notes) ||
+          !read(bias + phdr.p_vaddr, notes, phdr.p_filesz)) {
+        continue;
+      }
+      for (size_t offset = 0; offset + sizeof(Elf64_Nhdr) <= phdr.p_filesz;) {
+        Elf64_Nhdr nhdr;
+        memcpy(&nhdr, notes + offset, sizeof(nhdr));
+        const size_t name = offset + sizeof(nhdr);
+        const size_t desc = name + ((nhdr.n_namesz + 3) & ~size_t{3});
+        const size_t next = desc + ((nhdr.n_descsz + 3) & ~size_t{3});
+        if (next > phdr.p_filesz) {
+          break;
+        }
+        if (nhdr.n_type == NT_GNU_BUILD_ID && nhdr.n_namesz == sizeof("GNU") &&
+            memcmp(notes + name, "GNU", sizeof("GNU")) == 0) {
+          build_id.assign(notes + desc, notes + desc + nhdr.n_descsz);
+        }
+        offset = next;
+      }
+    }
+    if (!build_id.empty()) {
+      text += ModuleMarkup(id++, headers->name, build_id, bias, phdrs);
+    }
+  }
+  return text;
+}
+
 // Formats the {{{module}}} and {{{mmap}}} markup for the modules that contain |pcs|. elf_search
 // reads ELF headers from process memory, which for package modules is pager-backed, so this runs
 // on a thread that's abandoned if it doesn't finish within kModuleTimeout.
@@ -312,8 +435,6 @@ std::optional<std::string> ModuleContext(const zx::process& process, std::vector
   }
   std::thread([result, process = std::move(dup), pcs = std::move(pcs)] {
     std::string text;
-    char buf[160];
-    const uint64_t page_size = zx_system_get_page_size();
     unsigned int id = 0;
     elf_search::ForEachModule(process, [&](const elf_search::ModuleInfo& info) {
       auto contains = [&info](uint64_t pc) {
@@ -324,24 +445,7 @@ std::optional<std::string> ModuleContext(const zx::process& process, std::vector
       if (std::ranges::none_of(pcs, contains)) {
         return;
       }
-      text += "{{{module:" + std::to_string(id) + ":" + std::string(info.name) + ":elf:";
-      for (uint8_t byte : info.build_id) {
-        snprintf(buf, sizeof(buf), "%02x", byte);
-        text += buf;
-      }
-      text += "}}}\n";
-      for (const Elf64_Phdr& phdr : info.phdrs) {
-        if (phdr.p_type == PT_LOAD) {
-          const uint64_t start = phdr.p_vaddr & -page_size;
-          const uint64_t end = (phdr.p_vaddr + phdr.p_memsz + page_size - 1) & -page_size;
-          snprintf(buf, sizeof(buf),
-                   "{{{mmap:0x%" PRIx64 ":0x%" PRIx64 ":load:%u:%s%s%s:0x%" PRIx64 "}}}\n",
-                   info.vaddr + start, end - start, id, (phdr.p_flags & PF_R) ? "r" : "",
-                   (phdr.p_flags & PF_W) ? "w" : "", (phdr.p_flags & PF_X) ? "x" : "", start);
-          text += buf;
-        }
-      }
-      id++;
+      text += ModuleMarkup(id++, info.name, info.build_id, info.vaddr, info.phdrs);
     });
     std::scoped_lock lock(result->mutex);
     result->text = std::move(text);
@@ -354,9 +458,9 @@ std::optional<std::string> ModuleContext(const zx::process& process, std::vector
   return result->text;
 }
 
-// Prints each distinct stack of |process|'s picked threads once. Returns false if reading module
-// headers timed out.
-bool DumpProcess(const Process& process, bool skip_pager_backed_modules) {
+// Prints each distinct stack of |process|'s picked threads once, and appends its summary line to
+// |summary|. Returns false if reading module headers timed out.
+bool DumpProcess(const Process& process, bool skip_pager_backed_modules, std::string& summary) {
   const Mappings maps(process.handle);
   struct Stack {
     std::vector<uint64_t> pcs;
@@ -387,7 +491,9 @@ bool DumpProcess(const Process& process, bool skip_pager_backed_modules) {
   }
 
   std::optional<std::string> modules;
-  if (!stacks.empty() && !(skip_pager_backed_modules && process.pager_backed)) {
+  if (!stacks.empty() && !process.pager_backed_code) {
+    modules = BootfsModuleContext(process.handle, maps, all_pcs);
+  } else if (!stacks.empty() && !skip_pager_backed_modules) {
     modules = ModuleContext(process.handle, std::move(all_pcs));
   }
 
@@ -397,6 +503,7 @@ bool DumpProcess(const Process& process, bool skip_pager_backed_modules) {
            kTag, process.name.c_str(), process.koid, process.threads.size(), skipped, stacks.size(),
            modules ? "" : "; no module info (pager stuck?)");
   text += line;
+  summary += line;
   if (modules) {
     text += *modules;
   }
@@ -410,7 +517,7 @@ bool DumpProcess(const Process& process, bool skip_pager_backed_modules) {
     }
   }
   Print(text);
-  return modules.has_value() || stacks.empty();
+  return modules.has_value() || stacks.empty() || !process.pager_backed_code;
 }
 
 // Dies as a process critical to the root job, or kills the root job if that fails. Either way
@@ -440,8 +547,8 @@ bool DumpProcess(const Process& process, bool skip_pager_backed_modules) {
 
 }  // namespace
 
-bool HasPagerBackedMappings(const zx::process& process) {
-  return Mappings(process).any_pager_backed();
+bool HasPagerBackedCode(const zx::process& process) {
+  return Mappings(process).any_pager_backed_code();
 }
 
 void DumpWedgeDiagnosticsAndReboot(std::string_view reason, zx::job root_job) {
@@ -457,26 +564,29 @@ void DumpWedgeDiagnosticsAndReboot(std::string_view reason, zx::job root_job) {
   picker.WalkJobTree(job->get());
   std::vector<Process> processes = picker.TakeProcesses();
   std::erase_if(processes, [](const Process& p) { return p.threads.empty(); });
-  // Bootfs processes first: their module headers can always be read.
+  // Processes running bootfs code first: their module headers can always be read.
   for (Process& process : processes) {
-    process.pager_backed = HasPagerBackedMappings(process.handle);
+    process.pager_backed_code = HasPagerBackedCode(process.handle);
   }
-  std::ranges::stable_partition(processes, std::not_fn(&Process::pager_backed));
+  std::ranges::stable_partition(processes, std::not_fn(&Process::pager_backed_code));
 
   bool pager_stuck = false;
+  std::string summary;
   for (size_t i = 0; i < processes.size(); i++) {
     if (debuglog_used > kMaxStackDebuglogBytes) {
       std::println("{}: out of debuglog space, skipped {} processes", kTag, processes.size() - i);
       break;
     }
-    pager_stuck |= !DumpProcess(processes[i], pager_stuck);
+    pager_stuck |= !DumpProcess(processes[i], pager_stuck, summary);
   }
 
   // Then the log tail and storage Inspect data, as much as fits. Inspect is small, so it gets
   // room first, and the log tail drops its oldest lines to fit in the rest.
   ArchivistSnapshots snapshots = TakeArchivistSnapshots(zx::deadline_after(kArchivistTimeout));
-  constexpr size_t kSummaryLines = 2 * (kMaxLineLength + kDebuglogRecordHeader);
-  size_t room = kMaxDebuglogBytes - std::min(kMaxDebuglogBytes, debuglog_used + kSummaryLines);
+  // Leave room for the two snapshot summary lines and the trailer below.
+  const size_t reserved = (3 * (kMaxLineLength + kDebuglogRecordHeader)) + summary.size() +
+                          (kDebuglogRecordHeader * std::ranges::count(summary, '\n'));
+  size_t room = kMaxDebuglogBytes - std::min(kMaxDebuglogBytes, debuglog_used + reserved);
   std::span<const std::string> inspect = snapshots.inspect.lines;
   while (DebuglogCost(inspect) > room) {
     inspect = inspect.first(inspect.size() - 1);
@@ -491,6 +601,12 @@ void DumpWedgeDiagnosticsAndReboot(std::string_view reason, zx::job root_job) {
     }
     Print(text);
   }
+
+  // The kernel prints a whole address space to the debuglog for every page fault that times out,
+  // which can push the start of the dump out of the crashlog. So repeat the reason and the process
+  // summaries at the end, where they're the last thing to go.
+  Print(std::string(kTag) + ": ==== WEDGE DUMP END ==== storage stall: " + std::string(reason) +
+        "\n" + summary);
 
   char why[64];
   snprintf(why, sizeof(why), "wedge dump done in %.1f s",
