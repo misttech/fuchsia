@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl",
+    srcs = [
+        "src/lib.rs",
+        "src/wire.rs",
+    ],
+    crate_name = "fdf_fidl",
+    edition = "2024",
+    link_deps = [
+        "//src/devices/lib/driver:driver_runtime",  # @bazel2gn:path_overwrite://src/devices/bin/driver_runtime
+    ],
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    version = "0.1.0",
+    # In Bazel, the library must be visible to the package containing the symbolic macro.
+    # In GN, the library must be visible to any path that defines a `fidl()` target.
+    # In both, it is used outside the FIDL bindings in other places.
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+        "//examples:__subpackages__",
+        "//sdk/lib:__subpackages__",
+        "//src:__subpackages__",
+        "//tools:__subpackages__",
+        "//vendor:__subpackages__",
+    ],  # @bazel2gn:raw_overwrite:[ "//*" ]
+    deps = [
+        "//sdk/lib/async/rust/dispatcher",
+        "//sdk/lib/async/rust/fidl",
+        "//sdk/lib/driver/runtime/rust/channel",
+        "//sdk/lib/driver/runtime/rust/core",
+        "//sdk/lib/driver/runtime/rust/fdf_sys",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust_next/fidl_next",
+        "//src/lib/fuchsia-sync",
+    ],
+)
