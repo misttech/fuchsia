@@ -346,21 +346,11 @@ pub unsafe extern "C" fn arch_context_switch(
     debug_assert!(super::arch::arch_ints_disabled());
 
     if LOCAL_TRACE != 0 {
-        // SAFETY: both threads are valid per this function's contract, so
-        // `kernel::thread::name()` returns a NUL-terminated string that outlives
-        // the borrow -- a thread's name is owned by the thread.
+        // SAFETY: Both threads are valid per this function's contract.
         unsafe {
-            let old_name = crate::kernel::thread::name(old_thread.cast());
-            let new_name = crate::kernel::thread::name(new_thread.cast());
-            let old_name_str = core::ffi::CStr::from_ptr(old_name).to_str().unwrap_or("");
-            let new_name_str = core::ffi::CStr::from_ptr(new_name).to_str().unwrap_or("");
-            ltracef!(
-                "old {:p} ({}), new {:p} ({})\n",
-                old_thread,
-                old_name_str,
-                new_thread,
-                new_name_str,
-            );
+            let old_name = crate::kernel::thread::Thread::name_copy_ptr(old_thread.cast());
+            let new_name = crate::kernel::thread::Thread::name_copy_ptr(new_thread.cast());
+            ltracef!("old {:p} ({}), new {:p} ({})\n", old_thread, old_name, new_thread, new_name);
         }
     }
 

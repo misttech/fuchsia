@@ -7,7 +7,6 @@
 
 //! arm64 FPU state save and restore for user threads.
 
-use core::ffi::CStr;
 use core::mem::offset_of;
 
 use arm64_thread_bindings::{
@@ -65,8 +64,8 @@ pub unsafe extern "C" fn arm64_fpu_restore_state(t: *const Thread) {
     ltracef!(
         "cpu {}, thread {}, load fpstate {:p}\n",
         arch_curr_cpu_num(),
-        // SAFETY: `t` points to a live `Thread`, whose name is a NUL-terminated string it owns.
-        zr::from_utf8_lossy(unsafe { CStr::from_ptr(crate::kernel::thread::name(t)) }.to_bytes()),
+        // SAFETY: `t` points to a live `Thread`, per the caller's contract.
+        unsafe { Thread::name_copy_ptr(t) },
         fpstate
     );
 
@@ -93,8 +92,8 @@ pub unsafe extern "C" fn arm64_fpu_save_state(t: *mut Thread) {
     ltracef!(
         "cpu {}, thread {}, save fpstate {:p}\n",
         arch_curr_cpu_num(),
-        // SAFETY: `t` points to a live `Thread`, whose name is a NUL-terminated string it owns.
-        zr::from_utf8_lossy(unsafe { CStr::from_ptr(crate::kernel::thread::name(t)) }.to_bytes()),
+        // SAFETY: `t` points to a live `Thread`, per the caller's contract.
+        unsafe { Thread::name_copy_ptr(t) },
         fpstate
     );
 
@@ -104,8 +103,8 @@ pub unsafe extern "C" fn arm64_fpu_save_state(t: *mut Thread) {
 
     ltracef!(
         "thread {}, fpcr {:x}, fpsr {:x}\n",
-        // SAFETY: `t` points to a live `Thread`, whose name is a NUL-terminated string it owns.
-        zr::from_utf8_lossy(unsafe { CStr::from_ptr(crate::kernel::thread::name(t)) }.to_bytes()),
+        // SAFETY: `t` points to a live `Thread`, per the caller's contract.
+        unsafe { Thread::name_copy_ptr(t) },
         // SAFETY: The caller holds `t`'s lock, so nothing writes `fpstate` meanwhile.
         unsafe { (*fpstate).fpcr },
         // SAFETY: As above.

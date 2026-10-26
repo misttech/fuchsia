@@ -11,7 +11,7 @@ use super::scheduler_state::{
     HIGHEST_PRIORITY, IDLE_PRIORITY, LOWEST_PRIORITY, ThreadStateKind as ThreadState,
 };
 use super::stats::CpuStats;
-use super::thread::Thread;
+use super::thread::{Thread, ThreadName};
 use super::types::{
     AtomicCpuMask, CPU_MASK_ALL, INVALID_CPU, cpu_mask_t as CpuMask, cpu_num_t as CpuNum,
     cpu_num_to_mask, remove_cpu_from_mask,
@@ -35,18 +35,6 @@ use fbl::{
 };
 use ffl::{FastFixed, Fixed};
 use zx_status::Status;
-
-struct ThreadName {
-    buf: [u8; zx_types::ZX_MAX_NAME_LEN],
-    len: usize,
-}
-
-impl ThreadName {
-    #[inline]
-    fn as_str(&self) -> &str {
-        core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
-    }
-}
 
 /// Diagnostic state reported when the target preemption time is inconsistent
 /// with the current time slice in `Scheduler::reschedule_common_helper`.
@@ -132,7 +120,7 @@ unsafe fn panic_no_available_cpu(
         "thread={} affinity={:#x} soft_affinity={:#x} active={:#x} idle={:#x} \
          arch_ints_disabled={}",
         // SAFETY: `thread` is valid per the caller's contract.
-        unsafe { thread_name(thread) }.as_str(),
+        unsafe { thread_name(thread) },
         hard_affinity,
         soft_affinity,
         active_mask,
@@ -141,35 +129,22 @@ unsafe fn panic_no_available_cpu(
     );
 }
 
-/// Copies the thread's name into a stack-allocated buffer using volatile reads
-/// so that concurrent calls to `Thread::set_name` (which does not synchronize
-/// with scheduler locks) cannot cause a data race or out-of-bounds read.
+/// Copies the thread's name into a stack-allocated buffer using byte-wise
+/// relaxed atomic loads so that concurrent calls to `Thread::set_name` (which
+/// does not synchronize with scheduler locks) cannot cause a data race or
+/// out-of-bounds read.
 ///
 /// # Safety
 /// `thread` must be null or point to a valid `Thread`.
 #[inline]
 unsafe fn thread_name(thread: *const Thread) -> ThreadName {
-    let mut res = ThreadName { buf: [0u8; zx_types::ZX_MAX_NAME_LEN], len: 0 };
     if thread.is_null() {
-        return res;
+        core::hint::cold_path();
+        ThreadName::empty()
+    } else {
+        // SAFETY: `thread` is non-null and valid per the caller's contract.
+        unsafe { Thread::name_copy_ptr(thread) }
     }
-    // SAFETY: `thread` is non-null and valid per the caller's contract.
-    let ptr = unsafe { super::thread::name(thread) }.cast::<u8>();
-    if ptr.is_null() {
-        return res;
-    }
-    for i in 0..zx_types::ZX_MAX_NAME_LEN {
-        // SAFETY: `Thread::name()` points to an inline buffer of `ZX_MAX_NAME_LEN`
-        // bytes inside `Thread`. Volatile byte reads avoid UB from concurrent
-        // unsynchronized writes in `Thread::set_name`.
-        let b = unsafe { ptr.add(i).read_volatile() };
-        if b == 0 {
-            break;
-        }
-        res.buf[i] = b;
-        res.len = i + 1;
-    }
-    res
 }
 
 // Counts the number of times we set the preemption timer to fire at a point
@@ -2104,7 +2079,6 @@ unsafe extern "C" {
     fn cpp_thread_get_queue_node(thread: *mut Thread) -> *mut WavlTreeNode<Thread, bool>;
     fn cpp_thread_get_scheduler_state(thread: *mut Thread) -> *mut SchedulerState;
     fn cpp_thread_get_queue_state(thread: *mut Thread) -> *mut SchedulerQueueState;
-    fn cpp_thread_get_tid(thread: *const Thread) -> u64;
     fn cpp_owq_get_inherited_state(
         owq: *mut OwnedWaitQueue,
     ) -> *mut WaitQueueInheritedSchedulerState;
@@ -2112,7 +2086,6 @@ unsafe extern "C" {
         owq: *const OwnedWaitQueue,
     ) -> *const WaitQueueInheritedSchedulerState;
     fn cpp_scheduler_get_normalized_utilization(sched: *const Scheduler) -> SchedUtilization;
-    fn cpp_thread_is_idle(thread: *const Thread) -> bool;
     fn cpp_thread_dump_active(thread: *const Thread, output_target: *mut libc::stdio::FILE);
 
     fn cpp_scheduler_get(cpu: CpuNum) -> *mut Scheduler;
@@ -2984,7 +2957,7 @@ impl Scheduler {
                 let sched_state = self.state.get();
                 let active_thread = (*sched_state).active_thread;
                 let active_is_not_idle =
-                    !active_thread.is_null() && !cpp_thread_is_idle(active_thread);
+                    !active_thread.is_null() && !Thread::is_idle_ptr(active_thread);
 
                 let cnt = (*sched_state).fair_run_queue.len()
                     + (*sched_state).critical_deadline_run_queue.len()
@@ -2995,9 +2968,9 @@ impl Scheduler {
                     SchedulerState::get_effective_cpu_mask_raw(state_ptr, peek_active_mask())
                         as u64;
                 let this_cpu = self.this_cpu() as u64;
-                let is_idle = cpp_thread_is_idle(thread);
+                let is_idle = Thread::is_idle_ptr(thread);
 
-                let arg0 = cpp_thread_get_tid(thread);
+                let arg0 = Thread::tid_ptr(thread);
                 let arg1 = (effective_cpu_mask & 0xFFFF)
                     | (core::cmp::min(this_cpu, 0xF) << 16)
                     | ((core::cmp::min(cnt as u64, 0xFF)) << 20)
@@ -3047,7 +3020,7 @@ impl Scheduler {
                 curr_cpu == this_cpu || stolen_by == this_cpu || thread == active_thread,
                 "Thread {} expected to be a member of scheduler {}, but curr_cpu says {}",
                 // SAFETY: `thread` is valid.
-                unsafe { cpp_thread_get_tid(thread) },
+                unsafe { Thread::tid_ptr(thread) },
                 this_cpu,
                 curr_cpu
             );
@@ -3082,7 +3055,7 @@ impl Scheduler {
                 curr_cpu == this_cpu && in_queue,
                 "Thread {} expected to be in run queue of scheduler {}, curr_cpu={}, in_queue={}",
                 // SAFETY: `thread` is valid.
-                unsafe { cpp_thread_get_tid(thread) },
+                unsafe { Thread::tid_ptr(thread) },
                 this_cpu,
                 curr_cpu,
                 in_queue
@@ -3119,7 +3092,7 @@ impl Scheduler {
                 discipline == SchedDiscipline::Fair,
                 "Fair thread {} has non-fair effective profile",
                 // SAFETY: `t` is valid.
-                unsafe { cpp_thread_get_tid(t) }
+                unsafe { Thread::tid_ptr(t) }
             );
 
             // If we have dirty tracking enabled for effective profiles (only enabled in
@@ -3159,7 +3132,7 @@ impl Scheduler {
                             bp.is_fair(),
                             "Fair thread {} has clean, but non-fair, base profile",
                             // SAFETY: `t` is valid.
-                            unsafe { cpp_thread_get_tid(t) }
+                            unsafe { Thread::tid_ptr(t) }
                         );
                     }
                     if (ep.dirty_flags & EffectiveProfile::DIRTY_FLAG_INHERITED_DIRTY) == 0 {
@@ -3167,7 +3140,7 @@ impl Scheduler {
                             ipv.uncapped_utilization == SchedUtilization::from_raw(0),
                             "Fair thread {} has clean IPV, but non-zero inherited utilization ({})",
                             // SAFETY: `t` is valid.
-                            unsafe { cpp_thread_get_tid(t) },
+                            unsafe { Thread::tid_ptr(t) },
                             ipv.uncapped_utilization.raw_value()
                         );
                     }
@@ -3207,7 +3180,7 @@ impl Scheduler {
                 discipline == SchedDiscipline::Deadline,
                 "Deadline thread {} has non-deadline effective profile",
                 // SAFETY: `t` is valid.
-                unsafe { cpp_thread_get_tid(t) }
+                unsafe { Thread::tid_ptr(t) }
             );
 
             #[cfg(scheduler_extra_invariant_validation)]
@@ -3227,7 +3200,7 @@ impl Scheduler {
                             "Deadline thread {} has a clean effective profile, but neither a \
                              deadline base profile ({}), nor a non-zero inherited utilization ({})",
                             // SAFETY: `t` is valid.
-                            unsafe { cpp_thread_get_tid(t) },
+                            unsafe { Thread::tid_ptr(t) },
                             if bp.is_fair() { "Fair" } else { "Deadline" },
                             ipv.uncapped_utilization.raw_value()
                         );
@@ -3314,7 +3287,7 @@ impl Scheduler {
         let state = unsafe { &mut *cpp_thread_get_scheduler_state(thread) };
         debug_assert_eq!(state.state, ThreadState::Ready);
         // SAFETY: `thread` is valid.
-        debug_assert!(!unsafe { cpp_thread_is_idle(thread) });
+        debug_assert!(!unsafe { Thread::is_idle_ptr(thread) });
 
         let update_trace = local_ktrace_begin_scope!(
             DETAILED,
@@ -3592,7 +3565,7 @@ impl Scheduler {
             actual_runtime_ns.raw_value(),
             cpu,
             // SAFETY: `current_thread` is a valid pointer per caller contract.
-            unsafe { thread_name(current_thread) }.as_str(),
+            unsafe { thread_name(current_thread) },
         );
 
         // SAFETY: `self` is valid and `queue_lock_` is held.
@@ -3801,7 +3774,7 @@ impl Scheduler {
             let state_ptr = cpp_thread_get_scheduler_state(thread);
             let ep_ptr = &raw const (*state_ptr).effective_profile;
 
-            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(!Thread::is_idle_ptr(thread));
             debug_assert!(!queue_state.in_queue());
 
             // Ensure that removal happens only once, even if block() is called multiple times.
@@ -3826,7 +3799,7 @@ impl Scheduler {
                     let mut utilization_to_remove = deadline.utilization;
                     if self.power_level_control_is_enabled() && stolen_by == INVALID_CPU {
                         utilization_to_remove = self.bandwidth_reservation_cache_add(
-                            cpp_thread_get_tid(thread),
+                            Thread::tid_ptr(thread),
                             (*state_ptr).finish_time,
                             utilization_to_remove,
                         );
@@ -3880,7 +3853,7 @@ impl Scheduler {
             );
 
             debug_assert_eq!((*state_ptr).state, ThreadState::Ready);
-            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(!Thread::is_idle_ptr(thread));
             debug_assert!(self.is_scheduler_active_locked());
 
             // Ensure insertion happens only once, even if unblock is called multiple times.
@@ -3929,7 +3902,7 @@ impl Scheduler {
                     // last blocking.
                     // TODO(eieio): Optimize based on placement type?
                     let utilization_to_remove = if self.power_level_control_is_enabled() {
-                        self.bandwidth_reservation_cache_remove(cpp_thread_get_tid(thread))
+                        self.bandwidth_reservation_cache_remove(Thread::tid_ptr(thread))
                     } else {
                         SchedUtilization::from_raw(0)
                     };
@@ -5734,7 +5707,7 @@ impl Scheduler {
             let state_ptr = cpp_thread_get_scheduler_state(thread);
 
             debug_assert_eq!((*state_ptr).state, ThreadState::Ready);
-            debug_assert!(!cpp_thread_is_idle(thread));
+            debug_assert!(!Thread::is_idle_ptr(thread));
             debug_assert!(placement != Placement::Association);
 
             // Check the consistency of the start and finish times before adding the
@@ -5897,7 +5870,7 @@ impl Scheduler {
             }
 
             let state_ptr = cpp_thread_get_scheduler_state(current_thread);
-            let is_idle = cpp_thread_is_idle(current_thread);
+            let is_idle = Thread::is_idle_ptr(current_thread);
             let is_runnable = (*state_ptr).state == ThreadState::Ready;
             let is_deadline = (*state_ptr).effective_profile.is_deadline();
 
@@ -6203,13 +6176,13 @@ impl Scheduler {
                 "find_earlier_deadline",
                 "is_oversubscribed" => is_oversubscribed,
                 "contender_name" => unsafe { thread_name(eligible_thread) }.as_str(),
-                "contender_tid" => unsafe { cpp_thread_get_tid(eligible_thread) },
+                "contender_tid" => unsafe { Thread::tid_ptr(eligible_thread) },
                 "contender_finish_delta_ns" => eligible_state.finish_time - eligible_time,
                 "contender_start_delta_ns" => eligible_time - eligible_state.start_time,
                 "contender_remaining_slice_ns" => eligible_state.remaining_time_slice_ns(),
                 "contender_capacity_ns" => eligible_state.time_slice_ns,
                 "active_name" => unsafe { thread_name(reference_thread) }.as_str(),
-                "active_tid" => unsafe { cpp_thread_get_tid(reference_thread) },
+                "active_tid" => unsafe { Thread::tid_ptr(reference_thread) },
                 "active_finish_delta_ns" => ref_state.finish_time - eligible_time,
                 "active_start_delta_ns" => eligible_time - ref_state.start_time,
                 "active_remaining_slice_ns" => ref_state.remaining_time_slice_ns(),
@@ -6460,7 +6433,7 @@ impl Scheduler {
             (
                 cpp_thread_get_scheduler_state(current_thread),
                 cpp_thread_get_queue_state(current_thread),
-                cpp_thread_is_idle(current_thread),
+                Thread::is_idle_ptr(current_thread),
                 self.this_cpu(),
             )
         };
@@ -6794,7 +6767,7 @@ impl Scheduler {
             curr_is_idle
         } else {
             // SAFETY: `next_thread` is valid.
-            unsafe { cpp_thread_is_idle(next_thread) }
+            unsafe { Thread::is_idle_ptr(next_thread) }
         };
 
         // Convert from variable time to monotonic time if necessary.
@@ -7446,8 +7419,7 @@ fn panic_pi_unassociated_thread(
     curr_cpu: CpuNum,
 ) -> ! {
     panic!(
-        "Found unassociated thread {} with tid {tid} in state {}, curr_cpu is: {curr_cpu}",
-        name.as_str(),
+        "Found unassociated thread {name} with tid {tid} in state {}, curr_cpu is: {curr_cpu}",
         thread_state as u32
     );
 }
@@ -7709,7 +7681,7 @@ where
             && !(thread_state == ThreadState::Running || thread_state == ThreadState::Ready)
         {
             // SAFETY: `thread` is valid per the caller's contract.
-            panic_pi_unexpected_thread_state(thread_state, unsafe { cpp_thread_get_tid(thread) });
+            panic_pi_unexpected_thread_state(thread_state, unsafe { Thread::tid_ptr(thread) });
         }
         // SAFETY: `curr_cpu` is a valid CPU number, interrupts are disabled, and
         // `queue_lock_` is not already held.
@@ -7736,7 +7708,7 @@ where
         let disposition = unsafe { cpp_thread_get_disposition(thread) };
         if cfg!(debug_assertions) && disposition == QueueDisposition::Unassociated as i32 {
             // SAFETY: `thread` is valid per the caller's contract.
-            let (name, tid) = unsafe { (thread_name(thread), cpp_thread_get_tid(thread)) };
+            let (name, tid) = unsafe { (thread_name(thread), Thread::tid_ptr(thread)) };
             panic_pi_unassociated_thread(&name, tid, thread_state, curr_cpu);
         }
 
@@ -8832,7 +8804,7 @@ impl Scheduler {
             // came from the run queue (and is not the idle thread).
             // SAFETY: `next_thread` is valid and its lock is held.
             let (flow_id, tid) =
-                unsafe { ((*next_state_ptr).flow_id, cpp_thread_get_tid(next_thread)) };
+                unsafe { ((*next_state_ptr).flow_id, Thread::tid_ptr(next_thread)) };
             local_ktrace_flow_end!(
                 FLOW,
                 "sched_latency",
@@ -9970,15 +9942,15 @@ unsafe fn sched_trace_context_switch(
             "kernel:sched",
             current_cpu,
             sched_user_thread_state((*cpp_thread_get_scheduler_state(current_thread)).state),
-            cpp_thread_get_tid(current_thread),
-            cpp_thread_get_tid(next_thread),
-            "outgoing_weight" => if cpp_thread_is_idle(current_thread) {
+            Thread::tid_ptr(current_thread),
+            Thread::tid_ptr(next_thread),
+            "outgoing_weight" => if Thread::is_idle_ptr(current_thread) {
                 IDLE_WEIGHT
             } else {
                 (*cpp_thread_get_scheduler_state(current_thread))
                     .get_weight_or_packed_deadline_params()
             },
-            "incoming_weight" => if cpp_thread_is_idle(next_thread) {
+            "incoming_weight" => if Thread::is_idle_ptr(next_thread) {
                 IDLE_WEIGHT
             } else {
                 (*cpp_thread_get_scheduler_state(next_thread))
@@ -10000,25 +9972,25 @@ unsafe fn sched_trace_wakeup(thread: *mut Thread, target_cpu: CpuNum) {
     // SAFETY: `thread` is valid with its lock held exclusively, and `current_thread` is valid
     // on the current CPU (`is_idle` and `tid` are immutable after thread initialization).
     unsafe {
-        if !cpp_thread_is_idle(current_thread) {
+        if !Thread::is_idle_ptr(current_thread) {
             ktrace_rs::thread_wakeup!(
                 "kernel:sched",
                 target_cpu,
-                cpp_thread_get_tid(thread),
-                "weight" => if cpp_thread_is_idle(thread) {
+                Thread::tid_ptr(thread),
+                "weight" => if Thread::is_idle_ptr(thread) {
                     IDLE_WEIGHT
                 } else {
                     (*cpp_thread_get_scheduler_state(thread))
                         .get_weight_or_packed_deadline_params()
                 },
-                "waker" => ktrace_rs::Koid(cpp_thread_get_tid(current_thread)),
+                "waker" => ktrace_rs::Koid(Thread::tid_ptr(current_thread)),
             );
         } else {
             ktrace_rs::thread_wakeup!(
                 "kernel:sched",
                 target_cpu,
-                cpp_thread_get_tid(thread),
-                "weight" => if cpp_thread_is_idle(thread) {
+                Thread::tid_ptr(thread),
+                "weight" => if Thread::is_idle_ptr(thread) {
                     IDLE_WEIGHT
                 } else {
                     (*cpp_thread_get_scheduler_state(thread))
@@ -11416,7 +11388,7 @@ unsafe fn unblock_list_raw(list: *mut UnblockList) {
             break;
         }
         // SAFETY: `thread` is a valid `Thread` popped from `list`.
-        debug_assert!(!unsafe { cpp_thread_is_idle(thread) });
+        debug_assert!(!unsafe { Thread::is_idle_ptr(thread) });
         // SAFETY: `thread` is valid and its lock is held in `token`.
         let lock = unsafe { thread_get_lock(thread) };
         unsafe { (*lock).assert_acquired(&token) };
@@ -11509,7 +11481,7 @@ unsafe fn unblock_synchronous_raw(thread: *mut Thread) {
 ///   be held.
 unsafe fn unblock_idle(thread: *mut Thread) {
     // SAFETY: `thread` is valid.
-    debug_assert!(unsafe { cpp_thread_is_idle(thread) });
+    debug_assert!(unsafe { Thread::is_idle_ptr(thread) });
     // SAFETY: `thread` is valid and its lock is held by the caller.
     let state_ptr = unsafe { cpp_thread_get_scheduler_state(thread) };
     // SAFETY: `thread`'s lock is held.
@@ -11545,7 +11517,7 @@ unsafe fn yield_thread(current_thread: *mut Thread) {
     let mut trace = local_ktrace_begin_scope!(COMMON, "sched_yield");
     debug_assert_eq!(current_thread, super::thread::current_get());
     // SAFETY: `current_thread` is valid.
-    debug_assert!(!unsafe { cpp_thread_is_idle(current_thread) });
+    debug_assert!(!unsafe { Thread::is_idle_ptr(current_thread) });
     // SAFETY: `current_thread` is valid and its lock is held by the caller.
     let state_ptr = unsafe { cpp_thread_get_scheduler_state(current_thread) };
     // SAFETY: `current_thread`'s lock is held.
@@ -12270,7 +12242,6 @@ impl Scheduler {
         // is materialized once on this frame.
         // SAFETY: `thread` is a valid `Thread`.
         let name = unsafe { thread_name(thread) };
-        let name = name.as_str();
         let prefix = if is_active { "->" } else { "  " };
         if discipline == SchedDiscipline::Fair {
             // A fair thread that is the active thread has start and finish

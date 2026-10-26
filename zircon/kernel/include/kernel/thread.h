@@ -95,6 +95,7 @@ typedef int (*thread_start_routine)(void* arg) [[clang::cfi_unchecked_callee]];
 // Sadly, there does not seem to be a good way to statically annotate this.
 typedef void (*thread_trampoline_routine)() __NO_RETURN;
 
+// LINT.IfChange(thread_flags_and_signals)
 // clang-format off
 #define THREAD_FLAG_DETACHED                 (1 << 0)
 #define THREAD_FLAG_FREE_STRUCT              (1 << 1)
@@ -110,6 +111,10 @@ typedef void (*thread_trampoline_routine)() __NO_RETURN;
 #define THREAD_SIGNAL_CHECK_RSEQ             (1 << 5)
 #define THREAD_SIGNAL_POLICY_KILL            (1 << 6)
 // clang-format on
+// LINT.ThenChange(
+//   //zircon/kernel/kernel/thread.rs:thread_flags_and_signals,
+//   //zircon/kernel/kernel/thread_ffi.cc:thread_flags_and_signals,
+// )
 
 // thread priority
 #define NUM_PRIORITIES (32)
@@ -713,6 +718,28 @@ enum class ThreadStallState {
   Stalling,
 };
 
+extern "C" {
+
+// Rust implementations of the Thread flags, signals and name accessors and of
+// CheckKillOrSuspendSignal. The C++ methods of the same name below are thin
+// forwarders to these; none of them takes a lock.
+void rust_thread_set_signals(const Thread* thread, uint32_t bits);
+void rust_thread_clear_signals(const Thread* thread, uint32_t bits);
+uint32_t rust_thread_flags(const Thread* thread);
+bool rust_thread_detached(const Thread* thread);
+void rust_thread_set_detached(const Thread* thread, bool value);
+bool rust_thread_free_struct(const Thread* thread);
+void rust_thread_set_free_struct(const Thread* thread, bool value);
+bool rust_thread_idle(const Thread* thread);
+void rust_thread_set_idle(const Thread* thread, bool value);
+bool rust_thread_vcpu(const Thread* thread);
+void rust_thread_set_vcpu(const Thread* thread, bool value);
+const char* rust_thread_name(const Thread* thread);
+void rust_thread_set_name(Thread* thread, const char* name, size_t len);
+zx_status_t rust_thread_check_kill_or_suspend_signal(const Thread* thread);
+
+}  // extern "C"
+
 struct Thread : public ChainLockable {
   // TODO(kulakowski) Are these needed?
   // Default constructor/destructor declared to be not-inline in order to
@@ -787,11 +814,11 @@ struct Thread : public ChainLockable {
 
   // Returns the koid of the associated ProcessDispatcher for user threads or
   // ZX_KOID_INVLID for kernel threads.
-  zx_koid_t pid() const { return pid_; }
+  zx_koid_t pid() const { return pid_.load(ktl::memory_order_relaxed); }
 
   // Returns the koid of the associated ThreadDispatcher for user threads or an
   // independent koid for kernel threads.
-  zx_koid_t tid() const { return tid_; }
+  zx_koid_t tid() const { return tid_.load(ktl::memory_order_relaxed); }
 
   // Return the pid/tid of the thread as a tracing thread reference.
   fxt::ThreadRef<fxt::RefType::kInline> fxt_ref() const { return {pid(), tid()}; }
@@ -817,7 +844,9 @@ struct Thread : public ChainLockable {
   // raised, then `ZX_ERR_INTERNAL_INTR_KILLED` will be returned. If suspend has
   // been raised, then `ZX_ERR_INTERNAL_INTR_RETRY` will be returned. Otherwise,
   // `ZX_OK` will be returned.
-  zx_status_t CheckKillOrSuspendSignal() const;
+  zx_status_t CheckKillOrSuspendSignal() const {
+    return rust_thread_check_kill_or_suspend_signal(this);
+  }
 
   // Erase this thread from all global lists, where applicable.
   void EraseFromListsLocked() TA_REQ(list_lock_);
@@ -937,7 +966,7 @@ struct Thread : public ChainLockable {
 
   // Return true if thread has been signaled.
   bool IsSignaled() { return signals() != 0; }
-  bool IsIdle() const { return !!(flags_ & THREAD_FLAG_IDLE); }
+  bool IsIdle() const { return idle(); }
 
   // Returns true if this Thread's user state has been saved.
   //
@@ -1124,47 +1153,24 @@ struct Thread : public ChainLockable {
   void set_suspended() TA_REQ(get_lock()) { scheduler_state_.set_state(THREAD_SUSPENDED); }
 
   // Accessors for specific flags_ bits.
-  bool detatched() const { return (flags_ & THREAD_FLAG_DETACHED) != 0; }
-  void set_detached(bool value) {
-    if (value) {
-      flags_ |= THREAD_FLAG_DETACHED;
-    } else {
-      flags_ &= ~THREAD_FLAG_DETACHED;
-    }
-  }
-  bool free_struct() const { return (flags_ & THREAD_FLAG_FREE_STRUCT) != 0; }
-  void set_free_struct(bool value) {
-    if (value) {
-      flags_ |= THREAD_FLAG_FREE_STRUCT;
-    } else {
-      flags_ &= ~THREAD_FLAG_FREE_STRUCT;
-    }
-  }
-  bool idle() const { return (flags_ & THREAD_FLAG_IDLE) != 0; }
-  void set_idle(bool value) {
-    if (value) {
-      flags_ |= THREAD_FLAG_IDLE;
-    } else {
-      flags_ &= ~THREAD_FLAG_IDLE;
-    }
-  }
-  bool vcpu() const { return (flags_ & THREAD_FLAG_VCPU) != 0; }
-  void set_vcpu(bool value) {
-    if (value) {
-      flags_ |= THREAD_FLAG_VCPU;
-    } else {
-      flags_ &= ~THREAD_FLAG_VCPU;
-    }
-  }
+  bool detached() const { return rust_thread_detached(this); }
+  void set_detached(bool value) { rust_thread_set_detached(this, value); }
+  bool free_struct() const { return rust_thread_free_struct(this); }
+  void set_free_struct(bool value) { rust_thread_set_free_struct(this, value); }
+  bool idle() const { return rust_thread_idle(this); }
+  void set_idle(bool value) { rust_thread_set_idle(this, value); }
+  bool vcpu() const { return rust_thread_vcpu(this); }
+  void set_vcpu(bool value) { rust_thread_set_vcpu(this, value); }
 
   // Access to the entire flags_ value, for diagnostics.
-  unsigned int flags() const { return flags_; }
+  unsigned int flags() const { return rust_thread_flags(this); }
 
-  // Only these three methods directly access the signals_ member.
-  // TODO(https://fxbug.dev/42077109): Write down memory order requirements for accessing signals_.
+  // Accessors for pending signals. Reads are inline relaxed loads so IsSignaled() on syscall exit
+  // stays a single load; mutations forward to Rust.
+  // TODO(https://fxbug.dev/42077109): Write down memory order requirements for accessing signals.
   uint32_t signals() const { return signals_.load(ktl::memory_order_relaxed); }
-  void set_signals(uint32_t bits) { signals_.fetch_or(bits, ktl::memory_order_relaxed); }
-  void clear_signals(uint32_t bits) { signals_.fetch_and(~bits, ktl::memory_order_relaxed); }
+  void set_signals(uint32_t bits) { rust_thread_set_signals(this, bits); }
+  void clear_signals(uint32_t bits) { rust_thread_clear_signals(this, bits); }
 
   bool has_migrate_fn() const TA_REQ_SHARED(get_lock()) { return migrate_fn_ != nullptr; }
   bool migrate_pending() const TA_REQ_SHARED(get_lock()) { return migrate_pending_; }
@@ -1277,10 +1283,10 @@ struct Thread : public ChainLockable {
   VmAspace* active_aspace() { return aspace_; }
   const VmAspace* active_aspace() const { return aspace_; }
 
-  const char* name() const { return name_; }
+  const char* name() const { return rust_thread_name(this); }
   // This may truncate |name|, so that it (including a trailing NUL
   // byte) fit in ZX_MAX_NAME_LEN bytes.
-  void set_name(ktl::string_view name);
+  void set_name(ktl::string_view name) { rust_thread_set_name(this, name.data(), name.size()); }
 
   Linebuffer& linebuffer() { return linebuffer_; }
 
@@ -1375,15 +1381,16 @@ struct Thread : public ChainLockable {
   // Thread.
   bool CheckKillSignal() TA_REQ(get_lock());
 
-  // These should only be accessed from the current thread.
+  // These should only be accessed from the current thread. The kick-pending flag stays
+  // C++-owned, so both accessors work on |flags_| directly.
   bool restricted_kick_pending() const {
-    return (flags_ & THREAD_FLAG_RESTRICTED_KICK_PENDING) != 0;
+    return (flags_.load(ktl::memory_order_relaxed) & THREAD_FLAG_RESTRICTED_KICK_PENDING) != 0;
   }
   void set_restricted_kick_pending(bool value) {
     if (value) {
-      flags_ |= THREAD_FLAG_RESTRICTED_KICK_PENDING;
+      flags_.fetch_or(THREAD_FLAG_RESTRICTED_KICK_PENDING, ktl::memory_order_relaxed);
     } else {
-      flags_ &= ~THREAD_FLAG_RESTRICTED_KICK_PENDING;
+      flags_.fetch_and(~THREAD_FLAG_RESTRICTED_KICK_PENDING, ktl::memory_order_relaxed);
     }
   }
 
@@ -1414,7 +1421,8 @@ struct Thread : public ChainLockable {
   // These fields are among the most active in the thread. They are grouped
   // together near the front to improve cache locality.
   __NO_UNIQUE_ADDRESS mutable fbl::NullLock scheduler_variable_lock_;
-  unsigned int flags_{};
+  // ktl::atomic is used for type parity with the Rust side (RelaxedAtomicU32 / RelaxedAtomicU64).
+  ktl::atomic<uint32_t> flags_{};
   ktl::atomic<uint32_t> signals_;
   SchedulerState scheduler_state_ TA_GUARDED(get_lock());
   SchedulerQueueState scheduler_queue_state_ TA_GUARDED(scheduler_variable_lock_);
@@ -1457,8 +1465,8 @@ struct Thread : public ChainLockable {
 
   // When user_thread_ is set, these values are copied from ThreadDispatcher and
   // its parent ProcessDispatcher. Kernel threads maintain an independent tid.
-  zx_koid_t tid_ = KernelObjectId::Generate();
-  zx_koid_t pid_ = ZX_KOID_INVALID;
+  ktl::atomic<zx_koid_t> tid_{KernelObjectId::Generate()};
+  ktl::atomic<zx_koid_t> pid_{ZX_KOID_INVALID};
 
   // Architecture-specific stuff.
   arch_thread arch_{};
@@ -1756,7 +1764,6 @@ extern "C" {
 cpu_mask_t cpp_thread_get_cpu_affinity(const Thread* thread);
 cpu_mask_t cpp_thread_set_cpu_affinity(Thread* thread, cpu_mask_t affinity);
 ThreadDispatcher* cpp_thread_user_thread(Thread* thread);
-zx_koid_t cpp_thread_tid(const Thread* thread);
 uint64_t cpp_thread_lock_flow_id(const Thread* thread);
 uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread);
 }

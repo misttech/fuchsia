@@ -107,6 +107,12 @@ struct ThreadLayout {
   static_assert(sizeof(Thread::Canary) == sizeof(uint32_t));
   static_assert(sizeof(RelaxedAtomic<VmAspace*>) == sizeof(void*));
 
+  // Members that Rust models as RelaxedAtomicU32 / RelaxedAtomicU64 must match in size and align.
+  static_assert(sizeof(ktl::atomic<uint32_t>) == sizeof(uint32_t));
+  static_assert(alignof(ktl::atomic<uint32_t>) == alignof(uint32_t));
+  static_assert(sizeof(ktl::atomic<zx_koid_t>) == sizeof(zx_koid_t));
+  static_assert(alignof(ktl::atomic<zx_koid_t>) == alignof(zx_koid_t));
+
   static constexpr size_t kLockOffset = offsetof(Thread, lock_);
   static constexpr size_t kCanaryOffset = offsetof(Thread, canary_);
   static constexpr size_t kFlagsOffset = offsetof(Thread, flags_);

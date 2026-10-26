@@ -237,13 +237,6 @@ Thread::~Thread() {
   // here.
 }
 
-void Thread::set_name(ktl::string_view name) {
-  // |name| must fit in ZX_MAX_NAME_LEN bytes, minus 1 for the trailing NUL.
-  name = name.substr(0, ZX_MAX_NAME_LEN - 1);
-  memcpy(name_, name.data(), name.size());
-  memset(name_ + name.size(), 0, ZX_MAX_NAME_LEN - name.size());
-}
-
 Thread::Thread(ktl::string_view name) {
   set_name(name);
 
@@ -441,7 +434,7 @@ Thread* Thread::CreateEtc(Thread* t, ktl::string_view name, thread_start_routine
     }
 
     // save whether or not we need to free the thread struct and/or stack
-    t->flags_ = flags;
+    t->flags_.store(flags, ktl::memory_order_relaxed);
 
     if (likely(alt_trampoline == nullptr)) {
       alt_trampoline = &Thread::Trampoline;
@@ -789,7 +782,7 @@ zx_status_t Thread::Join(int* out_retcode, zx_instant_mono_t deadline) {
       Guard<SpinLock, NoIrqSave> list_guard{&list_lock_};
       ChainLockGuard guard{get_lock()};
 
-      if (flags_ & THREAD_FLAG_DETACHED) {
+      if (flags_.load(ktl::memory_order_relaxed) & THREAD_FLAG_DETACHED) {
         // the thread is detached, go ahead and exit
         return ZX_ERR_BAD_STATE;
       }
@@ -883,13 +876,14 @@ zx_status_t Thread::Detach() {
 
     // If the target thread is not yet dead, flag it as detached and get out.
     if (state() != THREAD_DEATH) {
-      flags_ |= THREAD_FLAG_DETACHED;
+      flags_.fetch_or(THREAD_FLAG_DETACHED, ktl::memory_order_relaxed);
       return JoinThread::No;
     }
 
     // Looks like the thread has already died.  Make sure the DETACHED flag has
     // been cleared (so that Join continues).
-    flags_ &= ~THREAD_FLAG_DETACHED;  // makes sure Join continues
+    flags_.fetch_and(~THREAD_FLAG_DETACHED,
+                     ktl::memory_order_relaxed);  // makes sure Join continues
     // Drop our lock and Join to finish the cleanup.
     return JoinThread::Yes;
   };
@@ -1003,7 +997,7 @@ __NO_RETURN void Thread::Current::Exit(int retcode) {
     current_thread->CallMigrateFnLocked(Thread::MigrateStage::Exiting);
 
     // if we're detached, then do our teardown here
-    if (current_thread->flags_ & THREAD_FLAG_DETACHED) {
+    if (current_thread->flags_.load(ktl::memory_order_relaxed) & THREAD_FLAG_DETACHED) {
       kcounter_add(thread_detached_exit_count, 1);
 
       // remove it from global lists and drop the global list lock.
@@ -1044,7 +1038,8 @@ __NO_RETURN void Thread::Current::Exit(int retcode) {
       // this is safe, it may be a good idea to come back here later and queue
       // the DPC while holding the thread's lock, just to simplify the structure
       // of the code around here.
-      if (current_thread->stack_.base() || (current_thread->flags_ & THREAD_FLAG_FREE_STRUCT)) {
+      if (current_thread->stack_.base() ||
+          (current_thread->flags_.load(ktl::memory_order_relaxed) & THREAD_FLAG_FREE_STRUCT)) {
         queue_free_dpc = true;
       }
     } else {
@@ -1270,17 +1265,6 @@ bool Thread::CheckKillSignal() {
   } else {
     return false;
   }
-}
-
-zx_status_t Thread::CheckKillOrSuspendSignal() const {
-  const auto current_signals = signals();
-  if (unlikely(current_signals & THREAD_SIGNAL_KILL)) {
-    return ZX_ERR_INTERNAL_INTR_KILLED;
-  }
-  if (unlikely(current_signals & THREAD_SIGNAL_SUSPEND)) {
-    return ZX_ERR_INTERNAL_INTR_RETRY;
-  }
-  return ZX_OK;
 }
 
 // finish suspending the current thread
@@ -1940,10 +1924,7 @@ void thread_init_early() {
 /**
  * @brief Change name of current thread
  */
-void Thread::Current::SetName(const char* name) {
-  Thread* current_thread = Thread::Current::Get();
-  strlcpy(current_thread->name_, name, sizeof(current_thread->name_));
-}
+void Thread::Current::SetName(const char* name) { Thread::Current::Get()->set_name(name); }
 
 /**
  * @brief Change the base profile of current thread
@@ -1975,12 +1956,12 @@ void Thread::SetUsermodeThread(fbl::RefPtr<ThreadDispatcher> user_thread) {
   DEBUG_ASSERT(!user_thread_);
 
   user_thread_ = ktl::move(user_thread);
-  tid_ = user_thread_->get_koid();
-  pid_ = user_thread_->process()->get_koid();
+  tid_.store(user_thread_->get_koid(), ktl::memory_order_relaxed);
+  pid_.store(user_thread_->process()->get_koid(), ktl::memory_order_relaxed);
 
   // All user mode threads are detached since they are responsible for cleaning themselves up.
   // We can set this directly because we've checked that we are in the initial state.
-  flags_ |= THREAD_FLAG_DETACHED;
+  flags_.fetch_or(THREAD_FLAG_DETACHED, ktl::memory_order_relaxed);
 }
 
 /**
@@ -2007,7 +1988,7 @@ void Thread::Current::BecomeIdle() {
     Thread::Current::SetName(name);
 
     // Mark ourself as idle
-    t->flags_ |= THREAD_FLAG_IDLE;
+    t->flags_.fetch_or(THREAD_FLAG_IDLE, ktl::memory_order_relaxed);
 
     // Now that we are the idle thread, make sure that we drop out of the
     // scheduler's bookkeeping altogether.
@@ -2121,7 +2102,7 @@ Thread* Thread::CreateIdleThread(cpu_num_t cpu_num) {
   {
     SingleChainLockGuard guard{IrqSaveOption, t->get_lock(), CLT_TAG("Thread::CreateIdleThread")};
 
-    t->flags_ |= THREAD_FLAG_IDLE | THREAD_FLAG_DETACHED;
+    t->flags_.fetch_or(THREAD_FLAG_IDLE | THREAD_FLAG_DETACHED, ktl::memory_order_relaxed);
     t->scheduler_state_.hard_affinity_ = cpu_num_to_mask(cpu_num);
 
     Scheduler::UnblockIdle(t);
@@ -2268,10 +2249,11 @@ void ThreadDumper::DumpLocked(const Thread* t, const char* match_owner, bool ful
     dprintf(INFO, "\truntime_ns %" PRIi64 ", runtime_s %" PRIi64 "\n", runtime,
             runtime / 1000000000);
     t->stack().DumpInfo(INFO);
+    const unsigned int flags = t->flags_.load(ktl::memory_order_relaxed);
     dprintf(INFO, "\tentry %p, arg %p, flags 0x%x %s%s%s%s\n", t->task_state_.entry_,
-            t->task_state_.arg_, t->flags_, (t->flags_ & THREAD_FLAG_DETACHED) ? "Dt" : "",
-            (t->flags_ & THREAD_FLAG_FREE_STRUCT) ? "Ft" : "",
-            (t->flags_ & THREAD_FLAG_IDLE) ? "Id" : "", (t->flags_ & THREAD_FLAG_VCPU) ? "Vc" : "");
+            t->task_state_.arg_, flags, (flags & THREAD_FLAG_DETACHED) ? "Dt" : "",
+            (flags & THREAD_FLAG_FREE_STRUCT) ? "Ft" : "", (flags & THREAD_FLAG_IDLE) ? "Id" : "",
+            (flags & THREAD_FLAG_VCPU) ? "Vc" : "");
 
     dprintf(INFO, "\twait queue %p, blocked_status %d, interruptible %s, wait queues owned %s\n",
             t->wait_queue_state().blocking_wait_queue_, t->wait_queue_state().blocked_status_,

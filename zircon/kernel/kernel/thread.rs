@@ -12,7 +12,7 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{align_of, offset_of, size_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
 use fbl::{
     DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode,
     SinglyLinkedListContainable, SinglyLinkedListNode,
@@ -91,7 +91,6 @@ unsafe extern "C" {
     fn cpp_thread_lock_guard_destroy(guard: *mut lock_guard_bindings::ThreadLockGuard);
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_current_active_aspace() -> *mut VmAspace;
-    fn cpp_thread_fxt_ref(thread: *mut Thread) -> FxtRef;
     fn cpp_thread_preempt_set_timeslice_extension(duration: DurationMono) -> bool;
     fn cpp_thread_preempt_clear_timeslice_extension();
     fn cpp_thread_preempt_disable();
@@ -117,14 +116,12 @@ unsafe extern "C" {
     fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
     fn cpp_thread_dump_current_stack();
     fn cpp_thread_is_running(thread: *const Thread) -> bool;
-    fn cpp_thread_name(thread: *const Thread) -> *const c_char;
     fn cpp_thread_process_pending_signals(frame: *mut c_void);
     fn cpp_thread_in_restricted(thread: *mut Thread) -> bool;
     fn cpp_thread_is_user_thread(thread: *const Thread) -> bool;
     fn cpp_thread_active_aspace(thread: *mut Thread) -> *mut VmAspace;
     fn cpp_thread_current_restricted_state() -> *mut RestrictedState;
     fn cpp_thread_current_set_restricted_state(raw_rs: *mut RestrictedState);
-    fn cpp_thread_current_is_signaled() -> bool;
     fn cpp_thread_current_check_for_restricted_kick() -> bool;
     fn cpp_thread_current_memory_allocation_state_enable();
     fn cpp_thread_current_memory_allocation_state_disable();
@@ -142,17 +139,16 @@ unsafe extern "C" {
     fn cpp_thread_last_cpu(thread: *const Thread) -> cpu_num_t;
     fn cpp_thread_current_migrate_to_cpu(target_cpu: cpu_num_t);
     fn cpp_thread_user_thread(thread: *mut Thread) -> *mut crate::object::ThreadDispatcher;
-    fn cpp_thread_tid(thread: *const Thread) -> zx_types::zx_koid_t;
     fn cpp_thread_lock_flow_id(thread: *const Thread) -> u64;
     fn cpp_thread_take_next_lock_flow_id(thread: *mut Thread) -> u64;
     fn cpp_thread_get_list_lock() -> *mut ksync::KSpinlock<ThreadListLockClass>;
-    fn cpp_thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> *mut Thread;
+    fn cpp_thread_id_to_thread_slow(tid: zx_koid_t) -> *mut Thread;
     fn cpp_thread_get_backtrace(thread: *mut Thread, out_bt: *mut Backtrace);
     fn cpp_thread_current_get_backtrace(out_bt: *mut Backtrace);
     fn cpp_thread_dump(thread: *const Thread, full: bool);
     fn cpp_thread_runtime(thread: *const Thread) -> DurationMono;
-    fn cpp_thread_dump_tid(tid: zx_types::zx_koid_t, full: bool);
-    fn cpp_thread_dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool);
+    fn cpp_thread_dump_tid(tid: zx_koid_t, full: bool);
+    fn cpp_thread_dump_tid_during_panic(tid: zx_koid_t, full: bool);
     fn cpp_thread_dump_all(match_owner: *const c_char, full: bool);
     fn cpp_thread_dump_all_during_panic(match_owner: *const c_char, full: bool);
     fn cpp_thread_current_reschedule();
@@ -234,12 +230,36 @@ pub unsafe fn scheduler_state<'a>(thread: *const Thread) -> &'a SchedulerState {
     unsafe { (*thread).scheduler_state_unchecked() }
 }
 
+// LINT.IfChange(thread_flags_and_signals)
+/// Thread is detached and will not be joined.
+pub const THREAD_FLAG_DETACHED: u32 = 1 << 0;
+/// `Thread` struct is heap-allocated and should be freed on exit.
+pub const THREAD_FLAG_FREE_STRUCT: u32 = 1 << 1;
+/// Thread is a per-CPU idle/power thread.
+pub const THREAD_FLAG_IDLE: u32 = 1 << 2;
+/// Thread runs a guest VCPU.
+pub const THREAD_FLAG_VCPU: u32 = 1 << 3;
+/// A restricted-mode kick is pending on this thread.
+pub const THREAD_FLAG_RESTRICTED_KICK_PENDING: u32 = 1 << 4;
+
+/// Thread has been signaled to terminate.
 pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;
+/// Thread has been signaled to suspend.
 pub const THREAD_SIGNAL_SUSPEND: u32 = 1 << 1;
+/// Thread has a pending job policy exception to deliver on syscall exit.
 pub const THREAD_SIGNAL_POLICY_EXCEPTION: u32 = 1 << 2;
+/// Thread has been kicked out of restricted mode.
 pub const THREAD_SIGNAL_RESTRICTED_KICK: u32 = 1 << 3;
+/// Thread has been signaled to sample its user stack.
 pub const THREAD_SIGNAL_SAMPLE_STACK: u32 = 1 << 4;
+/// Thread has been signaled to check its restartable sequence before returning to usermode.
 pub const THREAD_SIGNAL_CHECK_RSEQ: u32 = 1 << 5;
+/// Thread is being killed due to a fatal job policy violation.
+pub const THREAD_SIGNAL_POLICY_KILL: u32 = 1 << 6;
+// LINT.ThenChange(
+//   //zircon/kernel/include/kernel/thread.h:thread_flags_and_signals,
+//   //zircon/kernel/kernel/thread_ffi.cc:thread_flags_and_signals,
+// )
 
 /// `ZX_ERR_INTERNAL_INTR_KILLED`; `zx_status::Status` has no named constant for it.
 const ZX_ERR_INTERNAL_INTR_KILLED: Status =
@@ -247,15 +267,45 @@ const ZX_ERR_INTERNAL_INTR_KILLED: Status =
 /// `ZX_ERR_INTERNAL_INTR_RETRY`, an alias of `ZX_ERR_INTERRUPTED_RETRY`.
 const ZX_ERR_INTERNAL_INTR_RETRY: Status = Status::INTERRUPTED_RETRY;
 
-// LINT.IfChange(FxtRef)
-/// Rust representation of the C++ `FxtRef` struct.
+/// Process and thread koids for a tracing thread reference.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FxtRef {
     pub pid: u64,
     pub tid: u64,
 }
-// LINT.ThenChange(//zircon/kernel/kernel/thread_ffi.cc:FxtRef)
+
+/// Snapshot of a thread's name buffer.
+pub struct ThreadName {
+    buf: [u8; ZX_MAX_NAME_LEN],
+    len: usize,
+}
+
+impl ThreadName {
+    /// Returns an empty [`ThreadName`].
+    #[inline]
+    pub const fn empty() -> Self {
+        Self { buf: [0u8; ZX_MAX_NAME_LEN], len: 0 }
+    }
+
+    /// Returns the name bytes before the first NUL byte.
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.buf[..self.len]
+    }
+
+    /// Returns the name as a UTF-8 string slice, or `""` if it contains invalid UTF-8.
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(self.as_bytes()).unwrap_or("")
+    }
+}
+
+impl core::fmt::Display for ThreadName {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&zr::from_utf8_lossy(self.as_bytes()), f)
+    }
+}
 
 /// Tag type for a [`Thread`]'s membership in the global migrate list (`migrate_list_node`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -476,9 +526,12 @@ pub struct Thread {
     //
     // `scheduler_variable_lock_` (a zero-sized `fbl::NullLock`) has no storage and is omitted.
     //
-    // Mutated by the owning thread (restricted-kick) and under the thread's lock by other threads.
-    flags: UnsafeCell<u32>,
-    signals: AtomicU32,
+    // Relaxed atomic. Each flag is an independent bit: the owning thread mutates
+    // `THREAD_FLAG_RESTRICTED_KICK_PENDING` lock-free, `THREAD_FLAG_IDLE`/`THREAD_FLAG_VCPU` are
+    // set during setup, and `THREAD_FLAG_DETACHED`/`THREAD_FLAG_FREE_STRUCT` are set at creation
+    // or under `get_lock()`.
+    flags: RelaxedAtomicU32,
+    signals: RelaxedAtomicU32,
     // Guard: split (see `scheduler::SchedulerState`). `state`, `base_profile`,
     // `inherited_profile_values` and the `effective_profile` dirty flags are written under
     // `get_lock()`; the queue-related members (`start_time`, `finish_time`, time slices,
@@ -530,9 +583,10 @@ pub struct Thread {
 
     /// When user_thread_ is set, these values are copied from ThreadDispatcher and
     /// its parent ProcessDispatcher. Kernel threads maintain an independent tid.
-    // Set once during user-thread setup and read lock-free afterwards.
-    tid: UnsafeCell<zx_koid_t>,
-    pid: UnsafeCell<zx_koid_t>,
+    // Written during thread setup (or `SetUserThread` before the thread runs) and read lock-free
+    // with relaxed ordering.
+    tid: RelaxedAtomicU64,
+    pid: RelaxedAtomicU64,
 
     /// Architecture-specific stuff.
     arch: Opaque<layout::ThreadArchStorage>,
@@ -544,8 +598,11 @@ pub struct Thread {
     recursive_object_deletion_list: UnsafeCell<*mut c_void>,
 
     /// This always includes the trailing NUL.
-    // NUL-terminated name buffer; written by `set_name` and read lock-free.
-    name: UnsafeCell<[c_char; ZX_MAX_NAME_LEN]>,
+    // NUL-terminated name buffer, byte-wise relaxed atomics: `set_name` (and C++
+    // `Thread::Current::SetName`, which forwards to it) writes it without a lock and readers
+    // (`name_bytes`, `name_bytes_ptr`, C++ `name()`) copy or read it lock-free, tolerating a torn
+    // name. Same layout as `char[ZX_MAX_NAME_LEN]`.
+    name: [AtomicU8; ZX_MAX_NAME_LEN],
 
     /// Buffering for Debuglog output.
     linebuffer: Opaque<layout::ThreadLinebufferStorage>,
@@ -683,6 +740,10 @@ static_assert!(
         == layout::ThreadLayout_kRecursiveObjectDeletionListOffset
 );
 static_assert!(offset_of!(Thread, name) == layout::ThreadLayout_kNameOffset);
+static_assert!(size_of::<[AtomicU8; ZX_MAX_NAME_LEN]>() == size_of::<[c_char; ZX_MAX_NAME_LEN]>());
+static_assert!(
+    align_of::<[AtomicU8; ZX_MAX_NAME_LEN]>() == align_of::<[c_char; ZX_MAX_NAME_LEN]>()
+);
 static_assert!(offset_of!(Thread, linebuffer) == layout::ThreadLayout_kLinebufferOffset);
 static_assert!(offset_of!(Thread, lock_flow_id) == layout::ThreadLayout_kLockFlowIdOffset);
 static_assert!(offset_of!(Thread, user_state_saved) == layout::ThreadLayout_kUserStateSavedOffset);
@@ -732,7 +793,7 @@ unsafe impl ChainLocked for Thread {
 pub enum ThreadListLockClass {}
 
 impl ksync::LockClass for ThreadListLockClass {
-    const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    const ID: *mut c_void = core::ptr::null_mut();
 }
 
 impl Thread {
@@ -777,29 +838,268 @@ impl Thread {
         unsafe { (*canary).assert() };
     }
 
-    /// Returns the current pending signals bitmask on this thread.
+    /// Like [`Self::is_idle`], for a raw pointer, without forming a `&Thread`.
     ///
-    /// Uses `Relaxed` ordering, matching C++ `Thread::signals()` (`ktl::memory_order_relaxed`).
-    /// Signal bitmask reads are polled opportunistically or re-checked under the thread's lock,
-    /// and do not synchronize other memory accesses.
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
     #[inline]
-    pub fn signals(&self) -> u32 {
-        self.signals.load(Ordering::Relaxed)
+    pub(super) unsafe fn is_idle_ptr(this: *const Self) -> bool {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `flags` field place without forming a reference to the whole `Thread`.
+        let flags = unsafe { &raw const (*this).flags };
+        // SAFETY: `flags` is the live `Thread`'s flags field (see above).
+        unsafe { (*flags).load() & THREAD_FLAG_IDLE != 0 }
     }
 
-    /// Checks whether the kill or suspend signal has been raised. If kill has been raised, returns
-    /// `Err(ZX_ERR_INTERNAL_INTR_KILLED)`. If suspend has been raised, returns
-    /// `Err(ZX_ERR_INTERNAL_INTR_RETRY)`. Otherwise, returns `Ok(())`.
+    /// Returns the koid of the associated `ThreadDispatcher` for user threads or an independent
+    /// koid for kernel threads.
+    #[inline]
+    pub fn tid(&self) -> zx_koid_t {
+        self.tid.load()
+    }
+
+    /// Like [`Self::tid`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(crate) unsafe fn tid_ptr(this: *const Self) -> zx_koid_t {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `tid` field place without forming a reference to the whole `Thread`.
+        let tid = unsafe { &raw const (*this).tid };
+        // SAFETY: `tid` is the live `Thread`'s `tid` field (see above).
+        unsafe { (*tid).load() }
+    }
+
+    /// Returns the koid of the associated `ProcessDispatcher` for user threads or
+    /// `ZX_KOID_INVALID` for kernel threads.
+    #[inline]
+    pub fn pid(&self) -> zx_koid_t {
+        self.pid.load()
+    }
+
+    /// Like [`Self::pid`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(crate) unsafe fn pid_ptr(this: *const Self) -> zx_koid_t {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `pid` field place without forming a reference to the whole `Thread`.
+        let pid = unsafe { &raw const (*this).pid };
+        // SAFETY: `pid` is the live `Thread`'s `pid` field (see above).
+        unsafe { (*pid).load() }
+    }
+
+    /// Checks whether the kill or suspend signal has been raised.
+    ///
+    /// Returns `Err(ZX_ERR_INTERNAL_INTR_KILLED)` if kill has been raised,
+    /// `Err(ZX_ERR_INTERNAL_INTR_RETRY)` if suspend has been raised, and `Ok(())` otherwise.
     #[inline]
     pub fn check_kill_or_suspend_signal(&self) -> Result<(), Status> {
         let current_signals = self.signals();
         if current_signals & THREAD_SIGNAL_KILL != 0 {
+            core::hint::cold_path();
             return Err(ZX_ERR_INTERNAL_INTR_KILLED);
         }
         if current_signals & THREAD_SIGNAL_SUSPEND != 0 {
+            core::hint::cold_path();
             return Err(ZX_ERR_INTERNAL_INTR_RETRY);
         }
         Ok(())
+    }
+
+    // Accessors for specific flags bits.
+    /// Whether the thread is detached.
+    #[inline]
+    pub fn detached(&self) -> bool {
+        (self.flags.load() & THREAD_FLAG_DETACHED) != 0
+    }
+    /// Sets or clears the detached flag.
+    ///
+    /// # Safety
+    ///
+    /// Callers must preserve the detached-vs-joinable lifecycle invariant: a joined or being-joined
+    /// thread must not be marked detached, and a detached thread's exit path assumes it will not be
+    /// joined.
+    #[inline]
+    pub(crate) unsafe fn set_detached(&self, value: bool) {
+        if value {
+            self.flags.fetch_or(THREAD_FLAG_DETACHED);
+        } else {
+            self.flags.fetch_and(!THREAD_FLAG_DETACHED);
+        }
+    }
+    /// Whether the `Thread` struct is freed when the thread exits.
+    #[inline]
+    pub fn free_struct(&self) -> bool {
+        (self.flags.load() & THREAD_FLAG_FREE_STRUCT) != 0
+    }
+    /// Sets or clears the free-struct flag.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure this matches how the `Thread` storage was allocated (`new` vs
+    /// caller-owned storage) and is only changed before the thread's exit path inspects it.
+    #[inline]
+    pub(crate) unsafe fn set_free_struct(&self, value: bool) {
+        if value {
+            self.flags.fetch_or(THREAD_FLAG_FREE_STRUCT);
+        } else {
+            self.flags.fetch_and(!THREAD_FLAG_FREE_STRUCT);
+        }
+    }
+    /// Whether this is an idle thread; read lock-free by the scheduler.
+    #[inline]
+    pub fn is_idle(&self) -> bool {
+        (self.flags.load() & THREAD_FLAG_IDLE) != 0
+    }
+    /// Sets or clears the idle flag.
+    ///
+    /// # Safety
+    ///
+    /// Callers must only set this on a CPU's dedicated per-CPU idle thread during initialization,
+    /// as the scheduler relies on `is_idle()` to identify the idle thread.
+    #[inline]
+    pub(crate) unsafe fn set_idle(&self, value: bool) {
+        if value {
+            self.flags.fetch_or(THREAD_FLAG_IDLE);
+        } else {
+            self.flags.fetch_and(!THREAD_FLAG_IDLE);
+        }
+    }
+    /// Whether this thread runs a VCPU.
+    #[inline]
+    pub fn vcpu(&self) -> bool {
+        (self.flags.load() & THREAD_FLAG_VCPU) != 0
+    }
+    /// Sets or clears the VCPU flag.
+    #[inline]
+    pub(crate) fn set_vcpu(&self, value: bool) {
+        if value {
+            self.flags.fetch_or(THREAD_FLAG_VCPU);
+        } else {
+            self.flags.fetch_and(!THREAD_FLAG_VCPU);
+        }
+    }
+
+    /// Access to the entire flags value, for diagnostics.
+    #[inline]
+    pub fn flags(&self) -> u32 {
+        self.flags.load()
+    }
+
+    // TODO(https://fxbug.dev/42077109): Write down memory order requirements for accessing
+    // signals.
+    /// Returns the thread's pending signals.
+    ///
+    /// Uses `Relaxed` ordering: signal bitmask reads are polled opportunistically or re-checked
+    /// under the thread's lock, and do not synchronize other memory accesses.
+    #[inline]
+    pub fn signals(&self) -> u32 {
+        self.signals.load()
+    }
+    /// Raises `bits` in the thread's pending signals.
+    #[inline]
+    pub(crate) fn set_signals(&self, bits: u32) {
+        self.signals.fetch_or(bits);
+    }
+    /// Clears `bits` from the thread's pending signals.
+    #[inline]
+    pub(crate) fn clear_signals(&self, bits: u32) {
+        self.signals.fetch_and(!bits);
+    }
+
+    /// Copies the name buffer (always NUL-terminated) into `out`.
+    #[inline]
+    pub fn name_bytes(&self, out: &mut [u8; ZX_MAX_NAME_LEN]) {
+        // Like the C++ lock-free readers (ktrace, `DumpLocked`), the copy may observe a
+        // concurrent `set_name` of another thread renaming itself; byte-wise relaxed loads make
+        // that a torn name rather than a data race.
+        for i in 0..ZX_MAX_NAME_LEN {
+            out[i] = self.name[i].load(Ordering::Relaxed);
+        }
+    }
+
+    /// Like [`Self::name_bytes`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(super) unsafe fn name_bytes_ptr(this: *const Self, out: &mut [u8; ZX_MAX_NAME_LEN]) {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `name` field place without forming a reference to the whole `Thread`.
+        let name = unsafe { &raw const (*this).name };
+        for (i, byte) in out.iter_mut().enumerate() {
+            // SAFETY: `name` is the live `Thread`'s `[AtomicU8; ZX_MAX_NAME_LEN]` field (see
+            // above).
+            *byte = unsafe { (*name)[i].load(Ordering::Relaxed) };
+        }
+    }
+
+    /// Returns a snapshot of the thread's name.
+    #[inline]
+    pub fn name(&self) -> ThreadName {
+        // SAFETY: `self` is a valid, live `Thread`.
+        unsafe { Self::name_copy_ptr(core::ptr::from_ref(self)) }
+    }
+
+    /// Like [`Self::name`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub unsafe fn name_copy_ptr(this: *const Self) -> ThreadName {
+        let mut res = ThreadName::empty();
+        // SAFETY: `this` points to a valid, live `Thread` per the caller.
+        unsafe { Self::name_bytes_ptr(this, &mut res.buf) };
+        let mut len = 0;
+        while len < ZX_MAX_NAME_LEN && res.buf[len] != 0 {
+            len += 1;
+        }
+        res.len = len;
+        res
+    }
+
+    /// Writes `name` into `dst`, truncated so that it (including a trailing NUL byte) fits in
+    /// `ZX_MAX_NAME_LEN` bytes, and NUL-fills the remainder.
+    fn write_name_bytes(dst: &[AtomicU8; ZX_MAX_NAME_LEN], name: &[u8]) {
+        let len = core::cmp::min(name.len(), ZX_MAX_NAME_LEN - 1);
+        for i in 0..ZX_MAX_NAME_LEN {
+            let byte = if i < len { name[i] } else { 0 };
+            dst[i].store(byte, Ordering::Relaxed);
+        }
+    }
+
+    /// Sets the thread's name to `name`.
+    ///
+    /// This may truncate `name`, so that it (including a trailing NUL byte) fits in
+    /// `ZX_MAX_NAME_LEN` bytes. Writes to `name` are unsynchronized: concurrent `set_name` calls
+    /// may interleave, and readers (`name_bytes`, C++ `name()`) tolerate a torn name.
+    pub fn set_name(&self, name: &[u8]) {
+        Self::write_name_bytes(&self.name, name);
+    }
+
+    /// Sets the thread's name without creating a `&Thread` reference, so that it can be used on
+    /// a `Thread` that is still under construction.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to allocated, suitably aligned `Thread` storage whose `name` bytes are
+    /// initialized (it need not be a fully constructed `Thread`), with no concurrent non-atomic
+    /// access to `name`.
+    unsafe fn set_name_in_place(thread: *mut Self, name: &[u8]) {
+        // SAFETY: `&raw const` projects the `name` place without forming a reference to the
+        // surrounding (possibly uninitialized) `Thread`; the caller guarantees `name` is
+        // initialized and only accessed atomically.
+        let dst = unsafe { &raw const (*thread).name };
+        // SAFETY: `dst` points to the initialized `[AtomicU8; ZX_MAX_NAME_LEN]` field (see above).
+        Self::write_name_bytes(unsafe { &*dst }, name);
     }
 
     /// Raw read of the thread's scheduling state without its lock.
@@ -843,7 +1143,7 @@ impl Thread {
 
     /// Finds a thread whose `tid()` matches `tid` and dumps it (`Thread::DumpTid`).
     #[inline]
-    pub fn dump_tid(tid: zx_types::zx_koid_t, full: bool) {
+    pub fn dump_tid(tid: zx_koid_t, full: bool) {
         // SAFETY: Safe FFI call into `Thread::DumpTid`.
         unsafe { cpp_thread_dump_tid(tid, full) };
     }
@@ -856,7 +1156,7 @@ impl Thread {
     /// Because this method bypasses `Thread::list_lock_` and per-thread locks, it must only be
     /// called during a kernel panic when normal locking is unsafe or unavailable.
     #[inline]
-    pub unsafe fn dump_tid_during_panic(tid: zx_types::zx_koid_t, full: bool) {
+    pub unsafe fn dump_tid_during_panic(tid: zx_koid_t, full: bool) {
         // SAFETY: Caller guarantees the system is in a panic context.
         unsafe { cpp_thread_dump_tid_during_panic(tid, full) };
     }
@@ -892,7 +1192,7 @@ impl Thread {
 /// The caller must hold [`Thread::get_list_lock`], and the returned pointer is only guaranteed to
 /// remain valid while that lock is held.
 #[inline]
-pub unsafe fn thread_id_to_thread_slow(tid: zx_types::zx_koid_t) -> Option<ThreadPtr> {
+pub unsafe fn thread_id_to_thread_slow(tid: zx_koid_t) -> Option<ThreadPtr> {
     // SAFETY: Caller holds `Thread::get_list_lock()`, and `ThreadPtr::from_raw` wraps the raw
     // pointer without dereferencing it.
     unsafe { ThreadPtr::from_raw(cpp_thread_id_to_thread_slow(tid)) }
@@ -1348,8 +1648,10 @@ impl ThreadPtr {
     ///
     /// The caller must ensure that the thread pointer is still valid and the
     /// underlying thread has not been destroyed.
+    #[inline]
     pub unsafe fn fxt_ref(self) -> FxtRef {
-        unsafe { cpp_thread_fxt_ref(self.as_raw()) }
+        // SAFETY: Caller guarantees `self` points to a valid, live `Thread`.
+        unsafe { FxtRef { pid: self.pid(), tid: self.tid() } }
     }
 
     /// Sets the base profile of the thread (`Thread::SetBaseProfile`).
@@ -1451,8 +1753,7 @@ impl ThreadPtr {
         unsafe { self.as_ref().lock().as_chain_lock() }
     }
 
-    /// Returns the associated `ThreadDispatcher` (`user_thread()`), or null if this is a
-    /// kernel-only thread.
+    /// Returns the associated `ThreadDispatcher`, or null if this is a kernel-only thread.
     ///
     /// # Safety
     ///
@@ -1464,19 +1765,30 @@ impl ThreadPtr {
     }
 
     /// Returns the koid of the associated `ThreadDispatcher` for user threads or an independent
-    /// koid for kernel threads (`tid()`).
+    /// koid for kernel threads.
     ///
     /// # Safety
     ///
     /// The caller must ensure that `self` points to a valid `Thread`.
     #[inline]
-    pub unsafe fn tid(self) -> zx_types::zx_koid_t {
+    pub unsafe fn tid(self) -> zx_koid_t {
         // SAFETY: `self` points to a valid `Thread`.
-        unsafe { cpp_thread_tid(self.as_ptr()) }
+        unsafe { Thread::tid_ptr(self.as_ptr()) }
     }
 
-    /// Returns the last flow id allocated by [`ThreadPtr::take_next_lock_flow_id`] for this thread
-    /// (`lock_flow_id()`).
+    /// Returns the koid of the associated `ProcessDispatcher` for user threads or
+    /// `ZX_KOID_INVALID` for kernel threads.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `self` points to a valid `Thread`.
+    #[inline]
+    pub unsafe fn pid(self) -> zx_koid_t {
+        // SAFETY: `self` points to a valid `Thread`.
+        unsafe { Thread::pid_ptr(self.as_ptr()) }
+    }
+
+    /// Returns the last flow id allocated by [`ThreadPtr::take_next_lock_flow_id`] for this thread.
     ///
     /// # Safety
     ///
@@ -2162,15 +2474,6 @@ pub unsafe fn is_running(thread: *const Thread) -> bool {
     unsafe { cpp_thread_is_running(thread) }
 }
 
-/// Returns the name of `thread`.
-///
-/// # Safety
-/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
-pub unsafe fn name(thread: *const Thread) -> *const c_char {
-    // SAFETY: Forwarded to C++ Thread::name() with caller-verified pointer.
-    unsafe { cpp_thread_name(thread) }
-}
-
 /// Checks whether `thread` is executing in restricted mode.
 ///
 /// # Safety
@@ -2259,9 +2562,13 @@ pub unsafe fn current_set_restricted_state(raw_rs: *mut RestrictedState) {
 }
 
 /// Returns `true` if the current thread has been signaled.
+#[inline]
 pub fn current_is_signaled() -> bool {
-    // SAFETY: Foreign function wrapper for Thread::Current::Get()->IsSignaled().
-    unsafe { cpp_thread_current_is_signaled() }
+    // SAFETY: `current_get()` returns the current `Thread`, and `&raw const` projects the `signals`
+    // field place without forming a reference to the whole `Thread`.
+    let signals = unsafe { &raw const (*current_get()).signals };
+    // SAFETY: `signals` is the live current `Thread`'s `signals` field (see above).
+    unsafe { (*signals).load() != 0 }
 }
 
 /// If a restricted kick is pending on the current thread, clears it and returns `true`.
@@ -2317,6 +2624,123 @@ pub fn current_get_backtrace(out_bt: &mut Backtrace) {
     unsafe { cpp_thread_current_get_backtrace(out_bt) };
 }
 
+/// Forwards C++ `Thread::set_signals`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_set_signals(thread: &Thread, bits: u32) {
+    thread.set_signals(bits);
+}
+
+/// Forwards C++ `Thread::clear_signals`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_clear_signals(thread: &Thread, bits: u32) {
+    thread.clear_signals(bits);
+}
+
+/// Forwards C++ `Thread::flags`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_flags(thread: &Thread) -> u32 {
+    thread.flags()
+}
+
+/// Forwards C++ `Thread::detached`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_detached(thread: &Thread) -> bool {
+    thread.detached()
+}
+
+/// Forwards C++ `Thread::set_detached`.
+///
+/// # Safety
+///
+/// Callers must uphold the [`Thread::set_detached`] lifecycle invariants.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_set_detached(thread: &Thread, value: bool) {
+    // SAFETY: Forwarded from C++ `Thread::set_detached` caller.
+    unsafe { thread.set_detached(value) };
+}
+
+/// Forwards C++ `Thread::free_struct`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_free_struct(thread: &Thread) -> bool {
+    thread.free_struct()
+}
+
+/// Forwards C++ `Thread::set_free_struct`.
+///
+/// # Safety
+///
+/// Callers must uphold the [`Thread::set_free_struct`] storage-ownership invariants.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_set_free_struct(thread: &Thread, value: bool) {
+    // SAFETY: Forwarded from C++ `Thread::set_free_struct` caller.
+    unsafe { thread.set_free_struct(value) };
+}
+
+/// Forwards C++ `Thread::idle`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_idle(thread: &Thread) -> bool {
+    thread.is_idle()
+}
+
+/// Forwards C++ `Thread::set_idle`.
+///
+/// # Safety
+///
+/// Callers must uphold the [`Thread::set_idle`] idle-thread invariants.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_set_idle(thread: &Thread, value: bool) {
+    // SAFETY: Forwarded from C++ `Thread::set_idle` caller.
+    unsafe { thread.set_idle(value) };
+}
+
+/// Forwards C++ `Thread::vcpu`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_vcpu(thread: &Thread) -> bool {
+    thread.vcpu()
+}
+
+/// Forwards C++ `Thread::set_vcpu`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_set_vcpu(thread: &Thread, value: bool) {
+    thread.set_vcpu(value);
+}
+
+/// Forwards C++ `Thread::name`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_name(thread: &Thread) -> *const c_char {
+    thread.name.as_ptr().cast::<c_char>()
+}
+
+/// Forwards C++ `Thread::set_name`. Takes `*mut Thread` rather than `&Thread` because C++ calls
+/// this from the `Thread::Thread` constructor before the `Thread` is fully constructed.
+///
+/// # Safety
+///
+/// - `thread` must point to allocated, suitably aligned `Thread` storage whose `name` bytes are
+///   initialized, with no concurrent non-atomic access to `name`.
+/// - When `len > 0`, `name` must be valid for reads of `len` initialized bytes (the
+///   [`zr::slice_from_raw_parts`] preconditions), and `[name, name + len)` must not overlap
+///   `thread`'s `name` buffer or be concurrently mutated for the duration of this call. When
+///   `len == 0`, `name` is not dereferenced and may be null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_thread_set_name(
+    thread: *mut Thread,
+    name: *const c_char,
+    len: usize,
+) {
+    // SAFETY: Caller guarantees `name` is valid for `len` non-overlapping, unmutated bytes when
+    // `len > 0`, and `zr::slice_from_raw_parts` handles `len == 0` without dereferencing `name`.
+    let bytes = unsafe { zr::slice_from_raw_parts(name.cast::<u8>(), len) };
+    // SAFETY: Caller guarantees `thread` has valid storage for `name`.
+    unsafe { Thread::set_name_in_place(thread, bytes) };
+}
+
+/// Forwards C++ `Thread::CheckKillOrSuspendSignal`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_thread_check_kill_or_suspend_signal(thread: &Thread) -> zx_status_t {
+    Status::result_into_raw(thread.check_kill_or_suspend_signal())
+}
+
 /// Unit tests for Thread Rust bindings.
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_rust")]
@@ -2334,20 +2758,23 @@ mod tests {
         ChainLockTransaction, DONE, IRQ_SAVE_OPTION, OwnerGuard, SingleChainLockGuard, clt_tag,
         single_chain_lock_guard_owned,
     };
+    use crate::kernel::event::Event;
     use crate::kernel::mp::{INVALID_CPU, cpu_num_to_mask, get_online_mask};
     use crate::kernel::types::{cpu_mask_t, cpu_num_t, highest_cpu_set};
     use crate::kernel::wait_queue::{
         BlockedThreadTreeTag, MinRelativeDeadlineTraits, PRIMARY_KEY_ZERO,
     };
-    use crate::platform_rs::timer::{DurationMono, InstantMono};
-    use core::ffi::c_void;
+    use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time};
+    use core::ffi::{CStr, c_void};
     use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
     use fbl::{WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable};
     use kprint::kprintln;
     use unittest::{
-        assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_true, unwrap_ok,
+        assert_eq, assert_ne, assert_true, expect_eq, expect_err, expect_false, expect_ok,
+        expect_true, unwrap_ok,
     };
     use zx_status::Status;
+    use zx_types::{ZX_ERR_BAD_STATE, ZX_KOID_INVALID, ZX_MAX_NAME_LEN, ZX_OK, ZX_TIME_INFINITE};
 
     // Wait for condition |cond| to become true, polling with slow exponential backoff
     // to avoid pegging the CPU.
@@ -2759,6 +3186,307 @@ mod tests {
             .0,
             DurationMono::from_millis(10).0
         );
+    }
+
+    /// Shared with a helper thread that waits on `event` until `deadline` (monotonic) and exits
+    /// with the raw status `wait` returned.
+    struct WaitCtx {
+        event: *const Event,
+        deadline: InstantMono,
+    }
+
+    impl WaitCtx {
+        /// A generous but finite deadline, so a failed test self-terminates via the wait queue's
+        /// timeout instead of wedging the join.
+        fn ten_seconds(event: &Event) -> Self {
+            Self {
+                event: core::ptr::from_ref(event),
+                deadline: InstantMono(current_mono_time().0 + 10 * 1_000_000_000),
+            }
+        }
+    }
+
+    extern "C" fn wait_entry(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` is the `WaitCtx` the spawning test keeps alive until it joins us.
+        let ctx = unsafe { &*arg.cast::<WaitCtx>() };
+        // SAFETY: As above for the event the context points at.
+        let event = unsafe { &*ctx.event };
+        zx_status::Status::result_into_raw(
+            event.wait_deadline(ctx.deadline, super::Interruptible::No),
+        )
+    }
+
+    /// Waits for `waiter` to be blocked in the event's queue.
+    fn wait_until_blocked(waiter: super::ThreadPtr) -> bool {
+        for _ in 0..5000 {
+            // SAFETY: Callers have not joined `waiter` yet.
+            if unsafe { waiter.is_blocked() } {
+                return true;
+            }
+            let _ = super::sleep_relative(DurationMono(1_000_000)); // 1ms
+        }
+        false
+    }
+
+    /// A helper thread parked in `ctx`'s event queue. Its `Thread` can be inspected and poked
+    /// through [`ParkedWaiter::thread`] while it sits there; it is signaled and joined exactly
+    /// once, either by [`ParkedWaiter::join`] or on drop, so an early test return never leaves
+    /// it live.
+    struct ParkedWaiter<'a> {
+        ctx: &'a WaitCtx,
+        thread: Option<super::ThreadPtr>,
+    }
+
+    impl<'a> ParkedWaiter<'a> {
+        /// Spawns the waiter and waits for it to block; `None` if either step fails.
+        fn spawn(ctx: &'a WaitCtx) -> Option<Self> {
+            // SAFETY: `ctx` outlives the thread, which `join`/`Drop` joins.
+            let thread = unsafe {
+                super::spawn(
+                    c"thread_rust_waiter".as_ptr(),
+                    wait_entry,
+                    core::ptr::from_ref(ctx).cast_mut().cast(),
+                )
+            }
+            .ok()?;
+            let waiter = Self { ctx, thread: Some(thread) };
+            wait_until_blocked(thread).then_some(waiter)
+        }
+
+        fn thread(&self) -> &super::Thread {
+            let thread =
+                self.thread.as_ref().expect("only `join` takes the thread, and it consumes self");
+            // SAFETY: The waiter has not been joined (it is still in `self.thread`), so its
+            // `Thread` is alive for as long as `self` is borrowed.
+            unsafe { &*thread.as_ptr() }
+        }
+
+        /// Opens the event and joins the waiter, returning its exit status.
+        fn join(mut self) -> Result<i32, zx_status::Status> {
+            let thread = self.thread.take().expect("only `join` takes the thread");
+            // SAFETY: `self.event` outlives `self`.
+            unsafe { &*self.ctx.event }.signal();
+            // SAFETY: The thread was taken out of `self.thread`, so it is joined exactly once.
+            unsafe { thread.join(InstantMono(ZX_TIME_INFINITE)) }
+        }
+    }
+
+    impl Drop for ParkedWaiter<'_> {
+        fn drop(&mut self) {
+            if let Some(thread) = self.thread.take() {
+                // SAFETY: `self.event` outlives `self`.
+                unsafe { &*self.ctx.event }.signal();
+                // SAFETY: The thread was taken out of `self.thread`, so it is joined exactly once.
+                let _ = unsafe { thread.join(InstantMono(ZX_TIME_INFINITE)) };
+            }
+        }
+    }
+
+    /// Verifies the flag getters and setters on a parked helper thread, restoring its flags.
+    // A helper is used rather than the running thread because a blocked thread's flags are not
+    // concurrently modified by other systems, while the running thread's might be. Toggling
+    // `FREE_STRUCT`, `IDLE`, and `DETACHED` here is safe because `waiter` is parked on `event` and
+    // neither exits nor is scheduled until `waiter.join()`, after every flag is restored.
+    #[test]
+    fn test_thread_flags() {
+        pin_init::stack_pin_init!(let event = Event::init_unsignaled());
+        let ctx = WaitCtx { event: core::ptr::from_ref(&event), deadline: InstantMono::INFINITE };
+        let waiter = ParkedWaiter::spawn(&ctx);
+        assert_true!(waiter.is_some(), "failed to spawn and park the waiter");
+        let waiter = waiter.expect("checked above");
+        let thread = waiter.thread();
+        let saved = thread.flags();
+        // Put every bit back however the test exits.
+        let _restore = zr::defer(|| {
+            // SAFETY: Restores the parked waiter's original flags before `waiter` is dropped.
+            unsafe {
+                thread.set_free_struct(saved & super::THREAD_FLAG_FREE_STRUCT != 0);
+                thread.set_idle(saved & super::THREAD_FLAG_IDLE != 0);
+                thread.set_detached(saved & super::THREAD_FLAG_DETACHED != 0);
+            }
+            thread.set_vcpu(saved & super::THREAD_FLAG_VCPU != 0);
+        });
+
+        expect_false!(thread.is_idle());
+        // SAFETY: `thread` is a valid `Thread`.
+        expect_false!(unsafe { Thread::is_idle_ptr(core::ptr::from_ref(thread)) });
+
+        // SAFETY: `waiter` is parked in `event` and all flags are restored before it wakes/exits.
+        unsafe { thread.set_free_struct(true) };
+        expect_true!(thread.free_struct());
+        expect_true!(thread.flags() & super::THREAD_FLAG_FREE_STRUCT != 0);
+        // SAFETY: As above.
+        unsafe { thread.set_free_struct(false) };
+        expect_false!(thread.free_struct());
+        // SAFETY: As above.
+        unsafe { thread.set_free_struct(saved & super::THREAD_FLAG_FREE_STRUCT != 0) };
+        expect_eq!(thread.free_struct(), saved & super::THREAD_FLAG_FREE_STRUCT != 0);
+
+        // SAFETY: As above.
+        unsafe { thread.set_idle(true) };
+        expect_true!(thread.is_idle());
+        // SAFETY: `thread` is a valid `Thread`.
+        expect_true!(unsafe { Thread::is_idle_ptr(core::ptr::from_ref(thread)) });
+        expect_true!(thread.flags() & super::THREAD_FLAG_IDLE != 0);
+        // SAFETY: As above.
+        unsafe { thread.set_idle(false) };
+        expect_false!(thread.is_idle());
+        // SAFETY: `thread` is a valid `Thread`.
+        expect_false!(unsafe { Thread::is_idle_ptr(core::ptr::from_ref(thread)) });
+        // SAFETY: As above.
+        unsafe { thread.set_idle(saved & super::THREAD_FLAG_IDLE != 0) };
+        expect_eq!(thread.is_idle(), saved & super::THREAD_FLAG_IDLE != 0);
+
+        thread.set_vcpu(true);
+        expect_true!(thread.vcpu());
+        expect_true!(thread.flags() & super::THREAD_FLAG_VCPU != 0);
+        thread.set_vcpu(false);
+        expect_false!(thread.vcpu());
+        thread.set_vcpu(saved & super::THREAD_FLAG_VCPU != 0);
+        expect_eq!(thread.vcpu(), saved & super::THREAD_FLAG_VCPU != 0);
+
+        // SAFETY: As above.
+        unsafe { thread.set_detached(true) };
+        expect_true!(thread.detached());
+        expect_true!(thread.flags() & super::THREAD_FLAG_DETACHED != 0);
+        // SAFETY: As above.
+        unsafe { thread.set_detached(false) };
+        expect_false!(thread.detached());
+        // SAFETY: As above.
+        unsafe { thread.set_detached(saved & super::THREAD_FLAG_DETACHED != 0) };
+        expect_eq!(thread.detached(), saved & super::THREAD_FLAG_DETACHED != 0);
+
+        expect_eq!(thread.flags(), saved);
+        drop(_restore);
+        expect_eq!(waiter.join().unwrap_or(ZX_ERR_BAD_STATE), ZX_OK);
+    }
+
+    /// Verifies the signal accessors and `check_kill_or_suspend_signal` on a parked helper thread.
+    #[test]
+    fn test_thread_signals() {
+        pin_init::stack_pin_init!(let event = Event::init_unsignaled());
+        let ctx = WaitCtx::ten_seconds(&event);
+        let waiter = ParkedWaiter::spawn(&ctx);
+        assert_true!(waiter.is_some(), "failed to spawn and park the waiter");
+        let waiter = waiter.expect("checked above");
+        let thread = waiter.thread();
+        let initial = thread.signals();
+        expect_ok!(thread.check_kill_or_suspend_signal());
+
+        thread.set_signals(super::THREAD_SIGNAL_KILL);
+        expect_true!(thread.signals() & super::THREAD_SIGNAL_KILL != 0);
+        expect_err!(thread.check_kill_or_suspend_signal(), super::ZX_ERR_INTERNAL_INTR_KILLED);
+        thread.clear_signals(super::THREAD_SIGNAL_KILL);
+        expect_true!(thread.signals() & super::THREAD_SIGNAL_KILL == 0);
+
+        thread.set_signals(super::THREAD_SIGNAL_SUSPEND);
+        expect_err!(thread.check_kill_or_suspend_signal(), super::ZX_ERR_INTERNAL_INTR_RETRY);
+
+        // When both KILL and SUSPEND are raised, KILL takes precedence.
+        thread.set_signals(super::THREAD_SIGNAL_KILL);
+        expect_err!(thread.check_kill_or_suspend_signal(), super::ZX_ERR_INTERNAL_INTR_KILLED);
+        thread.clear_signals(super::THREAD_SIGNAL_KILL | super::THREAD_SIGNAL_SUSPEND);
+        expect_ok!(thread.check_kill_or_suspend_signal());
+        expect_eq!(thread.signals(), initial);
+
+        expect_eq!(waiter.join().unwrap_or(ZX_ERR_BAD_STATE), ZX_OK);
+    }
+
+    /// Verifies `set_name` truncation and zero-fill on the current thread, restoring its name.
+    #[test]
+    fn test_thread_name() {
+        let current_ptr = super::current_get();
+        // SAFETY: `current_get()` returns a valid pointer to the running thread, which stays alive
+        // for the duration of this test.
+        let current: &super::Thread = unsafe { &*current_ptr };
+        let saved = current.name();
+        let _restore = zr::defer(|| {
+            current.set_name(saved.as_bytes());
+        });
+
+        current.set_name(b"short");
+        let mut expected = [0u8; ZX_MAX_NAME_LEN];
+        expected[..5].copy_from_slice(b"short");
+        let mut buf = [0u8; ZX_MAX_NAME_LEN];
+        current.name_bytes(&mut buf);
+        expect_true!(buf == expected);
+        let mut ptr_buf = [0u8; ZX_MAX_NAME_LEN];
+        // SAFETY: `current_ptr` points to the live current thread.
+        unsafe { Thread::name_bytes_ptr(current_ptr, &mut ptr_buf) };
+        expect_true!(ptr_buf == expected);
+        // SAFETY: `current_ptr` points to the live current thread.
+        expect_true!(unsafe { Thread::name_copy_ptr(current_ptr) }.as_bytes() == b"short");
+        expect_eq!(super::rust_thread_name(current).addr(), current.name.as_ptr().addr());
+        // SAFETY: The buffer is NUL-terminated and nothing else writes the test thread's name.
+        let cstr = unsafe { CStr::from_ptr(super::rust_thread_name(current).cast()) };
+        expect_true!(cstr.to_bytes() == b"short");
+
+        let exact = [b'a'; ZX_MAX_NAME_LEN - 1];
+        current.set_name(&exact);
+        let mut expected = [b'a'; ZX_MAX_NAME_LEN];
+        expected[ZX_MAX_NAME_LEN - 1] = 0;
+        current.name_bytes(&mut buf);
+        expect_true!(buf == expected);
+        expect_eq!(current.name().as_bytes().len(), ZX_MAX_NAME_LEN - 1);
+
+        let long = [b'b'; ZX_MAX_NAME_LEN + 8];
+        current.set_name(&long);
+        let mut expected = [b'b'; ZX_MAX_NAME_LEN];
+        expected[ZX_MAX_NAME_LEN - 1] = 0;
+        current.name_bytes(&mut buf);
+        expect_true!(buf == expected);
+        // SAFETY: As above.
+        let cstr = unsafe { CStr::from_ptr(super::rust_thread_name(current).cast()) };
+        expect_eq!(cstr.to_bytes().len(), ZX_MAX_NAME_LEN - 1);
+
+        // Embedded NUL bytes and non-UTF-8 bytes are copied verbatim into the buffer.
+        current.set_name(b"ab\0cd");
+        let mut expected = [0u8; ZX_MAX_NAME_LEN];
+        expected[..5].copy_from_slice(b"ab\0cd");
+        current.name_bytes(&mut buf);
+        expect_true!(buf == expected);
+        expect_true!(current.name().as_bytes() == b"ab");
+        // SAFETY: As above.
+        let cstr = unsafe { CStr::from_ptr(super::rust_thread_name(current).cast()) };
+        expect_true!(cstr.to_bytes() == b"ab");
+
+        current.set_name(b"a\xffb");
+        let mut expected = [0u8; ZX_MAX_NAME_LEN];
+        expected[..3].copy_from_slice(b"a\xffb");
+        current.name_bytes(&mut buf);
+        expect_true!(buf == expected);
+        expect_true!(current.name().as_bytes() == b"a\xffb");
+
+        current.set_name(b"");
+        current.name_bytes(&mut buf);
+        expect_true!(buf == [0u8; ZX_MAX_NAME_LEN]);
+        expect_true!(current.name().as_bytes().is_empty());
+        // SAFETY: As above.
+        let cstr = unsafe { CStr::from_ptr(super::rust_thread_name(current).cast()) };
+        expect_true!(cstr.to_bytes().is_empty());
+
+        // `rust_thread_set_name` accepts a null pointer when `len == 0`.
+        current.set_name(b"nonempty");
+        // SAFETY: `current_ptr` has valid `name` storage and `len == 0` does not dereference the
+        // name pointer.
+        unsafe { super::rust_thread_set_name(current_ptr, core::ptr::null(), 0) };
+        current.name_bytes(&mut buf);
+        expect_true!(buf == [0u8; ZX_MAX_NAME_LEN]);
+    }
+
+    /// Verifies that a kernel thread has a nonzero tid and no pid.
+    #[test]
+    fn test_thread_tid_pid() {
+        let current_ptr = super::current_get();
+        // SAFETY: `current_get()` returns a valid pointer to the running thread, which stays alive
+        // for the duration of this test.
+        let current: &super::Thread = unsafe { &*current_ptr };
+        expect_true!(current.tid() != 0);
+        // SAFETY: `current_ptr` points to the valid current thread.
+        expect_eq!(current.tid(), unsafe { super::ThreadPtr::current().tid() });
+        expect_eq!(current.pid(), ZX_KOID_INVALID);
+        // SAFETY: `current_ptr` points to the valid current thread.
+        expect_eq!(current.pid(), unsafe { super::ThreadPtr::current().pid() });
     }
 }
 

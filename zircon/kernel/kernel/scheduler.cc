@@ -353,9 +353,6 @@ FFI_ALWAYS_INLINE SchedulerQueueState* cpp_thread_get_queue_state(Thread* thread
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_koid_t cpp_thread_get_tid(const Thread* thread) { return thread->tid(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const CpuSearchSet::Entry* cpp_get_cpu_search_set_entries(cpu_num_t cpu) {
   return percpu::Get(cpu).search_set.const_iterator().data();
 }

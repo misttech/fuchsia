@@ -113,7 +113,6 @@ void rust_kernel_scheduler_lock_handoff();
 void rust_kernel_scheduler_block(Thread* current_thread);
 void rust_kernel_scheduler_timer_tick(SchedTime now);
 int32_t cpp_thread_get_disposition(const Thread* thread);
-bool cpp_thread_is_idle(const Thread* thread);
 bool cpp_thread_has_migrate_fn(const Thread* thread);
 bool cpp_thread_migrate_pending(const Thread* thread);
 SchedulerState* cpp_thread_get_scheduler_state(Thread* t);
@@ -142,7 +141,6 @@ cpu_mask_t cpp_scheduler_power_state_post_update_request(
 zx_status_t cpp_scheduler_power_state_update_active_power_level(
     Scheduler* sched, uint8_t power_level, SchedProcessingRate* out_active_rate);
 SchedulerQueueState* cpp_thread_get_queue_state(Thread* thread);
-zx_koid_t cpp_thread_get_tid(const Thread* thread);
 SchedUtilization cpp_scheduler_power_level_control_update_normalized_utilization(
     Scheduler* sched, SchedUtilization delta);
 uint32_t cpp_scheduler_power_level_control_domain_id(const Scheduler* sched);
