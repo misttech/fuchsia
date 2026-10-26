@@ -41,7 +41,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_shared_library")
 load("@rules_fuchsia//fuchsia:defs.bzl", "fuchsia_cc_binary", "fuchsia_cc_test", "fuchsia_wrap_rust_binary")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_dylib_library", "rust_test")
 load(":defs.bzl", "debug_symbols_manifest", "multi_compilation_mode_filegroup")
 
 package(default_applicable_licenses = ["//:license"])
@@ -69,17 +69,20 @@ multi_compilation_mode_filegroup(
     testonly = True,
     srcs = [
         ":a_cc_shared_library",
+        ":a_rust_dylib_library",
     ] + select({
         "@platforms//os:fuchsia": [
             ":a_fuchsia_cc_binary",
             ":a_fuchsia_cc_test",
             ":a_wrapped_rust_binary",
+            ":a_wrapped_rust_binary_with_dylib",
             ":a_wrapped_rust_test",
         ],
         "//conditions:default": [
             ":a_cc_binary",
             ":a_cc_test",
             ":a_rust_binary",
+            ":a_rust_binary_with_dylib",
             ":a_rust_test",
         ],
     }),
@@ -125,6 +128,28 @@ rust_test(
     }),
 )
 
+rust_dylib_library(
+    name = "a_rust_dylib_library",
+    srcs = ["a_library.rs"],
+    edition = "2024",
+    link_deps = select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
+)
+
+rust_binary(
+    name = "a_rust_binary_with_dylib",
+    srcs = ["a_main.rs"],
+    edition = "2024",
+    link_deps = select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
+    rustc_flags = ["-Aunused-crate-dependencies"],
+    deps = [":a_rust_dylib_library"],
+)
+
 # The following targets will fail to compile in a non-Fuchsia build configuration
 # because these fuchsia_xx() macros inject dependencies to @fuchsia_sdk//pkg/sysroot:dist
 # which is only compatible with @platforms//os:fuchsia.
@@ -142,6 +167,11 @@ fuchsia_cc_test(
 fuchsia_wrap_rust_binary(
     name = "a_wrapped_rust_binary",
     native_binary = ":a_rust_binary",
+)
+
+fuchsia_wrap_rust_binary(
+    name = "a_wrapped_rust_binary_with_dylib",
+    native_binary = ":a_rust_binary_with_dylib",
 )
 
 fuchsia_wrap_rust_binary(
