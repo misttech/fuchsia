@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "crossbeam-deque",
+    package_name = "crossbeam-queue",
     package_url = "https://github.com/crossbeam-rs/crossbeam",
-    package_version = "0.8.6",
+    package_version = "0.3.14",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "crossbeam_deque",
+    name = "crossbeam_queue",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,7 +53,7 @@ rust_library(
         ],
     ),
     crate_features = [
-        "default",
+        "alloc",
         "std",
     ],
     crate_root = "src/lib.rs",
@@ -63,7 +63,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=crossbeam-deque",
+        "crate-name=crossbeam-queue",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,9 +76,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.6",
+    version = "0.3.14",
     deps = [
-        "//third_party/rust_crates/vendor/crossbeam-epoch-0.9.21:crossbeam_epoch",
         "//third_party/rust_crates/vendor/crossbeam-utils-0.8.23:crossbeam_utils",
     ],
 )

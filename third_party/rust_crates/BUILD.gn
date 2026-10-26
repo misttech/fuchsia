@@ -6936,9 +6936,9 @@ rustc_library("crossbeam-v0_8_5") {
 
   deps = []
   deps += [ ":crossbeam-channel-v0_5_17" ]
-  deps += [ ":crossbeam-deque-v0_8_6" ]
+  deps += [ ":crossbeam-deque-v0_8_8" ]
   deps += [ ":crossbeam-epoch-v0_9_21" ]
-  deps += [ ":crossbeam-queue-v0_3_12" ]
+  deps += [ ":crossbeam-queue-v0_3_14" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
 
   rustenv = []
@@ -6998,19 +6998,19 @@ rustc_library("crossbeam-channel-v0_5_17") {
   applicable_licenses = [ ":crossbeam-channel-v0_5_17.license" ]
 }
 
-license("crossbeam-deque-v0_8_6.license") {
+license("crossbeam-deque-v0_8_8.license") {
   public_package_name = "crossbeam_deque"
   license_files = [
-    "//third_party/rust_crates/vendor/crossbeam-deque-0.8.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crossbeam-deque-0.8.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crossbeam-deque-0.8.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crossbeam-deque-0.8.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("crossbeam-deque-v0_8_6") {
+rustc_library("crossbeam-deque-v0_8_8") {
   crate_name = "crossbeam_deque"
   source_root =
-      "//third_party/rust_crates/vendor/crossbeam-deque-0.8.6/src/lib.rs"
-  output_name = "crossbeam_deque-86df15dc6c50a85a"
+      "//third_party/rust_crates/vendor/crossbeam-deque-0.8.8/src/lib.rs"
+  output_name = "crossbeam_deque-c924c270eadffc9d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -7024,15 +7024,15 @@ rustc_library("crossbeam-deque-v0_8_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=86df15dc6c50a85a",
-    "-Cextra-filename=-86df15dc6c50a85a",
+    "-Cmetadata=c924c270eadffc9d",
+    "-Cextra-filename=-c924c270eadffc9d",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crossbeam-deque-v0_8_6.license" ]
+  applicable_licenses = [ ":crossbeam-deque-v0_8_8.license" ]
 }
 
 license("crossbeam-epoch-v0_9_21.license") {
@@ -7072,19 +7072,19 @@ rustc_library("crossbeam-epoch-v0_9_21") {
   applicable_licenses = [ ":crossbeam-epoch-v0_9_21.license" ]
 }
 
-license("crossbeam-queue-v0_3_12.license") {
+license("crossbeam-queue-v0_3_14.license") {
   public_package_name = "crossbeam_queue"
   license_files = [
-    "//third_party/rust_crates/vendor/crossbeam-queue-0.3.12/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/crossbeam-queue-0.3.12/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/crossbeam-queue-0.3.14/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/crossbeam-queue-0.3.14/LICENSE-MIT",
   ]
 }
 
-rustc_library("crossbeam-queue-v0_3_12") {
+rustc_library("crossbeam-queue-v0_3_14") {
   crate_name = "crossbeam_queue"
   source_root =
-      "//third_party/rust_crates/vendor/crossbeam-queue-0.3.12/src/lib.rs"
-  output_name = "crossbeam_queue-b33439b9b87a5ce4"
+      "//third_party/rust_crates/vendor/crossbeam-queue-0.3.14/src/lib.rs"
+  output_name = "crossbeam_queue-9fef5490b89c7623"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -7097,15 +7097,15 @@ rustc_library("crossbeam-queue-v0_3_12") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b33439b9b87a5ce4",
-    "-Cextra-filename=-b33439b9b87a5ce4",
+    "-Cmetadata=9fef5490b89c7623",
+    "-Cextra-filename=-9fef5490b89c7623",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crossbeam-queue-v0_3_12.license" ]
+  applicable_licenses = [ ":crossbeam-queue-v0_3_14.license" ]
 }
 
 license("crossbeam-utils-v0_8_23.license") {
@@ -18638,7 +18638,7 @@ rustc_library("rayon-core-v1_13_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crossbeam-deque-v0_8_6" ]
+  deps += [ ":crossbeam-deque-v0_8_8" ]
   deps += [ ":crossbeam-utils-v0_8_23" ]
 
   rustenv = []

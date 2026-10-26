@@ -654,6 +654,9 @@ env_vars = [
   "CARGO_PKG_VERSION_PATCH=2",
 ]
 
+[gn.package.crossbeam-deque."0.8.8"]
+rustflags = []
+
 [gn.package.crossbeam-epoch."0.9.21"]
 rustflags = []
 
