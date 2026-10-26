@@ -32,6 +32,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PLANTER_PROJECT_DIR:-$(dirname "$SCRIPT_DIR")}"
 
 python3 - "$PROJECT_DIR" "$@" <<'PYEOF'
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -1071,15 +1072,28 @@ log(
 initial_fp = machinery_fingerprint()
 rows = []
 all_findings = []
+release_machinery_locks()
+
+max_workers = min(8, os.cpu_count() or 4)
+if os.environ.get("PLANTER_SERIAL_CHECKS", "").strip() in ("1", "true"):
+    max_workers = 1
+
+
+def _exec_check(spec):
+    started = time.monotonic()
+    findings = run_check(spec)
+    duration = time.monotonic() - started
+    return spec, findings, duration
+
+
 try:
-    for n, spec in enumerate(enabled, 1):
-        if spec["name"] == "build_verification":
-            release_machinery_locks()
-        log(f"({n}/{len(enabled)}) {spec['name']}...")
-        started = time.monotonic()
-        findings = run_check(spec)
-        rows.append((spec, findings, time.monotonic() - started))
-        all_findings.extend(findings)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_exec_check, spec) for spec in enabled]
+        for n, fut in enumerate(futures, 1):
+            spec, findings, duration = fut.result()
+            log(f"({n}/{len(enabled)}) {spec['name']} done ({fmt_secs(duration)})")
+            rows.append((spec, findings, duration))
+            all_findings.extend(findings)
     if not commit_msg_only and (not only or "review_diff" in only):
         started = time.monotonic()
         diff_findings = run_review_diff(all_findings)
