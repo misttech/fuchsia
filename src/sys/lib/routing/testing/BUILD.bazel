@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The `routing_test_helpers` library provides test harnesses for users of
+# the `routing` library.
+rustc_library(
+    name = "routing_test_helpers",
+    testonly = True,
+    srcs = [
+        "src/availability.rs",
+        "src/component_id_index.rs",
+        "src/dictionary.rs",
+        "src/lib.rs",
+        "src/policy.rs",
+        "src/rights.rs",
+        "src/storage.rs",
+        "src/storage_admin.rs",
+    ],
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = [
+        "//src/sys/component_manager:__subpackages__",
+        "//src/sys/lib/routing:__subpackages__",
+        "//tools/lib/cm_fidl_analyzer:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/lib/capability_source",
+        "//src/sys/lib/cm_config",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_rust/testing",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/component_id_index",
+        "//src/sys/lib/moniker",
+        "//src/sys/lib/routing",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
