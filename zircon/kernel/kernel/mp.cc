@@ -53,13 +53,25 @@ KCOUNTER(counter_reschedule_self, "mp.reschedule_self")
 
 namespace {
 
-// Represents a pending task for some number of CPUs to execute.
-struct mp_ipi_task
-    : fbl::DoublyLinkedListable<mp_ipi_task*, fbl::NodeOptions::AllowRemoveFromContainer> {
-  mp_ipi_task(mp_ipi_task_func_t func_, void* context_) : func(func_), context(context_) {}
+struct mp_sync_context {
+  mp_sync_task_t task;
+  void* task_context;
+  // Mask of which CPUs need to finish the task
+  ktl::atomic<cpu_mask_t> outstanding_cpus;
+};
 
-  mp_ipi_task_func_t func;
-  void* context;
+void mp_sync_task(mp_sync_context* context) {
+  context->task(context->task_context);
+  // use seq-cst atomic to ensure this update is not seen before the
+  // side-effects of context->task
+  context->outstanding_cpus.fetch_and(~cpu_num_to_mask(arch_curr_cpu_num()));
+}
+
+// Represents a pending task for some number of CPUs to execute.
+struct mp_ipi_task : fbl::DoublyLinkedListable<mp_ipi_task*> {
+  explicit mp_ipi_task(mp_sync_context* context_) : context(context_) {}
+
+  mp_sync_context* context;
 };
 
 // Global mp state to track what the cpus are up to.
@@ -90,11 +102,33 @@ mp_state mp __CPU_ALIGN_EXCLUSIVE;
 
 // tracks if a cpu is online and initialized
 void mp_set_cpu_online(cpu_num_t cpu, bool online) {
+  ASSERT_MSG(is_valid_cpu_num(cpu), "cpu %u", cpu);
+
+  // Taking a CPU offline drains its queued tasks (see below), but a task the CPU has already
+  // popped can only be completed by the CPU itself.  If the CPU were to stop running partway
+  // through such a task (e.g. because it is about to be halted), that task's mp_sync_exec caller
+  // would wait forever.  So, either the CPU must be taking itself offline with interrupts disabled
+  // (see mp_unplug_current_cpu), or another CPU must be taking it offline after it failed to finish
+  // booting (see x86_bringup_aps).  In the latter case, the CPU never enabled interrupts (it does
+  // so only after it has reported that it booted), so it cannot have taken a generic IPI, and it
+  // was never added to the scheduler.
+  DEBUG_ASSERT(online ||
+               (cpu == arch_curr_cpu_num() ? arch_ints_disabled() : !Scheduler::PeekIsActive(cpu)));
+
+  interrupt_saved_state_t irqstate;
+  mp.ipi_task_lock.AcquireIrqSave(irqstate);
   if (online) {
     mp.online_cpus.fetch_or(cpu_num_to_mask(cpu));
   } else {
     mp.online_cpus.fetch_and(~cpu_num_to_mask(cpu));
+    // Drain any tasks that were queued for this CPU before it went offline, signaling to their
+    // mp_sync_exec callers that this CPU is done.  Tasks this CPU already popped are not in the
+    // list, and are completed by this CPU (see above).
+    while (mp_ipi_task* task = mp.ipi_task_list[cpu].pop_front()) {
+      task->context->outstanding_cpus.fetch_and(~cpu_num_to_mask(cpu));
+    }
   }
+  mp.ipi_task_lock.ReleaseIrqRestore(irqstate);
 }
 
 cpu_mask_t mp_get_online_mask() { return mp.online_cpus.load(); }
@@ -139,25 +173,6 @@ void mp_interrupt(mp_ipi_target target, cpu_mask_t mask) {
   arch_mp_send_ipi(target, mask, mp_ipi::INTERRUPT);
 }
 
-namespace {
-
-struct mp_sync_context {
-  mp_sync_task_t task;
-  void* task_context;
-  // Mask of which CPUs need to finish the task
-  ktl::atomic<cpu_mask_t> outstanding_cpus;
-};
-
-void mp_sync_task(void* raw_context) {
-  auto context = reinterpret_cast<mp_sync_context*>(raw_context);
-  context->task(context->task_context);
-  // use seq-cst atomic to ensure this update is not seen before the
-  // side-effects of context->task
-  context->outstanding_cpus.fetch_and(~cpu_num_to_mask(arch_curr_cpu_num()));
-}
-
-}  // namespace
-
 /* @brief Execute a task on the specified CPUs, and block on the calling
  *        CPU until all CPUs have finished the task.
  *
@@ -173,16 +188,10 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
                   void* const context) {
   const uint num_cpus = arch_max_num_cpus();
 
-  if (target == mp_ipi_target::ALL) {
-    mask = mp_get_online_mask();
-  } else if (target == mp_ipi_target::ALL_BUT_LOCAL) {
+  if (target == mp_ipi_target::ALL_BUT_LOCAL) {
     // targeting all other CPUs but the current one is hazardous
     // if the local CPU may be changed underneath us
     DEBUG_ASSERT(arch_ints_disabled());
-    mask = mp_get_online_mask() & ~cpu_num_to_mask(arch_curr_cpu_num());
-  } else {
-    // Mask any offline CPUs from target list
-    mask &= mp_get_online_mask();
   }
 
   // disable interrupts so our current CPU doesn't change
@@ -191,27 +200,49 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
 
   const cpu_num_t local_cpu = arch_curr_cpu_num();
 
-  // remove self from target lists, since no need to IPI ourselves
-  const bool targetting_self = mask & cpu_num_to_mask(local_cpu);
-  mask &= ~cpu_num_to_mask(local_cpu);
-
   // create tasks to enqueue (we need one per target due to each containing
   // a linked list node
   mp_sync_context sync_context = {
       .task = task,
       .task_context = context,
-      .outstanding_cpus = mask,
+      .outstanding_cpus = 0,
   };
 
   // Create an array up to SMP_MAX_CPUs of tasks to run, but only initialize
   // the first num_cpus of them to avoid unnecessary work.
   __UNINITIALIZED ktl::array<lazy_init::LazyInit<mp_ipi_task>, SMP_MAX_CPUS> sync_tasks;
   for (cpu_num_t i = 0; i < num_cpus; ++i) {
-    sync_tasks[i].Initialize(mp_sync_task, &sync_context);
+    sync_tasks[i].Initialize(&sync_context);
   }
 
-  // enqueue tasks
+  // Filter the target mask against the online CPUs and enqueue tasks under |ipi_task_lock|.
+  // |mp_set_cpu_online| updates |mp.online_cpus| and drains the offline CPU's |ipi_task_list| under
+  // this same lock, guaranteeing that a task is never left queued for an offline CPU.
+  //
+  // Note, the generic IPI is sent after |ipi_task_lock| is released, so a target CPU may go offline
+  // (and have its task drained) before the IPI is sent.  That is, while a task is never left queued
+  // for an offline CPU, an offline CPU may still be sent a generic IPI.  This is harmless, since
+  // the CPU's task for this call has already been drained, so if the CPU ever takes the IPI, it
+  // will not find that task.
   mp.ipi_task_lock.Acquire();
+  if (target == mp_ipi_target::ALL) {
+    mask = mp_get_online_mask();
+  } else if (target == mp_ipi_target::ALL_BUT_LOCAL) {
+    mask = mp_get_online_mask() & ~cpu_num_to_mask(local_cpu);
+  } else {
+    // Mask any offline CPUs from target list
+    mask &= mp_get_online_mask();
+  }
+
+  // remove self from target lists, since no need to IPI ourselves
+  const bool targetting_self = mask & cpu_num_to_mask(local_cpu);
+  mask &= ~cpu_num_to_mask(local_cpu);
+
+  // Relaxed is sufficient here because remote CPUs only observe |outstanding_cpus| after popping
+  // a task from their |ipi_task_list| (or after the list is drained by |mp_set_cpu_online|), both
+  // of which happen under |ipi_task_lock|, whose release below publishes this store.
+  sync_context.outstanding_cpus.store(mask, ktl::memory_order_relaxed);
+
   cpu_mask_t remaining = mask;
   cpu_num_t cpu_id = 0;
   while (remaining && cpu_id < num_cpus) {
@@ -242,15 +273,11 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
 
   bool ints_disabled = arch_ints_disabled();
   // wait for all other CPUs to be done with the context
-  while (1) {
-    // See comment in mp_unplug_trampoline about related CPU hotplug
-    // guarantees.
-    cpu_mask_t outstanding = sync_context.outstanding_cpus.load(ktl::memory_order_relaxed);
-    cpu_mask_t online = mp_get_online_mask();
-    if ((outstanding & online) == 0) {
-      break;
-    }
-
+  //
+  // Acquire pairs with the fetch_and in mp_sync_task / mp_set_cpu_online, ensuring that each
+  // task's side-effects, and the unlinking of each task from its |ipi_task_list|, are visible
+  // before we check |InContainer| below and before |sync_tasks| go out of scope.
+  while (sync_context.outstanding_cpus.load(ktl::memory_order_acquire) != 0) {
     // If interrupts are still disabled, we need to attempt to process any
     // tasks queued for us in order to prevent deadlock.
     if (ints_disabled) {
@@ -275,16 +302,11 @@ void mp_sync_exec(const mp_ipi_target target, cpu_mask_t mask, const mp_sync_tas
   }
   arch::ThreadMemoryBarrier();
 
-  // make sure the sync_tasks aren't in lists anymore, since they're
-  // stack allocated
-  mp.ipi_task_lock.AcquireIrqSave(irqstate);
+  // Every enqueued task has been popped and completed (by mp_mbx_generic_irq) or drained when its
+  // target CPU went offline (by mp_set_cpu_online) before clearing its bit in |outstanding_cpus|.
   for (cpu_num_t i = 0; i < num_cpus; ++i) {
-    // If a task is still around, it's because the CPU went offline.
-    if (sync_tasks[i]->InContainer()) {
-      sync_tasks[i]->RemoveFromContainer();
-    }
+    DEBUG_ASSERT(!sync_tasks[i]->InContainer());
   }
-  mp.ipi_task_lock.ReleaseIrqRestore(irqstate);
 }
 
 void mp_unplug_current_cpu() {
@@ -308,12 +330,8 @@ void mp_unplug_current_cpu() {
   // may only be scheduled on active CPUs.
   DEBUG_ASSERT(arch_blocking_disallowed());
 
-  // Note that before this invocation, but after we stopped accepting
-  // interrupts, we may have received a synchronous task to perform.
-  // Clearing this flag will cause the mp_sync_exec caller to consider
-  // this CPU done.  If this CPU comes back online before other all
-  // of the other CPUs finish their work (very unlikely, since tasks
-  // should be quick), then this CPU may execute the task.
+  // Mark this CPU as offline and drain any synchronous tasks that were queued for it after it
+  // stopped accepting interrupts, signaling to their mp_sync_exec callers that this CPU is done.
   mp_set_curr_cpu_online(false);
 
   // Stop and then shutdown this CPU's platform timer.
@@ -445,11 +463,11 @@ void mp_mbx_generic_irq() {
     mp.ipi_task_lock.Acquire();
     task = mp.ipi_task_list[local_cpu].pop_front();
     mp.ipi_task_lock.Release();
-    if (task == NULL) {
+    if (task == nullptr) {
       break;
     }
 
-    task->func(task->context);
+    mp_sync_task(task->context);
   }
 }
 

@@ -1283,7 +1283,7 @@ impl InterruptControllerOps for Gicv3 {
     }
 
     fn init_percpu(&self) {
-        crate::kernel::mp::set_curr_cpu_online(true);
+        crate::kernel::mp::set_curr_cpu_online();
         let ipi_base = IPI_BASE.load(Ordering::Relaxed);
         let _ = self.unmask(InterruptVector(MpIpi::Generic as u32 + ipi_base));
         let _ = self.unmask(InterruptVector(MpIpi::Reschedule as u32 + ipi_base));
@@ -1402,9 +1402,10 @@ impl InterruptControllerOps for Gicv3 {
         //
         // * Nothing depends on this CPU handling such an interrupt.  It is already offline (see
         //   mp_set_curr_cpu_online(false) in mp_unplug_current_cpu) and inactive, so mp_reschedule
-        //   no longer targets it, its unpinned threads have been migrated, and mp_sync_exec stops
-        //   waiting for (and dequeues its tasks from) CPUs that go offline.  IPIs may still be sent
-        //   to an offline CPU (e.g. by mp_interrupt), but they have no work to do there.
+        //   no longer targets it, its unpinned threads have been migrated, and any mp_sync_exec
+        //   tasks still queued for it were drained when it was marked offline (and no new ones are
+        //   queued for offline CPUs).  IPIs may still be sent to an offline CPU (e.g. by
+        //   mp_interrupt or a late mp_sync_exec IPI), but they have no work to do there.
         //
         // * An offline CPU is brought back online by PSCI CPU_ON, not by an interrupt.  When it
         //   comes back online, init_percpu_early masks and clears all SGIs and PPIs anyway (as it

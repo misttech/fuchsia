@@ -20,7 +20,6 @@
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
 
-using mp_ipi_task_func_t = void (*)(void* context);
 using mp_sync_task_t = void (*)(void* context);
 
 enum class mp_ipi : uint8_t { GENERIC, RESCHEDULE, INTERRUPT, HALT };
@@ -71,6 +70,14 @@ void mp_mbx_generic_irq();
 void mp_mbx_interrupt_irq();
 
 // tracks if a cpu is online and initialized
+//
+// |cpu| must be a valid CPU number.
+//
+// When |online| is false, any mp_sync_exec tasks still queued for |cpu| are drained (i.e. removed
+// and signaled as complete without being executed).  Tasks |cpu| has already dequeued are not
+// drained, and must be completed by |cpu| itself, otherwise their callers wait forever.  So, either
+// |cpu| must be the calling CPU, with interrupts disabled, or |cpu| must not be active (and must
+// never have enabled interrupts).
 void mp_set_cpu_online(cpu_num_t cpu, bool online);
 inline void mp_set_curr_cpu_online(bool online) { mp_set_cpu_online(arch_curr_cpu_num(), online); }
 cpu_mask_t mp_get_online_mask();
@@ -97,7 +104,6 @@ void mp_signal_curr_cpu_ready();
 zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline);
 
 extern "C" {
-void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online);
 void cpp_mp_set_curr_cpu_online(bool online);
 cpu_mask_t cpp_mp_get_online_mask();
 bool cpp_mp_is_cpu_online(cpu_num_t cpu);

@@ -38,7 +38,6 @@ pub unsafe fn unplug_event_signal(event: *mut MpUnplugEvent) {
 }
 
 unsafe extern "C" {
-    fn cpp_mp_set_cpu_online(cpu: cpu_num_t, online: bool);
     fn cpp_mp_set_curr_cpu_online(online: bool);
     fn cpp_mp_get_online_mask() -> cpu_mask_t;
     fn cpp_mp_is_cpu_online(cpu: cpu_num_t) -> bool;
@@ -112,16 +111,26 @@ pub const fn cpu_num_to_mask(cpu: cpu_num_t) -> cpu_mask_t {
     if cpu < cpu_mask_t::BITS { 1 << cpu } else { 0 }
 }
 
-/// Sets whether a given CPU is online and initialized.
-pub fn set_cpu_online(cpu: cpu_num_t, online: bool) {
-    // SAFETY: FFI call with value arguments has no safety preconditions.
-    unsafe { cpp_mp_set_cpu_online(cpu, online) };
+/// Marks the calling CPU as online and initialized.
+pub fn set_curr_cpu_online() {
+    // SAFETY: Bringing the calling CPU online has no safety preconditions.
+    unsafe { cpp_mp_set_curr_cpu_online(true) };
 }
 
-/// Sets whether the calling CPU is online and initialized.
-pub fn set_curr_cpu_online(online: bool) {
-    // SAFETY: FFI call has no safety preconditions.
-    unsafe { cpp_mp_set_curr_cpu_online(online) };
+/// Marks the calling CPU as offline.
+///
+/// Any `sync_exec` tasks still queued for the calling CPU are drained (i.e. removed and signaled
+/// as complete without being executed).
+///
+/// # Safety
+///
+/// Interrupts must be disabled on the calling CPU.  Tasks the calling CPU has already dequeued are
+/// not drained and can only be completed by the calling CPU, so the caller must not be in the
+/// middle of executing one (see `mp_set_cpu_online` in kernel/mp.h).
+pub unsafe fn set_curr_cpu_offline() {
+    // SAFETY: The caller guarantees that interrupts are disabled and that the calling CPU is not
+    // executing a dequeued `sync_exec` task.
+    unsafe { cpp_mp_set_curr_cpu_online(false) };
 }
 
 /// Returns the bitmask of currently online CPUs.
@@ -220,9 +229,8 @@ pub fn sync_exec<F: Fn() + Sync>(target: MpIpiTarget, mask: cpu_mask_t, f: F) {
     }
 
     // SAFETY: `&f` remains valid on the stack for the entire duration of `cpp_mp_sync_exec`,
-    // which blocks synchronously until all target CPUs have finished executing the trampoline.
-    // TODO(https://fxbug.dev/517305410): This is not safe if CPUs are offlined and then brought
-    // back online with this IPI still pending.
+    // which blocks synchronously until all target CPUs have finished executing the trampoline
+    // (or, for target CPUs that went offline, until the pending task was drained).
     unsafe {
         cpp_mp_sync_exec(
             target,

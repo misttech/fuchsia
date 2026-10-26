@@ -25,7 +25,6 @@ static_assert(static_cast<uint8_t>(mp_ipi::HALT) == 3);
 
 extern "C" {
 
-void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online);
 void cpp_mp_set_curr_cpu_online(bool online);
 cpu_mask_t cpp_mp_get_online_mask();
 bool cpp_mp_is_cpu_online(cpu_num_t cpu);
@@ -52,11 +51,6 @@ zx_status_t cpp_mp_unplug_cpu(cpu_num_t cpu);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_mp_unplug_event_signal(MpUnplugEvent* event) { event->Signal(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online) {
-  mp_set_cpu_online(cpu, online);
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_mp_set_curr_cpu_online(bool online) { mp_set_curr_cpu_online(online); }

@@ -461,7 +461,7 @@ impl InterruptControllerOps for Gicv2 {
     }
 
     fn init_percpu(&self) {
-        crate::kernel::mp::set_curr_cpu_online(true);
+        crate::kernel::mp::set_curr_cpu_online();
         let ipi_base = IPI_BASE.load(Ordering::Relaxed);
         let _ = self.unmask(InterruptVector(MpIpi::Generic as u32 + ipi_base));
         let _ = self.unmask(InterruptVector(MpIpi::Reschedule as u32 + ipi_base));
