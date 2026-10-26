@@ -85,7 +85,7 @@ rust_library(
         "//third_party/rust_crates/vendor/getopts-0.2.24:getopts",
         "//third_party/rust_crates/vendor/pulldown-cmark-escape-0.11.0:pulldown_cmark_escape",
         "//third_party/rust_crates/vendor/serde-1.0.229:serde",
-        "//third_party/rust_crates/vendor/unicase-2.9.0:unicase",
+        "//third_party/rust_crates/vendor/unicase-2.10.0:unicase",
     ],
 )
 

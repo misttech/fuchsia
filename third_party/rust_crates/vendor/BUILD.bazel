@@ -3398,14 +3398,14 @@ alias(
 )
 
 alias(
-    name = "unicase-2.9.0",
-    actual = "//third_party/rust_crates/vendor/unicase-2.9.0:unicase",
+    name = "unicase-2.10.0",
+    actual = "//third_party/rust_crates/vendor/unicase-2.10.0:unicase",
     tags = ["manual"],
 )
 
 alias(
     name = "unicase",
-    actual = "//third_party/rust_crates/vendor/unicase-2.9.0:unicase",
+    actual = "//third_party/rust_crates/vendor/unicase-2.10.0:unicase",
     tags = ["manual"],
 )
 
