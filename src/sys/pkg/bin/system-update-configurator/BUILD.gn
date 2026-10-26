@@ -11,18 +11,15 @@ grand_swd_binary("bin") {
   output_name = "system_update_configurator"
 }
 
-fuchsia_component("component") {
-  component_name = "system-update-configurator"
-  manifest = "meta/system-update-configurator.cml"
-  deps = [ ":bin" ]
-}
-
+# Kept in GN because `:bin` depends on `rustc_dylib`
+# `//src/lib/fuchsia-component`, which `collect_debug_symbols_manifest_aspect`
+# does not yet collect for assembled `fx_package` targets.
 fuchsia_package("system-update-configurator") {
   deps = [ ":component" ]
 }
 
 bazel_test_suite("system-update-configurator-unit-tests") {
-  target_tests = [ "//src/sys/pkg/bin/system-update-configurator:system-update-configurator-unit-tests" ]
+  target_tests = [ "//src/sys/pkg/bin/system-update-configurator:system-update-configurator-tests" ]
 }
 
 rustc_test("bin_test") {
@@ -72,7 +69,10 @@ fuchsia_test_package("system-update-configurator-integration-test") {
 
 group("hermetic_tests") {
   testonly = true
-  public_deps = [ ":system-update-configurator-unit-tests" ]
+  public_deps = [
+    ":system-update-configurator-tests",
+    ":system-update-configurator-unit-tests",
+  ]
 }
 
 group("non_hermetic_tests") {
@@ -138,4 +138,51 @@ rustc_library("lib") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]
+}
+rustc_test("lib_test") {
+  sources = [
+    "src/bridge.rs",
+    "src/bridge/testing.rs",
+    "src/bridge/vx_ta/mod.rs",
+    "src/bridge/vx_ta/tee_client_api.rs",
+    "src/health.rs",
+    "src/main.rs",
+    "src/service.rs",
+  ]
+  source_root = "src/main.rs"
+  edition = "2024"
+  link_deps = [ "//src/security/lib/tee/tee-client-api" ]
+  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
+  deps = [
+           "//sdk/fidl/fuchsia.update.config:fuchsia.update.config_rust",
+           "//src/lib/diagnostics/inspect/runtime/rust",
+           "//src/lib/diagnostics/inspect/rust",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia",
+           "//src/lib/fuchsia-async",
+           "//src/lib/fuchsia-component",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:log",
+           "//third_party/rust_crates:thiserror",
+         ] + [
+           "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+           "//third_party/rust_crates:assert_matches",
+         ]
+  lint_config = "//build/config/rust/lints:clippy_warn_all"
+  output_name = "system_update_configurator_lib_test"
+}
+fuchsia_unittest_package("system-update-configurator-tests") {
+  package_name = "system-update-configurator-unit-tests-gn"
+  component_name = "system-update-configurator-unit-tests"
+  deps = [ ":lib_test" ]
+}
+fuchsia_component_manifest("manifest") {
+  component_name = "system-update-configurator"
+  manifest = "meta/system-update-configurator.cml"
+}
+fuchsia_component("component") {
+  cm_label = ":manifest"
+  component_name = "system-update-configurator"
+  deps = [ ":bin" ]
 }

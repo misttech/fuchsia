@@ -2,6 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 load(
@@ -59,21 +68,45 @@ rustc_library(
     ],
 )
 
-# @bazel2gn:skip
+# @bazel2gn:raw_attribute:output_name = "system_update_configurator_lib_test"
 rustc_test(
     name = "lib_test",
     crate = ":lib",
     edition = "2024",
     lint_config = "//build/config/rust/lints:clippy_warn_all",
-    visibility = ["//visibility:private"],
     deps = [
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
         "//third_party/rust_crates/vendor:assert_matches",
     ],
 )
 
-# @bazel2gn:skip
 fx_unittest_package(
-    name = "system-update-configurator-unit-tests",
+    name = "system-update-configurator-tests",
+    package_name = "system-update-configurator-unit-tests",
     unit_tests = [":lib_test"],
+)
+
+fx_packaged_binary(
+    name = "bin",
+    binary = "//src/sys/pkg/bin/grand-swd-binary",
+    binary_name = "system_update_configurator",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "system-update-configurator",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/system-update-configurator.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "system-update-configurator",
+    deps = [
+        ":bin",  # @bazel2gn:path_overwrite::bin
+    ],
 )
