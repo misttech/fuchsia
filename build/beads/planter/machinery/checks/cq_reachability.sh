@@ -132,6 +132,31 @@ def gn_code(text):
     return re.sub(r'("(?:\\.|[^"\\])*")|#[^\n]*', lambda m: m.group(1) or " " * len(m.group(0)), text)
 
 
+# Check whether a dual-built test binary is packaged by a GN test package/component kept
+# above the BAZEL2GN SENTINEL in BUILD.gn.
+def is_packaged_by_kept_gn_test_package(gn_text, pkg_dir, bin_name):
+    if not gn_text:
+        return False
+    pre = (
+        gn_text[: SENTINEL_RE.search(gn_text).start()]
+        if SENTINEL_RE.search(gn_text)
+        else gn_text
+    )
+    pre_clean = gn_code(pre)
+    if not re.search(
+        r"\b(?:fuchsia_test_package|fuchsia_unittest_package)\s*\(", pre_clean
+    ):
+        return False
+    ref_re = re.compile(
+        r'"(?::|//'
+        + re.escape(pkg_dir)
+        + r":)"
+        + re.escape(bin_name)
+        + r'(?:\([^"]*\))?"'
+    )
+    return ref_re.search(pre_clean) is not None
+
+
 def closing(code, i):
     depth, in_str = 0, False
     while i < len(code):
@@ -411,9 +436,12 @@ maybe_refresh_origin_main(parent_sha)
 origin_main = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
 base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"])
 effective_diff_base = change_base
+wt_dirty = bool(git_lines(["diff", "--name-only", "HEAD"]) or git_lines(["ls-files", "--others", "--exclude-standard"]))
+head_commit_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"]) if parent_sha else []
+head_touches_target = not target_dirs or any(any(p.startswith(td + "/") for td in target_dirs) for p in head_commit_files)
 if parent_sha and (
     not base_sha
-    or (base_sha == head_sha and head_sha != origin_main)
+    or (base_sha == head_sha and head_sha != origin_main and not wt_dirty and head_touches_target)
     or not is_ancestor(base_sha, head_sha)
 ):
     effective_diff_base = "HEAD~1"
@@ -549,6 +577,98 @@ if origin_main and head_sha and head_sha != origin_main:
                         "`git -c core.editor=true rebase --continue` (preserving the existing `Change-Id` footer)."
                     ),
                 })
+
+
+# Check whether HEAD is stacked on a local ancestor commit that has already landed on
+# origin/main, or still carries a 'Depends on:' reference to a CL now in origin/main.
+def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha):
+    landed_ancestors = []
+    upstream_log = ""
+    if merge_base and merge_base != origin_main:
+        upstream_log = git_out(
+            ["log", "--format=%H%n%B%n---END---", f"{merge_base}..{origin_main}"]
+        )
+    if (
+        merge_base
+        and parent_sha
+        and merge_base != origin_main
+        and merge_base != parent_sha
+        and is_ancestor(merge_base, parent_sha)
+    ):
+        upstream_cids = set(
+            re.findall(r"^Change-Id:\s*(I[0-9a-f]{40})\b", upstream_log, re.M)
+        )
+        cherry_lines = git_lines(["cherry", origin_main, parent_sha, merge_base])
+        cherry_landed = {
+            line[2:].strip() for line in cherry_lines if line.startswith("- ")
+        }
+        for anc in git_lines(["rev-list", f"{merge_base}..{parent_sha}"]):
+            anc_msg = git_out(["log", "-1", "--format=%B", anc])
+            anc_cids = set(
+                re.findall(r"^Change-Id:\s*(I[0-9a-f]{40})\b", anc_msg, re.M)
+            )
+            if anc in cherry_landed or (anc_cids & upstream_cids):
+                anc_subj = (
+                    anc_msg.splitlines()[0] if anc_msg.splitlines() else anc[:11]
+                )
+                landed_ancestors.append((anc[:11], anc_subj))
+
+    head_msg = git_out(["log", "-1", "--format=%B", head_sha]) if head_sha else ""
+    stale_depends_on = []
+    dep_cl_re = r"(?:fxrev\.dev|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
+    for cl_num in re.findall(dep_cl_re, head_msg):
+        rev_pat = r"Reviewed-on:[^\n]*/\+/" + re.escape(cl_num) + r"\b"
+        if re.search(rev_pat, upstream_log) or git_out(
+            ["log", "-1", "--format=%H", f"--grep=Reviewed-on: .*/+/{cl_num}\\b", origin_main]
+        ):
+            ref = f"fxrev.dev/{cl_num}"
+            if ref not in stale_depends_on:
+                stale_depends_on.append(ref)
+
+    if landed_ancestors or stale_depends_on:
+        anc_desc = ", ".join(f"{sha} ({subj!r})" for sha, subj in landed_ancestors)
+        dep_desc = ", ".join(stale_depends_on)
+        msg_parts = []
+        if landed_ancestors:
+            msg_parts.append(
+                f"HEAD is stacked on local ancestor commit(s) {anc_desc} that have "
+                f"already landed on `origin/main` ({origin_main[:11]}), leaving the "
+                "branch diverged from `origin/main` on a closed prerequisite change."
+            )
+        if stale_depends_on:
+            msg_parts.append(
+                f"Commit message still lists `Depends on:` {dep_desc}, which has "
+                "already landed on `origin/main`."
+            )
+        rem_parts = [
+            "Run `git fetch origin main && git rebase origin/main` so git drops the "
+            "already-landed prerequisite commit(s) and rebases `HEAD` directly onto "
+            "`origin/main`."
+        ]
+        if stale_depends_on:
+            rem_parts.append(
+                f"Remove the obsolete `Depends on:` block ({dep_desc}) from the "
+                "commit message with `git commit --amend` (preserving the existing "
+                "`Change-Id`)."
+            )
+        findings.append({
+            "source": "cq_reachability",
+            "category": "stale_landed_parent_commit",
+            "severity": "error",
+            "file": "/COMMIT_MSG",
+            "line": 1,
+            "message": " ".join(msg_parts),
+            "remediation": " ".join(rem_parts),
+        })
+
+
+if origin_main and head_sha and head_sha != origin_main:
+    check_landed_ancestor_commits(
+        git_out(["merge-base", origin_main, head_sha]),
+        origin_main,
+        parent_sha,
+        head_sha,
+    )
 
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:
@@ -774,7 +894,12 @@ for td in target_dirs:
             packaged_in_unit_tests = re.search(
                 r'\bunit_tests\s*=\s*\[[^\]]*"(?://' + re.escape(td) + r')?:' + re.escape(device_bin) + r'"', bazel_src
             )
-            if FX_TEST_AVAILABLE and not (packaged_in_bin or packaged_in_unit_tests):
+            packaged_in_gn_pkg = is_packaged_by_kept_gn_test_package(
+                gn_src, td, device_bin
+            )
+            if FX_TEST_AVAILABLE and not (
+                packaged_in_bin or packaged_in_unit_tests or packaged_in_gn_pkg
+            ):
                 findings.append({
                     "source": "cq_reachability",
                     "category": "unpackaged_rust_device_test",

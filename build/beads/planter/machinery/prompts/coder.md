@@ -58,11 +58,11 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `<n>`. In `fuchsia_package_with_single_component("<n>")`, `package_name` defaults to `<n>`
      and `component_name` defaults to `package_name` (NOT the `.cml` filename stem), producing
      `meta/<component_name>.cm`.
-   - **Sandboxed `.shard.cml` includes**: `cmc` in Bazel is sandboxed, so list every direct
-     `cml_shard` target or `.shard.cml` file (plus any transitive `.shard.cml` files not wrapped in
-     `cml_shard`) in `includes = [...]` (e.g. `"include": ["syslog/client.shard.cml"]` needs
-     `"//sdk/lib/syslog:client.shard"`; `"inspect/client.shard.cml"` needs
-     `"//sdk/lib/inspect:{client,offer,use}.shard.cml"`).
+   - **Sandboxed `.shard.cml` includes (`cml_shard`)**: `cmc` in Bazel is sandboxed, so list every
+     included shard in `fx_component_manifest(includes = [...])`. Prefer `cml_shard` targets (from
+     `//build/bazel/rules/components:cml_shard.bzl`, e.g. `"//sdk/lib/syslog:client.shard"`,
+     `"//sdk/lib/inspect:client.shard"`) with transitive `includes = [...]` over `exports_files` of
+     raw `.shard.cml` files so callers only list the direct `cml_shard`.
 2. **Packaged binary & component (`fx_packaged_binary`, `fx_component`)**:
    - Declare the binary (`fx_cc_binary` or `rustc_binary`) with `tags = ["manual"]`. An
      `fx_cc_binary` must include `"//sdk/lib/fdio"` in `deps` (added implicitly in GN by
@@ -73,11 +73,12 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      `fx_component(name = "<c>", compiled_manifest = ":<c>-manifest", component_name = "<comp_name>", deps = [...])`.
 3. **`fx_package`, `BUILD.gn`, `bazel2gn`, and `//bundles/assembly` bridge cleanup**:
    - `bazel2gn` converts `fx_component` and `fx_component_manifest` (resolving same-package
-     `fx_packaged_binary` deps in `fx_component`), so `fuchsia_component` and
-     `fuchsia_component_manifest` targets that still have GN consumers can be migrated to
-     `BUILD.bazel` and synced below `## BAZEL2GN SENTINEL`. `bazel2gn` does NOT support
-     `fx_package`, `fx_test_component`, `fx_unittest_component`, or `resource` (`fx_cc_binary` IS
-     translated by `bazel2gn` into a GN `executable`). When migrating a package fully to Bazel,
+     `fx_packaged_binary` deps in `fx_component`) and `fuchsia_structured_config_rust_lib`, so
+     `fuchsia_component` and `fuchsia_component_manifest` targets that still have GN consumers can
+     be migrated to `BUILD.bazel` and synced below `## BAZEL2GN SENTINEL`. `bazel2gn` does NOT
+     support `fx_package`, `fx_test_component`, `fx_unittest_component`, or `resource`
+     (`fx_cc_binary` IS translated by `bazel2gn` into a GN `executable`; `cml_shard` is Bazel-only
+     and has no GN equivalent). When migrating a package fully to Bazel,
      delete the migrated `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component`
      (and any dedicated binary/resource not used by remaining GN targets) from `BUILD.gn`, and
      remove any reference to the deleted GN package target from a parent `BUILD.gn` group.
@@ -90,7 +91,7 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      Bazel `fx_package` with `# @bazel2gn:skip` and a brief reason comment;
      `bazel2gn` automatically skips `fx_component_manifest` targets consumed only by
      `fx_test_component` or a skipped `fx_component`, and ignores
-     `fx_package`/`fx_test_component`/`fx_packaged_binary`/`fx_test`, so do NOT put
+     `fx_package`/`fx_test_component`/`fx_packaged_binary`/`fx_test`/`cml_shard`, so do NOT put
      `# @bazel2gn:skip` on those, and do NOT skip test binaries: see "Migrating Tests").
    - When `//bundles/assembly/bazel_inputs/<dir>/BUILD.gn` bridges the package: (a) replace
      `"//bundles/assembly/bazel_inputs/<dir>..."` with `"//<dir>:<pkg>"` in
@@ -185,11 +186,9 @@ the Bazel test keeps the label).
   - plain ELF / `deprecated_legacy_test_execution`: `//sdk/lib/sys/testing/elf_test_runner.shard.cml`
   - dep `//src/sys/test_runners/gtest:death_test` adds `gtest/death_test.shard.cml`;
     `//src/sys/test_runners:tmp_storage` adds `//src/sys/test_runners/tmp_storage.shard.cml`.
-- **Export the shards (only when using a custom `.cml`).** Bazel `cmc` is sandboxed: list every shard (and each shard it includes)
-  as a label in `fx_component_manifest(includes)`. If the shard's directory has no BUILD.bazel
-  exporting it to your package (e.g. `src/sys/test_runners/rust/`), add or extend one with only
-  `package(default_applicable_licenses = ["//:license"])` and `exports_files([...], visibility = [...])`
-  naming your package.
+- **Export the shards (only when using a custom `.cml`).** List every shard in
+  `fx_component_manifest(includes)`, defining `cml_shard` targets (or `exports_files([...], visibility = [...])`
+  under `src/sys/test_runners/`) when a shard directory has no Bazel target yet.
 - **Constructing a custom-manifest test package explicitly** (only when `fx_unittest_package` / `fx_unittest_component` cannot be used):
   1. Test binary: C++ `fx_cc_binary(testonly = True, tags = ["manual"])`
      with the test main in `deps`; Rust standalone `rustc_test(...)`
@@ -214,7 +213,9 @@ the Bazel test keeps the label).
   `build_only`, `log_settings` and `test_type`, e.g. timeouts; custom realms; e2e tests;
   `bootfs_test`; Ninja-generated inputs) keep that one test GN-only,
   hand-written in GN, above the sentinel, depending on the generated library; name the reason in
-  the `summary` and commit message.
+  the `summary` and commit message. A Bazel-buildable `rustc_test` that such a kept GN test package
+  wraps still moves to `BUILD.bazel` (without `# @bazel2gn:skip`), and the kept GN package depends
+  on the copy `fx bazel2gn` generates below the sentinel.
 
 Rust device test of a dual-build library (GN: `rustc_library("foo") { with_unit_tests = true }`
 plus `fuchsia_unittest_package("foo-tests") { deps = [ ":foo_test" ] }`), no skip annotations:
@@ -362,29 +363,25 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    BUILD.gn files) over to the BUILD.bazel that now defines it.
 
 ## Verify, Then Run the Checks Once
-`run_checks.sh` (on `$PATH`) runs every static check and `build_verification` (`fx build`, GN
-dependents, `fx host-tool shac check` (including `verify_bazel2gn` drift), and `fx bazel build` for
-fuchsia and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDIR`:
-1. While iterating, run `run_checks.sh --skip-build` (seconds) and fix every ERROR and WARNING.
-   If CQ failed with `Failed to rebase` (`checkout|jiri patch`) or `cq_reachability` reports
-   `upstream_rebase_conflict`, fetch and rebase onto the latest `origin/main`
-   (`git fetch origin main && git rebase origin/main`, resolve conflicts in shared lists keeping both
-   `origin/main` and your entries in alphabetical order, `git add <file>`, and `git -c core.editor=true rebase --continue`
-   preserving `Change-Id`).
+`run_checks.sh` (on `$PATH`) runs every static check, `review_diff`, and `build_verification` (`fx build`,
+GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host). Never run full
+product builds or raw `planter diff --local --check-findings` by hand (`run_checks.sh` and planter's
+gate automatically suppress raw `diffengine` `copyright_header`/`package_hygiene` findings on
+auto-generated `third_party/rust_crates` `BUILD.bazel` files via `bazel_minimality` INFO coverage).
+From `$PLANTER_WORKDIR`:
+1. While iterating, run `run_checks.sh --skip-build` and fix every ERROR and WARNING. On
+   `upstream_rebase_conflict` / CQ `Failed to rebase`, run `git fetch origin main && git rebase origin/main`,
+   keep both `origin/main` and your entries sorted, and `git -c core.editor=true rebase --continue`.
    For fast compile feedback, run `fx bazel2gn -d <dir>` and
-   `fx bazel build --config=fuchsia_platform //<dir>:all` (for `fidl_library`/`validate_json`
-   packages pass `-- //<dir>:all -//<dir>:<name>_validate_ir_json`). Fix BUILD files, never sources.
-2. Run runnable host/unit tests of touched directories (`fx bazel test --config=host //<dir>:<test>`).
-   Never `fx bazel test` an `fx_test` (its executable is a stub that always fails): it is built by
-   `fx bazel build --config=fuchsia_platform //<dir>:all` and runs with `fx test <package_name>`
-   only when a device or emulator is available. `build_verification` runs the exported host tests.
-3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit
-   0 (unless a blocking finding is STILL failing as a false positive or rule conflict, in which
-   case keep the intended code and list it in `disputed_findings`). Never list passing checks or
-   INFO notes in `disputed_findings`. Do not edit anything after `run_checks.sh` passes so planter
-   reuses the result. Report contradictory instructions (or `remediation_validation` requiring
-   file edits when review comments only target `/COMMIT_MSG`) with
-   `"category": "machinery_conflict"` in `disputed_findings`.
+   `fx bazel build --config=fuchsia_platform //<dir>:all` (adding `-//<dir>:<name>_validate_ir_json`
+   when needed). Fix BUILD files, never sources.
+2. Run host tests (`fx bazel test --config=host //<dir>:<test>`). Never `fx bazel test` an `fx_test`
+   (stub executable); build it with `fx bazel build --config=fuchsia_platform //<dir>:<test>`, and
+   never put `fx test <target>` in `test_footers` or `Test:` footers unless `fx test --dry <target>`
+   exits 0 (present in `<build dir>/tests.json`).
+3. As your last step, run `run_checks.sh` without flags once after your final edit; it must exit 0.
+   When `run_checks.sh` exits 0, `disputed_findings` MUST be `[]`; only report a blocking finding
+   that still fails (exit 1) on the final code. Do not edit after passing.
 4. Record in `test_footers` (and any commit `Test:` footer) ONLY commands you ran that exited 0,
    at most 3 lines (`commit_message_format` reports the expected footer form).
 5. All paths in `modified_files`, `summary`, and commit messages must be relative to

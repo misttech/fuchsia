@@ -105,6 +105,12 @@ if head and base_rev and head != base_rev:
                  + ", ".join(moved) + ".")
 
     leaves = [d.rsplit("/", 1)[-1] for d in dirs]
+    non_leaf_common = [t for t in common if t not in leaves]
+    subj_path = (
+        subject.split(" //", 1)[1].split(":", 1)[0].strip("/")
+        if " //" in subject
+        else ""
+    )
     m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] //\S+$", subject)
     m_none = re.match(r"^\[bazel_migration\] //\S+$", subject)
     if not changed and not git("status", "--porcelain", "--ignore-submodules=all"):
@@ -121,13 +127,38 @@ if head and base_rev and head != base_rev:
             f"Use '[bazel_migration][<subsystem>] //{first}' with <subsystem> taken from the directory's git log "
             "history (prefer the broader subsystem over a leaf directory or crate name); if the history has no "
             f"recurring tag and no parent directory is a subsystem, use '[bazel_migration] //{first}'. {hint}")
-    elif m_tag and m_tag.group(1) in leaves and not [t for t in common if t not in leaves]:
+    elif (
+        len(dirs) == 1
+        and subj_path
+        and "..." not in subj_path
+        and first.startswith(subj_path + "/")
+        and f"{subj_path}/BUILD.bazel" not in changed
+    ):
+        pref_subj = (
+            f"[bazel_migration][{non_leaf_common[0]}] //{first}"
+            if non_leaf_common and len(f"[bazel_migration][{non_leaf_common[0]}] //{first}") <= 65
+            else f"[bazel_migration] //{first}"
+        )
+        add(
+            "commit_subject_format",
+            1,
+            f"Commit subject `{subject}` names the parent directory `//{subj_path}` instead of "
+            f"the migrated directory `//{first}`.",
+            f"Use `{pref_subj}` (omit `[<subsystem>]` when adding it would push the full "
+            f"`//{first}` subject over 65 characters).",
+            severity="error",
+        )
+    elif m_tag and m_tag.group(1) in leaves and not non_leaf_common:
         add("commit_subject_leaf_tag", 1,
             f"Commit subject tag [{m_tag.group(1)}] is just the leaf directory name, which may be too narrow to be "
             "a subsystem tag.",
             f"Keep it only if the history shows it is an established subsystem; otherwise, with no parent "
             f"subsystem, use '[bazel_migration] //{first}'. {hint}")
-    elif m_none and [t for t in common if t not in leaves]:
+    elif (
+        m_none
+        and non_leaf_common
+        and len(f"[bazel_migration][{non_leaf_common[0]}] //{first}") <= 65
+    ):
         add("commit_subject_missing_tag", 1,
             "Commit subject has no subsystem tag although the directory's git log uses one.",
             f"Use '[bazel_migration][<subsystem>] //{first}'. {hint}")
@@ -259,8 +290,126 @@ if head and base_rev and head != base_rev:
                 add("commit_body_redundant_title", end_ln, msg_text, rem_text)
                 break
 
+    # Inspect whether a package directory still has unmigrated GN targets in BUILD.gn
+    # or only adds exports_files() without migrating the entire directory.
+    gn_meta_constructs = {
+        "group",
+        "config",
+        "bazel_test_suite",
+        "bazel_host_tool",
+        "declare_args",
+        "import",
+        "set_defaults",
+        "template",
+        "foreach",
+        "if",
+        "assert",
+    }
+    gn_test_only_rules = {
+        "fuchsia_test_package",
+        "fuchsia_unittest_package",
+        "fuchsia_test_component",
+        "fuchsia_unittest_component",
+        "fuchsia_test",
+        "rustc_test",
+        "test",
+        "go_test",
+        "host_test",
+        "python_host_test",
+        "bootfs_test",
+    }
+
+    # Check whether a target block in BUILD.bazel is preceded by `# @bazel2gn:skip`.
+    def has_bazel2gn_skip(btxt_str, start_pos):
+        prefix_lines = btxt_str[:start_pos].splitlines()
+        idx = len(prefix_lines) - 1
+        while idx >= 0:
+            s = prefix_lines[idx].strip()
+            if not s:
+                idx -= 1
+                continue
+            if s.startswith("#"):
+                if "@bazel2gn:skip" in s:
+                    return True
+                idx -= 1
+                continue
+            break
+        return False
+
+    def inspect_dir_migration(rel_dir):
+        gn_path = os.path.join(workdir, rel_dir, "BUILD.gn")
+        bz_path = os.path.join(workdir, rel_dir, "BUILD.bazel")
+        try:
+            with open(gn_path) as fh:
+                gtxt = fh.read()
+        except OSError:
+            gtxt = ""
+        try:
+            with open(bz_path) as fh:
+                btxt = fh.read()
+        except OSError:
+            btxt = ""
+        pre_gtxt = gtxt.split("## BAZEL2GN SENTINEL", 1)[0] if gtxt else ""
+        suite_names = set(
+            re.findall(r'^\s*(?:bazel_test_suite|bazel_host_tool)\(\s*"([^"]+)"\s*\)', gtxt, re.M)
+        )
+        kept_pre_gn = {}
+        for grule, gname in re.findall(r'^\s*([A-Za-z_]\w*)\(\s*"([^"]+)"\s*\)', pre_gtxt, re.M):
+            if grule not in gn_meta_constructs and gname not in suite_names:
+                kept_pre_gn[gname] = grule
+        base_btxt = git("show", f"{base_rev}:{rel_dir}/BUILD.bazel")
+        bz_names = set()
+        new_bz_labels = []
+        base_bz_names = set()
+        for m in re.finditer(r"^([A-Za-z_]\w*)\((.*?)^\)", base_btxt, re.M | re.S):
+            n = re.search(r'^\s*name\s*=\s*"([^"]+)"', m.group(2), re.M)
+            if n:
+                base_bz_names.add(n.group(1))
+        for m in re.finditer(r"^([A-Za-z_]\w*)\((.*?)^\)", btxt, re.M | re.S):
+            rule, blk = m.group(1), m.group(2)
+            n = re.search(r'^\s*name\s*=\s*"([^"]+)"', blk, re.M)
+            if not n:
+                continue
+            tname = n.group(1)
+            if (
+                tname in kept_pre_gn
+                and has_bazel2gn_skip(btxt, m.start())
+                and rule not in ("fx_test_component", "rustc_test", "go_test")
+            ):
+                continue
+            bz_names.add(tname)
+            if rule not in ("package", "exports_files", "fx_packaged_binary", "fx_unittest_component"):
+                if tname not in base_bz_names:
+                    new_bz_labels.append(f"//{rel_dir}:{tname}")
+        for m in re.finditer(r"^exports_files\(\s*\[(.*?)\]", btxt, re.M | re.S):
+            for exp in re.findall(r'"([^"]+)"', m.group(1)):
+                if f'"{exp}"' not in base_btxt:
+                    new_bz_labels.append(f"//{rel_dir}:{exp}")
+        if not gtxt:
+            return [], [], new_bz_labels
+        unmigrated_all = []
+        unmigrated_non_test = []
+        has_sentinel = "## BAZEL2GN SENTINEL" in gtxt
+        for rule, gname in re.findall(r'^\s*([A-Za-z_]\w*)\(\s*"([^"]+)"\s*\)', gtxt, re.M):
+            if rule in gn_meta_constructs or gname in bz_names or gname in suite_names:
+                continue
+            item = f'{rule}("{gname}")'
+            if item not in unmigrated_all:
+                unmigrated_all.append(item)
+            if (
+                rule not in gn_test_only_rules
+                and not (
+                    has_sentinel
+                    and rule in ("fuchsia_package", "fuchsia_package_with_single_component")
+                )
+                and item not in unmigrated_non_test
+            ):
+                unmigrated_non_test.append(item)
+        return unmigrated_all, unmigrated_non_test, new_bz_labels
+
     # Check that commit message paths are relative to the Fuchsia checkout root
-    # (never prefixed with .jiri_root/worktrees/<name>/ or host filesystem paths).
+    # (never prefixed with .jiri_root/worktrees/<name>/ or host filesystem paths)
+    # and that partially migrated directories specify which targets are migrated.
     non_checkout_path_re = re.compile(
         r"(?:@?//)?\.jiri_root/(?:worktrees/[^/\s]+/)?([\w./\-]*)"
         r"|(?<![\w/:.])/(?:usr|home|tmp|var|opt)/[\w./\-]+"
@@ -298,11 +447,13 @@ if head and base_rev and head != base_rev:
                 if not b_dir or b_dir.startswith("."):
                     msg_text = (
                         f"`Also migrated in this change:` bullet `{bullet}` is not a valid "
-                        "Fuchsia checkout-relative `//<dir>` path."
+                        "Fuchsia checkout-relative `//<dir>` or `//<dir>:<target>` label."
                     )
                     rem_text = (
-                        "Write each bullet as `- //<dir>` relative to the Fuchsia checkout "
-                        "root, or remove the block if no extra directories were migrated."
+                        "Write each bullet as `- //<dir>` (when the entire directory is "
+                        "migrated) or `- //<dir>:<target>` (when only specific targets in "
+                        "`//<dir>` are migrated), or remove the block if no extra targets "
+                        "were migrated."
                     )
                     add("commit_msg_non_checkout_path", idx, msg_text, rem_text, severity="error")
                 elif b_dir == first and len(dirs) <= 1:
@@ -316,9 +467,61 @@ if head and base_rev and head != base_rev:
                         "in `CoderReport.modified_files`."
                     )
                     add("commit_body_redundant_also_migrated", idx, msg_text, rem_text)
+                elif ":" not in b_dir:
+                    unmig_all, _, new_bz_lbls = inspect_dir_migration(b_dir)
+                    if unmig_all:
+                        sample = ", ".join(f"`{t}`" for t in unmig_all[:3])
+                        examples = (
+                            ", ".join(f"`- {lbl}`" for lbl in new_bz_lbls[:4])
+                            if new_bz_lbls
+                            else f"`- //{b_dir}:<target>`"
+                        )
+                        msg_text = (
+                            f"`Also migrated in this change:` bullet `{bullet}` names the "
+                            f"entire directory `//{b_dir}`, but `{b_dir}/BUILD.gn` still "
+                            f"defines unmigrated targets ({sample})."
+                        )
+                        rem_text = (
+                            f"Do not imply the entire `//{b_dir}` directory is migrated: "
+                            "be specific about which targets (or exported files) are "
+                            f"migrated by writing `- //{b_dir}:<target>` (e.g. {examples}), "
+                            "or remove the bullet if no targets in that directory were "
+                            "migrated."
+                        )
+                        add(
+                            "also_migrated_partial_directory",
+                            idx,
+                            msg_text,
+                            rem_text,
+                            severity="error",
+                        )
+
+    # Check that a bare directory subject does not imply an entire directory is migrated
+    # when BUILD.gn still retains unmigrated non-test targets.
+    def check_subject_partial_directory(subj_str):
+        m_subj = re.match(r"^\[bazel_migration\](?:\[[A-Za-z0-9_.\-]+\])? //(\S+)$", subj_str)
+        if not m_subj:
+            return
+        subj_spec = m_subj.group(1).strip("/")
+        if ":" in subj_spec:
+            return
+        unmig_all, unmig_non_test, new_bz_lbls = inspect_dir_migration(subj_spec)
+        if unmig_non_test and new_bz_lbls and len(f"[bazel_migration] {new_bz_lbls[0]}") <= 65:
+            sample = ", ".join(f"`{t}`" for t in unmig_non_test[:3])
+            ex_lbl = new_bz_lbls[0]
+            msg_text = (
+                f"Commit subject `{subj_str}` names the bare directory `//{subj_spec}`, "
+                f"but `{subj_spec}/BUILD.gn` still defines unmigrated targets ({sample})."
+            )
+            rem_text = (
+                f"Be specific about which target is migrated (e.g. `{ex_lbl}`) instead "
+                f"of implying that the entire `//{subj_spec}` directory is migrated."
+            )
+            add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
 
     check_redundant_body_title(lines)
     check_checkout_relative_paths(lines)
+    check_subject_partial_directory(subject)
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -376,20 +579,61 @@ if head and base_rev and head != base_rev:
             "The shac/bazel2gn verification `Test:` line is not last.",
             "Group build/test commands together and put `Test: fx host-tool shac check` last.")
     # Bazel-Migration-Target: footers (required for every non-empty migration commit).
+    # Scan both primary target_dir packages and any other BUILD.bazel packages modified
+    # in the commit so co-migrated targets are recognized when target_dir only updates
+    # exports_files().
     is_empty = not changed and not git("status", "--porcelain", "--ignore-submodules=all")
     bmt_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Bazel-Migration-Target\s*:", l)]
     migrated_targets = []
+    fallback_dir_targets = []
     excluded_bmt = {}
-    helper_rules = {"package", "exports_files", "alias", "config_setting",
-                    "fx_packaged_binary", "fx_component_manifest", "fx_test_component",
-                    "fx_unittest_component"}
+    helper_rules = {
+        "package",
+        "exports_files",
+        "alias",
+        "config_setting",
+        "fx_packaged_binary",
+        "fx_unittest_component",
+    }
+    synth_component_rules = {"fx_component_manifest", "fx_test_component"}
     ut_re = r'^\s*(with_unit_tests\s*=\s*"(host|both|fuchsia)"|with_unit_tests\s*=\s*True|with_host_unit_tests\s*=\s*True)'
-    for d in dirs:
+    bmt_dirs = list(
+        dict.fromkeys(
+            dirs
+            + [
+                os.path.dirname(f)
+                for f in changed
+                if f.endswith("/BUILD.bazel") and os.path.dirname(f)
+            ]
+        )
+    )
+    kept_gn_by_dir = {}
+    for d in bmt_dirs:
         try:
             with open(f"{workdir}/{d}/BUILD.bazel") as fh:
                 btxt = fh.read()
         except OSError:
             continue
+        try:
+            with open(f"{workdir}/{d}/BUILD.gn") as fh:
+                cur_gtxt = fh.read()
+        except OSError:
+            cur_gtxt = ""
+        pre_gtxt = cur_gtxt.split("## BAZEL2GN SENTINEL", 1)[0] if cur_gtxt else ""
+        cur_suite_names = set(
+            re.findall(
+                r'^\s*(?:bazel_test_suite|bazel_host_tool)\(\s*"([^"]+)"\s*\)',
+                cur_gtxt,
+                re.M,
+            )
+        )
+        kept_gn_targets = {}
+        for grule, gname in re.findall(
+            r'^\s*([A-Za-z_]\w*)\(\s*"([^"]+)"\s*\)', pre_gtxt, re.M
+        ):
+            if grule not in gn_meta_constructs and gname not in cur_suite_names:
+                kept_gn_targets[gname] = grule
+        kept_gn_by_dir[d] = kept_gn_targets
         base_btxt = git("show", f"{base_rev}:{d}/BUILD.bazel")
         base_gtxt = git("show", f"{base_rev}:{d}/BUILD.gn")
         base_bazel_names = set()
@@ -431,8 +675,28 @@ if head and base_rev and head != base_rev:
                 continue
             tname = n.group(1)
             lbl = f"//{d}:{tname}"
-            if rule in helper_rules or (rule == "fx_package" and tname in test_wrapped_pkgs) or tname in wrapped_bins:
-                excluded_bmt[lbl] = "is an internal Bazel packaging/test-wrapper helper target, not a migrated GN target"
+            if (
+                tname in kept_gn_targets
+                and has_bazel2gn_skip(btxt, m.start())
+                and rule not in ("fx_test_component", "rustc_test", "go_test")
+            ):
+                grule = kept_gn_targets[tname]
+                excluded_bmt[lbl] = (
+                    f'remains hand-written as `{grule}("{tname}")` above the BAZEL2GN SENTINEL '
+                    f'in `{d}/BUILD.gn` (only copied/skipped in `BUILD.bazel`, not migrated from GN)'
+                )
+                continue
+            is_synth_comp = rule in synth_component_rules and tname not in base_gn_names
+            if (
+                rule in helper_rules
+                or is_synth_comp
+                or (rule == "fx_package" and tname in test_wrapped_pkgs)
+                or tname in wrapped_bins
+            ):
+                excluded_bmt[lbl] = (
+                    "is an internal Bazel packaging/test-wrapper helper target, "
+                    "not a migrated GN target"
+                )
                 continue
             all_dir_targets.append(lbl)
             if tname not in base_bazel_names:
@@ -442,13 +706,24 @@ if head and base_rev and head != base_rev:
                 all_dir_targets.append(tlbl)
                 if f"{tname}_test" not in base_bazel_names:
                     new_dir_targets.append(tlbl)
+        for tname, grule in kept_gn_targets.items():
+            lbl = f"//{d}:{tname}"
+            if lbl not in excluded_bmt and tname not in explicit_names:
+                excluded_bmt[lbl] = (
+                    f'remains unmigrated as `{grule}("{tname}")` in `{d}/BUILD.gn`'
+                )
         if new_dir_targets:
             for lbl in all_dir_targets:
                 if lbl not in new_dir_targets:
                     excluded_bmt[lbl] = "already existed in `BUILD.bazel` before this commit"
             migrated_targets.extend(new_dir_targets)
+        elif d in dirs:
+            fallback_dir_targets.extend(all_dir_targets)
         else:
-            migrated_targets.extend(all_dir_targets)
+            for lbl in all_dir_targets:
+                excluded_bmt[lbl] = "already existed in `BUILD.bazel` before this commit"
+    if not migrated_targets:
+        migrated_targets.extend(fallback_dir_targets)
     if not is_empty:
         migrated_targets = list(dict.fromkeys(migrated_targets))
         footer_ln = test_lines[-1][0] if test_lines else max(1, len(lines))
@@ -496,7 +771,91 @@ if head and base_rev and head != base_rev:
                     f"which {excluded_bmt[canon_val]}.",
                     "List only targets migrated from GN in this commit, "
                     f"e.g. {example_bmt}.",
+                    severity="error",
                 )
+
+        all_changed = set(changed) | {f for f in git("diff", "--name-only", base_rev).splitlines() if f}
+
+        # Check that a `Migrate ...` sentence in the commit body does not claim to migrate
+        # targets that still remain hand-written in BUILD.gn or claim to migrate/sync BUILD.gn
+        # when the package's BUILD.gn file was not touched by the commit.
+        def check_body_unmigrated_targets(msg_lines, kept_by_dir, mig_lbls, changed_paths):
+            for start_ln, end_ln, para in body_paragraphs(msg_lines):
+                for sent in re.split(r"(?<=\.)\s+", para):
+                    is_mig_sent = bool(
+                        re.match(r"^(?:this\s+(?:cl|change|commit|patch)\s+)?migrates?\b", sent, re.I)
+                    )
+                    claims_gn_sync = bool(
+                        re.search(r"\b(?:sync|regenerate)\s+BUILD\.gn\b|\bvia\s+fx\s+bazel2gn\b", sent, re.I)
+                    )
+                    if not (is_mig_sent or claims_gn_sync):
+                        continue
+                    clause = re.split(
+                        r"\b(?:while\s+keeping|keeping|and\s+keep)\b", sent, maxsplit=1, flags=re.I
+                    )[0]
+                    for d, kmap in kept_by_dir.items():
+                        gn_rel = f"{d}/BUILD.gn"
+                        gn_untouched = (
+                            os.path.isfile(os.path.join(workdir, gn_rel))
+                            and gn_rel not in changed_paths
+                        )
+                        if is_mig_sent:
+                            for kname, krule in kmap.items():
+                                pat = (
+                                    r'(?:[A-Za-z_]\w*\(\s*"'
+                                    + re.escape(kname)
+                                    + r'"\s*\)|`?'
+                                    + re.escape(f":{kname}")
+                                    + r'`?)'
+                                )
+                                if re.search(pat, clause):
+                                    gn_note = (
+                                        f" and `{gn_rel}` was not modified in this commit"
+                                        if gn_untouched
+                                        else ""
+                                    )
+                                    msg_text = (
+                                        f'Commit body claims to migrate `{kname}`, which remains '
+                                        f'hand-written as `{krule}("{kname}")` in `{gn_rel}`'
+                                        f"{gn_note} (copied with `# @bazel2gn:skip` in "
+                                        "`BUILD.bazel`, not migrated from GN)."
+                                    )
+                                    rem_text = (
+                                        "Describe `# @bazel2gn:skip` targets whose GN definitions "
+                                        f"remain in `{gn_rel}` as copied to `BUILD.bazel` while "
+                                        f"keeping `{gn_rel}` unchanged (do not claim `Migrate ...` "
+                                        f"or `sync BUILD.gn via fx bazel2gn` when `{gn_rel}` is "
+                                        "untouched), and remove any unreferenced `# @bazel2gn:skip` "
+                                        "duplicate targets from `BUILD.bazel`."
+                                    )
+                                    add(
+                                        "commit_body_claims_unmigrated_target",
+                                        start_ln,
+                                        msg_text,
+                                        rem_text,
+                                        severity="error",
+                                    )
+                                    return
+                        if claims_gn_sync and gn_untouched and (d in sent or len(kept_by_dir) == 1):
+                            msg_text = (
+                                f"Commit body claims to sync `{gn_rel}` via `fx bazel2gn`, "
+                                f"but `{gn_rel}` was not modified in this commit."
+                            )
+                            rem_text = (
+                                f"Describe the `# @bazel2gn:skip` targets in `{d}/BUILD.bazel` "
+                                f"as copied to `BUILD.bazel` while keeping `{gn_rel}` unchanged, "
+                                "and remove the false `sync BUILD.gn via fx bazel2gn` claim."
+                            )
+                            add(
+                                "commit_body_claims_unmigrated_target",
+                                start_ln,
+                                msg_text,
+                                rem_text,
+                                severity="error",
+                            )
+                            return
+
+        check_body_unmigrated_targets(lines, kept_gn_by_dir, migrated_targets, all_changed)
         skip_readme_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Skip-Readme-Check\s*:", l)]
         has_valid_skip_readme = False
         for ln, l in skip_readme_lines:
@@ -512,7 +871,6 @@ if head and base_rev and head != base_rev:
                     "The `Skip-Readme-Check:` footer must be followed by a non-empty reason.",
                     "Write `Skip-Readme-Check: No version change, Bazel build files only.` in the contiguous footer block at the bottom of the commit message.",
                     severity="error")
-        all_changed = set(changed) | {f for f in git("diff", "--name-only", base_rev).splitlines() if f}
         missing_readmes = set()
         for f in sorted(all_changed):
             if not f.startswith("third_party/") or f.startswith("third_party/rust_crates/"):

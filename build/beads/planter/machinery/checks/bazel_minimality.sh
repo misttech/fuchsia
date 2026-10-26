@@ -100,10 +100,28 @@ def git_lines(args):
     return [l.strip() for l in out.splitlines() if l.strip()]
 
 
+def normalize_git_rev(rev: str) -> str:
+    """Map jj relative revsets (@, @-, @--) to git HEAD equivalents for git commands."""
+    rev = (rev or "").strip() or "HEAD"
+    m = re.fullmatch(r"@(-*)", rev)
+    if m:
+        return f"HEAD~{len(m.group(1))}" if m.group(1) else "HEAD"
+    return rev
+
+
+change_base = normalize_git_rev(change_base)
 changed = set()
 changed.update(git_lines(["diff", "--name-only", change_base]))
 untracked = git_lines(["ls-files", "--others", "--exclude-standard"])
 changed.update(untracked)
+head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
+if change_base == "HEAD" and not changed and head_subj and head_subj[0].startswith("[bazel_migration]"):
+    head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
+    if not target_dirs or any(
+        any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
+    ):
+        change_base = "HEAD~1"
+        changed.update(head_files)
 
 
 def migrated_dependency_packages():
@@ -124,7 +142,24 @@ def migrated_dependency_packages():
     if not candidates:
         return set()
     label_re = re.compile(r'"@?//([^":]+)(?::([^"\s]+))?"')
-    found, seen, frontier = set(), set(), list(target_dirs)
+    seed_dirs = list(target_dirs)
+    for cand_pkg in sorted(candidates):
+        cand_texts = []
+        for fn in ("BUILD.gn", "BUILD.bazel"):
+            rel_f = f"{cand_pkg}/{fn}"
+            cand_texts.extend(git_lines(["show", f"{change_base}:{rel_f}"]))
+            try:
+                with open(os.path.join(workdir, rel_f), encoding="utf-8") as f:
+                    cand_texts.append(f.read())
+            except OSError:
+                pass
+        joined = "\n".join(cand_texts)
+        if any(
+            re.search(r'(?:@gn_targets//(?:[^\s"\':]+/)?|//)' + re.escape(td) + r'(?=[:"/\s\'])', joined)
+            for td in target_dirs
+        ):
+            seed_dirs.append(cand_pkg)
+    found, seen, frontier = set(), set(), seed_dirs
     while frontier and found != candidates:
         pkg = frontier.pop()
         if pkg in seen or not pkg:
@@ -271,6 +306,33 @@ findings = []
 for path in sorted(changed):
     if not is_allowed_scope(path):
         if is_shared_bazel_rule_file(path.strip("/")):
+            if path.strip("/") == "build/bazel/debug_symbols/aspects.bzl":
+                shared_rem = (
+                    f"Revert '{path}' (`git checkout {change_base} -- {path}`). When "
+                    "`export_last_build_debug_symbols` fails because an assembled "
+                    "`fx_package` packages a binary that depends on a `rustc_dylib` "
+                    "(`rust_dylib_library`), do not edit `build/bazel/debug_symbols/aspects.bzl`; "
+                    "instead remove the assembled `fx_package` target from the package's "
+                    "`BUILD.bazel`, keep `fuchsia_package` above `## BAZEL2GN SENTINEL` in "
+                    "`BUILD.gn` (while keeping `fx_component`, `fx_component_manifest`, and "
+                    "`fx_packaged_binary` in `BUILD.bazel`), keep its "
+                    "`//bundles/assembly/bazel_inputs/<dir>` bridge in "
+                    "`bundles/assembly/BUILD.bazel` and `bundles/assembly/bazel_inputs/BUILD.gn`, "
+                    "and remove the package target from `Bazel-Migration-Target:` footers and "
+                    "commit-body migration claims."
+                )
+            else:
+                shared_rem = (
+                    f"Revert '{path}' (`git checkout {change_base} -- {path}`). If a migrated "
+                    "target calls a legacy host-tool macro (`go_binary_host_tool`, "
+                    "`py_binary_host_tool`) and fails visibility on "
+                    "`//build/bazel/versioning:is_api_level_PLATFORM`, add `\"//<dir>:__pkg__\"` "
+                    "to `is_api_level_PLATFORM`'s `visibility` list in "
+                    "'build/bazel/versioning/BUILD.bazel' instead of editing "
+                    f"'{path}'. If a target passes a redundant or unsupported attribute (such as "
+                    "`output_name` matching `name` on `go_binary_host_tool`), omit or fix the "
+                    "attribute in the target's BUILD.bazel."
+                )
             findings.append({
                 "source": "bazel_minimality",
                 "category": "out_of_scope_package_modified",
@@ -278,20 +340,13 @@ for path in sorted(changed):
                 "file": path,
                 "line": 1,
                 "message": (
-                    f"File '{path}' is a shared Bazel rule or macro definition outside the assigned target "
-                    f"directory scope ({', '.join(target_dirs)}). Package migrations must never modify "
-                    "shared rules or macros under '//build/bazel/' (such as loading private rule definitions, "
-                    "wrapping macros, or adding custom attributes)."
+                    f"File '{path}' is a shared Bazel rule or macro definition outside the "
+                    f"assigned target directory scope ({', '.join(target_dirs)}). Package "
+                    "migrations must never modify shared rules or macros under '//build/bazel/' "
+                    "(such as loading private rule definitions, wrapping macros, editing debug "
+                    "symbol aspects, or adding custom attributes)."
                 ),
-                "remediation": (
-                    f"Revert '{path}' (`git checkout {change_base} -- {path}`). If a migrated target calls a "
-                    "legacy host-tool macro (`go_binary_host_tool`, `py_binary_host_tool`) and fails visibility "
-                    "on `//build/bazel/versioning:is_api_level_PLATFORM`, add `\"//<dir>:__pkg__\"` to "
-                    "`is_api_level_PLATFORM`'s `visibility` list in 'build/bazel/versioning/BUILD.bazel' instead "
-                    f"of editing '{path}'. If a target passes a redundant or unsupported attribute (such as "
-                    "`output_name` matching `name` on `go_binary_host_tool`), omit or fix the attribute in the "
-                    "target's BUILD.bazel."
-                ),
+                "remediation": shared_rem,
             })
         else:
             findings.append({
@@ -489,7 +544,7 @@ for rel_path, full_path in bazel_files:
                             "`deps` or GN `non_test_deps`."
                         ),
                     })
-            elif not has_justification:
+            else:
                 findings.append({
                     "source": "bazel_minimality",
                     "category": "rustc_test_repeats_library_srcs",
@@ -498,14 +553,17 @@ for rel_path, full_path in bazel_files:
                     "line": srcs_line,
                     "message": (
                         f"Target '{t_name}' (rustc_test) repeats `srcs` (and library features/deps) "
-                        f"instead of referencing sibling library `:{lib_stem}` via `crate`."
+                        f"instead of referencing sibling library `:{lib_stem}` via `crate` "
+                        "(`bazel2gn` natively supports `crate = \":<lib>\"` on `rustc_test` and "
+                        "inlines the crate's `srcs`, `edition`, `deps`, and `proc_macro_deps` into "
+                        "the generated GN `rustc_test`)."
                     ),
                     "remediation": (
                         f"Set `crate = \":{lib_stem}\"` on '{t_name}' and remove `srcs`, "
-                        "`crate_name`, and any `deps`/`proc_macro_deps`/`crate_features` already "
-                        f"inherited from `:{lib_stem}` (or, if unit tests require a `testutils` "
-                        "dependency variant, leave a concise comment above `rustc_test` justifying "
-                        "why it cannot attach to `crate`)."
+                        "`edition`, `crate_name`, any `deps`/`proc_macro_deps`/`crate_features` "
+                        f"already inherited from `:{lib_stem}`, any single-use `_<LIB>_*` "
+                        "variables, and any comment claiming `bazel2gn` requires `srcs`/`deps` "
+                        f"on `rustc_test`, then re-run `fx bazel2gn -d {pkg_dir}`."
                     ),
                 })
         if "crate_name" in k_map and ("crate" in kw_names or has_matching_lib):
@@ -1313,7 +1371,100 @@ for td in target_dirs:
                 starlark_rels.add(rel)
 
 
-# 4a-0. Check copyright header years on newly added vs pre-existing Starlark files.
+# 4a-0. Check copyright header years on newly added vs pre-existing Starlark files,
+#       and reject hand-edits to crate_universe-generated BUILD.bazel files.
+def check_generated_vendor_build_hygiene():
+    """Reject manual copyright header or package default_visibility edits in crate_universe BUILD.bazel files."""
+    import datetime
+
+    cur_year = str(datetime.datetime.now(datetime.timezone.utc).year)
+    copyright_re = re.compile(r"^#\s*Copyright\s+\d{4}\s+The\s+Fuchsia\s+Authors\b", re.M)
+    for p in sorted(changed):
+        norm = p.strip("/")
+        if not (
+            norm.startswith(RUST_CRATES + "vendor/")
+            and os.path.basename(norm) in ("BUILD.bazel", "BUILD")
+        ):
+            continue
+        full = os.path.join(workdir, norm)
+        if not os.path.isfile(full):
+            continue
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                cur_txt = f.read()
+        except OSError:
+            continue
+        base_txt = "\n".join(git_lines(["show", f"{change_base}:{norm}"]))
+        has_manual_copyright = bool(
+            copyright_re.search(cur_txt[:512])
+            and not copyright_re.search(base_txt[:512])
+        )
+        dropped_default_vis = (
+            "default_visibility" in base_txt and "default_visibility" not in cur_txt
+        )
+        if has_manual_copyright or dropped_default_vis:
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "hand_edited_generated_vendor_build",
+                "severity": "error",
+                "file": norm,
+                "line": 1,
+                "message": (
+                    f"Auto-generated crate_universe file '{norm}' was hand-edited to "
+                    "add a Fuchsia copyright header or remove package-level "
+                    "`default_visibility`."
+                ),
+                "remediation": (
+                    f"Do not hand-edit '{norm}' for copyright headers or visibility. "
+                    "Restore the standard crate_universe header and "
+                    "`default_visibility = [\"//visibility:public\"]` (or regenerate "
+                    "with `fx update-rustc-third-party` from "
+                    "`build/bazel/update-rustc-third-party/crate_annotation_overwrites.bzl`)."
+                ),
+            })
+        else:
+            # Record non-blocking INFO coverage for crate_universe header and
+            # default_visibility so diff review does not flag generated files.
+            dv_lines = {1}
+            for idx, ln in enumerate(cur_txt.splitlines(), 1):
+                if "package(" in ln or "default_visibility" in ln:
+                    dv_lines.add(idx)
+            for dv_cat in ("package_hygiene", "default_visibility"):
+                for ln_no in sorted(dv_lines):
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": dv_cat,
+                        "severity": "INFO",
+                        "file": norm,
+                        "line": ln_no,
+                        "message": (
+                            "package() must not specify default_visibility; "
+                            "set visibility explicitly per target"
+                        ),
+                        "remediation": (
+                            "Auto-generated crate_universe BUILD.bazel files "
+                            "retain their generated package(default_visibility) setting."
+                        ),
+                    })
+            for ch_msg in (
+                f"Missing {cur_year} Fuchsia copyright header in BUILD.bazel",
+                "BUILD.bazel is missing a Fuchsia copyright header",
+                "Missing Fuchsia copyright header in BUILD.bazel",
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "copyright_header",
+                    "severity": "INFO",
+                    "file": norm,
+                    "line": 1,
+                    "message": ch_msg,
+                    "remediation": (
+                        "Auto-generated crate_universe BUILD.bazel files "
+                        "use the crate_universe header instead of a Fuchsia copyright header."
+                    ),
+                })
+
+
 def check_starlark_copyright_headers(rels):
     import datetime
 
@@ -1324,6 +1475,8 @@ def check_starlark_copyright_headers(rels):
     all_rels = set(rels)
     for p in changed:
         norm = p.strip("/")
+        if norm.startswith("third_party/") and not norm.startswith(RUST_CRATES + "compat/"):
+            continue
         if os.path.basename(norm) in ("BUILD.bazel", "BUILD") and os.path.isfile(
             os.path.join(workdir, norm)
         ):
@@ -1411,7 +1564,81 @@ def check_starlark_copyright_headers(rels):
                 })
 
 
+# Check for newly exported raw .shard.cml files in exports_files() or multiple raw .shard.cml
+# includes from the same package in fx_component_manifest(includes) where cml_shard should be used.
+def check_cml_shard_targets(starlark_files):
+    exempt_prefixes = ("src/sys/test_runners/", "sdk/lib/sys/testing/")
+    for rel in sorted(starlark_files):
+        if not os.path.basename(rel).startswith("BUILD"):
+            continue
+        try:
+            with open(os.path.join(workdir, rel), "r", encoding="utf-8") as f:
+                st_src = f.read()
+            st_tree = ast.parse(st_src, filename=rel)
+        except Exception:
+            continue
+        base_txt = "\n".join(git_lines(["show", f"{change_base}:{rel}"]))
+        for node in ast.walk(st_tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            fname = node.func.id
+            if fname == "exports_files" and not rel.startswith(exempt_prefixes):
+                exported = []
+                if node.args and isinstance(node.args[0], ast.List):
+                    for elt in node.args[0].elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            if elt.value.endswith(".shard.cml") and f'"{elt.value}"' not in base_txt:
+                                exported.append(elt.value)
+                if exported:
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "prefer_cml_shard_over_exports_files",
+                        "severity": "error",
+                        "file": rel,
+                        "line": node.lineno,
+                        "message": (
+                            f"'{rel}' exports {', '.join(exported)} via `exports_files(...)` "
+                            "instead of defining `cml_shard(...)` target(s)."
+                        ),
+                        "remediation": (
+                            "Load `cml_shard` from `//build/bazel/rules/components:cml_shard.bzl` "
+                            "and declare `cml_shard(name = \"<stem>.shard\", shard = "
+                            "\"<stem>.shard.cml\", includes = [...])` instead of `exports_files`."
+                        ),
+                    })
+            elif fname == "fx_component_manifest":
+                by_pkg = {}
+                for kw in node.keywords:
+                    if kw.arg == "includes" and isinstance(kw.value, ast.List):
+                        for elt in kw.value.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                m_sh = re.match(r"^//([^:]+):([^:]+\.shard\.cml)$", elt.value)
+                                if m_sh and not m_sh.group(1).startswith(exempt_prefixes):
+                                    by_pkg.setdefault(m_sh.group(1), []).append(elt.value)
+                for spkg, slabels in sorted(by_pkg.items()):
+                    if len(slabels) >= 2:
+                        findings.append({
+                            "source": "bazel_minimality",
+                            "category": "unrolled_transitive_cml_shard_includes",
+                            "severity": "error",
+                            "file": rel,
+                            "line": node.lineno,
+                            "message": (
+                                f"`fx_component_manifest` in '{rel}' lists multiple raw "
+                                f"`.shard.cml` files from `//{spkg}` ({', '.join(slabels)}) "
+                                "instead of a `cml_shard` target with `includes`."
+                            ),
+                            "remediation": (
+                                f"Define `cml_shard` target(s) in `{spkg}/BUILD.bazel` bundling "
+                                "its transitive shard `includes` and reference the single "
+                                "`cml_shard` label in `fx_component_manifest(includes = [...])`."
+                            ),
+                        })
+
+
+check_generated_vendor_build_hygiene()
 check_starlark_copyright_headers(starlark_rels)
+check_cml_shard_targets(starlark_rels)
 
 # 4a. Reject newly added private external rule loads (@...//.../private/...) or duplicate
 #     loads of the same rule symbol from both a public and a private .bzl location.

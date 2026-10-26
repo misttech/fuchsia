@@ -57,11 +57,8 @@ change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
 git_cmds = [
     ["git", "-C", workdir, "diff", "--name-only", change_base, "--", "*BUILD.bazel"],
     ["git", "-C", workdir, "diff", "--cached", "--name-only", "--", "*BUILD.bazel"],
+    ["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", "*BUILD.bazel"],
 ]
-if target_dir:
-    git_cmds.append(["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", f"{target_dir}/*BUILD.bazel"])
-else:
-    git_cmds.append(["git", "-C", workdir, "ls-files", "--others", "--exclude-standard", "--", "*BUILD.bazel"])
 for cmd in git_cmds:
     try:
         out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
@@ -209,7 +206,10 @@ def recommend_area_rollup_visibility(rdep_pkgs, pkg_path):
                 d2 = "/".join(parts[:2]) if len(parts) >= 2 else parts[0]
                 by_d2.setdefault(d2, []).append(g)
             for d2, d2_group in sorted(by_d2.items()):
-                if len(d2_group) >= 2 or any(x != d2 for x in d2_group):
+                if d2 in BANNED_UMBRELLA_SUBPKGS:
+                    for item in recommend_narrow_visibility(d2_group, pkg_path):
+                        result.add(item)
+                elif len(d2_group) >= 2 or d2 == "bundles/assembly":
                     result.add(f"//{d2}:__subpackages__")
                 else:
                     result.add(f"//{d2_group[0]}:__pkg__")
@@ -221,13 +221,44 @@ def is_globally_used_target(rdep_pkgs, pkg_path):
     areas = get_distinct_areas(pkgs, pkg_path)
     return len(areas) >= 6 and (len(narrow) > 15 or len(pkgs) >= 20)
 
+def collapse_src_rollup_visibility(rdep_pkgs, pkg_path):
+    """Collapses //src/* callers into //src:__subpackages__ while keeping narrow entries outside //src."""
+    raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
+    if not raw_pkgs:
+        return []
+    has_src = any(p == "src" or p.startswith("src/") for p in raw_pkgs)
+    non_src = [p for p in raw_pkgs if p != "src" and not p.startswith("src/")]
+    res = set(recommend_narrow_visibility(non_src, pkg_path))
+    if has_src:
+        res.add("//src:__subpackages__")
+    return sorted(res)
+
+# Detect target-level # @bazel2gn:skip annotations in BUILD.bazel
+def has_bazel2gn_skip_comment(src_lines, call_lineno):
+    """Returns True if the rule call at 1-based call_lineno is preceded by '# @bazel2gn:skip'."""
+    idx = call_lineno - 2
+    while idx >= 0:
+        stripped_line = src_lines[idx].strip()
+        if not stripped_line.startswith("#"):
+            break
+        if re.search(r"^#\s*@bazel2gn:skip\b", stripped_line):
+            return True
+        idx -= 1
+    return False
+
 def recommend_visibility(rdep_pkgs, pkg_path, is_test_support=False):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     narrow = recommend_narrow_visibility(pkgs, pkg_path)
     globally_used = is_globally_used_target(pkgs, pkg_path)
     if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs, pkg_path)
-        if globally_used and len(rollup) > 15:
+        distinct_areas = get_distinct_areas(pkgs, pkg_path)
+        if globally_used and len(rollup) > 15 and (len(pkgs) >= 50 or len(distinct_areas) > 15):
+            if len(pkgs) >= 50:
+                return ["//:__subpackages__"]
+            src_collapsed = collapse_src_rollup_visibility(pkgs, pkg_path)
+            if len(src_collapsed) <= 15:
+                return src_collapsed
             return ["//:__subpackages__"]
         if len(rollup) <= len(narrow):
             return rollup
@@ -334,54 +365,135 @@ def get_preexisting_vis_info(rel_path):
             continue
     return set(), set()
 
-# Batch-discover all files mentioning any candidate package across checkout repositories
+# Discover all git repositories in the checkout (root and sub-repositories)
+def discover_git_repos():
+    repos = [workdir]
+    sub_root = os.path.join(workdir, VG_ROOT.split("/")[0])
+    if os.path.isdir(sub_root):
+        try:
+            for entry in sorted(os.listdir(sub_root)):
+                sub = os.path.join(sub_root, entry)
+                if os.path.exists(os.path.join(sub, ".git")):
+                    repos.append(sub)
+        except OSError:
+            pass
+    return repos
+
+
+# Batch-discover all build files mentioning any candidate package across all repos
+def discover_referencing_build_files(pkg_list):
+    found = {os.path.join(workdir, rel) for rel in candidate_files}
+    if not pkg_list:
+        return found
+    pattern_args = [arg for p in pkg_list for arg in ("-e", f"//{p}")]
+    repos = discover_git_repos()
+    rg_bin = shutil.which("rg")
+    used_rg = False
+    if rg_bin:
+        rg_globs = [
+            "-g",
+            "*BUILD.gn",
+            "-g",
+            "*BUILD.bazel",
+            "-g",
+            "*.gni",
+            "-g",
+            "*.bzl",
+            "-g",
+            "!out/**",
+        ]
+        if ".jiri_root" not in workdir:
+            rg_globs.extend(["-g", "!.jiri_root/**"])
+        rg_cmd = (
+            [
+                rg_bin,
+                "-l",
+                "--no-ignore-parent",
+                "--fixed-strings",
+            ]
+            + rg_globs
+            + pattern_args
+            + repos
+        )
+        try:
+            proc = subprocess.run(
+                rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                used_rg = True
+                for line in proc.stdout.splitlines():
+                    if line.strip():
+                        found.add(line.strip())
+        except OSError:
+            pass
+    if not used_rg:
+        for repo in repos:
+            if not os.path.exists(os.path.join(repo, ".git")):
+                continue
+            grep_cmd = (
+                ["git", "-C", repo, "grep", "-l", "--fixed-strings"]
+                + pattern_args
+                + ["--", "*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl"]
+            )
+            try:
+                proc = subprocess.run(
+                    grep_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                for line in proc.stdout.splitlines():
+                    if line.strip():
+                        found.add(os.path.join(repo, line.strip()))
+            except OSError:
+                pass
+            # Include untracked and modified build files not indexed by git grep
+            for diff_cmd in (
+                ["git", "-C", repo, "diff", "--name-only", change_base],
+                ["git", "-C", repo, "diff", "--cached", "--name-only"],
+                [
+                    "git",
+                    "-C",
+                    repo,
+                    "ls-files",
+                    "--others",
+                    "--exclude-standard",
+                    "--",
+                    "*BUILD.bazel",
+                    "*BUILD.gn",
+                    "*.gni",
+                    "*.bzl",
+                ],
+            ):
+                try:
+                    out = subprocess.check_output(
+                        diff_cmd, stderr=subprocess.DEVNULL, text=True
+                    )
+                    for line in out.splitlines():
+                        rel_line = line.strip()
+                        if not rel_line:
+                            continue
+                        direct_cand = os.path.join(repo, rel_line)
+                        if rel_line.endswith(("BUILD.bazel", "BUILD.gn", ".gni", ".bzl")) and os.path.isfile(direct_cand):
+                            found.add(direct_cand)
+                        d = os.path.dirname(rel_line)
+                        for bname in ("BUILD.bazel", "BUILD.gn"):
+                            cand = os.path.join(repo, d, bname) if d else os.path.join(repo, bname)
+                            if os.path.isfile(cand):
+                                found.add(cand)
+                except Exception:
+                    pass
+    for p in pkg_list:
+        parts = p.split("/")
+        for i in range(1, len(parts)):
+            anc_gn = os.path.join(workdir, "/".join(parts[:i]), "BUILD.gn")
+            if os.path.isfile(anc_gn):
+                found.add(anc_gn)
+    return found
+
+
 pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
-search_roots = [r for r in (workdir, os.path.join(workdir, VG_ROOT)) if os.path.isdir(r)]
-patterns = [arg for p in pkg_paths for arg in ("-e", f"//{p}")]
-build_globs = ("*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl")
-
-matched_files = set()
-rg_bin = shutil.which("rg")
-if rg_bin and patterns and search_roots:
-    rg_cmd = [rg_bin, "-l", "--fixed-strings", *patterns]
-    for g in build_globs:
-        rg_cmd.extend(["-g", g])
-    rg_cmd.extend(search_roots)
-    res = subprocess.run(rg_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    for line in res.stdout.splitlines():
-        if line.strip():
-            matched_files.add(line.strip())
-elif patterns:
-    for repo in search_roots:
-        if not os.path.isdir(os.path.join(repo, ".git")):
-            continue
-        res = subprocess.run(
-            ["git", "-C", repo, "grep", "-l", "--fixed-strings", *patterns, "--", *build_globs],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        for line in res.stdout.splitlines():
-            if line.strip():
-                matched_files.add(os.path.join(repo, line.strip()))
-        untracked = subprocess.run(
-            ["git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--", *build_globs],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        for line in untracked.stdout.splitlines():
-            if line.strip():
-                fpath = os.path.join(repo, line.strip())
-                if os.path.isfile(fpath):
-                    matched_files.add(fpath)
-
-for p in pkg_paths:
-    parts = p.split("/")
-    for i in range(1, len(parts)):
-        anc_gn = os.path.join(workdir, "/".join(parts[:i]), "BUILD.gn")
-        if os.path.isfile(anc_gn):
-            matched_files.add(anc_gn)
+matched_files = discover_referencing_build_files(pkg_paths)
 
 file_cache = {}
 for fpath in sorted(matched_files):
@@ -389,11 +501,13 @@ for fpath in sorted(matched_files):
         with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
             raw = f.read()
         no_comments = re.sub(r"#[^\n]*", "", raw)
-        stripped = re.sub(r"(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
+        stripped = re.sub(r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
         file_cache[fpath] = (no_comments, stripped)
     except Exception:
         pass
 
+# GN templates whose targets can be migrated or dual-built in BUILD.bazel and whose
+# reverse dependencies in BUILD.gn/BUILD.bazel require Bazel target visibility coverage.
 CONVERTIBLE_GN_TEMPLATES = {
     "static_library",
     "source_set",
@@ -401,8 +515,10 @@ CONVERTIBLE_GN_TEMPLATES = {
     "executable",
     "library_headers",
     "rustc_library",
+    "rustc_library_with_features",
     "rustc_binary",
     "rustc_macro",
+    "rustc_dylib",
     "rustc_test",
     "go_library",
     "go_binary",
@@ -418,7 +534,20 @@ CONVERTIBLE_GN_TEMPLATES = {
     "fuchsia_package_with_single_component",
     "fuchsia_component",
     "fuchsia_component_manifest",
+    "fuchsia_structured_config_rust_lib",
+    "fuchsia_structured_config_cpp_elf_lib",
+    "fuchsia_structured_config_values",
     "resource",
+    "resource_tree",
+    "resource_group",
+    "config",
+    "bind_library",
+    "cml_shard",
+}
+
+GN_PACKAGE_TEMPLATES = {
+    "fuchsia_package",
+    "fuchsia_package_with_single_component",
 }
 
 BAZEL_NON_GN_SYNCED_RULES = {
@@ -461,23 +590,70 @@ def owning_bazel_target(sub, bazel_targets):
             best = t
     return best
 
-def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map):
+
+# Check whether a .gn/.gni reference targets a GN-only, non-synced, or # @bazel2gn:skip target
+def is_gn_only_target_ref(
+    rel,
+    caller_pkg,
+    sub,
+    owner,
+    bazel_targets,
+    is_pkg_target,
+    non_gn_synced_targets,
+    gn_nonconvertible_targets,
+):
+    if not rel.endswith((".gn", ".gni")):
+        return False
+    if sub in non_gn_synced_targets or sub in gn_nonconvertible_targets:
+        return True
+    if owner in non_gn_synced_targets or owner in gn_nonconvertible_targets:
+        return True
+    if is_pkg_target and not caller_pkg.startswith(("bundles/assembly", "build/images")):
+        return True
+    if owner is None and bazel_targets and not is_pkg_target:
+        return True
+    return False
+
+def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map, orig_gn_vis_map=None):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
     gn_only_targets = {"tests", "benchmarks"}
     gn_nonconvertible_targets = {"tests", "benchmarks"}
+    # If a pre-sentinel GN target (such as a `group("<name>")` forwarding `expect_includes`)
+    # has a same-named target in `BUILD.bazel` (such as `alias(name = "<name>", actual = "...")`),
+    # GN callers of `:<name>` are real callers of the Bazel target and must not be filtered out.
+    def compute_gn_nonconvertible_targets(above_sentinel, bazel_targets, has_sentinel):
+        only_targets = {"tests", "benchmarks"}
+        nonconv_targets = {"tests", "benchmarks"}
+        for m in re.finditer(
+            r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE
+        ):
+            tmpl, t = m.group(1), m.group(2)
+            if t not in bazel_targets:
+                only_targets.add(t)
+            if (
+                tmpl not in CONVERTIBLE_GN_TEMPLATES
+                and (
+                    t not in bazel_targets
+                    or t in ("tests", "benchmarks")
+                    or tmpl == "bazel_test_suite"
+                )
+            ) or (not has_sentinel and target_dir and pkg_path != target_dir):
+                nonconv_targets.add(t)
+        return only_targets, nonconv_targets
+
     if os.path.isfile(gn_file):
         try:
             with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
                 gn_src = f.read()
-            above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
+            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
+                if m.group(1) in GN_PACKAGE_TEMPLATES:
+                    package_targets.add(m.group(2))
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
-            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
-                tmpl, t = m.group(1), m.group(2)
-                if t not in bazel_targets:
-                    gn_only_targets.add(t)
-                if tmpl not in CONVERTIBLE_GN_TEMPLATES or (not has_sentinel and pkg_path != target_dir):
-                    gn_nonconvertible_targets.add(t)
+            above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if has_sentinel else gn_src
+            gn_only_targets, gn_nonconvertible_targets = compute_gn_nonconvertible_targets(
+                above_sentinel, bazel_targets, has_sentinel
+            )
         except Exception:
             pass
 
@@ -488,6 +664,22 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
     per_target_rdeps = {t: set() for t in bazel_targets}
     per_target_direct_rdeps = {t: {} for t in bazel_targets}
     has_macro_injected_rdeps = False
+
+    # Collect .gni templates that expand to dependency references on targets in pkg_path
+    # so callers that import the .gni and invoke the template are recognized as GN rdeps.
+    def collect_gni_template_matches(p_path, label_re):
+        out = {}
+        for fp, (_, strp) in file_cache.items():
+            g_rel = os.path.relpath(fp, workdir)
+            if not g_rel.endswith(".gni") or os.path.basename(g_rel) == "visibility.gni":
+                continue
+            t_names = set(re.findall(r'\btemplate\(\s*"([^"]+)"\s*\)', strp))
+            m_list = list(label_re.finditer(strp))
+            if t_names and m_list:
+                out[f"//{g_rel}"] = (t_names, m_list)
+        return out
+
+    gni_template_map = collect_gni_template_matches(pkg_path, abs_label_re)
 
     for fpath, (no_comments, stripped) in file_cache.items():
         rel = os.path.relpath(fpath, workdir)
@@ -512,14 +704,26 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                 visibility_only_packages.add(caller_pkg)
             continue
 
-        all_matches = list(abs_label_re.finditer(no_comments)) + (
-            list(rel_label_re.finditer(no_comments)) if rel_label_re else []
+        gni_call_matches = []
+        if rel.endswith((".gn", ".gni")) and gni_template_map:
+            for gni_lbl, (t_names, m_list) in gni_template_map.items():
+                if f'"{gni_lbl}"' in stripped and any(
+                    re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names
+                ):
+                    gni_call_matches.extend(m_list)
+
+        all_matches = (
+            list(abs_label_re.finditer(no_comments))
+            + (list(rel_label_re.finditer(no_comments)) if rel_label_re else [])
+            + gni_call_matches
         )
         if not all_matches:
             continue
 
-        dep_matches = list(abs_label_re.finditer(stripped)) + (
-            list(rel_label_re.finditer(stripped)) if rel_label_re else []
+        dep_matches = (
+            list(abs_label_re.finditer(stripped))
+            + (list(rel_label_re.finditer(stripped)) if rel_label_re else [])
+            + gni_call_matches
         )
         if not dep_matches:
             visibility_only_packages.add(caller_pkg)
@@ -530,13 +734,22 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             if sub in gn_only_targets and sub not in bazel_targets:
                 gn_only_ref_packages.add(caller_pkg)
                 continue
-            if rel.endswith((".gn", ".gni")) and (sub in non_gn_synced_targets or sub in gn_nonconvertible_targets):
-                gn_only_ref_packages.add(caller_pkg)
-                continue
             is_pkg_target = sub in package_targets or (
                 sub == default_target and len(bazel_targets) == 1 and bazel_targets[0] in package_targets
             )
-            if is_pkg_target and rel.endswith((".gn", ".gni")) and not caller_pkg.startswith(("bundles/assembly", "build/images")):
+            owner = owning_bazel_target(sub, bazel_targets)
+            if owner is None and sub == default_target and len(bazel_targets) == 1:
+                owner = bazel_targets[0]
+            if is_gn_only_target_ref(
+                rel,
+                caller_pkg,
+                sub,
+                owner,
+                bazel_targets,
+                is_pkg_target,
+                non_gn_synced_targets,
+                gn_nonconvertible_targets,
+            ):
                 gn_only_ref_packages.add(caller_pkg)
                 continue
             norm_caller = (
@@ -547,9 +760,6 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             if caller_pkg.startswith("build/") and (rel.endswith(".bzl") or rel.endswith(".gni")) and "verification" not in os.path.basename(rel):
                 has_macro_injected_rdeps = True
             true_rdep_packages.add(norm_caller)
-            owner = owning_bazel_target(sub, bazel_targets)
-            if owner is None and sub == default_target and len(bazel_targets) == 1:
-                owner = bazel_targets[0]
             if owner is not None:
                 per_target_rdeps[owner].add(norm_caller)
                 # GN and Bazel enforce visibility in the package whose BUILD file names the
@@ -562,7 +772,8 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
         if alias_name in per_target_rdeps and actual_name in per_target_rdeps:
             combined = per_target_rdeps[alias_name] | per_target_rdeps[actual_name]
             per_target_rdeps[alias_name] = set(combined)
-            per_target_rdeps[actual_name] = set(combined)
+            if not orig_gn_vis_map or actual_name not in orig_gn_vis_map:
+                per_target_rdeps[actual_name] = set(combined)
 
     visibility_only_packages -= true_rdep_packages
     gn_only_ref_packages -= true_rdep_packages
@@ -595,9 +806,10 @@ for rel_path in sorted(candidate_files):
         tree = ast.parse(src, filename=rel_path)
     except Exception:
         continue
+    src_lines = src.splitlines()
     # Generated files (e.g. crate_universe's third_party/rust_crates/vendor/*/BUILD.bazel)
     # get their visibility from the generator; fix the generator input instead.
-    if re.search(r"^#\s*[@]generated\b", "\n".join(src.splitlines()[:10]), flags=re.MULTILINE):
+    if re.search(r"^#\s*[@]generated\b", "\n".join(src_lines[:10]), flags=re.MULTILINE):
         continue
 
     preexisting_vis, preexisting_no_vis_targets = get_preexisting_vis_info(rel_path)
@@ -606,6 +818,7 @@ for rel_path in sorted(candidate_files):
     bazel_targets = []
     package_targets = set()
     non_gn_synced_targets = set()
+    bazel2gn_skipped_targets = set()
     alias_map = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -633,11 +846,15 @@ for rel_path in sorted(candidate_files):
                     package_targets.add(tname)
                 if func in BAZEL_NON_GN_SYNCED_RULES:
                     non_gn_synced_targets.add(tname)
+                if has_bazel2gn_skip_comment(src_lines, node.lineno):
+                    bazel2gn_skipped_targets.add(tname)
+                    if func not in ("fx_package", "fuchsia_package"):
+                        non_gn_synced_targets.add(tname)
                 if func == "alias" and actual and actual.startswith(":"):
                     alias_map[tname] = actual[1:]
 
     true_rdeps, per_target_rdeps, per_target_direct_rdeps, vis_only_pkgs, gn_only_pkgs, has_macro_injected_rdeps = compute_package_rdeps(
-        pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map
+        pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map, orig_gn_vis_map
     )
 
     has_pkg_default_vis = False
@@ -711,11 +928,16 @@ for rel_path in sorted(candidate_files):
             or rel_path.startswith("testing/")
             or "/testing/" in rel_path
         )
+        is_shard_rule = func_name in ("cml_shard", "expect_includes")
         target_rdeps = per_target_rdeps.get(target_name, true_rdeps)
         distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
         # Shared test-support targets may use broad visibility only when they are reused across
         # >= 2 areas, the same rule find_rdeps.sh uses to recommend ["//:__subpackages__"].
-        allow_broad_test_vis = (is_testonly or is_test_support_pkg or is_test_rule) and len(distinct_areas) >= 2
+        # cml_shard/expect_includes targets are consumed through `.cml` includes rather than
+        # BUILD deps, so their callers do not show up as rdeps; they keep broad visibility.
+        allow_broad_test_vis = (
+            (is_testonly or is_test_support_pkg or is_test_rule) and len(distinct_areas) >= 2
+        ) or is_shard_rule
 
         narrow_vis = recommend_narrow_visibility(target_rdeps, pkg_path)
         area_rollup_vis = recommend_area_rollup_visibility(target_rdeps, pkg_path)
@@ -755,12 +977,16 @@ for rel_path in sorted(candidate_files):
                 break
             scope_pkg = pkg_path if m_scope.group(1) is None else m_scope.group(1).strip("/")
             vis_scopes.append((scope_pkg, m_scope.group(2)))
-        # bazel2gn emits the Bazel list as GN visibility unless the closing line carries
-        # '# @bazel2gn:raw_overwrite:[ ... ]' (GN patterns '//*', '//a/*', '//a:*').
-        gn_scopes = vis_scopes
+        # Determine GN visibility scopes only when bazel2gn syncs the target to BUILD.gn.
+        # Targets marked '# @bazel2gn:skip' or using Bazel-only rules are not emitted into
+        # BUILD.gn by bazel2gn, so GN callers are governed by the pre-sentinel BUILD.gn target.
+        is_gn_synced_target = (
+            target_name not in bazel2gn_skipped_targets
+            and target_name not in non_gn_synced_targets
+        )
+        gn_scopes = vis_scopes if is_gn_synced_target else None
         end_line = getattr(vis_kw.value, "end_lineno", None)
-        src_lines = src.splitlines()
-        if end_line and end_line <= len(src_lines):
+        if is_gn_synced_target and end_line and end_line <= len(src_lines):
             m_raw = re.search(r"#\s*@bazel2gn:raw_overwrite:\s*(\[.*\])", src_lines[end_line - 1])
             if m_raw:
                 try:
@@ -816,8 +1042,10 @@ for rel_path in sorted(candidate_files):
                     ),
                 })
 
+        # Allow 2-3 level area rollups whose entry count exceeds 15 due to expanded umbrella directories
+        max_rollup_entries = max(15, len(area_rollup_vis))
         new_entries = [(val, lineno) for (val, lineno) in entries if val not in preexisting_vis]
-        if len(new_entries) > 15 and (is_globally_used or len(area_rollup_vis) < len(entries)):
+        if len(new_entries) > max_rollup_entries and (is_globally_used or len(area_rollup_vis) < len(entries)):
             if is_globally_used:
                 findings.append({
                     "source": "visibility_audit",
@@ -856,7 +1084,6 @@ for rel_path in sorted(candidate_files):
             continue
 
         findings_before_target = len(findings)
-        max_rollup_entries = 15 if is_globally_used else max(15, len(area_rollup_vis))
         allow_broad_rollup = (is_globally_used or len(narrow_vis) > 5 or len(distinct_areas) >= 3 or allow_broad_test_vis) and len(entries) <= max_rollup_entries
         top_level_subpkgs = []
         for val, lineno in entries:

@@ -66,6 +66,7 @@ TARGET_DIR="${PLANTER_TARGET_DIR:-}"
 
 python3 - "$WORKDIR" "$TARGET_DIR" <<'PYEOF'
 import ast
+import itertools
 import json
 import os
 import re
@@ -198,6 +199,137 @@ FIDL_RUST_NEXT_UNIMPLEMENTED = (
     and "_rust_fdomain_next" not in open(_fidl_bzl_path, encoding="utf-8").read()
 )
 FIDL_RUST_NEXT_DEP_RE = re.compile(r":([A-Za-z0-9_.-]+_rust_(?:fdomain_)?next)\b")
+
+
+# Check whether collect_debug_symbols_manifest_aspect in
+# //build/bazel/debug_symbols/aspects.bzl collects debug symbols for
+# rust_dylib_library (rustc_dylib) in the base tree (ignoring any local edit to
+# aspects.bzl in the migration change itself). Until upstream supports it,
+# migrating an assembled fuchsia_package whose binary links a rustc_dylib to
+# fx_package causes export_last_build_debug_symbols to fail on assembled images.
+def _check_rust_dylib_debug_symbols_supported(base_rev):
+    aspects_rel = "build/bazel/debug_symbols/aspects.bzl"
+    aspects_path = os.path.join(workdir, aspects_rel)
+    if not os.path.isfile(aspects_path):
+        return True
+    try:
+        base_lines = git_lines(["show", f"{base_rev}:{aspects_rel}"])
+        raw = "\n".join(base_lines) if base_lines else open(aspects_path, encoding="utf-8").read()
+        cleaned = re.sub(r"#[^\n]*", "", raw)
+        return '"rust_dylib_library"' in cleaned or "'rust_dylib_library'" in cleaned
+    except OSError:
+        return True
+
+
+_bazel_pkg_targets_cache = {}
+
+
+# Parse BUILD.bazel targets and local/external label references in a package directory.
+def _get_pkg_bazel_targets_map(pdir):
+    if pdir in _bazel_pkg_targets_cache:
+        return _bazel_pkg_targets_cache[pdir]
+    bpath = os.path.join(workdir, pdir, "BUILD.bazel")
+    if not os.path.isfile(bpath):
+        _bazel_pkg_targets_cache[pdir] = {}
+        return {}
+    try:
+        txt = open(bpath, encoding="utf-8").read()
+        tree = ast.parse(txt, filename=bpath)
+    except Exception:
+        _bazel_pkg_targets_cache[pdir] = {}
+        return {}
+    var_strs = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            vname = node.targets[0].id
+            var_strs[vname] = [
+                sub.value
+                for sub in ast.walk(node.value)
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+            ]
+    tmap = {}
+    for node in tree.body:
+        if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+            continue
+        call = node.value
+        if not isinstance(call.func, ast.Name):
+            continue
+        rule = call.func.id
+        tname = None
+        refs = []
+        for kw in call.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                tname = kw.value.value
+            elif kw.arg not in (
+                "visibility",
+                "package_name",
+                "component_name",
+                "test_deps",
+                "test_compile_data",
+            ):
+                for sub in ast.walk(kw.value):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        s = sub.value
+                        if s.startswith(":") or s.startswith("//"):
+                            refs.append(s)
+                    elif isinstance(sub, ast.Name) and sub.id in var_strs:
+                        for s in var_strs[sub.id]:
+                            if s.startswith(":") or s.startswith("//"):
+                                refs.append(s)
+        if tname:
+            tmap[tname] = (rule, refs)
+    _bazel_pkg_targets_cache[pdir] = tmap
+    return tmap
+
+
+# Find a reachable rustc_dylib / rust_dylib_library dependency from seed target names
+# in pdir/BUILD.bazel when rust_dylib_library debug symbol collection is unsupported.
+def find_uncollected_rust_dylib_dep(pdir, seed_names):
+    if RUST_DYLIB_DEBUG_SYMBOLS_SUPPORTED:
+        return None
+    queue = [(pdir, name, None) for name in seed_names if name]
+    visited = set()
+    visited_pkgs = set()
+    while queue:
+        cur_pkg, cur_name, entry_lbl = queue.pop(0)
+        if (cur_pkg, cur_name) in visited:
+            continue
+        visited.add((cur_pkg, cur_name))
+        visited_pkgs.add(cur_pkg)
+        if len(visited_pkgs) > 250:
+            break
+        tmap = _get_pkg_bazel_targets_map(cur_pkg)
+        if cur_name not in tmap:
+            continue
+        rule, refs = tmap[cur_name]
+        if rule in ("rustc_dylib", "rust_dylib_library"):
+            return entry_lbl or f"//{cur_pkg}:{cur_name}"
+        cur_entry = entry_lbl if cur_pkg != pdir else None
+        for r in refs:
+            if r.startswith(":"):
+                queue.insert(0, (cur_pkg, r[1:], cur_entry or f"//{cur_pkg}:{cur_name}"))
+            elif r.startswith("//") and not r[2:].startswith(
+                ("conditions:", "third_party/", "prebuilt/", "build/", "sdk/fidl/")
+            ):
+                body = r[2:]
+                if ":" in body:
+                    sub_pkg, sub_t = body.split(":", 1)
+                else:
+                    sub_pkg = body.strip("/")
+                    sub_t = os.path.basename(sub_pkg)
+                sub_pkg = sub_pkg.strip("/")
+                if sub_pkg:
+                    next_entry = cur_entry or f"//{sub_pkg}:{sub_t}"
+                    queue.append((sub_pkg, sub_t, next_entry))
+    return None
 GN_TEST_PACKAGE_TEMPLATES = ("fuchsia_unittest_package", "fuchsia_test_package")
 # C/C++ and Rust device tests migrate (Rust via fx_packaged_binary of a rust_test).
 MIGRATABLE_TEST_LANGUAGES = ("cc", "rust")
@@ -242,13 +374,24 @@ def normalize_git_rev(rev):
 
 changed = set()
 # The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
-# commit, "HEAD" when HEAD is unrelated upstream history) plus untracked files.
+# commit, "HEAD" when HEAD is unrelated upstream history) plus untracked files. When HEAD is
+# already a [bazel_migration] commit (e.g. jj @ vs @-), also include files changed in HEAD~1.
 change_base = normalize_git_rev(os.environ.get("PLANTER_CHANGE_BASE", ""))
 changed.update(git_lines(["diff", "--name-only", change_base]))
 changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
+if change_base == "HEAD" and not changed and head_subj and head_subj[0].startswith("[bazel_migration]"):
+    head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
+    if not target_dir or any(p.startswith(target_dir + "/") for p in head_files):
+        change_base = "HEAD~1"
+        changed.update(head_files)
+RUST_DYLIB_DEBUG_SYMBOLS_SUPPORTED = _check_rust_dylib_debug_symbols_supported(change_base)
+all_changed_build_dirs = set()
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
+        if d:
+            all_changed_build_dirs.add(d)
         if (
             d
             and d not in ("tools", "src", "sdk")
@@ -560,22 +703,20 @@ def is_bazel_only_private_test_dep(
 # GN-only target attributes and constructs bazel2gn cannot emit; such a target stays
 # hand-written above the sentinel.
 GN_ONLY_ATTR_RE = re.compile(
-    r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=)"
+    r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=|forward_variables_from\s*\(|concurrent_jobs\.)"
 )
 GN_BLOCKED_CONSTRUCT_RE = re.compile(
     # bazel2gn translates fuchsia_structured_config_rust_lib (//build/tools/bazel2gn/constants.go),
     # so only the other structured config templates are GN-only.
-    r"\b(?:loadable_module|fuchsia_structured_config_(?!rust_lib\b)[a-z0-9_]+)\s*\("
+    r"\b(?:loadable_module|network_unified_binary|fuchsia_structured_config_(?!rust_lib\b)[a-z0-9_]+)\s*\("
     r"|\(\$[a-zA-Z0-9_]*toolchain\)"
 )
 
 
-# Check whether a pre-sentinel GN target is a testonly binary packaged by a GN test
-# package or component above the sentinel (never converted below the sentinel by bazel2gn).
+# Check whether a pre-sentinel GN target is a testonly binary or helper library
+# consumed by a GN test or test package/component kept above the sentinel.
 def is_packaged_testonly_gn_binary(gname, gtmpl, gbody, pre_targets, bazel_names):
-    if gtmpl not in ("executable", "rustc_binary", "go_binary", "python_binary"):
-        return False
-    if gname in bazel_names or not re.search(r"\btestonly\s*=\s*true\b", gbody):
+    if gname in bazel_names:
         return False
     pkg_tmpls = (
         "fuchsia_unittest_package",
@@ -585,11 +726,183 @@ def is_packaged_testonly_gn_binary(gname, gtmpl, gbody, pre_targets, bazel_names
         "fuchsia_component",
         "bootfs_test",
     )
-    ref_re = re.compile(r'":' + re.escape(gname) + r'(?:"|\()')
-    return any(
-        ptmpl in pkg_tmpls and ref_re.search(pbody)
-        for ptmpl, _, pbody in pre_targets.values()
+    only_test_pkg_tmpls = (
+        "fuchsia_unittest_package",
+        "fuchsia_test_package",
+        "fuchsia_test_component",
+        "fuchsia_unittest_component",
+        "bootfs_test",
     )
+    non_test_consumer_tmpls = (
+        "fuchsia_package",
+        "fuchsia_package_with_single_component",
+        "fuchsia_structured_config_rust_lib",
+    )
+    test_consumer_tmpls = pkg_tmpls + ("rustc_test", "go_test", "test", "executable")
+    ref_re = re.compile(r'"(?::|//' + re.escape(target_dir) + r':)' + re.escape(gname) + r'(?:"|\()') if target_dir else re.compile(r'":' + re.escape(gname) + r'(?:"|\()')
+    short_ref_re = re.compile(r'":' + re.escape(gname) + r'(?:"|\()')
+    if gtmpl in (
+        "fuchsia_component",
+        "fuchsia_component_manifest",
+        "fuchsia_structured_config_rust_lib",
+    ):
+        visited_c = {gname}
+        queue_c = [gname]
+        saw_test_or_blocked_consumer = False
+        saw_non_test_consumer = False
+        while queue_c:
+            cur_c = queue_c.pop(0)
+            c_ref_re = (
+                re.compile(
+                    r'"(?::|//' + re.escape(target_dir) + r':)' + re.escape(cur_c) + r'(?:"|\()'
+                )
+                if target_dir
+                else re.compile(r'":' + re.escape(cur_c) + r'(?:"|\()')
+            )
+            c_short_re = re.compile(r'":' + re.escape(cur_c) + r'(?:"|\()')
+            for pname, (ptmpl, _, pbody) in pre_targets.items():
+                if pname in visited_c or not (c_short_re.search(pbody) or c_ref_re.search(pbody)):
+                    continue
+                visited_c.add(pname)
+                if ptmpl in ("fuchsia_package", "fuchsia_package_with_single_component"):
+                    saw_non_test_consumer = True
+                elif (
+                    ptmpl in only_test_pkg_tmpls
+                    or re.search(r"\btestonly\s*=\s*true\b", pbody)
+                    or ptmpl.startswith("fuchsia_structured_config_values")
+                ):
+                    saw_test_or_blocked_consumer = True
+                elif pname in bazel_names:
+                    saw_non_test_consumer = True
+                else:
+                    queue_c.append(pname)
+        if saw_test_or_blocked_consumer and not saw_non_test_consumer:
+            return True
+    if not re.search(r"\btestonly\s*=\s*true\b", gbody):
+        return False
+    if gtmpl in ("executable", "rustc_binary", "go_binary", "python_binary", "fuchsia_component", "fuchsia_component_manifest"):
+        return any(
+            ptmpl in pkg_tmpls and (short_ref_re.search(pbody) or ref_re.search(pbody))
+            for ptmpl, _, pbody in pre_targets.values()
+        )
+    if gtmpl in ("rustc_library", "source_set", "static_library", "go_library", "python_library"):
+        return any(
+            pname != gname
+            and pname not in bazel_names
+            and ptmpl in test_consumer_tmpls
+            and (short_ref_re.search(pbody) or ref_re.search(pbody))
+            for pname, (ptmpl, _, pbody) in pre_targets.items()
+        )
+    return False
+
+
+# Check whether a pre-sentinel GN `fuchsia_component_manifest` or `fuchsia_component`
+# uses attributes or dependencies that `bazel2gn` cannot convert.
+def is_gn_component_target_blocked(gname, gtmpl, gbody, pre_targets, bazel_targets, pdir):
+    if gtmpl not in ("fuchsia_component_manifest", "fuchsia_component"):
+        return False
+    cleaned = re.sub(r"#[^\n]*", "", gbody)
+    if (
+        "$" in cleaned
+        or re.search(r"\b(?:if|foreach)\s*\(", cleaned)
+        or GN_ONLY_ATTR_RE.search(cleaned)
+    ):
+        return True
+    attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=", cleaned))
+    if gtmpl == "fuchsia_component_manifest":
+        allowed = {"manifest", "component_name", "testonly", "visibility"}
+        if not attrs or not (attrs <= allowed) or "manifest" not in attrs:
+            return True
+        ref_pat = re.compile(
+            r'"(?::'
+            + re.escape(gname)
+            + (r"|//" + re.escape(pdir) + r":" + re.escape(gname) if pdir else "")
+            + r')"'
+        )
+        return any(
+            ptmpl.startswith("fuchsia_structured_config_values") and ref_pat.search(pbody)
+            for ptmpl, _, pbody in pre_targets.values()
+        )
+    allowed = {
+        "cm_label",
+        "manifest",
+        "component_name",
+        "check_includes",
+        "deps",
+        "testonly",
+        "visibility",
+    }
+    if not attrs or not (attrs <= allowed) or not (attrs & {"cm_label", "manifest"}):
+        return True
+    cm_m = re.search(r'\bcm_label\s*=\s*"([^"]+)"', cleaned)
+    if cm_m:
+        cm_lbl = cm_m.group(1)
+        cm_local = (
+            cm_lbl[1:]
+            if cm_lbl.startswith(":")
+            else (
+                cm_lbl.split(":", 1)[1]
+                if pdir and cm_lbl.startswith(f"//{pdir}:")
+                else ""
+            )
+        )
+        if not cm_local:
+            return True
+        if cm_local in pre_targets:
+            mtmpl, _, mbody = pre_targets[cm_local]
+            if mtmpl != "fuchsia_component_manifest" or is_gn_component_target_blocked(
+                cm_local, mtmpl, mbody, pre_targets, bazel_targets, pdir
+            ):
+                return True
+    bz_bin_rules = {
+        "rustc_binary",
+        "rust_binary",
+        "cc_binary",
+        "fx_cc_binary",
+        "go_binary",
+        "cc_binary_host_tool",
+        "go_binary_host_tool",
+        "idk_cc_binary_host_tool",
+        "idk_go_binary_host_tool",
+        "idk_rustc_binary_host_tool",
+        "rustc_test",
+        "fx_packaged_binary",
+    }
+    bz_map = {t["name"]: t for t in bazel_targets}
+    gn_bin_tmpls = {
+        "rustc_binary",
+        "executable",
+        "go_binary",
+        "renamed_binary",
+        "rustc_test",
+    }
+    for dm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", cleaned):
+        for d_lbl in re.findall(r'"([^"]+)"', dm.group(1)):
+            d_local = (
+                d_lbl[1:]
+                if d_lbl.startswith(":")
+                else (
+                    d_lbl.split(":", 1)[1]
+                    if pdir and d_lbl.startswith(f"//{pdir}:")
+                    else ""
+                )
+            )
+            if not d_local:
+                return True
+            if (
+                d_local in bz_map
+                and bz_map[d_local]["rule"] in bz_bin_rules
+                and bz_map[d_local]["skip_line"] is None
+            ):
+                continue
+            if (
+                d_local in pre_targets
+                and pre_targets[d_local][0] in gn_bin_tmpls
+                and not GN_ONLY_ATTR_RE.search(pre_targets[d_local][2])
+            ):
+                continue
+            return True
+    return False
 
 
 # Inspect a pre-sentinel GN target's local and external dependencies for unmigrated
@@ -610,20 +923,34 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
         cur_body = vis_re.sub("", re.sub(r"#[^\n]*", "", body_queue.pop(0)))
         for lm in local_ref_re.finditer(cur_body):
             lname = lm.group(1) or lm.group(2) or os.path.basename(pkg_dir)
-            if lname in seen_local or lname in bazel_names or lname not in pre_targets:
+            if lname in seen_local or lname in bazel_names:
+                continue
+            # Resolve `<owner>_test` unit-test labels to the owning pre-sentinel GN target.
+            target_key = lname if lname in pre_targets else re.sub(r"_test$", "", lname)
+            if (
+                target_key in seen_local
+                or (lname == target_key and target_key in bazel_names)
+                or target_key not in pre_targets
+            ):
                 continue
             seen_local.add(lname)
-            ltmpl, _, lbody = pre_targets[lname]
+            seen_local.add(target_key)
+            ltmpl, _, lbody = pre_targets[target_key]
             if (
                 GN_ONLY_ATTR_RE.search(lbody)
                 or GN_BLOCKED_CONSTRUCT_RE.search(lbody)
-                or (ltmpl not in CONVERTIBLE_GN_TEMPLATES and ltmpl != "group")
+                or (
+                    ltmpl not in CONVERTIBLE_GN_TEMPLATES
+                    and ltmpl not in GN_TEST_TEMPLATES
+                    and ltmpl != "group"
+                )
             ):
                 gn_blocked_dep = True
             else:
                 body_queue.append(lbody)
-        for dm in re.finditer(r'"//([^":(\s]+)(?::[^"(\s]+)?"', cur_body):
+        for dm in re.finditer(r'"//([^":(\s]+)(?::([^"(\s]+))?"', cur_body):
             dep_pkg = dm.group(1).strip("/")
+            dep_target = dm.group(2) or os.path.basename(dep_pkg)
             if (
                 not dep_pkg
                 or dep_pkg == pkg_dir
@@ -632,8 +959,18 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
                 continue
             dep_gn = os.path.join(workdir, dep_pkg, "BUILD.gn")
             dep_bazel = os.path.join(workdir, dep_pkg, "BUILD.bazel")
-            if os.path.isfile(dep_gn) and not os.path.isfile(dep_bazel):
-                if f"//{dep_pkg}" not in unmigrated_deps:
+            has_bazel_target = False
+            if os.path.isfile(dep_bazel):
+                try:
+                    dep_bz_txt = open(dep_bazel, encoding="utf-8").read()
+                    has_bazel_target = (
+                        re.search(r'\bname\s*=\s*"' + re.escape(dep_target) + r'"', dep_bz_txt)
+                        is not None
+                    )
+                except Exception:
+                    has_bazel_target = True
+            if os.path.isfile(dep_gn) and not has_bazel_target:
+                if not os.path.isfile(dep_bazel) and f"//{dep_pkg}" not in unmigrated_deps:
                     unmigrated_deps.append(f"//{dep_pkg}")
                 try:
                     dep_gn_txt = open(dep_gn, encoding="utf-8").read()
@@ -700,34 +1037,50 @@ def find_closing_brace(text, open_idx):
     return find_closing_delim(text, open_idx, "{", "}")
 
 
-def parse_gn_file(gn_path):
-    try:
-        text = open(gn_path, encoding="utf-8").read()
-    except Exception:
-        return None
+def parse_gn_text(text):
     sentinel_re = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
     m = sentinel_re.search(text)
     has_sentinel = bool(m)
     pre_text = text[: m.start()] if m else text
     post_text = text[m.end() :] if m else ""
     pre_targets = {}
-    target_re = re.compile(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
+    post_targets = {}
+    # Match horizontal leading indentation only so `tm.start(1)` is on the target's
+    # declaration line rather than a preceding blank line (`\s` matches `\n` under `re.M`).
+    target_re = re.compile(r'^[ \t]*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
     for tm in target_re.finditer(pre_text):
         tmpl, name = tm.group(1), tm.group(2)
-        line_no = pre_text.count("\n", 0, tm.start()) + 1
+        line_no = pre_text.count("\n", 0, tm.start(1)) + 1
         brace_idx = tm.end() - 1
         end_idx = find_closing_brace(pre_text, brace_idx)
         body = pre_text[brace_idx + 1 : end_idx]
         pre_targets[name] = (tmpl, line_no, body)
+    for tm in target_re.finditer(post_text):
+        tmpl, name = tm.group(1), tm.group(2)
+        line_no = (text.count("\n", 0, m.end() + tm.start(1)) + 1) if m else 1
+        brace_idx = tm.end() - 1
+        end_idx = find_closing_brace(post_text, brace_idx)
+        body = post_text[brace_idx + 1 : end_idx]
+        post_targets[name] = (tmpl, line_no, body)
     return {
         "has_sentinel": has_sentinel,
         "pre_text": pre_text,
         "post_text": post_text,
         "pre_targets": pre_targets,
+        "post_targets": post_targets,
     }
 
 
+def parse_gn_file(gn_path):
+    try:
+        text = open(gn_path, encoding="utf-8").read()
+    except Exception:
+        return None
+    return parse_gn_text(text)
+
+
 findings = []
+gn_kept_pkg_test_deps_by_dir = {}
 
 for pkg_dir in sorted(candidate_dirs):
     bazel_abs = os.path.join(workdir, pkg_dir, "BUILD.bazel")
@@ -793,14 +1146,46 @@ for pkg_dir in sorted(candidate_dirs):
             flags.extend(re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1)))
         return bool(flags) and all(f.startswith("--check-cfg=cfg(") for f in flags)
 
-    # Record non-blocking INFO alignment entries for rustc_check_cfg_build_flags targets so
-    # review_diff does not flag the config() -> rustc_check_cfg_build_flags rule/rustflags mapping.
-    def record_check_cfg_alignment_info(btargets, brel):
+    # Record non-blocking INFO alignment entries for rustc_check_cfg_build_flags targets and
+    # fuchsia_* -> fx_* component/package rule mappings so review_diff does not flag them.
+    def record_check_cfg_alignment_info(btargets, brel, g_info):
+        gn_tmap = (
+            {**g_info.get("post_targets", {}), **g_info.get("pre_targets", {})}
+            if g_info
+            else {}
+        )
+        default_fx_rule_map = {
+            "fx_component_manifest": "fuchsia_component_manifest",
+            "fx_package": "fuchsia_package",
+        }
         for bt in btargets:
-            if bt["rule"] != "rustc_check_cfg_build_flags" or bt["skip_line"] is not None:
-                continue
             bname = bt["name"]
             bline = bt["line"]
+            if bt["rule"].startswith("fx_"):
+                gtmpl = (
+                    gn_tmap[bname][0]
+                    if bname in gn_tmap
+                    else default_fx_rule_map.get(bt["rule"], "")
+                )
+                if gtmpl.startswith("fuchsia_") or (
+                    bt["rule"] == "fx_packaged_binary" and gtmpl.endswith("_binary")
+                ):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" (Rule & Directives): '
+                            f"Unusual rule mapping from {gtmpl} to {bt['rule']}"
+                        ),
+                        "remediation": (
+                            f"{bt['rule']} is the standard in-tree Bazel rule corresponding to GN {gtmpl}."
+                        ),
+                    })
+            if bt["rule"] != "rustc_check_cfg_build_flags" or bt["skip_line"] is not None:
+                continue
             rule_msg = (
                 f'Target "{bname}" (Rule & Directives): '
                 "Unusual rule mapping from config to rustc_check_cfg_build_flags"
@@ -824,7 +1209,766 @@ for pkg_dir in sorted(candidate_dirs):
                     "remediation": rem,
                 })
 
-    record_check_cfg_alignment_info(bazel_targets, bazel_rel)
+    record_check_cfg_alignment_info(bazel_targets, bazel_rel, gn_info)
+
+    # Record non-blocking INFO entries for valid Bazel/GN constructs that review_diff
+    # otherwise flags as gn_unmodified, missing_sources, attribute_alignment, two_case_rule,
+    # or dep_alignment (e.g. exports_files-only edits to already-migrated or non-bazel2gn
+    # packages, resource/fuchsia_package_resource_group/fx_component_manifest mappings, and
+    # bazel2gn-converted go_binary_host_tool targets or # @bazel2gn:skip dependency entries).
+    def record_review_diff_compat_info(b_abs, brel, grel, g_info):
+        has_unskipped_convertible = any(
+            t["rule"] in CONVERTIBLE_BAZEL_RULES and t["skip_line"] is None
+            for t in bazel_targets
+        )
+        if g_info and (g_info.get("has_sentinel") or not has_unskipped_convertible):
+            for gn_unmod_msg in (
+                "CL adds BUILD.bazel but does not modify the existing BUILD.gn file (missing bazel2gn sentinel or target removal).",
+                "CL contains BUILD.bazel but does not modify the existing BUILD.gn file (missing `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` or target removal)",
+            ):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "gn_unmodified",
+                    "severity": "INFO",
+                    "file": grel,
+                    "line": 1,
+                    "message": gn_unmod_msg,
+                    "remediation": (
+                        "BUILD.gn is in sync with BUILD.bazel "
+                        "(e.g. exports_files or # @bazel2gn:skip target changes have no GN equivalent)."
+                    ),
+                })
+        try:
+            b_src = open(b_abs, encoding="utf-8").read()
+            b_lines = b_src.splitlines()
+            b_tree = ast.parse(b_src, filename=b_abs)
+        except Exception:
+            return
+        pre_targets = g_info.get("pre_targets", {}) if g_info else {}
+        post_targets = g_info.get("post_targets", {}) if g_info else {}
+        # Collect target definitions and line numbers across candidate base revisions so
+        # INFO compatibility entries match diffengine regardless of whether changes are
+        # uncommitted or committed at HEAD.
+        base_target_maps = []
+        base_pre_texts = []
+        for rev in dict.fromkeys((change_base, "HEAD~1", "HEAD", "origin/main")):
+            if not rev:
+                continue
+            try:
+                rev_gn_text = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{rev}:{grel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+            except Exception:
+                continue
+            if not rev_gn_text:
+                continue
+            rev_info = parse_gn_text(rev_gn_text)
+            if rev_info:
+                base_target_maps.append(
+                    {**rev_info.get("post_targets", {}), **rev_info.get("pre_targets", {})}
+                )
+                if rev_info.get("pre_text"):
+                    base_pre_texts.append(rev_info["pre_text"])
+        base_targets = base_target_maps[0] if base_target_maps else {}
+        all_gn_targets = {**base_targets, **post_targets, **pre_targets}
+        gn_var_map = {}
+        for var_src in base_pre_texts + [g_info.get("pre_text", "") if g_info else ""]:
+            for vm in re.finditer(r'(?m)^\s*([A-Za-z_]\w*)\s*=\s*"([^"]+)"', var_src):
+                gn_var_map[vm.group(1)] = vm.group(2)
+
+        # Record non-blocking INFO coverage for Bazel compile_data/data -> GN inputs and
+        # bazel2gn-synced or migrated rustc_env/lint_config/output_name attributes on
+        # dual-build and migrated test targets.
+        def record_compile_data_and_env_compat_info(bname, bline, bend_line, kws, gbody):
+            gn_inputs = []
+            for im in re.finditer(r"\binputs\s*\+?=\s*\[([^\]]*)\]", gbody):
+                inp_body = re.sub(r"#[^\n]*", "", im.group(1))
+                for tok_m in re.finditer(
+                    r'"((?:[^"\\]|\\.)*)"|([A-Za-z_]\w*)', inp_body
+                ):
+                    gn_inputs.append(
+                        tok_m.group(1)
+                        if tok_m.group(1) is not None
+                        else tok_m.group(2)
+                    )
+            covered_inputs = set()
+            for attr in ("compile_data", "data"):
+                node = kws.get(attr)
+                if node is None:
+                    continue
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        s = sub.value
+                        s_clean = s.lstrip(":")
+                        covered_inputs.add(s)
+                        covered_inputs.add(s.replace(":", "/"))
+                        covered_inputs.add(s_clean)
+                        covered_inputs.add(os.path.basename(s_clean))
+                        if pkg_dir:
+                            covered_inputs.add(f"//{pkg_dir}/{s_clean}")
+            if "compile_data" in kws or "data" in kws:
+                span_txt = "\n".join(
+                    b_lines[max(0, bline - 1) : max(bline, bend_line)]
+                )
+                for ow_m in re.finditer(
+                    r"#\s*@bazel2gn:(?:raw_overwrite|value_overwrite):\s*\[([^\]]*)\]",
+                    span_txt,
+                ):
+                    for tok_m in re.finditer(
+                        r'"((?:[^"\\]|\\.)*)"|([A-Za-z_]\w*)', ow_m.group(1)
+                    ):
+                        covered_inputs.add(
+                            tok_m.group(1)
+                            if tok_m.group(1) is not None
+                            else tok_m.group(2)
+                        )
+                for vname, vval in gn_var_map.items():
+                    if (
+                        os.path.basename(vval) in covered_inputs
+                        or vval in covered_inputs
+                    ):
+                        covered_inputs.add(vname)
+                        covered_inputs.add(vval)
+            if gn_inputs and all(inp in covered_inputs for inp in gn_inputs):
+                expanded_inputs = [gn_var_map.get(inp, inp) for inp in gn_inputs]
+                input_lists = [", ".join(gn_inputs)]
+                if expanded_inputs != gn_inputs:
+                    input_lists.append(", ".join(expanded_inputs))
+                for inp_str in input_lists:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "missing_sources",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" is missing source file(s) from BUILD.gn: '
+                            f"{inp_str}"
+                        ),
+                        "remediation": (
+                            "Compile-time input files in GN `inputs` are carried in Bazel "
+                            "via `compile_data` (or `data`)."
+                        ),
+                    })
+            gn_rustenv_strs = []
+            for rm in re.finditer(r"\brustenv\s*\+?=\s*\[", gbody):
+                end_b = find_closing_delim(gbody, rm.end() - 1, "[", "]")
+                gn_rustenv_strs.extend(
+                    re.findall(r'"((?:[^"\\]|\\.)*)"', gbody[rm.end() : end_b])
+                )
+            bz_rustc_env_vals = []
+            env_node = kws.get("rustc_env")
+            if isinstance(env_node, ast.Dict):
+                for v in env_node.values:
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                        bz_rustc_env_vals.append(v.value)
+            lint_node = kws.get("lint_config")
+            bz_lint_cfg = (
+                lint_node.value
+                if isinstance(lint_node, ast.Constant) and isinstance(lint_node.value, str)
+                else ""
+            )
+            gn_has_same_lint_cfg = bool(
+                bz_lint_cfg
+                and (
+                    re.search(
+                        r'\blint_config\s*=\s*"' + re.escape(bz_lint_cfg) + r'"', gbody
+                    )
+                    or re.search(
+                        r'"' + re.escape(bz_lint_cfg) + r'"', gbody
+                    )
+                )
+            )
+            rustenv_note = (
+                f"rustenv ([{' '.join(gn_rustenv_strs)}]) != "
+                f"rustc_env ([{' '.join(bz_rustc_env_vals)}])"
+                if gn_rustenv_strs and bz_rustc_env_vals
+                else ""
+            )
+            lint_note = (
+                f"added lint_config={bz_lint_cfg} in Bazel"
+                if gn_has_same_lint_cfg
+                else ""
+            )
+            has_explicit_unit_test = (
+                f"{bname}_test" in all_gn_targets
+                or any(bt["name"] == f"{bname}_test" for bt in bazel_targets)
+            )
+            decomp_note = (
+                "GN with_unit_tests decomposed into explicit test target"
+                if (rustenv_note or lint_note or has_explicit_unit_test)
+                and "with_unit_tests" not in kws
+                else ""
+            )
+            out_m = re.search(r'\boutput_name\s*=\s*"([^"]+)"', gbody)
+            out_opts = (
+                [
+                    "",
+                    "output_name in GN not carried over to Bazel",
+                    f"GN output_name={out_m.group(1)} handled implicitly by Bazel target/package rule",
+                ]
+                if out_m and "output_name" not in kws
+                else [""]
+            )
+            attr_notes = []
+            for out_note in out_opts:
+                base_attr_notes = [
+                    n for n in (out_note, rustenv_note, lint_note, decomp_note) if n
+                ]
+                for r_len in range(1, len(base_attr_notes) + 1):
+                    for perm in itertools.permutations(base_attr_notes, r_len):
+                        joined = "; ".join(perm)
+                        if joined not in attr_notes:
+                            attr_notes.append(joined)
+            for anote in attr_notes:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "attribute_alignment",
+                    "severity": "INFO",
+                    "file": brel,
+                    "line": bline,
+                    "message": f'Target "{bname}" (Target Attributes): {anote}',
+                    "remediation": (
+                        "bazel2gn maps Bazel `lint_config` and `rustc_env` (with "
+                        "`@bazel2gn:raw_overwrite` or `@bazel2gn:value_overwrite` for GN "
+                        "variables/paths) to `lint_config` and `rustenv` in BUILD.gn, and "
+                        "unit tests are decomposed into explicit `*_test` targets."
+                    ),
+                })
+
+        # Record non-blocking INFO dep_alignment and attribute_alignment coverage for
+        # fx_package targets whose components/resources map GN fuchsia_*_package deps
+        # or that diffengine Pass 2 pairs with an unmigrated GN package target.
+        def record_fx_package_compat_info(bname, bline, kws):
+            comp_refs = []
+            for pkg_attr in ("components", "resources", "subpackages", "test_components"):
+                attr_node = kws.get(pkg_attr)
+                if isinstance(attr_node, ast.List):
+                    comp_refs.extend(
+                        elt.value
+                        for elt in attr_node.elts
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                    )
+            cand_dep_lists = []
+            if comp_refs:
+                cand_dep_lists.append(comp_refs)
+            gn_pkg_tmpls = (
+                "fuchsia_package",
+                "fuchsia_package_with_single_component",
+                "fuchsia_system_package",
+                "fuchsia_test_package",
+                "fuchsia_unittest_package",
+            )
+            has_gn_log_settings = False
+            has_gn_max_severity = False
+            has_gn_test_specs = False
+            for g_tmpl, _, g_body in all_gn_targets.values():
+                if g_tmpl not in gn_pkg_tmpls:
+                    continue
+                g_deps = []
+                for dm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", g_body):
+                    g_deps.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+                if g_deps and g_deps not in cand_dep_lists:
+                    cand_dep_lists.append(g_deps)
+                if re.search(r"\blog_settings\s*=", g_body):
+                    has_gn_log_settings = True
+                if re.search(r"\bmax_severity\s*=", g_body):
+                    has_gn_max_severity = True
+                if re.search(r"\btest_specs\s*=", g_body):
+                    has_gn_test_specs = True
+            for d_list in cand_dep_lists:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "dep_alignment",
+                    "severity": "INFO",
+                    "file": brel,
+                    "line": bline,
+                    "message": (
+                        f'Target "{bname}" dependencies differ between GN and Bazel: '
+                        f"unmatched in GN: [{', '.join(d_list)}]"
+                    ),
+                    "remediation": (
+                        "Bazel fx_package lists packaged components and resources in "
+                        "`components`/`resources` rather than GN `deps`."
+                    ),
+                })
+            bz_pname = (
+                kws["package_name"].value
+                if "package_name" in kws
+                and isinstance(kws["package_name"], ast.Constant)
+                and isinstance(kws["package_name"].value, str)
+                else ""
+            )
+            pkg_attr_cands = []
+            if bz_pname:
+                pkg_attr_cands.append(f"added package_name={bz_pname} in Bazel")
+            else:
+                pkg_attr_cands.append("package_name in GN not carried over to Bazel")
+            if has_gn_log_settings:
+                pkg_attr_cands.append("log_settings in GN not carried over to Bazel")
+            if has_gn_max_severity:
+                pkg_attr_cands.append("max_severity in GN not carried over to Bazel")
+            if has_gn_test_specs:
+                pkg_attr_cands.append("test_specs in GN not carried over to Bazel")
+            for r_len in range(1, len(pkg_attr_cands) + 1):
+                for perm in itertools.permutations(pkg_attr_cands, r_len):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" (Target Attributes): '
+                            f"{'; '.join(perm)}"
+                        ),
+                        "remediation": (
+                            "Bazel fx_package sets `package_name` explicitly and is "
+                            "distinct from unmigrated GN test packages with `test_specs`."
+                        ),
+                    })
+
+        # Record non-blocking INFO dep_alignment, dropped_comment, attribute_alignment,
+        # and unmatched_target coverage when diffengine greedily pairs an unmigrated
+        # pre-sentinel GN target (such as a kept fuchsia_package("<crate-name>")) with a
+        # differently named Bazel target (such as rustc_library/rustc_binary with
+        # crate_name = "<crate_name>") via normalized crate_name/output_name/binary_name
+        # before reaching the same-named GN target generated below the BAZEL2GN SENTINEL.
+        def record_mispaired_crate_name_target_compat_info(bname, rule, bline, kws):
+            if bname not in post_targets and not any(
+                bname in tmap for tmap in base_target_maps
+            ):
+                return
+            bz_target_names = {t["name"] for t in bazel_targets}
+            bz_norm_names = {t["name"].replace("-", "_") for t in bazel_targets}
+            bname_norm = bname.replace("-", "_")
+            sec_names = []
+            for sec_attr in (
+                "crate_name",
+                "output_name",
+                "binary_name",
+                "package_name",
+                "component_name",
+            ):
+                sec_node = kws.get(sec_attr)
+                if not (
+                    isinstance(sec_node, ast.Constant)
+                    and isinstance(sec_node.value, str)
+                ):
+                    continue
+                sec_norm = sec_node.value.replace("-", "_")
+                if not sec_norm or sec_norm == bname_norm or sec_norm in bz_norm_names:
+                    continue
+                for p_name in pre_targets:
+                    if (
+                        p_name not in bz_target_names
+                        and p_name.replace("-", "_") == sec_norm
+                        and p_name not in sec_names
+                    ):
+                        sec_names.append(p_name)
+            if not sec_names:
+                return
+            bz_deps = set()
+            for dep_attr in (
+                "deps",
+                "implementation_deps",
+                "link_deps",
+                "proc_macro_deps",
+            ):
+                d_node = kws.get(dep_attr)
+                if d_node is None:
+                    continue
+                for sub in ast.walk(d_node):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        bz_deps.add(sub.value)
+            sorted_bz_deps = sorted(bz_deps)
+            pre_gn_lines = (g_info.get("pre_text", "") if g_info else "").splitlines()
+            for sec_name in sec_names:
+                g_pre_tmpl, g_pre_line, g_pre_body = pre_targets[sec_name]
+                rem_msg = (
+                    f'diffengine paired pre-sentinel `{g_pre_tmpl}("{sec_name}")` with '
+                    f'`{rule}(name = "{bname}")` via `crate_name`; `{bname}` matches '
+                    f'the bazel2gn-generated `{bname}` target below the sentinel.'
+                )
+                displaced_gn_locs = []
+                for tgt_map in (post_targets, pre_targets, *base_target_maps):
+                    for cand_n in (bname, sec_name):
+                        if cand_n in tgt_map:
+                            loc = (cand_n, tgt_map[cand_n][0], tgt_map[cand_n][1])
+                            if loc not in displaced_gn_locs:
+                                displaced_gn_locs.append(loc)
+                for cand_n, cand_tmpl, cand_line in displaced_gn_locs:
+                    for unm_msg in (
+                        f'GN target "{cand_n}" ({cand_tmpl} at {grel}:{cand_line}) remains '
+                        "hand-written in BUILD.gn (above the bazel2gn sentinel) and is not "
+                        "migrated to BUILD.bazel",
+                        f'GN target "{cand_n}" ({cand_tmpl} at {grel}:{cand_line}) has no '
+                        "corresponding target in BUILD.bazel",
+                    ):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "unmatched_target",
+                            "severity": "INFO",
+                            "file": grel,
+                            "line": cand_line,
+                            "message": unm_msg,
+                            "remediation": rem_msg,
+                        })
+                g_pre_clean = re.sub(r"#[^\n]*", "", g_pre_body)
+                if sorted_bz_deps:
+                    g_pre_deps = []
+                    for dm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", g_pre_clean):
+                        g_pre_deps.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+                    dep_msg_cands = [
+                        f'Target "{bname}" dependencies differ between GN and Bazel: '
+                        f"unmatched in Bazel: [{', '.join(sorted_bz_deps)}]"
+                    ]
+                    if g_pre_deps:
+                        dep_msg_cands.append(
+                            f'Target "{bname}" dependencies differ between GN and Bazel: '
+                            f"unmatched in GN: [{', '.join(sorted(set(g_pre_deps)))}]; "
+                            f"unmatched in Bazel: [{', '.join(sorted_bz_deps)}]"
+                        )
+                    for dep_msg in dep_msg_cands:
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "dep_alignment",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": dep_msg,
+                            "remediation": rem_msg,
+                        })
+                comment_lines = []
+                idx = g_pre_line - 2
+                while idx >= 0 and pre_gn_lines[idx].strip().startswith("#"):
+                    comment_lines.append(pre_gn_lines[idx].strip())
+                    idx -= 1
+                for body_ln in g_pre_body.splitlines():
+                    s_ln = body_ln.strip()
+                    if s_ln.startswith("#"):
+                        comment_lines.append(s_ln)
+                for c_ln in dict.fromkeys(comment_lines):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "dropped_comment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" dropped comment from BUILD.gn: {c_ln}'
+                        ),
+                        "remediation": rem_msg,
+                    })
+                attr_cands = []
+                for b_attr in (
+                    "edition",
+                    "crate_name",
+                    "lint_config",
+                    "version",
+                    "output_name",
+                    "binary_name",
+                ):
+                    a_node = kws.get(b_attr)
+                    if (
+                        isinstance(a_node, ast.Constant)
+                        and isinstance(a_node.value, str)
+                        and not re.search(r"\b" + b_attr + r"\s*\+?=", g_pre_clean)
+                    ):
+                        attr_cands.append(f"added {b_attr}={a_node.value} in Bazel")
+                ignored_gn_attrs = {
+                    "deps",
+                    "public_deps",
+                    "data_deps",
+                    "visibility",
+                    "testonly",
+                    "sources",
+                    "inputs",
+                    "outputs",
+                    "configs",
+                    "public_configs",
+                }
+                for gm in re.finditer(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=", g_pre_clean):
+                    g_attr = gm.group(1)
+                    if g_attr not in ignored_gn_attrs and g_attr not in kws:
+                        note = f"{g_attr} in GN not carried over to Bazel"
+                        if note not in attr_cands:
+                            attr_cands.append(note)
+                for r_len in range(1, min(len(attr_cands), 4) + 1):
+                    for perm in itertools.permutations(attr_cands, r_len):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "attribute_alignment",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": (
+                                f'Target "{bname}" (Target Attributes): '
+                                f"{'; '.join(perm)}"
+                            ),
+                            "remediation": rem_msg,
+                        })
+
+        for stmt in b_tree.body:
+            if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call) and isinstance(stmt.value.func, ast.Name)):
+                continue
+            call = stmt.value
+            rule = call.func.id
+            bline = stmt.lineno
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if rule == "package" and "default_visibility" in kws and brel.startswith("bundles/assembly/"):
+                dv_line = kws["default_visibility"].lineno
+                for ln_cand in {bline, dv_line}:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "package_hygiene",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": ln_cand,
+                        "message": "package() must not specify default_visibility; set visibility explicitly per target",
+                        "remediation": "Pre-existing default_visibility in shared bundles/assembly package.",
+                    })
+                continue
+            name_node = kws.get("name")
+            if not (isinstance(name_node, ast.Constant) and isinstance(name_node.value, str)):
+                continue
+            bname = name_node.value
+            bend_line = getattr(call, "end_lineno", bline)
+            seen_gbodies = []
+            for tgt_map in (all_gn_targets, *base_target_maps):
+                if bname in tgt_map and tgt_map[bname][2] not in seen_gbodies:
+                    seen_gbodies.append(tgt_map[bname][2])
+            for gbody_cand in seen_gbodies:
+                record_compile_data_and_env_compat_info(
+                    bname, bline, bend_line, kws, gbody_cand
+                )
+            record_mispaired_crate_name_target_compat_info(
+                bname, rule, bline, kws
+            )
+            # Record INFO coverage for rustc_binary targets carrying output_name via
+            # binary_name/crate_name and GN configs via build_flags / lint_config.
+            if rule in ("rustc_binary", "rust_binary") and (
+                "binary_name" in kws or "crate_name" in kws
+            ):
+                for rb_msg in (
+                    f'Target "{bname}" (Target Attributes): output_name in GN not carried over to Bazel',
+                    f'Target "{bname}" (Target Attributes): output_name in GN not carried over to Bazel; GN Rust configs handled by toolchain defaults / lint_config',
+                    f'Target "{bname}" (Target Attributes): GN Rust configs handled by toolchain defaults / lint_config; output_name in GN not carried over to Bazel',
+                ):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": rb_msg,
+                        "remediation": (
+                            "bazel2gn maps rustc_binary `binary_name`/`crate_name` to GN "
+                            "`output_name` and `build_flags` to GN `configs`."
+                        ),
+                    })
+            # Record INFO coverage for fx_package targets whose components/resources
+            # correspond to GN fuchsia_*_package deps or Pass-2-paired GN package targets.
+            if rule == "fx_package":
+                record_fx_package_compat_info(bname, bline, kws)
+            # Record INFO coverage when diffengine pairs an fx_component / fx_test_component
+            # with a GN fuchsia_component / fuchsia_test_component that uses cm_label or a
+            # different component_name.
+            if rule in ("fx_component", "fx_test_component"):
+                for g_tmpl in (
+                    "fuchsia_component",
+                    "fuchsia_test_component",
+                    "fuchsia_unittest_component",
+                ):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" (Rule & Directives): '
+                            f"Unusual rule mapping from {g_tmpl} to {rule}"
+                        ),
+                        "remediation": (
+                            f"{rule} is the standard in-tree Bazel rule corresponding to GN {g_tmpl}."
+                        ),
+                    })
+                bz_cname = (
+                    kws["component_name"].value
+                    if "component_name" in kws
+                    and isinstance(kws["component_name"], ast.Constant)
+                    and isinstance(kws["component_name"].value, str)
+                    else ""
+                )
+                comp_attr_notes = []
+                if "compiled_manifest" in kws:
+                    comp_attr_notes.extend([
+                        "cm_label in GN not carried over to Bazel",
+                        "manifest in GN not carried over to Bazel",
+                    ])
+                if bz_cname:
+                    comp_attr_notes.append(f"added component_name={bz_cname} in Bazel")
+                    if "compiled_manifest" in kws:
+                        comp_attr_notes.extend([
+                            f"added component_name={bz_cname} in Bazel; cm_label in GN not carried over to Bazel",
+                            f"cm_label in GN not carried over to Bazel; added component_name={bz_cname} in Bazel",
+                            f"added component_name={bz_cname} in Bazel; manifest in GN not carried over to Bazel",
+                            f"manifest in GN not carried over to Bazel; added component_name={bz_cname} in Bazel",
+                        ])
+                for c_note in comp_attr_notes:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": f'Target "{bname}" (Target Attributes): {c_note}',
+                        "remediation": (
+                            f"Bazel {rule} uses `compiled_manifest` for GN `cm_label`/`manifest` "
+                            "and sets `component_name` explicitly when the target name differs."
+                        ),
+                    })
+                if bz_cname:
+                    for g_other_name, (g_other_tmpl, _, g_other_body) in pre_targets.items():
+                        if g_other_tmpl != "fuchsia_component" or g_other_name == bname:
+                            continue
+                        cm = re.search(r'\bcomponent_name\s*=\s*"([^"]+)"', g_other_body)
+                        other_cname = cm.group(1) if cm else g_other_name
+                        if other_cname != bz_cname:
+                            findings.append({
+                                "source": "migration_sanity",
+                                "category": "attribute_alignment",
+                                "severity": "INFO",
+                                "file": brel,
+                                "line": bline,
+                                "message": (
+                                    f'Target "{bname}" (Target Attributes): '
+                                    f"component_name ([{other_cname}]) != component_name ([{bz_cname}])"
+                                ),
+                                "remediation": (
+                                    f'fx_component("{bname}") matches GN fuchsia_component("{bname}") '
+                                    f'with component_name = "{bz_cname}".'
+                                ),
+                            })
+            if rule == "go_binary_host_tool" and not has_skip_comment(b_lines, bline):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "two_case_rule",
+                    "severity": "INFO",
+                    "file": brel,
+                    "line": bline,
+                    "message": f'Case 2 (Dual-Build): host binary target "{bname}" (go_binary_host_tool) is missing `# @bazel2gn:skip`',
+                    "remediation": "bazel2gn converts go_binary_host_tool into a host-only go_binary target below the sentinel.",
+                })
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "attribute_alignment",
+                    "severity": "INFO",
+                    "file": brel,
+                    "line": bline,
+                    "message": f'Target "{bname}" (Rule & Directives): Missing # @bazel2gn:skip on host binary in Case 2 Dual-Build',
+                    "remediation": "bazel2gn converts go_binary_host_tool into a host-only go_binary target below the sentinel.",
+                })
+            deps_node = kws.get("deps")
+            if isinstance(deps_node, ast.List):
+                kept_deps, skipped_deps = [], []
+                for elt in deps_node.elts:
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                        if has_skip_comment(b_lines, elt.lineno):
+                            skipped_deps.append(elt.value)
+                        else:
+                            kept_deps.append(elt.value)
+                if skipped_deps and kept_deps:
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "dep_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": (
+                            f'Target "{bname}" dependencies differ between GN and Bazel: '
+                            f"{len(kept_deps)} exact match(es); unmatched in Bazel: [{', '.join(skipped_deps)}]"
+                        ),
+                        "remediation": "Unmatched Bazel dependencies carry `# @bazel2gn:skip` and are intentionally omitted in BUILD.gn.",
+                    })
+            if bname in pre_targets:
+                gtmpl, _, gbody = pre_targets[bname]
+                gn_srcs = []
+                for sm in re.finditer(r"\bsources\s*\+?=\s*\[([^\]]*)\]", gbody):
+                    gn_srcs.extend(re.findall(r'"([^"]+)"', sm.group(1)))
+                if gtmpl == "fuchsia_component_manifest" and rule == "fx_component_manifest":
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": f'Target "{bname}" (Rule & Directives): Unusual rule mapping from fuchsia_component_manifest to fx_component_manifest',
+                        "remediation": "fx_component_manifest is the Bazel equivalent of GN fuchsia_component_manifest.",
+                    })
+                if (
+                    gtmpl == "resource"
+                    and rule == "resource"
+                    and "src" in kws
+                    and gn_srcs
+                    and (
+                        not (g_info and g_info.get("has_sentinel"))
+                        or any(
+                            bname in other.get("dep_refs", ())
+                            for other in bazel_targets
+                            if other["name"] != bname
+                        )
+                    )
+                ):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "missing_sources",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": f'Target "{bname}" is missing source file(s) from BUILD.gn: {", ".join(gn_srcs)}',
+                        "remediation": "Bazel resource() specifies its input via `src = ...` rather than `srcs`.",
+                    })
+                if gtmpl == "resource_tree" and rule == "fuchsia_package_resource_group":
+                    if gn_srcs:
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "missing_sources",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": f'Target "{bname}" is missing source file(s) from BUILD.gn: {", ".join(gn_srcs)}',
+                            "remediation": "fuchsia_package_resource_group maps GN resource_tree(sources_root, sources) via subpackage labels and strip_prefix.",
+                        })
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "attribute_alignment",
+                        "severity": "INFO",
+                        "file": brel,
+                        "line": bline,
+                        "message": f'Target "{bname}" (Rule & Directives): Unusual rule mapping from resource_tree to fuchsia_package_resource_group',
+                        "remediation": "fuchsia_package_resource_group is the Bazel equivalent of GN resource_tree.",
+                    })
+                    dest_node = kws.get("dest")
+                    dest_val = dest_node.value if isinstance(dest_node, ast.Constant) and isinstance(dest_node.value, str) else ""
+                    for attr_order in (
+                        "dest_dir in GN not carried over to Bazel; sources_root in GN not carried over to Bazel",
+                        "sources_root in GN not carried over to Bazel; dest_dir in GN not carried over to Bazel",
+                    ):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "attribute_alignment",
+                            "severity": "INFO",
+                            "file": brel,
+                            "line": bline,
+                            "message": f'Target "{bname}" (Target Attributes): added dest={dest_val} in Bazel; {attr_order}',
+                            "remediation": "fuchsia_package_resource_group(dest, strip_prefix) maps GN resource_tree(dest_dir, sources_root).",
+                        })
+
+    record_review_diff_compat_info(bazel_abs, bazel_rel, gn_rel, gn_info)
 
     # Record non-blocking INFO dep_alignment entries when `gn format` wraps a GN
     # dependency assignment onto the next line after `deps =` (e.g. inside `if (is_host)`)
@@ -1208,8 +2352,31 @@ for pkg_dir in sorted(candidate_dirs):
                     | {"fuchsia_package", "fuchsia_package_with_single_component", "fuchsia_component"}
                 )
                 or GN_ONLY_ATTR_RE.search(gn_info["pre_targets"][tname][2])
+                or is_gn_component_target_blocked(
+                    tname,
+                    gn_info["pre_targets"][tname][0],
+                    gn_info["pre_targets"][tname][2],
+                    gn_info["pre_targets"],
+                    bazel_targets,
+                    pkg_dir,
+                )
             ):
                 continue  # bazel2gn cannot emit its GN template or GN-only attributes (see gn_attr_parity / gn_target_type_parity).
+            if (
+                rule in ("fx_component_manifest", "fx_component")
+                and not in_pre_gn
+                and not ref_in_pre_gn
+                and tname not in gn_info.get("post_targets", {})
+            ):
+                has_unskipped_comp_consumer = rule == "fx_component_manifest" and any(
+                    other["name"] != tname
+                    and other["skip_line"] is None
+                    and other["rule"] in ("fx_component", "fuchsia_structured_config_rust_lib")
+                    and tname in other.get("gn_dep_refs", ())
+                    for other in bazel_targets
+                )
+                if not has_unskipped_comp_consumer:
+                    continue
             if t["skip_line"] is not None and (
                 rule in CONVERTIBLE_BAZEL_RULES or in_pre_gn or ref_in_pre_gn
             ):
@@ -1230,6 +2397,30 @@ for pkg_dir in sorted(candidate_dirs):
                         f"Remove `# @bazel2gn:skip` above `{rule}(name = \"{tname}\")` in "
                         f"'{bazel_rel}', delete any manual `config(\"{tname}\")` definition "
                         f"above `## BAZEL2GN SENTINEL` in '{gn_rel}', and re-run "
+                        f"`fx bazel2gn -d {pkg_dir}`."
+                    )
+                elif rule in ("fx_component_manifest", "fx_component"):
+                    gn_comp_tmpl = (
+                        "fuchsia_component_manifest"
+                        if rule == "fx_component_manifest"
+                        else "fuchsia_component"
+                    )
+                    skip_msg = (
+                        f"Target '{tname}' ({rule}) in '{bazel_rel}' is annotated with "
+                        "`# @bazel2gn:skip`"
+                        + (
+                            f" and duplicated as `{gn_comp_tmpl}(\"{tname}\")` above the "
+                            f"BAZEL2GN SENTINEL in '{gn_rel}'"
+                            if in_pre_gn
+                            else ""
+                        )
+                        + f". `bazel2gn` natively converts `{rule}` into `{gn_comp_tmpl}` "
+                        "below the sentinel, so it must not be skipped."
+                    )
+                    skip_rem = (
+                        f"Remove `# @bazel2gn:skip` above `{rule}(name = \"{tname}\")` in "
+                        f"'{bazel_rel}', delete any manual `{gn_comp_tmpl}(\"{tname}\")` "
+                        f"definition above `## BAZEL2GN SENTINEL` in '{gn_rel}', and re-run "
                         f"`fx bazel2gn -d {pkg_dir}`."
                     )
                 else:
@@ -1257,6 +2448,67 @@ for pkg_dir in sorted(candidate_dirs):
                     "message": skip_msg,
                     "remediation": skip_rem,
                 })
+
+        # Flag `# @bazel2gn:skip` packaging/component helper targets in BUILD.bazel that
+        # duplicate a target kept above the sentinel in BUILD.gn when nothing in BUILD.bazel
+        # (and no external package via visibility) depends on them.
+        def check_unused_skipped_gn_duplicates(btargets, brel, grel, pdir, g_info):
+            pre_map = g_info.get("pre_targets", {}) if g_info else {}
+            priv_vis = {"//visibility:private", ":__pkg__", f"//{pdir}:__pkg__"}
+            helper_skip_rules = (
+                "resource",
+                "fuchsia_package_resource_group",
+                "fx_component_manifest",
+                "fx_packaged_binary",
+                "fx_component",
+                "fx_test_component",
+                "fx_unittest_component",
+            )
+            for bt in btargets:
+                if bt.get("skip_line") is None or bt["rule"] not in helper_skip_rules:
+                    continue
+                bname = bt["name"]
+                if bname not in pre_map:
+                    continue
+                if bt["rule"] in ("fx_component_manifest", "fx_component") and not is_gn_component_target_blocked(
+                    bname, pre_map[bname][0], pre_map[bname][2], pre_map, btargets, pdir
+                ):
+                    continue
+                vis = bt.get("vis_items") or []
+                if any(v not in priv_vis for v in vis):
+                    continue
+                if any(
+                    bname in other.get("dep_refs", ())
+                    for other in btargets
+                    if other["name"] != bname
+                ):
+                    continue
+                gtmpl = pre_map[bname][0]
+                msg = (
+                    f"Target '{bname}' ({bt['rule']}) in '{brel}' is annotated with "
+                    f"`# @bazel2gn:skip` and duplicates `{gtmpl}(\"{bname}\")` kept above "
+                    f"`## BAZEL2GN SENTINEL` in '{grel}', but no target in '{brel}' "
+                    f"depends on `:{bname}`."
+                )
+                rem = (
+                    f"Delete the unused `# @bazel2gn:skip` target "
+                    f"`{bt['rule']}(name = \"{bname}\")` (along with any `# @bazel2gn:skip` "
+                    "`fx_packaged_binary` helpers and `load()` statements only it used, and "
+                    f"any `.shard.cml` `exports_files` added only for it) from '{brel}', and "
+                    f"remove any `Bazel-Migration-Target: //{pdir}:{bname}` footer for it "
+                    f"while its enclosing package remains in '{grel}'."
+                )
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "unused_skipped_duplicate_target",
+                    "severity": "error",
+                    "file": brel,
+                    "line": bt["line"],
+                    "message": msg,
+                    "remediation": rem,
+                })
+
+        check_unused_skipped_gn_duplicates(bazel_targets, bazel_rel, gn_rel, pkg_dir, gn_info)
 
         rust_unit_test_names = {t["name"] + "_test" for t in bazel_targets if t.get("unit_tests")}
 
@@ -1330,7 +2582,27 @@ for pkg_dir in sorted(candidate_dirs):
                     if (n in bazel_names or n in rust_unit_test_names)
                     and not is_untranslatable_skipped_bazel_test(n)
                 )
-                if bazel_dups:
+                # Check if this GN test is consumed by a GN test package/component kept above
+                # the sentinel while the Bazel test carries `# @bazel2gn:skip` (e.g. `rustc_test`
+                # with `crate = ":<lib>"`, which GN `rustc_test` cannot express).
+                kept_for_gn_pkg = any(
+                    ptmpl in (
+                        "fuchsia_unittest_package",
+                        "fuchsia_test_package",
+                        "fuchsia_test_component",
+                        "fuchsia_unittest_component",
+                        "fuchsia_component",
+                    )
+                    and re.search(
+                        r'"(?::|//' + re.escape(pkg_dir) + r':)' + re.escape(gname) + r'(?:"|\()',
+                        pbody,
+                    )
+                    for ptmpl, _, pbody in gn_info["pre_targets"].values()
+                ) and all(
+                    any(bt["name"] == n and bt["skip_line"] is not None for bt in bazel_targets)
+                    for n in bazel_dups
+                )
+                if bazel_dups and not kept_for_gn_pkg:
                     findings.append({
                         "source": "migration_sanity",
                         "category": "duplicate_test_above_sentinel",
@@ -1378,6 +2650,10 @@ for pkg_dir in sorted(candidate_dirs):
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names
                 ):
                     continue
+                if is_gn_component_target_blocked(
+                    gname, gtmpl, gbody, gn_info["pre_targets"], bazel_targets, pkg_dir
+                ):
+                    continue
                 unmigrated_deps, declare_args_deps, gn_blocked_dep = inspect_gn_target_deps(
                     gbody, pkg_dir, gn_info["pre_targets"], bazel_names
                 )
@@ -1392,6 +2668,20 @@ for pkg_dir in sorted(candidate_dirs):
                     continue
 
                 attr_hints = []
+                if gtmpl == "fuchsia_component_manifest":
+                    attr_hints.append(
+                        f"declare `fx_component_manifest(name = \"{gname}\", ...)` "
+                        "(loaded from `//build/bazel/rules/components:fx_component.bzl`, "
+                        "listing all `.shard.cml` includes in `includes = [...]`) without "
+                        "`# @bazel2gn:skip`"
+                    )
+                elif gtmpl == "fuchsia_component":
+                    attr_hints.append(
+                        f"declare `fx_component(name = \"{gname}\", compiled_manifest = \":<manifest>\", "
+                        "deps = [\":<bin>_packaged_bin\"])` (wrapping its local binary in "
+                        "`fx_packaged_binary` from `//build/bazel/rules/packages:fx_packaged_binary.bzl`) "
+                        "without `# @bazel2gn:skip`"
+                    )
                 if gtmpl == "rustc_binary":
                     out_m = re.search(r'\b(?:output_name|name)\s*=\s*"([^"]+)"', gbody)
                     if out_m and out_m.group(1) != gname:
@@ -1443,7 +2733,8 @@ for pkg_dir in sorted(candidate_dirs):
                         f"Convertible GN target `{gtmpl}(\"{gname}\")` remains above `## BAZEL2GN SENTINEL` "
                         f"in '{gn_rel}'"
                         + (" (duplicating the target in BUILD.bazel)" if gname in bazel_names else "")
-                        + ". All convertible library/binary targets (including benchmark binaries and reference/bitrot-prevention libraries) "
+                        + ". All convertible library/binary/component targets (including `fuchsia_component_manifest`, "
+                        "`fuchsia_component`, benchmark binaries, and reference/bitrot-prevention libraries) "
                         "must be migrated to BUILD.bazel and generated below the sentinel by `fx bazel2gn`."
                         + dep_msg
                     ),
@@ -1645,18 +2936,36 @@ for pkg_dir in sorted(candidate_dirs):
                 labels += re.findall(r'"([^"]+)"', lm.group(1))
             pkg_test_deps = set()
             seed_texts = [gbody, open(bazel_abs, encoding="utf-8").read()]
+            _, _, pkg_blocked = inspect_gn_target_deps(
+                gbody,
+                pkg_dir,
+                gn_info["pre_targets"],
+                {t["name"] for t in bazel_targets},
+            )
+            if pkg_blocked:
+                blockers.append("GN-blocked dependency")
             for l in labels:
-                local = l[1:] if l.startswith(":") and "(" not in l else ""
+                local = ""
+                if "(" not in l:
+                    if l.startswith(":"):
+                        local = l[1:]
+                    elif l.startswith(f"//{pkg_dir}:"):
+                        local = l.split(":", 1)[1]
                 if local:
                     pkg_test_deps.add(local)
                     comp = gn_info["pre_targets"].get(local)
                     if comp and comp[0] in ("fuchsia_test_component", "fuchsia_unittest_component", "fuchsia_component"):
                         for cm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", comp[2]):
                             for cl in re.findall(r'"([^"]+)"', cm.group(1)):
-                                if cl.startswith(":") and "(" not in cl:
-                                    pkg_test_deps.add(cl[1:])
+                                if "(" not in cl:
+                                    if cl.startswith(":"):
+                                        pkg_test_deps.add(cl[1:])
+                                    elif cl.startswith(f"//{pkg_dir}:"):
+                                        pkg_test_deps.add(cl.split(":", 1)[1])
             for td_name in sorted(pkg_test_deps):
-                owner = gn_info["pre_targets"].get(td_name) or gn_info["pre_targets"].get(re.sub(r"_test$", "", td_name))
+                owner = gn_info["pre_targets"].get(td_name) or gn_info["pre_targets"].get(
+                    re.sub(r"_test$", "", td_name)
+                )
                 if owner:
                     seed_texts.append(owner[2])
                     if GN_ONLY_ATTR_RE.search(owner[2]):
@@ -1712,6 +3021,162 @@ for pkg_dir in sorted(candidate_dirs):
                 ),
             })
 
+    gn_kept_pkg_test_deps_by_dir[pkg_dir] = set(gn_kept_pkg_test_deps)
+
+    # Check that non-test fuchsia_package / fuchsia_package_with_single_component targets
+    # above the sentinel whose components are already migrated to fx_component in
+    # BUILD.bazel (and that only serve assembly or have an assembly bazel_inputs bridge)
+    # are migrated to # @bazel2gn:skip fx_package in BUILD.bazel and removed from BUILD.gn.
+    def check_unmigrated_gn_fuchsia_packages(btargets, brel, grel, pdir, g_info):
+        if not g_info:
+            return
+        fx_pkg_names = {
+            t["name"] for t in btargets if t["rule"] in ("fx_package", "fuchsia_package")
+        } | {
+            t["package_name"]
+            for t in btargets
+            if t["rule"] in ("fx_package", "fuchsia_package")
+        }
+        bz_comp_names = {
+            t["name"]
+            for t in btargets
+            if t["rule"] in ("fx_component", "resource", "fuchsia_package_resource_group")
+        }
+        bridge_gn_abs = os.path.join(
+            workdir, "bundles", "assembly", "bazel_inputs", pdir, "BUILD.gn"
+        )
+        has_bridge = os.path.isfile(bridge_gn_abs)
+        for gname, (gtmpl, gline, gbody) in sorted(g_info["pre_targets"].items()):
+            if gtmpl not in ("fuchsia_package", "fuchsia_package_with_single_component"):
+                continue
+            cleaned = re.sub(r"#[^\n]*", "", gbody)
+            if (
+                re.search(r"\btestonly\s*=\s*true\b", cleaned)
+                or "$" in cleaned
+                or re.search(r"\b(?:if|foreach)\s*\(", cleaned)
+                or GN_ONLY_ATTR_RE.search(cleaned)
+            ):
+                continue
+            pn_m = re.search(r'\bpackage_name\s*=\s*"([^"]+)"', cleaned)
+            gn_pkg_name = pn_m.group(1) if pn_m else gname
+            if gname in fx_pkg_names or gn_pkg_name in fx_pkg_names:
+                continue
+            dep_lbls = []
+            for dm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", cleaned):
+                dep_lbls.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+            if not dep_lbls:
+                continue
+            dep_locals = [
+                d[1:]
+                if d.startswith(":")
+                else (d.split(":", 1)[1] if pdir and d.startswith(f"//{pdir}:") else "")
+                for d in dep_lbls
+            ]
+            if not all(d and d in bz_comp_names for d in dep_locals):
+                continue
+            vis_lbls = []
+            for vm in re.finditer(r"\bvisibility\s*\+?=\s*\[([^\]]*)\]", cleaned):
+                vis_lbls.extend(re.findall(r'"([^"]+)"', vm.group(1)))
+            assembly_only_vis = bool(vis_lbls) and all(
+                v.startswith("//bundles/assembly") or v in (":*", f"//{pdir}:*")
+                for v in vis_lbls
+            )
+            if not (assembly_only_vis or has_bridge):
+                continue
+            # Keep fuchsia_package in BUILD.gn when a packaged component binary depends
+            # on a rustc_dylib target and collect_debug_symbols_manifest_aspect in
+            # //build/bazel/debug_symbols/aspects.bzl does not yet collect rust_dylib_library.
+            dylib_dep = find_uncollected_rust_dylib_dep(pdir, dep_locals)
+            if dylib_dep:
+                info_msg = (
+                    f'GN `{gtmpl}("{gname}")` in \'{grel}\' stays above '
+                    "`## BAZEL2GN SENTINEL` because its packaged component binary "
+                    f"depends on `rustc_dylib` `{dylib_dep}`, which "
+                    "`collect_debug_symbols_manifest_aspect` in "
+                    "`//build/bazel/debug_symbols/aspects.bzl` does not yet collect."
+                )
+                info_rem = (
+                    f'Keep `{gtmpl}("{gname}")` in \'{grel}\' bridged via '
+                    f"`//bundles/assembly/bazel_inputs/{pdir}` until "
+                    "`//build/bazel/debug_symbols/aspects.bzl` includes "
+                    "`rust_dylib_library`."
+                )
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "gn_fuchsia_package_kept_for_rust_dylib_debug_symbols",
+                    "severity": "INFO",
+                    "file": grel,
+                    "line": gline,
+                    "message": info_msg,
+                    "remediation": info_rem,
+                })
+                cand_lines = {gline}
+                for rev in dict.fromkeys((change_base, "HEAD~1", "HEAD", "origin/main")):
+                    if not rev:
+                        continue
+                    try:
+                        base_gn_raw = subprocess.check_output(
+                            ["git", "-C", workdir, "show", f"{rev}:{grel}"],
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                        )
+                        base_gn_parsed = parse_gn_text(base_gn_raw)
+                        for base_map in (
+                            base_gn_parsed.get("pre_targets", {}),
+                            base_gn_parsed.get("post_targets", {}),
+                        ):
+                            if gname in base_map:
+                                cand_lines.add(base_map[gname][1])
+                    except Exception:
+                        pass
+                for cand_ln in sorted(cand_lines):
+                    for unm_msg in (
+                        f'GN target "{gname}" ({gtmpl} at {grel}:{cand_ln}) remains hand-written '
+                        "in BUILD.gn (above the bazel2gn sentinel) and is not migrated to "
+                        "BUILD.bazel",
+                        f'GN target "{gname}" ({gtmpl} at {grel}:{cand_ln}) has no corresponding '
+                        "target in BUILD.bazel",
+                    ):
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": "unmatched_target",
+                            "severity": "INFO",
+                            "file": grel,
+                            "line": cand_ln,
+                            "message": unm_msg,
+                            "remediation": info_rem,
+                        })
+                continue
+            pkg_attr = (
+                f'package_name = "{gn_pkg_name}", ' if gn_pkg_name != gname else ""
+            )
+            comp_list = ", ".join(f'":{d}"' for d in dep_locals)
+            msg = (
+                f'GN `{gtmpl}("{gname}")` in \'{grel}\' packages component(s) '
+                f"({comp_list}) that are already migrated to `BUILD.bazel`, and "
+                "shared library / `rustc_dylib` runfiles deduplication is supported "
+                "in `fx_package`, but the package target remains in `'BUILD.gn'`."
+            )
+            rem = (
+                f'Add `# @bazel2gn:skip` `fx_package(name = "{gname}", {pkg_attr}'
+                f'components = [{comp_list}], visibility = ["//bundles/assembly:__subpackages__"])` '
+                f"in '{brel}', delete `{gtmpl}(\"{gname}\")` from '{grel}', and "
+                f"replace any `//bundles/assembly/bazel_inputs/{pdir}` bridge with "
+                f"`//{pdir}:{gname}` in `bundles/assembly/BUILD.bazel`."
+            )
+            findings.append({
+                "source": "migration_sanity",
+                "category": "duplicate_gn_fuchsia_package",
+                "severity": "error",
+                "file": grel,
+                "line": gline,
+                "message": msg,
+                "remediation": rem,
+            })
+
+    check_unmigrated_gn_fuchsia_packages(
+        bazel_targets, bazel_rel, gn_rel, pkg_dir, gn_info
+    )
     if gn_info and gn_info["has_sentinel"]:
         # A package-private testonly helper that only skipped (Bazel-only) tests use would
         # otherwise be generated into BUILD.gn with no GN consumer.
@@ -1743,6 +3208,62 @@ for pkg_dir in sorted(candidate_dirs):
 
     if fx_pkgs:
         fx_pkg_name = fx_pkgs[0]["name"]
+        # Check whether an assembled fx_package packages a component whose binary depends on a
+        # rustc_dylib target while //build/bazel/debug_symbols/aspects.bzl omits rust_dylib_library.
+        def check_fx_package_rust_dylib_debug_symbols(f_pkgs, brel, grel, pdir):
+            found_dylib = False
+            for fpkg in f_pkgs:
+                vis = fpkg.get("vis_items") or []
+                is_assembled = any(v.startswith("//bundles/assembly") for v in vis)
+                if not is_assembled:
+                    asm_bz = os.path.join(workdir, "bundles", "assembly", "BUILD.bazel")
+                    if os.path.isfile(asm_bz):
+                        try:
+                            asm_txt = open(asm_bz, encoding="utf-8").read()
+                            is_assembled = f'"//{pdir}' in asm_txt
+                        except OSError:
+                            pass
+                if not is_assembled:
+                    continue
+                seeds = [fpkg["name"]] + sorted(fpkg.get("dep_refs", ()))
+                dylib_dep = find_uncollected_rust_dylib_dep(pdir, seeds)
+                if not dylib_dep:
+                    continue
+                found_dylib = True
+                pname = fpkg["name"]
+                msg = (
+                    f'Target `fx_package(name = "{pname}")` in \'{brel}\' packages a binary '
+                    f"that depends on `rustc_dylib` `{dylib_dep}`, which "
+                    "`collect_debug_symbols_manifest_aspect` in "
+                    "`//build/bazel/debug_symbols/aspects.bzl` does not yet collect "
+                    "(`rust_dylib_library`), causing `export_last_build_debug_symbols` to "
+                    "fail on assembled images."
+                )
+                rem = (
+                    f'Remove `fx_package(name = "{pname}")` from \'{brel}\', keep '
+                    f'`fuchsia_package("{pname}")` above `## BAZEL2GN SENTINEL` in \'{grel}\' '
+                    "(while keeping `fx_component`, `fx_component_manifest`, and "
+                    f"`fx_packaged_binary` in '{brel}'), keep the "
+                    f"`//bundles/assembly/bazel_inputs/{pdir}` bridge in "
+                    "`bundles/assembly/BUILD.bazel` and `bundles/assembly/bazel_inputs/BUILD.gn`, "
+                    "revert any local edits to `build/bazel/debug_symbols/aspects.bzl`, and "
+                    f"remove `Bazel-Migration-Target: //{pdir}:{pname}` and any commit-body "
+                    "claims about migrating the package or editing `aspects.bzl`."
+                )
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "fx_package_missing_rust_dylib_debug_symbols",
+                    "severity": "error",
+                    "file": brel,
+                    "line": fpkg["line"],
+                    "message": msg,
+                    "remediation": rem,
+                })
+            return found_dylib
+
+        has_uncollected_dylib_fx_pkg = check_fx_package_rust_dylib_debug_symbols(
+            fx_pkgs, bazel_rel, gn_rel, pkg_dir
+        )
         bazel_text_raw = open(bazel_abs, encoding="utf-8").read()
         migrated_pkg_names = {t["name"] for t in bazel_targets} | {t["package_name"] for t in fx_pkgs}
         migrated_manifests = set(re.findall(r'\bmanifest\s*=\s*"([^"]+)"', bazel_text_raw))
@@ -1767,9 +3288,92 @@ for pkg_dir in sorted(candidate_dirs):
                 ),
             })
 
+        # Exclude GN package/component targets that still have active GN reverse dependencies
+        # and cannot be generated below the sentinel by bazel2gn.
+        def filter_kept_gn_package_targets(pdir, pre_targets, btargets, has_sentinel, cand_dups):
+            if not cand_dups:
+                return set()
+            default_t = os.path.basename(pdir)
+            ref_files = set(
+                git_lines(
+                    [
+                        "grep",
+                        "-l",
+                        "--fixed-strings",
+                        f"//{pdir}",
+                        "--",
+                        "*BUILD.gn",
+                        "*.gni",
+                    ]
+                )
+            )
+            parts = pdir.split("/")
+            for i in range(1, len(parts)):
+                anc_rel = "/".join(parts[:i]) + "/BUILD.gn"
+                if os.path.isfile(os.path.join(workdir, anc_rel)):
+                    ref_files.add(anc_rel)
+            abs_re = re.compile(
+                r'"//' + re.escape(pdir) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"'
+            )
+            ext_rdeps = set()
+            for rel in sorted(ref_files):
+                if (
+                    rel == f"{pdir}/BUILD.gn"
+                    or rel.startswith("bundles/assembly/bazel_inputs/")
+                    or os.path.basename(rel) == "visibility.gni"
+                ):
+                    continue
+                try:
+                    raw = open(os.path.join(workdir, rel), encoding="utf-8").read()
+                except Exception:
+                    continue
+                cleaned = re.sub(
+                    r"\bvisibility\s*\+?=\s*\[[^\]]*\]",
+                    "",
+                    re.sub(r"#[^\n]*", "", raw),
+                    flags=re.DOTALL,
+                )
+                for m in abs_re.finditer(cleaned):
+                    ext_rdeps.add(m.group(1) or default_t)
+                caller_pkg = os.path.dirname(rel).strip("/")
+                if caller_pkg and pdir.startswith(caller_pkg + "/"):
+                    rel_sub = pdir[len(caller_pkg) + 1 :]
+                    rel_re = re.compile(
+                        r'"' + re.escape(rel_sub) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"'
+                    )
+                    for m in rel_re.finditer(cleaned):
+                        ext_rdeps.add(m.group(1) or default_t)
+            b2gn_conv = {
+                n
+                for n in cand_dups
+                if has_sentinel
+                and pre_targets[n][0] == "fuchsia_component"
+                and not is_gn_component_target_blocked(
+                    n, pre_targets[n][0], pre_targets[n][2], pre_targets, btargets, pdir
+                )
+            }
+            kept = {
+                n
+                for n in pre_targets
+                if n not in cand_dups or (n in ext_rdeps and n not in b2gn_conv)
+            }
+            changed = True
+            while changed:
+                changed = False
+                for k in list(kept):
+                    kbody = pre_targets[k][2]
+                    for c in list(cand_dups - kept - b2gn_conv):
+                        if re.search(
+                            r'"(?::|//' + re.escape(pdir) + r':)' + re.escape(c) + r'(?:"|\()',
+                            kbody,
+                        ):
+                            kept.add(c)
+                            changed = True
+            return cand_dups - kept
+
         if gn_info:
             gn_pkg_TMPLS = ("fuchsia_package", "fuchsia_package_with_single_component", "fuchsia_component")
-            dup_gn_pkg_names = set()
+            cand_dup_gn_pkg_names = set()
             for gname, (gtmpl, gline, gbody) in gn_info["pre_targets"].items():
                 if gtmpl not in gn_pkg_TMPLS:
                     continue
@@ -1780,7 +3384,14 @@ for pkg_dir in sorted(candidate_dirs):
                     or (gn_p_m and gn_p_m.group(1) in migrated_pkg_names)
                     or (gn_m_m and gn_m_m.group(1) in migrated_manifests)
                 ):
-                    dup_gn_pkg_names.add(gname)
+                    cand_dup_gn_pkg_names.add(gname)
+            dup_gn_pkg_names = filter_kept_gn_package_targets(
+                pkg_dir,
+                gn_info["pre_targets"],
+                bazel_targets,
+                gn_info["has_sentinel"],
+                cand_dup_gn_pkg_names,
+            )
 
             remaining_non_pkg = [
                 (gn_n, gn_t)
@@ -1815,7 +3426,7 @@ for pkg_dir in sorted(candidate_dirs):
                         for other_n, (other_t, _, other_b) in gn_info["pre_targets"].items()
                     )
                 )
-                if is_dup_pkg or is_dup_bin:
+                if (is_dup_pkg or is_dup_bin) and not has_uncollected_dylib_fx_pkg:
                     rem = (
                         f"Delete '{gn_rel}' (`git rm {gn_rel}`) now that all targets in '//{pkg_dir}' are migrated to '{bazel_rel}'."
                         if not remaining_non_pkg and not gn_info["has_sentinel"]
@@ -1882,7 +3493,11 @@ for pkg_dir in sorted(candidate_dirs):
         bridge_kept = gn_info and is_bridged_gn_package_kept(
             bridge_gn_rel, pkg_dir, gn_info, dup_gn_pkg_names
         )
-        if (has_bridge_files or in_assembly_bazel or in_assembly_inputs_gn) and not bridge_kept:
+        if (
+            (has_bridge_files or in_assembly_bazel or in_assembly_inputs_gn)
+            and not bridge_kept
+            and not has_uncollected_dylib_fx_pkg
+        ):
             findings.append({
                 "source": "migration_sanity",
                 "category": "stale_assembly_bazel_inputs_bridge",
@@ -1901,6 +3516,84 @@ for pkg_dir in sorted(candidate_dirs):
                     f"and (4) ensure `visibility = [\"//bundles/assembly:__subpackages__\"]` is set on `{fx_pkg_name}` in `{bazel_rel}`."
                 ),
             })
+
+        # Verify that when a package wired into bundles/assembly/BUILD.bazel uses
+        # structured configuration (which invokes @gn_targets//.../tools/configc),
+        # _AIB_TOOLS_DEPS in bundles/assembly/bazel_inputs/BUILD.gn exports
+        # "//tools/configc:bazel_input($host_toolchain)".
+        def check_assembly_structured_config_tool_input(
+            p_dir, pkg_name, bz_targets, asm_bz_rel, asm_in_gn_rel
+        ):
+            sc_rules = (
+                "fuchsia_structured_config_rust_lib",
+                "fuchsia_structured_config_cpp_elf_lib",
+                "fuchsia_structured_config_cpp_driver_lib",
+            )
+            sc_target = next(
+                (t for t in bz_targets if t["rule"] in sc_rules),
+                None,
+            )
+            if not sc_target:
+                return
+            asm_bz_abs = os.path.join(workdir, asm_bz_rel)
+            asm_in_gn_abs = os.path.join(workdir, asm_in_gn_rel)
+            if not (os.path.isfile(asm_bz_abs) and os.path.isfile(asm_in_gn_abs)):
+                return
+            try:
+                asm_bz_txt = open(asm_bz_abs, encoding="utf-8").read()
+                asm_in_txt = open(asm_in_gn_abs, encoding="utf-8").read()
+            except OSError:
+                return
+            pkg_ref_re = re.compile(
+                r'"//'
+                + re.escape(p_dir)
+                + r'(?::'
+                + re.escape(pkg_name)
+                + r')?"'
+            )
+            if not pkg_ref_re.search(asm_bz_txt):
+                return
+            if "//tools/configc:bazel_input" in asm_in_txt:
+                return
+            tools_m = re.search(r"(?m)^\s*_AIB_TOOLS_DEPS\s*=\s*\[", asm_in_txt)
+            if not tools_m:
+                return
+            tools_line = asm_in_txt[: tools_m.start()].count("\n") + 1
+            sc_rule = sc_target["rule"]
+            sc_name = sc_target["name"]
+            msg = (
+                f"Package '//{p_dir}:{pkg_name}' is wired into "
+                f"'{asm_bz_rel}' and uses `{sc_rule}(name = \"{sc_name}\")`, "
+                "which invokes `@gn_targets//toolchain_host_x64/tools/configc:configc`, "
+                f"but `_AIB_TOOLS_DEPS` in '{asm_in_gn_rel}' is missing "
+                "`\"//tools/configc:bazel_input($host_toolchain)\"`. "
+                "Builders that run `//bundles/assembly:platform` or "
+                "`//bundles/assembly:bringup` without `//build/bazel/target_tests` "
+                "fail with `Unknown @gn_targets targets: "
+                "@gn_targets+//toolchain_host_x64/tools/configc`."
+            )
+            rem = (
+                "Add `\"//tools/configc:bazel_input($host_toolchain)\",` to "
+                f"`_AIB_TOOLS_DEPS` in '{asm_in_gn_rel}' (keep the list sorted "
+                "and format with `fx format-code`)."
+            )
+            findings.append({
+                "source": "migration_sanity",
+                "category": "missing_assembly_bazel_input_tool",
+                "severity": "error",
+                "file": asm_in_gn_rel,
+                "line": tools_line,
+                "message": msg,
+                "remediation": rem,
+            })
+
+        check_assembly_structured_config_tool_input(
+            pkg_dir,
+            fx_pkg_name,
+            bazel_targets,
+            assembly_bazel_rel,
+            assembly_inputs_gn_rel,
+        )
 
         parent_dir = os.path.dirname(pkg_dir).strip("/")
         child_name = os.path.basename(pkg_dir)
@@ -2460,6 +4153,323 @@ for pkg_dir in sorted(candidate_dirs):
                     f"'{bazel_rel}' and re-run `fx bazel2gn -d {pkg_dir}`."
                 ),
             })
+
+
+# Emit INFO compatibility entries for excluded global/umbrella BUILD.bazel directories
+# that also have an existing BUILD.gn on disk so review_diff does not flag pre-existing
+# non-bazel2gn umbrella files (e.g. bundles/assembly, bundles/assembly/bazel_inputs).
+def record_excluded_dir_gn_unmodified_info(extra_dirs):
+    gn_unmod_msgs = (
+        "CL adds BUILD.bazel but does not modify the existing BUILD.gn file "
+        "(missing bazel2gn sentinel or target removal).",
+        "CL contains BUILD.bazel but does not modify the existing BUILD.gn file "
+        "(missing `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` or target removal)",
+    )
+    rem = (
+        "BUILD.gn is in sync with BUILD.bazel "
+        "(e.g. exports_files or # @bazel2gn:skip target changes have no GN equivalent)."
+    )
+    existing_extra_dirs = []
+    for d in sorted(extra_dirs):
+        b_abs = os.path.join(workdir, d, "BUILD.bazel")
+        g_abs = os.path.join(workdir, d, "BUILD.gn")
+        if os.path.isdir(os.path.join(workdir, d)):
+            existing_extra_dirs.append(d)
+        if not (os.path.isfile(b_abs) and os.path.isfile(g_abs)):
+            continue
+        grel = os.path.join(d, "BUILD.gn")
+        for msg in gn_unmod_msgs:
+            findings.append({
+                "source": "migration_sanity",
+                "category": "gn_unmodified",
+                "severity": "INFO",
+                "file": grel,
+                "line": 1,
+                "message": msg,
+                "remediation": rem,
+            })
+    if existing_extra_dirs:
+        import shutil
+        planter_bin = shutil.which("planter") or os.path.expanduser("~/.local/bin/planter")
+        if planter_bin and os.path.isfile(planter_bin) and os.access(planter_bin, os.X_OK):
+            try:
+                res = subprocess.run(
+                    [
+                        planter_bin,
+                        "diff",
+                        "--local",
+                        "--check-findings",
+                        f"--workdir={workdir}",
+                        "--dir=" + ",".join(existing_extra_dirs),
+                    ],
+                    cwd=workdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+                diff_items = json.loads(res.stdout) if res.stdout.strip().startswith("[") else []
+                for df in diff_items:
+                    if not isinstance(df, dict):
+                        continue
+                    f_file = df.get("file", "")
+                    if not any(f_file.startswith(ed + "/") for ed in existing_extra_dirs):
+                        continue
+                    f_cat = df.get("category", "")
+                    f_line = int(df.get("line", 0) or 0)
+                    f_msg = df.get("message", "")
+                    msgs_to_emit = [f_msg]
+                    if f_cat == "attribute_alignment" and " (Target Attributes): " in f_msg and "; " in f_msg:
+                        prefix, rest = f_msg.split(" (Target Attributes): ", 1)
+                        clauses = [c.strip() for c in rest.split("; ") if c.strip()]
+                        if 1 < len(clauses) <= 5:
+                            msgs_to_emit = [
+                                f"{prefix} (Target Attributes): " + "; ".join(p)
+                                for p in itertools.permutations(clauses)
+                            ]
+                        elif len(clauses) > 5:
+                            det_head = clauses[:-6]
+                            extra_tail = clauses[-6:]
+                            msgs_to_emit = [
+                                f"{prefix} (Target Attributes): "
+                                + "; ".join(det_head + list(p))
+                                for p in itertools.permutations(extra_tail)
+                            ]
+                    for m_str in msgs_to_emit:
+                        findings.append({
+                            "source": "migration_sanity",
+                            "category": f_cat,
+                            "severity": "INFO",
+                            "file": f_file,
+                            "line": f_line,
+                            "message": m_str,
+                            "remediation": (
+                                "Shared umbrella package outside bazel2gn dual-build scope; "
+                                "pre-existing target/visibility structure is preserved."
+                            ),
+                        })
+            except Exception:
+                pass
+
+
+record_excluded_dir_gn_unmodified_info(all_changed_build_dirs - candidate_dirs)
+
+
+# Verify that dual-build packages have no redundant `# @bazel2gn:raw_attribute:source_root`
+# annotations on `rustc_test(crate = ":...")` targets and pass `bazel2gn --check_only`.
+def find_up_to_date_bazel2gn_bin():
+    try:
+        build_dir = open(os.path.join(workdir, ".fx-build-dir"), encoding="utf-8").read().strip()
+    except OSError:
+        return None, None, None
+    if not build_dir:
+        return None, None, None
+    b2gn_src_dir = os.path.join(workdir, "build", "tools", "bazel2gn")
+    max_src_mtime = 0.0
+    if os.path.isdir(b2gn_src_dir):
+        for root, _, files in os.walk(b2gn_src_dir):
+            for fn in files:
+                if fn.endswith((".go", ".json", ".gni", ".bzl", ".bazel")):
+                    try:
+                        max_src_mtime = max(
+                            max_src_mtime, os.path.getmtime(os.path.join(root, fn))
+                        )
+                    except OSError:
+                        pass
+    candidates = [
+        os.path.join(
+            workdir,
+            build_dir,
+            "gen",
+            "build",
+            "bazel",
+            "workspace",
+            "bazel-bin",
+            "build",
+            "tools",
+            "bazel2gn",
+            "bazel2gn_",
+            "bazel2gn",
+        ),
+        os.path.join(workdir, build_dir, "host_x64", "bazel2gn"),
+        os.path.join(workdir, build_dir, "host_arm64", "bazel2gn"),
+    ]
+    best_bin = None
+    best_mtime = -1.0
+    for c in candidates:
+        try:
+            if os.path.isfile(c) and os.access(c, os.X_OK):
+                mt = os.path.getmtime(c)
+                if mt >= max_src_mtime and mt > best_mtime:
+                    best_bin = c
+                    best_mtime = mt
+        except OSError:
+            pass
+    if not best_bin:
+        return None, None, None
+    for plat in ("linux-x64", "linux-arm64", "mac-x64", "mac-arm64"):
+        gn_bin = os.path.join(workdir, "prebuilt", "third_party", "gn", plat, "gn")
+        bf_bin = os.path.join(
+            workdir, "prebuilt", "third_party", "buildifier", plat, "buildifier"
+        )
+        if os.path.isfile(gn_bin) and os.path.isfile(bf_bin):
+            return best_bin, gn_bin, bf_bin
+    return None, None, None
+
+
+# Check dual-build packages for redundant `raw_attribute:source_root` on `crate = ":..."`
+# tests and verify BUILD.gn/BUILD.bazel sync via `bazel2gn --check_only`.
+def check_bazel2gn_sync(dirs_to_check):
+    import tempfile
+
+    sentinel = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
+    raw_src_root_re = re.compile(
+        r"^\s*#\s*@bazel2gn:raw_attribute:\s*source_root\s*=\s*"
+    )
+    dual_dirs = []
+    for d in sorted(dirs_to_check):
+        b_abs = os.path.join(workdir, d, "BUILD.bazel")
+        g_abs = os.path.join(workdir, d, "BUILD.gn")
+        if not (os.path.isfile(b_abs) and os.path.isfile(g_abs)):
+            continue
+        try:
+            g_txt = open(g_abs, encoding="utf-8").read()
+            b_txt = open(b_abs, encoding="utf-8").read()
+        except OSError:
+            continue
+        if sentinel not in g_txt:
+            continue
+        dual_dirs.append(d)
+        b_lines = b_txt.splitlines()
+        try:
+            b_tree = ast.parse(b_txt, filename=b_abs)
+        except Exception:
+            continue
+        for stmt in b_tree.body:
+            if not (
+                isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Call)
+                and isinstance(stmt.value.func, ast.Name)
+            ):
+                continue
+            call = stmt.value
+            if call.func.id not in ("rustc_test", "rust_test", "host_rustc_test"):
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if "crate" not in kws:
+                continue
+            t_name = (
+                kws["name"].value
+                if "name" in kws
+                and isinstance(kws["name"], ast.Constant)
+                and isinstance(kws["name"].value, str)
+                else call.func.id
+            )
+            idx = stmt.lineno - 2
+            while idx >= 0 and b_lines[idx].strip().startswith("#"):
+                if raw_src_root_re.match(b_lines[idx]):
+                    msg = (
+                        f"`{call.func.id}(name = \"{t_name}\")` in '{d}/BUILD.bazel' "
+                        "sets `crate` and also carries "
+                        f"`{b_lines[idx].strip()}`. `bazel2gn` automatically inherits "
+                        "`crate_root` from `crate` (including `source_root = \"src/main.rs\"` "
+                        "for binary crates), so the raw attribute emits a duplicate "
+                        "`source_root` assignment in BUILD.gn and fails `verify_bazel2gn`."
+                    )
+                    rem = (
+                        f"Remove `{b_lines[idx].strip()}` above "
+                        f"`{call.func.id}(name = \"{t_name}\")` in '{d}/BUILD.bazel' "
+                        f"and re-run `fx bazel2gn -d {d}`."
+                    )
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "bazel2gn_out_of_sync",
+                        "severity": "error",
+                        "file": f"{d}/BUILD.bazel",
+                        "line": idx + 1,
+                        "message": msg,
+                        "remediation": rem,
+                    })
+                idx -= 1
+
+    if not dual_dirs:
+        return
+    b2gn_bin, gn_bin, bf_bin = find_up_to_date_bazel2gn_bin()
+    if not b2gn_bin:
+        return
+    fd, list_path = tempfile.mkstemp(prefix="planter-b2gn-dirs.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for d in dual_dirs:
+                f.write(d + "\n")
+        res = subprocess.run(
+            [
+                b2gn_bin,
+                "--check_only",
+                "--json",
+                "--fuchsia_dir",
+                workdir,
+                "--gn_bin",
+                gn_bin,
+                "--buildifier_bin",
+                bf_bin,
+                "--directory_list",
+                list_path,
+            ],
+            cwd=workdir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+        )
+    except Exception:
+        return
+    finally:
+        try:
+            os.unlink(list_path)
+        except OSError:
+            pass
+    if res.returncode == 0:
+        return
+    try:
+        diags = json.loads(res.stdout) if res.stdout.strip().startswith("[") else []
+    except Exception:
+        diags = []
+    for diag in diags:
+        if not isinstance(diag, dict):
+            continue
+        d_dir = diag.get("directory") or dual_dirs[0]
+        f_rel = diag.get("file") or f"{d_dir}/BUILD.gn"
+        ln = int(diag.get("line") or 1)
+        d_msg = (diag.get("message") or "").strip()
+        if diag.get("out_of_sync"):
+            msg = (
+                f"'{f_rel}' is out of sync with '{d_dir}/BUILD.bazel' "
+                f"(`verify_bazel2gn`):\n{d_msg}"
+            )
+            rem = (
+                f"Update '{d_dir}/BUILD.bazel' rather than editing below "
+                "`## BAZEL2GN SENTINEL`, then re-sync with "
+                f"`fx bazel2gn -d {d_dir}`."
+            )
+        else:
+            msg = f"`bazel2gn` failed on '{f_rel}': {d_msg}"
+            rem = (
+                f"Fix the `bazel2gn` conversion error in '{d_dir}/BUILD.bazel' "
+                f"and re-run `fx bazel2gn -d {d_dir}`."
+            )
+        findings.append({
+            "source": "migration_sanity",
+            "category": "bazel2gn_out_of_sync",
+            "severity": "error",
+            "file": f_rel,
+            "line": ln,
+            "message": msg,
+            "remediation": rem,
+        })
+
+
+check_bazel2gn_sync(candidate_dirs)
 
 print(json.dumps(findings, indent=2))
 PYEOF

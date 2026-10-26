@@ -402,14 +402,22 @@ def bazel_tests_export_notes():
     if not missing:
         return []
     return [
-        "Not in <build dir>/tests.json after `fx build`: " + " ".join(missing) + ". Either their "
+        "Not in <build dir>/tests.json: " + " ".join(missing) + ". Either their "
         "`bazel_test_suite` is not reachable from the configured test roots (check with "
         "`fx set ... --with-test //<dir>:tests`), or it is not wired into `group(\"tests\")`. "
-        "Do not record `fx test` commands for these tests in `tests_run` unless they ran."
+        "Do not record `fx test` commands for these tests in `test_footers` or `Test:` commit "
+        "footers (`test_verifier` runs `fx test --dry` and fails when a test is missing from "
+        "`tests.json`); use `fx bazel build --config=fuchsia_platform @//<dir>:<test>` (device) "
+        "or `fx bazel test --config=host @//<dir>:<test>` (host) instead."
     ]
 
 
 FIDL_MACROS = {"fidl_library", "_fidl_library", "fidl_ir"}
+STRUCTURED_CONFIG_FIDL_MACROS = {
+    "fuchsia_structured_config_rust_lib",
+    "fuchsia_structured_config_cpp_elf_lib",
+    "fuchsia_structured_config_cpp_driver_lib",
+}
 VALIDATE_JSON_MACROS = {"validate_json", "validate_json5", "_validate_json_action"}
 FDOMAIN_UNSUPPORTED_HANDLE_RE = re.compile(
     r"\bzx\.Handle\s*:\s*(?:LOG|DEBUGLOG|INTERRUPT|MSI|IOMMU|BTI|PMT|PAGER|PCI_DEVICE|PROFILE|SUSPEND_TOKEN|VCPU)\b"
@@ -432,8 +440,9 @@ def _dir_has_fdomain_unsupported_handles(d):
 
 def validate_json_exclusions(d):
     """Returns `-//<d>:<target>` exclusions for `_validate_json_action` targets in `d/BUILD.bazel`
-    (and `<name>_rust_fdomain{,_flex}` when `.fidl` sources use `zx.Handle` subtypes missing from
-    `fdomain_client`). `//build/bazel/aspects:assert_no_deps.bzl` iterates
+    (including `<name>_fidl_internal_validate_ir_json` expanded by `fuchsia_structured_config_*`
+    macros, and `<name>_rust_fdomain{,_flex}` when `.fidl` sources use `zx.Handle` subtypes missing
+    from `fdomain_client`). `//build/bazel/aspects:assert_no_deps.bzl` iterates
     `getattr(ctx.rule.attr, "data", [])`, which crashes with `Error: type 'Target' is not iterable`
     when `:all` applies `assert_no_deps_aspect` at the top level to `_validate_json_action`
     (`data = attr.label(...)`). Excluding `<name>_validate_ir_json` from top-level `:all` still runs
@@ -452,6 +461,9 @@ def validate_json_exclusions(d):
             out.append(lbl)
 
     def _add_fidl(tname, fn):
+        if fn in STRUCTURED_CONFIG_FIDL_MACROS:
+            _add(f"{tname}_fidl_internal_validate_ir_json")
+            return
         _add(f"{tname}_validate_ir_json" if fn in FIDL_MACROS else tname)
         if fn in {"fidl_library", "_fidl_library"} and skip_fdomain:
             _add(f"{tname}_rust_fdomain")
@@ -465,14 +477,18 @@ def validate_json_exclusions(d):
             fn = node.func.id if isinstance(node.func, ast.Name) else (
                 node.func.attr if isinstance(node.func, ast.Attribute) else None
             )
-            if fn not in FIDL_MACROS and fn not in VALIDATE_JSON_MACROS:
+            if (
+                fn not in FIDL_MACROS
+                and fn not in STRUCTURED_CONFIG_FIDL_MACROS
+                and fn not in VALIDATE_JSON_MACROS
+            ):
                 continue
             for kw in node.keywords:
                 if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
                     _add_fidl(kw.value.value, fn)
     except SyntaxError:
         for m in re.finditer(
-            r"\b(fidl_library|_fidl_library|fidl_ir|validate_json5?|_validate_json_action)\s*\(([^)]*)\)",
+            r"\b(fidl_library|_fidl_library|fidl_ir|fuchsia_structured_config_(?:rust|cpp_elf|cpp_driver)_lib|validate_json5?|_validate_json_action)\s*\(([^)]*)\)",
             gn_code(text),
             re.S,
         ):
@@ -527,13 +543,13 @@ fuchsia_bazel_dirs = [d for d in bazel_dirs if has_non_suite_bazel_targets(d)]
 if fuchsia_bazel_dirs:
     steps.append((
         "bazel_build_fuchsia",
-        [fx, "bazel", "build", "--config=fuchsia_platform", "--noexpand_test_suites"]
+        [fx, "bazel", "build", "--config=fuchsia_platform", "--config=remote", "--noexpand_test_suites"]
         + bazel_target_args(fuchsia_bazel_dirs),
     ))
 if host_dirs:
-    steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host"] + bazel_target_args(host_dirs)))
+    steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host", "--config=remote"] + bazel_target_args(host_dirs)))
 if exported_tests["host_tests"]:
-    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host"] + exported_tests["host_tests"]))
+    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host", "--config=remote"] + exported_tests["host_tests"]))
 if exported_tests["host_tests"] or exported_tests["target_tests"]:
     steps.append(("bazel_tests_exported", None))  # Checks <build dir>/tests.json after gn_build.
 
@@ -827,6 +843,52 @@ def _subrepos_clean_since_upload():
     return True
 
 
+# Check whether the host `bazel2gn` binary executed by `shac check` (`<build dir>/host_*/bazel2gn`)
+# is missing or older than `//build/tools/bazel2gn` sources or `bazel-bin/.../bazel2gn`.
+def _bazel2gn_host_tool_stale():
+    build_dir = (read(".fx-build-dir") or "").strip()
+    if not build_dir:
+        return False
+    host_bins = [
+        os.path.join(workdir, build_dir, "host_x64", "bazel2gn"),
+        os.path.join(workdir, build_dir, "host_arm64", "bazel2gn"),
+    ]
+    existing_hosts = [p for p in host_bins if os.path.isfile(p)]
+    if not existing_hosts:
+        return True
+    host_mtime = max(os.path.getmtime(p) for p in existing_hosts)
+    b2gn_src_dir = os.path.join(workdir, "build", "tools", "bazel2gn")
+    if os.path.isdir(b2gn_src_dir):
+        for root, _, files in os.walk(b2gn_src_dir):
+            for fn in files:
+                if fn.endswith((".go", ".json", ".gni", ".bzl", ".bazel")):
+                    try:
+                        if os.path.getmtime(os.path.join(root, fn)) > host_mtime:
+                            return True
+                    except OSError:
+                        pass
+    bazel_bin = os.path.join(
+        workdir,
+        build_dir,
+        "gen",
+        "build",
+        "bazel",
+        "workspace",
+        "bazel-bin",
+        "build",
+        "tools",
+        "bazel2gn",
+        "bazel2gn_",
+        "bazel2gn",
+    )
+    try:
+        if os.path.isfile(bazel_bin) and os.path.getmtime(bazel_bin) > host_mtime:
+            return True
+    except OSError:
+        pass
+    return False
+
+
 uploaded_commit = os.environ.get("PLANTER_UPLOADED_COMMIT", "").strip()
 if uploaded_commit and not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", "").strip() in ("", "0"):
     try:
@@ -847,7 +909,14 @@ if uploaded_commit and not dry_run and os.environ.get("PLANTER_BUILD_NO_REUSE", 
         or os.path.basename(u) in BUILD_FILE_NAMES
         or u.endswith(BUILD_FILE_EXTS)
     ]
-    if up_tree and up_tree == head_tree and not diff_worktree and not untracked_in_dirs and _subrepos_clean_since_upload():
+    if (
+        up_tree
+        and up_tree == head_tree
+        and not diff_worktree
+        and not untracked_in_dirs
+        and _subrepos_clean_since_upload()
+        and not _bazel2gn_host_tool_stale()
+    ):
         findings.append({
             "source": "build_verification",
             "category": "build_reused",
@@ -975,6 +1044,14 @@ if reused is not None:
     sys.exit(0)
 
 if skip_build:
+    if exported_tests["host_tests"] or exported_tests["target_tests"]:
+        for n in bazel_tests_export_notes():
+            findings.append({
+                "source": "build_verification",
+                "category": "bazel_tests_exported",
+                "severity": "INFO",
+                "message": n,
+            })
     findings.append({
         "source": "build_verification",
         "category": "build_skipped",
@@ -988,6 +1065,47 @@ FROM_TARGET = re.compile(r"\(from target (?:@@?[\w.~+-]*)?(//[^\s)]+)\)")
 NINJA_STEP_TARGET = re.compile(r"^\[[0-9]+/[0-9]+\]\s+\S+\s+(//([A-Za-z0-9_./+-]+):([^\s(]+))")
 # Extract the transitive dependency manifest path from clippy or rustc Ninja command lines.
 TRANSDEPS_ARG = re.compile(r"(?:--transdeps\s+|--rust-compilation-deps-path=|@shell:)(\S+)")
+NINJA_MISSING_RULE = re.compile(
+    r"^ninja: error: '([^']+)', needed by '([^']+)', missing and no known rule to make it$"
+)
+
+
+# Check whether Ninja aborted on missing source files in an out-of-sync submodule or
+# subrepository outside the changed packages and their reverse dependencies.
+def unrelated_ninja_missing_source(lines, rdep_pkgs):
+    ninja_errors = [l.strip() for l in lines if "ninja: error:" in l]
+    if not ninja_errors or any(l.startswith("FAILED:") for l in lines):
+        return None
+    missing_srcs = []
+    for err_line in ninja_errors:
+        mm = NINJA_MISSING_RULE.match(err_line)
+        if not mm or not mm.group(1).startswith("../"):
+            return None
+        rel_src = re.sub(r"^(?:\.\./)+", "", mm.group(1)).strip("/")
+        needed_by = mm.group(2).strip("/")
+        if not rel_src or os.path.exists(os.path.join(workdir, rel_src)):
+            return None
+        if any(
+            rel_src == d
+            or rel_src.startswith(d + "/")
+            or f"/{d}/" in f"/{needed_by}/"
+            for d in dirs
+        ):
+            return None
+        if any(rel_src == p or rel_src.startswith(p + "/") for p in rdep_pkgs):
+            return None
+        if git_lines(["diff", "--name-only", change_base, "--", rel_src]):
+            return None
+        if rel_src not in missing_srcs:
+            missing_srcs.append(rel_src)
+    if not missing_srcs:
+        return None
+    return (
+        f"Ninja failed on missing source file(s) ({' '.join(missing_srcs)}) outside the "
+        "changed packages and their GN reverse dependencies (out-of-sync submodule or "
+        "subrepository in the checkout). Do not edit them; the changed packages and their "
+        "GN dependents are still verified by the remaining steps."
+    )
 
 
 # Check whether a native Ninja failure in `fx build` is in an unrelated GN target
@@ -995,15 +1113,17 @@ TRANSDEPS_ARG = re.compile(r"(?:--transdeps\s+|--rust-compilation-deps-path=|@sh
 def unrelated_gn_ninja_failure(output):
     if not bazel_dirs or any(p.endswith((".gni", ".bzl", "MODULE.bazel")) for p in changed):
         return None
-    if re.search(r"ninja: error:|ERROR at //", output):
+    if re.search(r"ERROR at //", output):
         return None
     for m in LOCATION.finditer(output):
         loc_path = m.group(1).replace("../../", "", 1)
         if any(loc_path == d or loc_path.startswith(d + "/") for d in dirs):
             return None
     rdep_pkgs = {os.path.dirname(f) for f in rdep_build_files()}
-    build_dir = (read(".fx-build-dir") or "").strip()
     lines = output.splitlines()
+    if any("ninja: error:" in l for l in lines):
+        return unrelated_ninja_missing_source(lines, rdep_pkgs)
+    build_dir = (read(".fx-build-dir") or "").strip()
     failed_targets = []
     for i, l in enumerate(lines):
         if not l.startswith("FAILED:"):
@@ -1117,6 +1237,20 @@ for name, cmd in steps:
             "message": f"PLANTER_BUILD_DRY_RUN: {name} would run `{fmt_cmd(cmd)}`",
         })
         continue
+    # Refresh `<build dir>/host_*/bazel2gn` before running `shac check` when `//build/tools/bazel2gn`
+    # or `bazel-bin/.../bazel2gn` is newer than the Ninja host binary.
+    if name == "shac_check" and _bazel2gn_host_tool_stale():
+        try:
+            subprocess.run(
+                [fx, "build", "--host", "//build/tools/bazel2gn:bazel2gn"],
+                cwd=workdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            pass
     try:
         proc = subprocess.run(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
         code, output = proc.returncode, proc.stdout
@@ -1154,17 +1288,43 @@ for name, cmd in steps:
                 continue
         else:
             output += f"\n\n`{fmt_cmd(static_checks_cmd)}` also failed ({sc_code}):\n{sc_output}"
-    if name == "gn_build":
+    if name == "gn_build_dependents" and code != "timeout":
+        own_only = [
+            lbl
+            for lbl in labels
+            if any(
+                lbl.split("(", 1)[0].split(":", 1)[0] == f"//{d}"
+                for d in dirs
+            )
+        ]
+        if own_only and own_only != labels and unrelated_bazel_failure(output):
+            own_cmd = [fx, "build"] + own_only
+            try:
+                own_proc = subprocess.run(
+                    own_cmd,
+                    cwd=workdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout,
+                )
+                if own_proc.returncode == 0:
+                    continue
+            except subprocess.TimeoutExpired:
+                pass
+    if name in ("gn_build", "gn_build_dependents"):
         note = unrelated_bazel_failure(output)
         if note:
             text, file, line = summarize(output, LOCATION)
             findings.append({
                 "source": "build_verification",
-                "category": "preexisting_failure_gn_build",
+                "category": f"preexisting_failure_{name}",
                 "severity": "INFO",
                 "file": file,
                 "line": line,
-                "message": f"`{fmt_cmd(cmd)}` failed ({code}) outside the change: {note}\n{text}",
+                "message": (
+                    f"`{fmt_cmd(cmd)}` failed ({code}) outside the change: {note}\n{text}"
+                ),
             })
             continue
     failed.add(name)

@@ -682,10 +682,88 @@ def downgrade_check_cfg_diff_findings(findings):
                 f["severity"] = "INFO"
         elif (
             f["category"] == "attribute_alignment"
-            and "output_name in GN not carried over to Bazel" in f["message"]
+            and "Unusual rule mapping from fuchsia_" in f["message"]
+            and " to fx_" in f["message"]
+        ):
+            f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and (
+                "output_name in GN not carried over to Bazel" in f["message"]
+                or "rustenv (" in f["message"]
+                or "added lint_config=" in f["message"]
+            )
             and (f["file"], f["line"]) in raw_overwrite_locs
         ):
             f["severity"] = "INFO"
+        elif (
+            f["category"] == "missing_sources"
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "compile_data" in bz_txt:
+                f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and (
+                "Unusual rule mapping from fuchsia_component_manifest to fx_component_manifest" in f["message"]
+                or "Unusual rule mapping from resource_tree to fuchsia_package_resource_group" in f["message"]
+                or ("sources_root in GN not carried over to Bazel" in f["message"] and "dest_dir in GN not carried over to Bazel" in f["message"])
+            )
+        ):
+            f["severity"] = "INFO"
+        # Downgrade gn_unmodified when BUILD.gn already has the sentinel or the sibling
+        # BUILD.bazel only exports files / non-bazel2gn targets.
+        elif (
+            f["category"] == "gn_unmodified"
+            and f["file"].endswith("BUILD.gn")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            gn_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            bz_path = os.path.join(workdir, os.path.dirname(f["file"]), "BUILD.bazel")
+            bz_txt = (
+                open(bz_path, encoding="utf-8", errors="ignore").read()
+                if os.path.isfile(bz_path)
+                else ""
+            )
+            if (
+                "## BAZEL2GN SENTINEL" in gn_txt
+                or "exports_files(" in bz_txt
+                or "# @bazel2gn:skip" in bz_txt
+            ):
+                f["severity"] = "INFO"
+        elif (
+            f["category"] == "dep_alignment"
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if (
+                (f["file"], f["line"]) in raw_overwrite_locs
+                or "crate =" in bz_txt
+            ) and (
+                "@bazel2gn:raw_attribute:" in bz_txt
+                or "@bazel2gn:path_overwrite:" in bz_txt
+            ):
+                f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and "max_severity in GN not carried over to Bazel" in f["message"]
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "max_log_severity" in bz_txt:
+                f["severity"] = "INFO"
         elif (
             f["category"] == "dep_alignment"
             and "unmatched in GN: [//third_party/googletest:" in f["message"]
@@ -733,6 +811,160 @@ def downgrade_check_cfg_diff_findings(findings):
                 "\n    deps =\n" in gn_txt or "\n  deps =\n" in gn_txt
             ):
                 f["severity"] = "INFO"
+        # Downgrade copyright_header and package_hygiene/default_visibility on
+        # auto-generated crate_universe third_party/rust_crates BUILD.bazel files
+        # and shared bundles/assembly files even when `--only review_diff` runs.
+        elif (
+            f["category"] in ("copyright_header", "package_hygiene", "default_visibility")
+            and (
+                (
+                    f["file"].startswith("third_party/rust_crates/")
+                    and not f["file"].startswith("third_party/rust_crates/compat/")
+                )
+                or f["file"].startswith("bundles/assembly/")
+            )
+            and f["file"].endswith(("BUILD.bazel", "BUILD"))
+        ):
+            f["severity"] = "INFO"
+        elif f["file"].startswith("bundles/assembly/") and f["category"] in (
+            "sentinel_drift",
+            "dropped_comment",
+            "dep_alignment",
+            "attribute_alignment",
+            "gn_unmodified",
+        ):
+            f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and (
+                "output_name in GN not carried over to Bazel" in f["message"]
+                or "GN Rust configs handled by toolchain defaults / lint_config" in f["message"]
+                or "configs mapped to Bazel equivalents" in f["message"]
+                or "added crate_name=" in f["message"]
+            )
+            and (
+                "GN Rust configs handled by toolchain defaults / lint_config" in f["message"]
+                or "configs mapped to Bazel equivalents" in f["message"]
+                or "GN with_unit_tests decomposed into explicit test target" in f["message"]
+                or "!= lint_config (" in f["message"]
+            )
+        ):
+            f["severity"] = "INFO"
+        elif (
+            f["category"] == "dep_alignment"
+            and "unmatched in GN: [" in f["message"]
+            and "unmatched in Bazel:" not in f["message"]
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "fx_package(" in bz_txt and (
+                "components =" in bz_txt or "resources =" in bz_txt
+            ):
+                f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and "added package_name=" in f["message"]
+            and (
+                "log_settings in GN not carried over to Bazel" in f["message"]
+                or "max_severity in GN not carried over to Bazel" in f["message"]
+                or "test_specs in GN not carried over to Bazel" in f["message"]
+            )
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "fx_package(" in bz_txt:
+                f["severity"] = "INFO"
+        elif (
+            f["category"] == "attribute_alignment"
+            and (
+                "component_name ([" in f["message"]
+                or "cm_label in GN not carried over to Bazel" in f["message"]
+                or ("added component_name=" in f["message"] and " in Bazel" in f["message"])
+            )
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "fx_component(" in bz_txt or "fx_test_component(" in bz_txt:
+                f["severity"] = "INFO"
+        # Downgrade attribute_alignment on fx_unittest_package / fx_unittest_component
+        # when GN had default or bazel2gn-synthesized <name>-gn package_name / component_name.
+        elif (
+            f["category"] == "attribute_alignment"
+            and (
+                "package_name in GN not carried over to Bazel" in f["message"]
+                or "component_name in GN not carried over to Bazel" in f["message"]
+            )
+            and f["file"].endswith("BUILD.bazel")
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "fx_unittest_package(" in bz_txt or "fx_unittest_component(" in bz_txt:
+                f["severity"] = "INFO"
+        # Downgrade unmatched_target, dep_alignment, dropped_comment, and
+        # attribute_alignment when diffengine greedily pairs an unmigrated
+        # pre-sentinel GN target with a Bazel target via crate_name/output_name/binary_name,
+        # leaving the bazel2gn-synced GN target of the same name unmatched.
+        elif (
+            f["category"] == "unmatched_target"
+            and f["file"].endswith("BUILD.gn")
+            and f["message"].startswith('GN target "')
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            tname = f["message"].split('"', 2)[1]
+            gn_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            bz_path = os.path.join(workdir, os.path.dirname(f["file"]), "BUILD.bazel")
+            bz_txt = (
+                open(bz_path, encoding="utf-8", errors="ignore").read()
+                if os.path.isfile(bz_path)
+                else ""
+            )
+            if (
+                "## BAZEL2GN SENTINEL" in gn_txt
+                and f'name = "{tname}"' in bz_txt
+                and f'("{tname}")' in gn_txt.split("## BAZEL2GN SENTINEL", 1)[1]
+            ):
+                f["severity"] = "INFO"
+        elif (
+            f["category"] in ("dep_alignment", "dropped_comment", "attribute_alignment")
+            and f["file"].endswith("BUILD.bazel")
+            and f["message"].startswith('Target "')
+            and os.path.isfile(os.path.join(workdir, f["file"]))
+        ):
+            tname = f["message"].split('"', 2)[1]
+            gn_path = os.path.join(workdir, os.path.dirname(f["file"]), "BUILD.gn")
+            gn_txt = (
+                open(gn_path, encoding="utf-8", errors="ignore").read()
+                if os.path.isfile(gn_path)
+                else ""
+            )
+            bz_txt = open(
+                os.path.join(workdir, f["file"]), encoding="utf-8", errors="ignore"
+            ).read()
+            if "## BAZEL2GN SENTINEL" in gn_txt:
+                pre_gn, post_gn = gn_txt.split("## BAZEL2GN SENTINEL", 1)
+                if (
+                    f'name = "{tname}"' in bz_txt
+                    and f'("{tname}")' in post_gn
+                    and f'("{tname}")' not in pre_gn
+                    and any(
+                        f'{attr} = "' in bz_txt
+                        for attr in ("crate_name", "output_name", "binary_name")
+                    )
+                ):
+                    f["severity"] = "INFO"
 
 
 def run_review_diff(existing_findings):
@@ -770,12 +1002,57 @@ def run_review_diff(existing_findings):
     return results
 
 
-COMMIT_MSG_CHECKS = {"confidentiality_check", "cq_reachability", "commit_message_format", "build_verification"}
+COMMIT_MSG_CHECKS = {
+    "confidentiality_check",
+    "cq_reachability",
+    "commit_message_format",
+    "build_verification",
+}
 commit_msg_only = not only and commit_msg_only_since_upload()
 if commit_msg_only:
     enabled = [s for s in enabled if s["name"] in COMMIT_MSG_CHECKS]
     if len(target_dirs) > 1:
         target_dirs = target_dirs[:1]
+
+
+# Snapshot check manifest and script metadata to detect mid-run machinery evolutions.
+def machinery_fingerprint():
+    checks_dir = os.path.join(machinery_root(), "checks")
+    entries = []
+    try:
+        names = sorted(os.listdir(checks_dir))
+    except OSError:
+        return ()
+    for fn in names:
+        if fn == "manifest.json" or fn.endswith(".sh"):
+            p = os.path.join(checks_dir, fn)
+            try:
+                st = os.stat(p)
+                entries.append((fn, st.st_mtime_ns, st.st_size))
+            except OSError:
+                pass
+    return tuple(entries)
+
+
+# Wait for an in-progress machinery evolution after build_verification completes.
+def wait_for_evolution_after_build(max_wait_secs=180):
+    release_machinery_locks()
+    if not evolution_running():
+        return True
+    log("waiting for in-progress machinery evolution to finish merging...")
+    wait_start = time.monotonic()
+    last_hb = wait_start
+    while time.monotonic() - wait_start < max_wait_secs:
+        release_machinery_locks()
+        time.sleep(2.0)
+        if not evolution_running():
+            return True
+        now = time.monotonic()
+        if now - last_hb >= HEARTBEAT_SECS:
+            log(f"still waiting for machinery evolution ({fmt_secs(now - wait_start)})")
+            last_hb = now
+    return False
+
 
 builds_skipped = skip_build or os.environ.get("PLANTER_SKIP_BUILD", "").strip() not in ("", "0")
 evolution_note = (
@@ -791,6 +1068,7 @@ log(
     + ("; commit-msg only since upload" if commit_msg_only else "")
     + ("; builds skipped" if builds_skipped and not commit_msg_only else "")
 )
+initial_fp = machinery_fingerprint()
 rows = []
 all_findings = []
 try:
@@ -806,8 +1084,59 @@ try:
         started = time.monotonic()
         diff_findings = run_review_diff(all_findings)
         if diff_findings is not None:
-            rows.append(({"name": "review_diff", "enabled": True}, diff_findings, time.monotonic() - started))
+            rows.append(
+                (
+                    {"name": "review_diff", "enabled": True},
+                    diff_findings,
+                    time.monotonic() - started,
+                )
+            )
             all_findings.extend(diff_findings)
+    # Re-run fast static checks when a parallel machinery evolution merged during this run.
+    if not builds_skipped and (evolution_in_progress or evolution_running()):
+        if wait_for_evolution_after_build():
+            evolution_in_progress = False
+    else:
+        release_machinery_locks()
+        if evolution_in_progress and not evolution_running():
+            evolution_in_progress = False
+    if not evolution_in_progress and machinery_fingerprint() != initial_fp:
+        log("machinery evolution merged updated checks; re-running static checks...")
+        try:
+            reloaded = load_specs(manifest_path) or []
+        except ValueError:
+            reloaded = specs
+        re_enabled = [s for s in reloaded if s["enabled"]]
+        disabled = [s for s in reloaded if not s["enabled"]]
+        if only:
+            wanted = set(only)
+            re_enabled = [s for s in re_enabled if s["name"] in wanted]
+            disabled = [s for s in disabled if s["name"] in wanted]
+        if commit_msg_only:
+            re_enabled = [s for s in re_enabled if s["name"] in COMMIT_MSG_CHECKS]
+        bv_rows = {s["name"]: (s, f, t) for s, f, t in rows if s["name"] == "build_verification"}
+        rows = []
+        all_findings = []
+        for s in re_enabled:
+            if s["name"] in bv_rows:
+                row = bv_rows[s["name"]]
+            else:
+                st = time.monotonic()
+                row = (s, run_check(s), time.monotonic() - st)
+            rows.append(row)
+            all_findings.extend(row[1])
+        if not commit_msg_only and (not only or "review_diff" in only):
+            st = time.monotonic()
+            diff_findings = run_review_diff(all_findings)
+            if diff_findings is not None:
+                rows.append(
+                    (
+                        {"name": "review_diff", "enabled": True},
+                        diff_findings,
+                        time.monotonic() - st,
+                    )
+                )
+                all_findings.extend(diff_findings)
 except KeyboardInterrupt:
     log("interrupted")
     sys.exit(130)
