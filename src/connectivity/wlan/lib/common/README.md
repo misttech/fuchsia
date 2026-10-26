@@ -1,27 +1,25 @@
 # WLAN Common
 
-This library encapsulates WLAN functions that are very general or are shared between multiple layers of the WLAN stack.
+This library provides shared WLAN definitions such as frame parsers, element encoders, and test utilities for the WLAN stack.
 
 ## Major Responsibilities
 
 ### Field and Element Parsing
+The [`ie parser`](./rust/src/ie/mod.rs) contains definitions and parsing logic for binary Information Elements (IEs) and vendor attributes in management frames.
 
-The ['ie parser'](./rust/src/ie/mod.rs) contains many definitions and parsing functions for parsing binary fields and information elements from WLAN frames into internal representations.
+### MAC Frame Parsing
+The [`mac frame parser`](./rust/src/mac/mod.rs) inspects binary frames to determine IEEE 802.11 frame control types, subtypes, and header fields.
 
-### MAC Frame parsing
-
-The ['mac frame parser'](./rust/src/mac/mod.rs) parses binary frames to determine their types. A user of WLAN Common can use this information to determine which field and element parsing should be performed.
+### Frame Writing
+Frame writing utilities serialize IEEE 802.11 management and data frames into binary formats for transmission.
 
 ### Test Utilities
+Test utilities generate [`fake frames`](./rust/src/test_utils/fake_frames.rs) and [`fake stations`](./rust/src/test_utils/fake_stas.rs) for unit tests across the stack and provide the `assert_variant` macro.
 
-Utilities for genering a set of ['fake frames'](./rust/src/test_utils/fake_frames.rs) as well as entire ['fake stations'](./rust/src/test_utils/fake_stas.rs) for unit testing throughout the WLAN stack.
+## Rust and C++ Implementations
 
-Also provides an 'assert_variant' macro that is used extensively in testing.
+The core WLAN stack completed its transition to Rust. The canonical library for the stack is `lib/common/rust` (`wlan-common`). The `lib/common/cpp` directory contains shared C++ helpers, element parsers, and utilities retained for C++ drivers (`wlansoftmac` and vendor drivers).
 
-### Frame writing
+## Build System Note
 
-Various utilities for writing fields and frames into binary formats.
-
-## Rust Transition
-
-This library currently contains both Rust and C++ implementions for many different functions. The C++ functions are mostly deprecated; our MLME implemention is transitioning from C++ to Rust, and we will remove this C++ functionality when the transition is complete.
+`BUILD.bazel` defines the `lib/common` build targets. When you modify dependencies or sources, edit `BUILD.bazel` first. Then run `fx bazel2gn` to regenerate `BUILD.gn`. Do not edit `BUILD.gn` directly.
