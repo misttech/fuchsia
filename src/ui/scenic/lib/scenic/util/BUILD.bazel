@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "util",
+    srcs = [
+        "error_reporter.cc",
+    ],
+    hdrs = [
+        "error_reporter.h",
+    ],
+    visibility = [
+        "//src/ui/scenic/lib/flatland:__subpackages__",
+        "//src/ui/scenic/lib/screen_capture/tests:__pkg__",
+        "//src/ui/scenic/lib/utils:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/syslog/cpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "rk4_spring_simulation",
+    srcs = [
+        "rk4_spring_simulation.cc",
+    ],
+    hdrs = [
+        "rk4_spring_simulation.h",
+    ],
+    implementation_deps = [
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+        "//zircon/system/ulib/fbl",
+    ],
+    alwayslink = True,
+)

@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# When told to shutdown, the manager notifies all registered subsystems and
+# waits for them to complete shutting down.
+fx_cc_library(
+    name = "shutdown",
+    srcs = [
+        "shutdown_manager.cc",
+    ],
+    hdrs = [
+        "shutdown_manager.h",
+    ],
+    visibility = [
+        "//src/ui/scenic/bin:__pkg__",
+        "//src/ui/scenic/lib/shutdown/tests:__pkg__",
+    ],
+    deps = [
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/fit-promise",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+    ],
+    alwayslink = True,
+)
