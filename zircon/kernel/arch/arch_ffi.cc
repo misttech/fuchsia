@@ -11,6 +11,7 @@
 
 #include <arch/arch_ops.h>
 #include <arch/debugger.h>
+#include <arch/exception.h>
 #include <arch/interrupt.h>
 #include <arch/ops.h>
 #include <kernel/ffi.h>
@@ -64,13 +65,16 @@ zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, const void* src, siz
 void* cpp_arch_get_current_thread();
 void cpp_arch_set_current_thread(void* thread);
 void cpp_arch_set_restricted_flag(bool in_restricted);
-void cpp_dump_common_exception_context(const arch_exception_context_t* context);
 bool cpp_with_frame_pointers();
 void cpp_arch_set_blocking_disallowed(bool value);
 void* cpp_arch_get_curr_percpu();
 uint32_t cpp_arch_vm_features();
 uint32_t cpp_arch_num_spinlocks_held();
 uint32_t cpp_arch_dcache_line_size();
+#ifndef __riscv
+uint32_t cpp_arch_exception_context_user_synth_code(const arch_exception_context_t* context);
+uint32_t cpp_arch_exception_context_user_synth_data(const arch_exception_context_t* context);
+#endif
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_arch_yield() { arch::Yield(); }
@@ -116,9 +120,6 @@ FFI_ALWAYS_INLINE void cpp_arch_set_current_thread(void* thread) {
 FFI_ALWAYS_INLINE void cpp_arch_set_restricted_flag(bool in_restricted) {
   arch_set_restricted_flag(in_restricted);
 }
-FFI_ALWAYS_INLINE void cpp_dump_common_exception_context(const arch_exception_context_t* context) {
-  dump_common_exception_context(context);
-}
 FFI_ALWAYS_INLINE bool cpp_with_frame_pointers() { return WITH_FRAME_POINTERS != 0; }
 FFI_ALWAYS_INLINE void cpp_arch_set_blocking_disallowed(bool value) {
   arch_set_blocking_disallowed(value);
@@ -127,5 +128,15 @@ FFI_ALWAYS_INLINE void* cpp_arch_get_curr_percpu() { return arch_get_curr_percpu
 FFI_ALWAYS_INLINE uint32_t cpp_arch_vm_features() { return arch_vm_features(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_num_spinlocks_held() { return arch_num_spinlocks_held(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_dcache_line_size() { return arch_dcache_line_size(); }
+#ifndef __riscv
+FFI_ALWAYS_INLINE uint32_t
+cpp_arch_exception_context_user_synth_code(const arch_exception_context_t* context) {
+  return context->user_synth_code;
+}
+FFI_ALWAYS_INLINE uint32_t
+cpp_arch_exception_context_user_synth_data(const arch_exception_context_t* context) {
+  return context->user_synth_data;
+}
+#endif
 
 }  // extern "C"

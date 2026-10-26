@@ -7,42 +7,40 @@
 use super::channel_dispatcher::MessageWaiter;
 use super::dispatcher::{DispatcherOps, impl_dispatcher_facade_with_state};
 use super::exception_dispatcher::ExceptionDispatcher;
-use super::exceptionate::{Exceptionate, ExceptionateStorage};
-use super::exceptionate_ffi::cpp_exceptionate_destroy;
+use super::exceptionate::Exceptionate;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
     cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_alloc,
     cpp_thread_dispatcher_attach_to_core_thread, cpp_thread_dispatcher_current,
-    cpp_thread_dispatcher_get_core_thread, cpp_thread_dispatcher_get_exception_report,
-    cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_lock_acquire,
-    cpp_thread_dispatcher_lock_release, cpp_thread_dispatcher_read_state,
-    cpp_thread_dispatcher_release_core_thread_observation, cpp_thread_dispatcher_reset_core_thread,
-    cpp_thread_dispatcher_set_core_thread, cpp_thread_dispatcher_set_user_entry,
-    cpp_thread_dispatcher_write_state, cpp_thread_handle_single_shot_exiting,
-    cpp_thread_runtime_stats_add_lock_contention_ticks,
+    cpp_thread_dispatcher_get_core_thread, cpp_thread_dispatcher_is_current,
+    cpp_thread_dispatcher_lock_acquire, cpp_thread_dispatcher_lock_release,
+    cpp_thread_dispatcher_read_state, cpp_thread_dispatcher_release_core_thread_observation,
+    cpp_thread_dispatcher_reset_core_thread, cpp_thread_dispatcher_set_core_thread,
+    cpp_thread_dispatcher_set_user_entry, cpp_thread_dispatcher_write_state,
+    cpp_thread_handle_single_shot_exiting, cpp_thread_runtime_stats_add_lock_contention_ticks,
     cpp_thread_runtime_stats_add_page_fault_ticks, cpp_thread_runtime_stats_get_compensated,
     cpp_thread_runtime_stats_init, cpp_thread_runtime_stats_update, cpp_thread_start_routine_entry,
 };
 use super::thread_state::{Exception, Lifecycle, ThreadState, lifecycle_to_string};
-use crate::arch_rs::UserEntryState;
+use crate::arch_rs::{ArchExceptionContext, UserEntryState};
 use crate::counters::define_kcounter;
 use crate::kernel::scheduler_state::{
     DEFAULT_PRIORITY, SchedulerStateBaseProfile, ThreadStateKind,
 };
-use crate::kernel::thread::{Thread, ThreadPtr};
+use crate::kernel::thread::{Thread, ThreadPtr, with_exception_context};
 use core::ffi::c_void;
-use core::mem::MaybeUninit;
 use debug::{ltrace_entry_obj, ltrace_exit_obj, ltracef};
 use fbl::{Canary, RefPtr};
+use kprint::kprintln;
 use ksync::{KMutex, LockToken, RawCriticalMutex, RawSpinlock, guarded};
 use object_constants_rs as object_constants;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_THREAD, ZX_THREAD_RUNNING, ZX_THREAD_SUSPENDED, ZX_THREAD_TERMINATED,
-    zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
-    zx_info_thread_t, zx_rights_t,
+    ZX_ERR_INTERNAL_INTR_KILLED, ZX_OBJ_TYPE_THREAD, ZX_THREAD_RUNNING, ZX_THREAD_SUSPENDED,
+    ZX_THREAD_TERMINATED, zx_exception_context_t, zx_exception_report_t, zx_excp_type_t,
+    zx_info_task_runtime_t, zx_info_thread_stats_t, zx_info_thread_t, zx_rights_t,
 };
 
 pub use crate::kernel::types::cpu_mask_t;
@@ -101,7 +99,7 @@ pub struct ThreadDispatcherState {
     /// Support for sending an exception to an exception handler and then waiting for a response.
     /// Exceptionates have internal locking so we don't need to guard it here.
     #[pin]
-    pub(crate) exceptionate: ExceptionateStorage,
+    pub(crate) exceptionate: Exceptionate,
 
     /// Non-null if the thread is currently processing a channel exception.
     #[guarded_by(lock)]
@@ -167,11 +165,7 @@ impl ThreadDispatcherState {
             // placement new.
             runtime_stats <- unsafe { ThreadRuntimeStatsStorage::init() },
             blocked_reason: core::sync::atomic::AtomicU32::new(Blocked::NONE.0),
-            // SAFETY: `ExceptionateStorage::init()` initializes the opaque storage via
-            // placement new.
-            exceptionate <- unsafe {
-                ExceptionateStorage::init(zx_types::ZX_EXCEPTION_CHANNEL_TYPE_THREAD)
-            },
+            exceptionate <- Exceptionate::new(zx_types::ZX_EXCEPTION_CHANNEL_TYPE_THREAD),
             exception: None.into(),
             exceptionate_type: zx_types::ZX_EXCEPTION_CHANNEL_TYPE_NONE.into(),
             suspend_count: 0.into(),
@@ -223,12 +217,6 @@ impl PinnedDrop for ThreadDispatcherState {
             // SAFETY: `core_thread` was initialized but never started, so forgetting it is safe.
             unsafe { core_thread.forget() };
         }
-
-        // Run the `Exceptionate` destructor: `ExceptionateStorage` has no drop hook of its own.
-        // SAFETY: `exceptionate` was initialized by `ExceptionateStorage::init` in
-        // `ThreadDispatcherState::init`, nothing can reach it once the last reference to the
-        // dispatcher is gone, and it is destroyed exactly once here.
-        unsafe { cpp_exceptionate_destroy(this.exceptionate.as_void_ptr()) };
     }
 }
 
@@ -302,6 +290,16 @@ impl ThreadDispatcher {
         let ptr = unsafe { cpp_thread_dispatcher_current() };
         debug_assert!(!ptr.is_null());
         CurrentThreadDispatcher { ptr }
+    }
+
+    /// Returns a wrapper that dereferences to the current [`ThreadDispatcher`], or `None` if the
+    /// current thread is not a user thread (i.e., not associated with a `ThreadDispatcher`).
+    #[inline]
+    pub fn try_get_current() -> Option<CurrentThreadDispatcher> {
+        // SAFETY: `cpp_thread_dispatcher_current` returns the current thread's `user_thread()`, or
+        // null when executing on a kernel-only thread.
+        let ptr = unsafe { cpp_thread_dispatcher_current() };
+        if ptr.is_null() { None } else { Some(CurrentThreadDispatcher { ptr }) }
     }
 
     /// Returns a wrapper that dereferences to the current thread's [`MessageWaiter`].
@@ -683,6 +681,12 @@ impl ThreadDispatcher {
             self.state().state.get(token).lifecycle() == Lifecycle::Suspended
                 || self.in_exception_locked(token)
         }
+    }
+
+    /// Marks the current thread for termination. The thread will actually terminate when the
+    /// kernel stack unwinds.
+    pub fn kill_current() {
+        crate::kernel::thread::current_kill();
     }
 
     /// Kills this thread.
@@ -1156,16 +1160,173 @@ impl ThreadDispatcher {
         }
     }
 
-    /// Returns the thread's current exception report.
-    pub fn get_exception_report(&self) -> Result<zx_types::zx_exception_report_t, Status> {
-        let mut report = MaybeUninit::<zx_types::zx_exception_report_t>::uninit();
-        // SAFETY: self is a valid ThreadDispatcher and report points to uninitialized stack memory.
-        let status = unsafe {
-            cpp_thread_dispatcher_get_exception_report(self as *const _, report.as_mut_ptr())
+    /// Assuming the thread is stopped waiting for an exception response, returns the exception
+    /// report, or `Err(Status::BAD_STATE)` if not in an exception.
+    pub fn get_exception_report(&self) -> Result<zx_exception_report_t, Status> {
+        self.state().canary.assert();
+        ltrace_entry_obj!(self);
+
+        ksync::lock!(let guard = self.state().lock_lock());
+        if let Some(exception) = guard.fields().exception.as_ref() {
+            // We always leave exception handling before the report gets wiped
+            // so this must succeed.
+            let report = exception.fill_report();
+            debug_assert!(report.is_some());
+            report.ok_or(Status::BAD_STATE)
+        } else {
+            Err(Status::BAD_STATE)
+        }
+    }
+
+    /// Sends an exception over the exception channel and blocks for a response.
+    ///
+    /// Returns `(result, sent)`, where `sent` indicates whether the exception was successfully
+    /// sent over the given `exceptionate` channel. This can be used in the `Err(Status::NEXT)`
+    /// case to determine whether the exception channel didn't exist or it did exist but the
+    /// receiver opted not to handle the exception.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())`: If the exception was processed and the thread should resume.
+    /// * `Err(Status::NEXT)`: If there is no channel or the receiver opted to skip.
+    /// * `Err(Status::STOP)`: If the receiver requested `ZX_EXCEPTION_STATE_THREAD_EXIT`.
+    /// * `Err(Status::NO_MEMORY)`: On allocation failure.
+    /// * `Err(Status(ZX_ERR_INTERNAL_INTR_KILLED))`: If the thread was killed before receiving a
+    ///   response.
+    /// # Panics
+    ///
+    /// Panics if `self` is not the currently executing user thread.
+    pub fn handle_exception(
+        &self,
+        exceptionate: &Exceptionate,
+        exception: &RefPtr<ExceptionDispatcher>,
+    ) -> (Result<(), Status>, bool) {
+        self.state().canary.assert();
+        ltrace_entry_obj!(self);
+        assert!(self.is_current());
+
+        // Mark as blocked before sending the exception, otherwise a handler could
+        // potentially query our state before we've marked ourself blocked.
+        let _by = AutoBlocked::new(Blocked::EXCEPTION);
+
+        {
+            ksync::lock!(let mut guard = self.state().lock_lock());
+
+            // We send the exception while locked so that if it succeeds we can
+            // atomically update our state.
+            if let Err(status) = exceptionate.send_exception(exception) {
+                return (Err(status), false);
+            }
+
+            // This state is needed by `get_info_for_userspace()`.
+            // SAFETY: `guard` holds `self`'s state lock.
+            unsafe {
+                self.set_exception_dispatcher_locked(
+                    guard.as_mut().token_mut(),
+                    exception.clone(),
+                    exceptionate.type_(),
+                );
+            }
+        }
+
+        ltracef!("blocking on exception response\n");
+
+        let mut result = exception.wait_for_handle_close();
+
+        ltracef!("received exception response {}\n", Status::result_into_raw(result));
+
+        ksync::lock!(let mut guard = self.state().lock_lock());
+
+        // If both the thread was killed and the exception was resumed before we
+        // started waiting, the exception resume status (ZX_OK) might be returned,
+        // but we want thread kill to always take priority and stop exception
+        // handling immediately.
+        //
+        // Note that this logic will always trigger for ZX_EXCP_THREAD_EXITING
+        // whether the thread was killed or is exiting normally, but that's fine
+        // because that exception only ever goes to a single handler so we ignore
+        // the handler return value anyway.
+        // SAFETY: `guard` holds `self`'s state lock.
+        if unsafe { self.clear_exception_locked(guard.as_mut().token_mut()) } {
+            result = Err(Status::err_from_raw(ZX_ERR_INTERNAL_INTR_KILLED));
+        }
+
+        (result, true)
+    }
+
+    /// Similar to [`Self::handle_exception`], but for single-shot exceptions which are sent to at
+    /// most one handler (e.g. `ZX_EXCP_THREAD_STARTING`).
+    ///
+    /// The main difference is that this takes `exception_type` and `arch_context` rather than a
+    /// full exception object, and internally sets up the required state and creates the exception
+    /// object.
+    ///
+    /// Returns `true` if the exception was sent.
+    ///
+    /// # Safety
+    ///
+    /// * `self` must be the currently executing user thread (`self.is_current()`).
+    /// * `self`'s dispatcher lock (`state().lock`) must not be held (`TA_EXCL(get_lock())`), nor
+    ///   any thread lock, spinlock, or active `ChainLockTransaction`.
+    /// * `arch_context` must point to a valid, initialized `arch_exception_context_t` for the
+    ///   current thread that outlives this call, and if `(*arch_context).frame` is non-null, it
+    ///   must point to a valid, initialized, writable `iframe_t` for the duration of the call
+    ///   without conflicting Rust references.
+    pub unsafe fn handle_single_shot_exception(
+        &self,
+        exceptionate: &Exceptionate,
+        exception_type: zx_excp_type_t,
+        arch_context: *const ArchExceptionContext,
+    ) -> bool {
+        self.state().canary.assert();
+        ltrace_entry_obj!(self);
+        debug_assert!(self.is_current());
+
+        // Do a quick check for valid channel first. It's still possible that the
+        // channel will become invalid immediately after this check, but that will
+        // be caught when we try to send the exception. This is just an
+        // optimization to avoid unnecessary setup/teardown in the common case.
+        if !exceptionate.has_valid_channel() {
+            return false;
+        }
+
+        // SAFETY: Caller guarantees `arch_context` points to a valid `arch_exception_context_t`.
+        let report =
+            unsafe { ExceptionDispatcher::build_arch_report(exception_type, arch_context) };
+
+        // SAFETY: `report` and `arch_context` outlive `_cleanup` below, which calls
+        // `exception.clear()` on all exit paths before `report` goes out of scope.
+        let Some(exception) = (unsafe {
+            ExceptionDispatcher::create(
+                RefPtr::from_ref(self),
+                exception_type,
+                &report,
+                arch_context,
+            )
+        }) else {
+            core::hint::cold_path();
+            kprintln!(
+                "KERN: failed to allocate memory for exception type {:u} in thread {:u}.{:u}",
+                exception_type,
+                self.process().get_koid(),
+                self.get_koid()
+            );
+            return false;
         };
-        Status::ok(status)?;
-        // SAFETY: cpp_thread_dispatcher_get_exception_report succeeded and initialized report.
-        Ok(unsafe { report.assume_init() })
+
+        // We're about to handle the exception (`handle_exception`). Install `arch_context` on the
+        // current thread to make its user register state available to debuggers and exception
+        // handlers while the thread is "in exception".
+        // SAFETY: Caller guarantees `self` is the current user thread, `arch_context` (and any
+        // non-null `(*arch_context).frame`) is valid without conflicting references, and no
+        // dispatcher lock, thread lock, spinlock, or active `ChainLockTransaction` is held.
+        unsafe {
+            with_exception_context(arch_context, || {
+                let _cleanup = zr::defer(|| exception.clear());
+                let (_result, sent) = self.handle_exception(exceptionate, &exception);
+                sent
+            })
+        }
     }
 
     /// Raises a user exception for the job debugger.
@@ -1190,9 +1351,7 @@ impl ThreadDispatcher {
     /// Returns the thread's `Exceptionate`.
     pub fn exceptionate(&self) -> &Exceptionate {
         self.assert_canary();
-        // SAFETY: `exceptionate` is initialized by `ThreadDispatcherState::init` and lives until
-        // `PinnedDrop::drop`, so it holds a valid `Exceptionate` for `self`'s whole lifetime.
-        unsafe { &*self.state().exceptionate.as_void_ptr().cast::<Exceptionate>() }
+        &self.state().exceptionate
     }
 }
 
@@ -1378,11 +1537,11 @@ extern "C" fn rust_thread_start_routine(arg: *mut c_void) -> i32 {
 #[cfg(ktest)]
 #[unittest::suite(name = "thread_dispatcher_rust")]
 mod tests {
-    use super::super::exception_dispatcher::{ArchExceptionContext, ExceptionDispatcher};
+    use super::super::exception_dispatcher::ExceptionDispatcher;
     use super::super::job_dispatcher::JobDispatcher;
     use super::super::process_dispatcher::ProcessDispatcher;
     use super::{Blocked, Lifecycle, ThreadDispatcher, cpp_thread_dispatcher_reset_core_thread};
-    use crate::arch_rs::InterruptDisableGuard;
+    use crate::arch_rs::{ArchExceptionContext, InterruptDisableGuard};
     use crate::kernel::scheduler_state::{DEFAULT_PRIORITY, SchedulerStateBaseProfile};
     use unittest::{assert_ok, expect_eq, expect_ok, expect_true, unwrap_ok};
     use zx_status::Status;

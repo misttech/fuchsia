@@ -45,11 +45,6 @@ class ThreadDispatcher;
 extern "C" {
 void* rust_thread_dispatcher_get_exceptionate(const ThreadDispatcher* thread);
 bool rust_thread_dispatcher_suspended_or_in_exception_locked(const ThreadDispatcher* thread);
-bool rust_thread_dispatcher_clear_exception_locked(const ThreadDispatcher* thread);
-void rust_thread_dispatcher_set_exception_locked(const ThreadDispatcher* thread,
-                                                 const ExceptionDispatcher* exception,
-                                                 uint32_t exceptionate_type);
-ExceptionDispatcher* rust_thread_dispatcher_get_exception_locked(const ThreadDispatcher* thread);
 void* rust_thread_dispatcher_get_core_thread_lock(const ThreadDispatcher* thread);
 
 // Allocates and constructs a ThreadDispatcher. The Rust ThreadDispatcher::create() calls this
@@ -86,6 +81,9 @@ zx_status_t rust_thread_dispatcher_suspend(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_resume(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_suspending(const ThreadDispatcher* thread);
 void rust_thread_dispatcher_resuming(const ThreadDispatcher* thread);
+bool rust_thread_dispatcher_handle_single_shot_exception(
+    ThreadDispatcher* thread, Exceptionate* exceptionate, zx_excp_type_t exception_type,
+    const arch_exception_context_t* arch_context);
 
 void cpp_thread_handle_single_shot_exiting(ProcessDispatcher* process, ThreadDispatcher* thread);
 void cpp_thread_dispatcher_reset_core_thread(ThreadDispatcher* thread);
@@ -209,42 +207,23 @@ class ThreadDispatcher final : public Dispatcher,
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final
       TA_EXCL(get_lock());
 
-  // Assuming the thread is stopped waiting for an exception response,
-  // fill in |*report| with the exception report.
-  // Returns ZX_ERR_BAD_STATE if not in an exception.
-  zx_status_t GetExceptionReport(zx_exception_report_t* report);
-
   Exceptionate* exceptionate() {
     AssertCanary();
     return static_cast<Exceptionate*>(rust_thread_dispatcher_get_exceptionate(this));
   }
 
-  // Sends an exception over the exception channel and blocks for a response.
+  // Sends a single-shot exception (which is sent to at most one handler, e.g.
+  // ZX_EXCP_THREAD_STARTING) over |exceptionate| and blocks for a response.
   //
-  // |sent| will indicate whether the exception was successfully sent over
-  // the given |exceptionate| channel. This can be used in the ZX_ERR_NEXT
-  // case to determine whether the exception channel didn't exist or it did
-  // exist but the receiver opted not to handle the exception.
-  //
-  // Returns:
-  //   ZX_OK if the exception was processed and the thread should resume.
-  //   ZX_ERR_NEXT if there is no channel or the receiver opted to skip.
-  //   ZX_ERR_NO_MEMORY on allocation failure.
-  //   ZX_ERR_INTERNAL_INTR_KILLED if the thread was killed before
-  //       receiving a response.
-  zx_status_t HandleException(Exceptionate* exceptionate,
-                              fbl::RefPtr<ExceptionDispatcher> exception, bool* sent);
-
-  // Similar to HandleException(), but for single-shot exceptions which are
-  // sent to at most one handler, e.g. ZX_EXCP_THREAD_STARTING.
-  //
-  // The main difference is that this takes |exception_type| and |context|
-  // rather than a full exception object, and internally sets up the required
-  // state and creates the exception object.
+  // Internally sets up the required exception state and creates the exception
+  // object from |exception_type| and |context|.
   //
   // Returns true if the exception was sent.
   bool HandleSingleShotException(Exceptionate* exceptionate, zx_excp_type_t exception_type,
-                                 const arch_exception_context_t& context) TA_EXCL(get_lock());
+                                 const arch_exception_context_t& context) TA_EXCL(get_lock()) {
+    return rust_thread_dispatcher_handle_single_shot_exception(this, exceptionate, exception_type,
+                                                               &context);
+  }
 
   // Fetch a consistent snapshot of the runtime stats, compensated for unaccumulated runtime in the
   // ready or running state.
@@ -491,8 +470,6 @@ zx_status_t cpp_thread_dispatcher_write_state(ThreadDispatcher* thread, uint32_t
 zx_status_t cpp_sys_thread_raise_exception(uint32_t options, zx_excp_type_t type,
                                            const zx_exception_context_t* user_context);
 zx_status_t cpp_sys_thread_legacy_yield(uint32_t options);
-zx_status_t cpp_thread_dispatcher_get_exception_report(
-    const ThreadDispatcher* thread, ffi::Uninitialized<zx_exception_report_t>* out_report);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_THREAD_DISPATCHER_H_

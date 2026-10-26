@@ -61,7 +61,7 @@ struct SyscallResult {
 }
 
 /// Architectural exception context saved during exception handling.
-type ArchExceptionContext = riscv64_regs_bindings::arch_exception_context;
+pub type ArchExceptionContext = riscv64_regs_bindings::arch_exception_context;
 
 const _: () = {
     assert!(core::mem::size_of::<ArchExceptionContext>() == 32);
@@ -210,15 +210,9 @@ pub unsafe extern "C" fn rust_riscv64_print_frame(
 // C++ kernel runtime hooks called from Rust exception handlers.
 unsafe extern "C" {
     fn cpp_set_crashlog_regs(iframe: *const Iframe, cause: i64, tval: u64);
-    // Declared `extern "C"` in <arch/exception.h>; no shim needed.
-    fn dispatch_user_exception(
-        exception_type: u32,
-        context: *const ArchExceptionContext,
-    ) -> Result<(), Status>;
     fn cpp_vmm_page_fault_handler(tval: u64, flags: u32) -> Result<(), Status>;
     // Defined in exceptions.S and already `extern "C"`; no shim needed.
     fn riscv64_syscall_dispatcher(frame: *mut Iframe) -> SyscallResult;
-    fn cpp_dump_common_exception_context(context: *const ArchExceptionContext);
     fn cpp_cpu_stats_inc_page_faults();
 }
 
@@ -294,7 +288,13 @@ unsafe fn fatal_exception(cause: i64, tval: u64, frame: *mut Iframe) -> ! {
 }
 
 /// Attempt to dispatch an exception to userspace exception handlers.
-fn try_dispatch_user_exception(
+///
+/// # Safety
+///
+/// If `frame` is non-null, it must point to a valid, initialized, writable trap `Iframe` on the
+/// current thread's kernel stack that outlives this call without conflicting Rust references, and
+/// no thread lock, spinlock, or active `ChainLockTransaction` may be held.
+unsafe fn try_dispatch_user_exception(
     exception_type: u32,
     cause: i64,
     tval: u64,
@@ -313,9 +313,14 @@ fn try_dispatch_user_exception(
     };
 
     super::arch::arch_enable_ints();
-    // SAFETY: `context` is a live local; the callee copies out of it and does not
-    // retain the pointer past the call.
-    let status = unsafe { dispatch_user_exception(exception_type, &context) };
+    // SAFETY: `context` lives on this stack frame for the duration of the call;
+    // `dispatch_user_exception` temporarily stores `&raw const context` in `ExceptionDispatcher`
+    // and installs `context.frame` into the thread's `suspended_general_regs` across blocking
+    // handler delivery, clearing both pointers before returning. The caller guarantees `frame` (if
+    // non-null) points to a valid, writable trap `Iframe` without conflicting references and that
+    // no thread lock, spinlock, or active `ChainLockTransaction` is held.
+    let status =
+        unsafe { crate::object::dispatch_user_exception(exception_type, &raw const context) };
     super::arch::arch_disable_ints();
     status
 }
@@ -432,13 +437,18 @@ unsafe fn riscv64_page_fault_handler(cause: i64, tval: u64, frame: *mut Iframe, 
     }
 
     if user
-        && try_dispatch_user_exception(
-            ZX_EXCP_FATAL_PAGE_FAULT,
-            cause,
-            tval,
-            frame,
-            pf_status.into_raw() as u32,
-        )
+        // SAFETY: `frame` points to the trap `Iframe` built on the current thread's stack by
+        // `stvec.S` with no conflicting references, and no thread lock, spinlock, or
+        // `ChainLockTransaction` is held.
+        && unsafe {
+            try_dispatch_user_exception(
+                ZX_EXCP_FATAL_PAGE_FAULT,
+                cause,
+                tval,
+                frame,
+                pf_status.into_raw() as u32,
+            )
+        }
         .is_ok()
     {
         return;
@@ -500,7 +510,10 @@ unsafe fn riscv64_misaligned_fault_handler(cause: i64, tval: u64, frame: *mut If
             crate::platform_rs::power::ZirconCrashReason::Panic,
         );
     }
-    let _ = try_dispatch_user_exception(ZX_EXCP_UNALIGNED_ACCESS, cause, tval, frame, 0);
+    // SAFETY: `frame` points to the trap `Iframe` built on the current thread's stack by `stvec.S`
+    // with no conflicting references, and no thread lock, spinlock, or `ChainLockTransaction` is
+    // held.
+    let _ = unsafe { try_dispatch_user_exception(ZX_EXCP_UNALIGNED_ACCESS, cause, tval, frame, 0) };
 }
 
 /// Illegal instruction exception handler.
@@ -535,7 +548,12 @@ unsafe fn riscv64_illegal_instruction_handler(
             crate::platform_rs::power::ZirconCrashReason::Panic,
         );
     }
-    let _ = try_dispatch_user_exception(ZX_EXCP_UNDEFINED_INSTRUCTION, cause, tval, frame, 0);
+    // SAFETY: `frame` points to the trap `Iframe` built on the current thread's stack by `stvec.S`
+    // with no conflicting references, and no thread lock, spinlock, or `ChainLockTransaction` is
+    // held.
+    let _ = unsafe {
+        try_dispatch_user_exception(ZX_EXCP_UNDEFINED_INSTRUCTION, cause, tval, frame, 0)
+    };
 }
 
 /// Software breakpoint (ebreak) handler.
@@ -565,7 +583,10 @@ unsafe fn riscv64_breakpoint_handler(cause: i64, tval: u64, frame: *mut Iframe, 
             crate::platform_rs::power::ZirconCrashReason::Panic,
         );
     }
-    let _ = try_dispatch_user_exception(ZX_EXCP_SW_BREAKPOINT, cause, tval, frame, 0);
+    // SAFETY: `frame` points to the trap `Iframe` built on the current thread's stack by `stvec.S`
+    // with no conflicting references, and no thread lock, spinlock, or `ChainLockTransaction` is
+    // held.
+    let _ = unsafe { try_dispatch_user_exception(ZX_EXCP_SW_BREAKPOINT, cause, tval, frame, 0) };
 }
 
 /// System call trap handler.
@@ -776,7 +797,7 @@ pub unsafe extern "C" fn arch_dump_exception_context(context: *const ArchExcepti
     // SAFETY: the caller guarantees `context` points at a live exception context.
     let ctx = unsafe { &*context };
     // SAFETY: same pointer, passed straight through; the callee only reads it.
-    unsafe { cpp_dump_common_exception_context(context) };
+    unsafe { crate::object::dump_common_exception_context(context) };
 
     if ctx.frame.is_null() {
         dprintf!(0, "no frame to dump\n");
@@ -849,9 +870,12 @@ pub extern "C" fn arch_dispatch_user_policy_exception(
         user_synth_code: policy_exception_code,
         user_synth_data: policy_exception_data,
     };
-    // SAFETY: `context` is a live local; the callee copies out of it and does not
-    // retain the pointer past the call.
-    unsafe { dispatch_user_exception(ZX_EXCP_POLICY_ERROR, &context) }
+    // SAFETY: `context` lives on this stack frame with a null `frame` pointer;
+    // `dispatch_user_exception` temporarily stores `&raw const context` in `ExceptionDispatcher`
+    // across blocking handler delivery and clears the pointer before returning, and policy
+    // exceptions are raised in normal thread context with no thread lock, spinlock, or active
+    // `ChainLockTransaction` held.
+    unsafe { crate::object::dispatch_user_exception(ZX_EXCP_POLICY_ERROR, &raw const context) }
 }
 
 /// Install suspended register context on a thread.

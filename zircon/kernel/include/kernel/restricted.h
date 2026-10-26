@@ -15,22 +15,6 @@
 
 // Routines to support restricted mode.
 
-// Called as part of a synchronous exception that is to be handled by the normal mode in-thread
-// exception handler.
-//
-// Specifically this function will:
-//   1. Copy the exception report into either the restricted mode state VMO or to the user_ptr
-//      provided during the bind_state call.
-//
-//   2. Update the exception `iframe_t` on the stack such that the thread will return from this
-//      exception to normal mode instead of restricted mode. The restricted `reason code` will be
-//      set to `ZX_RESTRICTED_REASON_EXCEPTION` or, in the case that a user-copy was attempted and
-//      failed, `ZX_RESTRICTED_REASON_EXCEPTION_LOST`.
-//
-// The caller must ensure that this is only called on a thread that is in restricted mode.
-void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs,
-                                             const zx_exception_report_t& report);
-
 // Leave restricted mode on the current thread and return to normal mode.
 //
 // There are two variants of this function, one for each way a thread may have entered kernel mode

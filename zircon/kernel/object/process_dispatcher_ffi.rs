@@ -406,8 +406,23 @@ unsafe extern "C" {
         process: *mut ProcessDispatcher,
     ) -> *mut super::exceptionate::Exceptionate;
 
+    /// Looks up a thread in `process` by `koid`, returning an exported `RefPtr<ThreadDispatcher>`
+    /// raw pointer (or null if not found).
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_lookup_thread_by_id(
         process: *mut ProcessDispatcher,
         koid: zx_koid_t,
     ) -> *mut ThreadDispatcher;
+
+    /// Returns whether `process` is marked critical to the root job.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_critical_to_root_job(
+        process: *const ProcessDispatcher,
+    ) -> bool;
 }

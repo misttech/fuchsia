@@ -31,22 +31,6 @@ extern "C" ExceptionDispatcher* cpp_exception_dispatcher_create(
   return fbl::ExportToRawPtr(&exception);
 }
 
-zx_exception_report_t ExceptionDispatcher::BuildArchReport(
-    uint32_t type, const arch_exception_context_t& context) {
-  zx_exception_report_t report = {};
-  report.header.size = sizeof(report);
-  report.header.type = type;
-  arch_fill_in_exception_context(&context, &report);
-  return report;
-}
-
-fbl::RefPtr<ExceptionDispatcher> ExceptionDispatcher::Create(
-    fbl::RefPtr<ThreadDispatcher> thread, zx_excp_type_t exception_type,
-    const zx_exception_report_t* report, const arch_exception_context_t* arch_context) {
-  return fbl::ImportFromRawPtr(rust_exception_dispatcher_create(
-      fbl::ExportToRawPtr(&thread), exception_type, report, arch_context));
-}
-
 ExceptionDispatcher::ExceptionDispatcher(fbl::RefPtr<ThreadDispatcher> thread,
                                          zx_excp_type_t exception_type,
                                          const zx_exception_report_t* report,

@@ -16,12 +16,13 @@ use super::process_dispatcher_ffi::cpp_process_dispatcher_hw_trace_context_id;
 use super::process_dispatcher_ffi::{
     cpp_process_add_initialized_thread, cpp_process_attach_aspace_to_thread,
     cpp_process_dispatcher_aspace_at, cpp_process_dispatcher_create,
-    cpp_process_dispatcher_create_shared, cpp_process_dispatcher_current,
-    cpp_process_dispatcher_enforce_basic_policy, cpp_process_dispatcher_exit_current,
-    cpp_process_dispatcher_futex_context, cpp_process_dispatcher_get_debug_addr,
-    cpp_process_dispatcher_get_dyn_break_on_load, cpp_process_dispatcher_get_info,
-    cpp_process_dispatcher_get_runtime_stats, cpp_process_dispatcher_get_stats,
-    cpp_process_dispatcher_get_threads, cpp_process_dispatcher_get_timer_slack_policy,
+    cpp_process_dispatcher_create_shared, cpp_process_dispatcher_critical_to_root_job,
+    cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
+    cpp_process_dispatcher_exit_current, cpp_process_dispatcher_futex_context,
+    cpp_process_dispatcher_get_debug_addr, cpp_process_dispatcher_get_dyn_break_on_load,
+    cpp_process_dispatcher_get_info, cpp_process_dispatcher_get_runtime_stats,
+    cpp_process_dispatcher_get_stats, cpp_process_dispatcher_get_threads,
+    cpp_process_dispatcher_get_timer_slack_policy,
     cpp_process_dispatcher_get_timer_slack_policy_amount, cpp_process_dispatcher_handle_table,
     cpp_process_dispatcher_is_current, cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
     cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_make_and_add_handle,
@@ -741,6 +742,13 @@ impl ProcessDispatcher {
     /// `ZX_ERR_BAD_HANDLE` after processing the remaining handles.
     pub fn remove_handles(&self, handles: &[zx_types::zx_handle_t]) -> Result<(), Status> {
         self.handle_table().remove_handles(self, handles)
+    }
+
+    /// Returns whether this process is marked critical to the root job.
+    #[inline]
+    pub fn critical_to_root_job(&self) -> bool {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_critical_to_root_job(self.as_ffi()) }
     }
 }
 

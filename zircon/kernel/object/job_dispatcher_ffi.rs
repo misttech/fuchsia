@@ -168,12 +168,33 @@ unsafe extern "C" {
         process_rights: zx_rights_t,
     ) -> zx_status_t;
 
+    /// Looks up a direct child job of `job` by `koid`, returning an exported
+    /// `RefPtr<JobDispatcher>` raw pointer (or null if not found).
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`.
     pub(crate) fn cpp_job_dispatcher_lookup_job_by_id(
         job: *mut JobDispatcher,
         koid: zx_koid_t,
     ) -> *mut JobDispatcher;
+
+    /// Looks up a direct child process of `job` by `koid`, returning an exported
+    /// `RefPtr<ProcessDispatcher>` raw pointer (or null if not found).
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`.
     pub(crate) fn cpp_job_dispatcher_lookup_process_by_id(
         job: *mut JobDispatcher,
         koid: zx_koid_t,
     ) -> *mut ProcessDispatcher;
+
+    /// Returns the parent job of `job` as an exported `RefPtr<JobDispatcher>` raw pointer (or null
+    /// if `job` is the root job).
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher`.
+    pub(crate) fn cpp_job_dispatcher_parent(job: *const JobDispatcher) -> *mut JobDispatcher;
 }

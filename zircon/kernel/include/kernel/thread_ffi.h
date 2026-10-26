@@ -14,6 +14,7 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <arch/exception.h>
 #include <fbl/macros.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
@@ -81,6 +82,12 @@ FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_add_lock_contention_ticks(
     void* storage, zx_duration_mono_ticks_t ticks);
 FFI_ALWAYS_INLINE void cpp_thread_runtime_stats_get_compensated(
     void* storage, ffi::Uninitialized<zx_info_task_runtime_t>* out_stats);
+
+FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_init(
+    ffi::Uninitialized<ScopedThreadExceptionContext>* storage,
+    const arch_exception_context_t* context);
+FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_destroy(
+    ScopedThreadExceptionContext* context);
 
 __END_CDECLS
 

@@ -28,9 +28,12 @@ mod event_dispatcher_ffi;
 mod event_pair_dispatcher;
 #[allow(improper_ctypes)]
 mod event_pair_dispatcher_ffi;
+mod exception;
 mod exception_dispatcher;
 mod exception_dispatcher_ffi;
+mod exception_ffi;
 mod exceptionate;
+#[allow(improper_ctypes)]
 mod exceptionate_ffi;
 mod executor;
 mod fifo_dispatcher;
@@ -140,7 +143,8 @@ pub use diagnostics::{
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use event_dispatcher::EventDispatcher;
 pub use event_pair_dispatcher::EventPairDispatcher;
-pub use exception_dispatcher::{ArchExceptionContext, ExceptionDispatcher};
+pub use exception::{dispatch_user_exception, dump_common_exception_context};
+pub use exception_dispatcher::ExceptionDispatcher;
 pub use exceptionate::Exceptionate;
 pub use executor::Executor;
 pub use fifo_dispatcher::FifoDispatcher;

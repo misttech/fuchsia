@@ -64,6 +64,10 @@ constexpr size_t kExceptionDispatcherStateSize = 160 + kLockClassIdSize;
 constexpr size_t kExceptionDispatcherStateAlign = 8;
 constexpr size_t kExceptionDispatcherStateOffset = 48;
 
+// Size and alignment for Exceptionate.
+constexpr size_t kExceptionateStorageSize = 56 + kLockClassIdSize;
+constexpr size_t kExceptionateStorageAlign = 8;
+
 // Size, alignment, and offset for FifoDispatcherState.
 constexpr size_t kFifoDispatcherStateSize = 72;
 constexpr size_t kFifoDispatcherStateAlign = 8;
@@ -275,10 +279,5 @@ constexpr size_t kHandleTableStorageSize = 176;
 #endif
 constexpr size_t kHandleTableStorageAlign = 16;
 #endif
-
-// Size and alignment for ExceptionateStorage (Exceptionate). The Exceptionate's mutex grows by one
-// lock class id when lockdep is enabled.
-constexpr size_t kExceptionateStorageSize = 56 + kLockClassIdSize;
-constexpr size_t kExceptionateStorageAlign = 8;
 
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

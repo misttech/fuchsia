@@ -37,7 +37,6 @@ static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::WAIT_MANY) == 7);
 static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::INTERRUPT) == 8);
 static_assert(static_cast<uint32_t>(ThreadDispatcher::Blocked::PAGER) == 9);
 // LINT.ThenChange(//zircon/kernel/object/thread_dispatcher.rs:Blocked)
-
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -180,14 +179,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_sys_thread_legacy_yield(uint32_t options) {
   return ZX_OK;
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_exception_report(
-    const ThreadDispatcher* thread, ffi::Uninitialized<zx_exception_report_t>* out_report) {
-  return const_cast<ThreadDispatcher*>(thread)->GetExceptionReport(
-      out_report->GetAddressUnchecked());
-}
-
-// TRANSITIONAL: while HandleSingleShotException remains a C++ method.
+// TRANSITIONAL: while arch_exception_context_t remains a C++ type on x86_64 and arm64.
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_handle_single_shot_exiting(ProcessDispatcher* process,
                                                              ThreadDispatcher* thread) {

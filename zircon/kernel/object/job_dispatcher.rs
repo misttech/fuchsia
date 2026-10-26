@@ -22,9 +22,9 @@ use super::job_dispatcher_ffi::{
     cpp_job_dispatcher_get_root_job_handle, cpp_job_dispatcher_get_runtime_stats,
     cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
     cpp_job_dispatcher_kill_job_with_kill_on_oom, cpp_job_dispatcher_lookup_job_by_id,
-    cpp_job_dispatcher_lookup_process_by_id, cpp_job_dispatcher_set_basic_policy_v1,
-    cpp_job_dispatcher_set_basic_policy_v2, cpp_job_dispatcher_set_kill_on_oom,
-    cpp_job_dispatcher_set_timer_slack_policy,
+    cpp_job_dispatcher_lookup_process_by_id, cpp_job_dispatcher_parent,
+    cpp_job_dispatcher_set_basic_policy_v1, cpp_job_dispatcher_set_basic_policy_v2,
+    cpp_job_dispatcher_set_kill_on_oom, cpp_job_dispatcher_set_timer_slack_policy,
 };
 use super::process_dispatcher::ProcessDispatcher;
 
@@ -243,6 +243,15 @@ impl JobDispatcher {
         // SAFETY: `self` is a valid `JobDispatcher` reference.
         let ptr =
             unsafe { cpp_job_dispatcher_lookup_process_by_id(self as *const _ as *mut _, koid) };
+        // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
+        unsafe { fbl::RefPtr::try_from_raw(ptr) }
+    }
+
+    /// Returns the parent job of this job, or `None` if this is the root job.
+    #[inline]
+    pub fn parent(&self) -> Option<fbl::RefPtr<JobDispatcher>> {
+        // SAFETY: `self` is a valid `JobDispatcher` reference.
+        let ptr = unsafe { cpp_job_dispatcher_parent(core::ptr::from_ref(self)) };
         // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
         unsafe { fbl::RefPtr::try_from_raw(ptr) }
     }

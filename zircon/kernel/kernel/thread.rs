@@ -21,7 +21,7 @@ use ksync::KCell;
 use pin_init::{PinInit, pin_data, pinned_drop};
 use thread_layout_bindings as layout;
 use thread_lock_guard_bindings as lock_guard_bindings;
-use zr::{Opaque, static_assert};
+use zr::{Opaque, OpaqueBytes, static_assert};
 use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, zx_instant_mono_t, zx_koid_t, zx_status_t};
 
@@ -155,6 +155,11 @@ unsafe extern "C" {
     fn cpp_thread_dump_all(match_owner: *const c_char, full: bool);
     fn cpp_thread_dump_all_during_panic(match_owner: *const c_char, full: bool);
     fn cpp_thread_current_reschedule();
+    fn cpp_scoped_thread_exception_context_init(
+        storage: *mut core::mem::MaybeUninit<CppScopedThreadExceptionContext>,
+        context: *const crate::arch_rs::ArchExceptionContext,
+    );
+    fn cpp_scoped_thread_exception_context_destroy(context: *mut CppScopedThreadExceptionContext);
 }
 
 /// Stall accounting state of a thread.
@@ -1930,6 +1935,73 @@ impl Drop for ScopedMemoryAllocationDisabled {
         // SAFETY: Re-enables memory allocations on the current thread when the guard drops.
         unsafe { cpp_thread_current_memory_allocation_state_enable() };
     }
+}
+
+/// Opaque inline backing storage matching C++ `ScopedThreadExceptionContext`.
+#[repr(C, align(8))]
+struct CppScopedThreadExceptionContext(OpaqueBytes<24>);
+
+/// Private RAII wrapper around C++ `ScopedThreadExceptionContext`.
+///
+/// Kept private behind [`with_exception_context`] so safe code cannot call `core::mem::forget` on
+/// the guard and leave `Thread::arch().suspended_general_regs` dangling into popped stack memory.
+#[repr(C)]
+struct ScopedThreadExceptionContext {
+    storage: core::mem::MaybeUninit<CppScopedThreadExceptionContext>,
+    _not_send_sync: PhantomData<*mut ()>,
+}
+
+zr::static_assert!(
+    core::mem::size_of::<ScopedThreadExceptionContext>() == 3 * core::mem::size_of::<usize>()
+);
+zr::static_assert!(
+    core::mem::align_of::<ScopedThreadExceptionContext>() == core::mem::align_of::<usize>()
+);
+
+impl Drop for ScopedThreadExceptionContext {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: `self.storage` was initialized by `cpp_scoped_thread_exception_context_init` in
+        // `with_exception_context` and has not yet been destroyed, and the caller of
+        // `with_exception_context` guarantees neither the current thread's lock nor an active
+        // `ChainLockTransaction` is held when the scope exits.
+        unsafe {
+            cpp_scoped_thread_exception_context_destroy(self.storage.as_mut_ptr());
+        }
+    }
+}
+
+/// Installs `context` on the current user thread for the duration of `f`, making its user register
+/// state available to debuggers and exception handlers while the thread is in an exception.
+///
+/// # Safety
+///
+/// * `context` must point to a valid, initialized `arch_exception_context_t` for the current
+///   thread that outlives this call.
+/// * If `(*context).frame` is non-null, it must point to a valid, initialized, writable `iframe_t`
+///   that outlives this call with no conflicting Rust references while installed.
+/// * The current thread must be a user thread (`user_thread_ != nullptr`).
+/// * Neither the current thread's lock nor an active `ChainLockTransaction` may be held on the
+///   current CPU when entering `with_exception_context` or when `f` returns (or unwinds).
+#[inline]
+pub unsafe fn with_exception_context<R>(
+    context: *const crate::arch_rs::ArchExceptionContext,
+    f: impl FnOnce() -> R,
+) -> R {
+    let mut guard = ScopedThreadExceptionContext {
+        storage: core::mem::MaybeUninit::uninit(),
+        _not_send_sync: PhantomData,
+    };
+    // SAFETY: `guard.storage` has the verified size and alignment of C++
+    // `ScopedThreadExceptionContext` (which is non-self-referential), and the caller guarantees
+    // `context` (and any non-null `(*context).frame`) is valid for the current user thread and
+    // outlives this call with neither the thread lock nor an active `ChainLockTransaction` held.
+    unsafe {
+        cpp_scoped_thread_exception_context_init(&raw mut guard.storage, context);
+    }
+    let result = f();
+    drop(guard);
+    result
 }
 
 pub use crate::kernel::wait_queue::Interruptible;

@@ -12,6 +12,7 @@
 #include <lib/stall.h>
 #include <zircon/types.h>
 
+#include <arch/exception.h>
 #include <arch/ops.h>
 #include <arch/regs.h>
 #include <kernel/auto_preempt_disabler.h>
@@ -697,4 +698,23 @@ FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_get_soft_cpu_affinity(const Thread* thre
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE cpu_num_t cpp_thread_last_cpu(const Thread* thread) { return thread->LastCpu(); }
 
+static_assert(sizeof(ScopedThreadExceptionContext) == 3 * sizeof(uintptr_t));
+static_assert(alignof(ScopedThreadExceptionContext) == alignof(uintptr_t));
+static_assert(sizeof(ffi::Uninitialized<ScopedThreadExceptionContext>) ==
+              sizeof(ScopedThreadExceptionContext));
+static_assert(alignof(ffi::Uninitialized<ScopedThreadExceptionContext>) ==
+              alignof(ScopedThreadExceptionContext));
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_init(
+    ffi::Uninitialized<ScopedThreadExceptionContext>* storage,
+    const arch_exception_context_t* context) {
+  storage->Initialize(context);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_destroy(
+    ScopedThreadExceptionContext* context) {
+  ktl::destroy_at(context);
+}
 }  // extern "C"

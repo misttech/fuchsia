@@ -192,4 +192,10 @@ FFI_ALWAYS_INLINE ProcessDispatcher* cpp_job_dispatcher_lookup_process_by_id(Job
   return fbl::ExportToRawPtr(&proc);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* job) {
+  fbl::RefPtr<JobDispatcher> parent = job->parent();
+  return fbl::ExportToRawPtr(&parent);
+}
+
 }  // extern "C"

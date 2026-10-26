@@ -90,7 +90,7 @@ class JobDispatcher final
   // Dispatcher implementation.
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_JOB; }
   zx_koid_t get_related_koid() const final;
-  fbl::RefPtr<JobDispatcher> parent() { return fbl::RefPtr<JobDispatcher>(parent_); }
+  fbl::RefPtr<JobDispatcher> parent() const { return fbl::RefPtr<JobDispatcher>(parent_); }
 
   // Job methods.
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final;
@@ -336,6 +336,7 @@ zx_status_t cpp_job_dispatcher_create_debug_exceptionate(JobDispatcher* job,
                                                          zx_rights_t process_rights);
 JobDispatcher* cpp_job_dispatcher_lookup_job_by_id(JobDispatcher* job, zx_koid_t koid);
 ProcessDispatcher* cpp_job_dispatcher_lookup_process_by_id(JobDispatcher* job, zx_koid_t koid);
+JobDispatcher* cpp_job_dispatcher_parent(const JobDispatcher* job);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

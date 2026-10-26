@@ -7,24 +7,33 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EXCEPTIONATE_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EXCEPTIONATE_H_
 
-#include <lib/zircon-internal/thread_annotations.h>
+#include <lib/object-constants.h>
 #include <zircon/types.h>
 
-#include <kernel/mutex.h>
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class ExceptionDispatcher;
+class Exceptionate;
+
+extern "C" {
+void rust_exceptionate_init_storage(void* storage, uint32_t type);
+void rust_exceptionate_drop_storage(void* storage);
+zx_status_t rust_exceptionate_set_channel(Exceptionate* exceptionate,
+                                          KernelHandle<ChannelDispatcher>* channel,
+                                          zx_rights_t thread_rights, zx_rights_t process_rights);
+void rust_exceptionate_shutdown(Exceptionate* exceptionate);
+bool rust_exceptionate_has_valid_channel(const Exceptionate* exceptionate);
+}
 
 // Kernel-owned exception channel endpoint.
 //
 // This class is thread-safe, does not require external synchronization.
+// Note: Not marked `final` because `JobDispatcher::DebugExceptionate` inherits from it.
 class Exceptionate {
  public:
   // |type| must be a valid ZX_EXCEPTION_CHANNEL_TYPE_* constant.
-  explicit Exceptionate(uint32_t type);
-
-  uint32_t type() const { return type_; }
+  explicit Exceptionate(uint32_t type) { rust_exceptionate_init_storage(&storage_, type); }
 
   // Shuts the underlying channel down if it's still connected to be sure the
   // userspace endpoint gets the PEER_CLOSED signal.
@@ -32,7 +41,12 @@ class Exceptionate {
   // In most cases the task wants to manually shutdown the exceptionate when
   // transitioning to a dead state, but in some cases tasks can be destroyed
   // without registering the dead state e.g. childless jobs.
-  ~Exceptionate();
+  ~Exceptionate() { rust_exceptionate_drop_storage(&storage_); }
+
+  Exceptionate(const Exceptionate&) = delete;
+  Exceptionate& operator=(const Exceptionate&) = delete;
+  Exceptionate(Exceptionate&&) = delete;
+  Exceptionate& operator=(Exceptionate&&) = delete;
 
   // Sets the backing ChannelDispatcher endpoint.
   //
@@ -45,50 +59,25 @@ class Exceptionate {
   // the handle should not be made available through this channel.
   //
   // Returns:
-  //   ZX_ERR_INVALID_ARGS if |channel| is null.
-  //   ZX_ERR_ALREADY_BOUND is there is already a valid channel.
+  //   ZX_ERR_INVALID_ARGS if |channel_handle| is null.
+  //   ZX_ERR_ALREADY_BOUND if there is already a valid channel.
   //   ZX_ERR_BAD_STATE if Shutdown() has already been called.
   zx_status_t SetChannel(KernelHandle<ChannelDispatcher> channel_handle, zx_rights_t thread_rights,
-                         zx_rights_t process_rights);
+                         zx_rights_t process_rights) {
+    return rust_exceptionate_set_channel(this, &channel_handle, thread_rights, process_rights);
+  }
 
   // Removes any exception channel, which will signal PEER_CLOSED for the
   // userspace endpoint.
   //
   // Any further attempt to set a new channel will return ZX_ERR_BAD_STATE.
-  void Shutdown();
+  void Shutdown() { rust_exceptionate_shutdown(this); }
 
   // Returns true if the channel exists and has a valid userspace peer.
-  bool HasValidChannel() const;
-
-  // Sends an exception to userspace.
-  //
-  // The exception message contains:
-  //  * 1 struct: zx_exception_info_t
-  //  * 1 handle: ExceptionDispatcher
-  //
-  // Returns:
-  //   ZX_ERR_NEXT if there is no valid underlying channel.
-  //   ZX_ERR_NO_MEMORY if we failed to allocate memory.
-  zx_status_t SendException(const fbl::RefPtr<ExceptionDispatcher>& exception);
+  bool HasValidChannel() const { return rust_exceptionate_has_valid_channel(this); }
 
  private:
-  bool HasValidChannelLocked() const TA_REQ(lock_);
-
-  const uint32_t type_;
-  mutable DECLARE_MUTEX(Exceptionate) lock_;
-  KernelHandle<ChannelDispatcher> channel_handle_ TA_GUARDED(lock_);
-  zx_rights_t thread_rights_ TA_GUARDED(lock_) = 0;
-  zx_rights_t process_rights_ TA_GUARDED(lock_) = 0;
-  bool is_shutdown_ TA_GUARDED(lock_) = false;
+  OpaqueStorage<kExceptionateStorageSize, kExceptionateStorageAlign> storage_;
 };
-
-extern "C" {
-void cpp_exceptionate_init(void* storage, uint32_t exception_type);
-void cpp_exceptionate_destroy(void* storage);
-zx_status_t cpp_exceptionate_set_channel(Exceptionate* exceptionate,
-                                         KernelHandle<ChannelDispatcher>* channel,
-                                         zx_rights_t thread_rights, zx_rights_t process_rights);
-void cpp_exceptionate_shutdown(Exceptionate* exceptionate);
-}
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_EXCEPTIONATE_H_

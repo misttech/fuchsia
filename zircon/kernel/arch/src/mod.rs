@@ -33,6 +33,12 @@ pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
 #[macro_use]
 pub mod api;
 
+pub mod exception;
+pub use exception::{
+    ArchExceptionContext, arch_dump_exception_context, arch_exception_context_user_synth_code,
+    arch_exception_context_user_synth_data, arch_fill_in_exception_context,
+};
+
 pub mod ops;
 
 #[cfg(target_arch = "riscv64")]

@@ -162,11 +162,28 @@ pub fn thread_current_set_restricted_state(state: Option<Box<RestrictedState>>) 
 }
 
 /// Redirect a synchronous exception raised while in restricted mode to normal mode handling.
-pub fn redirect_restricted_exception_to_normal_mode(
+///
+/// Called as part of a synchronous exception that is to be handled by the normal mode in-thread
+/// exception handler. Specifically this function will:
+/// 1. Copy the exception report into either the restricted mode state VMO or to the `user_ptr`
+///    provided during the `bind_state` call.
+/// 2. Update the exception `iframe_t` on the stack such that the thread will return from this
+///    exception to normal mode instead of restricted mode. The restricted `reason` code will be
+///    set to `ZX_RESTRICTED_REASON_EXCEPTION` or, in the case that a user-copy was attempted and
+///    failed, `ZX_RESTRICTED_REASON_EXCEPTION_LOST`.
+///
+/// # Safety
+///
+/// * The calling thread must be a user thread currently in restricted mode (`rs.in_restricted()`),
+///   and `rs` must be the calling thread's bound [`RestrictedState`].
+/// * The calling thread must have an installed exception context
+///   ([`crate::kernel::thread::with_exception_context`]) with valid `suspended_general_regs` for
+///   the synchronous restricted-mode exception frame.
+pub unsafe fn redirect_restricted_exception_to_normal_mode(
     rs: &mut RestrictedState,
     report: &zx_exception_report_t,
 ) {
-    debug_assert!(rs.in_restricted());
+    assert!(rs.in_restricted());
     let state = rs.state_mut();
 
     ktrace_rs::duration_end!("kernel:restricted", "restricted mode", "reason" => zx_types::ZX_RESTRICTED_REASON_EXCEPTION);
@@ -192,6 +209,7 @@ pub fn redirect_restricted_exception_to_normal_mode(
             )
         };
         if user_out.copy_slice_to_user(report_bytes).is_err() {
+            core::hint::cold_path();
             reason = zx_types::ZX_RESTRICTED_REASON_EXCEPTION_LOST;
         }
     } else {
@@ -223,18 +241,6 @@ pub unsafe extern "C" fn syscall_from_restricted(regs: *const SyscallRegs) -> ! 
     // SAFETY: regs is guaranteed non-null and valid by assembly caller.
     let regs_ref = unsafe { &*regs };
     restricted_leave_syscall(regs_ref, zx_types::ZX_RESTRICTED_REASON_SYSCALL);
-}
-
-/// FFI trampoline for `redirect_restricted_exception_to_normal_mode`.
-///
-/// # Safety
-/// Caller must pass valid references to `RestrictedState` and `zx_exception_report_t`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_redirect_restricted_exception_to_normal_mode(
-    rs: &mut RestrictedState,
-    report: &zx_exception_report_t,
-) {
-    redirect_restricted_exception_to_normal_mode(rs, report);
 }
 
 /// FFI trampoline for `restricted_leave_iframe`.

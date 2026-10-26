@@ -11,11 +11,6 @@
 #include <kernel/restricted.h>
 #include <kernel/restricted_state.h>
 
-void RedirectRestrictedExceptionToNormalMode(RestrictedState* rs,
-                                             const zx_exception_report_t& report) {
-  rust_redirect_restricted_exception_to_normal_mode(rs, &report);
-}
-
 [[noreturn]] void RestrictedLeaveIframe(const iframe_t* iframe, zx_restricted_reason_t reason) {
   rust_restricted_leave_iframe(iframe, reason);
   __UNREACHABLE;

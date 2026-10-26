@@ -38,6 +38,7 @@ kernel_rust_mod("arch-rs") {
   source_root = "src/mod.rs"
   sources = [
     "src/api.rs",
+    "src/exception.rs",
     "src/mod.rs",
     "src/ops.rs",
   ]
