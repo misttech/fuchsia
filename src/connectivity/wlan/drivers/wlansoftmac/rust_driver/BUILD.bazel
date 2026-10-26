@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlansoftmac-rust",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//src/connectivity/wlan/drivers/wlansoftmac/rust_driver/c-binding:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.sme:fuchsia.wlan.sme_rust",
+        "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
+        "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/mlme/rust:wlan-mlme",
+        "//src/connectivity/wlan/lib/power_manager",
+        "//src/connectivity/wlan/lib/sme:wlan-sme",
+        "//src/connectivity/wlan/lib/trace:wlan-trace",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
