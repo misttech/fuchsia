@@ -19,15 +19,21 @@ bool WriteFile(const std::string& path, std::string_view data);
 bool WriteFile(const std::string& path, const char* data, ssize_t size);
 bool WriteFileAt(int dirfd, const std::string& path, const char* data, ssize_t size);
 
-// Writes the given data a temporary file under |temp_root| and then moves the
-// temporary file to |path|, ensuring write atomicity. Returns true if the data
-// was successfully written, otherwise returns false.
+// Atomically creates |filename| under |dirfd| with |data|.
 //
-// Note that |path| and |temp_root| must be within the same filesystem for the
-// move to work. For example, it will not work to use |path| under /data and
-// |temp_root| under /tmp.
-bool WriteFileInTwoPhases(const std::string& path, std::string_view data,
-                          const std::string& temp_root);
+// This is done by writing |data| to a temporary file named "<filename>.tmp" in
+// |dirfd|, syncing the temporary file, renaming it to |filename|, and syncing
+// |dirfd|. |dirfd| must be a valid open directory file descriptor (not
+// AT_FDCWD), and |filename| must be a valid single-component filename (no '/').
+// Returns true if the file was successfully written, otherwise returns false.
+//
+// Note that power failure after the temporary file is created, but before it is
+// renamed, will result in "<filename>.tmp" existing in |dirfd|. A subsequent
+// call for the same |filename| will overwrite and clean up the temporary file,
+// but if this function is never called again for |filename|, the temporary file
+// will remain. Callers must not invoke this concurrently with the same |dirfd|
+// and |filename|.
+bool WriteFileInTwoPhases(int dirfd, const std::string& filename, std::string_view data);
 
 // Reads the contents of the file at the given path or file descriptor and
 // stores the data in result. Returns true if the file was read successfully,

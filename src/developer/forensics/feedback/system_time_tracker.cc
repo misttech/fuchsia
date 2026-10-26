@@ -4,8 +4,10 @@
 
 #include "src/developer/forensics/feedback/system_time_tracker.h"
 
+#include <fcntl.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <fbl/unique_fd.h>
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -82,8 +84,9 @@ void SystemTimeTracker::WriteUptimeAndRuntime() {
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
   doc.Accept(writer);
 
-  if (!files::WriteFileInTwoPhases(write_path_, buffer.GetString(),
-                                   files::GetDirectoryName(write_path_))) {
+  fbl::unique_fd dirfd(open(files::GetDirectoryName(write_path_).c_str(), O_RDONLY | O_DIRECTORY));
+  if (!dirfd.is_valid() || !files::WriteFileInTwoPhases(
+                               dirfd.get(), files::GetBaseName(write_path_), buffer.GetString())) {
     FX_LOGS_FIRST_N(ERROR, 10) << "Failed to write system time to: " << write_path_;
   }
 }

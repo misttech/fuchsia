@@ -9,23 +9,94 @@
 #include <vector>
 
 #include <fbl/unique_fd.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/files/directory.h"
 #include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
 
 namespace files {
 namespace {
 
+using ::testing::IsEmpty;
+using ::testing::UnorderedElementsAre;
+
+std::vector<std::string> GetNonDotDirContents(const std::string& dir_path) {
+  std::vector<std::string> contents;
+  EXPECT_TRUE(ReadDirContents(dir_path, &contents));
+  std::erase_if(contents, [](const std::string& entry) { return entry == "." || entry == ".."; });
+  return contents;
+}
+
 TEST(File, WriteFileInTwoPhases) {
   ScopedTempDir dir;
-  std::string path = dir.path() + "/destination";
+  fbl::unique_fd dirfd(open(dir.path().c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(dirfd.is_valid());
 
+  std::string filename = "destination";
   std::string content = "Hello World";
-  ASSERT_TRUE(WriteFileInTwoPhases(path, content, dir.path()));
+  ASSERT_TRUE(WriteFileInTwoPhases(dirfd.get(), filename, content));
+  std::string read_content;
+  ASSERT_TRUE(ReadFileToStringAt(dirfd.get(), filename, &read_content));
+  EXPECT_EQ(read_content, content);
+  EXPECT_THAT(GetNonDotDirContents(dir.path()), UnorderedElementsAre("destination"));
+
+  std::string updated_content = "Updated Hello World";
+  ASSERT_TRUE(WriteFileInTwoPhases(dirfd.get(), filename, updated_content));
+  ASSERT_TRUE(ReadFileToStringAt(dirfd.get(), filename, &read_content));
+  EXPECT_EQ(read_content, updated_content);
+  EXPECT_THAT(GetNonDotDirContents(dir.path()), UnorderedElementsAre("destination"));
+}
+
+TEST(File, WriteFileInTwoPhasesOverwritesLeftoverTempFile) {
+  ScopedTempDir dir;
+  fbl::unique_fd dirfd(open(dir.path().c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(dirfd.is_valid());
+
+  std::string path = dir.path() + "/destination";
+  std::string leftover_temp_path = dir.path() + "/destination.tmp";
+
+  // Simulate a prior write that was interrupted (e.g. by a reboot) after writing the temp file
+  // but before renaming it over the destination.
+  ASSERT_TRUE(WriteFile(path, "old content"));
+  ASSERT_TRUE(WriteFile(leftover_temp_path, "interrupted temp content"));
+
+  ASSERT_TRUE(WriteFileInTwoPhases(dirfd.get(), "destination", "new content"));
+
   std::string read_content;
   ASSERT_TRUE(ReadFileToString(path, &read_content));
-  EXPECT_EQ(read_content, content);
+  EXPECT_EQ(read_content, "new content");
+  EXPECT_FALSE(IsFile(leftover_temp_path));
+  EXPECT_THAT(GetNonDotDirContents(dir.path()), UnorderedElementsAre("destination"));
+}
+
+TEST(File, WriteFileInTwoPhasesCleansUpTempFileOnRenameFailure) {
+  ScopedTempDir dir;
+  fbl::unique_fd dirfd(open(dir.path().c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(dirfd.is_valid());
+
+  // Creating a directory at the target filename causes renameat() of the temporary file to fail
+  // with EISDIR.
+  ASSERT_TRUE(CreateDirectoryAt(dirfd.get(), "destination"));
+
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), "destination", "content"));
+  EXPECT_THAT(GetNonDotDirContents(dir.path()), UnorderedElementsAre("destination"));
+}
+
+TEST(File, WriteFileInTwoPhasesFailsOnInvalidArguments) {
+  ScopedTempDir dir;
+  fbl::unique_fd dirfd(open(dir.path().c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(dirfd.is_valid());
+
+  EXPECT_FALSE(WriteFileInTwoPhases(-1, "destination", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(AT_FDCWD, "destination", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), "", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), ".", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), "..", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), "subdir/destination", "content"));
+  EXPECT_FALSE(WriteFileInTwoPhases(dirfd.get(), "/destination", "content"));
+  EXPECT_THAT(GetNonDotDirContents(dir.path()), IsEmpty());
 }
 
 TEST(File, ReadWriteFileAt) {

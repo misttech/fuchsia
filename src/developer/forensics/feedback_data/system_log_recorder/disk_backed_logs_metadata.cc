@@ -4,10 +4,12 @@
 
 #include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
 
+#include <fcntl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <ranges>
 
+#include <fbl/unique_fd.h>
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -161,7 +163,12 @@ bool DiskBackedLogsMetadata::ToFile(const std::string& path) const {
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
   doc.Accept(writer);
 
-  return files::WriteFileInTwoPhases(path, buffer.GetString(), files::GetDirectoryName(path));
+  fbl::unique_fd dirfd(open(files::GetDirectoryName(path).c_str(), O_RDONLY | O_DIRECTORY));
+  if (!dirfd.is_valid()) {
+    return false;
+  }
+
+  return files::WriteFileInTwoPhases(dirfd.get(), files::GetBaseName(path), buffer.GetString());
 }
 
 void DiskBackedLogsMetadata::ReconcileWithExistingFiles(const std::vector<size_t>& existing_files) {

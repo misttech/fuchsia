@@ -17,7 +17,7 @@
 
 #include "src/lib/files/eintr_wrapper.h"
 #include "src/lib/files/file_descriptor.h"
-#include "src/lib/files/scoped_temp_dir.h"
+#include "src/lib/files/path.h"
 
 namespace files {
 namespace {
@@ -79,20 +79,36 @@ bool WriteFileAt(int dirfd, const std::string& path, const char* data, ssize_t s
   return fxl::WriteFileDescriptor(fd.get(), data, size);
 }
 
-bool WriteFileInTwoPhases(const std::string& path, std::string_view data,
-                          const std::string& temp_root) {
-  ScopedTempDir temp_dir(temp_root);
-
-  std::string temp_file_path;
-  if (!temp_dir.NewTempFile(&temp_file_path)) {
+bool WriteFileInTwoPhases(int dirfd, const std::string& filename, std::string_view data) {
+  if (dirfd < 0) {
     return false;
   }
 
-  if (!WriteFile(temp_file_path, data.data(), data.size())) {
+  const std::string temp_filename = filename + ".tmp";
+  if (!IsValidName(filename) || !IsValidName(temp_filename)) {
     return false;
   }
 
-  if (rename(temp_file_path.c_str(), path.c_str()) != 0) {
+  {
+    fbl::unique_fd fd(HANDLE_EINTR(
+        openat(dirfd, temp_filename.c_str(), O_CREAT | O_TRUNC | O_WRONLY, FILE_CREATE_MODE)));
+    if (!fd.is_valid()) {
+      return false;
+    }
+    if (!fxl::WriteFileDescriptor(fd.get(), data.data(), data.size()) ||
+        HANDLE_EINTR(fsync(fd.get())) != 0) {
+      fd.reset();
+      unlinkat(dirfd, temp_filename.c_str(), 0);
+      return false;
+    }
+  }
+
+  if (renameat(dirfd, temp_filename.c_str(), dirfd, filename.c_str()) != 0) {
+    unlinkat(dirfd, temp_filename.c_str(), 0);
+    return false;
+  }
+
+  if (HANDLE_EINTR(fsync(dirfd)) != 0) {
     return false;
   }
 
