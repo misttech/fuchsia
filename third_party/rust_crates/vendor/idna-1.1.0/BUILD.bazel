@@ -80,7 +80,7 @@ rust_library(
     version = "1.1.0",
     deps = [
         "//third_party/rust_crates/vendor/idna_adapter-1.2.2:idna_adapter",
-        "//third_party/rust_crates/vendor/smallvec-1.15.2:smallvec",
+        "//third_party/rust_crates/vendor/smallvec-1.16.2:smallvec",
         "//third_party/rust_crates/vendor/utf8_iter-1.0.4:utf8_iter",
     ],
 )

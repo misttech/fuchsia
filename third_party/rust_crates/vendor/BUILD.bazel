@@ -2996,14 +2996,14 @@ alias(
 )
 
 alias(
-    name = "smallvec-1.15.2",
-    actual = "//third_party/rust_crates/vendor/smallvec-1.15.2:smallvec",
+    name = "smallvec-1.16.2",
+    actual = "//third_party/rust_crates/vendor/smallvec-1.16.2:smallvec",
     tags = ["manual"],
 )
 
 alias(
     name = "smallvec",
-    actual = "//third_party/rust_crates/vendor/smallvec-1.15.2:smallvec",
+    actual = "//third_party/rust_crates/vendor/smallvec-1.16.2:smallvec",
     tags = ["manual"],
 )
 

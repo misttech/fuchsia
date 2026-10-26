@@ -243,7 +243,7 @@ sha2-0_10 = { package = "sha2", version = "0.10.9" }
 simplelog = { version = "0.12.2", default-features = false }
 siphasher = "1.0.3"
 slab = "0.4.12"
-smallvec = {version= "1.15.2", features = ["const_generics", "const_new", "union"]}
+smallvec = {version= "1.16.2", features = ["const_generics", "const_new", "union"]}
 socket2 = { version = "=0.6.5", features = ["all"] }
 splines = "5.0.0"
 static_assertions = "1.1.0"
