@@ -1,0 +1,79 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Only for internal use.
+rustc_library(
+    name = "lib",
+    testonly = True,
+    srcs = ["lib.rs"],
+    crate_name = "cm_stress_tests_lib",
+    crate_root = "lib.rs",
+    edition = "2024",
+    deps = [
+        ":test.componentmanager.stresstests_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+fidl_library(
+    name = "test.componentmanager.stresstests",
+    testonly = True,
+    srcs = ["stress.test.fidl"],
+)
+
+rustc_test(
+    name = "realm_with_many_children_bin",
+    srcs = ["realm_with_many_children.rs"],
+    crate_name = "realm_with_many_children",
+    crate_root = "realm_with_many_children.rs",
+    edition = "2024",
+    deps = [
+        ":lib",
+        ":test.componentmanager.stresstests_rust",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_test(
+    name = "deep_tree_stress_test_bin",
+    srcs = ["deep_tree_stress_test.rs"],
+    crate_name = "deep_tree_stress_test",
+    crate_root = "deep_tree_stress_test.rs",
+    edition = "2024",
+    deps = [
+        ":lib",
+        "//src/lib/fuchsia",
+    ],
+)
+
+rustc_binary(
+    name = "child_for_stress_test_bin",
+    testonly = True,
+    srcs = ["child_for_stress_test.rs"],
+    crate_name = "child_for_stress_test",
+    crate_root = "child_for_stress_test.rs",
+    edition = "2024",
+    deps = [
+        ":lib",
+        ":test.componentmanager.stresstests_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
