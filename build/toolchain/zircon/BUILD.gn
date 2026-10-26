@@ -28,6 +28,18 @@ if (current_toolchain == default_toolchain) {
         "standalone",
       ]
       exclude_variant_tags = [ "needs-compiler-abi" ]
+
+      # LINT.IfChange(sysroot_variants)
+      # Enable variants that do not have "needs-compiler-abi" and are enabled
+      # in //sdk/lib/c:user.libc_$cpu, since user_basic_redirect() redirects
+      # basic_abi targets in user.libc_$cpu-<variant> to
+      # user.basic_$cpu-<variant>-shared.
+      enable_variants = [
+        "coverage",
+        "ubsan",
+      ]
+
+      # LINT.ThenChange(//sdk/lib/c/BUILD.gn:sysroot_variants)
     }
   }
 }

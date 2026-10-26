@@ -272,13 +272,26 @@ if (current_toolchain == default_toolchain) {
       # enough to fix the issue.
       exclude_variant_tags = [ "fuzzer" ]
 
-      # The Asan-based variants are needed to generate binaries for the SDK.
-      enable_variants = [ "asan" ]
+      # LINT.IfChange(sysroot_variants)
+      # The asan and hwasan variants are always exported to the IDK sysroot,
+      # while the other instrumented variants are needed by the in-tree Bazel
+      # sysroot (and when -fuzzer variants redirect to their base variant).
+      enable_variants = [
+        "asan",
+        "asan-ubsan",
+        "ubsan",
+        "coverage",
+      ]
 
       # TODO(https://fxbug.dev/327442322): Support hwasan for x64 and riscv64.
       if (cpu == "arm64") {
-        enable_variants += [ "hwasan" ]
+        enable_variants += [
+          "hwasan",
+          "hwasan-ubsan",
+        ]
       }
+
+      # LINT.ThenChange(//build/toolchain/zircon/BUILD.gn:sysroot_variants)
     }
   }
 } else if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
