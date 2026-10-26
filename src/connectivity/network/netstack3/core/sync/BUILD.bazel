@@ -42,7 +42,6 @@ _COMMON_PROC_MACRO_DEPS = ["//third_party/rust_crates/vendor:derivative"]
 _COMMON_DEPS = [
     "//src/connectivity/lib/net-types",
     "//src/connectivity/network/netstack3/core/lock-order",
-    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates/vendor:lock_api",
 ]
 
@@ -109,6 +108,7 @@ rustc_test(
     crate = ":netstack3-sync",
     edition = "2024",
     visibility = ["//visibility:private"],
+    deps = ["//src/lib/fuchsia-sync"],
 )
 
 rustc_test(
@@ -117,6 +117,7 @@ rustc_test(
     crate = ":netstack3-sync-instrumented",
     edition = "2024",
     visibility = ["//visibility:private"],
+    deps = ["//src/lib/fuchsia-sync"],
 )
 
 wrap_host_rust_test(

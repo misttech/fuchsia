@@ -179,16 +179,8 @@ pub mod sync {
     pub use netstack3_sync::{LockGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
     pub use sync::BindingsSyncTypes;
 
-    /// Concrete lock implementations provided by [`netstack3_sync`].
-    ///
-    /// This module is exposed so that bindings and test utilities can implement
-    /// [`BindingsSyncTypes`] using the platform-appropriate raw locks without
-    /// core crates depending directly on concrete `std` or platform lock
-    /// implementations.
-    ///
-    /// TODO(https://fxbug.dev/553027583): Move to testutils once everything is
-    /// using lock_api
-    pub use netstack3_sync::lock_impl;
+    #[cfg(any(test, feature = "testutils"))]
+    pub use sync::lock_impl;
 }
 
 pub use sync::BindingsSyncTypes;
@@ -217,6 +209,7 @@ pub mod testutil {
     pub use crate::rng::testutil::{FakeCryptoRng, new_rng, run_with_many_seeds};
     pub use crate::settings::testutil::AlwaysDefaultsSettingsContext;
     pub use crate::socket::sndbuf::testutil::FakeSocketWritableListener;
+    pub use crate::sync::lock_impl;
     pub use crate::time::testutil::{
         FakeAtomicInstant, FakeInstant, FakeInstantCtx, FakeTimerCtx, FakeTimerCtxExt, FakeTimerId,
         InstantAndData, WithFakeTimerContext,

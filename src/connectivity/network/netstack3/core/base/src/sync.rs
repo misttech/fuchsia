@@ -15,3 +15,18 @@ pub trait BindingsSyncTypes {
     /// The one-time initialization primitive used by [`netstack3_sync::OnceLock`].
     type Once: once::Once + Send + Sync + 'static;
 }
+
+/// Concrete synchronization primitive implementations for tests.
+///
+/// This module provides default raw lock and `Once` types so fake bindings
+/// contexts and tests can implement [`BindingsSyncTypes`] without duplicating
+/// platform-specific lock selection.
+#[cfg(any(test, feature = "testutils"))]
+pub mod lock_impl {
+    extern crate std;
+
+    pub use fuchsia_sync::{RawMutex, RawRwLock};
+    /// Default [`netstack3_sync::once::Once`] implementation backed by
+    /// [`std::sync::Once`].
+    pub type Once = std::sync::Once;
+}

@@ -110,6 +110,7 @@ _COMMON_DEPS = [
 # @bazel2gn:transformer=deps
 _TESTUTILS_DEPS = [
     "//src/connectivity/lib/net-declare",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates/vendor:assert_matches",
     "//third_party/rust_crates/vendor:criterion",
     "//third_party/rust_crates/vendor:rand_xorshift",
