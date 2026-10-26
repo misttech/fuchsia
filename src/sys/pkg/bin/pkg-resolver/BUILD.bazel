@@ -4,11 +4,16 @@
 
 load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
     "fx_component_manifest",
 )
 load(
     "//build/bazel/rules/components:structured_config.bzl",
     "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
 )
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 
@@ -134,4 +139,20 @@ fuchsia_structured_config_rust_lib(
     name = "config_lib",
     cm_label = ":manifest",
     crate_name = "pkg_resolver_config",
+)
+
+fx_packaged_binary(
+    name = "bin",
+    binary = "//src/sys/pkg/bin/grand-swd-binary",
+    binary_name = "pkg_resolver",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "pkg-resolver",
+    visibility = ["//src/sys/pkg/tests/isolated-ota:__pkg__"],
+    deps = [
+        ":bin",  # @bazel2gn:path_overwrite::bin
+    ],
 )

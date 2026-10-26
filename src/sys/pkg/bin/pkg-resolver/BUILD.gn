@@ -10,12 +10,6 @@ grand_swd_binary("bin") {
   output_name = "pkg_resolver"
 }
 
-fuchsia_component("component") {
-  component_name = "pkg-resolver"
-  manifest = "meta/pkg-resolver.cml"
-  deps = [ ":bin" ]
-}
-
 group("production-component-and-config") {
   public_deps = [ ":component" ]
 }
@@ -312,4 +306,13 @@ fuchsia_component_manifest("manifest") {
 fuchsia_structured_config_rust_lib("config_lib") {
   cm_label = ":manifest"
   name = "pkg_resolver_config"
+}
+fuchsia_component("component") {
+  cm_label = ":manifest"
+  component_name = "pkg-resolver"
+  visibility = [
+    ":*",
+    "//src/sys/pkg/tests/isolated-ota:*",
+  ]
+  deps = [ ":bin" ]
 }
