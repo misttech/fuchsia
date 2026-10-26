@@ -24,6 +24,11 @@ bazel_action("target_tests") {
   # symbols are needed to symbolize test failures.
   copy_debug_symbols = true
 
+  # Consumers of `bazel_test_packages.list` read the packages' manifests and
+  # blobs from the Ninja build directory, so export them there after
+  # building, while they're guaranteed to be on disk.
+  export_test_packages = true
+
   deps = [
     # The following are currently needed by `fx_package()`.
     # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
@@ -44,8 +49,9 @@ bazel_action("target_tests") {
 
 # Pretends to generate bazel_test_packages.list, which is actually written by
 # regenerator.py during `fx gen`, and depends on `:target_tests` so that the
-# package manifests and blobs listed in it exist on disk before any consumer
-# (such as //build/images/updates:all_package_manifests.list) reads them.
+# exported package manifests and blobs listed in it exist on disk before any
+# consumer (such as //build/images/updates:all_package_manifests.list) reads
+# them.
 action("bazel_test_packages.list") {
   testonly = true
   script = "//build/scripts/no_op.sh"

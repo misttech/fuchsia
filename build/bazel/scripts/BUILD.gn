@@ -209,9 +209,22 @@ if (is_host) {
     deps = [ ":minimal_workspace" ]
   }
 
+  python_library("bazel_test_packages") {
+    sources = [ "bazel_test_packages.py" ]
+    library_deps = [ ":build_utils" ]
+  }
+
+  python_build_time_tests("bazel_test_packages_test") {
+    tests = [ "bazel_test_packages_test.py" ]
+    deps = [ ":bazel_test_packages" ]
+  }
+
   python_library("bazel_tests_utils") {
     sources = [ "bazel_tests_utils.py" ]
-    library_deps = [ ":build_utils" ]
+    library_deps = [
+      ":bazel_test_packages",
+      ":build_utils",
+    ]
   }
 
   python_build_time_tests("bazel_tests_utils_test") {
@@ -234,6 +247,7 @@ if (is_host) {
       ":bazel_label_mapper",
       ":bazel_rust_analyzer_utils",
       ":bazel_source_path_mapper",
+      ":bazel_test_packages",
       ":build_utils",
       ":stdio_redirection",
       ":thread_pool_helpers",
@@ -336,6 +350,7 @@ group("tests") {
     ":bazel_repository_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
     ":bazel_source_path_mapper_test($host_toolchain)",
+    ":bazel_test_packages_test($host_toolchain)",
     ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
     ":compute_content_hash_test($host_toolchain)",
