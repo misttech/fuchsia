@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# GN-only group aggregating test packages that use GN-only structured config
+# values and component-manager-realm-builder-cmp.
 group("minimal_shards") {
   testonly = true
   deps = [

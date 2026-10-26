@@ -1,0 +1,10 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+# All targets in BUILD.gn depend on fuchsia_structured_config_cpp_elf_lib or
+# fuchsia_structured_config_values, which have no in-tree Bazel rules yet.
+# LINT.ThenChange(BUILD.gn)

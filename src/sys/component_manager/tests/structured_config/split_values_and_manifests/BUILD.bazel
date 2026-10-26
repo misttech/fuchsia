@@ -1,0 +1,9 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This module ensures that these build templates work for components defined in
+# other files. `fuchsia_structured_config_values` is GN-only and remains in
+# BUILD.gn.
+
+package(default_applicable_licenses = ["//:license"])

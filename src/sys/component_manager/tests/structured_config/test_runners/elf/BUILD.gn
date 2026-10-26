@@ -5,6 +5,10 @@
 import("//build/components.gni")
 import("//build/test.gni")
 
+# LINT.IfChange
+
+# All targets in this file depend on fuchsia_structured_config_cpp_elf_lib or
+# fuchsia_structured_config_values, which have no in-tree Bazel rules yet.
 test("bin") {
   testonly = true
   output_name = "sc_elf_test_runner"
@@ -105,3 +109,4 @@ fuchsia_test_package("tests") {
     ":gtest_values",
   ]
 }
+# LINT.ThenChange(BUILD.bazel)
