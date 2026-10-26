@@ -314,12 +314,7 @@ void StreamImpl::SetResolution(uint64_t id, fuchsia::math::Size coded_size) {
     legacy_stream_->SetImageFormat(legacy_stream_format_index_, [this](zx_status_t status) {
       if (status != ZX_OK) {
         FX_PLOGS(ERROR, status) << description_ << ": Unexpected response from driver.";
-        while (!clients_.empty()) {
-          auto it = clients_.begin();
-          it->second->CloseConnection(ZX_ERR_INTERNAL);
-          clients_.erase(it);
-        }
-        on_no_clients_();
+        CloseAllClients(ZX_ERR_INTERNAL);
         return;
       }
     });
