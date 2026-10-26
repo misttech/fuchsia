@@ -27,12 +27,7 @@ bazel_test_suite("library_loader_tests") {
 
 group("tests") {
   testonly = true
-
-  # TODO: https://fxbug.dev/401049868: Re-enable it
-  # for the profile variant after the issue is resolved.
-  if (!is_profile) {
-    deps = [ ":library_loader_tests" ]
-  }
+  deps = [ ":library_loader_tests" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

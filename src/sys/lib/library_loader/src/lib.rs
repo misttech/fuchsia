@@ -150,34 +150,34 @@ mod tests {
     use super::*;
     use fidl_fuchsia_ldsvc::LoaderMarker;
 
-    async fn list_directory<'a>(root_proxy: &'a fio::DirectoryProxy) -> Vec<String> {
-        let entries = fuchsia_fs::directory::readdir(root_proxy).await.expect("readdir failed");
-        entries.iter().map(|entry| entry.name.clone()).collect::<Vec<String>>()
-    }
-
     #[fuchsia::test]
     async fn load_objects_test() -> Result<(), Error> {
-        // Open this test's real /pkg/lib directory to use for this test, and then check to see
-        // whether an asan subdirectory is present, and use it instead if so.
+        // Open this test's real /pkg/lib directory to use for this test, and if ld.so.1 is in a
+        // variant subdirectory (such as /pkg/lib/asan or /pkg/lib/ubsan), use that subdirectory
+        // instead.
         // TODO(https://fxbug.dev/42061196): Replace conditional logic with a pseudo-directory using Rust VFS.
+        // LINT.IfChange
         let rights = fuchsia_fs::PERM_READABLE | fuchsia_fs::PERM_EXECUTABLE;
         let mut pkg_lib = fuchsia_fs::directory::open_in_namespace("/pkg/lib", rights)?;
-        let entries = list_directory(&pkg_lib).await;
-        if let Some(name) = [
-            "asan",
-            "asan-ubsan",
-            "coverage",
-            "coverage-cts",
-            "coverage-rust",
-            "hwasan",
-            "hwasan-ubsan",
-            "profile",
-        ]
-        .iter()
-        .find(|&&name| entries.iter().any(|f| f == name))
-        {
-            pkg_lib = fuchsia_fs::directory::open_directory_async(&pkg_lib, name, rights)?;
+        let entries = fuchsia_fs::directory::readdir(&pkg_lib).await?;
+        if !entries.iter().any(|e| e.name == "ld.so.1") {
+            for entry in entries
+                .into_iter()
+                .filter(|e| e.kind == fuchsia_fs::directory::DirentKind::Directory)
+            {
+                let subdir =
+                    fuchsia_fs::directory::open_directory_async(&pkg_lib, &entry.name, rights)?;
+                if fuchsia_fs::directory::readdir(&subdir)
+                    .await?
+                    .iter()
+                    .any(|e| e.name == "ld.so.1")
+                {
+                    pkg_lib = subdir;
+                    break;
+                }
+            }
         }
+        // LINT.ThenChange(//src/sys/test_runners/lib_loader_cache/src/loader_cache.rs)
         let (loader_proxy, loader_service) = fidl::endpoints::create_proxy::<LoaderMarker>();
         start(pkg_lib.into(), loader_service.into_channel());
 
