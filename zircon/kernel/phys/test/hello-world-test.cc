@@ -18,7 +18,7 @@
 #endif
 
 int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("hello-world-test");
+  Symbolize symbolize("hello-world-test");
 
   printf("Hello, world!\n\n");
 

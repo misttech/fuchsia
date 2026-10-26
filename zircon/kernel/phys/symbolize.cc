@@ -9,11 +9,14 @@
 #include <inttypes.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/elfldltl/diagnostics.h>
+#include <lib/elfldltl/self.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <zircon/assert.h>
 
+#include <fbl/no_destructor.h>
 #include <ktl/iterator.h>
+#include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
 #include <ktl/variant.h>
@@ -29,6 +32,13 @@
 #endif
 
 #include <ktl/enforce.h>
+
+#ifdef __ELF__
+// These are defined by the phys.ld linker script.
+extern "C" ktl::byte __executable_start[], _edata[], _end[];
+extern "C" const ktl::byte __start_note_gnu_build_id[];
+extern "C" const ktl::byte __stop_note_gnu_build_id[];
+#endif  // __ELF__
 
 namespace {
 
@@ -65,6 +75,62 @@ void PruneSegment(auto& segment, size_type memsz) {
 }  // namespace
 
 Symbolize* gSymbolize = nullptr;
+
+Symbolize::Symbolize(const char* name, FILE* f) : name_{name}, output_{f}, writer_{{output_}} {
+  gSymbolize = this;
+
+  InitSelf();
+
+  if (!BootOptions::Get() || BootOptions::Get()->phys_verbose) {
+    Context();
+  }
+}
+
+#ifdef __ELF__
+
+void Symbolize::InitSelf() {
+  using Phdr = ElfImage::Elf::Phdr;
+
+  auto memory = elfldltl::Self<>::Memory(__executable_start, _end);
+  auto bias = elfldltl::Self<>::LoadBias();
+
+  Phdr load_segment = {
+      .type = elfldltl::ElfPhdrType::kLoad,
+      .vaddr = memory.base(),
+      .filesz = _edata - __executable_start,
+      .memsz = memory.image().size_bytes(),
+  };
+  load_segment.flags = Phdr::kRead | Phdr::kWrite | Phdr::kExecute;
+
+  static fbl::NoDestructor<ElfImage> gSelfImage;
+  gSelfImage->InitSelf(name_, memory, bias, load_segment,
+                       {__start_note_gnu_build_id, __stop_note_gnu_build_id});
+
+  ZX_DEBUG_ASSERT(!self_);
+  self_ = gSelfImage.get();
+  ReplaceModulesStorage(ModuleList{ktl::span{&self_, 1}});
+  OnLoad(*self_);
+
+  static constexpr Stack<BootStack> kBootStacks[] = {
+      {boot_stack, "boot"},
+      {phys_exception_stack, "exception"},
+  };
+  set_stacks(ktl::span(kBootStacks));
+
+#if __has_feature(shadow_call_stack)
+  static constexpr Stack<BootShadowCallStack> kBootShadowCallStacks[] = {
+      {boot_shadow_call_stack, "boot"},
+      {phys_exception_shadow_call_stack, "exception"},
+  };
+  set_shadow_call_stacks(ktl::span(kBootShadowCallStacks));
+#endif  // __has_feature(shadow_call_stack)
+}
+
+#else  // !__ELF__
+
+void Symbolize::InitSelf() {}
+
+#endif  // __ELF__
 
 void Symbolize::ReplaceModulesStorage(ModuleList modules) {
   ModuleList old = ktl::exchange(modules_, ktl::move(modules));

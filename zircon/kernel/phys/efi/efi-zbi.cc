@@ -20,7 +20,7 @@
 using EfiZbiView = zbitl::View<EfiFilePtr>;
 
 int main(int argc, char** argv) {
-  MainSymbolize symbolize("efi-zbi");
+  Symbolize symbolize("efi-zbi");
 
   ktl::string_view filename;
   if (argc == 0) {

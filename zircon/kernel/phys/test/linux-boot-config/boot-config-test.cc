@@ -15,7 +15,7 @@
 #include <ktl/enforce.h>
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("boot-config-smoke-test");
+  Symbolize symbolize("boot-config-smoke-test");
 
   // Initialize memory for allocation/free.
   AddressSpace aspace;

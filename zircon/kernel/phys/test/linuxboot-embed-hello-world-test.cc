@@ -28,7 +28,7 @@ static_assert(kMaxBytes > kExpectedImage.size());
 extern "C" __LOCAL uint64_t __executable_start[];  // NOLINT(bugprone-reserved-identifier)
 
 int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("linuxboot-embed-hello-world-test");
+  Symbolize symbolize("linuxboot-embed-hello-world-test");
 
   const size_t link_size = GetLinuxbootLinkMemorySize();
   const size_t header_size = GetLinuxbootHeaderMemorySize();

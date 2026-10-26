@@ -203,7 +203,7 @@ void TurduckenTestBase::Boot() {
 }
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks entry_ticks) {
-  MainSymbolize symbolize(kTestName);
+  Symbolize symbolize(kTestName);
   symbolize.ContextAlways();
 
   AddressSpace aspace;

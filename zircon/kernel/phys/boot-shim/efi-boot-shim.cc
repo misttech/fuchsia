@@ -25,7 +25,7 @@ using Shim = boot_shim::EfiBootShim<>;
 }  // namespace
 
 int main(int argc, char** argv) {
-  MainSymbolize symbolize(argc == 0 ? "efi-boot-shim" : argv[0]);
+  Symbolize symbolize(argc == 0 ? "efi-boot-shim" : argv[0]);
 
   Shim shim(symbolize.name());
 

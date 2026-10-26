@@ -73,7 +73,7 @@ void LogMemory() {
 }  // namespace
 
 int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks ticks) {
-  MainSymbolize symbolize("phys-memory-test");
+  Symbolize symbolize("phys-memory-test");
 
 #if defined(__riscv)
   // TODO(https://fxbug.dev/571663247): Re-enable on riscv64.

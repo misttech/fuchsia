@@ -45,7 +45,7 @@ constexpr uint64_t kLoadAddress = 0xffff'ffff'0000'0000;
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize(kTestName);
+  Symbolize symbolize(kTestName);
 
 #ifdef __aarch64__
   // There is no upper address space in EL2+ by default, so drop down to EL1

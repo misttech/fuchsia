@@ -146,7 +146,7 @@ void RelocateElfKernel(ElfImage& kernel) {
   // redirected to the log code path.  Instead keep it pointed at a copy of the
   // current stdout, which is just the console.
   FILE console = *stdout;
-  MainSymbolize symbolize("physboot", &console);
+  Symbolize symbolize("physboot", &console);
   if (BootOptions::Get()->phys_verbose) {
     symbolize.Context();
     LogSerial();

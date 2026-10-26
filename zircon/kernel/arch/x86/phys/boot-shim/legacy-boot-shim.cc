@@ -34,7 +34,7 @@ void PhysMain(void* ptr, arch::EarlyTicks boot_ticks) {
 
   ApplyRelocations();
 
-  MainSymbolize symbolize(kLegacyShimName);
+  Symbolize symbolize(kLegacyShimName);
 
   // This also fills in gLegacyBoot.
   AddressSpace aspace;

@@ -33,7 +33,7 @@ constexpr uint32_t kTestPayloadSize = sizeof(kTestPayload) - 1;
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("decompress-test");
+  Symbolize symbolize("decompress-test");
 
   // Initialize memory for allocation/free.
   AddressSpace aspace;

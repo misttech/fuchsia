@@ -32,9 +32,13 @@ class ElfImage;
 struct PhysExceptionState;
 class Symbolize;
 
-// The Symbolize instance registered by MainSymbolize.
+// The Symbolize instance for the running program, registered on construction.
 extern class Symbolize* gSymbolize;
 
+// Symbolize is the singleton that tracks the loaded ELF modules of the running
+// phys program (itself first, plus anything it loads) and emits symbolizer
+// markup, backtraces, and other diagnostics about them.  On construction it
+// registers itself as `gSymbolize` and emits symbolization markup context.
 class Symbolize {
  public:
   template <class BootStackType>
@@ -55,8 +59,7 @@ class Symbolize {
   Symbolize() = delete;
   Symbolize(const Symbolize&) = delete;
 
-  explicit Symbolize(const char* name, FILE* f = stdout)
-      : name_{name}, output_{f}, writer_{{output_}} {}
+  explicit Symbolize(const char* name, FILE* f = stdout);
 
   const char* name() const { return name_; }
 
@@ -67,6 +70,10 @@ class Symbolize {
 
   // Return the ELF build ID note for the currently executing module.
   elfldltl::ElfNote build_id() const;
+
+  // Provide storage for the module list so that additional modules (e.g. the
+  // kernel) can be loaded and symbolized.
+  void EnableModuleLoading(ModuleList modules) { ReplaceModulesStorage(ktl::move(modules)); }
 
   void set_stacks(ktl::span<const Stack<BootStack>> stacks) { stacks_ = stacks; }
 
@@ -144,15 +151,16 @@ class Symbolize {
   // should no longer be considered part of the segment's or module's bounds.
   void PruneFromSelf(uint64_t start, uint64_t end);
 
- protected:
+ private:
+  [[gnu::format(printf, 2, 3)]] void Printf(const char* fmt, ...);
+
+  // Set up self_ (and the stacks) to describe the running executable.  This is
+  // a no-op in non-ELF (i.e. EFI) environments.
+  void InitSelf();
+
   // This reads the existing modules to the new storage and then
   // replaces it as the storage to be used by future OnLoad calls.
   void ReplaceModulesStorage(ModuleList modules);
-
-  const ElfImage* self_ = nullptr;
-
- private:
-  [[gnu::format(printf, 2, 3)]] void Printf(const char* fmt, ...);
 
   void AddModule(const ElfImage* module);
 
@@ -162,22 +170,10 @@ class Symbolize {
   ktl::span<const Stack<BootStack>> stacks_;
   ktl::span<const Stack<BootShadowCallStack>> shadow_call_stacks_;
   FileMarkupWriter writer_;
+  // This doubles as the initial one-element module list storage until
+  // EnableModuleLoading() provides more.
+  const ElfImage* self_ = nullptr;
   bool context_done_ = false;
-};
-
-// MainSymbolize represents the singleton Symbolize instance to be used by the
-// current program. On construction, it regsters itself as `gSymbolize` and
-// emits symbolization markup context.
-class MainSymbolize : public Symbolize {
- public:
-  explicit MainSymbolize(const char* name, FILE* f = stdout);
-
-  // Registers the running executable's own image as the first module.
-  void set_self(const ElfImage& self);
-
-  // Provide storage for the module list so that additional modules (e.g. the
-  // kernel) can be loaded and symbolized.
-  void EnableModuleLoading(ModuleList modules) { ReplaceModulesStorage(ktl::move(modules)); }
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_SYMBOLIZE_H_

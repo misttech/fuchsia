@@ -303,7 +303,7 @@ class BootShimHelper {
   }
 
   MaybeAddressSpace<options.enable_mmu> maybe_aspace_;
-  MainSymbolize symbolize_;
+  Symbolize symbolize_;
   Shim shim_;
   ktl::string_view zbi_boot_;
 };

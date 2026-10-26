@@ -36,7 +36,7 @@ constexpr ktl::string_view kNamespace = "basic-elf-loading-test-data";
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("basic-elf-loading-test");
+  Symbolize symbolize("basic-elf-loading-test");
 
   // Initialize memory for allocation/free.
   AddressSpace aspace;

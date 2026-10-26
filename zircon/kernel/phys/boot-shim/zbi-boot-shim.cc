@@ -27,7 +27,7 @@
 // must be in the new uniform format.
 
 void ZbiMain(void* zbi_ptr, EarlyBootZbi zbi, arch::EarlyTicks boot_ticks) {
-  MainSymbolize symbolize("zbi-boot-shim");
+  Symbolize symbolize("zbi-boot-shim");
 
   AddressSpace aspace;
   InitMemory(zbi_ptr, ktl::move(zbi), &aspace);

@@ -17,7 +17,7 @@
 #include <ktl/enforce.h>
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("boot-config-zbi-smoke-test");
+  Symbolize symbolize("boot-config-zbi-smoke-test");
 
   zbitl::View zbi(
       zbitl::StorageFromRawHeader<ktl::span<ktl::byte>>(static_cast<zbi_header_t*>(zbi_ptr)));

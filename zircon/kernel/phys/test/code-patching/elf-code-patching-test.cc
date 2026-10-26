@@ -42,7 +42,7 @@ ktl::array<const ElfImage*, 5> modules;
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize(kTestName);
+  Symbolize symbolize(kTestName);
 
   // Initialize memory for allocation/free.
   AddressSpace aspace;

@@ -119,7 +119,7 @@ int TestMultiplyByFactorPatching(code_patching::PatcherWithGlobalCacheConsistenc
 }  // namespace
 
 int TestMain(void* zbi_ptr, ktl::optional<EarlyBootZbi> early_zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("code-patching-test");
+  Symbolize symbolize("code-patching-test");
 
   // Initialize memory for allocation/free.
   AddressSpace aspace;

@@ -15,7 +15,7 @@
 #include "test-main.h"
 
 int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::EarlyTicks) {
-  MainSymbolize symbolize("paging-test");
+  Symbolize symbolize("paging-test");
 
   AddressSpace aspace;
   InitMemory(bootloader_data, ktl::move(zbi), &aspace);
