@@ -4,8 +4,6 @@
 
 """Generic Git staging isolation and staged action runner package."""
 
-from __future__ import annotations
-
 from .engine import (
     ActionContext,
     GitError,

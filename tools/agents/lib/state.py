@@ -4,8 +4,6 @@
 
 """State journal, status inspection, grant reconciliation, and configuration rollback."""
 
-from __future__ import annotations
-
 import dataclasses
 import datetime
 import json

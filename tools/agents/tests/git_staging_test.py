@@ -5,8 +5,6 @@
 
 """Unit tests for the git staging isolation and staged action runner library."""
 
-from __future__ import annotations
-
 import os
 import re
 import shutil

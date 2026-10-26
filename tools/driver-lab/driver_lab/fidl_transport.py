@@ -11,8 +11,6 @@ host-side round-trip tests (in-process channel pairs) and a real target
 (channels from a device-connected fuchsia-controller context).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Sequence
 from typing import Any
 

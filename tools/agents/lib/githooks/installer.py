@@ -4,8 +4,6 @@
 
 """Installer and uninstaller for Fuchsia git hooks."""
 
-from __future__ import annotations
-
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass, field

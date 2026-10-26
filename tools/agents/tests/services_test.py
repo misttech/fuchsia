@@ -4,8 +4,6 @@
 
 """Unit tests for daemon service discovery and management."""
 
-from __future__ import annotations
-
 import unittest
 from unittest import mock
 

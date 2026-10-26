@@ -4,8 +4,6 @@
 
 """Testing utilities and hermetic base test cases for agents."""
 
-from __future__ import annotations
-
 from agents_testing.base import BaseTestCase
 from agents_testing.runner import ParallelTextTestRunner, parallel_main
 from agents_testing.workspace import GitWorkspaceTestCase

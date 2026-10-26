@@ -4,8 +4,6 @@
 
 """Hermetic Git workspace test case using fast template caching."""
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

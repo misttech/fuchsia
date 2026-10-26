@@ -10,8 +10,6 @@ asynchronous waits, and the distinction between semantic device protocols and
 raw registers.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 from collections.abc import Awaitable, Callable, Mapping, Sequence

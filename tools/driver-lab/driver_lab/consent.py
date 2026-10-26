@@ -11,8 +11,6 @@ persistent choices store the exact access rule -- never a region, range,
 or wildcard.
 """
 
-from __future__ import annotations
-
 import datetime
 import enum
 from typing import Protocol

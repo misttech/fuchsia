@@ -4,8 +4,6 @@
 
 """Installer and uninstaller for PreToolUse agent hooks in hooks.json."""
 
-from __future__ import annotations
-
 import json
 import shlex
 import sys

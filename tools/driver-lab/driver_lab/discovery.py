@@ -8,8 +8,6 @@ Provides stable node enumeration, bound driver inspection, and unclaimed-node
 detection over FIDL, fulfilling Phase 1 Milestone H0/H1.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 from collections.abc import Callable, Mapping

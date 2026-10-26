@@ -4,8 +4,6 @@
 
 """Configuration management and atomic writing for AI coding agents."""
 
-from __future__ import annotations
-
 import datetime
 import json
 import os

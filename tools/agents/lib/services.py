@@ -4,8 +4,6 @@
 
 """Daemon service discovery and management for AI coding agents."""
 
-from __future__ import annotations
-
 import pathlib
 import shutil
 import subprocess

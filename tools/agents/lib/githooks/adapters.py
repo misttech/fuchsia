@@ -8,8 +8,6 @@ Integrates Fuchsia platform formatting and commit message checking
 with the generic git_staging engine.
 """
 
-from __future__ import annotations
-
 import shutil
 import subprocess
 import sys

@@ -5,8 +5,6 @@
 
 """Unit tests for the top-level `fx agents` CLI dispatcher."""
 
-from __future__ import annotations
-
 import argparse
 import unittest
 from unittest import mock

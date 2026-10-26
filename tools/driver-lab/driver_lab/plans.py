@@ -16,8 +16,6 @@ setting one fails with a distinct reserved-key error, so phase 2 can
 adopt them without a schema-shape change.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from collections.abc import Mapping

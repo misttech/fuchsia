@@ -4,8 +4,6 @@
 
 """Declarative command schema and parser definitions."""
 
-from __future__ import annotations
-
 import argparse
 from collections.abc import Sequence
 from dataclasses import dataclass

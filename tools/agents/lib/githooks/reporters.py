@@ -4,8 +4,6 @@
 
 """Structured reporting, TTY/ASCII detection, and remediation hints for Git hooks."""
 
-from __future__ import annotations
-
 import sys
 from collections.abc import Sequence
 from typing import Any, TextIO

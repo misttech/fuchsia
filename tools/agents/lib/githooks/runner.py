@@ -5,8 +5,6 @@
 
 """Fuchsia Git hook CLI runner and hook dispatcher entrypoints."""
 
-from __future__ import annotations
-
 import argparse
 import os
 import sys

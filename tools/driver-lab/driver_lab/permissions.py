@@ -11,8 +11,6 @@ duplicate or ambiguous entries at load, and persists atomically under a
 lock file.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import enum
 import json

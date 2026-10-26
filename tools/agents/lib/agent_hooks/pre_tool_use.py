@@ -5,8 +5,6 @@
 
 """PreToolUse agent hook dispatching tool invocations through ToolRouter."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

@@ -5,8 +5,6 @@
 
 """Unit tests for path and directory discovery logic."""
 
-from __future__ import annotations
-
 import pathlib
 import subprocess
 import unittest

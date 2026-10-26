@@ -4,8 +4,6 @@
 
 """Grant-based policy evaluation against config.json and state.json."""
 
-from __future__ import annotations
-
 import functools
 import itertools
 import json

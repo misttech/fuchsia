@@ -5,8 +5,6 @@
 
 """Unit tests for the git hooks reporters."""
 
-from __future__ import annotations
-
 import io
 import unittest
 from typing import TextIO, cast

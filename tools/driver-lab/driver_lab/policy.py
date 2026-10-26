@@ -11,8 +11,6 @@ configuration) may only narrow this ceiling, never widen it (Spec 9.2, 22).
 Manifests are canonicalized and digested via SHA-256 (Spec 9.6).
 """
 
-from __future__ import annotations
-
 import dataclasses
 import hashlib
 import json

@@ -5,8 +5,6 @@
 
 """Main entry point for `fx agents` CLI."""
 
-from __future__ import annotations
-
 import argparse
 import sys
 from collections.abc import Sequence

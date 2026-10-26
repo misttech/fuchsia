@@ -4,8 +4,6 @@
 
 """Fuchsia Git hooks and reporting subsystem."""
 
-from __future__ import annotations
-
 from .adapters import (
     DEFAULT_FORMATTABLE_EXTENSIONS,
     DEFAULT_PRE_COMMIT_ACTIONS,

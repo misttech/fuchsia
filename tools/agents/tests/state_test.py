@@ -4,8 +4,6 @@
 
 """Unit tests for agent state journal, status formatting, and configuration rollback."""
 
-from __future__ import annotations
-
 import json
 import pathlib
 import unittest

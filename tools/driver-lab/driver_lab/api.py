@@ -12,8 +12,6 @@ manifest last). Missing consent fails closed, and no denial or failure
 skips evidence finalization.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 from collections.abc import Awaitable, Callable, Mapping, Sequence

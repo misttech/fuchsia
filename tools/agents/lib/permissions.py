@@ -4,8 +4,6 @@
 
 """Permission definitions, profile resolution, command list reading, and regex expansion."""
 
-from __future__ import annotations
-
 import dataclasses
 import pathlib
 import re

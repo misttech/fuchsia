@@ -12,8 +12,6 @@ This module provides core primitives for safely working with Git index and stage
    re-staging) and read-only checks on partially staged files under stash isolation.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import os
 import subprocess

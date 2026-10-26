@@ -4,8 +4,6 @@
 
 """Filesystem paths and directory discovery for AI coding agents."""
 
-from __future__ import annotations
-
 import os
 import pathlib
 import subprocess

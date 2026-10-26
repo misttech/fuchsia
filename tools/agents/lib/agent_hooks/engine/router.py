@@ -4,8 +4,6 @@
 
 """Command and tool routing engine for agent hook policy evaluation."""
 
-from __future__ import annotations
-
 import enum
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass

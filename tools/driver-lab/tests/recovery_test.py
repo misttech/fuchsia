@@ -7,8 +7,6 @@
 Fulfills Phase 1 Milestone H5 (Spec Sections 3, 6.4, 14.1-14.3, 16, 17).
 """
 
-from __future__ import annotations
-
 import json
 import tempfile
 import unittest

@@ -5,8 +5,6 @@
 
 """Unit tests for permissions definitions and expansion logic."""
 
-from __future__ import annotations
-
 import re
 import unittest
 from collections.abc import Sequence

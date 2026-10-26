@@ -19,8 +19,6 @@ generic token matching cannot infer on its own for the rules in
    `git reset`, `git push`, `git config`, `rm`, and `sed`).
 """
 
-from __future__ import annotations
-
 from agents.lib.agent_hooks.engine.parser import CommandSchema, Flag, Subcommand
 
 

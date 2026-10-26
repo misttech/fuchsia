@@ -9,8 +9,6 @@ from serialized forms happen in explicit functions; unvalidated
 dictionaries are never passed through the system.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import enum
 import hashlib

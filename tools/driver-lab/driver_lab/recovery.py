@@ -13,8 +13,6 @@ Fulfills Phase 1 Milestone H5 (Spec Sections 3, 6.4, 14.1-14.3, 16, 17):
 - Evidence-linked interpretations citing exact operation indices and raw values.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import datetime

@@ -10,8 +10,6 @@ types. Real implementations speak FIDL through fuchsia-controller;
 staleness rejection, exact-allowlist enforcement, and audit sequencing.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import enum

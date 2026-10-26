@@ -10,8 +10,6 @@ including heredoc body removal, compound operator splitting (`&&`, `||`, `;`,
 stripping.
 """
 
-from __future__ import annotations
-
 import codecs
 import re
 import shlex

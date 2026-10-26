@@ -5,8 +5,6 @@
 
 """Unit tests for config module, atomic writing, and backup creation."""
 
-from __future__ import annotations
-
 import json
 import pathlib
 import unittest

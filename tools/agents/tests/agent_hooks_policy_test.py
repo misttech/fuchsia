@@ -5,8 +5,6 @@
 
 """Unit tests for PreToolUse command schemas, grant policies, and installer."""
 
-from __future__ import annotations
-
 import io
 import json
 import unittest

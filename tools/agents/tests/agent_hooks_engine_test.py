@@ -5,8 +5,6 @@
 
 """Unit tests for PreToolUse agent hooks lexer, parser, and routers."""
 
-from __future__ import annotations
-
 import unittest
 from collections.abc import Sequence
 

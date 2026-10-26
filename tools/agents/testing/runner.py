@@ -4,8 +4,6 @@
 
 """Minimal thread-pool unittest runner for parallel host test execution."""
 
-from __future__ import annotations
-
 import concurrent.futures
 import os
 import sys

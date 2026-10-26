@@ -10,8 +10,6 @@ argument, plan, or permission errors; `run` returns the run's exit
 category, 7 when evidence cannot be persisted, and 4 when interrupted.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import dataclasses

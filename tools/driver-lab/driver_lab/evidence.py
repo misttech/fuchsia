@@ -11,8 +11,6 @@ written only at finalization, so its presence marks a complete bundle; a
 run whose evidence cannot be finalized is not successful.
 """
 
-from __future__ import annotations
-
 import datetime
 import enum
 import hashlib
