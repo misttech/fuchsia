@@ -453,6 +453,7 @@ pub type VmCowPagesLock = KMutex<VmCowPagesLockClass, RawCriticalMutex>;
 #[pin_data(PinnedDrop)]
 #[repr(transparent)]
 pub struct DeferredOps<'a> {
+    #[pin]
     opaque: Opaque<bindings::VmCowPages_DeferredOps>,
     phantom: PhantomData<&'a VmCowPages>,
 }
@@ -498,6 +499,7 @@ impl<'a> DeferredOps<'a> {
 #[pin_data(PinnedDrop)]
 #[repr(transparent)]
 pub struct PriorityChanger<'a> {
+    #[pin]
     opaque: Opaque<bindings::PriorityChanger>,
     phantom: PhantomData<&'a VmCowPages>,
 }

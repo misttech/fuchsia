@@ -29,6 +29,7 @@ pub use bindings::VmAddressRegionEnumeratorType;
 #[pin_data(PinnedDrop)]
 #[repr(transparent)]
 pub struct VmAddressRegionEnumerator<'a> {
+    #[pin]
     opaque: Opaque<bindings::CppVmAddressRegionEnumerator>,
     phantom: PhantomData<&'a VmAddressRegion>,
 }
