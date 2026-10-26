@@ -78,10 +78,6 @@ pub struct MemoryPressureLevelConfig {
 
     /// The limit of cached nodes.
     pub cache_size_limit: usize,
-
-    /// The initial delay before the background task runs. The background task has a longer initial
-    /// delay to avoid running the task during boot.
-    pub background_task_initial_delay: Duration,
 }
 
 impl Default for MemoryPressureLevelConfig {
@@ -89,7 +85,6 @@ impl Default for MemoryPressureLevelConfig {
         Self {
             background_task_period: Duration::from_secs(20),
             cache_size_limit: DIRENT_CACHE_LIMIT,
-            background_task_initial_delay: Duration::from_secs(70),
         }
     }
 }
@@ -124,17 +119,14 @@ impl Default for MemoryPressureConfig {
             mem_normal: MemoryPressureLevelConfig {
                 background_task_period: Duration::from_secs(20),
                 cache_size_limit: DIRENT_CACHE_LIMIT,
-                background_task_initial_delay: Duration::from_secs(70),
             },
             mem_warning: MemoryPressureLevelConfig {
                 background_task_period: Duration::from_secs(5),
                 cache_size_limit: 100,
-                background_task_initial_delay: Duration::from_secs(5),
             },
             mem_critical: MemoryPressureLevelConfig {
                 background_task_period: Duration::from_millis(1500),
                 cache_size_limit: 20,
-                background_task_initial_delay: Duration::from_millis(1500),
             },
         }
     }
@@ -732,8 +724,7 @@ impl FxVolume {
         let mut terminate = terminate.fuse();
         // Default to the normal period until updates come from the `level_stream`.
         let mut level = MemoryPressureLevel::Normal;
-        let mut timer =
-            pin!(fasync::Timer::new(config.for_level(&level).background_task_initial_delay));
+        let mut timer = pin!(fasync::Timer::new(config.for_level(&level).background_task_period));
 
         loop {
             let mut should_terminate = false;
@@ -1666,7 +1657,6 @@ mod tests {
                 MemoryPressureConfig {
                     mem_normal: MemoryPressureLevelConfig {
                         background_task_period: Duration::from_millis(100),
-                        background_task_initial_delay: Duration::from_millis(100),
                         ..Default::default()
                     },
                     mem_warning: Default::default(),
@@ -1746,7 +1736,6 @@ mod tests {
                 mem_warning: MemoryPressureLevelConfig {
                     background_task_period: Duration::from_millis(100),
                     cache_size_limit: 100,
-                    background_task_initial_delay: Duration::from_millis(100),
                     ..Default::default()
                 },
                 mem_critical: MemoryPressureLevelConfig {

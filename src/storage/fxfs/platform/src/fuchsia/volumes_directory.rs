@@ -1383,7 +1383,9 @@ mod tests {
     use super::{Mode, serve_startup_volume_proxy};
     use crate::fuchsia::RemoteCrypt;
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
-    use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
+    use crate::fuchsia::testing::{
+        self, TestFixture, close_file_checked, open_dir_checked, open_file_checked,
+    };
     use crate::fuchsia::volume::MemoryPressureConfig;
     use crate::fuchsia::volumes_directory::VolumesDirectory;
     use crate::testing::TestFixtureOptions;
@@ -2329,6 +2331,14 @@ mod tests {
             .find(&fxfs::object_store::ObjectKey::object(file_id))
             .await
             .expect("tree find after clear_caches failed");
+
+        close_file_checked(file).await;
+        std::mem::drop(root);
+        std::mem::drop(dir_proxy);
+        std::mem::drop(vol);
+        volumes_directory.terminate().await;
+        std::mem::drop(volumes_directory);
+        filesystem.close().await.expect("close filesystem failed");
     }
 
     #[fuchsia::test]
