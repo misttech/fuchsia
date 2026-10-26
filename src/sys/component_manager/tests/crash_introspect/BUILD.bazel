@@ -1,0 +1,112 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "report_then_panic_on_start_bin",
+    srcs = ["report_then_panic_on_start.rs"],
+    crate_name = "report_then_panic_on_start",
+    crate_root = "report_then_panic_on_start.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/crash_introspect/fidl:fuchsia.test_rust",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "report_then_panic_on_start_bin_packaged_bin",
+    binary = ":report_then_panic_on_start_bin",
+    binary_name = "report_then_panic_on_start",
+)
+
+fx_component_manifest(
+    name = "report_then_panic_on_start-manifest",
+    component_name = "report_then_panic_on_start",
+    includes = [
+        "//src/sys/component_manager:meta/passthrough_diagnostics.shard.cml",
+        "//src/sys/component_manager/tests:meta/elf_runner_and_environment.shard.cml",
+        "//src/sys/component_manager/tests:meta/use_elf_runner.shard.cml",
+    ],
+    manifest = "meta/report_then_panic_on_start.cml",
+)
+
+# We want `diagnostics` from self rather than parent, so we can't use
+# syslog/client.shard.cml.
+fx_component(
+    name = "report_then_panic_on_start",
+    check_includes = False,
+    compiled_manifest = ":report_then_panic_on_start-manifest",
+    component_name = "report_then_panic_on_start",
+    deps = [":report_then_panic_on_start_bin_packaged_bin"],
+)
+
+rustc_binary(
+    name = "panic_on_start_bin",
+    srcs = ["panic_on_start.rs"],
+    crate_name = "panic_on_start",
+    crate_root = "panic_on_start.rs",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+fx_packaged_binary(
+    name = "panic_on_start_bin_packaged_bin",
+    binary = ":panic_on_start_bin",
+    binary_name = "panic_on_start",
+)
+
+fx_component_manifest(
+    name = "panic_on_start-manifest",
+    component_name = "panic_on_start",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/panic_on_start.cml",
+)
+
+fx_component(
+    name = "panic_on_start",
+    compiled_manifest = ":panic_on_start-manifest",
+    component_name = "panic_on_start",
+    visibility = [
+        "//src/sys/component_manager:__pkg__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/sys/lib/task-exceptions:__pkg__",
+    ],
+    deps = [":panic_on_start_bin_packaged_bin"],
+)
+
+rustc_test(
+    name = "crash_introspect_test_bin",
+    srcs = ["crash_introspect_test.rs"],
+    crate_name = "crash_introspect_test",
+    crate_root = "crash_introspect_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/component_manager/tests/crash_introspect/fidl:fuchsia.test_rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

@@ -8,3 +8,8 @@ exports_files(
     ["meta/component_manager_root_trace.root_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
 )
+
+exports_files(
+    ["meta/passthrough_diagnostics.shard.cml"],
+    visibility = ["//src/sys/component_manager/tests:__subpackages__"],
+)
