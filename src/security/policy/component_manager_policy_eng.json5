@@ -480,6 +480,16 @@
             {
                 source_moniker: "/core/lowpanservice",
                 source: "component",
+                source_name: "fuchsia.lowpan.device.DeviceConnector",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/sl4f",
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/core/lowpanservice",
+                source: "component",
                 source_name: "fuchsia.lowpan.device.DeviceExtraConnector",
                 capability: "protocol",
                 target_monikers: [
@@ -491,6 +501,15 @@
                 source_moniker: "/core/lowpanservice",
                 source: "component",
                 source_name: "fuchsia.lowpan.device.DeviceRouterExtraConnector",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+            {
+                source_moniker: "/core/lowpanservice",
+                source: "component",
+                source_name: "fuchsia.lowpan.thread.DatasetConnector",
                 capability: "protocol",
                 target_monikers: [
                     "/toolbox",
