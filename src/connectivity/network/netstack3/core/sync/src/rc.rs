@@ -905,11 +905,11 @@ pub trait Notifier<T>: Send {
 /// `Clone` type.
 ///
 /// Useful for tests where completion assertions are possible and useful.
-#[derive(Debug, Derivative)]
-#[derivative(Clone(bound = ""))]
-pub struct ArcNotifier<T>(alloc::sync::Arc<crate::Mutex<Option<T>>>);
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""), Debug(bound = "T: Debug, R: lock_api::RawMutex"))]
+pub struct ArcNotifier<T, R>(alloc::sync::Arc<crate::Mutex<Option<T>, R>>);
 
-impl<T> ArcNotifier<T> {
+impl<T, R: lock_api::RawMutex> ArcNotifier<T, R> {
     /// Creates a new `ArcNotifier`.
     pub fn new() -> Self {
         Self(alloc::sync::Arc::new(crate::Mutex::new(None)))
@@ -922,7 +922,7 @@ impl<T> ArcNotifier<T> {
     }
 }
 
-impl<T: Send> Notifier<T> for ArcNotifier<T> {
+impl<T: Send, R: lock_api::RawMutex + Send + Sync> Notifier<T> for ArcNotifier<T, R> {
     fn notify(&mut self, data: T) {
         let Self(inner) = self;
         assert!(inner.lock().replace(data).is_none(), "notified twice");
@@ -965,6 +965,10 @@ impl<T> Notifier<T> for ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use fuchsia_sync::RawMutex;
+
+    type ArcNotifier<T> = super::ArcNotifier<T, RawMutex>;
 
     #[test]
     fn zombie_weak() {

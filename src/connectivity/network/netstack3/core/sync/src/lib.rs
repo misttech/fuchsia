@@ -45,15 +45,11 @@ pub use inner_loom::*;
 mod inner {
     use core::fmt;
 
-    /// TODO(https://fxbug.dev/553027583): Remove this import and the default
-    /// parameters for locks.
-    use fuchsia_sync::{RawMutex, RawRwLock};
-
     /// A mutex assuming lock poisoning will never occur.
-    pub struct Mutex<T, R = RawMutex>(lock_api::Mutex<R, T>);
+    pub struct Mutex<T, R>(lock_api::Mutex<R, T>);
 
     /// Lock guard for access to a [`Mutex`].
-    pub type LockGuard<'a, T, R = RawMutex> = lock_api::MutexGuard<'a, R, T>;
+    pub type LockGuard<'a, T, R> = lock_api::MutexGuard<'a, R, T>;
 
     impl<T: Default, R: lock_api::RawMutex> Default for Mutex<T, R> {
         #[inline]
@@ -108,13 +104,13 @@ mod inner {
         }
     }
     /// A reader-writer lock assuming lock poisoning will never occur.
-    pub struct RwLock<T, R = RawRwLock>(lock_api::RwLock<R, T>);
+    pub struct RwLock<T, R>(lock_api::RwLock<R, T>);
 
     /// Lock guard for read access to a [`RwLock`].
-    pub type RwLockReadGuard<'a, T, R = RawRwLock> = lock_api::RwLockReadGuard<'a, R, T>;
+    pub type RwLockReadGuard<'a, T, R> = lock_api::RwLockReadGuard<'a, R, T>;
 
     /// Lock guard for write access to a [`RwLock`].
-    pub type RwLockWriteGuard<'a, T, R = RawRwLock> = lock_api::RwLockWriteGuard<'a, R, T>;
+    pub type RwLockWriteGuard<'a, T, R> = lock_api::RwLockWriteGuard<'a, R, T>;
 
     impl<T: Default, R: lock_api::RawRwLock> Default for RwLock<T, R> {
         #[inline]
@@ -194,15 +190,12 @@ mod inner_loom {
     use lock_api as _;
 
     use crate::sync;
-    /// TODO(https://fxbug.dev/553027583): Remove this import and the default
-    /// parameters for locks.
-    use fuchsia_sync::{RawMutex, RawRwLock};
 
     /// A mutex assuming lock poisoning will never occur.
-    pub struct Mutex<T, R = RawMutex>(sync::Mutex<T>, PhantomData<R>);
+    pub struct Mutex<T, R>(sync::Mutex<T>, PhantomData<R>);
 
     /// Lock guard for access to a [`Mutex`].
-    pub struct LockGuard<'a, T, R = RawMutex>(sync::MutexGuard<'a, T>, PhantomData<R>);
+    pub struct LockGuard<'a, T, R>(sync::MutexGuard<'a, T>, PhantomData<R>);
 
     impl<T: fmt::Debug, R> fmt::Debug for LockGuard<'_, T, R> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -278,10 +271,10 @@ mod inner_loom {
     }
 
     /// A reader-writer lock assuming lock poisoning will never occur.
-    pub struct RwLock<T, R = RawRwLock>(sync::RwLock<T>, PhantomData<R>);
+    pub struct RwLock<T, R>(sync::RwLock<T>, PhantomData<R>);
 
     /// Lock guard for read access to a [`RwLock`].
-    pub struct RwLockReadGuard<'a, T, R = RawRwLock>(sync::RwLockReadGuard<'a, T>, PhantomData<R>);
+    pub struct RwLockReadGuard<'a, T, R>(sync::RwLockReadGuard<'a, T>, PhantomData<R>);
 
     impl<T: fmt::Debug, R> fmt::Debug for RwLockReadGuard<'_, T, R> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -307,10 +300,7 @@ mod inner_loom {
     }
 
     /// Lock guard for write access to a [`RwLock`].
-    pub struct RwLockWriteGuard<'a, T, R = RawRwLock>(
-        sync::RwLockWriteGuard<'a, T>,
-        PhantomData<R>,
-    );
+    pub struct RwLockWriteGuard<'a, T, R>(sync::RwLockWriteGuard<'a, T>, PhantomData<R>);
 
     impl<T: fmt::Debug, R> fmt::Debug for RwLockWriteGuard<'_, T, R> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

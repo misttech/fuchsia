@@ -230,11 +230,37 @@ pub mod sync {
     use netstack3_sync as _;
 
     pub use netstack3_base::sync::{
-        BindingsSyncTypes, DebugReferences, DynDebugReferences, LockGuard, MapRcNotifier, Mutex,
-        Once, OnceLock, PrimaryRc, RcNotifier, ResourceToken, ResourceTokenValue, RwLock,
-        RwLockReadGuard, RwLockWriteGuard, StrongRc, WeakRc, lock_impl,
+        BindingsSyncTypes, DebugReferences, DynDebugReferences, MapRcNotifier, Once, OnceLock,
+        PrimaryRc, RcNotifier, ResourceToken, ResourceTokenValue, StrongRc, WeakRc, lock_impl,
     };
     pub use netstack3_base::{RemoveResourceResult, RemoveResourceResultWithContext};
+
+    /// Re-exported temporarily for bindings.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Remove this.
+    pub type Mutex<T> = netstack3_base::sync::Mutex<T, lock_impl::RawMutex>;
+
+    /// Re-exported temporarily for bindings.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Remove this.
+    pub type LockGuard<'a, T> = netstack3_base::sync::LockGuard<'a, T, lock_impl::RawMutex>;
+
+    /// Re-exported temporarily for bindings.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Remove this.
+    pub type RwLock<T> = netstack3_base::sync::RwLock<T, lock_impl::RawRwLock>;
+
+    /// Re-exported temporarily for bindings.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Remove this.
+    pub type RwLockReadGuard<'a, T> =
+        netstack3_base::sync::RwLockReadGuard<'a, T, lock_impl::RawRwLock>;
+
+    /// Re-exported temporarily for bindings.
+    ///
+    /// TODO(https://fxbug.dev/553027583): Remove this.
+    pub type RwLockWriteGuard<'a, T> =
+        netstack3_base::sync::RwLockWriteGuard<'a, T, lock_impl::RawRwLock>;
 }
 
 /// Methods for dealing with TCP sockets.
