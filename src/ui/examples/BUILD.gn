@@ -16,7 +16,7 @@ group("tests") {
   testonly = true
   public_deps = [
     "flatland-rainbow:flatland-rainbow-tests",
-    "snake-flatland:snake-flatland-tests",
+    "snake-flatland:tests",
   ]
 }
 

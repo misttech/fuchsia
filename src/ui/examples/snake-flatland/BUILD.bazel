@@ -1,0 +1,85 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/game.rs",
+        "src/internal_message.rs",
+        "src/keyboard.rs",
+        "src/main.rs",
+        "src/mouse.rs",
+        "src/scene.rs",
+        "src/touch.rs",
+    ],
+    binary_name = "snake-flatland",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+        "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+        "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+        "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component/client",
+        "//src/lib/ui/fuchsia-scenic",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "bin_test",
+    crate = ":bin",
+    crate_name = "snake_flatland_bin_test",
+)
+
+fx_packaged_binary(
+    name = "bin_packaged",
+    binary = ":bin",
+    binary_name = "snake-flatland",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "snake-flatland",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/snake-flatland.cml",
+)
+
+fx_component(
+    name = "snake-flatland",
+    compiled_manifest = ":manifest",
+    component_name = "snake-flatland",
+    visibility = ["//src/ui/examples:__pkg__"],
+    deps = [":bin_packaged"],
+)
+
+fx_unittest_package(
+    name = "snake-flatland-tests",
+    unit_tests = [":bin_test"],
+)

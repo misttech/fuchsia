@@ -21,7 +21,7 @@ use fidl_fuchsia_ui_input3 as fuiinput;
 use fidl_fuchsia_ui_pointer as fptr;
 use fidl_fuchsia_ui_views as fviews;
 use fuchsia_async as fasync;
-use fuchsia_component::client::connect_to_protocol;
+use fuchsia_component_client::connect_to_protocol;
 use fuchsia_scenic::ViewRefPair;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::prelude::*;
