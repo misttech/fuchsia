@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
-use rapidhash::RapidBuildHasher;
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
@@ -364,11 +363,12 @@ impl RuleKey {
         Self { source_type, target_type, class }
     }
 
-    /// Hashes this [`RuleKey`] using `hasher`.
-    fn hash(&self, hasher: &RapidBuildHasher) -> u64 {
-        let mut state = hasher.build_hasher();
-        Hash::hash(self, &mut state);
-        state.finish()
+    /// Hashes this [`RuleKey`].
+    fn hash(&self) -> u64 {
+        let packed = (self.source_type.as_u16() as u64)
+            | ((self.target_type.as_u16() as u64) << 16)
+            | ((self.class.as_u16() as u64) << 32);
+        rapidhash::rapidhash(&packed.to_ne_bytes())
     }
 
     /// Constructs a [`BinaryAccessVectorRuleHeader`] for this [`RuleKey`], [`RuleKind`], and enabled flag.
@@ -597,7 +597,6 @@ pub struct IndexedAccessVectorRules {
     av_table: HashTable<U24Index>,
     type_transition_table: HashTable<U24Index>,
     xperms_table: HashTable<U24Index>,
-    hasher: RapidBuildHasher,
 }
 
 impl IndexedAccessVectorRules {
@@ -605,21 +604,19 @@ impl IndexedAccessVectorRules {
     ///
     /// Returns [`ParseError::DuplicateAccessVectorRule`] if non-contiguous rules share the same key.
     fn new(rules: AccessVectorRules) -> Result<Self, ParseError> {
-        let hasher = RapidBuildHasher::default();
-        let av_table = build_index(&rules.av_rules, &hasher)?;
-        let type_transition_table = build_index(&rules.type_rules, &hasher)?;
-        let xperms_table = build_index(&rules.xperm_rules, &hasher)?;
+        let av_table = build_index(&rules.av_rules)?;
+        let type_transition_table = build_index(&rules.type_rules)?;
+        let xperms_table = build_index(&rules.xperm_rules)?;
 
-        Ok(Self { rules, av_table, type_transition_table, xperms_table, hasher })
+        Ok(Self { rules, av_table, type_transition_table, xperms_table })
     }
 
     fn find_rules<'a, R: HasRuleKey>(
         table: &HashTable<U24Index>,
         rules: &'a [R],
         key: RuleKey,
-        hasher: &RapidBuildHasher,
     ) -> impl Iterator<Item = &'a R> {
-        let hash = key.hash(hasher);
+        let hash = key.hash();
         let slice = match table.find(hash, |&i| rules[usize::from(i)].key() == key) {
             Some(&i) => &rules[usize::from(i)..],
             None => &[],
@@ -634,12 +631,7 @@ impl IndexedAccessVectorRules {
         target: TypeId,
         class: ClassId,
     ) -> impl Iterator<Item = &AccessRule> {
-        Self::find_rules(
-            &self.av_table,
-            &self.rules.av_rules,
-            RuleKey::new(source, target, class),
-            &self.hasher,
-        )
+        Self::find_rules(&self.av_table, &self.rules.av_rules, RuleKey::new(source, target, class))
     }
 
     /// Returns an iterator yielding matching type transition, change, or member rules for the specified tuple.
@@ -653,7 +645,6 @@ impl IndexedAccessVectorRules {
             &self.type_transition_table,
             &self.rules.type_rules,
             RuleKey::new(source, target, class),
-            &self.hasher,
         )
     }
 
@@ -668,7 +659,6 @@ impl IndexedAccessVectorRules {
             &self.xperms_table,
             &self.rules.xperm_rules,
             RuleKey::new(source, target, class),
-            &self.hasher,
         )
     }
 }
@@ -699,22 +689,19 @@ impl Validate for IndexedAccessVectorRules {
 /// and well-ordered.
 ///
 /// Returns [`ParseError::DuplicateAccessVectorRule`] if non-contiguous rules share the same key.
-fn build_index<R: HasRuleKey>(
-    rules: &[R],
-    hasher: &RapidBuildHasher,
-) -> Result<HashTable<U24Index>, ParseError> {
+fn build_index<R: HasRuleKey>(rules: &[R]) -> Result<HashTable<U24Index>, ParseError> {
     let mut table = HashTable::new();
     let mut offset = 0;
 
     for chunk in rules.chunk_by(|a, b| a.key() == b.key()) {
         let key = chunk[0].key();
         let u24_idx = offset.try_into()?;
-        let hash = key.hash(hasher);
+        let hash = key.hash();
 
         let Entry::Vacant(entry) = table.entry(
             hash,
             |&i| rules[usize::from(i)].key() == key,
-            |&i| rules[usize::from(i)].key().hash(hasher),
+            |&i| rules[usize::from(i)].key().hash(),
         ) else {
             return Err(ParseError::DuplicateAccessVectorRule { key, kind: chunk[0].kind() });
         };
