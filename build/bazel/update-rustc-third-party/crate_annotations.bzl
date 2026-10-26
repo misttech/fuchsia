@@ -622,7 +622,7 @@ CRATE_ANNOTATIONS = {
     ],
     "zerocopy": [
         crate.annotation(
-            version = "0.8.48",
+            version = "0.8.61",
             crate_features = [
                 "alloc",
                 "std",
@@ -634,7 +634,7 @@ CRATE_ANNOTATIONS = {
     ],
     "zerocopy-derive": [
         crate.annotation(
-            version = "0.8.48",
+            version = "0.8.61",
             rustc_flags = [
                 "--cfg=zerocopy_derive_union_into_bytes",
             ],

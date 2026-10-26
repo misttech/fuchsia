@@ -68,6 +68,6 @@ rust_library(
         "//third_party/rust_crates/intree/sunstone/sapphire-sync:sapphire_sync",
         "//third_party/rust_crates/vendor/futures-0.3.34:futures",
         "//third_party/rust_crates/vendor/thiserror-2.0.21:thiserror",
-        "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.61:zerocopy",
     ],
 )

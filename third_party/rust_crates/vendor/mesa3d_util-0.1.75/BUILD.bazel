@@ -79,6 +79,6 @@ rust_library(
         "//third_party/rust_crates/vendor/log-0.4.29:log",
         "//third_party/rust_crates/vendor/rustix-1.1.5:rustix",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
-        "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.61:zerocopy",
     ],
 )

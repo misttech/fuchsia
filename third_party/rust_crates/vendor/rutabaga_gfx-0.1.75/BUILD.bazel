@@ -84,6 +84,6 @@ rust_library(
         "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.151:serde_json",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
-        "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.61:zerocopy",
     ],
 )

@@ -537,7 +537,7 @@ _NORMAL_DEPENDENCIES = {
             "which": Label("//third_party/rust_crates/vendor/which-8.0.6:which"),
             "winnow": Label("//third_party/rust_crates/vendor/winnow-1.0.4:winnow"),
             "xml": Label("//third_party/rust_crates/vendor/xml-1.4.0:xml"),
-            "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy"),
+            "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.61:zerocopy"),
             "zerotrie": Label("//third_party/rust_crates/vendor/zerotrie-0.2.5:zerotrie"),
             "zstd": Label("//third_party/rust_crates/vendor/zstd-0.13.3:zstd"),
             "zstd-safe": Label("//third_party/rust_crates/vendor/zstd-safe-7.2.4:zstd_safe"),

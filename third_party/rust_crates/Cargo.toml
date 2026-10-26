@@ -282,7 +282,7 @@ walkdir = "2.5.0"
 which = "8.0.6"
 winnow = "1.0.4"
 xml = "1.4.0"
-zerocopy = { version = "0.8.48", features = ["derive", "simd"] }
+zerocopy = { version = "0.8.61", features = ["derive", "simd"] }
 zerotrie = { version = "0.2.5", features = ["alloc"] }
 zstd = "0.13.3"
 zstd-safe = "7.2.4"
@@ -297,7 +297,7 @@ num-traits = { version = "0.2.19", default-features = false }
 paste = "1.0.15"
 pin-init = { version = "0.3.0", default-features = false }
 rand = { version = "0.10.3", default-features = false }
-zerocopy = { version = "0.8.48", features = ["derive"] }
+zerocopy = { version = "0.8.61", features = ["derive"] }
 # keep-sorted end
 
 # Target-side only dependencies
@@ -1458,16 +1458,16 @@ groups = [
   { name = "x509-cert-0.2" }
 ]
 
-[gn.package.zerocopy."0.8.48"]
+[gn.package.zerocopy."0.8.61"]
 rustflags = [ "--cfg=zerocopy_inline_always" ]
 configs = [
   "//third_party/rust_crates/configs/release:optimize_speed",
   "//third_party/rust_crates/configs/balanced:optimize_moderate"
 ]
-[gn.package.zerocopy."0.8.48".platform."cfg(not(kernel))"]
+[gn.package.zerocopy."0.8.61".platform."cfg(not(kernel))"]
 features = [ "alloc", "std" ]
 
-[gn.package.zerocopy-derive."0.8.48"]
+[gn.package.zerocopy-derive."0.8.61"]
 # See https://github.com/google/zerocopy/issues/1792
 rustflags = [ "--cfg=zerocopy_derive_union_into_bytes" ]
 

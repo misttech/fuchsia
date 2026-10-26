@@ -87,6 +87,6 @@ rust_library(
         "//third_party/rust_crates/vendor/slab-0.4.12:slab",
         "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
         "//third_party/rust_crates/vendor/which-8.0.6:which",
-        "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.61:zerocopy",
     ],
 )
