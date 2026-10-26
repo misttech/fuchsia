@@ -11740,18 +11740,6 @@ pub unsafe extern "C" fn rust_scheduler_unblock_list(list: *mut UnblockList) {
     unsafe { unblock_list_raw(list) };
 }
 
-/// Synchronously unblocks `thread`, releasing its lock and rescheduling remote CPUs as needed.
-///
-/// # Safety
-/// `thread` must point to a valid, initialized `Thread` whose lock is held by an
-/// active `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token)`); the lock
-/// is released on return (`TA_REL(thread->get_lock())`).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_scheduler_unblock_synchronous(thread: *mut Thread) {
-    // SAFETY: Forwarded from the caller.
-    unsafe { unblock_synchronous_raw(thread) };
-}
-
 /// Marks the idle `thread` ready on its assigned CPU.
 ///
 /// # Safety

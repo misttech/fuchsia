@@ -37,8 +37,6 @@ source_set("kernel") {
     "scheduler_pi.cc",
     "scheduler_state.cc",
     "scheduler_state_ffi.cc",
-    "semaphore.cc",
-    "semaphore_ffi.cc",
     "stats_ffi.cc",
     "task_runtime_stats.cc",
     "thread.cc",
@@ -409,6 +407,32 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
   ]
 }
 
+kernel_bindgen_crate("semaphore-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/semaphore.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  # Layout contract only: the Rust `Semaphore` asserts its size, alignment and
+  # field offsets against the C++ `Semaphore`.
+  type_allowlist = [
+    "Semaphore",
+    "WaitQueue",
+    "std::atomic",
+  ]
+  opaque_types = [
+    "WaitQueue",
+    "std::atomic",
+  ]
+  function_blocklist = [ ".*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  expect_lints = [ "non_camel_case_types" ]
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
@@ -448,6 +472,7 @@ kernel_rust_mod("kernel-rs") {
     ":event-bindings",
     ":owned-wait-queue-bindings",
     ":percpu-bindings",
+    ":semaphore-bindings",
     ":thread-layout-bindings",
     ":thread-lock-guard-bindings",
     ":wait-queue-bindings",

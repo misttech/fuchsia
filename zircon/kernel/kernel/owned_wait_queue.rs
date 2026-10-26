@@ -1298,7 +1298,7 @@ impl OwnedWaitQueue {
         let proof = unsafe { assume_synchronized_read_only(self) };
         // Something is very very wrong if we have been allowed to destruct while we
         // still have an owner.
-        debug_assert!(proof.owner_thread().is_none());
+        assert!(proof.owner_thread().is_none());
     }
 
     /// Releases ownership of all wait queues currently owned by `t` and updates bookkeeping as

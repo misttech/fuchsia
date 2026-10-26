@@ -129,10 +129,6 @@ ktl::optional<uint32_t> WaitQueue::WakeAllLocked(zx_status_t wait_queue_error) {
   return woken;
 }
 
-void WaitQueue::DequeueThread(Thread* t, zx_status_t wait_queue_error) {
-  rust_wait_queue_dequeue_thread(this, t, wait_queue_error);
-}
-
 void WaitQueue::MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t) {
   rust_wait_queue_move_thread(source, dest, t);
 }

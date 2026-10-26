@@ -10,6 +10,7 @@ use super::port_dispatcher::{
     PortAllocator, PortDispatcher, PortDispatcherState, PortObserver, PortPacket, RawPortPacket,
 };
 use crate::kernel::deadline::Deadline;
+use crate::kernel::owned_wait_queue::OwnedWaitQueue;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use zx_types::{zx_signals_t, zx_status_t};
@@ -97,19 +98,22 @@ pub unsafe extern "C" fn rust_port_dispatcher_queue(
 /// `port_packet` must point to a valid `PortPacket` that is not in any container.
 /// `observer` must be null or point to a valid `PortObserver` created on `disp`; when non-null,
 /// `port_packet` must be the packet embedded in `observer`.
-/// `queue_to_own` may be null or point to a valid `OwnedWaitQueue` (passed as `void*` because
-/// the Rust `OwnedWaitQueue` is `!Unpin` and therefore not FFI-safe in `extern` signatures).
+/// `queue_to_own` may be null or point to a valid `OwnedWaitQueue` that remains live until this
+/// call returns.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_port_dispatcher_queue_and_remove_observer(
     disp: &PortDispatcher,
     port_packet: *mut PortPacket,
     observed: zx_signals_t,
     observer: *mut PortObserver,
-    queue_to_own: *mut core::ffi::c_void,
+    queue_to_own: *mut OwnedWaitQueue,
 ) -> zx_status_t {
-    // SAFETY: caller guarantees validity of pointers.
+    // SAFETY: The caller guarantees `queue_to_own` is null or points to a valid `OwnedWaitQueue`
+    // that remains live until this call returns; only a shared reference is formed.
+    let queue_to_own = unsafe { queue_to_own.as_ref() };
+    // SAFETY: caller guarantees validity of `port_packet` and `observer`.
     zx_status::Status::result_into_raw(unsafe {
-        disp.queue_and_remove_observer(port_packet, observed, observer, queue_to_own.cast())
+        disp.queue_and_remove_observer(port_packet, observed, observer, queue_to_own)
     })
 }
 

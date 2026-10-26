@@ -987,7 +987,7 @@ impl PortDispatcher {
 
         // post() may unblock a waiting thread that will immediately acquire the spinlock.
         // We drop the spinlock before posting to avoid unnecessary spinning.
-        self.state().sema.post();
+        self.state().sema.post(None);
         true
     }
 
@@ -1000,13 +1000,13 @@ impl PortDispatcher {
     /// cancels them before destruction). On `Ok(())`, ownership of `port_packet` is transferred
     /// to the port; on `Err(...)`, the caller retains ownership of `port_packet`.
     pub unsafe fn queue(&self, port_packet: NonNull<PortPacket>) -> Result<(), Status> {
-        // SAFETY: `port_packet` is valid; observer and queue_to_own are null.
+        // SAFETY: `port_packet` is valid per this function's contract, and `observer` is null.
         unsafe {
             self.queue_and_remove_observer(
                 port_packet.as_ptr(),
                 ZX_SIGNAL_NONE,
                 core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                None,
             )
         }
     }
@@ -1020,13 +1020,12 @@ impl PortDispatcher {
     /// `observer` must be either null or point to a valid `PortObserver` that was created on
     /// this `PortDispatcher` (via `make_observer`); when non-null, `port_packet` must be the
     /// packet embedded in `observer`.
-    /// `queue_to_own` must be either null or point to a valid `OwnedWaitQueue`.
     pub unsafe fn queue_and_remove_observer(
         &self,
         port_packet: *mut PortPacket,
         observed: zx_signals_t,
         observer: *mut PortObserver,
-        queue_to_own: *mut OwnedWaitQueue,
+        queue_to_own: Option<&OwnedWaitQueue>,
     ) -> Result<(), Status> {
         self.state().canary.assert();
 
@@ -1061,11 +1060,7 @@ impl PortDispatcher {
         // If post() unblocks a thread, that thread will attempt to acquire the lock. We drop
         // the lock before calling post() to allow the unblocked thread to acquire the lock
         // without blocking.
-        // SAFETY: `queue_to_own` is null or a valid `OwnedWaitQueue` per this function's
-        // contract.
-        unsafe {
-            self.state().sema.post_etc(queue_to_own);
-        }
+        self.state().sema.post(queue_to_own);
         Ok(())
     }
 

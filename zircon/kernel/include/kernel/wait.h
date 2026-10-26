@@ -46,7 +46,6 @@ bool rust_wait_queue_base_is_empty(const WaitQueueBase* wait_queue);
 uint32_t rust_wait_queue_base_count(const WaitQueueBase* wait_queue);
 zx_status_t rust_wait_queue_base_unblock_thread(WaitQueueBase* wait_queue, Thread* t,
                                                 zx_status_t wait_queue_error);
-Thread* rust_wait_queue_base_peek_front(const WaitQueueBase* wait_queue);
 zx_status_t rust_wait_queue_base_block_etc_preamble(WaitQueueBase* wait_queue,
                                                     Thread* current_thread,
                                                     const Deadline* deadline, uint32_t signal_mask,
@@ -71,7 +70,6 @@ bool rust_wait_queue_wake_one_locked(WaitQueue* wait_queue, zx_status_t wait_que
                                      bool* out_woken);
 bool rust_wait_queue_wake_all_locked(WaitQueue* wait_queue, zx_status_t wait_queue_error,
                                      uint32_t* out_woken);
-void rust_wait_queue_dequeue_thread(WaitQueue* wait_queue, Thread* t, zx_status_t wait_queue_error);
 void rust_wait_queue_move_thread(WaitQueue* source, WaitQueue* dest, Thread* t);
 }  // extern "C"
 
@@ -264,11 +262,6 @@ class WaitQueueBase : public ChainLockable {
   explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}
   ~WaitQueueBase();
 
-  Thread* PeekFront() TA_REQ(get_lock()) { return rust_wait_queue_base_peek_front(this); }
-  const Thread* PeekFront() const TA_REQ(get_lock()) {
-    return rust_wait_queue_base_peek_front(this);
-  }
-
   inline zx_status_t BlockEtcPreamble(Thread* current_thread, const Deadline& deadline,
                                       uint signal_mask, ResourceOwnership reason,
                                       Interruptible interruptible)
@@ -308,9 +301,6 @@ class WaitQueue : public WaitQueueBase {
   WaitQueue(WaitQueue&&) = delete;
   WaitQueue& operator=(WaitQueue&) = delete;
   WaitQueue& operator=(WaitQueue&&) = delete;
-
-  // Expose direct access to PeekFront.
-  using WaitQueueBase::PeekFront;
 
   // Block on a wait queue.
   // The returned status is whatever the caller of WaitQueue::Wake_*() specifies.
@@ -367,11 +357,6 @@ class WaitQueue : public WaitQueueBase {
       TA_REQ(chainlock_transaction_token, get_lock(), preempt_disabled_token);
   ktl::optional<uint32_t> WakeAllLocked(zx_status_t wait_queue_error)
       TA_REQ(chainlock_transaction_token, get_lock(), preempt_disabled_token);
-
-  // Dequeue the specified thread and set its blocked_status.  Do not actually
-  // schedule the thread to run.
-  void DequeueThread(Thread* t, zx_status_t wait_queue_error)
-      TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
  protected:
   explicit constexpr WaitQueue(uint32_t magic) : WaitQueueBase(magic) {}

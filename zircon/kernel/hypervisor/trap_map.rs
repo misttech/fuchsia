@@ -201,7 +201,7 @@ impl BlockingPortAllocator {
         unsafe {
             self.arena.delete(port_packet);
         }
-        self.semaphore.post();
+        self.semaphore.post(None);
     }
 
     fn as_handle_ptr(&self) -> NonNull<c_void> {

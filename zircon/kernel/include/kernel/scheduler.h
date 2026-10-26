@@ -182,7 +182,6 @@ Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list);
 
 void rust_scheduler_unblock(Thread* thread) TA_REL(thread->get_lock());
 void rust_scheduler_unblock_list(Thread::UnblockList* list);
-void rust_scheduler_unblock_synchronous(Thread* thread) TA_REL(thread->get_lock());
 void rust_scheduler_unblock_idle(Thread* thread);
 void rust_scheduler_yield(Thread* current_thread);
 void rust_scheduler_preempt(uint8_t preempt_type);
@@ -517,13 +516,6 @@ class Scheduler {
   // successfully assigning it to a scheduler.
   static void Unblock(Thread::UnblockList thread_list) TA_REQ(chainlock_transaction_token) {
     rust_scheduler_unblock_list(&thread_list);
-  }
-
-  // Similar to Unblock, except that it uses different target CPU selection
-  // criteria to enable a "synchronous wake", if possible.
-  static void UnblockSynchronous(Thread* thread) TA_REQ(chainlock_transaction_token)
-      TA_REL(thread->get_lock()) {
-    rust_scheduler_unblock_synchronous(thread);
   }
 
   // UnblockIdle is used in the process of creation of the idle thread.

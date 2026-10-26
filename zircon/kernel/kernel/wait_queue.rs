@@ -2841,27 +2841,6 @@ pub unsafe extern "C" fn rust_wait_queue_base_unblock_thread(
     }
 }
 
-/// C++ FFI entry point for `WaitQueueBase::PeekFront()`.
-///
-/// # Safety
-///
-/// `wait_queue` must be a valid non-null pointer to an initialized [`WaitQueueBase`] whose lock is
-/// held by the caller.
-// SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
-// `zircon/kernel/include/kernel/wait.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_wait_queue_base_peek_front(
-    wait_queue: *const bindings::WaitQueueBase,
-) -> *mut bindings::Thread {
-    debug_assert!(!wait_queue.is_null());
-    // SAFETY: The caller guarantees `wait_queue` points to an initialized `WaitQueueBase` with its
-    // lock held.
-    let wq: &WaitQueueBase = unsafe { &*wait_queue.cast::<WaitQueueBase>() };
-    // SAFETY: The caller holds `wq.lock()`.
-    let proof = unsafe { ChainLockProof::assume_held_unchecked(wq) };
-    proof.peek_front().map_or(core::ptr::null_mut(), |t| t.as_raw().cast())
-}
-
 /// C++ FFI entry point for `WaitQueueBase::BlockEtcPreamble()`.
 ///
 /// # Safety
@@ -3226,38 +3205,6 @@ pub unsafe extern "C" fn rust_wait_queue_wake_all_locked(
         *out_woken = woken;
     }
     true
-}
-
-/// C++ FFI entry point for `WaitQueue::DequeueThread()`.
-///
-/// # Safety
-///
-/// The caller must ensure that:
-/// - `wait_queue` and `t` are valid non-null pointers to a live [`WaitQueue`] and [`Thread`].
-/// - Both `wait_queue`'s lock and `t`'s lock are exclusively held by the caller.
-/// - `t` is currently blocked in `wait_queue`.
-// SAFETY: Symbol name is unique across the kernel link unit and matches the C++ declaration in
-// `zircon/kernel/include/kernel/wait.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_wait_queue_dequeue_thread(
-    wait_queue: *mut bindings::WaitQueue,
-    t: *mut bindings::Thread,
-    wait_queue_error: zx_status_t,
-) {
-    debug_assert!(!wait_queue.is_null());
-    debug_assert!(!t.is_null());
-    // SAFETY:
-    // - `wait_queue` and `t` are valid pointers to a live `WaitQueue` and `Thread` per caller
-    //   contract.
-    // - Both locks are exclusively held by the caller (`assume_held_unchecked`).
-    // - `t` is currently blocked in `wait_queue` (`dequeue_thread`).
-    unsafe {
-        let wq: &WaitQueue = &*wait_queue.cast::<WaitQueue>();
-        let thread: &Thread = &*t.cast::<Thread>();
-        let mut wq_proof = ChainLockProof::assume_held_unchecked(wq);
-        let mut t_proof = ChainLockProof::assume_held_unchecked(thread);
-        wq_proof.dequeue_thread(&mut t_proof, Status::ok(wait_queue_error));
-    }
 }
 
 /// C++ FFI entry point for `WaitQueue::MoveThread()`.
