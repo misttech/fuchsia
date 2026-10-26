@@ -6,9 +6,6 @@
 
 #include "object/socket_dispatcher.h"
 
-#include <zircon/errors.h>
-#include <zircon/types.h>
-
 extern "C" {
 void rust_socket_dispatcher_state_init(void* state, void* holder, uint32_t flags);
 void rust_socket_dispatcher_state_destroy(void* state);

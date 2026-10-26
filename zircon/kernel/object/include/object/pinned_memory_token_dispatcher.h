@@ -13,10 +13,8 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
-#include <kernel/lockdep.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class BusTransactionInitiatorDispatcher;
 class PinnedMemoryTokenDispatcher;

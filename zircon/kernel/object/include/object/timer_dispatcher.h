@@ -8,17 +8,13 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_TIMER_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <sys/types.h>
-#include <zircon/compiler.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <kernel/dpc.h>
 #include <kernel/ffi.h>
 #include <kernel/timer.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class TimerDispatcher;
 

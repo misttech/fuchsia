@@ -9,7 +9,7 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
-#include <ktl/memory.h>
+#include <ktl/utility.h>
 #include <object/clock_dispatcher.h>
 #include <object/handle.h>
 #include <vm/vm_object_paged.h>

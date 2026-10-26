@@ -8,14 +8,11 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_ADDRESS_REGION_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <sys/types.h>
-#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 #include <vm/vm_address_region.h>
 
 class VmAddressRegionDispatcher;

@@ -4,11 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/counters.h>
-
 #include <fbl/alloc_checker.h>
 #include <kernel/ffi.h>
-#include <kernel/lockdep.h>
 #include <ktl/utility.h>
 #include <object/fifo_dispatcher.h>
 

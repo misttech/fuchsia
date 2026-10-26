@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/user_copy/user_ptr.h>
-
 #include <fbl/alloc_checker.h>
 #include <kernel/ffi.h>
 #include <object/socket_dispatcher.h>

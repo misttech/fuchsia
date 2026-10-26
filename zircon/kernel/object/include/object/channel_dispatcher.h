@@ -14,7 +14,6 @@
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class ChannelDispatcher;
 

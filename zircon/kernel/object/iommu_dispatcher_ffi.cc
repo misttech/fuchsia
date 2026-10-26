@@ -4,9 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <string.h>
 #include <zircon/errors.h>
-#include <zircon/rights.h>
 #include <zircon/syscalls/iommu.h>
 
 #include <dev/iommu/iommu.h>

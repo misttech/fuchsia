@@ -7,8 +7,8 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SAMPLER_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SAMPLER_DISPATCHER_H_
 
+#include <arch.h>
 #include <lib/object-constants.h>
-#include <lib/thread_sampler/thread_sampler.h>
 #include <lib/zx/result.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/sampler.h>
@@ -17,8 +17,6 @@
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
-#include <object/thread_dispatcher.h>
 
 class SamplerDispatcher;
 extern "C" {

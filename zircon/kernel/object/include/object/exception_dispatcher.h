@@ -16,7 +16,6 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
-#include <object/opaque_storage.h>
 #include <object/thread_dispatcher.h>
 
 class ExceptionDispatcher;

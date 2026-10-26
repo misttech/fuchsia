@@ -8,16 +8,13 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SOCKET_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <lib/user_copy/user_ptr.h>
-#include <lib/zx/result.h>
 #include <stdint.h>
-#include <zircon/rights.h>
+#include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class SocketDispatcher;
 

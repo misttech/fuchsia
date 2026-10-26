@@ -83,13 +83,11 @@ source_set("object") {
   deps = [
     ":object-rs",
     "//sdk/lib/fit",
-    "//sdk/lib/iob",
     "//zircon/kernel/dev/iommu/stub",
     "//zircon/kernel/hypervisor",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/dump",
     "//zircon/kernel/lib/fasttime:headers",
     "//zircon/kernel/lib/fbl",
@@ -100,12 +98,9 @@ source_set("object") {
     "//zircon/kernel/lib/object-constants",
     "//zircon/kernel/lib/object_cache",
     "//zircon/kernel/lib/page",
-    "//zircon/kernel/lib/page-map",
-    "//zircon/kernel/lib/page_cache",
     "//zircon/kernel/lib/stall:headers",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/system/ulib/pretty",
-    "//zircon/system/ulib/region-alloc",
     "//zircon/system/ulib/zx",
   ]
   if (current_cpu == "arm64") {
@@ -116,30 +111,24 @@ source_set("object") {
 library_headers("headers") {
   headers = []
   public_deps = [
+    "//zircon/kernel/dev/interrupt:headers",
+    "//zircon/kernel/lib/debuglog:headers",
+
     # <object/dispatcher.h> has #include <ktl/unique_ptr.h>.
     "//zircon/kernel/lib/ktl:headers",
 
-    # <object/port_dispatcher.h> has <lib/object_cache.h>
+    # <object/port_dispatcher.h> has <lib/object_cache.h>.
     "//zircon/kernel/lib/object_cache:headers",
-
-    # <object/log_dispatcher.h> has #include <lib/debuglog.h>.
-    "//zircon/kernel/lib/debuglog:headers",
 
     # <object/log_dispatcher.h> and <object/counter_dispatcher.h> have #include
     # <lib/object-constants.h>.
-    "//zircon/kernel/dev/interrupt:headers",
     "//zircon/kernel/lib/object-constants:headers",
 
-    # <object/clock_dispatcher.h> includes things from kconcurrent
-    "//zircon/kernel/lib/kconcurrent:headers",
-
-    # <object/clock_dispatcher.h> has #include <lib/page/size.h>
+    # <object/clock_dispatcher.h> has #include <lib/page/size.h>.
     "//zircon/kernel/lib/page:headers",
 
     # <object/process_dispatcher.h> has #include <vm/vm_aspace.h>.
     "//zircon/kernel/vm:headers",
-
-    # <object/clock_dispatcher.h> has #include <lib/affine/transform.h>.
     "//zircon/system/ulib/affine",
   ]
 }
@@ -188,7 +177,6 @@ kernel_bindgen_crate("executor-bindings") {
     "HandleOwner",
     "MemoryWatchdog",
     "fbl::RefPtr",
-    "ktl::unique_ptr",
     "std::unique_ptr",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
@@ -197,8 +185,6 @@ kernel_bindgen_crate("executor-bindings") {
 }
 
 kernel_rust_mod("object-rs") {
-  output_name = "object"
-  source_root = "object.rs"
   sources = [
     "bti.rs",
     "buffer_chain.rs",

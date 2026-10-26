@@ -12,7 +12,6 @@
 
 #include <arch/vm.h>
 #include <kernel/ffi.h>
-#include <object/opaque_storage.h>
 
 class FutexId {
  public:

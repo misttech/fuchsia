@@ -6,17 +6,6 @@
 
 #include "object/counter_dispatcher.h"
 
-#include <zircon/errors.h>
-#include <zircon/rights.h>
-
-#include <new>
-
-#include <fbl/alloc_checker.h>
-#include <fbl/ref_ptr.h>
-#include <ktl/utility.h>
-#include <object/handle.h>
-#include <object/process_dispatcher.h>
-
 #include <ktl/enforce.h>
 
 extern "C" {

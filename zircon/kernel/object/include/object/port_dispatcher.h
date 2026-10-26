@@ -19,7 +19,6 @@
 #include <kernel/mutex.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 #include <object/signal_observer.h>
 
 // PortObserver lifetime and locking notes: the canonical description of the

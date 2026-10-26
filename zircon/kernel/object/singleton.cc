@@ -13,7 +13,6 @@
 #include <object/executor.h>
 #include <object/job_dispatcher.h>
 #include <object/memory_watchdog.h>
-#include <object/root_job_observer_ffi.h>
 
 extern "C" void rust_executor_start_root_job_observer(Executor* executor);
 

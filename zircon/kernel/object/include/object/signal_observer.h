@@ -9,10 +9,8 @@
 
 #include <zircon/types.h>
 
-#include <fbl/canary.h>
 #include <fbl/intrusive_double_list.h>
 
-class Handle;
 class OwnedWaitQueue;
 
 // SignalObserver implementations may register to be called when

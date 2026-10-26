@@ -6,7 +6,6 @@
 
 #include <kernel/ffi.h>
 #include <object/counter_dispatcher.h>
-#include <object/process_dispatcher.h>
 
 extern "C" {
 

@@ -6,13 +6,6 @@
 
 #include "object/suspend_token_dispatcher.h"
 
-#include <lib/object-constants.h>
-#include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/types.h>
-
-#include <fbl/alloc_checker.h>
-
 SuspendTokenDispatcher::SuspendTokenDispatcher() : Dispatcher(0) {
   DISPATCHER_VERIFY_OFFSET(SuspendTokenDispatcher, kSuspendTokenDispatcherStateOffset);
   rust_suspend_token_dispatcher_state_init(&opaque_storage_, this);

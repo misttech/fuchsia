@@ -9,15 +9,10 @@
 
 #include <lib/object-constants.h>
 #include <lib/wake-vector.h>
-#include <sys/types.h>
-#include <zircon/compiler.h>
-#include <zircon/rights.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
-#include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class InterruptDispatcher;
 

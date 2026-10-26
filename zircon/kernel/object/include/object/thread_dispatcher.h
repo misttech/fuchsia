@@ -31,7 +31,6 @@
 #include <object/exceptionate.h>
 #include <object/futex_context.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 #include <vm/vm_address_region.h>
 
 class ExceptionDispatcher;

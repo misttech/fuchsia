@@ -5,10 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/unittest/unittest.h>
-#include <zircon/rights.h>
 #include <zircon/syscalls/exception.h>
 
-#include <fbl/ref_ptr.h>
+#include <ktl/utility.h>
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
 

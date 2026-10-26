@@ -6,10 +6,8 @@
 
 #include <lib/unittest/unittest.h>
 
-#include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <ktl/utility.h>
-#include <object/dispatcher.h>
 #include <object/event_pair_dispatcher.h>
 
 #include "fake_dispatcher.h"

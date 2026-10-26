@@ -6,10 +6,8 @@
 
 #include "object/clock_dispatcher.h"
 
-#include <lib/affine/transform.h>
 #include <lib/arch/intrin.h>
 #include <lib/fasttime/clock.h>
-#include <lib/object-constants.h>
 
 #include <platform/timer.h>
 

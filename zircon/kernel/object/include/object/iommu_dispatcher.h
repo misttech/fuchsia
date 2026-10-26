@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_IOMMU_DISPATCHER_H_
 
 #include <lib/object-constants.h>
-#include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
@@ -16,7 +15,6 @@
 #include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class IommuDispatcher;
 

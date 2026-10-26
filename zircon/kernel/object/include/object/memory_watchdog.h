@@ -11,7 +11,6 @@
 #include <stdint.h>
 
 #include <kernel/ffi.h>
-#include <object/opaque_storage.h>
 
 // Object is thread safe.
 // Delegates business logic to its Rust state stored in opaque_storage_.

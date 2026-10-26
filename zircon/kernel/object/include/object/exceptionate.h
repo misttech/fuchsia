@@ -10,9 +10,9 @@
 #include <lib/object-constants.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
-#include <object/opaque_storage.h>
 
 class Exceptionate;
 

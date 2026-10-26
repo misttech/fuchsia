@@ -6,16 +6,12 @@
 
 #include "object/timer_dispatcher.h"
 
-#include <lib/counters.h>
-#include <lib/object-constants.h>
-#include <zircon/compiler.h>
 #include <zircon/errors.h>
-#include <zircon/rights.h>
-#include <zircon/types.h>
 
 #include <new>
 
 #include <fbl/alloc_checker.h>
+#include <kernel/dpc.h>
 #include <kernel/ffi.h>
 #include <ktl/utility.h>
 

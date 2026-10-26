@@ -12,7 +12,6 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/ffi.h>
 #include <ktl/array.h>
-#include <object/opaque_storage.h>
 #include <object/process_dispatcher.h>
 
 class RootJobObserver final {
