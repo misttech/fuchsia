@@ -15,7 +15,8 @@ def compile_component_manifest(
         includes,
         include_paths,
         toolchain = None,
-        extra_args = []):
+        extra_args = [],
+        output_name = None):
     """Compiles a `.cml` component manifest into a `.cm` file with `cmc compile`.
 
     Args:
@@ -28,13 +29,15 @@ def compile_component_manifest(
         toolchain: The toolchain type to run `cmc` with, if any.
         extra_args: Additional arguments to pass to `cmc compile`, such as
             `--features` or `--must-offer-dictionary`.
+        output_name: The path of the compiled manifest relative to the
+            package's output directory. Defaults to `meta/<component_name>.cm`.
 
     Returns:
         A list of `DefaultInfo` and `FuchsiaComponentManifestInfo` providers.
     """
 
     # output should have the .cm extension
-    manifest_out = ctx.actions.declare_file("meta/{}.cm".format(component_name))
+    manifest_out = ctx.actions.declare_file(output_name or "meta/{}.cm".format(component_name))
     config_package_path = "meta/%s.cvf" % component_name
 
     include_path_args = []

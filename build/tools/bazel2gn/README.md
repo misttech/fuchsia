@@ -119,8 +119,8 @@ match its target name, because `tool_output_name` is not synced.
 
 #### Components
 
-`fx_component_manifest()` and `fx_component()` sync to GN
-`fuchsia_component_manifest()` and `fuchsia_component()`:
+`fx_component_manifest()`, `fx_compiled_manifest()`, and `fx_component()` sync
+to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
 
 *   `fx_component_manifest()` maps `manifest` to a GN path, passes
     `restricted_features` through, and omits `includes`
@@ -132,9 +132,19 @@ match its target name, because `tool_output_name` is not synced.
     `fuchsia_structured_config_rust_lib()`) is skipped automatically.
 *   `fx_component()` maps `compiled_manifest` (which must refer to a
     `:<manifest>` target in the same `BUILD` file) to `cm_label`. If the
-    `fx_component_manifest()` appears after a consumer in `BUILD.bazel`,
-    `bazel2gn` hoists it earlier in `BUILD.gn` so GN's `get_target_outputs()`
-    succeeds.
+    `fx_component_manifest()` or `fx_compiled_manifest()` appears after a
+    consumer (including `fuchsia_structured_config_rust_lib()`) in
+    `BUILD.bazel`, `bazel2gn` hoists it earlier in `BUILD.gn` so GN's
+    `get_target_outputs()` succeeds.
+*   `fx_compiled_manifest()` maps to the low-level GN `cm()`, which compiles
+    the manifest without adding it to a package as a resource (for a `.cm`
+    file that is embedded in a binary or only read at build time). GN `cm()`
+    has no `component_name`, so `bazel2gn` emits the `output_name` (default
+    `cml/<name>/<component_name>.cm`) and `config_values_package_path`
+    (`meta/<component_name>.cvf`) that the Bazel rule uses instead.
+    `restricted_features` is passed through and `includes` is omitted. An
+    `fx_component()` can't use an `fx_compiled_manifest()` as its
+    `compiled_manifest`.
 *   `fx_packaged_binary()` has no standalone GN equivalent, but when an
     `fx_component()` depends on a `:<packaged_bin>` defined in the same
     `BUILD.bazel` wrapping an un-skipped binary target in the same file:

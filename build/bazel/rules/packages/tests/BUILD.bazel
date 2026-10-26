@@ -16,13 +16,14 @@ load(
 )
 load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_compiled_manifest",
     "fx_component",
     "fx_component_manifest",
     "fx_test_component",
 )
 load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
-load("//build/bazel/rules/rust:defs.bzl", "rustc_dylib", "rustc_test")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_dylib", "rustc_library", "rustc_test")
 load(
     "//build/bazel/rules/testing:defs.bzl",
     "analysis_failure_test",
@@ -423,8 +424,10 @@ filegroup(
         ":example_check_includes_disabled_package",
         ":example_cml_shard_invalid_name_failure_test",
         ":example_cml_shard_mismatched_shard_failure_test",
+        ":example_compiled_manifest_consumer",
         ":example_component_unwrapped_cc_binary_failure_test",
         ":example_component_unwrapped_rust_binary_failure_test",
+        ":example_component_with_compiled_manifest_failure_test",
         ":example_conflicting_runners_failure_test",
         ":example_dynamic_dictionaries_manifest",
         ":example_expect_includes_package",
@@ -451,6 +454,7 @@ filegroup(
         ":example_unsupported_restricted_feature_failure_test",
         ":example_zxtest_unittest_package",
         ":gn_visibility_pattern_matches_test",
+        ":verify_example_compiled_manifest_paths",
         ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
@@ -975,4 +979,70 @@ analysis_failure_test(
 
 gn_visibility_test(
     name = "gn_visibility_pattern_matches_test",
+)
+
+# Tests `fx_compiled_manifest()` with the default `output_name`.
+fx_compiled_manifest(
+    name = "example_compiled_manifest",
+    component_name = "example_dynamic_dictionary",
+    manifest = "meta/example_dynamic_dictionary.cml",
+    restricted_features = ["dynamic_dictionaries"],
+)
+
+# Tests `fx_compiled_manifest()` with a custom `output_name`.
+fx_compiled_manifest(
+    name = "example_compiled_manifest_custom_output_name",
+    manifest = "meta/example_helper.cml",
+    output_name = "custom/example_helper.cm",
+)
+
+genrule(
+    name = "verify_example_compiled_manifest_paths",
+    testonly = True,
+    srcs = [
+        ":example_compiled_manifest",
+        ":example_compiled_manifest_custom_output_name",
+    ],
+    outs = ["verify_example_compiled_manifest_paths.stamp"],
+    cmd = """
+case "$(execpath :example_compiled_manifest)" in
+  */build/bazel/rules/packages/tests/cml/example_compiled_manifest/example_dynamic_dictionary.cm) ;;
+  *) echo "Unexpected default output path: $(execpath :example_compiled_manifest)" >&2; exit 1 ;;
+esac
+case "$(execpath :example_compiled_manifest_custom_output_name)" in
+  */build/bazel/rules/packages/tests/custom/example_helper.cm) ;;
+  *) echo "Unexpected custom output path: $(execpath :example_compiled_manifest_custom_output_name)" >&2; exit 1 ;;
+esac
+touch $@
+""",
+)
+
+# Embeds the compiled manifests in a Rust library, like component_manager does.
+rustc_library(
+    name = "example_compiled_manifest_consumer",
+    testonly = True,
+    srcs = ["example_compiled_manifest_consumer.rs"],
+    compile_data = [
+        ":example_compiled_manifest",
+        ":example_compiled_manifest_custom_output_name",
+    ],
+    edition = "2024",
+    rustc_env = {
+        "CUSTOM_OUTPUT_NAME_CM_PATH": "$(execpath :example_compiled_manifest_custom_output_name)",
+        "EXAMPLE_CM_PATH": "$(execpath :example_compiled_manifest)",
+    },
+)
+
+# `fx_compiled_manifest()` does not provide `_FxComponentManifestSourcesInfo`,
+# which `fx_component()` requires via its `compiled_manifest` attribute.
+fx_component(
+    name = "example_component_with_compiled_manifest",
+    compiled_manifest = ":example_compiled_manifest",
+    tags = ["manual"],
+)
+
+analysis_failure_test(
+    name = "example_component_with_compiled_manifest_failure_test",
+    expected_message = "_FxComponentManifestSourcesInfo",
+    target_under_test = ":example_component_with_compiled_manifest",
 )

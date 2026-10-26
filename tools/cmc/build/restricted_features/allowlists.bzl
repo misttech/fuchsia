@@ -27,6 +27,7 @@ RESTRICTED_FEATURE_ALLOWLISTS = {
     # LINT.IfChange(dynamic_dictionaries)
     "dynamic_dictionaries": [
         # Tests of the Bazel `fx_component_manifest(restricted_features = ...)`.
+        "//build/bazel/rules/packages/tests:example_compiled_manifest",
         "//build/bazel/rules/packages/tests:example_dynamic_dictionaries_manifest",
         "//examples/components/dictionaries/*",
         "//src/bringup/bin/kernel-args-forwarder:*",

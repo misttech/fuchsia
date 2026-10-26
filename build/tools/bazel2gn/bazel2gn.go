@@ -313,6 +313,10 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		if err := validateFxComponentManifest(expr); err != nil {
 			return nil, err
 		}
+	case "fx_compiled_manifest":
+		if err := prepareFxCompiledManifest(expr); err != nil {
+			return nil, err
+		}
 	case "fx_component":
 		if err := validateFxComponent(expr); err != nil {
 			return nil, err
@@ -762,7 +766,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 			transformers = append(transformers, bazelCmlIncludesToGN)
 		}
 	case "manifest":
-		if bazelRule == "fx_component_manifest" {
+		if isFxManifestRule(bazelRule) {
 			transformers = append(transformers, bazelFilePathsToGN)
 		}
 	case "args":

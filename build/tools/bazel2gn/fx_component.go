@@ -33,6 +33,21 @@ var (
 		"target_compatible_with": true,
 	}
 
+	// `fx_compiled_manifest()` accepts the same attributes as
+	// `fx_component_manifest()`, plus `output_name`.
+	allowedFxCompiledManifestAttrs = map[string]bool{
+		"name":                   true,
+		"manifest":               true,
+		"component_name":         true,
+		"includes":               true,
+		"output_name":            true,
+		"restricted_features":    true,
+		"testonly":               true,
+		"visibility":             true,
+		"tags":                   true,
+		"target_compatible_with": true,
+	}
+
 	allowedFxComponentAttrs = map[string]bool{
 		"name":                   true,
 		"compiled_manifest":      true,
@@ -58,6 +73,95 @@ var (
 
 	rawOutputNameRE = regexp.MustCompile(`^\s*output_name\s*=\s*"([^"]+)"\s*$`)
 )
+
+// isFxManifestRule returns whether `rule` compiles a component manifest that
+// GN targets can pass to `get_target_outputs()`.
+func isFxManifestRule(rule string) bool {
+	return rule == "fx_component_manifest" || rule == "fx_compiled_manifest"
+}
+
+// prepareFxCompiledManifest validates a Bazel `fx_compiled_manifest()` call and
+// rewrites it in place before converting it to GN `cm()`.
+//
+// GN `cm()` has no `component_name`, so this replaces `component_name` and
+// `output_name` with the `output_name` and `config_values_package_path` that
+// the Bazel rule uses, so both build systems produce the same `.cm` file at
+// the same path relative to the target's output directory.
+func prepareFxCompiledManifest(call *syntax.CallExpr) error {
+	var name, componentName, outputName string
+	hasManifest := false
+	newArgs := make([]syntax.Expr, 0, len(call.Args)+2)
+	insertIdx := -1
+
+	for _, arg := range call.Args {
+		binaryExpr, ok := arg.(*syntax.BinaryExpr)
+		if !ok || binaryExpr.Op != syntax.EQ {
+			return fmt.Errorf("fx_compiled_manifest only accepts keyword arguments, got %T", arg)
+		}
+		shouldSkip, err := hasSkipAnnotation(binaryExpr)
+		if err != nil {
+			return fmt.Errorf("failed to check skip annotation: %v", err)
+		}
+		if shouldSkip {
+			newArgs = append(newArgs, arg)
+			continue
+		}
+		ident, ok := binaryExpr.X.(*syntax.Ident)
+		if !ok {
+			return fmt.Errorf("expected identifier for argument name, got %T", binaryExpr.X)
+		}
+		if !allowedFxCompiledManifestAttrs[ident.Name] {
+			return fmt.Errorf("bazel2gn doesn't support attribute %q of fx_compiled_manifest; use # @bazel2gn:skip and write the GN copy by hand", ident.Name)
+		}
+		switch ident.Name {
+		case "name":
+			name, err = stringLiteralValue(binaryExpr.Y)
+			if err != nil {
+				return fmt.Errorf("fx_compiled_manifest name: %v", err)
+			}
+		case "manifest":
+			hasManifest = true
+			newArgs = append(newArgs, arg)
+			insertIdx = len(newArgs)
+			continue
+		case "component_name":
+			componentName, err = stringLiteralValue(binaryExpr.Y)
+			if err != nil {
+				return fmt.Errorf("fx_compiled_manifest component_name: %v", err)
+			}
+			continue
+		case "output_name":
+			outputName, err = stringLiteralValue(binaryExpr.Y)
+			if err != nil {
+				return fmt.Errorf("fx_compiled_manifest output_name: %v", err)
+			}
+			continue
+		}
+		newArgs = append(newArgs, arg)
+	}
+
+	if name == "" {
+		return errors.New("missing `name` attribute in fx_compiled_manifest")
+	}
+	if !hasManifest {
+		return fmt.Errorf("missing `manifest` attribute in fx_compiled_manifest %q", name)
+	}
+	if componentName == "" {
+		componentName = name
+	}
+	if outputName == "" {
+		// LINT.IfChange(fx_compiled_manifest_output_name)
+		outputName = fmt.Sprintf("cml/%s/%s.cm", name, componentName)
+		// LINT.ThenChange(//build/bazel/rules/components/fx_component.bzl:fx_compiled_manifest_output_name)
+	}
+	generated := []syntax.Expr{
+		attrExpr("output_name", stringLiteral(outputName)),
+		// `compile_component_manifest()` always passes `--config-package-path`.
+		attrExpr("config_values_package_path", stringLiteral("meta/"+componentName+".cvf")),
+	}
+	call.Args = append(newArgs[:insertIdx:insertIdx], append(generated, newArgs[insertIdx:]...)...)
+	return nil
+}
 
 // validateFxComponentManifest validates a Bazel `fx_component_manifest()` call
 // before converting it to GN `fuchsia_component_manifest()`.
@@ -192,6 +296,9 @@ type packagedBinaryRecord struct {
 //     matches the GN binary's default `"bin/<output_name>"`, or rewriting the
 //     `fx_packaged_binary()` into a GN `renamed_binary()` target otherwise.
 func resolveComponentTargets(f *syntax.File) error {
+	if err := checkCompiledManifestConsumers(f); err != nil {
+		return err
+	}
 	if err := skipBazelOnlyComponentManifests(f); err != nil {
 		return err
 	}
@@ -283,6 +390,52 @@ func resolveComponentTargets(f *syntax.File) error {
 		}
 	}
 
+	return nil
+}
+
+// checkCompiledManifestConsumers fails if an un-skipped `fx_component()` uses an
+// `fx_compiled_manifest()` in the same file as its `compiled_manifest`, because
+// GN `fuchsia_component()` relies on `fuchsia_component_manifest()` to add the
+// compiled manifest to the package, which GN `cm()` doesn't do.
+func checkCompiledManifestConsumers(f *syntax.File) error {
+	compiledManifests := map[string]bool{}
+	for _, stmt := range f.Stmts {
+		call, ok := callOfStmt(stmt)
+		if !ok {
+			continue
+		}
+		if fn, ok := call.Fn.(*syntax.Ident); ok && fn.Name == "fx_compiled_manifest" {
+			if name, ok := callStringAttr(call, "name"); ok {
+				compiledManifests[name] = true
+			}
+		}
+	}
+	if len(compiledManifests) == 0 {
+		return nil
+	}
+	for _, stmt := range f.Stmts {
+		call, ok := callOfStmt(stmt)
+		if !ok {
+			continue
+		}
+		fn, ok := call.Fn.(*syntax.Ident)
+		if !ok || fn.Name != "fx_component" {
+			continue
+		}
+		skip, err := hasSkipAnnotation(stmt)
+		if err != nil {
+			return err
+		}
+		if skip {
+			continue
+		}
+		cmVal, attrSkip, ok := callLocalLabelAttr(call, "compiled_manifest")
+		if !ok || attrSkip || !compiledManifests[strings.TrimPrefix(cmVal, ":")] {
+			continue
+		}
+		compName, _ := callStringAttr(call, "name")
+		return stmtError(stmt, fmt.Errorf("fx_component %q compiled_manifest %q refers to an fx_compiled_manifest(), which isn't packaged in GN; use fx_component_manifest() instead", compName, cmVal))
+	}
 	return nil
 }
 
@@ -381,7 +534,7 @@ func hoistComponentManifests(f *syntax.File) error {
 			continue
 		}
 		fn, ok := call.Fn.(*syntax.Ident)
-		if !ok || fn.Name != "fx_component_manifest" {
+		if !ok || !isFxManifestRule(fn.Name) {
 			continue
 		}
 		skip, err := hasSkipAnnotation(stmt)
@@ -449,7 +602,7 @@ func hoistComponentManifests(f *syntax.File) error {
 			continue
 		}
 		fn, ok := call.Fn.(*syntax.Ident)
-		if !ok || fn.Name != "fx_component_manifest" {
+		if !ok || !isFxManifestRule(fn.Name) {
 			continue
 		}
 		name, ok := callStringAttr(call, "name")

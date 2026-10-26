@@ -451,6 +451,78 @@ fuchsia_component("component") {
 	component_name = "dispatcher"
 }`,
 		},
+		{
+			name: "fx_compiled_manifest converts to cm",
+			bazel: `fuchsia_structured_config_rust_lib(
+	name = "dispatcher_config",
+	cm_label = ":dispatcher_cm",
+)
+
+fx_compiled_manifest(
+	name = "elf_runner_cm",
+	component_name = "elf_runner",
+	includes = ["//sdk/lib/syslog:client.shard"],
+	manifest = "meta/elf_runner.cml",
+)
+
+fx_compiled_manifest(
+	name = "dispatcher_cm",
+	testonly = True,
+	component_name = "dispatcher",
+	manifest = "meta/dispatcher.cml",
+	output_name = "custom/dispatcher.cm",
+	restricted_features = ["dynamic_dictionaries"],
+	visibility = [":__subpackages__"],
+)
+
+fx_compiled_manifest(
+	name = "default_name",
+	manifest = "meta/default_name.cml",
+)`,
+			wantGN: `cm("dispatcher_cm") {
+	testonly = true
+	manifest = "meta/dispatcher.cml"
+	output_name = "custom/dispatcher.cm"
+	config_values_package_path = "meta/dispatcher.cvf"
+	restricted_features = [
+		"dynamic_dictionaries",
+	]
+	visibility = [
+		"./*",
+	]
+}
+fuchsia_structured_config_rust_lib("dispatcher_config") {
+	cm_label = ":dispatcher_cm"
+}
+cm("elf_runner_cm") {
+	manifest = "meta/elf_runner.cml"
+	output_name = "cml/elf_runner_cm/elf_runner.cm"
+	config_values_package_path = "meta/elf_runner.cvf"
+}
+cm("default_name") {
+	manifest = "meta/default_name.cml"
+	output_name = "cml/default_name/default_name.cm"
+	config_values_package_path = "meta/default_name.cvf"
+}`,
+		},
+		{
+			name: "skipped fx_component using fx_compiled_manifest",
+			bazel: `fx_compiled_manifest(
+	name = "manifest",
+	manifest = "meta/foo.cml",
+)
+
+# @bazel2gn:skip
+fx_component(
+	name = "component",
+	compiled_manifest = ":manifest",
+)`,
+			wantGN: `cm("manifest") {
+	manifest = "meta/foo.cml"
+	output_name = "cml/manifest/manifest.cm"
+	config_values_package_path = "meta/manifest.cvf"
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -572,6 +644,40 @@ fx_component(
 	name = "component",
 	compiled_manifest = ":manifest",
 	deps = [":pkg_bin"],
+)`,
+		},
+		{
+			name: "fx_compiled_manifest missing manifest",
+			bazel: `fx_compiled_manifest(
+	name = "manifest",
+)`,
+		},
+		{
+			name: "fx_compiled_manifest unsupported attribute",
+			bazel: `fx_compiled_manifest(
+	name = "manifest",
+	manifest = "meta/foo.cml",
+	required_offers = ["fuchsia.logger.LogSink"],
+)`,
+		},
+		{
+			name: "fx_compiled_manifest non-literal component_name",
+			bazel: `fx_compiled_manifest(
+	name = "manifest",
+	component_name = NAME,
+	manifest = "meta/foo.cml",
+)`,
+		},
+		{
+			name: "fx_component using fx_compiled_manifest",
+			bazel: `fx_compiled_manifest(
+	name = "manifest",
+	manifest = "meta/foo.cml",
+)
+
+fx_component(
+	name = "component",
+	compiled_manifest = ":manifest",
 )`,
 		},
 	} {

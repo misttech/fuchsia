@@ -114,6 +114,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fuchsia_structured_config_rust_lib": "fuchsia_structured_config_rust_lib",
 	"fx_component":                       "fuchsia_component",
 	"fx_component_manifest":              "fuchsia_component_manifest",
+	"fx_compiled_manifest":               "cm",
 
 	// Host tools
 	"cc_binary_host_tool": "executable",
@@ -239,6 +240,7 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// action sandbox. GN runs `cmc` with global include paths and a depfile
 	// instead, and `fuchsia_component_manifest()` does not accept `includes`.
 	"fx_component_manifest": {"includes": true},
+	"fx_compiled_manifest":  {"includes": true},
 }
 
 // unsupportedAttrsByRules lists attributes that bazel2gn can't translate yet.
