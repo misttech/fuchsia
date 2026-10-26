@@ -12,19 +12,6 @@ grand_swd_binary("bin") {
   output_name = "omaha_client_service"
 }
 
-# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
-# target, so that `:omaha-client-structured-config-lib` refers to the same
-# label in both builds.
-fuchsia_component_manifest("manifest") {
-  component_name = "omaha-client-service"
-  manifest = "meta/omaha-client-service.cml"
-}
-
-fuchsia_component("component") {
-  cm_label = ":manifest"
-  deps = [ ":bin" ]
-}
-
 fuchsia_package("omaha-client-unconfigured") {
   deps = [ ":component" ]
   validate_structured_config = false
@@ -248,9 +235,22 @@ rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 }
+fuchsia_component_manifest("manifest") {
+  component_name = "omaha-client-service"
+  manifest = "meta/omaha-client-service.cml"
+}
 fuchsia_structured_config_rust_lib("omaha-client-structured-config-lib") {
   cm_label = ":manifest"
   name = "omaha_client_structured_config"
+}
+fuchsia_component("component") {
+  cm_label = ":manifest"
+  component_name = "omaha-client-service"
+  visibility = [
+    ":*",
+    "//src/sys/pkg/tests/omaha-client:*",
+  ]
+  deps = [ ":bin" ]
 }
 metrics_registry("mos_metrics_registry") {
   generate_binarypb = false

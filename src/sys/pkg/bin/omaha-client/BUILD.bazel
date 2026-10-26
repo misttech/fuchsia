@@ -2,14 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@fuchsia_rules_common//packages:resources.bzl", "resource")
 load(
     "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
     "fx_component_manifest",
 )
 load(
     "//build/bazel/rules/components:structured_config.bzl",
     "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
 )
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
 load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
@@ -100,16 +104,14 @@ rustc_library(
     ],
 )
 
-# The GN build uses the `fuchsia_component_manifest("manifest")` target defined
-# above the bazel2gn sentinel in BUILD.gn instead.
-# @bazel2gn:skip
+# The Bazel build defines an equivalent `fx_component_manifest("manifest")`
+# target, so that `:omaha-client-structured-config-lib` refers to the same
+# label in both builds.
 fx_component_manifest(
     name = "manifest",
     component_name = "omaha-client-service",
     includes = [
-        "//sdk/lib/inspect:client.shard.cml",
-        "//sdk/lib/inspect:offer.shard.cml",
-        "//sdk/lib/inspect:use.shard.cml",
+        "//sdk/lib/inspect:client.shard",
         "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/omaha-client-service.cml",
@@ -121,6 +123,22 @@ fuchsia_structured_config_rust_lib(
     crate_name = "omaha_client_structured_config",
 )
 
+fx_packaged_binary(
+    name = "bin",
+    binary = "//src/sys/pkg/bin/grand-swd-binary",
+    binary_name = "omaha_client_service",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "omaha-client-service",
+    visibility = ["//src/sys/pkg/tests/omaha-client:__pkg__"],
+    deps = [
+        ":bin",  # @bazel2gn:path_overwrite::bin
+    ],
+)
+
 metrics_registry(
     name = "mos_metrics_registry",
     generate_binarypb = False,
@@ -128,12 +146,4 @@ metrics_registry(
     # This must match the ID of our Cobalt project as specified in:
     # third_party/cobalt_config/projects.yaml
     project_id = 285903809,
-)
-
-# @bazel2gn:skip
-resource(
-    name = "omaha-client-channels-test-config",
-    testonly = True,
-    src = "test_data/test_channel_config.json",
-    dest = "test-config-data/omaha-client-service-bin-tests/channel_config.json",
 )

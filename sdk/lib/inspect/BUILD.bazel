@@ -16,7 +16,6 @@ exports_files(
     visibility = [
         "//bundles/assembly:__subpackages__",
         "//src/security/lib/scrutiny/tests/route_verification:__pkg__",
-        "//src/sys/pkg/bin/omaha-client:__pkg__",
         "//src/sys/pkg/lib/omaha-client-fuchsia:__pkg__",
         "//src/sys/pkg/tests/pkg-resolver:__pkg__",
     ],
@@ -47,6 +46,7 @@ cml_shard(
         "//src/connectivity/policy/http-client:__pkg__",
         "//src/connectivity/wlan:__subpackages__",
         "//src/power/shutdown-shim:__subpackages__",
+        "//src/sys/pkg/bin/omaha-client:__pkg__",
         "//src/sys/pkg/bin/pkg-cache:__pkg__",
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
         "//src/sys/pkg/bin/system-update-checker:__pkg__",
