@@ -519,7 +519,7 @@ mod tests {
                 rtt: Some(rtt),
                 rtt_var: Some(rtt / 2),
                 snd_ssthresh: u32::MAX,
-                snd_cwnd: 4380 + 1460,
+                snd_cwnd: 14600 + 1460,
                 retransmits: 5,
                 last_ack_recv: Some(now - Duration::from_secs(2)),
                 segs_out: 10,

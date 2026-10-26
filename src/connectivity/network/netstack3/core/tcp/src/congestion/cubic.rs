@@ -716,14 +716,14 @@ mod tests {
         const RTT: Duration = Duration::from_millis(100);
 
         // Assert we have the correct initial window.
-        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 10 * u32::from(DEFAULT_MSS));
 
         // Slow start.
         clock.sleep(RTT);
         for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
             cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 8 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 20 * u32::from(DEFAULT_MSS));
 
         clock.sleep(RTT);
         let flight_size = params.cwnd;
@@ -731,25 +731,23 @@ mod tests {
         assert_eq!(params.cwnd, u32::from(DEFAULT_MSS));
 
         // We are now back in slow start.
-        clock.sleep(RTT);
-        cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
-        assert_eq!(params.cwnd, 2 * u32::from(DEFAULT_MSS));
-
-        clock.sleep(RTT);
-        for _ in 0..2 {
-            cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
+        for exp in 1..=3 {
+            clock.sleep(RTT);
+            for _ in 0..params.cwnd / u32::from(DEFAULT_MSS) {
+                cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
+            }
+            assert_eq!(params.cwnd, (1 << exp) * u32::from(DEFAULT_MSS));
         }
-        assert_eq!(params.cwnd, 4 * u32::from(DEFAULT_MSS));
 
         // In this roundtrip, we enter a new congestion epoch from slow start,
         // in this round trip, both cubic and the reno-friendly window equations
         // will be reset, so the cwnd in this round trip will be ssthresh, which
-        // is 2680 bytes, or 5 full sized segments.
+        // is 7504 bytes, or 14 full sized segments.
         clock.sleep(RTT);
         for _seg in 0..params.cwnd / u32::from(DEFAULT_MSS) {
             cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
         }
-        assert_eq!(params.cwnd, 5 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 14 * u32::from(DEFAULT_MSS));
 
         // In the Reno-Friendly region, the cwnd is increased by alpha_cubic MSS
         // per cwnd of acked data. Since alpha_cubic is approximately 0.53, in
@@ -760,7 +758,7 @@ mod tests {
                 cubic.on_ack_u32(&mut params, u32::from(DEFAULT_MSS), clock.now(), RTT);
             }
         }
-        assert_eq!(params.cwnd, 6 * u32::from(DEFAULT_MSS));
+        assert_eq!(params.cwnd, 15 * u32::from(DEFAULT_MSS));
     }
 
     // This is a regression test for https://fxbug.dev/327628809.

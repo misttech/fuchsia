@@ -38,23 +38,11 @@ struct CongestionControlParams {
 
 impl CongestionControlParams {
     fn with_mss(mss: EffectiveMss) -> Self {
-        let mss_u32 = u32::from(mss);
-        // Per RFC 5681 (https://www.rfc-editor.org/rfc/rfc5681#page-5):
-        //   IW, the initial value of cwnd, MUST be set using the following
-        //   guidelines as an upper bound.
-        //   If SMSS > 2190 bytes:
-        //       IW = 2 * SMSS bytes and MUST NOT be more than 2 segments
-        //   If (SMSS > 1095 bytes) and (SMSS <= 2190 bytes):
-        //       IW = 3 * SMSS bytes and MUST NOT be more than 3 segments
-        //   if SMSS <= 1095 bytes:
-        //       IW = 4 * SMSS bytes and MUST NOT be more than 4 segments
-        let cwnd = if mss_u32 > 2190 {
-            mss_u32 * 2
-        } else if mss_u32 > 1095 {
-            mss_u32 * 3
-        } else {
-            mss_u32 * 4
-        };
+        // Per RFC 6928 Section 2 (https://www.rfc-editor.org/rfc/rfc6928#section-2):
+        //   Specifically, the initial window (IW) will have an upper bound of
+        //   10 segments and the maximum amount of data that can be sent is 10 *
+        //   SMSS.
+        let cwnd = 10 * u32::from(mss);
         Self { cwnd, ssthresh: u32::MAX, mss }
     }
 
