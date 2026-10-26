@@ -73,10 +73,14 @@ fn get_mac_identifier_from_octets(
 // 05:00:18 following "platform" represents
 // vid(vendor id):pid(product id):did(device id) and are defined in each board file
 //
-// SDIO
+// SDIO (DFv1):
 // "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy"
 // 05:00:6 following "platform" represents
 // vid(vendor id):pid(product id):did(device id) and are defined in each board file
+//
+// SDIO (DFv2):
+// "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device"
+// "/sys/platform/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-netdev/network-device"
 //
 // Ethernet Jack for VIM2
 // "/dev/sys/platform/04:02:7/aml-ethernet/Designware-MAC/ethernet"
@@ -231,7 +235,9 @@ fn get_bus_type_for_topological_path(topological_path: &str) -> BusType {
         // controller, so the bus path represents the USB type with a
         // different string.
         return BusType::USB;
-    } else if p.contains("/sdio/") {
+    } else if p.contains("/sdio/") || p.contains("/sdmmc-sdio/") {
+        // DFv1 topological paths use `/sdio/`, whereas DFv2 SDMMC drivers
+        // create child nodes under `/sdmmc-sdio/`.
         return BusType::SDIO;
     } else if p.contains("/virtio-net/") {
         return BusType::VirtIo;
@@ -704,6 +710,20 @@ mod tests {
         "platform_wlan"
     )]
     #[test_case(
+        "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device",
+        [0x06, 0x06, 0x06, 0x06, 0x06, 0x59],
+        crate::InterfaceType::WlanClient,
+        "wlans59";
+        "platform_wlan_dfv2_mmc"
+    )]
+    #[test_case(
+        "/sys/platform/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-netdev/network-device",
+        [0x06, 0x06, 0x06, 0x06, 0x06, 0x59],
+        crate::InterfaceType::WlanClient,
+        "wlans59";
+        "platform_wlan_dfv2_aml_sdio"
+    )]
+    #[test_case(
         "/dev/sys/platform/04:02:7/aml-ethernet/Designware-MAC/ethernet",
         [0x07, 0x07, 0x07, 0x07, 0x07, 0x07],
         crate::InterfaceType::Ethernet,
@@ -825,16 +845,16 @@ mod tests {
         expected_size: 1 }];
         "two_interfaces_different_device_class"
     )]
-    // Recreating an SDIO WLAN interface with a new child
-    // node and the same MAC address retries via
+    // Recreating an SDIO WLAN interface with a new DFv2 child
+    // node (`wifi-1` -> `wifi-2`) and the same MAC address retries via
     // NormalizedMac rather than duplicating the previous interface's name.
     #[test_case([StableNameTestCase {
-        topological_path: "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy-1",
+        topological_path: "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device",
         mac: [0x01, 0x01, 0x01, 0x01, 0x01, 0x59],
         interface_type: crate::InterfaceType::WlanClient,
         want_name: "wlans59",
         expected_size: 1 }, StableNameTestCase {
-        topological_path: "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy-2",
+        topological_path: "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-2/brcmfmac-netdev/network-device",
         mac: [0x01, 0x01, 0x01, 0x01, 0x01, 0x59],
         interface_type: crate::InterfaceType::WlanClient,
         want_name: "wlans5a",
@@ -870,7 +890,7 @@ mod tests {
         "usb_ethernet"
     )]
     #[test_case(
-        "/dev/sys/platform/05:00:6/aml-sd-emmc/sdio/broadcom-wlanphy",
+        "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device",
         crate::InterfaceType::WlanClient,
         "wlans";
         "sdio_wlan"
@@ -1016,6 +1036,22 @@ mod tests {
         true,
         "05006";
         "sdio_match"
+    )]
+    #[test_case(
+        "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device",
+        vec![BusType::SDIO],
+        BusType::SDIO,
+        true,
+        "ffffff";
+        "sdio_dfv2_mmc_match"
+    )]
+    #[test_case(
+        "/sys/platform/aml-sdio/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi/brcmfmac-netdev/network-device",
+        vec![BusType::SDIO],
+        BusType::SDIO,
+        true,
+        "ffffff";
+        "sdio_dfv2_aml_sdio_match"
     )]
     #[test_case(
         "/dev/sys/platform/pt/PC00/bus/00:1e.0/00_1e_0/virtio-net/network-device",
@@ -1474,6 +1510,16 @@ mod tests {
         },
         "wlans1";
         "default_sdio_wlan"
+    )]
+    #[test_case(
+        vec![NameCompositionRule::Default],
+        DeviceInfoRef {
+            device_class: DeviceClass::WlanClient,
+            topological_path: "/sys/platform/mmc-ffe05000/aml-sd-emmc/sdmmc/sdmmc-sdio/sdmmc-sdio-1/wifi-1/brcmfmac-netdev/network-device",
+            ..default_device_info()
+        },
+        "wlans1";
+        "default_sdio_wlan_dfv2"
     )]
     fn test_naming_rules(
         composition_rules: Vec<NameCompositionRule>,
