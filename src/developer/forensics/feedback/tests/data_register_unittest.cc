@@ -130,7 +130,7 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnReservedNamespace) {
       {"k", "v"},
   }});
 
-  Upsert(std::move(data));
+  Upsert(std::move(data), ZX_ERR_INVALID_ARGS);
 
   EXPECT_THAT(data_register_->Get(), testing::IsEmpty());
   EXPECT_FALSE(data_register_->IsMissingAnnotations());

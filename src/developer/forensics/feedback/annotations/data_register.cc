@@ -64,9 +64,7 @@ void DataRegister::Upsert(UpsertRequest& request, UpsertCompleter::Sync& complet
     FX_LOGS(WARNING) << fxl::StringPrintf(
         "Ignoring non-platform annotations, %s is a reserved namespace",
         data.namespace_()->c_str());
-
-    // TODO(https://fxbug.dev/42125546): close connection with ZX_ERR_INVALID_ARGS instead.
-    completer.Reply();
+    completer.Close(ZX_ERR_INVALID_ARGS);
     return;
   }
 
