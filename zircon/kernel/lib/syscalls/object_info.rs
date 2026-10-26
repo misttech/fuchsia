@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::arch_rs::{UserCopyCaptureFaultsError, max_num_cpus};
+use crate::arch_rs::max_num_cpus;
 use crate::kernel::mp::is_cpu_online;
 use crate::kernel::percpu::PerCpu;
 use crate::kernel::scheduler::get_projected_cpu_stats;
@@ -53,17 +53,6 @@ impl<T: VmoInfoVersion + IntoBytes + Immutable> VmoInfoWriter for SubsetVmoInfoW
         self.out.element_offset(offset + self.base_offset).copy_to_user(&versioned_vmo)
     }
 
-    fn write_capture_faults(
-        &mut self,
-        vmo: &zx_info_vmo_t,
-        offset: usize,
-    ) -> Result<(), UserCopyCaptureFaultsError> {
-        let versioned_vmo: T = vmo_info_to_version(vmo);
-        self.out
-            .element_offset(offset + self.base_offset)
-            .copy_to_user_capture_faults(&versioned_vmo)
-    }
-
     fn add_offset(&mut self, offset: usize) {
         self.base_offset += offset;
     }
@@ -90,17 +79,6 @@ impl<T: MapsInfoVersion + IntoBytes + Immutable> VmarMapsInfoWriter
     fn write(&mut self, maps: &zx_info_maps_t, offset: usize) -> Result<(), Status> {
         let versioned_maps: T = maps_info_to_version(maps);
         self.out.element_offset(offset + self.base_offset).copy_to_user(&versioned_maps)
-    }
-
-    fn write_capture_faults(
-        &mut self,
-        maps: &zx_info_maps_t,
-        offset: usize,
-    ) -> Result<(), UserCopyCaptureFaultsError> {
-        let versioned_maps: T = maps_info_to_version(maps);
-        self.out
-            .element_offset(offset + self.base_offset)
-            .copy_to_user_capture_faults(&versioned_maps)
     }
 
     fn add_offset(&mut self, offset: usize) {

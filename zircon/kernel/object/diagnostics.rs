@@ -7,7 +7,6 @@
 use super::io_buffer_dispatcher::IoBufferDispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use super::vm_object_dispatcher::{VmObjectDispatcher, VmoOwnership, vmo_to_info_entry};
-use crate::arch_rs::UserCopyCaptureFaultsError;
 use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_INVALID, ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ,
     ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
@@ -65,13 +64,6 @@ pub trait VmoInfoWriter {
     /// Writes a single `zx_info_vmo_t` at the given element offset. Return values are same as
     /// `user_ptr::copy_to_user`.
     fn write(&mut self, vmo: &zx_info_vmo_t, offset: usize) -> Result<(), Status>;
-    /// Same as `write`, except is the no faulting variant and returns the complete capture result
-    /// type.
-    fn write_capture_faults(
-        &mut self,
-        vmo: &zx_info_vmo_t,
-        offset: usize,
-    ) -> Result<(), UserCopyCaptureFaultsError>;
     /// Increases the base offset such that writes to offset 0 write to this offset.
     fn add_offset(&mut self, offset: usize);
 }
@@ -81,13 +73,6 @@ pub trait VmarMapsInfoWriter {
     /// Writes a single `zx_info_maps_t` at the given element offset. Return values are same as
     /// `user_ptr::copy_to_user`.
     fn write(&mut self, maps: &zx_info_maps_t, offset: usize) -> Result<(), Status>;
-    /// Same as `write`, except is the no faulting variant and returns the complete capture result
-    /// type.
-    fn write_capture_faults(
-        &mut self,
-        maps: &zx_info_maps_t,
-        offset: usize,
-    ) -> Result<(), UserCopyCaptureFaultsError>;
     /// Increases the base offset such that writes to offset 0 write to this offset.
     fn add_offset(&mut self, offset: usize);
 }

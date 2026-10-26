@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::percpu::PerCpu;
+use crate::kernel::scheduler::Scheduler;
 use crate::object::{
     EventDispatcher, HandleValue, JobDispatcher, ProcessDispatcher, validate_system_resource,
 };
@@ -26,18 +28,6 @@ zr::static_assert!(core::mem::size_of::<zx_wake_source_report_entry_t>() == 72);
 zr::static_assert!(core::mem::align_of::<zx_wake_source_report_entry_t>() == 8);
 
 pub const MEMORY_STALL_MAX_WINDOW: zx_duration_mono_t = 10 * 1_000_000_000;
-
-unsafe extern "C" {
-    fn cpp_percpu_processor_count() -> usize;
-    fn cpp_scheduler_update_processing_rates(info: *mut zx_cpu_performance_info_t, count: usize);
-    fn cpp_scheduler_update_processing_limits(info: *mut zx_cpu_perf_limit_t, count: usize);
-    fn cpp_scheduler_get_performance_scales(info: *mut zx_cpu_performance_info_t, count: usize);
-    fn cpp_scheduler_get_default_performance_scales(
-        info: *mut zx_cpu_performance_info_t,
-        count: usize,
-    );
-    fn cpp_scheduler_get_processing_limits(info: *mut zx_cpu_perf_limit_t, count: usize);
-}
 
 #[syscall]
 pub fn sys_system_get_event(
@@ -109,8 +99,7 @@ pub fn sys_system_set_performance_info(
 ) -> Result<(), Status> {
     validate_system_resource(resource, ZX_RSRC_SYSTEM_CPU_BASE)?;
 
-    // SAFETY: Getting processor count from percpu has no preconditions.
-    let num_cpus = unsafe { cpp_percpu_processor_count() };
+    let num_cpus = PerCpu::processor_count();
     if count == 0 || count > num_cpus {
         return Err(Status::OUT_OF_RANGE);
     }
@@ -138,10 +127,10 @@ pub fn sys_system_set_performance_info(
                     return Err(Status::OUT_OF_RANGE);
                 }
             }
-            // SAFETY: Passing valid slice pointer and count to C++ scheduler.
-            unsafe {
-                cpp_scheduler_update_processing_rates(performance_info.as_mut_ptr(), count);
-            }
+            // SAFETY: `performance_info.len() == count <= num_cpus`, each
+            // `logical_cpu_number < num_cpus` was verified above, and no scheduler queue lock is
+            // held on the syscall entry path.
+            unsafe { Scheduler::update_processing_rates(performance_info) };
             Ok(())
         }
         ZX_CPU_PERF_LIMIT => {
@@ -166,10 +155,9 @@ pub fn sys_system_set_performance_info(
                     return Err(Status::NOT_SUPPORTED);
                 }
             }
-            // SAFETY: Passing valid slice pointer and count to C++ scheduler.
-            unsafe {
-                cpp_scheduler_update_processing_limits(limit_info.as_mut_ptr(), count);
-            }
+            // SAFETY: `limit_info.len() == count <= num_cpus`, each `logical_cpu_number < num_cpus`
+            // was verified above, and no scheduler queue lock is held on the syscall entry path.
+            unsafe { Scheduler::update_processing_limits(limit_info) };
             Ok(())
         }
         _ => Err(Status::INVALID_ARGS),
@@ -186,8 +174,7 @@ pub fn sys_system_get_performance_info(
 ) -> Result<(), Status> {
     validate_system_resource(resource, ZX_RSRC_SYSTEM_CPU_BASE)?;
 
-    // SAFETY: Getting processor count from percpu has no preconditions.
-    let num_cpus = unsafe { cpp_percpu_processor_count() };
+    let num_cpus = PerCpu::processor_count();
     if info_count != num_cpus {
         return Err(Status::OUT_OF_RANGE);
     }
@@ -200,8 +187,9 @@ pub fn sys_system_get_performance_info(
             let mut info =
                 kalloc::Box::<[zx_cpu_performance_info_t]>::try_new_zeroed_slice(info_count)
                     .map_err(|_| Status::NO_MEMORY)?;
-            // SAFETY: Passing valid slice pointer and count.
-            unsafe { cpp_scheduler_get_performance_scales(info.as_mut_ptr(), info_count) };
+            // SAFETY: `info.len() == info_count == num_cpus` and no scheduler queue lock is held
+            // on the syscall entry path.
+            unsafe { Scheduler::get_performance_scales(&mut info) };
             info_void.reinterpret::<zx_cpu_performance_info_t>().copy_slice_to_user(&info)?;
             output_count.write(info_count)?;
             Ok(())
@@ -210,8 +198,9 @@ pub fn sys_system_get_performance_info(
             let mut info =
                 kalloc::Box::<[zx_cpu_performance_info_t]>::try_new_zeroed_slice(info_count)
                     .map_err(|_| Status::NO_MEMORY)?;
-            // SAFETY: Passing valid slice pointer and count.
-            unsafe { cpp_scheduler_get_default_performance_scales(info.as_mut_ptr(), info_count) };
+            // SAFETY: `info.len() == info_count == num_cpus` and no scheduler queue lock is held
+            // on the syscall entry path.
+            unsafe { Scheduler::get_default_performance_scales(&mut info) };
             info_void.reinterpret::<zx_cpu_performance_info_t>().copy_slice_to_user(&info)?;
             output_count.write(info_count)?;
             Ok(())
@@ -219,8 +208,9 @@ pub fn sys_system_get_performance_info(
         ZX_CPU_PERF_LIMIT => {
             let mut info = kalloc::Box::<[zx_cpu_perf_limit_t]>::try_new_zeroed_slice(info_count)
                 .map_err(|_| Status::NO_MEMORY)?;
-            // SAFETY: Passing valid slice pointer and count.
-            unsafe { cpp_scheduler_get_processing_limits(info.as_mut_ptr(), info_count) };
+            // SAFETY: `info.len() == info_count == num_cpus` and no scheduler queue lock is held
+            // on the syscall entry path.
+            unsafe { Scheduler::get_processing_limits(&mut info) };
             info_void.reinterpret::<zx_cpu_perf_limit_t>().copy_slice_to_user(&info)?;
             output_count.write(info_count)?;
             Ok(())

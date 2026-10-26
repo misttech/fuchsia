@@ -33,7 +33,6 @@
 #include <ktl/array.h>
 #include <ktl/unique_ptr.h>
 
-#include "../../lib/syscalls/system_priv.h"
 #include "amd.h"
 
 #include <ktl/enforce.h>

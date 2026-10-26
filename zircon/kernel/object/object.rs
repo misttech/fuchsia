@@ -162,7 +162,7 @@ pub use io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 pub use iommu_dispatcher::IommuDispatcher;
 pub use job_dispatcher::*;
 pub use job_policy::{JobPolicy, JobPolicyCollection, Policy};
-pub use log_dispatcher::*;
+pub use log_dispatcher::LogDispatcher;
 pub use memory_watchdog::*;
 pub use message_packet::{MessagePacket, MessagePacketPtr};
 pub use msi_allocation::MsiAllocation;

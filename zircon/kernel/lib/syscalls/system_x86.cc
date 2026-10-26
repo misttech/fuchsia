@@ -5,19 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 #include <bits.h>
-#include <lib/boot-options/boot-options.h>
-#include <trace.h>
+#include <stdint.h>
+#include <stdio.h>
 
-#include <arch/arch_ops.h>
-#include <arch/mp.h>
 #include <arch/x86/feature.h>
 #include <arch/x86/platform_access.h>
 #include <kernel/ffi.h>
-#include <kernel/percpu.h>
 #include <kernel/recurring_callback.h>
-#include <kernel/timer.h>
-
-#define LOCAL_TRACE 0
 
 namespace {
 

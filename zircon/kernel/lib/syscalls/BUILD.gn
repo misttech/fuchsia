@@ -34,7 +34,6 @@ source_set("impl") {
   sources = [
     "driver.cc",
     "membarrier_ffi.cc",
-    "system_ffi.cc",
     "test.cc",
     "thread_ffi.cc",
   ]
@@ -42,34 +41,16 @@ source_set("impl") {
     ":dispatch",
     ":headers",
     ":syscalls-rs",
-    "//src/lib/zbitl",
     "//zircon/kernel/dev/iommu",
-    "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/console",
-    "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/crashlog",
-    "//zircon/kernel/lib/crypto",
+    "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/fbl",
-    "//zircon/kernel/lib/heap",
-    "//zircon/kernel/lib/io",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page-map",
-    "//zircon/kernel/lib/persistent-debuglog",
-    "//zircon/kernel/lib/power-management",
-    "//zircon/kernel/lib/stall",
-    "//zircon/kernel/lib/thread_sampler",
-    "//zircon/kernel/lib/user_copy",
-    "//zircon/kernel/lib/userabi:headers",
     "//zircon/kernel/object",
-    "//zircon/kernel/platform:headers",
-    "//zircon/system/ulib/explicit-memory",
-    "//zircon/system/ulib/region-alloc",
   ]
   if (current_cpu == "x64") {
     sources += [ "system_x86.cc" ]
-    deps += [ "//zircon/kernel/platform/pc" ]
   }
 }
 
@@ -101,8 +82,6 @@ group("boot_tests") {
 }
 
 kernel_rust_mod("syscalls-rs") {
-  output_name = "syscalls_rs"
-  source_root = "mod.rs"
   sources = [
     "bti.rs",
     "channel.rs",
@@ -142,7 +121,6 @@ kernel_rust_mod("syscalls-rs") {
     "stream.rs",
     "system.rs",
     "system_x86.rs",
-    "system_x86_ffi.rs",
     "task.rs",
     "test.rs",
     "thread.rs",
@@ -163,9 +141,11 @@ kernel_rust_mod("syscalls-rs") {
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/bin/rustenv_path",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
+    "//zircon/kernel/lib/crypto",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/lib/wake-vector:wake-vector-rs",
+    "//zircon/system/ulib/explicit-memory",
     "//zircon/system/ulib/fbl/rust:fbl",
     "//zircon/vdso:private",
   ]

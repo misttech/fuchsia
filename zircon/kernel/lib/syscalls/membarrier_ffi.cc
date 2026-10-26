@@ -4,13 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <zircon/types.h>
+#include <lib/arch/intrin.h>
 
 #include <arch/ops.h>
 #include <kernel/ffi.h>
-#include <kernel/mp.h>
-
-#include "membarrier_priv.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_membarrier_data_barrier() { arch::ThreadMemoryBarrier(); }

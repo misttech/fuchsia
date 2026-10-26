@@ -9,37 +9,46 @@ use debug::dprintf;
 use zx_status::Status;
 use zx_types::ZX_OK;
 
-use super::system_x86_ffi::{
-    cpp_x86_clear_limit_reason_log, cpp_x86_power_limit_suported, cpp_x86_print_limit_reasons,
-    cpp_x86_print_limits, cpp_x86_status_callback_toggle,
-};
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
 
-/// Returns whether RAPL power limit controls are supported on the current x86
-/// microarchitecture.
-fn power_limit_suported() -> bool {
-    // SAFETY: Queries x86 microarchitecture configuration initialized during early boot.
-    unsafe { cpp_x86_power_limit_suported() }
-}
+unsafe extern "C" {
+    /// Returns whether RAPL power limit controls are supported on the current x86
+    /// microarchitecture.
+    ///
+    /// # Safety
+    ///
+    /// Must be called after early boot CPU microarchitecture initialization.
+    fn cpp_x86_power_limit_suported() -> bool;
 
-/// Toggles the recurring RAPL energy status callback.
-fn status_callback_toggle() {
-    // SAFETY: Synchronizes recurring callback state internally with no caller preconditions.
-    unsafe { cpp_x86_status_callback_toggle() };
-}
+    /// Toggles the recurring RAPL energy status callback.
+    ///
+    /// # Safety
+    ///
+    /// Synchronizes recurring callback state internally with no caller preconditions.
+    fn cpp_x86_status_callback_toggle();
 
-/// Prints CPU and graphics performance limit reasons from architectural MSRs.
-fn print_limit_reasons(use_log: bool) {
-    // SAFETY: Checks microarchitecture support internally before reading MSRs; no caller
-    // preconditions.
-    unsafe { cpp_x86_print_limit_reasons(use_log) };
-}
+    /// Prints CPU and graphics performance limit reasons from architectural MSRs.
+    ///
+    /// # Safety
+    ///
+    /// Checks microarchitecture support internally before reading MSRs; must be called after early
+    /// boot CPU microarchitecture initialization.
+    fn cpp_x86_print_limit_reasons(use_log: bool);
 
-/// Clears the latched CPU and graphics performance limit reason log MSR bits.
-fn clear_limit_reason_log() {
-    // SAFETY: Checks microarchitecture support internally before writing MSRs; no caller
-    // preconditions.
-    unsafe { cpp_x86_clear_limit_reason_log() };
+    /// Clears the latched CPU and graphics performance limit reason log MSR bits.
+    ///
+    /// # Safety
+    ///
+    /// Checks microarchitecture support internally before writing MSRs; must be called after early
+    /// boot CPU microarchitecture initialization.
+    fn cpp_x86_clear_limit_reason_log();
+
+    /// Prints RAPL package power limits (PL1 and PL2) from MSRs.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called when `cpp_x86_power_limit_suported()` is true.
+    fn cpp_x86_print_limits();
 }
 
 fn print_command_usage() {
@@ -73,13 +82,15 @@ unsafe extern "C" fn cmd_power(argc: c_int, argv: *const CmdArgs, _flags: u32) -
         return Status::INVALID_ARGS.into_raw();
     }
 
-    if !power_limit_suported() {
+    // SAFETY: Queries x86 microarchitecture configuration initialized during early boot.
+    if !unsafe { cpp_x86_power_limit_suported() } {
         dprintf!(ALWAYS, "Power limit controls not supported\n");
         return Status::NOT_SUPPORTED.into_raw();
     }
 
     if argv[1].as_str() == "status" {
-        status_callback_toggle();
+        // SAFETY: Synchronizes recurring callback state internally with no caller preconditions.
+        unsafe { cpp_x86_status_callback_toggle() };
         return ZX_OK;
     } else if argv[1].as_str() == "limitreason" {
         if argv.len() < 3 {
@@ -87,14 +98,16 @@ unsafe extern "C" fn cmd_power(argc: c_int, argv: *const CmdArgs, _flags: u32) -
             return Status::INVALID_ARGS.into_raw();
         }
         if argv[2].as_str() == "log" {
-            print_limit_reasons(true);
+            // SAFETY: Checks microarchitecture support internally before reading MSRs.
+            unsafe { cpp_x86_print_limit_reasons(true) };
             return ZX_OK;
         } else if argv[2].as_str() == "clear" {
-            clear_limit_reason_log();
+            // SAFETY: Checks microarchitecture support internally before writing MSRs.
+            unsafe { cpp_x86_clear_limit_reason_log() };
             return ZX_OK;
         }
     } else if argv[1].as_str() == "limits" {
-        // SAFETY: `power_limit_suported()` was verified above.
+        // SAFETY: `cpp_x86_power_limit_suported()` was verified above.
         unsafe { cpp_x86_print_limits() };
         return ZX_OK;
     }

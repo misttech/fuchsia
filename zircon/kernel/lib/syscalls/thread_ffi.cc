@@ -13,8 +13,6 @@
 #include <object/vm_object_dispatcher.h>
 #include <vm/vm_object_paged.h>
 
-#include "thread_priv.h"
-
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

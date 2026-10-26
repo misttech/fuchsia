@@ -6,8 +6,6 @@
 
 #include "object/log_dispatcher.h"
 
-#include <zircon/errors.h>
-
 #include <ktl/enforce.h>
 
 extern "C" {

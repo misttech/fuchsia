@@ -101,9 +101,8 @@ fn copy_out_log_record(
     if len < record_bytes.len() {
         // Not enough space to copy the whole struct so we must treat it as an array
         // of bytes instead.
-        let to_copy = core::cmp::min(len, record_bytes.len());
-        dst.copy_slice_to_user(&record_bytes[..to_copy])?;
-        return Ok(to_copy);
+        dst.copy_slice_to_user(&record_bytes[..len])?;
+        return Ok(len);
     }
 
     // There's enough space for the struct so copy it as is.
@@ -141,8 +140,7 @@ pub fn sys_debuglog_read(
     })?;
 
     let mut record = dlog_record_t::default();
-    let mut actual = 0;
-    log.read(options, &mut record, &mut actual)?;
+    log.read(&mut record)?;
 
     let copied = copy_out_log_record(&record, ptr, len)?;
     Status::ok(copied as zx_types::zx_status_t)
