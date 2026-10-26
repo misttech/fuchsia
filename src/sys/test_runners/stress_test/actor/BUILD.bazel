@@ -1,0 +1,46 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "stress-test-actor",
+    srcs = ["src/actor.rs"],
+    aspect_hints = [":actor_includes"],
+    crate_root = "src/actor.rs",
+    edition = "2024",
+    visibility = [
+        "//src/diagnostics/archivist/tests/stress-test:__pkg__",
+        "//src/sys/component_manager/stress_tests_alt:__pkg__",
+        "//src/sys/test_runners/stress_test/tests/test_data:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.stresstest:fuchsia.stresstest_rust",
+        "//sdk/fidl/fuchsia.stresstest:rust_measure_tape_for_action",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+expect_includes(
+    name = "actor_includes",
+    includes = ["default.shard.cml"],
+)
+
+alias(
+    name = "actor",
+    actual = ":stress-test-actor",
+    visibility = [
+        "//src/diagnostics/archivist/tests/stress-test:__pkg__",
+        "//src/sys/component_manager/stress_tests_alt:__pkg__",
+        "//src/sys/test_runners/stress_test/tests/test_data:__subpackages__",
+    ],
+)
