@@ -31,7 +31,7 @@ class DataRegisterTest : public UnitTestFixture {
   DataRegisterTest() { MakeNewDataRegister(); }
 
  protected:
-  void Upsert(ComponentData data) {
+  void Upsert(ComponentData data, const zx_status_t expected_status = ZX_OK) {
     zx::result endpoints = fidl::CreateEndpoints<fuchsia_feedback::ComponentDataRegister>();
     FX_CHECK(endpoints.is_ok());
 
@@ -42,11 +42,17 @@ class DataRegisterTest : public UnitTestFixture {
 
     bool called_back = false;
     client->Upsert(std::move(data))
-        .Then(
-            [&called_back](fidl::Result<fuchsia_feedback::ComponentDataRegister::Upsert>& result) {
-              FX_CHECK(result.is_ok());
-              called_back = true;
-            });
+        .Then([&called_back, expected_status](
+                  fidl::Result<fuchsia_feedback::ComponentDataRegister::Upsert>& result) {
+          if (expected_status == ZX_OK) {
+            FX_CHECK(result.is_ok()) << result.error_value();
+          } else {
+            FX_CHECK(result.is_error());
+            EXPECT_TRUE(result.error_value().is_peer_closed());
+            EXPECT_EQ(result.error_value().status(), expected_status);
+          }
+          called_back = true;
+        });
     RunLoopUntilIdle();
     FX_CHECK(called_back);
   }
@@ -128,6 +134,59 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnReservedNamespace) {
 
   EXPECT_THAT(data_register_->Get(), testing::IsEmpty());
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
+  EXPECT_TRUE(ReadRegisterJson().empty());
+}
+
+struct InvalidNamespaceParam {
+  std::string test_name;
+  std::string namespace_;
+};
+
+class InvalidNamespaceDataRegisterTest : public DataRegisterTest,
+                                         public testing::WithParamInterface<InvalidNamespaceParam> {
+};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousInvalidNamespaces, InvalidNamespaceDataRegisterTest,
+                         testing::ValuesIn(std::vector<InvalidNamespaceParam>({
+                             {
+                                 "Empty",
+                                 "",
+                             },
+                             {
+                                 "ContainsPeriod",
+                                 "namespace.with.period",
+                             },
+                             {
+                                 "ReservedPrefixWithPeriod",
+                                 std::string(kReservedNamespace) + ".sub",
+                             },
+                             {
+                                 "ContainsUnderscore",
+                                 "namespace_with_underscore",
+                             },
+                             {
+                                 "ContainsUppercase",
+                                 "NamespaceWithUppercase",
+                             },
+                             {
+                                 "ContainsDigit",
+                                 "namespace1",
+                             },
+                         })),
+                         [](const testing::TestParamInfo<InvalidNamespaceParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(InvalidNamespaceDataRegisterTest, Upsert_NoInsertionsOnInvalidNamespace) {
+  ComponentData data;
+  data.namespace_(GetParam().namespace_);
+  data.annotations({{
+      {"k", "v"},
+  }});
+
+  Upsert(std::move(data), ZX_ERR_INVALID_ARGS);
+
+  EXPECT_THAT(data_register_->Get(), testing::IsEmpty());
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
   EXPECT_TRUE(ReadRegisterJson().empty());
 }
@@ -229,7 +288,7 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentNamespaces) {
 
   // We upsert another ComponentData with the same annotations, but under a different namespace.
   ComponentData data2;
-  data2.namespace_("namespace2");
+  data2.namespace_("namespace-two");
   data2.annotations({{
       {"k", "v"},
   }});
@@ -238,14 +297,14 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentNamespaces) {
 
   EXPECT_THAT(data_register_->Get(), UnorderedElementsAreArray({
                                          Pair("namespace.k", ErrorOrString("v")),
-                                         Pair("namespace2.k", ErrorOrString("v")),
+                                         Pair("namespace-two.k", ErrorOrString("v")),
                                      }));
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
   EXPECT_EQ(ReadRegisterJson(), R"({
     "namespace": {
         "k": "v"
     },
-    "namespace2": {
+    "namespace-two": {
         "k": "v"
     }
 })");
@@ -328,7 +387,7 @@ TEST_F(DataRegisterTest, Upsert_UpdateIfSameKey) {
 
 TEST_F(DataRegisterTest, ReinitializesFromJson) {
   ComponentData data1;
-  data1.namespace_("namespace1");
+  data1.namespace_("namespace-one");
   data1.annotations({{
       {"k1", "v1"},
       {"k2", "v2"},
@@ -337,7 +396,7 @@ TEST_F(DataRegisterTest, ReinitializesFromJson) {
   Upsert(std::move(data1));
 
   ComponentData data2;
-  data2.namespace_("namespace2");
+  data2.namespace_("namespace-two");
   data2.annotations({{
       {"k3", "v3"},
       {"k4", "v4"},
@@ -347,10 +406,10 @@ TEST_F(DataRegisterTest, ReinitializesFromJson) {
 
   MakeNewDataRegister();
   EXPECT_THAT(data_register_->Get(), UnorderedElementsAreArray({
-                                         Pair("namespace1.k1", ErrorOrString("v1")),
-                                         Pair("namespace1.k2", ErrorOrString("v2")),
-                                         Pair("namespace2.k3", ErrorOrString("v3")),
-                                         Pair("namespace2.k4", ErrorOrString("v4")),
+                                         Pair("namespace-one.k1", ErrorOrString("v1")),
+                                         Pair("namespace-one.k2", ErrorOrString("v2")),
+                                         Pair("namespace-two.k3", ErrorOrString("v3")),
+                                         Pair("namespace-two.k4", ErrorOrString("v4")),
                                      }));
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
 }

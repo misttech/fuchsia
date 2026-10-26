@@ -104,7 +104,11 @@ source_set("data_register") {
     "//third_party/rapidjson",
   ]
 
-  deps = [ "//sdk/lib/syslog/cpp" ]
+  deps = [
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/utils:regexp",
+    "//third_party/re2",
+  ]
 }
 
 source_set("device_id_provider") {
