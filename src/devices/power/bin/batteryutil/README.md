@@ -16,7 +16,8 @@ under `/svc/`. If multiple instances are present:
 - `watch`, `battery watch`, and `charger watch` multiplex real-time streaming updates across all
   discovered instances.
 - Charger control subcommands (`charger mode`, `charger charge-current`, `charger float-voltage`,
-  `charger term-current`, `charger clear`) select the first discovered instance and warn if multiple are present.
+  `charger term-current`, `charger top-off`, `charger clear`) select the first discovered instance
+  and warn if multiple are present.
 
 To target a specific battery or charger instance directly, pass the `-p` / `--path` option before
 the command:
@@ -189,6 +190,10 @@ Supported limit and reset controls:
 - `batteryutil charger term-current <current | auto>`: sets or clears the sticky charge
   termination (top-off) current (`charge_term_current_ua`, e.g. `200mA`, `200000uA`, `200000`, or
   `auto`; bare numbers without a unit suffix are in microamps, `uA`)
+- `batteryutil charger top-off <duration | auto>`: sets or clears the sticky top-off duration, how
+  long the charger stays in top-off before it terminates the charge (`top_off_duration`, e.g.
+  `30s`, `10m`, `600`, or `auto`; `s`/`sec` are seconds, `m`/`min` are minutes, and bare numbers
+  without a unit suffix are in seconds)
 - `batteryutil charger clear`: clears all sticky `DebugService` overrides
 
 Settings applied through `DebugService` are sticky overrides: they stay in effect after
@@ -225,6 +230,12 @@ Successfully set charger termination current to 200.000 mA via fuchsia.hardware.
 
 $ batteryutil charger term-current auto
 Successfully cleared charger termination current override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger top-off 30s
+Successfully set charger top-off duration to 30 s via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
+
+$ batteryutil charger top-off auto
+Successfully cleared charger top-off duration override via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)
 
 $ batteryutil charger clear
 Successfully cleared all charger overrides via fuchsia.hardware.power.charger.Debug (/svc/fuchsia.hardware.power.charger.DebugService/default/debug)

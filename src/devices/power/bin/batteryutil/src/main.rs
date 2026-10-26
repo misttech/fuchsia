@@ -12,7 +12,9 @@ mod spmi;
 use anyhow::Result;
 use argh::FromArgs;
 use battery::BatteryInstance;
-use charger::{ChargerInstance, ChargerModeArg, CurrentLimitArg, ModeArg, VoltageLimitArg};
+use charger::{
+    ChargerInstance, ChargerModeArg, CurrentLimitArg, ModeArg, TopOffDurationArg, VoltageLimitArg,
+};
 use fidl::endpoints::ServiceMarker;
 use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_fuchsia_hardware_power_charger as fcharger;
@@ -91,6 +93,7 @@ pub enum ChargerSubcommand {
     ChargeCurrent(ChargeCurrentCommand),
     FloatVoltage(FloatVoltageCommand),
     TermCurrent(TermCurrentCommand),
+    TopOff(TopOffCommand),
     Clear(ClearCommand),
 }
 
@@ -141,6 +144,15 @@ pub struct TermCurrentCommand {
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
+#[argh(subcommand, name = "top-off")]
+/// set how long the charger stays in top-off before it terminates (e.g. 30s, 10m, or auto)
+pub struct TopOffCommand {
+    #[argh(positional)]
+    /// top-off duration (e.g. 30s, 10m, seconds) or auto (clear top-off duration override)
+    duration: TopOffDurationArg,
+}
+
+#[derive(FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "clear")]
 /// clear all sticky charger DebugService overrides
 pub struct ClearCommand {}
@@ -175,6 +187,12 @@ async fn main() -> Result<()> {
             Some(ChargerSubcommand::TermCurrent(cmd)) => match cmd.current {
                 CurrentLimitArg::Set(ua) => charger::set_term_current(path, ua).await,
                 CurrentLimitArg::Auto => charger::clear_term_current_override(path).await,
+            },
+            Some(ChargerSubcommand::TopOff(cmd)) => match cmd.duration {
+                TopOffDurationArg::Set(duration) => {
+                    charger::set_top_off_duration(path, duration).await
+                }
+                TopOffDurationArg::Auto => charger::clear_top_off_duration_override(path).await,
             },
             Some(ChargerSubcommand::Clear(_)) => charger::clear_all_charger_overrides(path).await,
         },
@@ -410,6 +428,26 @@ mod tests {
             Some(Subcommand::Charger(ChargerCommand {
                 command: Some(ChargerSubcommand::TermCurrent(TermCurrentCommand {
                     current: CurrentLimitArg::Auto
+                }))
+            }))
+        );
+
+        let args = Args::from_args(&["batteryutil"], &["charger", "top-off", "30s"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::TopOff(TopOffCommand {
+                    duration: TopOffDurationArg::Set(std::time::Duration::from_secs(30))
+                }))
+            }))
+        );
+
+        let args = Args::from_args(&["batteryutil"], &["charger", "top-off", "auto"]).unwrap();
+        assert_eq!(
+            args.command,
+            Some(Subcommand::Charger(ChargerCommand {
+                command: Some(ChargerSubcommand::TopOff(TopOffCommand {
+                    duration: TopOffDurationArg::Auto
                 }))
             }))
         );

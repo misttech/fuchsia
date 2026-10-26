@@ -19,6 +19,7 @@ use fuchsia_component::client::connect_to_protocol_at_path;
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
 use std::fmt;
+use std::time::Duration;
 
 struct DisplayOperatingMode(fcharger::OperatingMode);
 
@@ -169,6 +170,9 @@ impl fmt::Display for DisplayChargerSpec<'_> {
                 if s.charge_term_current_ua.is_some() {
                     triggers.push("charge_term_current");
                 }
+                if s.top_off_duration.is_some() {
+                    triggers.push("top_off_duration");
+                }
                 if triggers.is_empty() { "None".to_string() } else { triggers.join(", ") }
             };
 
@@ -219,6 +223,11 @@ impl fmt::Display for DisplayChargerStatus<'_> {
         }
         if let Some(v) = s.charge_term_current_ua {
             writeln!(f, "Charge Term Current: {}", MicroUnit(v, "A"))?;
+        }
+        if let Some(nanos) = s.top_off_duration {
+            // A `zx.Duration` top-off time is never negative.
+            let duration = Duration::from_nanos(u64::try_from(nanos).unwrap_or_default());
+            writeln!(f, "Top-off Duration: {} s", duration.as_secs_f64())?;
         }
         Ok(())
     }
@@ -662,6 +671,43 @@ impl std::str::FromStr for VoltageLimitArg {
     }
 }
 
+/// Suffixes accepted by `TopOffDurationArg` and their length in seconds. A bare number is seconds.
+const DURATION_UNITS: [(&str, u64); 4] = [("sec", 1), ("s", 1), ("min", 60), ("m", 60)];
+
+/// Argument for `batteryutil charger top-off`: a top-off duration, or `auto` to clear the top-off
+/// duration override applied through the charger `DebugService`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopOffDurationArg {
+    /// Applies a sticky top-off duration through the charger `DebugService`.
+    Set(Duration),
+    /// Clears the top-off duration override applied through the charger `DebugService`.
+    Auto,
+}
+
+impl std::str::FromStr for TopOffDurationArg {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            return Ok(Self::Auto);
+        }
+        let lower = s.to_ascii_lowercase();
+        let (number, seconds_per_unit) = DURATION_UNITS
+            .iter()
+            .find_map(|(suffix, seconds)| lower.strip_suffix(suffix).map(|n| (n, *seconds)))
+            .unwrap_or((&lower, 1));
+        let invalid = |reason: &dyn fmt::Display| {
+            format!("Invalid top-off duration '{s}' ({reason}). Use e.g. 30s, 10m, 600, or auto.")
+        };
+        let n = number.trim().parse::<u64>().map_err(|e| invalid(&e))?;
+        n.checked_mul(seconds_per_unit)
+            .map(Duration::from_secs)
+            // `ControlOptions.top_off_duration` is an `i64` count of nanoseconds.
+            .filter(|duration| i64::try_from(duration.as_nanos()).is_ok())
+            .map(Self::Set)
+            .ok_or_else(|| invalid(&"too long"))
+    }
+}
+
 fn resolve_debug_instance(path: Option<&str>, command: &str) -> Result<String> {
     match path {
         Some(p) => debug_service_instance(p),
@@ -754,6 +800,32 @@ pub(crate) async fn clear_term_current_override(path: Option<&str>) -> Result<()
     .await
 }
 
+/// Applies a sticky top-off duration through the charger `DebugService`.
+pub async fn set_top_off_duration(path: Option<&str>, duration: Duration) -> Result<()> {
+    let instance = resolve_debug_instance(path, "charger top-off")?;
+    let nanos = i64::try_from(duration.as_nanos()).context("top-off duration is too long")?;
+    let options = fcharger::ControlOptions { top_off_duration: Some(nanos), ..Default::default() };
+    let target = set_debug_control(&instance, &options).await?;
+    println!(
+        "Successfully set charger top-off duration to {} s via {target}",
+        duration.as_secs_f64()
+    );
+    Ok(())
+}
+
+/// Withdraws the sticky top-off duration override applied through the charger `DebugService`,
+/// leaving any other debug overrides intact.
+pub(crate) async fn clear_top_off_duration_override(path: Option<&str>) -> Result<()> {
+    let options = fcharger::ControlOptions { top_off_duration: Some(0), ..Default::default() };
+    clear_charger_overrides(
+        path,
+        &options,
+        "charger top-off auto",
+        "charger top-off duration override",
+    )
+    .await
+}
+
 /// Withdraws sticky overrides matching `options` (or all overrides when `options` is empty)
 /// through the charger `DebugService`, handing control back to the production policy client or
 /// the charger's autonomous defaults.
@@ -825,6 +897,9 @@ async fn clear_debug_overrides_with_proxy(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOP_OFF_30_S_NANOS: i64 = 30_000_000_000;
+    const TOP_OFF_10_MIN_NANOS: i64 = 600_000_000_000;
 
     #[test]
     fn test_parse_charger_mode_arg() {
@@ -901,6 +976,7 @@ mod tests {
             input_current_ua: Some(1_200_000),
             charge_current_limit_ua: Some(2_500_000),
             float_voltage_uv: Some(4_350_000),
+            top_off_duration: Some(TOP_OFF_10_MIN_NANOS),
             ..Default::default()
         };
         let status_out = DisplayChargerStatus(&status).to_string();
@@ -913,6 +989,7 @@ mod tests {
         assert!(status_out.contains("Input Current: 1.200 A"));
         assert!(status_out.contains("Charge Current Limit: 2.500 A"));
         assert!(status_out.contains("Float Voltage: 4.350 V"));
+        assert!(status_out.contains("Top-off Duration: 600 s"));
     }
 
     #[fuchsia::test]
@@ -1054,6 +1131,38 @@ mod tests {
         debug_server.await;
     }
 
+    /// Verifies that a top-off duration override is sent as `top_off_duration` alone.
+    #[fuchsia::test]
+    async fn test_set_debug_control_sends_top_off_duration() {
+        let (debug_proxy, mut debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
+        let debug_server = fuchsia_async::Task::local(async move {
+            let Some(Ok(fcharger::DebugRequest::SetControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected a SetControl request");
+            };
+            assert_eq!(
+                options,
+                fcharger::ControlOptions {
+                    top_off_duration: Some(TOP_OFF_30_S_NANOS),
+                    ..Default::default()
+                }
+            );
+            responder.send(Ok(())).expect("send SetControl response");
+        });
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions {
+                top_off_duration: Some(TOP_OFF_30_S_NANOS),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set top-off duration succeeded");
+        debug_server.await;
+    }
+
     #[test]
     fn test_parse_mode_arg() {
         for s in ["auto", "AUTO", "Auto"] {
@@ -1086,6 +1195,29 @@ mod tests {
         assert_eq!("4350mV".parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Set(4_350_000)));
         assert_eq!("4350000".parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Set(4_350_000)));
         assert!("invalid".parse::<VoltageLimitArg>().is_err());
+    }
+
+    /// Verifies that `TopOffDurationArg` parses `auto`, seconds (`30s`, `30sec`, and bare `600`),
+    /// and minutes (`10m` and `10min`), and rejects negative, overflowing, fractional, and
+    /// non-numeric strings.
+    #[test]
+    fn test_parse_top_off_duration_arg() {
+        for s in ["auto", "AUTO", "Auto"] {
+            assert_eq!(s.parse::<TopOffDurationArg>(), Ok(TopOffDurationArg::Auto));
+        }
+        let thirty_seconds = Ok(TopOffDurationArg::Set(Duration::from_secs(30)));
+        let ten_minutes = Ok(TopOffDurationArg::Set(Duration::from_secs(600)));
+        assert_eq!("30s".parse::<TopOffDurationArg>(), thirty_seconds);
+        assert_eq!("30sec".parse::<TopOffDurationArg>(), thirty_seconds);
+        assert_eq!("600".parse::<TopOffDurationArg>(), ten_minutes);
+        assert_eq!("10m".parse::<TopOffDurationArg>(), ten_minutes);
+        assert_eq!("10min".parse::<TopOffDurationArg>(), ten_minutes);
+        assert!("-30s".parse::<TopOffDurationArg>().is_err());
+        // `u32::MAX` minutes overflows the `i64` nanosecond count.
+        assert!(format!("{}m", u32::MAX).parse::<TopOffDurationArg>().is_err());
+        assert!("10ms".parse::<TopOffDurationArg>().is_err());
+        assert!("1.5min".parse::<TopOffDurationArg>().is_err());
+        assert!("invalid".parse::<TopOffDurationArg>().is_err());
     }
 
     #[test]
@@ -1158,6 +1290,18 @@ mod tests {
             else {
                 panic!("expected fifth ClearControl request");
             };
+            assert!(options.top_off_duration.is_some());
+            assert!(options.operating_mode.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            assert!(options.charge_term_current_ua.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected sixth ClearControl request");
+            };
             assert_eq!(options, fcharger::ControlOptions::default());
             responder.send(Ok(())).expect("send ClearControl response");
         });
@@ -1182,6 +1326,11 @@ mod tests {
         clear_debug_overrides_with_proxy(&debug_proxy, &term_mask)
             .await
             .expect("clear termination current override succeeded");
+        let top_off_mask =
+            fcharger::ControlOptions { top_off_duration: Some(0), ..Default::default() };
+        clear_debug_overrides_with_proxy(&debug_proxy, &top_off_mask)
+            .await
+            .expect("clear top-off duration override succeeded");
         clear_debug_overrides_with_proxy(&debug_proxy, &fcharger::ControlOptions::default())
             .await
             .expect("clear all overrides succeeded");
