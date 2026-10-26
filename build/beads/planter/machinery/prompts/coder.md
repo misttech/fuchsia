@@ -460,6 +460,25 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 - **Comments**: carry each migrated GN target's comments (and comments about it in parent
    BUILD.gn files) over to the BUILD.bazel that now defines it.
 
+## Accelerating CQ with Build-Only: true (fxr/1913427)
+Fuchsia CQ supports build-only presubmit runs for qualifying migration CLs via the
+`Build-Only: true` commit footer. A build-only CQ run skips emulator and hardware device
+tests while running all compilation, static checks (shac), and build parity checks,
+reducing CQ cycle time by 3x to 5x (10-15 minutes vs 45-90 minutes).
+
+**Eligibility Criteria (Enforced by Gerrit Submit Requirements & Policy):**
+1. **Subject**: Must begin with `[bazel_migration]`.
+2. **Pure BUILD Files**: The change must ONLY modify `BUILD.gn` and `BUILD.bazel` files. If
+   ANY `.cml`, `.gni`, `.bzl`, `.rs`, `.cc`, or other file is touched, Gerrit's
+   `No-Build-Only-Footer` submit requirement will reject the change at `Commit-Queue+2`.
+3. **No Product / Assembly Impact**: Must NOT touch Assembly Input Bundles (`bundles/assembly/`,
+   `build/images/`, `vendor/google/assembly/`) or alter product contents, even transitively.
+4. **Leaf Node Migrations**: Intended for leaf libraries and dual-build targets.
+
+When these criteria are met, add `Build-Only: true` to the contiguous footer block at the
+bottom of the commit message (after `Test:` and `Bazel-Migration-Target:`, before `TAG:` and
+`Change-Id:`).
+
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check, `review_diff`, and `build_verification` (`fx build`,
 GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host). Never run full

@@ -519,9 +519,38 @@ if head and base_rev and head != base_rev:
             )
             add("commit_subject_partial_directory", 1, msg_text, rem_text, severity="error")
 
+    # Check body line length (wrap at 72 chars) starting from line 3 (if body exists),
+    # matching //scripts/shac/commit_msg_checker.py and the Fuchsia commit style guide.
+    body_url_re = re.compile(r"https?://[^\s]+")
+    body_footer_re = re.compile(
+        r"^(Bug|Fixed|Test|Bazel-Migration-Target|Build-Only|Change-Id|Cq-Include-Trybots|"
+        r"Fuchsia-Auto-Submit|Multiply|Depends-on|Run-All-Tests|Exempt|No-Tree-Checks|No-Presubmit|"
+        r"No-Try|TAG|CONV|Skip-Readme-Check|Reviewed-on|Reviewed-by|Commit-Queue)[:=]"
+    )
+
+    def check_body_line_length(msg_lines):
+        for idx, raw in enumerate(msg_lines[2:], start=3):
+            if len(raw) <= 72:
+                continue
+            if body_url_re.search(raw):
+                continue
+            if body_footer_re.match(raw.strip()):
+                continue
+            if raw.startswith(("    ", "\t", ">", "#", "```")):
+                continue
+            add(
+                "commit_msg_body_line_length",
+                idx,
+                f"Line {idx} exceeds 72 characters ({len(raw)} chars). Wrap body text at 72 characters.",
+                "Wrap body text paragraphs at 72 characters to conform with Fuchsia Git commit "
+                "message style guidelines and pass the shac commit_msg_checker presubmit check.",
+                severity="error",
+            )
+
     check_redundant_body_title(lines)
     check_checkout_relative_paths(lines)
     check_subject_partial_directory(subject)
+    check_body_line_length(lines)
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -889,17 +918,57 @@ if head and base_rev and head != base_rev:
                 f"Files under `{cand}` were modified without modifying `{readme}`, which fails the CQ `third_party_readme_update` shac check unless waived by a `Skip-Readme-Check:` footer.",
                 "Because GN-to-Bazel migrations must not modify `README.fuchsia` (`build_only_scope`), add `Skip-Readme-Check: No version change, Bazel build files only.` to the contiguous footer block at the bottom of the commit message (before `TAG:`/`Change-Id:`).",
                 severity="error")
+
+        # Build-Only footer check: fxr/1913427 (Bug 576757166) allows `Build-Only: true` on
+        # [bazel_migration] CLs that touch BUILD.gn and BUILD.bazel files exclusively,
+        # skipping device/emulator tests in CQ to accelerate presubmit turnaround.
+        build_only_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Build-Only\s*:", l, re.I)]
+        aib_paths = {f for f in all_changed if f.startswith(("bundles/assembly/", "build/images/", "vendor/google/assembly/"))}
+        non_build_files = {f for f in all_changed if not (f.endswith("/BUILD.gn") or f.endswith("/BUILD.bazel") or f in ("BUILD.gn", "BUILD.bazel"))}
+        if build_only_lines:
+            for ln, l in build_only_lines:
+                val = l.split(":", 1)[1].strip()
+                if val.lower() not in ("true", "1"):
+                    add("build_only_invalid_value", ln,
+                        f"`Build-Only:` footer `{l}` has invalid value `{val}` (expected `true`).",
+                        "Write `Build-Only: true` in the contiguous footer block.", severity="error")
+                if not subject.startswith("[bazel_migration]"):
+                    add("build_only_invalid_subject", ln,
+                        "`Build-Only: true` is only permitted on changes whose subject begins with `[bazel_migration]` "
+                        "(per Gerrit submit requirement No-Build-Only-Footer in fxr/1913427).",
+                        "Ensure the commit subject begins with `[bazel_migration][<subsystem>] //<dir>` or remove `Build-Only: true`.",
+                        severity="error")
+                if non_build_files:
+                    sample_bad = ", ".join(f"`{f}`" for f in sorted(non_build_files)[:3])
+                    add("build_only_non_build_file_modified", ln,
+                        "`Build-Only: true` is only permitted when the change modifies `BUILD.gn` and `BUILD.bazel` files "
+                        f"exclusively (per Gerrit submit requirement No-Build-Only-Footer in fxr/1913427). This change modifies "
+                        f"non-build file(s): {sample_bad}.",
+                        "Remove `Build-Only: true` from the commit footers because changes touching non-BUILD files cannot skip presubmit tests.",
+                        severity="error")
+                if aib_paths:
+                    sample_aib = ", ".join(f"`{f}`" for f in sorted(aib_paths)[:3])
+                    add("build_only_assembly_modified", ln,
+                        f"`Build-Only: true` must not be used on changes that modify Assembly Input Bundles (AIBs) or product contents ({sample_aib}).",
+                        "Remove `Build-Only: true` from the commit footers.", severity="error")
+        elif subject.startswith("[bazel_migration]") and not non_build_files and not aib_paths and dirs and changed:
+            add("build_only_eligible", footer_ln,
+                "This change modifies `BUILD.gn` and `BUILD.bazel` exclusively and does not touch Assembly Input Bundles (AIBs). "
+                "It is eligible for the `Build-Only: true` footer (allowed under fxr/1913427).",
+                "Consider adding `Build-Only: true` to the contiguous footer block to skip device/emulator presubmit testing in CQ and accelerate landing turnaround.",
+                severity="info")
+
         nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
         if nonempty_idxs:
             final_start = nonempty_idxs[-1]
             while final_start > 0 and lines[final_start - 1].strip():
                 final_start -= 1
-            for ln, l in bmt_lines + test_lines + skip_readme_lines:
+            for ln, l in bmt_lines + test_lines + skip_readme_lines + build_only_lines:
                 if ln - 1 < final_start:
                     add("footer_block_not_contiguous", ln,
                         f"Footer `{l}` is separated from the final footer block by a blank line, so Gerrit will not "
                         "index it as a commit footer (breaking `hasfooter:Bazel-Migration-Target` queries).",
-                        "Group all footers (`Bug:`/`Fixed:`, `Skip-Readme-Check:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
+                        "Group all footers (`Bug:`/`Fixed:`, `Skip-Readme-Check:`, `Build-Only:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
                         "`Change-Id:`) into a single contiguous block at the very bottom of the commit message with "
                         "no blank lines between them.")
                     break
