@@ -5,32 +5,20 @@
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_test_manager as ftest_manager;
 use ftest_manager::{
-    CaseStatus, DebugDataIteratorMarker, Event as FidlEvent, EventDetails as FidlEventDetails,
-    RunEvent as FidlRunEvent, RunEventPayload as FidlRunEventPayload, SuiteEvent as FidlSuiteEvent,
-    SuiteEventPayload as FidlSuiteEventPayload, SuiteResult, SuiteStatus, TestCaseResult,
+    DebugDataIteratorMarker, Event as FidlEvent, EventDetails as FidlEventDetails, SuiteResult,
+    TestCaseResult,
 };
 
+#[allow(dead_code)]
 pub(crate) enum RunEventPayload {
     DebugData(ClientEnd<DebugDataIteratorMarker>),
 }
 
+#[allow(dead_code)]
 pub(crate) struct RunEvent {
+    #[allow(dead_code)]
     timestamp: i64,
     payload: RunEventPayload,
-}
-
-impl Into<FidlRunEvent> for RunEvent {
-    fn into(self) -> FidlRunEvent {
-        match self.payload {
-            RunEventPayload::DebugData(client) => FidlRunEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlRunEventPayload::Artifact(ftest_manager::Artifact::DebugData(
-                    client,
-                ))),
-                ..Default::default()
-            },
-        }
-    }
 }
 
 impl RunEvent {
@@ -65,122 +53,6 @@ pub(crate) enum SuiteEventPayload {
 pub struct SuiteEvents {
     pub timestamp: i64,
     pub payload: SuiteEventPayload,
-}
-
-impl Into<FidlSuiteEvent> for SuiteEvents {
-    fn into(self) -> FidlSuiteEvent {
-        match self.payload {
-            SuiteEventPayload::CaseFound(name, identifier) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseFound(ftest_manager::CaseFound {
-                    test_case_name: name,
-                    identifier,
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CaseStarted(identifier) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseStarted(ftest_manager::CaseStarted {
-                    identifier,
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CaseStopped(identifier, status) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseStopped(ftest_manager::CaseStopped {
-                    identifier,
-                    status: to_case_status(status),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CaseFinished(identifier) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseFinished(ftest_manager::CaseFinished {
-                    identifier,
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CaseStdout(identifier, socket) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseArtifact(ftest_manager::CaseArtifact {
-                    identifier,
-                    artifact: ftest_manager::Artifact::Stdout(socket),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CaseStderr(identifier, socket) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::CaseArtifact(ftest_manager::CaseArtifact {
-                    identifier,
-                    artifact: ftest_manager::Artifact::Stderr(socket),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::CustomArtifact(custom) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                    artifact: ftest_manager::Artifact::Custom(custom),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::SuiteSyslog(syslog) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                    artifact: ftest_manager::Artifact::Log(syslog),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::SuiteStderr(socket) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                    artifact: ftest_manager::Artifact::Stderr(socket),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::SuiteStarted => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteStarted(ftest_manager::SuiteStarted {})),
-                ..Default::default()
-            },
-            SuiteEventPayload::SuiteStopped(status) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteStopped(ftest_manager::SuiteStopped {
-                    status: to_suite_status(status),
-                })),
-                ..Default::default()
-            },
-            SuiteEventPayload::DebugData(client) => FidlSuiteEvent {
-                timestamp: Some(self.timestamp),
-                payload: Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                    artifact: ftest_manager::Artifact::DebugData(client),
-                })),
-                ..Default::default()
-            },
-        }
-    }
-}
-
-fn to_case_status(status: TestCaseResult) -> CaseStatus {
-    match status {
-        TestCaseResult::Passed => CaseStatus::Passed,
-        TestCaseResult::Failed => CaseStatus::Failed,
-        TestCaseResult::TimedOut => CaseStatus::TimedOut,
-        TestCaseResult::Skipped => CaseStatus::Skipped,
-        TestCaseResult::Error => CaseStatus::Error,
-        _ => CaseStatus::Error,
-    }
-}
-
-fn to_suite_status(status: SuiteResult) -> SuiteStatus {
-    match status {
-        SuiteResult::Finished => SuiteStatus::Passed,
-        SuiteResult::Failed => SuiteStatus::Failed,
-        SuiteResult::DidNotFinish => SuiteStatus::DidNotFinish,
-        SuiteResult::TimedOut => SuiteStatus::TimedOut,
-        SuiteResult::Stopped => SuiteStatus::Stopped,
-        SuiteResult::InternalError => SuiteStatus::InternalError,
-        _ => SuiteStatus::InternalError,
-    }
 }
 
 impl Into<FidlEvent> for SuiteEvents {
@@ -397,11 +269,6 @@ impl SuiteEvents {
     }
 
     #[cfg(test)]
-    pub fn into_suite_run_event(self) -> FidlSuiteEvent {
-        self.into()
-    }
-
-    #[cfg(test)]
     pub fn into_event(self) -> FidlEvent {
         self.into()
     }
@@ -419,97 +286,6 @@ mod tests {
 
     #[test]
     fn suite_events() {
-        let event = SuiteEvents::case_found(1, "case1".to_string()).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_eq!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseFound(ftest_manager::CaseFound {
-                test_case_name: "case1".into(),
-                identifier: 1
-            }))
-        );
-
-        let event = SuiteEvents::case_started(2).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_eq!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseStarted(ftest_manager::CaseStarted { identifier: 2 }))
-        );
-
-        let event = SuiteEvents::case_stopped(2, TestCaseResult::Failed).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_eq!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseStopped(ftest_manager::CaseStopped {
-                identifier: 2,
-                status: CaseStatus::Failed
-            }))
-        );
-
-        let event = SuiteEvents::case_finished(2).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_eq!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseFinished(ftest_manager::CaseFinished {
-                identifier: 2
-            }))
-        );
-
-        let (sock1, _sock2) = zx::Socket::create_stream();
-        let event = SuiteEvents::case_stdout(2, sock1).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_matches!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseArtifact(ftest_manager::CaseArtifact {
-                identifier: 2,
-                artifact: ftest_manager::Artifact::Stdout(_)
-            }))
-        );
-
-        let (sock1, _sock2) = zx::Socket::create_stream();
-        let event = SuiteEvents::case_stderr(2, sock1).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_matches!(
-            event.payload,
-            Some(FidlSuiteEventPayload::CaseArtifact(ftest_manager::CaseArtifact {
-                identifier: 2,
-                artifact: ftest_manager::Artifact::Stderr(_)
-            }))
-        );
-
-        let event = SuiteEvents::suite_stopped(SuiteResult::Failed).into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_eq!(
-            event.payload,
-            Some(FidlSuiteEventPayload::SuiteStopped(ftest_manager::SuiteStopped {
-                status: SuiteStatus::Failed,
-            }))
-        );
-
-        let (client_end, _server_end) = zx::Socket::create_stream();
-        let event = SuiteEvents::suite_syslog(ftest_manager::Syslog::Stream(client_end))
-            .into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_matches!(
-            event.payload,
-            Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                artifact: ftest_manager::Artifact::Log(ftest_manager::Syslog::Stream(_)),
-            }))
-        );
-
-        let (client_end, _server_end) = fidl::endpoints::create_endpoints();
-        let event = SuiteEvents::suite_syslog(ftest_manager::Syslog::Batch(client_end))
-            .into_suite_run_event();
-        assert_matches!(event.timestamp, Some(_));
-        assert_matches!(
-            event.payload,
-            Some(FidlSuiteEventPayload::SuiteArtifact(ftest_manager::SuiteArtifact {
-                artifact: ftest_manager::Artifact::Log(ftest_manager::Syslog::Batch(_)),
-            }))
-        );
-
-        // New Event FIDL type.
-
         let event = SuiteEvents::suite_started().into_event();
         assert_matches!(event.timestamp, Some(_));
         assert_eq!(

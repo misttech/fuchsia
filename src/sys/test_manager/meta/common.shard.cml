@@ -161,8 +161,6 @@
             backing_dir: "fxfs_data",
             storage_id: "static_instance_id_or_moniker",
         },
-        { protocol: "fuchsia.test.manager.Query" },
-        { protocol: "fuchsia.test.manager.RunBuilder" },
         { protocol: "fuchsia.test.manager.TestCaseEnumerator" },
         { protocol: "fuchsia.test.manager.SuiteRunner" },
         { protocol: "fuchsia.test.manager.EarlyBootProfile" },
@@ -771,14 +769,6 @@
         },
     ],
     expose: [
-        {
-            protocol: "fuchsia.test.manager.Query",
-            from: "self",
-        },
-        {
-            protocol: "fuchsia.test.manager.RunBuilder",
-            from: "self",
-        },
         {
             protocol: "fuchsia.test.manager.TestCaseEnumerator",
             from: "self",

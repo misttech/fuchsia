@@ -6,7 +6,11 @@ use crate::debug_data_server;
 use crate::run_events::{RunEvent, SuiteEvents};
 use anyhow::Error;
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_debugdata as fdebug;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_test_debug as ftest_debug;
 use fidl_fuchsia_test_manager::LaunchError;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
@@ -15,12 +19,8 @@ use fuchsia_fs::{PERM_READABLE, PERM_WRITABLE};
 use futures::channel::mpsc;
 use futures::future::FutureExt;
 use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
-use futures::{pin_mut, select_biased, SinkExt};
+use futures::{SinkExt, pin_mut, select_biased};
 use log::info;
-use {
-    fidl_fuchsia_debugdata as fdebug, fidl_fuchsia_io as fio,
-    fidl_fuchsia_test_debug as ftest_debug, fuchsia_async as fasync,
-};
 
 /// Processor that collects debug data and serves the iterator sending data back to a test
 /// executor.
@@ -88,6 +88,7 @@ impl DebugDataProcessor {
 
     /// Collect debug data produced by the corresponding |DebugDataSender|, and serve the resulting
     /// data. In case debug data is produced, sends the event over |run_event_sender|.
+    #[allow(dead_code)]
     pub async fn collect_and_serve(
         self,
         run_event_sender: mpsc::Sender<RunEvent>,

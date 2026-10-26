@@ -64,81 +64,36 @@ async fn main() -> Result<(), Error> {
     );
 
     info!("Reading capabilities from {}", args.manifest_name());
-    let routing_info_for_run_builder =
+    let routing_info_for_task_test_case_enumerator =
         Arc::new(AboveRootCapabilitiesForTest::new(args.manifest_name()).await?);
-    let routing_info_for_query = routing_info_for_run_builder.clone();
-    let routing_info_for_task_test_case_enumerator = routing_info_for_run_builder.clone();
-    let routing_info_for_suite_runner = routing_info_for_run_builder.clone();
+    let routing_info_for_suite_runner = routing_info_for_task_test_case_enumerator.clone();
 
-    let resolver_for_run_builder = Arc::new(
+    let resolver_for_test_case_enumerator = Arc::new(
         connect_to_protocol::<fresolution::ResolverMarker>()
             .expect("Cannot connect to component resolver"),
     );
-    let resolver_for_query = resolver_for_run_builder.clone();
-    let resolver_for_test_case_enumerator = resolver_for_run_builder.clone();
-    let resolver_for_suite_runner = resolver_for_run_builder.clone();
+    let resolver_for_suite_runner = resolver_for_test_case_enumerator.clone();
 
-    let pkg_resolver_for_run_builder = Arc::new(
+    let pkg_resolver_for_test_case_enumerator = Arc::new(
         connect_to_protocol::<fpkg::PackageResolverMarker>()
             .expect("Cannot connect to pkg resolver"),
     );
-    let pkg_resolver_for_query = pkg_resolver_for_run_builder.clone();
-    let pkg_resolver_for_test_case_enumerator = pkg_resolver_for_run_builder.clone();
-    let pkg_resolver_for_suite_runner = pkg_resolver_for_run_builder.clone();
+    let pkg_resolver_for_suite_runner = pkg_resolver_for_test_case_enumerator.clone();
 
-    let root_inspect_for_run_builder = Arc::new(RootDiagnosticNode::new(
+    let root_inspect_for_test_case_enumerator = Arc::new(RootDiagnosticNode::new(
         fuchsia_inspect::component::inspector().root().clone_weak(),
     ));
-    let root_inspect_for_query = root_inspect_for_run_builder.clone();
-    let root_inspect_for_test_case_enumerator = root_inspect_for_run_builder.clone();
-    let root_inspect_for_suite_runner = root_inspect_for_run_builder.clone();
+    let root_inspect_for_suite_runner = root_inspect_for_test_case_enumerator.clone();
 
     let server_scope = fasync::Scope::new();
     // Create a Arc wrapped child scope and pass its clone to various closures so that this scope
     // is not terminated along with those closures.
     let child_scope: Arc<fasync::Scope> = Arc::new(server_scope.new_child());
-    let scope_for_run_builder = child_scope.clone();
-    let scope_for_query = child_scope.clone();
     let scope_for_test_case_enumerator = child_scope.clone();
     let scope_for_suite_runner = child_scope.clone();
     let scope_for_early_boot_profiles = child_scope.clone();
 
     fs.dir("svc")
-        .add_fidl_service(move |stream| {
-            let resolver = resolver_for_run_builder.clone();
-            let pkg_resolver = pkg_resolver_for_run_builder.clone();
-            let routing_info = routing_info_for_run_builder.clone();
-            let root_inspect = root_inspect_for_run_builder.clone();
-            scope_for_run_builder.spawn(async move {
-                test_manager_lib::run_test_manager_run_builder_server(
-                    stream,
-                    resolver,
-                    pkg_resolver,
-                    routing_info,
-                    &*root_inspect,
-                )
-                .await
-                .unwrap_or_else(|error| warn!(error:?; "test manager returned error"))
-            });
-        })
-        .add_fidl_service(move |stream| {
-            let resolver = resolver_for_query.clone();
-            let pkg_resolver = pkg_resolver_for_query.clone();
-            let routing_info = routing_info_for_query.clone();
-            let root_inspect = root_inspect_for_query.clone();
-
-            scope_for_query.spawn_local(async move {
-                test_manager_lib::run_test_manager_query_server(
-                    stream,
-                    resolver,
-                    pkg_resolver,
-                    routing_info,
-                    &*root_inspect,
-                )
-                .await
-                .unwrap_or_else(|error| warn!(error:?; "test manager returned error"));
-            });
-        })
         .add_fidl_service(move |stream| {
             scope_for_early_boot_profiles.spawn(async move {
                 test_manager_lib::serve_early_boot_profiles(stream)

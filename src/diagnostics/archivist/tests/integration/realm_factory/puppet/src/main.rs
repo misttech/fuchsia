@@ -15,6 +15,8 @@ use diagnostics_hierarchy::Property;
 use diagnostics_log::{OnInterestChanged, Publisher, PublisherOptions, TestRecord};
 use diagnostics_log_encoding::Argument;
 use fidl::endpoints::{ClientEnd, create_request_stream};
+use fidl_fuchsia_archivist_test as fpuppet;
+use fidl_fuchsia_diagnostics_types as fdiagnostics;
 use fidl_table_validation::ValidFidlTable;
 use fuchsia_async::{Scope, Timer};
 use fuchsia_component::server::ServiceFs;
@@ -27,7 +29,6 @@ use inspect_runtime::{EscrowOptions, EscrowToken, PublishedInspectController};
 use inspect_testing::ExampleInspectData;
 use log::{debug, error, info, trace, warn};
 use std::sync::Arc;
-use {fidl_fuchsia_archivist_test as fpuppet, fidl_fuchsia_diagnostics_types as fdiagnostics};
 
 enum IncomingServices {
     Puppet(fpuppet::PuppetRequestStream),
@@ -309,11 +310,6 @@ async fn handle_puppet_request(
         }
         fpuppet::PuppetRequest::Crash { message, .. } => {
             panic!("{message}");
-        }
-        fpuppet::PuppetRequest::RecordLazyValues { key, responder } => {
-            let (client, requests) = create_request_stream();
-            responder.send(client).expect("response succeeds");
-            record_lazy_values(key, requests, component::inspector()).await
         }
         fpuppet::PuppetRequest::Println { message, responder } => {
             println!("{message}");

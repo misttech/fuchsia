@@ -12,14 +12,6 @@
     },
     use: [
         {
-            protocol: "fuchsia.test.manager.Query",
-            from: "#test_manager",
-        },
-        {
-            protocol: "fuchsia.test.manager.RunBuilder",
-            from: "#test_manager",
-        },
-        {
             protocol: "fuchsia.test.manager.TestCaseEnumerator",
             from: "#test_manager",
         },

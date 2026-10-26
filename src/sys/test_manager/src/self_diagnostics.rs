@@ -5,8 +5,8 @@
 use fuchsia_inspect::Property;
 use fuchsia_sync::Mutex;
 use std::borrow::Cow;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Error, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -24,6 +24,7 @@ impl RootDiagnosticNode {
     }
 
     /// Create a |DiagnosticNode| that records contents to inspect when dropped.
+    #[allow(dead_code)]
     pub(crate) fn persistent_child(&self) -> DiagnosticNode {
         let name =
             format!("id-{:?}", self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
@@ -120,6 +121,7 @@ impl DiagnosticNode {
     }
 
     /// Mark a property as true.
+    #[allow(dead_code)]
     pub(crate) fn set_flag(&self, key: &'static str) {
         self.set_property(key, "true")
     }

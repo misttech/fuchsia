@@ -5,11 +5,10 @@
 use crate::constants::{HERMETIC_TESTS_COLLECTION, TEST_TYPE_REALM_MAP};
 use crate::error::{FacetError, LaunchTestError};
 use anyhow::format_err;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_data as fdata;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_data as fdata,
-};
 
 const TEST_TYPE_FACET_KEY: &'static str = "fuchsia.test.type";
 pub const TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: &'static str =
@@ -22,6 +21,7 @@ pub(crate) struct SuiteFacets {
     pub deprecated_allowed_packages: Option<Vec<String>>,
 }
 
+#[allow(dead_code)]
 pub(crate) enum ResolveStatus {
     Unresolved,
     Resolved(Result<SuiteFacets, LaunchTestError>),

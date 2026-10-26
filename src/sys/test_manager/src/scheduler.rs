@@ -10,6 +10,7 @@ use futures::channel::oneshot;
 use futures::stream::{self, StreamExt};
 use std::sync::atomic::{AtomicU16, Ordering};
 
+#[allow(dead_code)]
 #[async_trait]
 pub(crate) trait Scheduler {
     /// This function schedules and executes the provided collection
@@ -32,6 +33,7 @@ pub(crate) trait Scheduler {
     );
 }
 
+#[allow(dead_code)]
 #[async_trait]
 pub(crate) trait RunSuiteFn {
     /// This function allows us to specify what function we want the
@@ -72,11 +74,13 @@ impl Scheduler for SerialScheduler {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct ParallelScheduler<T: RunSuiteFn> {
     pub suite_runner: T,
     pub max_parallel_suites: u16,
 }
 
+#[allow(dead_code)]
 pub(crate) struct RunSuiteObj {}
 
 #[async_trait]

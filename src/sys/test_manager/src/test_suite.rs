@@ -7,10 +7,9 @@ use crate::constants::{self, HERMETIC_TESTS_COLLECTION};
 use crate::debug_data_processor::{DebugDataDirectory, DebugDataProcessor, DebugDataSender};
 use crate::error::*;
 use crate::facet::SuiteFacets;
-use crate::run_events::{RunEvent, SuiteEvents};
-use crate::scheduler::Scheduler;
+use crate::run_events::SuiteEvents;
 use crate::self_diagnostics::DiagnosticNode;
-use crate::{facet, running_suite, scheduler};
+use crate::{facet, running_suite};
 use anyhow::Error;
 use fidl::endpoints::Responder;
 use fidl_fuchsia_component::RealmProxy;
@@ -18,10 +17,7 @@ use fidl_fuchsia_component_resolution::ResolverProxy;
 use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_pkg::PackageResolverProxy;
 use fidl_fuchsia_test_manager as ftest_manager;
-use ftest_manager::{
-    LaunchError, RunControllerRequest, RunControllerRequestStream, SchedulingOptions,
-    SuiteControllerRequest, SuiteControllerRequestStream,
-};
+use ftest_manager::{LaunchError, SuiteControllerRequest, SuiteControllerRequestStream};
 use fuchsia_async as fasync;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -47,217 +43,6 @@ pub(crate) struct Suite {
     pub above_root_capabilities_for_test: Arc<AboveRootCapabilitiesForTest>,
     pub facets: facet::ResolveStatus,
     pub realm: Option<SuiteRealm>,
-}
-
-pub(crate) struct TestRunBuilder {
-    pub suites: Vec<Suite>,
-}
-
-impl TestRunBuilder {
-    /// Serve a RunControllerRequestStream. Returns Err if the client stops the test
-    /// prematurely or there is an error serving he stream.
-    /// Be careful, |run_task| is dropped once the other end of |controller| is dropped
-    /// or |kill| on the controller is called.
-    async fn run_controller(
-        mut controller: RunControllerRequestStream,
-        run_task: futures::future::RemoteHandle<()>,
-        stop_sender: oneshot::Sender<()>,
-        event_recv: mpsc::Receiver<RunEvent>,
-        diagnostics: DiagnosticNode,
-    ) {
-        let mut run_task = Some(run_task);
-        let mut stop_sender = Some(stop_sender);
-        let (events_responder_sender, mut events_responder_recv) = mpsc::unbounded();
-        let diagnostics_ref = &diagnostics;
-
-        let serve_controller_fut = async move {
-            while let Some(request) = controller.try_next().await? {
-                match request {
-                    RunControllerRequest::Stop { .. } => {
-                        diagnostics_ref.set_flag("stopped");
-                        if let Some(stop_sender) = stop_sender.take() {
-                            // no need to check error.
-                            let _ = stop_sender.send(());
-                            // after this all `senders` go away and subsequent GetEvent call will
-                            // return rest of events and eventually a empty array and will close the
-                            // connection after that.
-                        }
-                    }
-                    RunControllerRequest::Kill { .. } => {
-                        diagnostics_ref.set_flag("killed");
-                        // dropping the remote handle cancels it.
-                        drop(run_task.take());
-                        // after this all `senders` go away and subsequent GetEvent call will
-                        // return rest of events and eventually a empty array and will close the
-                        // connection after that.
-                    }
-                    RunControllerRequest::GetEvents { responder } => {
-                        events_responder_sender.unbounded_send(responder).unwrap_or_else(|e| {
-                            // If the handler is already done, drop responder without closing the
-                            // channel.
-                            e.into_inner().drop_without_shutdown();
-                        })
-                    }
-                    RunControllerRequest::_UnknownMethod { ordinal, control_handle, .. } => {
-                        warn!(
-                            "Unknown run controller request received: {}, closing connection",
-                            ordinal
-                        );
-                        // dropping the remote handle cancels it.
-                        drop(run_task.take());
-                        control_handle.shutdown_with_epitaph(zx::Status::NOT_SUPPORTED);
-                        break;
-                    }
-                }
-            }
-            Result::<(), Error>::Ok(())
-        };
-
-        let get_events_fut = async move {
-            let mut event_chunks = event_recv.map(RunEvent::into).ready_chunks(EVENTS_THRESHOLD);
-            while let Some(responder) = events_responder_recv.next().await {
-                diagnostics_ref.set_property("events", "awaiting");
-                let next_chunk = event_chunks.next().await.unwrap_or_default();
-                diagnostics_ref.set_property("events", "idle");
-                let done = next_chunk.is_empty();
-                responder.send(next_chunk)?;
-                if done {
-                    diagnostics_ref.set_flag("events_drained");
-                    break;
-                }
-            }
-            // Drain remaining responders without dropping them so that the channel doesn't
-            // close.
-            events_responder_recv.close();
-            events_responder_recv
-                .for_each(|responder| async move {
-                    responder.drop_without_shutdown();
-                })
-                .await;
-            Result::<(), Error>::Ok(())
-        };
-
-        match futures::future::select(serve_controller_fut.boxed(), get_events_fut.boxed()).await {
-            Either::Left((serve_result, _fut)) => {
-                if let Err(e) = serve_result {
-                    warn!(diagnostics:?; "Error serving RunController: {:?}", e);
-                }
-            }
-            Either::Right((get_events_result, serve_fut)) => {
-                if let Err(e) = get_events_result {
-                    warn!(diagnostics:?; "Error sending events for RunController: {:?}", e);
-                }
-                // Wait for the client to close the channel.
-                // TODO(https://fxbug.dev/42169156) once https://fxbug.dev/42169061 is fixed, this is no longer
-                // necessary.
-                if let Err(e) = serve_fut.await {
-                    warn!(diagnostics:?; "Error serving RunController: {:?}", e);
-                }
-            }
-        }
-    }
-
-    pub(crate) async fn run(
-        self,
-        controller: RunControllerRequestStream,
-        diagnostics: DiagnosticNode,
-        scheduling_options: Option<SchedulingOptions>,
-    ) {
-        let (stop_sender, mut stop_recv) = oneshot::channel::<()>();
-        let (event_sender, event_recv) = mpsc::channel::<RunEvent>(16);
-
-        let diagnostics_ref = &diagnostics;
-
-        let max_parallel_suites = match &scheduling_options {
-            Some(options) => options.max_parallel_suites,
-            None => None,
-        };
-        let max_parallel_suites_ref = &max_parallel_suites;
-        let accumulate_debug_data = scheduling_options
-            .as_ref()
-            .and_then(|options| options.accumulate_debug_data)
-            .unwrap_or(false);
-        let debug_data_directory = match accumulate_debug_data {
-            true => DebugDataDirectory::Accumulating { dir: constants::DEBUG_DATA_FOR_SCP },
-            false => DebugDataDirectory::Isolated { parent: constants::ISOLATED_TMP },
-        };
-        let (debug_data_processor, debug_data_sender) =
-            DebugDataProcessor::new(debug_data_directory);
-
-        let debug_task = fasync::Task::local(
-            debug_data_processor
-                .collect_and_serve(event_sender)
-                .unwrap_or_else(|err| warn!(err:?; "Error serving debug data")),
-        );
-
-        // This future returns the task which needs to be completed before completion.
-        let suite_scheduler_fut = async move {
-            diagnostics_ref.set_property(EXECUTION_PROPERTY, "executing");
-
-            let serial_executor = scheduler::SerialScheduler {};
-
-            match max_parallel_suites_ref {
-                Some(max_parallel_suites) => {
-                    let parallel_executor = scheduler::ParallelScheduler {
-                        suite_runner: scheduler::RunSuiteObj {},
-                        max_parallel_suites: *max_parallel_suites,
-                    };
-                    let get_facets_fn = |test_url, resolver| async move {
-                        facet::get_suite_facets(test_url, resolver).await
-                    };
-                    let (serial_suites, parallel_suites) =
-                        split_suites_by_hermeticity(self.suites, get_facets_fn).await;
-
-                    parallel_executor
-                        .execute(
-                            parallel_suites,
-                            diagnostics_ref.child("parallel_executor"),
-                            &mut stop_recv,
-                            debug_data_sender.clone(),
-                        )
-                        .await;
-                    serial_executor
-                        .execute(
-                            serial_suites,
-                            diagnostics_ref.child("serial_executor"),
-                            &mut stop_recv,
-                            debug_data_sender.clone(),
-                        )
-                        .await;
-                }
-                None => {
-                    serial_executor
-                        .execute(
-                            self.suites,
-                            diagnostics_ref.child("serial_executor"),
-                            &mut stop_recv,
-                            debug_data_sender.clone(),
-                        )
-                        .await;
-                }
-            }
-
-            drop(debug_data_sender); // needed for debug_data_processor to complete.
-
-            diagnostics_ref.set_property(EXECUTION_PROPERTY, "complete");
-        };
-
-        let (remote, remote_handle) = suite_scheduler_fut.remote_handle();
-
-        let ((), ()) = futures::future::join(
-            remote.then(|_| async move {
-                debug_task.await;
-            }),
-            Self::run_controller(
-                controller,
-                remote_handle,
-                stop_sender,
-                event_recv,
-                diagnostics.child("controller"),
-            ),
-        )
-        .await;
-    }
 }
 
 // max events to send so that we don't cross fidl limits.
@@ -346,15 +131,6 @@ impl Suite {
                                 e.into_inner().drop_without_shutdown();
                             })
                     }
-                    SuiteControllerRequest::GetEvents { responder } => {
-                        events_responder_sender
-                            .unbounded_send(EventResponder::Deprecated(responder))
-                            .unwrap_or_else(|e| {
-                                // If the handler is already done, drop responder without closing the
-                                // channel.
-                                e.into_inner().drop_without_shutdown();
-                            })
-                    }
                     SuiteControllerRequest::_UnknownMethod { ordinal, control_handle, .. } => {
                         warn!(
                             "Unknown suite controller request received: {}, closing connection",
@@ -404,29 +180,18 @@ impl Suite {
 }
 
 enum EventResponder {
-    Deprecated(ftest_manager::SuiteControllerGetEventsResponder),
     New(ftest_manager::SuiteControllerWatchEventsResponder),
 }
 
 impl EventResponder {
     fn drop_without_shutdown(self) {
         match self {
-            EventResponder::Deprecated(inner) => inner.drop_without_shutdown(),
             EventResponder::New(inner) => inner.drop_without_shutdown(),
         }
     }
 
     pub fn send(self, results: Vec<Result<SuiteEvents, LaunchError>>) -> Result<bool, fidl::Error> {
         match self {
-            EventResponder::Deprecated(inner) => {
-                let result: Result<Vec<_>, _> =
-                    results.into_iter().map(|r| r.map(SuiteEvents::into)).collect();
-                let done = match &result {
-                    Ok(events) => events.is_empty(),
-                    Err(_) => true,
-                };
-                inner.send(result).map(|_| done)
-            }
             EventResponder::New(inner) => {
                 let result: Result<Vec<_>, _> =
                     results.into_iter().map(|r| r.map(SuiteEvents::into)).collect();
@@ -538,6 +303,7 @@ async fn run_single_suite_for_suite_runner(
     info!(diagnostics:?; "Test destruction complete");
 }
 
+#[allow(dead_code)]
 pub(crate) async fn run_single_suite(
     suite: Suite,
     debug_data_sender: DebugDataSender,
@@ -638,6 +404,7 @@ pub(crate) async fn run_single_suite(
 // Separate suite into a hermetic and a non-hermetic collection
 // Note: F takes String and Arc<ResolverProxy> to circumvent the
 // borrow checker.
+#[allow(dead_code)]
 async fn split_suites_by_hermeticity<F, Fut>(
     suites: Vec<Suite>,
     get_facets_fn: F,
@@ -691,69 +458,6 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_component_resolution as fresolution;
     use fuchsia_async as fasync;
-
-    fn new_run_inspect_node() -> DiagnosticNode {
-        DiagnosticNode::new("root", Arc::new(fuchsia_inspect::types::Node::default()))
-    }
-
-    #[fuchsia::test]
-    async fn run_controller_stop_test() {
-        let (sender, recv) = mpsc::channel(1024);
-        let (stop_sender, stop_recv) = oneshot::channel::<()>();
-        let (task, remote_handle) = async move {
-            stop_recv.await.unwrap();
-            // drop event sender so that fake test can end.
-            drop(sender);
-        }
-        .remote_handle();
-        let _task = fasync::Task::spawn(task);
-        let (proxy, controller) = create_proxy_and_stream::<ftest_manager::RunControllerMarker>();
-        let run_controller = fasync::Task::spawn(async move {
-            TestRunBuilder::run_controller(
-                controller,
-                remote_handle,
-                stop_sender,
-                recv,
-                new_run_inspect_node(),
-            )
-            .await
-        });
-        // sending a get event first should not prevent stop from cancelling the suite.
-        let get_events_task = fasync::Task::spawn(proxy.get_events());
-        proxy.stop().unwrap();
-        assert_eq!(get_events_task.await.unwrap(), vec![]);
-
-        drop(proxy);
-        run_controller.await;
-    }
-
-    #[fuchsia::test]
-    async fn run_controller_abort_when_channel_closed() {
-        let (_sender, recv) = mpsc::channel(1024);
-        let (stop_sender, _stop_recv) = oneshot::channel::<()>();
-        // Create a future that normally never resolves.
-        let (task, remote_handle) = futures::future::pending().remote_handle();
-        let pending_task = fasync::Task::spawn(task);
-        let (proxy, controller) = create_proxy_and_stream::<ftest_manager::RunControllerMarker>();
-        let run_controller = fasync::Task::spawn(async move {
-            TestRunBuilder::run_controller(
-                controller,
-                remote_handle,
-                stop_sender,
-                recv,
-                new_run_inspect_node(),
-            )
-            .await
-        });
-        // sending a get event first should not prevent killing the controller.
-        let get_events_task = fasync::Task::spawn(proxy.get_events());
-        drop(proxy);
-        drop(get_events_task);
-        // After controller is dropped, both the controller future and the task it was
-        // controlling should terminate.
-        pending_task.await;
-        run_controller.await;
-    }
 
     #[fuchsia::test]
     async fn suite_controller_stop_test() {

@@ -5,14 +5,16 @@
 use crate::run_events::{RunEvent, SuiteEvents};
 use anyhow::Error;
 use fidl::endpoints::create_request_stream;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_test_manager as ftest_manager;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::stream::FusedStream;
-use futures::{pin_mut, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, pin_mut};
 use itertools::Either;
 use log::warn;
 use test_diagnostics::zstd_compress::{Encoder, Error as CompressionError};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_test_manager as ftest_manager, fuchsia_async as fasync};
 
 const DEBUG_DATA_TIMEOUT_SECONDS: i64 = 15;
 const EARLY_BOOT_DEBUG_DATA_PATH: &'static str = "/debugdata";
@@ -120,6 +122,7 @@ async fn serve_file_over_socket(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) async fn serve_directory(
     dir_path: &str,
     mut event_sender: mpsc::Sender<RunEvent>,
