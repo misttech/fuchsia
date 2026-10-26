@@ -12,13 +12,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
-from pathlib import Path
 from typing import Any
-
-# Ensure fuchsia root is in sys.path for absolute imports
-_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.scripts import managed_process
 

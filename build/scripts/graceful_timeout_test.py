@@ -15,11 +15,6 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-# Ensure fuchsia root is in sys.path
-_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
-
 from build.scripts import graceful_timeout, managed_process
 
 EXIT_TIMEOUT: int = graceful_timeout.EXIT_TIMEOUT

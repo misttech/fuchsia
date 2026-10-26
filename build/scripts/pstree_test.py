@@ -5,17 +5,11 @@
 
 import io
 import json
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
-
-# Ensure fuchsia root is in sys.path
-_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.profile import procfs
 from build.scripts import pstree

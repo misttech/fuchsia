@@ -36,11 +36,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, TextIO
 
-# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
-_FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
-
+# Expects FUCHSIA_DIR to be present in sys.path (via PYTHONPATH).
 # LINT.IfChange(main_build_python_imports)
 from build.auth import gcloud
 from build.bazel.scripts import bazel_invocation as bazel_inv

@@ -5,19 +5,11 @@
 
 import signal
 import subprocess
-import sys
 import unittest
-from pathlib import Path
 from typing import Any
 from unittest import mock
 
-# Ensure fuchsia root is in sys.path for absolute imports
-_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
-
-import signal_utils
-from build.scripts import managed_process
+from build.scripts import managed_process, signal_utils
 
 
 def make_mock_managed_process(

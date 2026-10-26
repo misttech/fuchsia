@@ -19,11 +19,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self, TextIO
 
-# Ensure fuchsia root is in sys.path
-_FUCHSIA_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_FUCHSIA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_ROOT))
-
 from build.python.modules.serialization import serialization
 from build.scripts import graceful_timeout, managed_process, pstree
 
