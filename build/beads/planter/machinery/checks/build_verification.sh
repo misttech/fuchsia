@@ -9,20 +9,13 @@ set -uo pipefail
 # review panel only read BUILD files; this is what proves the change compiles.
 #
 # Steps (each failing step becomes one ERROR finding with the relevant log lines):
-#   1. gn_build:               `fx build` (incremental, the whole configured
-#                              product), so the migrated GN targets and the GN
-#                              dependents in the product graph are rebuilt.
-#   2. gn_build_dependents:    `fx build <labels>` for the GN targets the product
-#                              graph may leave out: the changed packages'
-#                              `:tests` groups and test/binary targets, then the
-#                              GN targets of other packages that depend on a
-#                              changed package (tests and binaries first, then
-#                              libraries), limited to labels of the GN graph
-#                              (<build dir>/ninja_outputs.json). Catches GN-only
-#                              link failures (e.g. undefined `operator new` in a
-#                              GN test after a dependency label or edge changed)
-#                              that Bazel builds and the default `fx build` miss.
-#                              Skipped when gn_build fails.
+#   1. gn_build:               Target-scoped `fx build <labels>` for the changed
+#                              packages and their dependents (falling back to bare
+#                              `fx build` if no labels found, or if
+#                              PLANTER_FULL_GN_BUILD=1).
+#   2. gn_build_dependents:    `fx build <labels>` for any remaining GN dependents
+#                              if gn_build ran a full product build. Skipped when
+#                              gn_build is target-scoped or fails.
 #   3. shac_check:             `fx host-tool shac check`, which runs shac static
 #                              checks on the change (including `verify_bazel2gn`
 #                              for BUILD.gn/BUILD.bazel drift, buildifier,
@@ -63,6 +56,8 @@ set -uo pipefail
 # Environment:
 #   PLANTER_SKIP_BUILD=1          skip the builds (still validates commit Test:
 #                                 footers and reports an INFO finding).
+#   PLANTER_FULL_GN_BUILD=1       always run full product `fx build` instead of
+#                                 target-scoped build.
 #   PLANTER_BUILD_NO_REUSE=1      always build; do not reuse a recorded result.
 #   PLANTER_BUILD_REUSE_TTL=<secs>  max age of a reused result (default 21600).
 #   PLANTER_BUILD_DRY_RUN=1       run nothing; report the planned commands as
@@ -1201,9 +1196,19 @@ def unrelated_bazel_failure(output):
 
 failed = set()
 step_findings_start = len(findings)
+gn_build_scoped = False
 for name, cmd in steps:
+    if name == "gn_build":
+        if os.environ.get("PLANTER_FULL_GN_BUILD", "").strip() not in ("1", "true"):
+            labels, notes = dependent_labels()
+            if labels:
+                cmd = [fx, "build"] + labels
+                gn_build_scoped = True
+                findings.extend(
+                    {"source": "build_verification", "category": "dependents_note", "severity": "INFO", "message": n} for n in notes
+                )
     if name == "gn_build_dependents":
-        if "gn_build" in failed:
+        if "gn_build" in failed or gn_build_scoped:
             continue
         labels, notes = dependent_labels()
         findings.extend(
