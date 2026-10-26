@@ -3,19 +3,29 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
-# gn_attr_parity: GN-only target attributes that bazel2gn cannot emit must not be dropped.
+# gn_attr_parity: GN-only target attributes that bazel2gn does not translate from a plain
+# BUILD.bazel attribute must not be dropped.
 #
 # Some GN target attributes change how (or in which toolchain variants) GN builds a target and
-# have no BUILD.bazel attribute that bazel2gn translates:
-#   - exclude_toolchain_tags = [ ... ]  (e.g. "instrumented", "asan", "hwasan": the target, and a
-#     rustc_* target's with_unit_tests test, are not built/run in coverage or sanitizer variants)
+# have no plain BUILD.bazel attribute that bazel2gn translates:
+#   - exclude_toolchain_tags = [ ... ]  (e.g. "instrumented", "asan", "hwasan", "heapdump": the
+#     target, and a rustc_* target's with_unit_tests test, are not built/run in those variants)
 #   - configs -= [ ... ]                (removes default configs, e.g. implicit host libs)
 #   - disable_syslog_backend = ...      (no implicit syslog backend dependency)
-# Converting such a target to bazel2gn silently drops the attribute: the generated GN target then
-# fails to link in instrumented builders or its tests run (and fail) in sanitizer builders.
+#   - toolchain-qualified assert_no_deps entries (e.g.
+#     "//third_party/rust_crates:serde_json5($current_toolchain)": only the target toolchain is
+#     restricted, so build tools may still use the crate; the unqualified `assert_no_deps=` tag
+#     form would restrict every toolchain)
+# Converting such a target to bazel2gn without naming the attribute in BUILD.bazel silently
+# drops it: the generated GN target then fails to link in instrumented builders or its tests run
+# (and fail) in sanitizer builders. bazel2gn emits them when BUILD.bazel names them with
+# `# @bazel2gn:raw_attribute:` (or dedicated forms such as `disable_instrumentation`,
+# `disable_build_flags`, and the tags newer bazel2gn versions document), and migration_sanity
+# accepts such generated lines below the sentinel.
 #
 # For every changed package, each GN target at $PLANTER_CHANGE_BASE carrying one of these
-# attributes must still exist in the package's BUILD.gn with the same values
+# attributes (directly, or through `forward_variables_from(<scope>, ...)` of a scope defined in the
+# same BUILD.gn) must still exist in the package's BUILD.gn with the same values
 # (gn_only_attr_dropped, error).
 #
 # Exception (template semantics, see build/rust/rustc_library.gni): rustc_library and
@@ -56,7 +66,18 @@ KNOWN_OR_DEDICATED_GN_ATTRS = {
     "dest", "source_root", "features", "disable_rustdoc", "disable_clippy",
     "original_target_name", "applicable_licenses", "assert_no_deps",
 }
-LIST_ATTRS = {"exclude_toolchain_tags": r"exclude_toolchain_tags\s*\+?=", "configs -=": r"configs\s*-="}
+LIST_ATTRS = {
+    "exclude_toolchain_tags": r"exclude_toolchain_tags\s*\+?=",
+    "configs -=": r"configs\s*-=",
+    "assert_no_deps": r"assert_no_deps\s*\+?=",
+}
+# GN variable each tracked attribute is assigned to (for forward_variables_from filtering).
+ATTR_GN_VARS = {
+    "exclude_toolchain_tags": "exclude_toolchain_tags",
+    "configs -=": "configs",
+    "assert_no_deps": "assert_no_deps",
+    "disable_syslog_backend": "disable_syslog_backend",
+}
 SCALAR_ATTRS = {"disable_syslog_backend": r"disable_syslog_backend\s*="}
 # Templates whose library artifact ignores exclude_toolchain_tags (only their unit test uses it).
 TEST_ONLY_EXCLUDE_TEMPLATES = {"rustc_library", "rustc_staticlib"}
@@ -139,19 +160,60 @@ def targets(text):
     return out
 
 
-def gn_only_attrs(body):
+def gn_only_attrs(body, text=None):
+    """GN-only attribute values of a target body. With the BUILD.gn `text`, also the values the
+    body pulls in through `forward_variables_from(<scope>, ...)` of a scope literal in `text`."""
+    body_code = re.sub(r"#[^\n]*", "", body)
     found = {}
     for attr, pat in LIST_ATTRS.items():
         vals = set()
-        for m in re.finditer(r"(?<![\w.])" + pat + r"\s*\[([^\]]*)\]", body):
+        for m in re.finditer(r"(?<![\w.])" + pat + r"\s*\[([^\]]*)\]", body_code):
             vals |= set(re.findall(r'"([^"]+)"', m.group(1)))
+        if attr == "assert_no_deps":
+            # Only toolchain-qualified entries: the unqualified ones map to `assert_no_deps=` tags.
+            vals = {v for v in vals if "($" in v}
         if vals:
             found[attr] = vals
     for attr, pat in SCALAR_ATTRS.items():
-        m = re.search(r"(?<![\w.])" + pat + r"\s*(\w+)", body)
+        m = re.search(r"(?<![\w.])" + pat + r"\s*(\w+)", body_code)
         if m:
             found[attr] = {m.group(1)}
+    if text:
+        scopes = gn_scope_literals(text)
+        for fm in re.finditer(
+            r"(?<![\w.])forward_variables_from\(\s*([A-Za-z_]\w*)\s*,\s*(\"\*\"|\[[^\]]*\])\s*(?:,\s*(\[[^\]]*\]))?\s*\)",
+            body_code,
+        ):
+            scope_body = scopes.get(fm.group(1))
+            if scope_body is None:
+                continue
+            wanted = None if fm.group(2) == '"*"' else set(re.findall(r'"([^"]+)"', fm.group(2)))
+            excluded = set(re.findall(r'"([^"]+)"', fm.group(3) or ""))
+            for attr, vals in gn_only_attrs(scope_body).items():
+                gn_var = ATTR_GN_VARS[attr]
+                if gn_var in excluded or (wanted is not None and gn_var not in wanted):
+                    continue
+                found.setdefault(attr, set()).update(vals)
     return found
+
+
+_scope_cache = {}
+
+
+def gn_scope_literals(text):
+    """Bodies of top-level `name = { ... }` scope literals in a BUILD.gn."""
+    key = hash(text)
+    if key in _scope_cache:
+        return _scope_cache[key]
+    scopes = {}
+    for m in re.finditer(r"(?m)^([A-Za-z_]\w*)\s*=\s*\{", text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        scopes[m.group(1)] = text[m.end():i - 1]
+    _scope_cache[key] = scopes
+    return scopes
 
 
 def eval_starlark(node, top_vars):
@@ -589,28 +651,17 @@ def check_test_log_settings_alignment_info(
 # base feature_sets deps, @bazel2gn:raw_attribute / @bazel2gn:path_overwrite directives
 # (including those inherited via `crate = ":<target>"`), non-canonical extra-slash GN labels
 # normalized in Bazel, or implicit GN //sdk/lib/fdio on C/C++ binaries.
-def check_dep_alignment_info(
-    pkg,
-    bazel_rel,
-    name,
-    bt_rule,
-    bt_line,
-    bt_kws,
-    top_vars,
-    gn_top,
-    base_fs_deps,
-    tp_map,
-    raw_gn_deps=(),
-    overwritten_bz_deps=(),
-    extra_bazel_deps=(),
-):
-    gn_deps = sorted(set(
+def gn_top_dep_labels(gn_top):
+    return sorted(set(
         gn_top.get("deps", [])
         + gn_top.get("public_deps", [])
         + gn_top.get("link_deps", [])
         + gn_top.get("non_rust_deps", [])
         + gn_top.get("proc_macro_deps", [])
     ))
+
+
+def bazel_dep_labels(bt_kws, top_vars, extra_bazel_deps=()):
     bazel_deps = list(extra_bazel_deps)
     for b_attr in (
         "deps",
@@ -623,7 +674,11 @@ def check_dep_alignment_info(
         "data",
     ):
         bazel_deps.extend(eval_starlark(bt_kws.get(b_attr), top_vars))
-    bazel_deps = sorted(set(bazel_deps))
+    return sorted(set(bazel_deps))
+
+
+def match_dep_labels(pkg, gn_deps, bazel_deps):
+    """(exact_matches, vendor_matches, unmatched_gn, unmatched_bazel) the way review_diff pairs them."""
     used_bazel = set()
     exact_matches = 0
     vendor_matches = 0
@@ -652,6 +707,42 @@ def check_dep_alignment_info(
         if not matched:
             unmatched_gn.append(g)
     unmatched_bazel = [b for b_idx, b in enumerate(bazel_deps) if b_idx not in used_bazel]
+    return exact_matches, vendor_matches, unmatched_gn, unmatched_bazel
+
+
+def dep_alignment_message(name, exact_matches, vendor_matches, unmatched_gn, unmatched_bazel):
+    dep_notes = []
+    if exact_matches > 0:
+        dep_notes.append(f"{exact_matches} exact match(es)")
+    if vendor_matches > 0:
+        dep_notes.append(f"{vendor_matches} vendor crate mapping(s)")
+    if unmatched_gn:
+        dep_notes.append(f"unmatched in GN: [{', '.join(unmatched_gn)}]")
+    if unmatched_bazel:
+        dep_notes.append(f"unmatched in Bazel: [{', '.join(unmatched_bazel)}]")
+    return f'Target "{name}" dependencies differ between GN and Bazel: {"; ".join(dep_notes)}'
+
+
+def check_dep_alignment_info(
+    pkg,
+    bazel_rel,
+    name,
+    bt_rule,
+    bt_line,
+    bt_kws,
+    top_vars,
+    gn_top,
+    base_fs_deps,
+    tp_map,
+    raw_gn_deps=(),
+    overwritten_bz_deps=(),
+    extra_bazel_deps=(),
+):
+    gn_deps = gn_top_dep_labels(gn_top)
+    bazel_deps = bazel_dep_labels(bt_kws, top_vars, extra_bazel_deps)
+    exact_matches, vendor_matches, unmatched_gn, unmatched_bazel = match_dep_labels(
+        pkg, gn_deps, bazel_deps
+    )
     if not unmatched_gn and not unmatched_bazel:
         return None
     base_fs_canons = {
@@ -694,25 +785,80 @@ def check_dep_alignment_info(
             covered_gn_canons.add(g_canon)
     if unmatched_gn_canons - covered_gn_canons:
         return None
-    dep_notes = []
-    if exact_matches > 0:
-        dep_notes.append(f"{exact_matches} exact match(es)")
-    if vendor_matches > 0:
-        dep_notes.append(f"{vendor_matches} vendor crate mapping(s)")
-    if unmatched_gn:
-        dep_notes.append(f"unmatched in GN: [{', '.join(unmatched_gn)}]")
-    if unmatched_bazel:
-        dep_notes.append(f"unmatched in Bazel: [{', '.join(unmatched_bazel)}]")
     return {
         "source": "gn_attr_parity",
         "category": "dep_alignment",
         "severity": "info",
         "file": bazel_rel,
         "line": bt_line,
-        "message": (
-            f'Target "{name}" dependencies differ between GN and Bazel: '
-            f'{"; ".join(dep_notes)}'
+        "message": dep_alignment_message(
+            name, exact_matches, vendor_matches, unmatched_gn, unmatched_bazel
         ),
+    }
+
+
+# GN text of the scope literals a target body pulls in with `forward_variables_from(<scope>, ...)`
+# (e.g. a `_component_manager_bin = { deps = [...] ... }` shared by several binaries), filtered to
+# the forwarded variable names, followed by the body itself.
+def body_with_forwarded_scopes(body, text):
+    scopes = gn_scope_literals(text or "")
+    if not scopes:
+        return body
+    parts = []
+    body_code = re.sub(r"#[^\n]*", "", body)
+    for fm in re.finditer(
+        r"(?<![\w.])forward_variables_from\(\s*([A-Za-z_]\w*)\s*,\s*(\"\*\"|\[[^\]]*\])\s*(?:,\s*(\[[^\]]*\]))?\s*\)",
+        body_code,
+    ):
+        scope_body = scopes.get(fm.group(1))
+        if scope_body is None:
+            continue
+        wanted = None if fm.group(2) == '"*"' else set(re.findall(r'"([^"]+)"', fm.group(2)))
+        excluded = set(re.findall(r'"([^"]+)"', fm.group(3) or ""))
+        kept = []
+        skipping = False
+        for ln in scope_body.splitlines():
+            am = re.match(r"\s*([A-Za-z_]\w*)\s*(?:\+?=|-=)", re.sub(r"#.*$", "", ln))
+            if am:
+                v = am.group(1)
+                skipping = v in excluded or (wanted is not None and v not in wanted)
+            if not skipping:
+                kept.append(ln)
+        parts.append("\n".join(kept))
+    if not parts:
+        return body
+    return "\n".join(parts) + "\n" + body
+
+
+# Record the INFO dep_alignment review_diff reports for a GN target whose deps come (partly) from
+# a forwarded scope literal: review_diff only reads the target body, so it reports the Bazel deps
+# as unmatched. Emit its message when the deps with the forwarded scope resolved do match.
+def check_forwarded_scope_dep_alignment_info(
+    pkg, bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, body, before_text,
+    base_fs_deps, tp_map, raw_gn_deps=(), overwritten_bz_deps=(), extra_bazel_deps=(),
+):
+    resolved_body = body_with_forwarded_scopes(body, before_text)
+    if resolved_body == body:
+        return None
+    gn_top = parse_gn_top_attrs(body)
+    resolved_top = parse_gn_top_attrs(resolved_body)
+    bazel_deps = bazel_dep_labels(bt_kws, top_vars, extra_bazel_deps)
+    raw = match_dep_labels(pkg, gn_top_dep_labels(gn_top), bazel_deps)
+    if not raw[2] and not raw[3]:
+        return None
+    resolved = match_dep_labels(pkg, gn_top_dep_labels(resolved_top), bazel_deps)
+    if (resolved[2] or resolved[3]) and not check_dep_alignment_info(
+        pkg, bazel_rel, name, bt_rule, bt_line, bt_kws, top_vars, resolved_top,
+        base_fs_deps, tp_map, raw_gn_deps, overwritten_bz_deps, extra_bazel_deps,
+    ):
+        return None
+    return {
+        "source": "gn_attr_parity",
+        "category": "dep_alignment",
+        "severity": "info",
+        "file": bazel_rel,
+        "line": bt_line,
+        "message": dep_alignment_message(name, *raw),
     }
 
 
@@ -1255,11 +1401,11 @@ for pkg in sorted(d for d in dirs if d):
     for name, (tmpl, line, body) in sorted(targets(before).items()):
         if tmpl == "config":
             continue
-        old_attrs = gn_only_attrs(body)
+        old_attrs = gn_only_attrs(body, before)
         if not old_attrs:
             continue
         cur = new_targets.get(name)
-        new_attrs = gn_only_attrs(cur[2]) if cur else {}
+        new_attrs = gn_only_attrs(cur[2], after) if cur else {}
         lost = []
         for attr, vals in sorted(old_attrs.items()):
             missing = vals - new_attrs.get(attr, set())
@@ -1269,7 +1415,7 @@ for pkg in sorted(d for d in dirs if d):
                 if not WITH_UNIT_TESTS.search(body):
                     continue
                 kept_test = new_targets.get(f"{name}_test")
-                if kept_test and not (missing - gn_only_attrs(kept_test[2]).get(attr, set())):
+                if kept_test and not (missing - gn_only_attrs(kept_test[2], after).get(attr, set())):
                     continue
             if missing:
                 shown = ", ".join(f'"{v}"' for v in sorted(missing))
@@ -1290,25 +1436,30 @@ for pkg in sorted(d for d in dirs if d):
             "file": gn_rel if after is not None else f"{pkg}/BUILD.bazel",
             "line": cur[1] if cur else 1,
             "message": (
-                f'`{tmpl}("{name}")` in //{pkg} had GN-only attribute(s) {", ".join(lost)} at the '
-                f"change base and {where}. bazel2gn has no BUILD.bazel attribute for them, so the "
-                "generated GN target is built differently (e.g. linked with coverage/profile "
-                "runtimes it cannot satisfy, or its unit tests run in sanitizer builders they are "
-                "excluded from)."
+                f'`{tmpl}("{name}")` in //{pkg} had GN-only attribute(s) {", ".join(lost)} at the change base '
+                f"and {where}. No plain BUILD.bazel attribute carries them, so unless BUILD.bazel names them "
+                "explicitly the generated GN target is built differently (e.g. linked with coverage/profile "
+                "runtimes it cannot satisfy, its unit tests run in sanitizer builders they are excluded from, or "
+                "its assert_no_deps restricts a different set of toolchains)."
             ),
             "remediation": (
-                f'Keep `{tmpl}("{name}")` hand-written above the BAZEL2GN SENTINEL of {gn_rel} '
-                "with the original attributes (exclude_toolchain_tags, configs -=, "
-                "disable_syslog_backend) and a comment saying bazel2gn cannot express them; mark "
-                "the BUILD.bazel target `# @bazel2gn:skip` (it stays in Bazel, migration_sanity "
-                "accepts the skip for such targets). If the target has "
-                "`with_unit_tests`/`test_deps` or is a test binary, keep its GN test package in "
-                "GN too (the Bazel fx_test would lose the toolchain-variant exclusion), and name "
-                "the kept attributes in the CoderReport summary. Do not approximate them with "
-                "copts/linkopts alone. For rustc_library/rustc_staticlib, exclude_toolchain_tags "
-                "only reaches the with_unit_tests test: the library may be generated by bazel2gn "
-                f"if a hand-written GN `{name}_test` above the sentinel keeps the same "
-                "exclude_toolchain_tags."
+                f'Preferred: keep `{name}` generated by bazel2gn and name the attributes on its BUILD.bazel target, '
+                "then re-run `fx bazel2gn`: stack `# @bazel2gn:raw_attribute:<GN line>` comments right above the "
+                'target (e.g. `# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "heapdump" ]`, '
+                '`# @bazel2gn:raw_attribute:assert_no_deps += [ "//third_party/rust_crates:serde_json5($current_toolchain)" ]`, '
+                "`# @bazel2gn:raw_attribute:configs -= [ ... ]`), or use `disable_instrumentation = True` "
+                "(`exclude_toolchain_tags = [ \"instrumented\" ]`) / `disable_build_flags` (`configs -=`) on "
+                "`fx_cc_*` targets and the dedicated tags the checkout's build/tools/bazel2gn/README.md documents "
+                "(e.g. `exclude_toolchain_tags=<tag>`, `assert_no_deps_current_toolchain=<label>`). See \"GN-only "
+                "attributes on generated targets\" in the coder prompt. Alternative when even that cannot express "
+                f'it: keep `{tmpl}("{name}")` hand-written above the BAZEL2GN SENTINEL of {gn_rel} with the original '
+                "attributes and a comment saying why; mark the BUILD.bazel target `# @bazel2gn:skip` (it stays in "
+                "Bazel, migration_sanity accepts the skip for such targets). If the target has `with_unit_tests`/"
+                "`test_deps` or is a test binary, keep its GN test package in GN too (the Bazel fx_test would lose "
+                "the toolchain-variant exclusion), and name the kept attributes in the CoderReport summary. Do not "
+                "approximate them with copts/linkopts alone. For rustc_library/rustc_staticlib, exclude_toolchain_tags "
+                "only reaches the with_unit_tests test: the library may be generated by bazel2gn if a hand-written GN "
+                f"`{name}_test` above the sentinel keeps the same exclude_toolchain_tags."
             ),
         })
 
@@ -1418,6 +1569,24 @@ for pkg in sorted(d for d in dirs if d):
                     )
                     if dep_info and dep_info not in findings:
                         findings.append(dep_info)
+                scope_dep_info = check_forwarded_scope_dep_alignment_info(
+                    pkg,
+                    bazel_rel,
+                    name,
+                    bt_rule,
+                    bt_line,
+                    bt_kws,
+                    top_vars,
+                    body,
+                    before,
+                    base_fs_deps,
+                    THIRD_PARTY_MAP,
+                    raw_gn_deps,
+                    overwritten_bz_deps,
+                    c_deps,
+                )
+                if scope_dep_info and scope_dep_info not in findings:
+                    findings.append(scope_dep_info)
                 findings.extend(
                     check_rule_and_config_alignment_info(
                         bazel_rel, name, tmpl, bt_rule, bt_line, bt_kws, top_vars, gn_top

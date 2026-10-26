@@ -324,6 +324,90 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    ```
 - **`rustc_binary` attributes**: bazel2gn maps Bazel `crate_name` to GN `output_name`,
    `crate_root` to `source_root`, and `lint_config` to GN lint `configs`.
+- **GN-only attributes on generated targets**: a convertible target that sets
+   `exclude_toolchain_tags`, `configs -=`, `disable_syslog_backend`, a `concurrent_jobs` pool,
+   toolchain-qualified labels (`"<label>($current_toolchain)"` in `assert_no_deps`,
+   `"<label>($default_toolchain)"` in `deps`), or embeds a generated file through
+   `rustenv`/`inputs` still converts. Name those GN lines on its BUILD.bazel target and let
+   bazel2gn emit them below the sentinel; never add them below the sentinel by hand
+   (`migration_sanity` rejects GN-only lines there that nothing in BUILD.bazel produces:
+   `unsanctioned_gn_construct_below_sentinel`; `gn_attr_parity` rejects dropping them, including
+   ones the GN target got through `forward_variables_from(<scope>, "*")`).
+   1. Use a dedicated form when one exists: `disable_instrumentation = True`
+      (`exclude_toolchain_tags = [ "instrumented" ]`) and `disable_build_flags` (`configs -=`) on
+      `fx_cc_*`, and the forms the checkout's `build/tools/bazel2gn/README.md` documents (newer
+      versions: `exclude_toolchain_tags=<tag>` and `assert_no_deps_current_toolchain=<label>` tags,
+      a large RBE worker `exec_properties` for `concurrent_jobs.rust_highmem`, `$(execpath :<label>)`
+      in `rustc_env`/`compile_data`).
+   2. Otherwise stack `# @bazel2gn:raw_attribute:<GN line>` comments right above the target. They
+      are appended after the converted attributes, so use `+=` only for attributes the generated
+      target already assigns (`configs`; `deps` when it has Bazel deps; `assert_no_deps` when it
+      has `assert_no_deps=` tags) and `=` otherwise. GN cannot chain scope accesses
+      (`concurrent_jobs.rust_highmem.configs` fails `gn format`), so go through a variable.
+   3. A generated file embedded with `include_bytes!`-style env vars keeps its GN path variables
+      (computed with `get_label_info(":<label>($default_toolchain)", "target_out_dir")`) above the
+      sentinel, referenced with `value_overwrite` on the `rustc_env` entry and `raw_overwrite` on
+      the closing `],` of `compile_data` (on a single list item it emits a quoted string).
+   4. Bazel-only attributes bazel2gn would copy verbatim (e.g. `exec_properties` before bazel2gn
+      maps it) get a per-attribute `# @bazel2gn:skip`.
+   The core `component_manager` binary (`//src/sys/component_manager:bin`) is the example:
+   ```python
+   # @bazel2gn:raw_attribute:_concurrent_jobs = concurrent_jobs.rust_highmem
+   # @bazel2gn:raw_attribute:configs += _concurrent_jobs.configs
+   # @bazel2gn:raw_attribute:forward_variables_from(_concurrent_jobs.vars, "*")
+   # @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "heapdump" ]
+   # @bazel2gn:raw_attribute:assert_no_deps += [ "//third_party/rust_crates:serde_json5($current_toolchain)" ]
+   # @bazel2gn:raw_attribute:deps += [ ":elf_runner_cm($default_toolchain)" ]
+   rustc_binary(
+       name = "bin",
+       compile_data = [
+           ":elf_runner_cm",
+       ],  # @bazel2gn:raw_overwrite:[ elf_runner_cm ]
+       crate_name = "component_manager",
+       rustc_env = {
+           "ELF_RUNNER_CM_PATH": "$(execpath :elf_runner_cm)",  # @bazel2gn:value_overwrite:$elf_runner_cm_path
+       },
+       tags = ["assert_no_deps=//third_party/rust_crates/vendor:regex"],
+       ...
+   )
+   ```
+   with `import("//build/toolchain/concurrent_jobs.gni")` and the `elf_runner_cm*` variables
+   above the sentinel. Keep a target hand-written above the sentinel (Bazel twin
+   `# @bazel2gn:skip`) only when no annotation can express it, and say why in the summary.
+- **Compiled manifests (`cm()`, `restricted_features`)**: where the checkout's bazel2gn supports
+   them (`build/tools/bazel2gn/README.md`, "Components"), a GN `cm("<name>")` (a `.cm` that is
+   embedded in a binary or read at build time, not packaged as a resource) becomes
+   `fx_compiled_manifest(name, manifest, component_name, output_name, restricted_features)` from
+   `//build/bazel/rules/components:fx_component.bzl`, which bazel2gn turns back into the same GN
+   `cm()` (with `config_values_package_path = "meta/<component_name>.cvf"`) below the sentinel,
+   hoisted above its consumers. `output_name` defaults to `cml/<name>/<component_name>.cm`; set it
+   only when GN used another path. `fuchsia_component_manifest(restricted_features = [...])` becomes
+   `fx_component_manifest(restricted_features = [...])`. Both are then convertible: keeping such a
+   `cm()` or manifest above the sentinel with a skipped Bazel twin is rejected
+   (`skipped_convertible_target`, `duplicate_target_above_sentinel`), and `restricted_features`
+   in the generated section is expected. A restricted feature still needs the Bazel allowlist
+   entry next to the GN one under `//tools/cmc/build/restricted_features`. For component_manager:
+   ```python
+   fx_compiled_manifest(
+       name = "elf_runner_cm",
+       component_name = "elf_runner",
+       manifest = "meta/elf_runner.cml",
+   )
+
+   fx_compiled_manifest(
+       name = "dispatcher_cm",
+       component_name = "dispatcher",
+       manifest = "meta/dispatcher.cml",
+       restricted_features = ["dynamic_dictionaries"],
+   )
+
+   fuchsia_structured_config_rust_lib(
+       name = "dispatcher_config",
+       cm_label = ":dispatcher_cm",
+   )
+   ```
+   An `fx_component()` cannot use an `fx_compiled_manifest()` as its `compiled_manifest`; use
+   `fx_component_manifest()` for packaged components.
 - **Legacy host-tool macros (`go_binary_host_tool`, `py_binary_host_tool`) and `output_name`**:
    these macros in `//build/bazel/rules/host:defs.bzl` are legacy macros that expand a `select()`
    referencing `//build/bazel/versioning:is_api_level_PLATFORM` in the caller package - grant the

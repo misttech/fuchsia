@@ -60,6 +60,19 @@ set -euo pipefail
 # 9. generic_test_output_name (error): flags any `rustc_test` or `host_rustc_test` in BUILD.bazel
 #    whose effective GN binary output name is an undisambiguated generic name (such as `lib_test`,
 #    `bin_test`, `core_test`, etc.) that collides in `${root_out_dir}` across packages.
+# 10. unsanctioned_gn_construct_below_sentinel (error): a GN-only construct (exclude_toolchain_tags,
+#     configs -=, disable_syslog_backend, forward_variables_from, concurrent_jobs.<pool>, or a
+#     "<label>($<x>_toolchain)" label) that the change adds to a bazel2gn-generated target below the
+#     sentinel without a BUILD.bazel source (annotation, native attribute or a dedicated tag the
+#     checkout's bazel2gn implements; see check_gn_only_constructs_below_sentinel). Sanctioned lines
+#     are accepted, so targets with such attributes can be generated instead of kept above the
+#     sentinel; gn_only_attr_target_kept_above_sentinel (info) points at that recipe.
+# 11. When the checkout's bazel2gn converts `fx_compiled_manifest()` to GN `cm()` and passes
+#     `restricted_features` through (detected from literals in build/tools/bazel2gn/*.go),
+#     `fx_compiled_manifest` is a convertible Bazel rule and `cm` a convertible GN template (with
+#     the attributes bazel2gn emits: manifest, output_name, config_values_package_path,
+#     restricted_features), and `restricted_features` no longer blocks converting a
+#     `fuchsia_component_manifest`: checks 1 and 2 then apply to them.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -75,6 +88,32 @@ import sys
 
 workdir = os.path.abspath(sys.argv[1])
 target_dir = sys.argv[2].strip().strip("/")
+
+
+def _read_bazel2gn_go_sources():
+    """Concatenated non-test .go sources of the checkout's build/tools/bazel2gn (feature detection)."""
+    src = []
+    b2gn_dir = os.path.join(workdir, "build", "tools", "bazel2gn")
+    try:
+        names = sorted(os.listdir(b2gn_dir))
+    except OSError:
+        names = []
+    for fn in names:
+        if fn.endswith(".go") and not fn.endswith("_test.go"):
+            try:
+                src.append(open(os.path.join(b2gn_dir, fn), encoding="utf-8").read())
+            except OSError:
+                pass
+    return "\n".join(src)
+
+
+BAZEL2GN_GO_SOURCES = _read_bazel2gn_go_sources()
+# bazel2gn converts `fx_compiled_manifest()` to GN `cm()` (a compiled manifest that is not packaged
+# as a resource, e.g. one embedded in a binary).
+FX_COMPILED_MANIFEST_SUPPORTED = '"fx_compiled_manifest"' in BAZEL2GN_GO_SOURCES
+# bazel2gn passes `restricted_features` of `fx_component_manifest()` / `fx_compiled_manifest()`
+# through to GN.
+RESTRICTED_FEATURES_SUPPORTED = '"restricted_features"' in BAZEL2GN_GO_SOURCES
 
 CONVERTIBLE_BAZEL_RULES = {
     "fx_cc_library",
@@ -107,6 +146,8 @@ CONVERTIBLE_BAZEL_RULES = {
     "fx_component",
     "fx_component_manifest",
 }
+if FX_COMPILED_MANIFEST_SUPPORTED:
+    CONVERTIBLE_BAZEL_RULES.add("fx_compiled_manifest")
 
 # Plain GN `shared_library()` is intentionally excluded: `build/tools/bazel2gn/constants.go`
 # maps `cc_library` and `fx_cc_library` only to `static_library` or `source_set` (and
@@ -135,6 +176,12 @@ CONVERTIBLE_GN_TEMPLATES = {
     "fuchsia_component",
     "fuchsia_component_manifest",
 }
+if FX_COMPILED_MANIFEST_SUPPORTED:
+    CONVERTIBLE_GN_TEMPLATES.add("cm")
+# Bazel manifest rules bazel2gn converts, and their GN templates.
+FX_MANIFEST_RULE_TO_GN = {"fx_component_manifest": "fuchsia_component_manifest"}
+if FX_COMPILED_MANIFEST_SUPPORTED:
+    FX_MANIFEST_RULE_TO_GN["fx_compiled_manifest"] = "cm"
 
 # A hand-written GN test above the sentinel either duplicates the GN copy bazel2gn generates
 # from the Bazel test or is a GN-only test, never an unmigrated convertible library
@@ -700,8 +747,12 @@ def is_bazel_only_private_test_dep(
     return has_bazel_test_consumer
 
 
-# GN-only target attributes and constructs bazel2gn cannot emit; such a target stays
-# hand-written above the sentinel.
+# GN-only target attributes and constructs that bazel2gn does not translate from a plain
+# BUILD.bazel attribute. A convertible target using them may stay hand-written above the
+# sentinel, but it may also be generated below it when BUILD.bazel names them with a sanctioned
+# annotation or tag (`# @bazel2gn:raw_attribute:`, `raw_overwrite`, `value_overwrite`,
+# `path_overwrite`, tags such as `exclude_toolchain_tags=<tag>` or
+# `assert_no_deps_current_toolchain=<label>`): see check_gn_only_constructs_below_sentinel.
 GN_ONLY_ATTR_RE = re.compile(
     r"(?<![\w.])(?:exclude_toolchain_tags\s*\+?=|configs\s*-=|disable_syslog_backend\s*=|forward_variables_from\s*\(|concurrent_jobs\.)"
 )
@@ -711,6 +762,17 @@ GN_BLOCKED_CONSTRUCT_RE = re.compile(
     r"\b(?:loadable_module|network_unified_binary|fuchsia_structured_config_(?!rust_lib\b)[a-z0-9_]+)\s*\("
     r"|\(\$[a-zA-Z0-9_]*toolchain\)"
 )
+GN_SENTINEL_RE = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
+
+
+def gn_hand_written_text(text):
+    """The part of a BUILD.gn above the bazel2gn sentinel (all of it without a sentinel).
+
+    GN-only constructs below the sentinel were generated from BUILD.bazel annotations, so they
+    show that the package is already migrated rather than that it is blocked on GN-only code.
+    """
+    m = GN_SENTINEL_RE.search(text)
+    return text[: m.start()] if m else text
 
 
 # Check whether a pre-sentinel GN target is a testonly binary or helper library
@@ -796,10 +858,13 @@ def is_packaged_testonly_gn_binary(gname, gtmpl, gbody, pre_targets, bazel_names
     return False
 
 
-# Check whether a pre-sentinel GN `fuchsia_component_manifest` or `fuchsia_component`
-# uses attributes or dependencies that `bazel2gn` cannot convert.
+# Check whether a pre-sentinel GN `fuchsia_component_manifest`, `fuchsia_component` or (when the
+# checkout's bazel2gn converts `fx_compiled_manifest()`) `cm` uses attributes or dependencies that
+# `bazel2gn` cannot convert.
 def is_gn_component_target_blocked(gname, gtmpl, gbody, pre_targets, bazel_targets, pdir):
-    if gtmpl not in ("fuchsia_component_manifest", "fuchsia_component"):
+    if gtmpl not in ("fuchsia_component_manifest", "fuchsia_component") and not (
+        gtmpl == "cm" and FX_COMPILED_MANIFEST_SUPPORTED
+    ):
         return False
     cleaned = re.sub(r"#[^\n]*", "", gbody)
     if (
@@ -809,8 +874,13 @@ def is_gn_component_target_blocked(gname, gtmpl, gbody, pre_targets, bazel_targe
     ):
         return True
     attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=", cleaned))
-    if gtmpl == "fuchsia_component_manifest":
-        allowed = {"manifest", "component_name", "testonly", "visibility"}
+    if gtmpl in ("fuchsia_component_manifest", "cm"):
+        if gtmpl == "cm":
+            allowed = {"manifest", "output_name", "config_values_package_path", "testonly", "visibility"}
+        else:
+            allowed = {"manifest", "component_name", "testonly", "visibility"}
+        if RESTRICTED_FEATURES_SUPPORTED:
+            allowed.add("restricted_features")
         if not attrs or not (attrs <= allowed) or "manifest" not in attrs:
             return True
         ref_pat = re.compile(
@@ -976,8 +1046,9 @@ def inspect_gn_target_deps(gbody, pkg_dir, pre_targets, bazel_names):
                     dep_gn_txt = open(dep_gn, encoding="utf-8").read()
                     if "declare_args(" in dep_gn_txt and f"//{dep_pkg}" not in declare_args_deps:
                         declare_args_deps.append(f"//{dep_pkg}")
-                    if GN_ONLY_ATTR_RE.search(dep_gn_txt) or GN_BLOCKED_CONSTRUCT_RE.search(
-                        dep_gn_txt
+                    dep_hand_txt = gn_hand_written_text(dep_gn_txt)
+                    if GN_ONLY_ATTR_RE.search(dep_hand_txt) or GN_BLOCKED_CONSTRUCT_RE.search(
+                        dep_hand_txt
                     ):
                         gn_blocked_dep = True
                     else:
@@ -1038,7 +1109,7 @@ def find_closing_brace(text, open_idx):
 
 
 def parse_gn_text(text):
-    sentinel_re = re.compile(r"^##\s*BAZEL2GN SENTINEL|#LOCAL_BAZEL_BUILD_SENTINEL", re.M)
+    sentinel_re = GN_SENTINEL_RE
     m = sentinel_re.search(text)
     has_sentinel = bool(m)
     pre_text = text[: m.start()] if m else text
@@ -2363,15 +2434,20 @@ for pkg_dir in sorted(candidate_dirs):
             ):
                 continue  # bazel2gn cannot emit its GN template or GN-only attributes (see gn_attr_parity / gn_target_type_parity).
             if (
-                rule in ("fx_component_manifest", "fx_component")
+                (rule in FX_MANIFEST_RULE_TO_GN or rule == "fx_component")
                 and not in_pre_gn
                 and not ref_in_pre_gn
                 and tname not in gn_info.get("post_targets", {})
             ):
-                has_unskipped_comp_consumer = rule == "fx_component_manifest" and any(
+                # An fx_compiled_manifest() is consumed by structured config libraries and by
+                # binaries that embed the .cm (compile_data / $(execpath)).
+                has_unskipped_comp_consumer = rule in FX_MANIFEST_RULE_TO_GN and any(
                     other["name"] != tname
                     and other["skip_line"] is None
-                    and other["rule"] in ("fx_component", "fuchsia_structured_config_rust_lib")
+                    and (
+                        other["rule"] in ("fx_component", "fuchsia_structured_config_rust_lib")
+                        or (rule == "fx_compiled_manifest" and other["rule"] in CONVERTIBLE_BAZEL_RULES)
+                    )
                     and tname in other.get("gn_dep_refs", ())
                     for other in bazel_targets
                 )
@@ -2399,12 +2475,8 @@ for pkg_dir in sorted(candidate_dirs):
                         f"above `## BAZEL2GN SENTINEL` in '{gn_rel}', and re-run "
                         f"`fx bazel2gn -d {pkg_dir}`."
                     )
-                elif rule in ("fx_component_manifest", "fx_component"):
-                    gn_comp_tmpl = (
-                        "fuchsia_component_manifest"
-                        if rule == "fx_component_manifest"
-                        else "fuchsia_component"
-                    )
+                elif rule in FX_MANIFEST_RULE_TO_GN or rule == "fx_component":
+                    gn_comp_tmpl = FX_MANIFEST_RULE_TO_GN.get(rule, "fuchsia_component")
                     skip_msg = (
                         f"Target '{tname}' ({rule}) in '{bazel_rel}' is annotated with "
                         "`# @bazel2gn:skip`"
@@ -2459,6 +2531,7 @@ for pkg_dir in sorted(candidate_dirs):
                 "resource",
                 "fuchsia_package_resource_group",
                 "fx_component_manifest",
+                "fx_compiled_manifest",
                 "fx_packaged_binary",
                 "fx_component",
                 "fx_test_component",
@@ -2470,7 +2543,7 @@ for pkg_dir in sorted(candidate_dirs):
                 bname = bt["name"]
                 if bname not in pre_map:
                     continue
-                if bt["rule"] in ("fx_component_manifest", "fx_component") and not is_gn_component_target_blocked(
+                if (bt["rule"] in FX_MANIFEST_RULE_TO_GN or bt["rule"] == "fx_component") and not is_gn_component_target_blocked(
                     bname, pre_map[bname][0], pre_map[bname][2], pre_map, btargets, pdir
                 ):
                     continue
@@ -2645,6 +2718,32 @@ for pkg_dir in sorted(candidate_dirs):
                         ),
                     })
                 continue
+            gn_only_matches = (
+                sorted({m.group(0).strip() for m in GN_ONLY_ATTR_RE.finditer(re.sub(r"#[^\n]*", "", gbody))})
+                if gtmpl in CONVERTIBLE_GN_TEMPLATES
+                else []
+            )
+            if gn_only_matches:
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "gn_only_attr_target_kept_above_sentinel",
+                    "severity": "INFO",
+                    "file": gn_rel,
+                    "line": gline,
+                    "message": (
+                        f"Convertible GN target `{gtmpl}(\"{gname}\")` stays hand-written above "
+                        f"`## BAZEL2GN SENTINEL` in '{gn_rel}' because it uses GN-only constructs "
+                        f"({', '.join(f'`{x}`' for x in gn_only_matches)}). This is allowed."
+                    ),
+                    "remediation": (
+                        "bazel2gn can also generate it below the sentinel: define it in "
+                        f"'{bazel_rel}' and name the GN-only constructs there with "
+                        "`# @bazel2gn:raw_attribute:` lines (or the dedicated tags/attributes the "
+                        "checkout's build/tools/bazel2gn/README.md documents, e.g. "
+                        "`disable_instrumentation`, `disable_build_flags`), as described in "
+                        "\"GN-only attributes on generated targets\" in the coder prompt."
+                    ),
+                })
             if gtmpl in CONVERTIBLE_GN_TEMPLATES and not GN_ONLY_ATTR_RE.search(gbody):
                 if is_packaged_testonly_gn_binary(
                     gname, gtmpl, gbody, gn_info["pre_targets"], bazel_names
@@ -2668,6 +2767,14 @@ for pkg_dir in sorted(candidate_dirs):
                     continue
 
                 attr_hints = []
+                if gtmpl == "cm":
+                    attr_hints.append(
+                        f"declare `fx_compiled_manifest(name = \"{gname}\", manifest = ..., "
+                        "component_name = ..., output_name = ...)` (loaded from "
+                        "`//build/bazel/rules/components:fx_component.bzl`, with `restricted_features` "
+                        "if GN sets them) without `# @bazel2gn:skip`; it generates the same GN `cm()`, "
+                        "which is not packaged as a resource"
+                    )
                 if gtmpl == "fuchsia_component_manifest":
                     attr_hints.append(
                         f"declare `fx_component_manifest(name = \"{gname}\", ...)` "
@@ -4470,6 +4577,388 @@ def check_bazel2gn_sync(dirs_to_check):
 
 
 check_bazel2gn_sync(candidate_dirs)
+
+
+# GN-only constructs in the bazel2gn-generated section of a dual-build BUILD.gn must come from
+# BUILD.bazel. bazel2gn emits them only from a sanctioned source on the Bazel target (or, for
+# top-level statements, anywhere in BUILD.bazel):
+#   - a `# @bazel2gn:raw_attribute:`, `raw_overwrite:`, `value_overwrite:` or `path_overwrite:`
+#     annotation whose text contains the construct;
+#   - `disable_instrumentation = True` (`exclude_toolchain_tags = [ "instrumented" ]`) or
+#     `disable_build_flags` (`configs -=`);
+#   - the dedicated tags/attributes of newer bazel2gn versions: `exclude_toolchain_tags=<tag>`,
+#     `assert_no_deps_<toolchain>=<label>` (e.g. `assert_no_deps_current_toolchain=`), a large
+#     RBE worker request (`exec_properties` naming the large worker, or a large-worker tag) for
+#     `concurrent_jobs.rust_highmem`, `concurrent_jobs=<pool>`, and `$(execpath <label>)` /
+#     `$(location <label>)` or a local `compile_data` label for toolchain-qualified references to
+#     that label.
+# A construct with none of these sources is a hand edit below the sentinel: the next `fx bazel2gn`
+# run drops it and `verify_bazel2gn` fails in CQ (unsanctioned_gn_construct_below_sentinel, error).
+# This check needs no bazel2gn binary, so it also catches hand edits while `check_bazel2gn_sync`
+# cannot run. Only constructs that the generated target did not already have at the change base
+# are reported.
+GN_EXEC_REF_RE = re.compile(
+    r"\$\((?:execpaths?|rootpaths?|locations?|rlocationpaths?)\s+([^)\s]+)\s*\)"
+)
+LARGE_WORKER_RE = re.compile(r"(?i)large[_-]?(?:rbe[_-]?)?worker|rust[_-]?highmem")
+GN_TOOLCHAIN_LABEL_RE = re.compile(r'"([^"\s]*\(\$[A-Za-z0-9_]*toolchain\))"')
+BAZEL2GN_ANNOTATION_RE = re.compile(
+    r"#\s*@bazel2gn:(?:raw_attribute|raw_overwrite|value_overwrite|path_overwrite):(.*)$"
+)
+
+
+def _nows(s):
+    return re.sub(r"\s+", "", s)
+
+
+_bazel2gn_features = None
+
+
+def bazel2gn_features():
+    """Which dedicated tag/attribute translations the checkout's bazel2gn implements.
+
+    Annotations (`raw_attribute`, `raw_overwrite`, ...) and `disable_instrumentation` /
+    `disable_build_flags` are always available. The newer forms only sanction a generated
+    construct once the checkout's bazel2gn sources (non-test .go files) implement them.
+    """
+    global _bazel2gn_features
+    if _bazel2gn_features is not None:
+        return _bazel2gn_features
+    text = BAZEL2GN_GO_SOURCES
+    _bazel2gn_features = {
+        "exclude_toolchain_tags_tag": "exclude_toolchain_tags=" in text,
+        "qualified_assert_no_deps_tag": bool(re.search(r"assert_no_deps_[A-Za-z0-9_]*toolchain", text)),
+        "large_worker": "concurrent_jobs" in text,
+        "exec_refs": bool(re.search(r"execpath|\$\(location", text)),
+    }
+    return _bazel2gn_features
+
+
+def canonical_gn_or_bazel_label(pkg_dir, label):
+    lbl = label.strip().strip('"')
+    if lbl.startswith("@//"):
+        lbl = lbl[1:]
+    if lbl.startswith(":"):
+        lbl = f"//{pkg_dir}:{lbl[1:]}"
+    lbl = lbl.replace("//third_party/rust_crates/vendor:", "//third_party/rust_crates:")
+    if lbl.startswith("//") and ":" in lbl:
+        pkg_part, tgt = lbl.split(":", 1)
+        if tgt == pkg_part.rsplit("/", 1)[-1]:
+            lbl = pkg_part
+    return lbl
+
+
+def gn_only_constructs(body):
+    """(key, display, offset) for every GN-only construct in a GN body (comments stripped)."""
+    code = re.sub(r"#[^\n]*", lambda m: " " * len(m.group(0)), body)
+    out = []
+    for m in re.finditer(r"(?<![\w.])exclude_toolchain_tags\s*\+?=\s*\[([^\]]*)\]", code):
+        for v in re.findall(r'"([^"]+)"', m.group(1)):
+            out.append((("exclude_toolchain_tags", v), f'exclude_toolchain_tags "{v}"', m.start()))
+    for m in re.finditer(r"(?<![\w.])configs\s*-=\s*(\[[^\]]*\]|[A-Za-z_][\w.]*)", code):
+        out.append((("configs -=", _nows(m.group(1))), f"configs -= {m.group(1).strip()}", m.start()))
+    for m in re.finditer(r"(?<![\w.])disable_syslog_backend\s*=", code):
+        out.append((("disable_syslog_backend",), "disable_syslog_backend", m.start()))
+    for m in re.finditer(r"(?<![\w.])forward_variables_from\s*\(\s*([^,)]+)", code):
+        arg = _nows(m.group(1))
+        out.append((("forward_variables_from", arg), f"forward_variables_from({arg}, ...)", m.start()))
+    for m in re.finditer(r"(?<![\w.])concurrent_jobs\.([A-Za-z_]\w*)", code):
+        out.append((("concurrent_jobs", m.group(1)), f"concurrent_jobs.{m.group(1)}", m.start()))
+    for m in GN_TOOLCHAIN_LABEL_RE.finditer(code):
+        attr_m = None
+        for attr_m in re.finditer(r"(?<![\w.])([A-Za-z_]\w*)\s*[+-]?=(?!=)", code[: m.start()]):
+            pass
+        attr = attr_m.group(1) if attr_m else ""
+        out.append((("toolchain_label", m.group(1), attr), f'"{m.group(1)}"', m.start()))
+    return out
+
+
+def bazel2gn_sources(bazel_text, pkg_dir):
+    """Per-target and file-level BUILD.bazel sources of GN-only constructs."""
+    lines = bazel_text.splitlines()
+    file_ann = [_nows(m.group(1)) for ln in lines for m in [BAZEL2GN_ANNOTATION_RE.search(ln)] if m]
+    per_target = {}
+    try:
+        tree = ast.parse(bazel_text)
+    except Exception:
+        return per_target, file_ann
+    for node in tree.body:
+        if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+            continue
+        call = node.value
+        kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+        name_node = kws.get("name")
+        if not (isinstance(name_node, ast.Constant) and isinstance(name_node.value, str)):
+            continue
+        start = node.lineno
+        end = getattr(call, "end_lineno", start) or start
+        idx = start - 2
+        while idx >= 0 and (not lines[idx].strip() or lines[idx].strip().startswith("#")):
+            idx -= 1
+        span = lines[idx + 1 : end]
+        ann = [_nows(m.group(1)) for ln in span for m in [BAZEL2GN_ANNOTATION_RE.search(ln)] if m]
+        tags = []
+        tags_node = kws.get("tags")
+        if tags_node is not None:
+            for sub in ast.walk(tags_node):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    tags.append(sub.value)
+        disable_instr = kws.get("disable_instrumentation")
+        exec_props_seg = (
+            ast.get_source_segment(bazel_text, kws["exec_properties"]) or ""
+            if "exec_properties" in kws
+            else ""
+        )
+        exec_labels = set()
+        for attr in ("rustc_env", "compile_data", "data", "env"):
+            node_v = kws.get(attr)
+            if node_v is None:
+                continue
+            for sub in ast.walk(node_v):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    for em in GN_EXEC_REF_RE.finditer(sub.value):
+                        exec_labels.add(canonical_gn_or_bazel_label(pkg_dir, em.group(1)))
+                    if attr == "compile_data" and sub.value.startswith(":"):
+                        exec_labels.add(canonical_gn_or_bazel_label(pkg_dir, sub.value))
+        per_target[name_node.value] = {
+            "ann": ann,
+            "tags": tags,
+            "disable_instrumentation": isinstance(disable_instr, ast.Constant)
+            and disable_instr.value is True,
+            "disable_build_flags": "disable_build_flags" in kws,
+            "large_worker": bool(LARGE_WORKER_RE.search(exec_props_seg))
+            or any(LARGE_WORKER_RE.search(t) for t in tags),
+            "exec_labels": exec_labels,
+        }
+    return per_target, file_ann
+
+
+def gn_construct_sanctioned(key, src, ann, pkg_dir):
+    kind = key[0]
+    feats = bazel2gn_features()
+    tags = src.get("tags", []) if src else []
+    if kind == "exclude_toolchain_tags":
+        v = key[1]
+        if any("exclude_toolchain_tags" in a and f'"{v}"' in a for a in ann):
+            return True
+        if feats["exclude_toolchain_tags_tag"] and any(
+            t.startswith("exclude_toolchain_tags=") and v in t.split("=", 1)[1].split(",")
+            for t in tags
+        ):
+            return True
+        return bool(src) and v == "instrumented" and src["disable_instrumentation"]
+    if kind == "configs -=":
+        return any("configs-=" in a for a in ann) or (bool(src) and src["disable_build_flags"])
+    if kind == "disable_syslog_backend":
+        return any("disable_syslog_backend" in a for a in ann)
+    if kind == "forward_variables_from":
+        if any("forward_variables_from(" + key[1] in a for a in ann):
+            return True
+        return (
+            "concurrent_jobs" in key[1]
+            and feats["large_worker"]
+            and bool(src)
+            and (src["large_worker"] or any(t.startswith("concurrent_jobs=") for t in tags))
+        )
+    if kind == "concurrent_jobs":
+        pool = key[1]
+        if any("concurrent_jobs." + pool in a for a in ann):
+            return True
+        if not feats["large_worker"]:
+            return False
+        if any(t == f"concurrent_jobs={pool}" for t in tags):
+            return True
+        return pool == "rust_highmem" and bool(src) and src["large_worker"]
+    if kind == "toolchain_label":
+        label = key[1]
+        if any(_nows(label) in a for a in ann):
+            return True
+        base, _, qual = label.partition("($")
+        toolchain = qual.rstrip(")")
+        base_canon = canonical_gn_or_bazel_label(pkg_dir, base)
+        if feats["qualified_assert_no_deps_tag"]:
+            for t in tags:
+                tm = re.match(r"assert_no_deps_([A-Za-z0-9_]*toolchain)=(.+)$", t)
+                if (
+                    tm
+                    and tm.group(1) == toolchain
+                    and canonical_gn_or_bazel_label(pkg_dir, tm.group(2)) == base_canon
+                ):
+                    return True
+        return feats["exec_refs"] and bool(src) and base_canon in src["exec_labels"]
+    return False
+
+
+def gn_unsupported_form_note(key, src):
+    """Names a dedicated BUILD.bazel form the target uses that the checkout's bazel2gn lacks."""
+    if not src:
+        return ""
+    feats = bazel2gn_features()
+    kind = key[0]
+    form = ""
+    if kind == "exclude_toolchain_tags" and not feats["exclude_toolchain_tags_tag"]:
+        if any(t.startswith("exclude_toolchain_tags=") for t in src["tags"]):
+            form = "the `exclude_toolchain_tags=<tag>` tag"
+    elif kind in ("concurrent_jobs", "forward_variables_from") and not feats["large_worker"]:
+        if src["large_worker"]:
+            form = "the large RBE worker request"
+    elif kind == "toolchain_label" and key[2] == "assert_no_deps":
+        if not feats["qualified_assert_no_deps_tag"] and any(
+            re.match(r"assert_no_deps_[A-Za-z0-9_]*toolchain=", t) for t in src["tags"]
+        ):
+            form = "the `assert_no_deps_<toolchain>=<label>` tag"
+    elif kind == "toolchain_label":
+        if not feats["exec_refs"] and src["exec_labels"]:
+            form = "`$(execpath ...)`/`compile_data` label translation"
+    if not form:
+        return ""
+    return (
+        f" The target uses {form}, but this checkout's build/tools/bazel2gn does not implement "
+        "it yet, so bazel2gn cannot have generated this line"
+    )
+
+
+def gn_construct_recipe(key):
+    kind = key[0]
+    if kind == "exclude_toolchain_tags":
+        return (
+            f'`# @bazel2gn:raw_attribute:exclude_toolchain_tags = [ "{key[1]}" ]` above the target '
+            f"(or the `exclude_toolchain_tags={key[1]}` tag where the checkout's bazel2gn supports it"
+            + ("; `disable_instrumentation = True` on `fx_cc_binary`" if key[1] == "instrumented" else "")
+            + ")"
+        )
+    if kind == "configs -=":
+        return (
+            "`disable_build_flags = [...]` on `fx_cc_*` targets, otherwise "
+            "`# @bazel2gn:raw_attribute:configs -= [ ... ]`"
+        )
+    if kind in ("concurrent_jobs", "forward_variables_from") and (
+        kind == "concurrent_jobs" or "concurrent_jobs" in key[1]
+    ):
+        return (
+            "the large RBE worker request where the checkout's bazel2gn maps it, otherwise three "
+            "stacked raw attributes (GN cannot chain `concurrent_jobs.rust_highmem.configs`): "
+            "`# @bazel2gn:raw_attribute:_concurrent_jobs = concurrent_jobs.rust_highmem`, "
+            "`# @bazel2gn:raw_attribute:configs += _concurrent_jobs.configs`, "
+            '`# @bazel2gn:raw_attribute:forward_variables_from(_concurrent_jobs.vars, "*")`, with '
+            '`import("//build/toolchain/concurrent_jobs.gni")` above the sentinel'
+        )
+    if kind == "toolchain_label" and key[2] == "assert_no_deps":
+        return (
+            f'`# @bazel2gn:raw_attribute:assert_no_deps += [ "{key[1]}" ]` above the target (keep the '
+            "unqualified entries as `assert_no_deps=<label>` tags), or the "
+            "`assert_no_deps_current_toolchain=<label>` tag where the checkout's bazel2gn supports it"
+        )
+    if kind == "toolchain_label" and key[2] in ("deps", "public_deps", "data_deps", "non_rust_deps"):
+        return (
+            f'`# @bazel2gn:raw_attribute:{key[2]} += [ "{key[1]}" ]` above the target, '
+            "`# @bazel2gn:path_overwrite:` on the list entry, or (for a generated file embedded "
+            "through `rustc_env`/`compile_data`) the `$(execpath <label>)` translation where the "
+            "checkout's bazel2gn supports it"
+        )
+    if kind == "toolchain_label":
+        return (
+            "the `$(execpath <label>)` translation of `rustc_env`/`compile_data` where the "
+            "checkout's bazel2gn supports it, otherwise file-level GN variables above the sentinel "
+            "(computed with `get_label_info(...)`) referenced through `# @bazel2gn:value_overwrite:` "
+            "on the `rustc_env` entry and `# @bazel2gn:raw_overwrite:[ <var> ]` on the closing `],` of "
+            "`compile_data`, plus `# @bazel2gn:raw_attribute:deps += [ ... ]` for the producing target"
+        )
+    return f"`# @bazel2gn:raw_attribute:` naming `{key[-1]}` above the target"
+
+
+def check_gn_only_constructs_below_sentinel(dirs_to_check):
+    target_re = re.compile(r'^[ \t]*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
+    for d in sorted(dirs_to_check):
+        b_abs = os.path.join(workdir, d, "BUILD.bazel")
+        g_abs = os.path.join(workdir, d, "BUILD.gn")
+        if not (os.path.isfile(b_abs) and os.path.isfile(g_abs)):
+            continue
+        try:
+            g_txt = open(g_abs, encoding="utf-8").read()
+            b_txt = open(b_abs, encoding="utf-8").read()
+        except OSError:
+            continue
+        sm = GN_SENTINEL_RE.search(g_txt)
+        if not sm:
+            continue
+        gn_rel = f"{d}/BUILD.gn"
+        bazel_rel = f"{d}/BUILD.bazel"
+        post_off = sm.end()
+        post = g_txt[post_off:]
+
+        def segments(text):
+            segs = []
+            covered = []
+            for tm in target_re.finditer(text):
+                brace = tm.end() - 1
+                end = find_closing_brace(text, brace)
+                segs.append((tm.group(2), tm.group(1), brace + 1, text[brace + 1 : end]))
+                covered.append((tm.start(), end + 1))
+            rest = list(text)
+            for s, e in covered:
+                for i in range(s, min(e, len(rest))):
+                    if rest[i] != "\n":
+                        rest[i] = " "
+            segs.append((None, None, 0, "".join(rest)))
+            return segs
+
+        base_keys = {}
+        try:
+            base_txt = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{change_base}:{gn_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            base_txt = ""
+        bsm = GN_SENTINEL_RE.search(base_txt) if base_txt else None
+        if bsm:
+            for name, _, _, body in segments(base_txt[bsm.end() :]):
+                base_keys.setdefault(name, set()).update(k for k, _, _ in gn_only_constructs(body))
+
+        per_target, file_ann = bazel2gn_sources(b_txt, d)
+        reported = set()
+        for name, tmpl, body_off, body in segments(post):
+            src = per_target.get(name) if name else None
+            ann = (src["ann"] if src else []) + ([] if src else file_ann)
+            for key, display, off in gn_only_constructs(body):
+                if key in base_keys.get(name, set()) or (name, key) in reported:
+                    continue
+                if gn_construct_sanctioned(key, src, ann, d):
+                    continue
+                reported.add((name, key))
+                line = g_txt.count("\n", 0, post_off + body_off + off) + 1
+                where = (
+                    f'bazel2gn-generated `{tmpl}("{name}")`' if name else "the bazel2gn-generated section"
+                )
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "unsanctioned_gn_construct_below_sentinel",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": line,
+                    "message": (
+                        f"`{display}` in {where} below `## BAZEL2GN SENTINEL` of '{gn_rel}' has no "
+                        f"source in '{bazel_rel}'"
+                        + (f' (`{name}` there has no annotation, tag or attribute that emits it)' if src else "")
+                        + "."
+                        + gn_unsupported_form_note(key, src)
+                        + (". " if gn_unsupported_form_note(key, src) else " ")
+                        + "It is a hand edit below the sentinel: the next `fx bazel2gn` run drops it "
+                        "and `verify_bazel2gn` fails in CQ."
+                    ),
+                    "remediation": (
+                        f"Express it in '{bazel_rel}'"
+                        + (f' on `{name}`' if name else "")
+                        + f" with {gn_construct_recipe(key)}, then re-run `fx bazel2gn -d {d}`. "
+                        "If bazel2gn cannot express it at all, keep the whole target hand-written "
+                        "above the sentinel and mark the Bazel target `# @bazel2gn:skip` with a comment."
+                    ),
+                })
+
+
+check_gn_only_constructs_below_sentinel(candidate_dirs)
 
 print(json.dumps(findings, indent=2))
 PYEOF

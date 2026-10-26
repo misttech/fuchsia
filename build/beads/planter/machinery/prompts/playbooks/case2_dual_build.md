@@ -6,6 +6,12 @@ working).
 - For `bazel2gn`-convertible non-test targets (libraries, standalone binaries, FIDL),
   BUILD.bazel is the source of truth; never hand-edit BUILD.gn below `## BAZEL2GN SENTINEL` and
   run `fx bazel2gn -d <dir>` after every BUILD.bazel edit.
+- Convertible targets with GN-only attributes (`exclude_toolchain_tags`, a `concurrent_jobs` pool,
+  toolchain-qualified `assert_no_deps`/`deps` labels, `rustenv`/`inputs` that embed a generated
+  file, `configs -=`) are generated too: name those GN lines on the BUILD.bazel target as in
+  "GN-only attributes on generated targets" in the coder prompt (e.g. the core
+  `component_manager` binary). Keeping such a target hand-written above the sentinel with a
+  `# @bazel2gn:skip` Bazel twin is the fallback when no annotation or tag can express it.
 - Non-test `fuchsia_package`/`fuchsia_package_with_single_component` targets migrate to
   `fx_package`/`fx_component`/`fx_component_manifest`/`fx_packaged_binary` in BUILD.bazel and are
   deleted from BUILD.gn (`bazel2gn` does not convert `fx_package`; omit the sentinel if BUILD.bazel
