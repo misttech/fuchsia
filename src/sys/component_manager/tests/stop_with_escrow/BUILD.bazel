@@ -1,0 +1,108 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "stop_with_escrow_integration_test_bin",
+    srcs = ["stop_with_escrow_integration_test.rs"],
+    crate_name = "stop_with_escrow_integration_test",
+    crate_root = "stop_with_escrow_integration_test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "stop_with_pending_request_bin",
+    srcs = ["stop_with_pending_request.rs"],
+    crate_name = "stop_with_pending_request",
+    crate_root = "stop_with_pending_request.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "stop_with_delivery_on_readable_request_bin",
+    srcs = ["stop_with_delivery_on_readable_request.rs"],
+    crate_name = "stop_with_delivery_on_readable_request",
+    crate_root = "stop_with_delivery_on_readable_request.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/detect-stall",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+rustc_binary(
+    name = "stop_with_dynamic_dictionary_bin",
+    srcs = ["stop_with_dynamic_dictionary.rs"],
+    crate_name = "stop_with_dynamic_dictionary",
+    crate_root = "stop_with_dynamic_dictionary.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/detect-stall",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_binary(
+    name = "stop_with_escrowed_dictionary_bin",
+    srcs = ["stop_with_escrowed_dictionary.rs"],
+    crate_name = "stop_with_escrowed_dictionary",
+    crate_root = "stop_with_escrowed_dictionary.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/detect-stall",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)

@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "shutdown_integration_test_bin",
+    srcs = ["shutdown_integration.rs"],
+    crate_name = "shutdown_integration_test",
+    crate_root = "shutdown_integration.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "system_controller_client_bin",
+    srcs = ["system_controller_client.rs"],
+    crate_name = "system_controller_client",
+    crate_root = "system_controller_client.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)

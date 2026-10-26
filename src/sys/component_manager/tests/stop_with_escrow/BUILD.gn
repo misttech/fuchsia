@@ -3,54 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_binary.gni")
-import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
 
   deps = [ ":stop_with_escrow_integration_test" ]
-}
-
-rustc_test("stop_with_escrow_integration_test_bin") {
-  name = "stop_with_escrow_integration_test"
-  edition = "2024"
-  source_root = "stop_with_escrow_integration_test.rs"
-  deps = [
-    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component-test",
-    "//src/lib/fuchsia-runtime",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//src/sys/lib/component-events",
-    "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:futures",
-  ]
-
-  sources = [ "stop_with_escrow_integration_test.rs" ]
-}
-
-rustc_binary("stop_with_pending_request_bin") {
-  name = "stop_with_pending_request"
-  edition = "2024"
-  source_root = "stop_with_pending_request.rs"
-  deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//third_party/rust_crates:futures",
-  ]
-
-  sources = [ "stop_with_pending_request.rs" ]
 }
 
 fuchsia_component("stop_with_pending_request") {
@@ -59,48 +16,10 @@ fuchsia_component("stop_with_pending_request") {
   deps = [ ":stop_with_pending_request_bin" ]
 }
 
-rustc_binary("stop_with_delivery_on_readable_request_bin") {
-  name = "stop_with_delivery_on_readable_request"
-  edition = "2024"
-  source_root = "stop_with_delivery_on_readable_request.rs"
-  deps = [
-    "//src/lib/detect-stall",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//third_party/rust_crates:futures",
-  ]
-
-  sources = [ "stop_with_delivery_on_readable_request.rs" ]
-}
-
 fuchsia_component("stop_with_delivery_on_readable_request") {
   testonly = true
   manifest = "meta/stop_with_delivery_on_readable_request.cml"
   deps = [ ":stop_with_delivery_on_readable_request_bin" ]
-}
-
-rustc_binary("stop_with_dynamic_dictionary_bin") {
-  name = "stop_with_dynamic_dictionary"
-  edition = "2024"
-  source_root = "stop_with_dynamic_dictionary.rs"
-  deps = [
-    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
-    "//sdk/rust/zx",
-    "//src/lib/detect-stall",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "stop_with_dynamic_dictionary.rs" ]
 }
 
 fuchsia_component("stop_with_dynamic_dictionary") {
@@ -108,27 +27,6 @@ fuchsia_component("stop_with_dynamic_dictionary") {
   manifest = "meta/stop_with_dynamic_dictionary.cml"
   deps = [ ":stop_with_dynamic_dictionary_bin" ]
   restricted_features = [ "dynamic_dictionaries" ]
-}
-
-rustc_binary("stop_with_escrowed_dictionary_bin") {
-  name = "stop_with_escrowed_dictionary"
-  edition = "2024"
-  source_root = "stop_with_escrowed_dictionary.rs"
-  deps = [
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
-    "//sdk/rust/zx",
-    "//src/lib/detect-stall",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "stop_with_escrowed_dictionary.rs" ]
 }
 
 fuchsia_component("stop_with_escrowed_dictionary") {
@@ -152,5 +50,121 @@ fuchsia_unittest_package("stop_with_escrow_integration_test") {
     ":stop_with_pending_request",
     ":test_root",
     "//src/sys/component_manager:component-manager-realm-builder-debug-cmp",
+  ]
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+rustc_test("stop_with_escrow_integration_test_bin") {
+  sources = [ "stop_with_escrow_integration_test.rs" ]
+  output_name = "stop_with_escrow_integration_test"
+  source_root = "stop_with_escrow_integration_test.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-runtime",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//src/sys/lib/component-events",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:futures",
+  ]
+}
+rustc_binary("stop_with_pending_request_bin") {
+  sources = [ "stop_with_pending_request.rs" ]
+  output_name = "stop_with_pending_request"
+  source_root = "stop_with_pending_request.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//third_party/rust_crates:futures",
+  ]
+}
+rustc_binary("stop_with_delivery_on_readable_request_bin") {
+  sources = [ "stop_with_delivery_on_readable_request.rs" ]
+  output_name = "stop_with_delivery_on_readable_request"
+  source_root = "stop_with_delivery_on_readable_request.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/detect-stall",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//third_party/rust_crates:futures",
+  ]
+}
+rustc_binary("stop_with_dynamic_dictionary_bin") {
+  sources = [ "stop_with_dynamic_dictionary.rs" ]
+  output_name = "stop_with_dynamic_dictionary"
+  source_root = "stop_with_dynamic_dictionary.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.component.runtime:fuchsia.component.runtime_rust",
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/rust/zx",
+    "//src/lib/detect-stall",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+rustc_binary("stop_with_escrowed_dictionary_bin") {
+  sources = [ "stop_with_escrowed_dictionary.rs" ]
+  output_name = "stop_with_escrowed_dictionary"
+  source_root = "stop_with_escrowed_dictionary.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/rust/zx",
+    "//src/lib/detect-stall",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
   ]
 }

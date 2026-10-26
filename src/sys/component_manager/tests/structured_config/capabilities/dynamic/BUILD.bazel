@@ -1,0 +1,29 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:raw_attribute:output_name = "sc_capabilities_dynamic_child"
+fx_cc_binary(
+    name = "child_bin",
+    testonly = True,
+    srcs = ["child.cc"],
+    deps = [
+        ":test.config_cpp",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/component/outgoing/cpp",
+    ],
+)
+
+fidl_library(
+    name = "test.config",
+    testonly = True,
+    srcs = ["config.test.fidl"],
+    deps = ["//zircon/vdso/zx"],
+)

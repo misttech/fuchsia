@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:raw_attribute:output_name = "structured_config_bad_values"
+fx_cc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.cc"],
+    deps = [
+        "//sdk/lib/fdio",  # @bazel2gn:skip
+        "//sdk/lib/syslog/cpp",
+    ],
+)
+
+rustc_test(
+    name = "cpp_sc_bad_values_test_bin",
+    srcs = ["src/test.rs"],
+    crate_root = "src/test.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+    ],
+)

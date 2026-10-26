@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "sc_client_integration_support",
+    testonly = True,
+    srcs = ["support/lib.rs"],
+    crate_root = "support/lib.rs",
+    edition = "2024",
+    visibility = [
+        "//src/sys/component_manager/tests/structured_config/client_integration/cpp_driver:__pkg__",
+        "//src/sys/component_manager/tests/structured_config/client_integration/rust:__pkg__",
+    ],
+    deps = [
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/structured_config/fidl:test.structuredconfig.receiver_rust",
+    ],
+)
