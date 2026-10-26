@@ -1,0 +1,18 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
+
+package(default_applicable_licenses = ["//:license"])
+
+metrics_registry(
+    name = "metrics",
+    generate_cc = True,
+    generate_rust = False,
+    namespace = "media_metrics",
+    # This must match the ID of our Cobalt project as specified in:
+    # third_party/cobalt_config/projects.yaml
+    project_id = 3142410971,
+    visibility = ["//src/media/lib:__subpackages__"],
+)
