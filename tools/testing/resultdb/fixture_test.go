@@ -35,7 +35,6 @@ func TestClassifyFixture(t *testing.T) {
 	tests := []struct {
 		name       string
 		detail     *runtests.TestDetails
-		wantOK     bool
 		wantStatus resultpb.TestResult_Status
 	}{
 		{
@@ -44,10 +43,10 @@ func TestClassifyFixture(t *testing.T) {
 				Name:   "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
 				Status: runtests.TestFailure,
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
 		},
 		{
-			name: "Scenario 1: clean pass",
+			name: "Scenario 1: clean pass or intentional skip",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestSuccess,
@@ -56,7 +55,7 @@ func TestClassifyFixture(t *testing.T) {
 					TeardownSucceeded: boolPtr(true),
 				},
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_PASSED,
 		},
 		{
 			name: "Scenario 2: case assertion failure with clean fixture",
@@ -68,22 +67,33 @@ func TestClassifyFixture(t *testing.T) {
 					TeardownSucceeded: boolPtr(true),
 				},
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_PASSED,
 		},
 		{
-			name: "Scenario 3: intentional skip",
+			name: "setup succeeded without a teardown outcome",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestSuccess,
+				TestResult: runtests.TestResult{
+					SetupSucceeded: boolPtr(true),
+				},
+			},
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
+		},
+		{
+			name: "setup and teardown succeeded with infra failure suite status is ignored",
+			detail: &runtests.TestDetails{
+				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
+				Status: runtests.TestInfraFailure,
 				TestResult: runtests.TestResult{
 					SetupSucceeded:    boolPtr(true),
 					TeardownSucceeded: boolPtr(true),
 				},
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
 		},
 		{
-			name: "Scenario 4: setup failed (intrinsic fixture bug)",
+			name: "Scenario 3: setup failed (intrinsic fixture bug)",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestFailure,
@@ -91,11 +101,10 @@ func TestClassifyFixture(t *testing.T) {
 					SetupSucceeded: boolPtr(false),
 				},
 			},
-			wantOK:     true,
 			wantStatus: resultpb.TestResult_FAILED,
 		},
 		{
-			name: "Scenario 5: mid-suite abort",
+			name: "Scenario 4: mid-suite abort",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestAborted,
@@ -103,7 +112,7 @@ func TestClassifyFixture(t *testing.T) {
 					SetupSucceeded: boolPtr(true),
 				},
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
 		},
 		{
 			name: "setup failed with non-failure suite status is ignored",
@@ -114,10 +123,10 @@ func TestClassifyFixture(t *testing.T) {
 					SetupSucceeded: boolPtr(false),
 				},
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
 		},
 		{
-			name: "Scenario 6: teardown failed after cases passed",
+			name: "Scenario 5: teardown failed after cases passed",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestFailure,
@@ -126,20 +135,19 @@ func TestClassifyFixture(t *testing.T) {
 					TeardownSucceeded: boolPtr(false),
 				},
 			},
-			wantOK:     true,
 			wantStatus: resultpb.TestResult_FAILED,
 		},
 		{
-			name: "Scenario 7: unaffected target skipped",
+			name: "Scenario 6: unaffected target skipped",
 			detail: &runtests.TestDetails{
 				Name:     "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status:   runtests.TestSkipped,
 				Affected: false,
 			},
-			wantOK: false,
+			wantStatus: resultpb.TestResult_STATUS_UNSPECIFIED,
 		},
 		{
-			name: "Scenario 8: contaminated environment (noisy neighbor) setup infra fail",
+			name: "Scenario 7: contaminated environment (noisy neighbor) setup infra fail",
 			detail: &runtests.TestDetails{
 				Name:   "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
 				Status: runtests.TestInfraFailure,
@@ -147,7 +155,6 @@ func TestClassifyFixture(t *testing.T) {
 					SetupSucceeded: boolPtr(false),
 				},
 			},
-			wantOK:     true,
 			wantStatus: resultpb.TestResult_EXECUTION_ERRORED,
 		},
 		{
@@ -160,24 +167,17 @@ func TestClassifyFixture(t *testing.T) {
 					TeardownSucceeded: boolPtr(false),
 				},
 			},
-			wantOK:     true,
 			wantStatus: resultpb.TestResult_EXECUTION_ERRORED,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			status, reason, ok := classifyFixture(tc.detail)
-			if ok != tc.wantOK {
-				t.Fatalf("classifyFixture() ok = %v, want %v", ok, tc.wantOK)
-			}
-			if !ok {
-				return
-			}
+			status, reason := classifyFixture(tc.detail)
 			if status != tc.wantStatus {
 				t.Errorf("classifyFixture() status = %v, want %v (reason %q)", status, tc.wantStatus, reason)
 			}
-			if reason == "" {
-				t.Errorf("classifyFixture() reason is empty")
+			if wantReason := status == resultpb.TestResult_FAILED; (reason != "") != wantReason {
+				t.Errorf("classifyFixture() reason = %q, want non-empty: %v", reason, wantReason)
 			}
 		})
 	}
@@ -191,13 +191,11 @@ func TestSynthesizeFixtureResult_NoFixture(t *testing.T) {
 			TestResult:           runtests.TestResult{SetupSucceeded: boolPtr(false)},
 			IsTestingFailureMode: true,
 		},
-		"clean pass": {
+		"lifecycle fields unset": {
 			Name:   "fuchsia-pkg://fuchsia.com/foo#meta/foo.cm",
 			Status: runtests.TestSuccess,
 			TestResult: runtests.TestResult{
-				SetupSucceeded:    boolPtr(true),
-				TeardownSucceeded: boolPtr(true),
-				Cases:             []runtests.TestCaseResult{{SuiteName: "Suite", CaseName: "Case", Format: "GoogleTest"}},
+				Cases: []runtests.TestCaseResult{{SuiteName: "Suite", CaseName: "Case", Format: "GoogleTest"}},
 			},
 		},
 	} {
@@ -415,7 +413,64 @@ func TestSynthesizeFixtureResult_TestIDTooLong(t *testing.T) {
 	}
 }
 
-func TestSynthesizeFixtureResult_Scenarios4And6And8(t *testing.T) {
+func TestSynthesizeFixtureResult_Scenarios(t *testing.T) {
+	t.Run("Scenarios 1 and 2: clean setup and teardown reports PASSED while cases keep their status", func(t *testing.T) {
+		for _, tc := range []struct {
+			status     runtests.TestStatus
+			caseStatus runtests.TestStatus
+			wantCase   resultpb.TestResult_Status
+		}{
+			{status: runtests.TestSuccess, caseStatus: runtests.TestSuccess, wantCase: resultpb.TestResult_PASSED},
+			{status: runtests.TestFailure, caseStatus: runtests.TestFailure, wantCase: resultpb.TestResult_FAILED},
+		} {
+			detail := &runtests.TestDetails{
+				Name:        "fuchsia-pkg://fuchsia.com/bt-host-smoke-test#meta/bt-host-smoke-test.cm",
+				SourceLabel: "//src/connectivity/bluetooth/tests/bt_host:bt_host_smoke_test",
+				Status:      tc.status,
+				StartTime:   time.Unix(1700000000, 0),
+				TestResult: runtests.TestResult{
+					SetupSucceeded:    boolPtr(true),
+					TeardownSucceeded: boolPtr(true),
+					ExitCode:          intPtr(0),
+					FailureReason:     runtests.FailureReasonFromMessage("BtHostTestSuite.TestConnectPeer failed"),
+					Cases: []runtests.TestCaseResult{
+						{
+							DisplayName: "BtHostTestSuite.TestConnectPeer",
+							SuiteName:   "BtHostTestSuite",
+							CaseName:    "TestConnectPeer",
+							Status:      tc.caseStatus,
+							Format:      "GoogleTest",
+						},
+					},
+				},
+			}
+
+			f, _ := synthesizeFixtureResult(testCaseResults(t, detail), detail)
+			if f == nil {
+				t.Fatalf("%s: synthesizeFixtureResult() = nil, want a fixture", tc.status)
+			}
+			if want := detail.Name + "/BtHostTestSuite:" + FixtureCaseName; f.TestId != want {
+				t.Errorf("%s: fixture TestId = %q, want %q", tc.status, f.TestId, want)
+			}
+			if f.StatusV2 != resultpb.TestResult_PASSED {
+				t.Errorf("%s: fixture StatusV2 = %v, want PASSED", tc.status, f.StatusV2)
+			}
+			if f.FailureReason != nil {
+				t.Errorf("%s: fixture FailureReason = %v, want nil for PASSED", tc.status, f.FailureReason)
+			}
+			if f.SummaryHtml != "" {
+				t.Errorf("%s: fixture SummaryHtml = %q, want empty for PASSED", tc.status, f.SummaryHtml)
+			}
+
+			caseResults, _, _ := testCaseToResultSink(detail.Cases, nil, detail, t.TempDir())
+			if len(caseResults) != 1 {
+				t.Fatalf("%s: got %d case results, want 1", tc.status, len(caseResults))
+			}
+			if got := caseResults[0].StatusV2; got != tc.wantCase {
+				t.Errorf("%s: case StatusV2 = %v, want %v", tc.status, got, tc.wantCase)
+			}
+		}
+	})
 	t.Run("Scenario 4: setup failure reports FAILED with CRASH kind and leaves case statuses unchanged", func(t *testing.T) {
 		outputRoot := t.TempDir()
 		artifactRel := "case_log.txt"
@@ -679,6 +734,19 @@ func TestTestToResultSink_FixtureNotDuplicated(t *testing.T) {
 			wantTestID: "fuchsia-pkg://fuchsia.com/setup-fail#meta/setup-fail.cm",
 		},
 		{
+			desc: "top-level result of a passing test without test cases is the fixture",
+			detail: &runtests.TestDetails{
+				Name:      "fuchsia-pkg://fuchsia.com/pass#meta/pass.cm",
+				Status:    runtests.TestSuccess,
+				StartTime: time.Unix(1700000000, 0),
+				TestResult: runtests.TestResult{
+					SetupSucceeded:    boolPtr(true),
+					TeardownSucceeded: boolPtr(true),
+				},
+			},
+			wantTestID: "fuchsia-pkg://fuchsia.com/pass#meta/pass.cm",
+		},
+		{
 			desc: "fixture is synthesized for a test with test cases",
 			detail: &runtests.TestDetails{
 				Name:      "fuchsia-pkg://fuchsia.com/setup-fail#meta/setup-fail.cm",
@@ -752,7 +820,7 @@ func TestTruncateEscapedHTML(t *testing.T) {
 func TestSummaryToResultSink_FixtureSynthesis(t *testing.T) {
 	longName := strings.Repeat("a", MaxTestIDLength)
 	summary := &runtests.TestSummary{Tests: []runtests.TestDetails{
-		// Scenario 1: Clean pass -> no fixture
+		// Scenario 1: Clean pass -> 1 fixture (PASSED)
 		{
 			Name:      "fuchsia-pkg://fuchsia.com/pass#meta/pass.cm",
 			Status:    runtests.TestSuccess,
@@ -762,6 +830,30 @@ func TestSummaryToResultSink_FixtureSynthesis(t *testing.T) {
 				TeardownSucceeded: boolPtr(true),
 				Cases: []runtests.TestCaseResult{
 					{SuiteName: "PassSuite", CaseName: "Case1", Status: runtests.TestSuccess, Format: "GoogleTest"},
+				},
+			},
+		},
+		// Scenario 2: Case failure with clean fixture -> 1 fixture (PASSED)
+		{
+			Name:      "fuchsia-pkg://fuchsia.com/case-fail#meta/case-fail.cm",
+			Status:    runtests.TestFailure,
+			StartTime: time.Unix(1700000000, 0),
+			TestResult: runtests.TestResult{
+				SetupSucceeded:    boolPtr(true),
+				TeardownSucceeded: boolPtr(true),
+				Cases: []runtests.TestCaseResult{
+					{SuiteName: "CaseFailSuite", CaseName: "Case1", Status: runtests.TestFailure, Format: "GoogleTest"},
+				},
+			},
+		},
+		// Lifecycle fields unset -> no fixture
+		{
+			Name:      "fuchsia-pkg://fuchsia.com/no-lifecycle#meta/no-lifecycle.cm",
+			Status:    runtests.TestSuccess,
+			StartTime: time.Unix(1700000000, 0),
+			TestResult: runtests.TestResult{
+				Cases: []runtests.TestCaseResult{
+					{SuiteName: "NoLifecycleSuite", CaseName: "Case1", Status: runtests.TestSuccess, Format: "GoogleTest"},
 				},
 			},
 		},
@@ -825,19 +917,33 @@ func TestSummaryToResultSink_FixtureSynthesis(t *testing.T) {
 		},
 	}}
 	results, _, testsSkipped := SummaryToResultSink(summary, nil, t.TempDir())
+	fixtureStatuses := map[string]resultpb.TestResult_Status{}
 	var fixtureIDs []string
 	for _, r := range results {
 		if strings.HasSuffix(r.TestId, ":"+FixtureCaseName) {
 			fixtureIDs = append(fixtureIDs, r.TestId)
+			fixtureStatuses[r.TestId] = r.StatusV2
 		}
 	}
+	wantFixtureStatuses := map[string]resultpb.TestResult_Status{
+		"fuchsia-pkg://fuchsia.com/pass#meta/pass.cm/PassSuite:" + FixtureCaseName:                  resultpb.TestResult_PASSED,
+		"fuchsia-pkg://fuchsia.com/case-fail#meta/case-fail.cm/CaseFailSuite:" + FixtureCaseName:    resultpb.TestResult_PASSED,
+		"fuchsia-pkg://fuchsia.com/setup-fail#meta/setup-fail.cm/SetupFailSuite:" + FixtureCaseName: resultpb.TestResult_FAILED,
+		"fuchsia-pkg://fuchsia.com/teardown-fail#meta/teardown-fail.cm/test:" + FixtureCaseName:     resultpb.TestResult_FAILED,
+		"fuchsia-pkg://fuchsia.com/noisy#meta/noisy.cm/NoisySuite:" + FixtureCaseName:               resultpb.TestResult_EXECUTION_ERRORED,
+	}
 	wantFixtureIDs := []string{
+		"fuchsia-pkg://fuchsia.com/pass#meta/pass.cm/PassSuite:" + FixtureCaseName,
+		"fuchsia-pkg://fuchsia.com/case-fail#meta/case-fail.cm/CaseFailSuite:" + FixtureCaseName,
 		"fuchsia-pkg://fuchsia.com/setup-fail#meta/setup-fail.cm/SetupFailSuite:" + FixtureCaseName,
 		"fuchsia-pkg://fuchsia.com/teardown-fail#meta/teardown-fail.cm/test:" + FixtureCaseName,
 		"fuchsia-pkg://fuchsia.com/noisy#meta/noisy.cm/NoisySuite:" + FixtureCaseName,
 	}
 	if diff := cmp.Diff(wantFixtureIDs, fixtureIDs); diff != "" {
 		t.Errorf("fixture test IDs mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantFixtureStatuses, fixtureStatuses); diff != "" {
+		t.Errorf("fixture statuses mismatch (-want +got):\n%s", diff)
 	}
 	// The long-named test's case is also skipped, so only compare *fixtures.
 	// With no test case result to share a fine_name with, the *fixture falls

@@ -32,27 +32,42 @@ const MaxSummaryHTMLLength = 4096
 // classifyFixture determines whether to synthesize a *fixture result for a test
 // suite execution and what its StatusV2 should be.
 //
-// A *fixture result is only synthesized when setup or teardown fails; a clean
-// setup and teardown does not produce one:
-//   - FAIL (intrinsic fixture failure) -> FAILED
-//   - INFRA_FAIL (environmental or infrastructure failure) -> EXECUTION_ERRORED
-func classifyFixture(t *runtests.TestDetails) (status resultpb.TestResult_Status, reason string, ok bool) {
+// A *fixture result is synthesized whenever setup and teardown outcomes are
+// reported, so that LUCI Analysis sees both passing and failing runs of the
+// *fixture to compute flake rates and detect changepoints:
+//   - setup and teardown both succeeded (e.g. with PASS, or FAIL when only
+//     test cases failed) -> PASSED, unless the suite had an INFRA_FAIL
+//   - setup or teardown failed with FAIL (intrinsic fixture failure) -> FAILED
+//   - setup or teardown failed with INFRA_FAIL (environmental or
+//     infrastructure failure) -> EXECUTION_ERRORED
+//
+// Returns STATUS_UNSPECIFIED if no *fixture should be reported. reason is only
+// set for FAILED, as the fallback failure reason (see fixtureFailureReason).
+func classifyFixture(t *runtests.TestDetails) (status resultpb.TestResult_Status, reason string) {
 	if t.Status == runtests.TestFailure {
 		if t.SetupSucceeded != nil && !*t.SetupSucceeded {
-			return resultpb.TestResult_FAILED, "Test setup failed before test cases could run.", true
+			return resultpb.TestResult_FAILED, "Test setup failed before test cases could run."
 		}
 		if t.TeardownSucceeded != nil && !*t.TeardownSucceeded {
-			return resultpb.TestResult_FAILED, "Test teardown failed after test cases executed.", true
+			return resultpb.TestResult_FAILED, "Test teardown failed after test cases executed."
 		}
 	} else if t.Status == runtests.TestInfraFailure {
 		if t.SetupSucceeded != nil && !*t.SetupSucceeded {
-			return resultpb.TestResult_EXECUTION_ERRORED, "Test setup failed due to an infrastructure or environmental error.", true
+			return resultpb.TestResult_EXECUTION_ERRORED, ""
 		}
 		if t.TeardownSucceeded != nil && !*t.TeardownSucceeded {
-			return resultpb.TestResult_EXECUTION_ERRORED, "Test teardown failed due to an infrastructure or environmental error.", true
+			return resultpb.TestResult_EXECUTION_ERRORED, ""
 		}
+		// The infrastructure failure is not attributable to setup or
+		// teardown, so there is nothing to report about the *fixture.
+		return resultpb.TestResult_STATUS_UNSPECIFIED, ""
 	}
-	return resultpb.TestResult_STATUS_UNSPECIFIED, "", false
+	setupSucceeded := t.SetupSucceeded != nil && *t.SetupSucceeded
+	teardownSucceeded := t.TeardownSucceeded != nil && *t.TeardownSucceeded
+	if setupSucceeded && teardownSucceeded {
+		return resultpb.TestResult_PASSED, ""
+	}
+	return resultpb.TestResult_STATUS_UNSPECIFIED, ""
 }
 
 // hasFixture reports whether results already contain a *fixture under
@@ -125,8 +140,8 @@ func fixtureFineName(scheme string, results []*sinkpb.TestResult) string {
 }
 
 // synthesizeFixtureResult builds the <fine_name>/*fixture TestResult for a
-// test suite execution when setup or teardown failed, or nil if no fixture
-// should be reported. If the fixture's test ID exceeds MaxTestIDLength, it
+// test suite execution that reports its setup and teardown outcomes (see
+// classifyFixture), or nil if no fixture should be reported. If the fixture's test ID exceeds MaxTestIDLength, it
 // returns nil and the test ID so that the caller can report it as skipped.
 //
 // SetupSucceeded and TeardownSucceeded describe the suite execution as a
@@ -141,8 +156,8 @@ func synthesizeFixtureResult(results []*sinkpb.TestResult, testDetail *runtests.
 		return nil, ""
 	}
 
-	status, reason, ok := classifyFixture(testDetail)
-	if !ok {
+	status, reason := classifyFixture(testDetail)
+	if status == resultpb.TestResult_STATUS_UNSPECIFIED {
 		return nil, ""
 	}
 
