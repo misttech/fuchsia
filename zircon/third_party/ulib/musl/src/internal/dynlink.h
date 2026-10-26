@@ -4,6 +4,7 @@
 #include <elf.h>
 #include <features.h>
 #include <link.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
@@ -75,6 +76,10 @@ void _dl_log_unlogged(void) ATTR_LIBC_VISIBILITY;
 void _dl_log_write(const char* buffer, size_t len) ATTR_LIBC_VISIBILITY;
 void _dl_log_write_init(zx_handle_t handle, uint32_t info) ATTR_LIBC_VISIBILITY;
 void _dl_log_write_init_fallback(void) ATTR_LIBC_VISIBILITY;
+
+// Formats and writes a message like _dl_log_write.  Unlike vfprintf, this
+// is safe to call before the compiler ABI (shadow call stack, etc.) is set up.
+void _dl_log_vprintf(const char* format, va_list args) ATTR_LIBC_VISIBILITY;
 
 // These are redundant with the decls in dlfcn/dlfcn-abi.h, which is C++-only.
 void _dlfcn_lock(void) ATTR_LIBC_VISIBILITY;

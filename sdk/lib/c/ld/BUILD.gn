@@ -225,6 +225,7 @@ libc_source_set("musl-glue.basic") {
   # These symbols are what the legacy libc.so gets from this libc_source_set().
   global_symbols = [
     "__sanitizer_log_write",
+    "_dl_log_vprintf",
     "_dl_log_write",
     "_dl_log_write_init",
     "_dl_log_write_init_fallback",

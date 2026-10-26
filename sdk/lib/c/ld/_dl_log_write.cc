@@ -4,12 +4,25 @@
 
 #include <lib/ld/processargs.h>
 
+#include <cstdarg>
+
 #include "dynlink.h"
 #include "log.h"
+#include "stdio/printf_core/wrapper.h"
 
 using LIBC_NAMESPACE::gLog;
 
 void _dl_log_write(const char* buffer, size_t len) { gLog({buffer, len}); }
+
+// This is called by the legacy dynamic linker's error() and debugmsg() paths,
+// which can run before the compiler ABI (thread pointer, shadow call stack,
+// unsafe stack) has been set up, so they cannot use stdio's vfprintf.  This
+// code is built for the basic machine ABI and uses the hermetic printf core.
+void _dl_log_vprintf(const char* format, va_list args) {
+  using LIBC_NAMESPACE::printf_core::Printf;
+  using LIBC_NAMESPACE::printf_core::PrintfNewline;
+  Printf<ld::Log::kBufferSize, PrintfNewline::kNo>(gLog, format, args);
+}
 
 // This is called by __dls3 for any PA_FD handle in the bootstrap message.
 void _dl_log_write_init(zx_handle_t handle, uint32_t info) {

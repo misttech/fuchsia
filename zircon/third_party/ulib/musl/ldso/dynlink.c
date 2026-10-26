@@ -2756,32 +2756,13 @@ LIBC_NO_SAFESTACK zx_status_t dl_clone_loader_service(zx_handle_t* out) {
   return status;
 }
 
-LIBC_NO_SAFESTACK static size_t errormsg_write(FILE* f, const unsigned char* buf, size_t len) {
-  if (f != NULL && f->wpos > f->wbase) {
-    _dl_log_write((const char*)f->wbase, f->wpos - f->wbase);
-  }
-
-  if (len > 0) {
-    _dl_log_write((const char*)buf, len);
-  }
-
-  if (f != NULL) {
-    f->wend = f->buf + f->buf_size;
-    f->wpos = f->wbase = f->buf;
-  }
-
-  return len;
-}
-
-LIBC_NO_SAFESTACK static int errormsg_vprintf(const char* restrict fmt, va_list ap) {
-  FILE f = {
-      .lbf = EOF,
-      .write = errormsg_write,
-      .buf = (void*)fmt,
-      .buf_size = 0,
-      .lock = -1,
-  };
-  return vfprintf(&f, fmt, ap);
+// This can be called before the compiler ABI is set up (e.g. from __dls3 or
+// load_deps), so it must not use stdio: vfprintf and its callees are built
+// with the shadow-call-stack (or safe-stack) ABI, which faults when the
+// corresponding register or thread pointer has not been initialized yet.
+// _dl_log_vprintf is built for the basic machine ABI.
+LIBC_NO_SAFESTACK static void errormsg_vprintf(const char* restrict fmt, va_list ap) {
+  _dl_log_vprintf(fmt, ap);
 }
 
 LIBC_NO_SAFESTACK static void debugmsg(const char* fmt, ...) {
