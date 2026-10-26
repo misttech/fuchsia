@@ -20,6 +20,7 @@ When conducting tests on a local target, execute the following steps:
 ### 1.1 Verify Target Device Presence
 Before initiating the test suite, ensure the Device Under Test (DUT) is
 connected and responsive:
+
 * **Command:** `ffx target list` to discover it.
 * **Command:** `ffx target echo` to verify responsiveness.
 * **Note:** The device may be physically attached OR it may be remote-forwarded
@@ -32,9 +33,10 @@ connected and responsive:
 WLAN E2E tests frequently require specialized hardware like Access Points
 (Whirlwind, OpenWRT), PDUs (DigitalLoggers, Synaccess), software-controlled
 attenuators, etc.
-1.  **Analyze Test Code:** Check the relevant Python test file to see what
-    specific hardware arguments are required (e.g., `ap-ip`, `ap-ssh-port`).
-    Common locations include:
+
+1.  **Analyze Test Code:** Verify the relevant Python test file to see what
+    specific hardware arguments the test requires (e.g., `ap-ip`,
+    `ap-ssh-port`). Common locations include:
     * `//src/testing/end_to_end/antlion/tests/`
     * `//src/connectivity/wlan/tests/`
 2.  **Verify Presence:** Look in the user's prompt or local environment for
@@ -48,14 +50,16 @@ attenuators, etc.
     misconfigured hardware was the cause.
 
 ### 1.3 Run the Fuchsia E2E Test
-Launch tests using `fx test`. E2E tests require specific flags followed by a
-`--` separator to pass the hardware configuration parameters to the test script.
+Start tests using `fx test`. E2E tests require specific flags followed by a `--`
+separator to pass the hardware configuration parameters to the test script.
+
 * **Example Syntax:** `fx test --output --timeout 1200 --e2e sched_scan_test --
   --ap-ip 127.0.0.1 --ap-ssh-port 8023 --device "[::1]:8022"`
 * **Pattern:** `fx test --output --timeout 1200 --e2e <test_name> --
   <equipment_params...>`
 
 **Key E2E Testing Caveats & Requirements:**
+
 * **Package Server (`fx serve`):** Some tests actively pull packages and require
   a package server to be running. If a package server is not running, the `fx
   test` command should automatically raise one by default. However, if it does
@@ -86,6 +90,7 @@ investigate.
 
 ### 1.5 Analyze Test Output
 Once execution is complete:
+
 1.  **Review the Summary:** Parse the final summary block showing numbers of
     tests passed, failed, skipped, and errored.
 2.  **Analyze Failures:** Scan the `stdout` logs for panics, assertion failures,
@@ -99,7 +104,7 @@ Once execution is complete:
 ## 2. Running Tests with `fx test-remote`
 
 When targeting tests for which the user does not have the necessary local
-hardware (e.g. attenuator), utilize remote infrastructure.
+hardware (e.g. attenuator), use remote infrastructure.
 
 ### 2.1 Use the `fx-test-remote` Skill
 Apply the procedures defined in the
@@ -109,32 +114,35 @@ tasks on infrastructure. Look for WLAN specific builders.
 ### 2.2 Configure `fx set` (User Confirmation Required!)
 Testing remotely often demands reconfiguring the local Fuchsia checkout to match
 the remote builder's parameters.
+
 * **Actionable Rule:** You may need to run `fx set` to align the build graph. If
-  you suspect this is required, propose the specific `fx set` command
+  you suspect the build needs this change, propose the specific `fx set` command
   immediately in your response to the user so they can approve or deny it
   without blocking.
 * ** CRITICAL:** NEVER run an `fx set` command without the user's explicit
   confirmation, as doing so will wipe their existing build outputs.
 
 ### 2.3 Analyze Results
-After kicking off an infra run, use infra tools (`bb` or `logdog` as documented
-in `fx-test-remote`) to retrieve and analyze test logs. Follow
-`wlan-luci-triage` principles to parse snapshots and test framework errors.
+After starting an infra run, use infra tools (`bb` or `logdog` as documented in
+`fx-test-remote`) to retrieve and analyze test logs. Follow
+`wlan-e2e-test-luci-triage` principles to parse snapshots and test framework
+errors.
 
 ---
 
 ## 3. Additional Features & Capabilities (Expert Troubleshooting)
 
-When assisting users with WLAN E2E tests, proactively utilize your knowledge of
+When assisting users with WLAN E2E tests, proactively use your knowledge of
 Fuchsia WLAN test topologies to provide expert assistance:
 
 ### 3.1 Resolving Broken Testbed Infrastructure
 If tests fail to communicate with equipment (DUTs, APs, PDUs), assist with
 network debugging:
+
 * **Ask About Forwarding:** Consistently inquire whether the device is remote or
   locally forwarded if you hit connectivity issues. If the device is remote,
-  remind the user to double check their remote forwarding tools, including
-  `mrt`, `pontis`, etc.
+  remind the user to verify their remote forwarding tools, including `mrt`,
+  `pontis`, etc.
 * **SSH Access Point Rejections:** If SSH to a Whirlwind or OpenWRT AP fails
   (e.g. "Connection timed out during banner exchange"), advise the user to edit
   their `~/.ssh/config` to use `ProxyCommand none` for the AP's subnet to bypass
@@ -147,6 +155,7 @@ network debugging:
 ### 3.2 Recommending Build Contexts and Product Bundles
 WLAN tests run against specific testing product bundles which exclude default
 production components (like `cast_agent`) that could interfere with the tests.
+
 * **Build Setup:** Remind users configuring their local development setup for
   specific tests that they may need to include:
   `--args='product_bundle_labels+=["//vendor/google/tests/end_to_end/wlan/product_bundles"]'`
@@ -169,11 +178,12 @@ production components (like `cast_agent`) that could interfere with the tests.
 
 ## 4. Iterative Development & Test-Driven Development (TDD)
 
-When actively developing WLAN features alongside writing or modifying E2E tests,
+When actively developing WLAN features alongside writing or changing E2E tests,
 it is critical to understand when to re-flash devices versus when merely
 re-running the test framework is sufficient.
 
 ### 4.1 Test Code vs. System Source Code
+
 * **Test Code Changes:** Changes exclusively to the Python E2E test files do NOT
   require flashing or rebooting the device. Simply rebuild (e.g. `fx build`) and
   re-run the test command (`fx test ...`). The Antlion runner will execute the
@@ -218,29 +228,29 @@ OTA and flashing.
         target echo && break; sleep 1; done`
 
 CRITICAL: Consider polling the user to determine which flash tool is preferable
-given their local hardware and the build type. Remind the user to ensure their
-devices are connected, discoverable (e.g. `ffx target list`), and reachable
-(e.g. `ffx target ssh`) before proceeding. This will help ensure any
-user-specific setup (e.g. devices plugged in, remote SSH tunnels/forwarding,
-etc.) are prepared beforehand, and reduces the risk of getting stuck with
+given their local hardware and the build type. Remind the user to connect their
+devices and ensure they are discoverable (e.g. `ffx target list`) and reachable
+(e.g. `ffx target ssh`) before proceeding. This step helps ensure the user
+prepares any custom setup (e.g. devices plugged in, remote SSH
+tunnels/forwarding, etc.) beforehand, and reduces the risk of getting stuck with
 unreachable devices.
 
 ### 4.3 Verifying Code Deployment (Revision Tagging)
 In complex systems with many moving components, it can be difficult to verify if
-your newly compiled code successfully deployed and was loaded by the device.
-**Helpful Practice:** Add a temporary, highly visible syslog statement with an
-incrementing "Revision" number to the initialization block of the class or
-function you are modifying. Example: `LOGF(INFO, "MyComponent::Initialize
-[Revision 12] started");` Always bump this revision number with every build and
-flash iteration. Before investigating a new test failure, immediately grep the
-test logs or `ffx log dump` for your revision tag (`[Revision 12]`) to
-confidently confirm your code is actively running on the device. Remove this
-logline when work is completed.
+the device deployed and loaded your newly compiled code. **Helpful Practice:**
+Add a temporary, highly visible syslog statement with an incrementing "Revision"
+number to the initialization block of the class or function you are changing.
+Example: `LOGF(INFO, "MyComponent::Initialize [Revision 12] started");` Always
+bump this revision number with every build and flash iteration. Before
+investigating a new test failure, immediately grep the test logs or `ffx log
+dump` for your revision tag (`[Revision 12]`) to confidently verify your code is
+actively running on the device. Remove this logline when you finish your work.
 
 ## 5. Other Compatible Skills
 This skill is part of a larger ecosystem of testing workflows. Actively consult
 these related skills when relevant:
+
 * Global Fuchsia skills under `fuchsia/.agents/skills/`
 * WLAN domain-specific skills under
-  `fuchsia/src/connectivity/wlan/.agents/skills/` (e.g., `wlan-luci-triage` to
-  analyze remote LUCI CI failures).
+  `fuchsia/src/connectivity/wlan/.agents/skills/` (e.g.,
+  `wlan-e2e-test-luci-triage` to analyze remote LUCI CI failures).
