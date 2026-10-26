@@ -1264,6 +1264,48 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   EXPECT_STATUS(res4.value(), ZX_ERR_INTERNAL);
 }
 
+TEST_F(UsbPeripheralFunctionTest, DisableEndpointDuringClearFunctionsTeardownSucceeds) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  zx::result<uint8_t> ep_addr_result = ConfigureDefaultFunction(function_client, arena);
+  ASSERT_OK(ep_addr_result);
+  uint8_t ep_addr = ep_addr_result.value();
+
+  fidl::WireSharedClient<ffunction::UsbFunction> shared_function_client(
+      function_client.TakeClientEnd(),
+      dut().runtime().StartBackgroundDispatcher()->async_dispatcher());
+
+  libsync::Completion disable_completed;
+  auto stop_cleanup = fit::defer([&]() {
+    dut().RunInEnvironmentTypeContext(
+        [](UsbPeripheralTestEnvironment& env) { env.dci().set_on_stop_controller(nullptr); });
+  });
+  dut().RunInEnvironmentTypeContext([&](UsbPeripheralTestEnvironment& env) {
+    env.dci().set_on_stop_controller([&]() {
+      shared_function_client->DisableEndpoint(ep_addr).ThenExactlyOnce(
+          [&](fidl::WireUnownedResult<ffunction::UsbFunction::DisableEndpoint>& res) {
+            EXPECT_TRUE(res.ok()) << res.FormatDescription();
+            if (res.ok()) {
+              EXPECT_OK(res.value());
+            }
+            disable_completed.Signal();
+          });
+    });
+  });
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  auto clear_res = peripheral_client.value()->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+  disable_completed.Wait();
+  dut().runtime().RunUntilIdle();
+}
+
 TEST_F(UsbPeripheralFunctionTest, StateTransitionErrors) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);

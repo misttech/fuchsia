@@ -342,12 +342,24 @@ void UsbFunction::ConfigureEndpoint(ConfigureEndpointRequest& request,
 void UsbFunction::DisableEndpoint(DisableEndpointRequest& request,
                                   DisableEndpointCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", request.endpoint_address());
+  const uint8_t ep_address = request.endpoint_address();
+  // During peripheral teardown, CompleteFunctionsTeardown() stops the DCI controller and resets
+  // endpoint_map_ entries before child function drivers finish their PrepareStop() callbacks.
+  // Treat DisableEndpoint() as an idempotent success when teardown has already cleared the
+  // endpoint mapping or function interface.
+  if (peripheral_->IsPeripheralStopping() || state_ == FunctionState::kCleared) {
+    if (!function_intf_.is_valid() || !peripheral_->ValidateEndpoint(index_, ep_address)) {
+      peripheral_->dci_inspect().RecordEvent(
+          std::format("endpoint 0x{:02x} already disabled", ep_address));
+      completer.Reply(fit::ok());
+      return;
+    }
+  }
   if (!function_intf_.is_valid()) {
     fdf::debug("DisableEndpoint called with invalid function interface");
     completer.Reply(fit::as_error(ZX_ERR_BAD_STATE));
     return;
   }
-  const uint8_t ep_address = request.endpoint_address();
   if (!peripheral_->ValidateEndpoint(index_, ep_address)) {
     completer.Reply(fit::as_error(ZX_ERR_NOT_FOUND));
     return;
