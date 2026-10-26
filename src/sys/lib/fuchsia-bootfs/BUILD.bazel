@@ -1,0 +1,81 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//packages:resources.bzl", "fuchsia_package_resource_group", "resource")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+resource(
+    name = "testdata_bootfs",
+    src = "testdata/basic.bootfs.uncompressed",
+    dest = "data/basic.bootfs.uncompressed",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+)
+
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "testdata_golden_subdir",
+    srcs = [
+        "testdata/input/dir/empty",
+        "testdata/input/dir/lorem.txt",
+        "testdata/input/dir/simple-copy.txt",
+    ],
+    basename_only = True,
+    dest = "data/golden/dir",
+)
+
+# @bazel2gn:skip
+fuchsia_package_resource_group(
+    name = "testdata_golden_root",
+    srcs = [
+        "testdata/input/empty",
+        "testdata/input/random.dat",
+        "testdata/input/simple.txt",
+    ],
+    basename_only = True,
+    dest = "data/golden",
+)
+
+rustc_library(
+    name = "fuchsia-bootfs",
+    srcs = [
+        "src/bootfs.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/bringup/lib/userboot/rust:__pkg__",
+        "//src/factory/factory_store_providers:__pkg__",
+        "//src/firmware/lib/zircon_boot/test/rust/factory_bootfs_util:__pkg__",
+        "//src/sys/component_manager:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "fuchsia-bootfs_test",
+    crate = ":fuchsia-bootfs",
+    edition = "2024",
+    deps = ["//third_party/rust_crates/vendor:anyhow"],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "fuchsia-bootfs-tests",
+    resources = [
+        ":testdata_bootfs",
+        ":testdata_golden_root",
+        ":testdata_golden_subdir",
+    ],
+    unit_tests = [":fuchsia-bootfs_test"],
+)

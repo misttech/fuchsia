@@ -1,0 +1,65 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "capability_source",
+    srcs = ["src/lib.rs"],
+    # Some host tools use serde to serialize/deserialize types defined in
+    # this crate. This dependency is guarded in code via #[cfg(feature = "serde")]
+    # and #[cfg_attr(feature = "serde", ...)] to prevent serde dependencies in
+    # non-host builds.
+    crate_features = select({
+        "//build/bazel/platforms:is_host_os": [
+            "serde",
+        ],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    visibility = [
+        "//src/security/lib/scrutiny/frontend:__pkg__",
+        "//src/sys/component_manager:__pkg__",
+        "//src/sys/lib/routing:__subpackages__",
+        "//src/sys/lib/runtime_capabilities:__pkg__",
+        "//tools/lib/cm_fidl_analyzer:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/from-enum",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/moniker",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//third_party/rust_crates/vendor:serde",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "capability_source_test",
+    crate = ":capability_source",
+    crate_features = select({
+        "//build/bazel/platforms:is_host_os": [
+            "serde",
+        ],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    ],
+)
+
+fx_unittest_package(
+    name = "capability_source_tests",
+    unit_tests = [":capability_source_test"],
+)

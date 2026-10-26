@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "abi",
+    srcs = ["src/lib.rs"],
+    # TODO(https://fxbug.dev/42082652): //sdk/fidl/zbi:zbi_zither.rust is unused right now,
+    # but is depended upon for compilation exercise. Future changes will begin
+    # to replace the abi crate with the generated one, at which point this can be
+    # removed.
+    build_flags = [":unused"],
+    crate_name = "fuchsia_zbi_abi",
+    # @bazel2gn:skip
+    disable_clippy = True,
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:num-derive"],
+    visibility = ["//src/sys/lib/fuchsia-zbi:__pkg__"],
+    deps = [
+        "//sdk/fidl/zbi:zbi_zither.rust",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+# LINT.IfChange(unused)
+# @bazel2gn:skip
+build_flags(
+    name = "unused",
+    rustflags = ["-Aunused-crate-dependencies"],
+)
+# LINT.ThenChange(BUILD.gn:unused)
