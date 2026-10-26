@@ -5,11 +5,10 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_LOG_LOG_H_
 #define SRC_CONNECTIVITY_NETWORK_DRIVERS_NETWORK_DEVICE_LOG_LOG_H_
 
+#include <lib/syslog/cpp/log_message_impl.h>
 #include <zircon/compiler.h>
 
 #include <cstdarg>
-
-#include <sdk/lib/syslog/cpp/log_message_impl.h>
 
 namespace network {
 namespace internal {
