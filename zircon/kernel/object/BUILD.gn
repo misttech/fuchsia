@@ -44,7 +44,6 @@ source_set("object") {
     "iommu_dispatcher_ffi.cc",
     "job_dispatcher.cc",
     "job_dispatcher_ffi.cc",
-    "job_policy.cc",
     "log_dispatcher.cc",
     "log_dispatcher_ffi.cc",
     "memory_watchdog.cc",
@@ -168,30 +167,6 @@ source_set("tests") {
 group("kernel-tests") {
   testonly = true
   deps = [ ":tests" ]
-}
-
-kernel_bindgen_crate("process-dispatcher-bindings") {
-  visibility = [ ":*" ]
-  headers = [ "include/object/process_dispatcher_ffi.h" ]
-  non_rust_deps = [ ":headers" ]
-  output_name = "process_dispatcher_bindings.rs"
-  cpp = true
-  notice_year = 2026
-  function_allowlist = [
-    "cpp_process_dispatcher_normal_aspace",
-    "cpp_process_dispatcher_restricted_aspace",
-  ]
-  type_allowlist = [ "ProcessDispatcher" ]
-  opaque_types = [ "ProcessDispatcher" ]
-  function_blocklist = [ "ProcessDispatcher_.*" ]
-  type_blocklist = [ "VmAspace" ]
-  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-
-  edition = "2024"
-  raw_lines = [
-    "#![no_std]",
-    "pub type VmAspace = core::ffi::c_void;",
-  ]
 }
 
 kernel_bindgen_crate("executor-bindings") {
@@ -327,7 +302,6 @@ kernel_rust_mod("object-rs") {
 
   deps = [
     ":executor-bindings",
-    ":process-dispatcher-bindings",
     "//sdk/rust/iob",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",

@@ -8,10 +8,8 @@
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
-#include <object/process_dispatcher_ffi.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
-#include <object/vm_object_dispatcher.h>
 
 extern "C" {
 
@@ -118,12 +116,6 @@ FFI_ALWAYS_INLINE const HandleTable* cpp_process_dispatcher_handle_table(
 FFI_ALWAYS_INLINE zx_status_t
 cpp_process_dispatcher_enforce_basic_policy(ProcessDispatcher* process, uint32_t policy) {
   return process->EnforceBasicPolicy(policy);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE int64_t
-cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process) {
-  return process->GetTimerSlackPolicy().amount();
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -243,12 +235,6 @@ cpp_process_dispatcher_set_dyn_break_on_load(ProcessDispatcher* process, uintptr
   return process->set_dyn_break_on_load(break_on_load);
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uintptr_t
-cpp_process_dispatcher_vdso_base_address(const ProcessDispatcher* process) {
-  return process->vdso_base_address();
-}
-
 #if ARCH_X86
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE uintptr_t
@@ -256,14 +242,6 @@ cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* process) {
   return process->hw_trace_context_id();
 }
 #endif
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE zx_status_t cpp_process_attach_aspace_to_thread(ProcessDispatcher* process,
-                                                                  Thread* core_thread) {
-  VmAspace* aspace = process->normal_aspace();
-  aspace->AttachToThread(core_thread);
-  return ZX_OK;
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process,

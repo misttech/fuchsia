@@ -43,7 +43,7 @@ use zx_types::{
     zx_info_task_runtime_t, zx_info_thread_stats_t, zx_info_thread_t, zx_rights_t,
 };
 
-pub use crate::kernel::types::cpu_mask_t;
+use crate::kernel::types::cpu_mask_t;
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -274,7 +274,7 @@ impl core::ops::Deref for CurrentMessageWaiter {
 }
 
 /// Default rights for a thread handle.
-pub const DEFAULT_RIGHTS: zx_rights_t = zx_types::ZX_DEFAULT_THREAD_RIGHTS;
+const DEFAULT_RIGHTS: zx_rights_t = zx_types::ZX_DEFAULT_THREAD_RIGHTS;
 
 impl ThreadDispatcher {
     /// Returns default rights for a thread handle.
@@ -329,15 +329,14 @@ impl ThreadDispatcher {
     /// Creates a new child `ThreadDispatcher` under the given parent process.
     pub fn create(
         process: RefPtr<ProcessDispatcher>,
-        flags: u32,
+        _flags: u32,
         name: &[u8],
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         // Create the user-mode thread and attach it to the process and lower level thread.
         let process_raw = RefPtr::into_raw(process).cast_mut();
         // SAFETY: `process_raw` is a valid pointer carrying an acquired refcount.
-        let handle = unsafe {
-            KernelHandle::create(|out| cpp_thread_dispatcher_alloc(process_raw, flags, out))
-        }?;
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_thread_dispatcher_alloc(process_raw, out)) }?;
 
         let user_thread = &**handle.dispatcher() as *const Self as *mut Self;
 
@@ -376,7 +375,7 @@ impl ThreadDispatcher {
     ///
     /// `token` must have been obtained from locking **this particular instance's** state lock
     /// (`self.state().lock`).
-    pub(crate) unsafe fn set_state_locked(
+    unsafe fn set_state_locked(
         &self,
         token: &mut ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
         lifecycle: Lifecycle,
@@ -415,7 +414,7 @@ impl ThreadDispatcher {
     }
 
     /// Returns the current lifecycle while the state lock is held.
-    pub(crate) fn lifecycle_locked(
+    fn lifecycle_locked(
         &self,
         token: &ksync::LockToken<'_, ThreadDispatcherStateLockClass>,
     ) -> Lifecycle {

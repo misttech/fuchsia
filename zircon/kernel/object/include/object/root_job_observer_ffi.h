@@ -10,7 +10,6 @@
 #include <zircon/types.h>
 
 class ProcessDispatcher;
-class ThreadDispatcher;
 class SignalObserver;
 
 extern "C" {
@@ -19,11 +18,6 @@ extern "C" {
 void cpp_root_job_signal_observer_init(void* storage, void* rust_ctx);
 void cpp_root_job_signal_observer_destroy(SignalObserver* observer);
 void cpp_start_root_job_observer();
-
-// Test state check helpers.
-bool cpp_test_process_is_dead(const ProcessDispatcher* process);
-bool cpp_test_thread_is_dying_or_dead(const ThreadDispatcher* thread);
-bool cpp_test_process_is_running(const ProcessDispatcher* process);
 
 // Rust trampolines callable from C++.
 void rust_root_job_observer_destroy(void* storage);

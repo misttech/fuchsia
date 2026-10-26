@@ -8,7 +8,6 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_SHAREABLE_PROCESS_STATE_H_
 
 #include <fbl/ref_counted.h>
-#include <kernel/mutex.h>
 #include <ktl/atomic.h>
 #include <object/futex_context.h>
 #include <object/handle_table.h>
@@ -95,10 +94,8 @@ class ShareableProcessState : public fbl::RefCounted<ShareableProcessState> {
   uint64_t share_count() const { return process_count_.load(ktl::memory_order_relaxed); }
 
   HandleTable& handle_table() { return handle_table_; }
-  const HandleTable& handle_table() const { return handle_table_; }
 
   FutexContext& futex_context() { return futex_context_; }
-  const FutexContext& futex_context() const { return futex_context_; }
 
   VmAspace* aspace() { return aspace_.get(); }
   const VmAspace* aspace() const { return aspace_.get(); }

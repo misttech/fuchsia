@@ -6,9 +6,6 @@
 
 use core::ffi::c_void;
 
-use super::process_dispatcher::ProcessDispatcher;
-use super::thread_dispatcher::ThreadDispatcher;
-
 unsafe extern "C" {
     /// Initializes a C++ `RootJobSignalObserver` in inline `storage` attached to `rust_ctx`.
     ///
@@ -26,33 +23,12 @@ unsafe extern "C" {
     /// `observer` must point to an initialized `RootJobSignalObserver`.
     pub(crate) fn cpp_root_job_signal_observer_destroy(observer: *mut c_void);
 
-    /// Checks if a process is in DEAD state.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to an initialized `ProcessDispatcher`.
-    pub(crate) fn cpp_test_process_is_dead(process: *const ProcessDispatcher) -> bool;
-
-    /// Checks if a thread is dying or dead.
-    ///
-    /// # Safety
-    ///
-    /// `thread` must point to an initialized `ThreadDispatcher`.
-    pub(crate) fn cpp_test_thread_is_dying_or_dead(thread: *const ThreadDispatcher) -> bool;
-
     /// Starts the singleton `RootJobObserver` watching the root job.
     ///
     /// # Safety
     ///
     /// Must be called once during userboot initialization after the root job has at least one child.
     pub(crate) fn cpp_start_root_job_observer();
-
-    /// Checks if a process is in RUNNING state.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to an initialized `ProcessDispatcher`.
-    pub(crate) fn cpp_test_process_is_running(process: *const ProcessDispatcher) -> bool;
 }
 
 /// Starts the `RootJobObserver`. Must be called after the root job has at least one child process

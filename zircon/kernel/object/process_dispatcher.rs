@@ -14,24 +14,23 @@ use super::job_dispatcher::JobDispatcher;
 #[cfg(target_arch = "x86_64")]
 use super::process_dispatcher_ffi::cpp_process_dispatcher_hw_trace_context_id;
 use super::process_dispatcher_ffi::{
-    cpp_process_add_initialized_thread, cpp_process_attach_aspace_to_thread,
-    cpp_process_dispatcher_aspace_at, cpp_process_dispatcher_create,
-    cpp_process_dispatcher_create_shared, cpp_process_dispatcher_critical_to_root_job,
-    cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
-    cpp_process_dispatcher_exit_current, cpp_process_dispatcher_futex_context,
-    cpp_process_dispatcher_get_debug_addr, cpp_process_dispatcher_get_dyn_break_on_load,
-    cpp_process_dispatcher_get_info, cpp_process_dispatcher_get_runtime_stats,
-    cpp_process_dispatcher_get_stats, cpp_process_dispatcher_get_threads,
-    cpp_process_dispatcher_get_timer_slack_policy,
-    cpp_process_dispatcher_get_timer_slack_policy_amount, cpp_process_dispatcher_handle_table,
-    cpp_process_dispatcher_is_current, cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
+    cpp_process_add_initialized_thread, cpp_process_dispatcher_aspace_at,
+    cpp_process_dispatcher_create, cpp_process_dispatcher_create_shared,
+    cpp_process_dispatcher_critical_to_root_job, cpp_process_dispatcher_current,
+    cpp_process_dispatcher_enforce_basic_policy, cpp_process_dispatcher_exit_current,
+    cpp_process_dispatcher_futex_context, cpp_process_dispatcher_get_debug_addr,
+    cpp_process_dispatcher_get_dyn_break_on_load, cpp_process_dispatcher_get_info,
+    cpp_process_dispatcher_get_runtime_stats, cpp_process_dispatcher_get_stats,
+    cpp_process_dispatcher_get_threads, cpp_process_dispatcher_get_timer_slack_policy,
+    cpp_process_dispatcher_handle_table, cpp_process_dispatcher_is_current,
+    cpp_process_dispatcher_job, cpp_process_dispatcher_kill,
     cpp_process_dispatcher_lookup_thread_by_id, cpp_process_dispatcher_make_and_add_handle,
-    cpp_process_dispatcher_make_and_add_handle_from_ref, cpp_process_dispatcher_resume,
+    cpp_process_dispatcher_make_and_add_handle_from_ref, cpp_process_dispatcher_normal_aspace,
+    cpp_process_dispatcher_restricted_aspace, cpp_process_dispatcher_resume,
     cpp_process_dispatcher_set_critical_to_job, cpp_process_dispatcher_set_debug_addr,
     cpp_process_dispatcher_set_dyn_break_on_load, cpp_process_dispatcher_shareable_state,
     cpp_process_dispatcher_start, cpp_process_dispatcher_state, cpp_process_dispatcher_suspend,
-    cpp_process_dispatcher_vdso_base_address, cpp_process_remove_thread,
-    cpp_shareable_process_state_aspace,
+    cpp_process_remove_thread, cpp_shareable_process_state_aspace,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -277,12 +276,6 @@ impl ProcessDispatcher {
         Status::ok(status)
     }
 
-    /// Returns the timer slack policy amount for this process.
-    pub fn get_timer_slack_policy_amount(&self) -> i64 {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        unsafe { cpp_process_dispatcher_get_timer_slack_policy_amount(self.as_ffi()) }
-    }
-
     /// Returns the timer slack policy for this process.
     #[inline]
     pub fn get_timer_slack_policy(&self) -> crate::kernel::deadline::TimerSlack {
@@ -295,25 +288,6 @@ impl ProcessDispatcher {
         slack
     }
 
-    /// Returns the KOID of this process's handle table.
-    #[inline]
-    pub fn handle_table_koid(&self) -> zx_types::zx_koid_t {
-        self.handle_table().get_koid()
-    }
-
-    /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this process's
-    /// handle table.
-    #[inline]
-    pub fn get_dispatcher_with_rights<T>(
-        &self,
-        handle_value: HandleValue,
-        rights: zx_rights_t,
-    ) -> Result<fbl::RefPtr<T>, Status>
-    where
-        T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
-    {
-        self.handle_table().get_dispatcher_with_rights::<T>(self, handle_value, rights)
-    }
     /// Returns information about this process.
     pub fn get_info(&self) -> zx_info_process_t {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
@@ -551,14 +525,9 @@ impl ProcessDispatcher {
     /// TODO(https://fxbug.dev/42083004): Update this comment once all architectures support unified
     /// aspaces.
     pub fn normal_aspace(&self) -> &VmAspace {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        let raw: *mut process_dispatcher_bindings::VmAspace = unsafe {
-            process_dispatcher_bindings::cpp_process_dispatcher_normal_aspace(
-                self.as_ffi_mut().cast(),
-            )
-        };
-        // SAFETY: The normal address space is valid for the lifetime of `self`.
-        unsafe { raw.cast::<VmAspace>().as_ref_unchecked() }
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference, and the normal address space is
+        // valid for the lifetime of `self`.
+        unsafe { &*cpp_process_dispatcher_normal_aspace(self.as_ffi_mut()) }
     }
 
     /// Returns the "restricted" address space for a process, or nullptr if it does not have a
@@ -568,14 +537,9 @@ impl ProcessDispatcher {
     /// is private to the process. Threads executing in restricted mode are restricted to this
     /// address space.
     pub fn restricted_aspace(&self) -> Option<&VmAspace> {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        let raw: *mut process_dispatcher_bindings::VmAspace = unsafe {
-            process_dispatcher_bindings::cpp_process_dispatcher_restricted_aspace(
-                self.as_ffi().cast(),
-            )
-        };
-        // SAFETY: The restricted address space is valid for the lifetime of `self`.
-        unsafe { raw.cast::<VmAspace>().as_ref() }
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference, and the restricted address
+        // space (if present) is valid for the lifetime of `self`.
+        unsafe { cpp_process_dispatcher_restricted_aspace(self.as_ffi()).as_ref() }
     }
 
     /// Returns the job associated with this process.
@@ -616,8 +580,7 @@ impl ProcessDispatcher {
 
     /// Returns the base address of the vDSO mapping for this process.
     pub fn vdso_base_address(&self) -> usize {
-        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        unsafe { cpp_process_dispatcher_vdso_base_address(self.as_ffi()) }
+        self.shareable_state().aspace().vdso_base_address()
     }
 
     /// Returns the hardware trace context ID for this process.
@@ -652,11 +615,7 @@ impl ProcessDispatcher {
 
     /// Attaches the normal address space of this process to `core_thread`.
     pub fn attach_normal_aspace_to_thread(&self, core_thread: ThreadPtr) {
-        // SAFETY: `self` is a valid `ProcessDispatcher`, and `core_thread` upholds the
-        // `ThreadPtr` invariant that it points to a live kernel thread.
-        let status =
-            unsafe { cpp_process_attach_aspace_to_thread(self.as_ffi(), core_thread.as_raw()) };
-        debug_assert_eq!(status, zx_types::ZX_OK);
+        self.normal_aspace().attach_to_thread(core_thread);
     }
 
     /// Transitions `thread` from the initialized state to a runnable state and adds it to the
@@ -729,21 +688,6 @@ impl ProcessDispatcher {
         // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount, or null.
         unsafe { fbl::RefPtr::try_from_raw(ptr) }
     }
-
-    /// Maps a handle to its user-visible `HandleValue` for this process.
-    #[inline]
-    pub fn map_handle_to_value(&self, handle: super::handle::HandleRef<'_>) -> HandleValue {
-        self.handle_table().map_handle_to_value(handle)
-    }
-
-    /// Removes a slice of raw handle values from this process's handle table.
-    ///
-    /// `ZX_HANDLE_INVALID` entries are skipped, and if any non-zero handle is missing, returns
-    /// `ZX_ERR_BAD_HANDLE` after processing the remaining handles.
-    pub fn remove_handles(&self, handles: &[zx_types::zx_handle_t]) -> Result<(), Status> {
-        self.handle_table().remove_handles(self, handles)
-    }
-
     /// Returns whether this process is marked critical to the root job.
     #[inline]
     pub fn critical_to_root_job(&self) -> bool {

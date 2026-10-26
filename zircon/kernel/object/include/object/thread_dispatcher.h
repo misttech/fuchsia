@@ -49,8 +49,7 @@ void* rust_thread_dispatcher_get_core_thread_lock(const ThreadDispatcher* thread
 // Allocates and constructs a ThreadDispatcher. The Rust ThreadDispatcher::create() calls this
 // and then attaches a lower-level kernel Thread to the result.
 zx_status_t cpp_thread_dispatcher_alloc(
-    ProcessDispatcher* process, uint32_t flags,
-    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle);
+    ProcessDispatcher* process, ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle);
 void cpp_thread_dispatcher_set_core_thread(ThreadDispatcher* thread, Thread* core_thread);
 Thread* cpp_thread_dispatcher_get_core_thread(const ThreadDispatcher* thread);
 void cpp_thread_dispatcher_set_user_entry(ThreadDispatcher* thread, const UserEntryState* entry);
@@ -229,7 +228,6 @@ class ThreadDispatcher final : public Dispatcher,
   TaskRuntimeStats GetCompensatedTaskRuntimeStats() const {
     return runtime_stats().GetCompensatedTaskRuntimeStats();
   }
-  zx_info_task_runtime_t GetRuntimeStats() const { return GetCompensatedTaskRuntimeStats(); }
 
   // For debugger usage.
   zx_status_t ReadState(zx_thread_state_topic_t state_kind, user_out_ptr<void> buffer,
@@ -377,21 +375,16 @@ class ThreadDispatcher final : public Dispatcher,
   // through these shims, and friendship does not follow the caller across the FFI boundary, so
   // the shims themselves are the friends rather than the Rust code that calls them.
   friend zx_status_t cpp_thread_dispatcher_alloc(
-      ProcessDispatcher* process, uint32_t flags,
-      ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle);
+      ProcessDispatcher* process, ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle);
   friend void cpp_thread_dispatcher_set_core_thread(ThreadDispatcher* thread, Thread* core_thread);
   friend int cpp_thread_start_routine_entry(void* thread);
 
-  ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags);
+  explicit ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process);
   ThreadDispatcher(const ThreadDispatcher&) = delete;
   ThreadDispatcher& operator=(const ThreadDispatcher&) = delete;
 
   friend void cpp_thread_dispatcher_reset_core_thread(ThreadDispatcher* thread)
       TA_REQ(thread->get_lock());
-
-  // OwnedWaitQueue is a friend only so that it can access the blocking_futex_id_ member for tracing
-  // purposes.
-  friend class OwnedWaitQueue;
 
   // kernel level entry point
   static int StartRoutine(void* arg);

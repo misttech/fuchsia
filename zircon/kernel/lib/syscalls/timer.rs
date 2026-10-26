@@ -53,7 +53,7 @@ pub fn sys_timer_set(
             handle,
             ZX_RIGHT_WRITE,
         )?;
-        Ok((timer, up.get_timer_slack_policy_amount()))
+        Ok((timer, up.get_timer_slack_policy().amount().0))
     })?;
     let effective_slack = core::cmp::max(slack, policy_slack);
 

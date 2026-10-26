@@ -9,13 +9,8 @@
 #include <new>
 
 #include <kernel/ffi.h>
-#include <object/handle.h>
-#include <object/job_dispatcher.h>
-#include <object/process_dispatcher.h>
-#include <object/root_job_observer.h>
 #include <object/root_job_observer_ffi.h>
 #include <object/signal_observer.h>
-#include <object/thread_dispatcher.h>
 
 class RootJobSignalObserver final : public SignalObserver {
  public:
@@ -44,21 +39,6 @@ FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_init(void* storage, void* ru
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_root_job_signal_observer_destroy(SignalObserver* observer) {
   static_cast<RootJobSignalObserver*>(observer)->~RootJobSignalObserver();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_test_process_is_dead(const ProcessDispatcher* process) {
-  return process->state() == ProcessDispatcher::State::DEAD;
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_test_thread_is_dying_or_dead(const ThreadDispatcher* thread) {
-  return thread->IsDyingOrDead();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_test_process_is_running(const ProcessDispatcher* process) {
-  return process->state() == ProcessDispatcher::State::RUNNING;
 }
 
 }  // extern "C"

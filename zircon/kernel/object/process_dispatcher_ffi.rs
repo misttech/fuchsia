@@ -11,7 +11,6 @@ use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::{ProcessDispatcher, ProcessState, ShareableProcessState};
 use super::thread_dispatcher::ThreadDispatcher;
 use crate::arch_rs::UserEntryState;
-use crate::kernel::thread::Thread;
 use core::mem::MaybeUninit;
 use zx_types::{
     zx_info_process_t, zx_info_task_runtime_t, zx_info_task_stats_t, zx_koid_t, zx_rights_t,
@@ -135,15 +134,6 @@ unsafe extern "C" {
         process: *mut ProcessDispatcher,
         policy: u32,
     ) -> zx_status_t;
-
-    /// Returns the timer slack policy amount for the given process.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy_amount(
-        process: *const ProcessDispatcher,
-    ) -> i64;
 
     /// Returns the timer slack policy for the given process.
     ///
@@ -275,6 +265,24 @@ unsafe extern "C" {
         va: usize,
     ) -> *mut crate::vm::vm_aspace::VmAspace;
 
+    /// Returns the normal address space of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(super) fn cpp_process_dispatcher_normal_aspace(
+        process: *mut ProcessDispatcher,
+    ) -> *mut crate::vm::vm_aspace::VmAspace;
+
+    /// Returns the restricted address space of `process`, or null if none.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(super) fn cpp_process_dispatcher_restricted_aspace(
+        process: *const ProcessDispatcher,
+    ) -> *mut crate::vm::vm_aspace::VmAspace;
+
     /// Returns the job of `process`.
     ///
     /// # Safety
@@ -320,15 +328,6 @@ unsafe extern "C" {
         break_on_load: usize,
     ) -> zx_status_t;
 
-    /// Returns the vDSO base address of `process`.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_dispatcher_vdso_base_address(
-        process: *const ProcessDispatcher,
-    ) -> usize;
-
     /// Returns the hardware trace context ID of `process`.
     ///
     /// # Safety
@@ -347,17 +346,6 @@ unsafe extern "C" {
     pub(crate) fn cpp_process_dispatcher_futex_context(
         process: *const ProcessDispatcher,
     ) -> *mut core::ffi::c_void;
-
-    /// Attaches the normal address space of `process` to `core_thread`.
-    ///
-    /// # Safety
-    ///
-    /// `process` must point to a valid `ProcessDispatcher` and `core_thread` must point to a
-    /// valid `Thread`.
-    pub(crate) fn cpp_process_attach_aspace_to_thread(
-        process: *const ProcessDispatcher,
-        core_thread: *mut Thread,
-    ) -> zx_status_t;
 
     /// Makes `thread` runnable and adds it to the C++ thread list of `process`.
     ///

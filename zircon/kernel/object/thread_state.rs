@@ -9,7 +9,7 @@
 //! `Exception` value.
 //!
 //! 1. Lifecycle: Initial -> Initialized -> Running <-> Suspended -> Dying -> Dead.
-//! 2. Exception: Idle -> Unprocessed -> TryNext / Resume -> Idle.
+//! 2. Exception: Idle <-> Unprocessed.
 //!
 //! This module exists to encapsulate all legal state transitions, so generally other assertions
 //! about the state of a thread prior to transitioning are not necessary.
@@ -48,10 +48,6 @@ pub enum Lifecycle {
 }
 
 /// The exception handler state of a thread.
-///
-/// Idle threads become Unprocessed. Unprocessed threads are told to either Resume or TryNext in
-/// a loop until they are killed (no more exception handlers) or resumed, in which case they
-/// become Idle again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Exception {
     /// There's no pending exception.
@@ -59,12 +55,6 @@ pub enum Exception {
 
     /// The thread is waiting for the pending exception to be processed.
     Unprocessed = 1,
-
-    /// The exception has been processed, and the next exception handler should be queried.
-    TryNext = 2,
-
-    /// The exception has been processed, and the thread should resume.
-    Resume = 3,
 }
 
 /// Internal representation of the combined lifecycle and exception state.
@@ -76,18 +66,12 @@ enum Value {
 
     RunningIdle,
     RunningUnprocessed,
-    RunningTryNext,
-    RunningResume,
 
     SuspendedIdle,
     SuspendedUnprocessed,
-    SuspendedTryNext,
-    SuspendedResume,
 
     DyingIdle,
     DyingUnprocessed,
-    DyingTryNext,
-    DyingResume,
 
     DeadIdle,
 }
@@ -115,18 +99,9 @@ impl ThreadState {
         match self.value {
             Value::InitialIdle => Lifecycle::Initial,
             Value::InitializedIdle => Lifecycle::Initialized,
-            Value::RunningIdle
-            | Value::RunningUnprocessed
-            | Value::RunningTryNext
-            | Value::RunningResume => Lifecycle::Running,
-            Value::SuspendedIdle
-            | Value::SuspendedUnprocessed
-            | Value::SuspendedTryNext
-            | Value::SuspendedResume => Lifecycle::Suspended,
-            Value::DyingIdle
-            | Value::DyingUnprocessed
-            | Value::DyingTryNext
-            | Value::DyingResume => Lifecycle::Dying,
+            Value::RunningIdle | Value::RunningUnprocessed => Lifecycle::Running,
+            Value::SuspendedIdle | Value::SuspendedUnprocessed => Lifecycle::Suspended,
+            Value::DyingIdle | Value::DyingUnprocessed => Lifecycle::Dying,
             Value::DeadIdle => Lifecycle::Dead,
         }
     }
@@ -140,10 +115,6 @@ impl ThreadState {
             Value::RunningUnprocessed | Value::SuspendedUnprocessed | Value::DyingUnprocessed => {
                 Exception::Unprocessed
             }
-            Value::RunningTryNext | Value::SuspendedTryNext | Value::DyingTryNext => {
-                Exception::TryNext
-            }
-            Value::RunningResume | Value::SuspendedResume | Value::DyingResume => Exception::Resume,
             Value::InitializedIdle | Value::DeadIdle => {
                 // Someone could have, for example, requested zx_info_thread_t.
                 Exception::Idle
@@ -169,15 +140,11 @@ impl ThreadState {
             Lifecycle::Running => match self.value {
                 Value::InitializedIdle | Value::SuspendedIdle => self.value = Value::RunningIdle,
                 Value::SuspendedUnprocessed => self.value = Value::RunningUnprocessed,
-                Value::SuspendedTryNext => self.value = Value::RunningTryNext,
-                Value::SuspendedResume => self.value = Value::RunningResume,
                 _ => debug_assert!(false),
             },
             Lifecycle::Suspended => match self.value {
                 Value::RunningIdle => self.value = Value::SuspendedIdle,
                 Value::RunningUnprocessed => self.value = Value::SuspendedUnprocessed,
-                Value::RunningTryNext => self.value = Value::SuspendedTryNext,
-                Value::RunningResume => self.value = Value::SuspendedResume,
                 _ => debug_assert!(false),
             },
             Lifecycle::Dying => match self.value {
@@ -187,19 +154,10 @@ impl ThreadState {
                 Value::RunningUnprocessed
                 | Value::SuspendedUnprocessed
                 | Value::DyingUnprocessed => self.value = Value::DyingUnprocessed,
-                Value::RunningTryNext | Value::SuspendedTryNext | Value::DyingTryNext => {
-                    self.value = Value::DyingTryNext
-                }
-                Value::RunningResume | Value::SuspendedResume | Value::DyingResume => {
-                    self.value = Value::DyingResume
-                }
                 _ => debug_assert!(false),
             },
             Lifecycle::Dead => match self.value {
-                Value::DyingIdle
-                | Value::DyingUnprocessed
-                | Value::DyingTryNext
-                | Value::DyingResume => self.value = Value::DeadIdle,
+                Value::DyingIdle | Value::DyingUnprocessed => self.value = Value::DeadIdle,
                 _ => debug_assert!(false),
             },
         }
@@ -211,33 +169,15 @@ impl ThreadState {
     pub fn set_exception(&mut self, exception: Exception) {
         match exception {
             Exception::Idle => match self.value {
-                Value::RunningUnprocessed | Value::RunningTryNext | Value::RunningResume => {
-                    self.value = Value::RunningIdle
-                }
-                Value::SuspendedUnprocessed | Value::SuspendedTryNext | Value::SuspendedResume => {
-                    self.value = Value::SuspendedIdle
-                }
-                Value::DyingUnprocessed | Value::DyingTryNext | Value::DyingResume => {
-                    self.value = Value::DyingIdle
-                }
+                Value::RunningUnprocessed => self.value = Value::RunningIdle,
+                Value::SuspendedUnprocessed => self.value = Value::SuspendedIdle,
+                Value::DyingUnprocessed => self.value = Value::DyingIdle,
                 _ => debug_assert!(false),
             },
             Exception::Unprocessed => match self.value {
                 Value::RunningIdle => self.value = Value::RunningUnprocessed,
                 Value::SuspendedIdle => self.value = Value::SuspendedUnprocessed,
                 Value::DyingIdle => self.value = Value::DyingUnprocessed,
-                _ => debug_assert!(false),
-            },
-            Exception::TryNext => match self.value {
-                Value::RunningUnprocessed => self.value = Value::RunningTryNext,
-                Value::SuspendedUnprocessed => self.value = Value::SuspendedTryNext,
-                Value::DyingUnprocessed => self.value = Value::DyingTryNext,
-                _ => debug_assert!(false),
-            },
-            Exception::Resume => match self.value {
-                Value::RunningUnprocessed => self.value = Value::RunningResume,
-                Value::SuspendedUnprocessed => self.value = Value::SuspendedResume,
-                Value::DyingUnprocessed => self.value = Value::DyingResume,
                 _ => debug_assert!(false),
             },
         }
@@ -321,12 +261,9 @@ mod tests {
         state.set_lifecycle(Lifecycle::Initialized);
         state.set_lifecycle(Lifecycle::Running);
 
-        // Running: Idle -> Unprocessed -> TryNext -> Idle
+        // Running: Idle -> Unprocessed -> Idle
         state.set_exception(Exception::Unprocessed);
         expect_eq!(state.exception(), Exception::Unprocessed);
-
-        state.set_exception(Exception::TryNext);
-        expect_eq!(state.exception(), Exception::TryNext);
 
         state.set_exception(Exception::Idle);
         expect_eq!(state.exception(), Exception::Idle);
@@ -336,9 +273,6 @@ mod tests {
         state.set_lifecycle(Lifecycle::Suspended);
         expect_eq!(state.lifecycle(), Lifecycle::Suspended);
         expect_eq!(state.exception(), Exception::Unprocessed);
-
-        state.set_exception(Exception::Resume);
-        expect_eq!(state.exception(), Exception::Resume);
 
         state.set_exception(Exception::Idle);
         expect_eq!(state.exception(), Exception::Idle);

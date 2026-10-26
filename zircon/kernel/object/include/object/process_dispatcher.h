@@ -14,17 +14,10 @@
 #include <fbl/canary.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/name.h>
-#include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
-#include <kernel/brwlock.h>
-#include <kernel/event.h>
 #include <kernel/ffi.h>
-#include <kernel/mutex.h>
 #include <kernel/task_runtime_stats.h>
 #include <kernel/thread.h>
-#include <ktl/array.h>
-#include <ktl/forward.h>
-#include <ktl/span.h>
 #include <object/dispatcher.h>
 #include <object/exceptionate.h>
 #include <object/futex_context.h>
@@ -37,7 +30,6 @@
 
 class JobDispatcher;
 class ProcessDispatcher;
-class ThreadDispatcher;
 class VmAddressRegionDispatcher;
 
 extern "C" {
@@ -74,7 +66,6 @@ const ShareableProcessState* cpp_process_dispatcher_shareable_state(
 const VmAspace* cpp_shareable_process_state_aspace(const ShareableProcessState* state);
 zx_status_t cpp_process_dispatcher_enforce_basic_policy(ProcessDispatcher* process,
                                                         uint32_t policy);
-int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
 void cpp_process_dispatcher_get_timer_slack_policy(const ProcessDispatcher* process,
                                                    TimerSlack* out_slack);
 zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process);
@@ -90,18 +81,18 @@ zx_status_t cpp_process_dispatcher_set_critical_to_job(ProcessDispatcher* proces
 JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* process);
 
 VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* process, zx_vaddr_t va);
+VmAspace* cpp_process_dispatcher_normal_aspace(ProcessDispatcher* process);
+VmAspace* cpp_process_dispatcher_restricted_aspace(const ProcessDispatcher* process);
 
 uintptr_t cpp_process_dispatcher_get_debug_addr(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_set_debug_addr(ProcessDispatcher* process, uintptr_t addr);
 uintptr_t cpp_process_dispatcher_get_dyn_break_on_load(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_set_dyn_break_on_load(ProcessDispatcher* process,
                                                          uintptr_t break_on_load);
-uintptr_t cpp_process_dispatcher_vdso_base_address(const ProcessDispatcher* process);
 #if ARCH_X86
 uintptr_t cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* process);
 #endif
 void* cpp_process_dispatcher_futex_context(const ProcessDispatcher* process);
-zx_status_t cpp_process_attach_aspace_to_thread(ProcessDispatcher* process, Thread* core_thread);
 zx_status_t cpp_process_add_initialized_thread(ProcessDispatcher* process, ThreadDispatcher* thread,
                                                bool ensure_initial_thread,
                                                const UserEntryState* entry);
@@ -110,6 +101,7 @@ Exceptionate* cpp_process_dispatcher_exceptionate(ProcessDispatcher* process);
 Exceptionate* cpp_process_dispatcher_debug_exceptionate(ProcessDispatcher* process);
 ThreadDispatcher* cpp_process_dispatcher_lookup_thread_by_id(ProcessDispatcher* process,
                                                              zx_koid_t koid);
+bool cpp_process_dispatcher_critical_to_root_job(const ProcessDispatcher* process);
 
 }  // extern "C"
 
@@ -221,8 +213,6 @@ class ProcessDispatcher final
   }
 #endif
 
-  uintptr_t vdso_base_address() const { return shareable_state_->aspace()->vdso_base_address(); }
-
   void EnumerateAspaceChildren(VmEnumerator* ve) {
     fbl::RefPtr<VmAddressRegion> root_vmar = shareable_state_->aspace()->RootVmar();
     if (root_vmar) {
@@ -281,9 +271,8 @@ class ProcessDispatcher final
   Exceptionate* exceptionate();
   Exceptionate* debug_exceptionate();
 
-  // The following two methods can be slow and inaccurate and should only be
-  // called from diagnostics code.
-  uint32_t ThreadCount() const;
+  // This method can be slow and inaccurate and should only be called from
+  // diagnostics code.
   VmObject::AttributionCounts GetAttributedMemory() const;
 
   // Look up a process given its koid.

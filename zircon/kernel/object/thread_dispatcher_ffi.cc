@@ -84,11 +84,10 @@ FFI_ALWAYS_INLINE void cpp_thread_dispatcher_release_core_thread_observation(
 }
 
 zx_status_t cpp_thread_dispatcher_alloc(
-    ProcessDispatcher* process, uint32_t flags,
-    ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle) {
+    ProcessDispatcher* process, ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle) {
   fbl::RefPtr<ProcessDispatcher> process_ref = fbl::ImportFromRawPtr(process);
   fbl::AllocChecker ac;
-  auto user_thread = fbl::AdoptRef(new (&ac) ThreadDispatcher(ktl::move(process_ref), flags));
+  auto user_thread = fbl::AdoptRef(new (&ac) ThreadDispatcher(ktl::move(process_ref)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }

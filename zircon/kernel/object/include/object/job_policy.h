@@ -7,11 +7,13 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_POLICY_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_POLICY_H_
 
+#include <stddef.h>
 #include <stdint.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/types.h>
 
-#include <kernel/timer.h>
+#include <kernel/deadline.h>
+
 // JobPolicyCollection is a storage container of two 64-bit words representing
 // the encoded bit fields of each policy.
 struct JobPolicyCollection {
@@ -51,7 +53,11 @@ class JobPolicy {
   JobPolicy() = delete;
   JobPolicy(const JobPolicy& parent) = default;
   JobPolicy& operator=(const JobPolicy& other) = default;
-  static JobPolicy CreateRootPolicy();
+  static JobPolicy CreateRootPolicy() {
+    JobPolicy policy((UninitializedTag()));
+    rust_job_policy_create_root_policy(&policy);
+    return policy;
+  }
 
   // Merge array |policy| of length |count| into this object.
   //
@@ -63,32 +69,44 @@ class JobPolicy {
   // ZX_JOB_POL_ABSOLUTE - If any of the policies in |policy| conflict with those in this object,
   //   the call will fail with an error and this object will not be modified.
   //
-  zx_status_t AddBasicPolicy(uint32_t mode, const zx_policy_basic_v2_t* policy, size_t count);
+  zx_status_t AddBasicPolicy(uint32_t mode, const zx_policy_basic_v2_t* policy, size_t count) {
+    return rust_job_policy_add_basic_policy(this, mode, policy, count);
+  }
 
   // Returns the action (e.g. ZX_POL_ACTION_ALLOW) for the specified |condition|.
   //
   // This method asserts if |policy| is invalid, and returns ZX_POL_ACTION_DENY for all other
   // failure modes.
-  uint32_t QueryBasicPolicy(uint32_t condition) const;
+  uint32_t QueryBasicPolicy(uint32_t condition) const {
+    return rust_job_policy_query_basic_policy(this, condition);
+  }
 
   // Returns if the action for the specified condition can be overriden, so it returns
   // ZX_POL_OVERRIDE_ALLOW or ZX_POL_OVERRIDE_DENY.
-  uint32_t QueryBasicPolicyOverride(uint32_t condition) const;
+  uint32_t QueryBasicPolicyOverride(uint32_t condition) const {
+    return rust_job_policy_query_basic_policy_override(this, condition);
+  }
 
   // Sets the timer slack policy.
   //
   // |slack.amount| must be >= 0.
-  void SetTimerSlack(TimerSlack slack);
+  void SetTimerSlack(TimerSlack slack) { rust_job_policy_set_timer_slack(this, &slack); }
 
   // Returns the timer slack policy.
-  TimerSlack GetTimerSlack() const;
+  TimerSlack GetTimerSlack() const {
+    TimerSlack slack = TimerSlack::none();
+    rust_job_policy_get_timer_slack(this, &slack);
+    return slack;
+  }
 
   // Increment the kcounter for the given |action| and |condition|.
   //
   // action must be < ZX_POL_ACTION_MAX and condition must be < ZX_POL_MAX.
   //
   // For example: IncrementCounter(ZX_POL_ACTION_KILL, ZX_POL_NEW_CHANNEL);
-  static void IncrementCounter(uint32_t action, uint32_t condition);
+  static void IncrementCounter(uint32_t action, uint32_t condition) {
+    rust_job_policy_increment_counter(action, condition);
+  }
 
  private:
   struct UninitializedTag {};

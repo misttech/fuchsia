@@ -194,7 +194,7 @@ impl RootJobObserver {
     ///
     /// May or may not return depending on whether halt/reboot is already in progress.
     /// Once committed with the halt token, this function does not return.
-    pub fn halt() {
+    fn halt() {
         let boot_options = boot_options::BootOptions::get();
         if !HaltToken::get().take() {
             kprint::kprintln!("root-job: halt/reboot already in progress; returning");
@@ -426,10 +426,7 @@ mod tests {
 
     use super::super::handle::KernelHandle;
     use super::super::job_dispatcher::JobDispatcher;
-    use super::super::process_dispatcher::ProcessDispatcher;
-    use super::super::root_job_observer_ffi::{
-        cpp_test_process_is_dead, cpp_test_process_is_running, cpp_test_thread_is_dying_or_dead,
-    };
+    use super::super::process_dispatcher::{ProcessDispatcher, ProcessState};
     use super::super::thread_dispatcher::ThreadDispatcher;
     use super::RootJobObserver;
     use crate::arch_rs::UserEntryState;
@@ -541,8 +538,8 @@ mod tests {
         let observer = RootJobObserver::new_with_callback(root_job.clone(), None, move || {
             // SAFETY: pointers are valid for the test duration.
             unsafe {
-                assert!(cpp_test_process_is_dead(proc_ptr.get()));
-                assert!(cpp_test_thread_is_dying_or_dead(thread_ptr.get()));
+                assert!((*proc_ptr.get()).state() == ProcessState::Dead);
+                assert!((*thread_ptr.get()).is_dying_or_dead());
                 let evt = Event::from_raw_ref(event_ptr.get());
                 evt.signal();
             }
@@ -550,11 +547,8 @@ mod tests {
         expect_true!(observer.is_ok());
 
         // Ensure everything is running.
-        // SAFETY: pointers are valid.
-        unsafe {
-            expect_true!(cpp_test_process_is_running(proc_ptr.get()));
-            expect_true!(!cpp_test_thread_is_dying_or_dead(thread_ptr.get()));
-        }
+        expect_true!(child_process.dispatcher().state() == ProcessState::Running);
+        expect_true!(!child_thread.dispatcher().is_dying_or_dead());
 
         // Kill the parent job.
         expect_true!(root_job.kill(1));
@@ -582,8 +576,8 @@ mod tests {
             let (event_ptr, proc_ptr, thread_ptr) = (event_ptr, proc_ptr, thread_ptr);
             // SAFETY: `event_ptr` points to the pinned `event` on the caller's stack frame.
             unsafe {
-                assert!(cpp_test_process_is_dead(proc_ptr.get()));
-                assert!(cpp_test_thread_is_dying_or_dead(thread_ptr.get()));
+                assert!((*proc_ptr.get()).state() == ProcessState::Dead);
+                assert!((*thread_ptr.get()).is_dying_or_dead());
                 let evt = Event::from_raw_ref(event_ptr.get());
                 evt.signal();
             }
@@ -591,11 +585,8 @@ mod tests {
         expect_true!(observer.is_ok());
 
         // Ensure everything is running.
-        // SAFETY: pointers are valid.
-        unsafe {
-            expect_true!(cpp_test_process_is_running(proc_ptr.get()));
-            expect_true!(!cpp_test_thread_is_dying_or_dead(thread_ptr.get()));
-        }
+        expect_true!(child_process.dispatcher().state() == ProcessState::Running);
+        expect_true!(!child_thread.dispatcher().is_dying_or_dead());
 
         // Kill the process.
         child_process.dispatcher().kill(1);

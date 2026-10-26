@@ -71,7 +71,6 @@ unsafe extern "C" {
     /// `KernelHandle<ThreadDispatcher>`.
     pub(crate) fn cpp_thread_dispatcher_alloc(
         process: *mut ProcessDispatcher,
-        flags: u32,
         out_handle: *mut MaybeUninit<KernelHandle<ThreadDispatcher>>,
     ) -> zx_status_t;
 

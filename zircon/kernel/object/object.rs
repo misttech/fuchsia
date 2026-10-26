@@ -86,7 +86,7 @@ mod port_dispatcher;
 mod port_dispatcher_ffi;
 mod process_dispatcher;
 #[allow(improper_ctypes)]
-pub(crate) mod process_dispatcher_ffi;
+mod process_dispatcher_ffi;
 mod profile_dispatcher;
 #[allow(improper_ctypes)]
 mod profile_dispatcher_ffi;

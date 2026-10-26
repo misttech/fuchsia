@@ -9,31 +9,27 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <lib/counters.h>
-#include <lib/crypto/global_prng.h>
 #include <lib/fit/defer.h>
 #include <lib/ktrace.h>
 #include <lib/page/size.h>
 #include <string.h>
 #include <trace.h>
+#include <zircon/errors.h>
 #include <zircon/rights.h>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/ref_ptr.h>
 #include <kernel/thread.h>
-#include <object/diagnostics.h>
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
 #include <object/root_job_observer.h>
 #include <object/thread_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
-#include <object/vm_object_dispatcher.h>
 #include <vm/attribution.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>
-
-#include "zircon/errors.h"
 
 #define LOCAL_TRACE 0
 
@@ -788,13 +784,6 @@ Exceptionate* ProcessDispatcher::exceptionate() {
 Exceptionate* ProcessDispatcher::debug_exceptionate() {
   canary_.Assert();
   return &debug_exceptionate_;
-}
-
-uint32_t ProcessDispatcher::ThreadCount() const {
-  canary_.Assert();
-
-  Guard<CriticalMutex> guard{get_lock()};
-  return static_cast<uint32_t>(thread_list_.size_slow());
 }
 
 VmObject::AttributionCounts ProcessDispatcher::GetAttributedMemory() const {
