@@ -2,11 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/zircon/migrated_targets.gni")
+import("//build/cpp/library_headers.gni")
 
-zx_library("cksum") {
-  sdk = "source"
-  sdk_headers = [ "lib/cksum.h" ]
+library_headers("headers") {
+  headers = [ "lib/cksum.h" ]
+  public_deps = [
+    # <lib/cksum.h> uses <zircon/compiler.h>.
+    "//zircon/system/public",
+  ]
+}
+
+static_library("cksum") {
+  public_deps = [ ":headers" ]
 
   sources = [
     "crc32.c",
@@ -14,17 +21,7 @@ zx_library("cksum") {
     "zutil.h",
   ]
 
-  cflags = [ "-Wno-strict-prototypes" ]
-
   if (is_kernel) {
-    # TODO(55514): Excluding kernel libc for efi bootloader until standard
-    # library dependency of bootloader is sorted out.
     deps = [ "//zircon/kernel/lib/libc" ]
   }
-
-  # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-  configs += [
-    "//build/config:Wno-call-graph-section-no-prototype",
-    "//build/config:Wno-conversion",
-  ]
 }
