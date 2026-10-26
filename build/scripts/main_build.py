@@ -41,12 +41,21 @@ _FUCHSIA_ROOT = pathlib.Path(__file__).parent.parent.parent
 if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
+# LINT.IfChange(main_build_python_imports)
 from build.auth import gcloud
 from build.bazel.scripts import bazel_invocation as bazel_inv
 from build.profile import procfs
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
-from build.scripts import build_timeout, properties, pstree, signal_utils
+from build.scripts import (
+    build_timeout,
+    properties,
+    pstree,
+    python_subprocess,
+    signal_utils,
+)
+
+# LINT.ThenChange(//tools/devshell/BUILD.gn:main_build_python_imports, //tools/devshell/tests/subcommands/fx_build_test:main_build_python_imports)
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -669,6 +678,22 @@ class FuchsiaBuildContext(object):
         self.env = env
         self.config = config
 
+    def check_python_output(
+        self,
+        cmd: Sequence[str],
+        **popen_kwargs: Any,
+    ) -> str:
+        """Invokes an in-tree Python helper script and returns its stripped stdout string.
+
+        Ensures that PYTHONPATH is set to resolve in-tree first-party absolute imports.
+        """
+        return python_subprocess.check_output(
+            cmd=cmd,
+            source_dir=self.source_dir,
+            base_env=self.env,
+            **popen_kwargs,
+        )
+
     @functools.cached_property
     def authenticated_user(self) -> str:
         """Resolves and caches the user identity for RBE/ResultStore authentication.
@@ -805,9 +830,8 @@ class FuchsiaBuildContext(object):
             return None
 
         try:
-            output = subprocess.check_output(
+            output = self.check_python_output(
                 [
-                    str(PYTHON_BIN),
                     str(isolate_script),
                     "isolate",
                     "--out-dir",
@@ -815,10 +839,8 @@ class FuchsiaBuildContext(object):
                     "--quota-project",
                     quota_project,
                 ],
-                text=True,
                 stderr=None,
-                env=self.env,
-            ).strip()
+            )
             if output:
                 return pathlib.Path(output)
         except subprocess.CalledProcessError:
@@ -1145,11 +1167,10 @@ class FuchsiaBuildContext(object):
                     print_artifact_dir=True,
                 )
             )
-            output = subprocess.check_output(
+            output = self.check_python_output(
                 cmd,
-                text=True,
                 stderr=subprocess.PIPE,
-            ).strip()
+            )
             if output:
                 return pathlib.Path(output)
         except (subprocess.CalledProcessError, OSError) as e:
@@ -1172,11 +1193,10 @@ class FuchsiaBuildContext(object):
                     print_job_count=True,
                 )
             )
-            output = subprocess.check_output(
+            output = self.check_python_output(
                 cmd,
-                text=True,
                 stderr=subprocess.PIPE,
-            ).strip()
+            )
             if output:
                 return int(output)
         except (subprocess.CalledProcessError, OSError, ValueError) as e:
@@ -1311,13 +1331,11 @@ class FuchsiaBuildContext(object):
         """Invokes select_auth_method.py to determine the auth type."""
         select_script = self.select_auth_script
         try:
-            output = subprocess.check_output(
-                [str(PYTHON_BIN), str(select_script)],
-                text=True,
+            output = self.check_python_output(
+                [str(select_script)],
                 stderr=None,  # Let warnings flow through to the console directly
-                env=self.env,
             )
-            lines = output.strip().splitlines()
+            lines = output.splitlines()
             if lines:
                 return lines[-1]
             raise BuildConfigurationError(

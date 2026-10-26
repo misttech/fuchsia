@@ -12,6 +12,7 @@ if (is_host) {
       ":build_timeout",
       ":properties_lib",
       ":pstree_lib",
+      ":python_subprocess_lib",
       ":signal_utils_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
@@ -24,6 +25,10 @@ if (is_host) {
       "//build/resultstore:rs_profile",
     ]
     data_deps = [ "//build/auth:select_auth_method" ]
+  }
+
+  python_library("python_subprocess_lib") {
+    sources = [ "python_subprocess.py" ]
   }
 
   python_library("managed_process_lib") {
@@ -91,6 +96,11 @@ if (is_host) {
     deps = [ ":properties_lib" ]
   }
 
+  python_build_time_tests("python_subprocess_test") {
+    tests = [ "python_subprocess_test.py" ]
+    deps = [ ":python_subprocess_lib" ]
+  }
+
   python_build_time_tests("service_profile_test") {
     tests = [ "service_profile_test.py" ]
     deps = [ ":service_profile_lib" ]
@@ -149,6 +159,7 @@ group("tests") {
     ":ninjatrace2json_test($host_toolchain)",
     ":properties_test($host_toolchain)",
     ":pstree_test($host_toolchain)",
+    ":python_subprocess_test($host_toolchain)",
     ":service_profile_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
   ]

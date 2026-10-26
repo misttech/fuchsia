@@ -39,7 +39,7 @@ if str(_FUCHSIA_ROOT) not in sys.path:
 from build.auth import gcloud
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
-from build.scripts import main_build, signal_utils
+from build.scripts import main_build, python_subprocess, signal_utils
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
 
@@ -390,19 +390,14 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             context = self.create_context()
             context.env = {"FOO": "BAR"}
             with mock.patch.object(
-                subprocess,
-                "check_output",
+                context,
+                "check_python_output",
                 return_value="some output\noauth\n",
             ) as mock_sub:
                 self.assertEqual(context._run_select_auth_script(), "oauth")
                 mock_sub.assert_called_once_with(
-                    [
-                        str(main_build.PYTHON_BIN),
-                        str(context.select_auth_script),
-                    ],
-                    text=True,
+                    [str(context.select_auth_script)],
                     stderr=None,
-                    env=context.env,
                 )
         finally:
             self.run_select_patcher.start()
@@ -412,8 +407,8 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         try:
             context = self.create_context()
             with mock.patch.object(
-                subprocess,
-                "check_output",
+                context,
+                "check_python_output",
                 side_effect=subprocess.CalledProcessError(
                     1, cmd="cmd", stderr="My strict auth error"
                 ),
@@ -460,20 +455,16 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             fint_context_path=pathlib.Path("/fake/context.textpb")
         )
         with mock.patch.object(
-            subprocess, "check_output", return_value="32\n"
+            context, "check_python_output", return_value="32\n"
         ) as mock_check:
             self.assertEqual(context.fint_job_count, 32)
             mock_check.assert_called_once_with(
-                [
-                    str(main_build.PYTHON_BIN),
-                    "-S",
-                    "-u",
-                    str(context.fint_build_py),
-                    "--context",
-                    "/fake/context.textpb",
-                    "--print-job-count",
-                ],
-                text=True,
+                list(
+                    context._fint_wrapper_cmd(
+                        context_path=pathlib.Path("/fake/context.textpb"),
+                        print_job_count=True,
+                    )
+                ),
                 stderr=subprocess.PIPE,
             )
 
@@ -526,6 +517,18 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             ):
                 # Even though max_concurrency is set to 16, the Fint job_count override (32) is returned directly
                 self.assertEqual(context.concurrency, 32)
+
+    @mock.patch.object(python_subprocess, "check_output", return_value="out")
+    def test_check_python_output_delegates(self, mock_check: mock.Mock) -> None:
+        context = self.create_context()
+        res = context.check_python_output(["script.py", "arg"], timeout=10.0)
+        self.assertEqual(res, "out")
+        mock_check.assert_called_once_with(
+            cmd=["script.py", "arg"],
+            source_dir=context.source_dir,
+            base_env=context.env,
+            timeout=10.0,
+        )
 
     def test_load_user_preference(self) -> None:
         with mock.patch.object(
@@ -3066,28 +3069,26 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             env={"USER": "fake-user"},
             config=config,
         )
-        self.assertEqual(
-            context.fint_artifact_dir, pathlib.Path("/mock/resolved/artifacts")
-        )
-        mock_check_output.assert_called_once_with(
-            [
-                str(main_build.PYTHON_BIN),
-                "-S",
-                "-u",
-                "/tmp/fuchsia/tools/integration/fint/fint_build.py",
-                "--context",
-                "/tmp/context.proto",
-                "--print-artifact-dir",
-            ],
-            text=True,
-            stderr=subprocess.PIPE,
-        )
+        with mock.patch.object(
+            context,
+            "check_python_output",
+            return_value="/mock/resolved/artifacts",
+        ) as mock_check_output:
+            self.assertEqual(
+                context.fint_artifact_dir,
+                pathlib.Path("/mock/resolved/artifacts"),
+            )
+            mock_check_output.assert_called_once_with(
+                list(
+                    context._fint_wrapper_cmd(
+                        context_path=pathlib.Path("/tmp/context.proto"),
+                        print_artifact_dir=True,
+                    )
+                ),
+                stderr=subprocess.PIPE,
+            )
 
-    @mock.patch.object(subprocess, "check_output")
-    def test_fint_artifact_dir_failure(
-        self, mock_check_output: mock.Mock
-    ) -> None:
-        mock_check_output.side_effect = subprocess.CalledProcessError(2, "cmd")
+    def test_fint_artifact_dir_failure(self) -> None:
         config = main_build.FuchsiaBuildConfig(
             rbe=True,
             resultstore="all",
@@ -3107,7 +3108,12 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             env={"USER": "fake-user"},
             config=config,
         )
-        self.assertIsNone(context.fint_artifact_dir)
+        with mock.patch.object(
+            context,
+            "check_python_output",
+            side_effect=subprocess.CalledProcessError(2, "cmd"),
+        ):
+            self.assertIsNone(context.fint_artifact_dir)
 
     def test_write_metadata_json_no_profile_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
