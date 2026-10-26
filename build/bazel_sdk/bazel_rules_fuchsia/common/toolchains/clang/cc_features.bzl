@@ -416,15 +416,15 @@ def get_default_compile_flags_feature(
         _flag_configs.no_frame_pointers,
         _flag_configs.linker_gc,
         _flag_configs.no_rtti,
-        _flag_configs.pic,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
-    # no_exceptions, icf, relative_paths):
+    # no_exceptions, icf, relative_paths, shared_library_config):
     oot_only_ldflags = [] if use_default_build_flags else [
         _flag_configs.debuginfo,
         _flag_configs.no_exceptions,
         _flag_configs.icf,
+        _flag_configs.pic,
         _flag_configs.relpath_debug_info,
     ]
 
