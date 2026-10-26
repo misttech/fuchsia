@@ -15,7 +15,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
-#include <bind/fuchsia/usb/phy/cpp/bind.h>
 #include <gtest/gtest.h>
 namespace usb_phy_visitor_dt {
 
@@ -74,13 +73,13 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_usb_phy::NAME, "another-phy"),
+          fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "another-phy"),
       }},
       (*mgr_request.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-          fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, "another-phy"),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "another-phy"),
       }},
       (*mgr_request.parents2())[2].properties(), false));
 }

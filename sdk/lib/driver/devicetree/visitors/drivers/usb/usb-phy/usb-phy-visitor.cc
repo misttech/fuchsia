@@ -12,7 +12,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
-#include <bind/fuchsia/usb/phy/cpp/bind.h>
 
 namespace usb_phy_visitor_dt {
 
@@ -98,8 +97,8 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   } else if (phy_name == "dwc3-phy") {
     did = bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3;
   } else if (!phy_name.empty()) {
-    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia_usb_phy::NAME, phy_name));
-    bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, phy_name));
+    bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia::NAME, phy_name));
+    bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia::NAME, phy_name));
   }
 
   if (did) {
