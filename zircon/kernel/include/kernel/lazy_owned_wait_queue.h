@@ -18,8 +18,14 @@
 class OwnedWaitQueue;
 class OwnedWaitQueuePool;
 
+extern "C" Lock<SpinLock>* rust_owned_wait_queue_pool_lock_get();
+
 // Global lock for OwnedWaitQueuePool.
-DECLARE_SINGLETON_SPINLOCK(OwnedWaitQueuePoolLock);
+struct OwnedWaitQueuePoolLock {
+  static Lock<SpinLock>* Get() TA_RET_CAP(rust_owned_wait_queue_pool_lock_get()) {
+    return rust_owned_wait_queue_pool_lock_get();
+  }
+};
 
 // Global pool accessor policy.
 struct GlobalOwqPoolAccess {

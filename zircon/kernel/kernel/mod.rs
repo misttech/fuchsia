@@ -19,6 +19,7 @@ pub mod koid;
 pub mod lock_trace;
 pub mod mp;
 pub mod owned_wait_queue;
+pub mod owned_wait_queue_pool;
 pub mod percpu;
 pub mod recurring_callback;
 pub mod relaxed_atomic;

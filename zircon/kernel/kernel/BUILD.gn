@@ -28,7 +28,6 @@ source_set("kernel") {
     "mutex.cc",
     "owned_wait_queue.cc",
     "owned_wait_queue_ffi.cc",
-    "owned_wait_queue_pool.cc",
     "percpu.cc",
     "restricted_ffi.cc",
     "rppm_ffi.cc",
@@ -407,6 +406,24 @@ kernel_bindgen_crate("owned-wait-queue-bindings") {
   ]
 }
 
+kernel_bindgen_crate("owned-wait-queue-pool-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/owned_wait_queue_pool.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  # Layout contract only: the Rust `OwnedWaitQueuePool` asserts its size and
+  # alignment against the C++ `OwnedWaitQueuePool`.
+  type_allowlist = [ "OwnedWaitQueuePool" ]
+  opaque_types = [ "OwnedWaitQueuePool" ]
+  function_blocklist = [ ".*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  raw_lines = [ "#![no_std]" ]
+}
+
 kernel_bindgen_crate("semaphore-bindings") {
   visibility = [ "//zircon/kernel/*" ]
   headers = [ "//zircon/kernel/include/kernel/semaphore.h" ]
@@ -453,6 +470,7 @@ kernel_rust_mod("kernel-rs") {
     "mod.rs",
     "mp.rs",
     "owned_wait_queue.rs",
+    "owned_wait_queue_pool.rs",
     "percpu.rs",
     "recurring_callback.rs",
     "relaxed_atomic.rs",
@@ -471,6 +489,7 @@ kernel_rust_mod("kernel-rs") {
   deps = [
     ":event-bindings",
     ":owned-wait-queue-bindings",
+    ":owned-wait-queue-pool-bindings",
     ":percpu-bindings",
     ":semaphore-bindings",
     ":thread-layout-bindings",
@@ -482,6 +501,7 @@ kernel_rust_mod("kernel-rs") {
     "//src/lib/kalloc",
     "//src/lib/kstring",
     "//src/lib/ksync",
+    "//src/lib/lazy_init",
     "//src/lib/lockdep/rust:lockdep",
     "//src/lib/zr",
     "//third_party/rust_crates:paste",
@@ -493,6 +513,7 @@ kernel_rust_mod("kernel-rs") {
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/kconcurrent:kconcurrent_rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
+    "//zircon/kernel/lib/object_cache:object_cache-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
