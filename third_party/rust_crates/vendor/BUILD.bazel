@@ -1656,14 +1656,14 @@ alias(
 )
 
 alias(
-    name = "mio-1.2.1",
-    actual = "//third_party/rust_crates/vendor/mio-1.2.1:mio",
+    name = "mio-1.2.4",
+    actual = "//third_party/rust_crates/vendor/mio-1.2.4:mio",
     tags = ["manual"],
 )
 
 alias(
     name = "mio",
-    actual = "//third_party/rust_crates/vendor/mio-1.2.1:mio",
+    actual = "//third_party/rust_crates/vendor/mio-1.2.4:mio",
     tags = ["manual"],
 )
 

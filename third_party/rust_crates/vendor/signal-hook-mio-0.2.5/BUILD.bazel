@@ -41,7 +41,7 @@ rust_library(
         allow_empty = False,
     ),
     aliases = {
-        "//third_party/rust_crates/vendor/mio-1.2.1:mio": "mio_1_0",
+        "//third_party/rust_crates/vendor/mio-1.2.4:mio": "mio_1_0",
     },
     compile_data = glob(
         include = ["**"],
@@ -82,7 +82,7 @@ rust_library(
     version = "0.2.5",
     deps = [
         "//third_party/rust_crates/forks/libc-0.2.190:libc",
-        "//third_party/rust_crates/vendor/mio-1.2.1:mio",
+        "//third_party/rust_crates/vendor/mio-1.2.4:mio",
         "//third_party/rust_crates/vendor/signal-hook-0.3.18:signal_hook",
     ],
 )

@@ -551,7 +551,7 @@ _NORMAL_DEPENDENCIES = {
             "home": Label("//third_party/rust_crates/vendor/home-0.5.12:home"),
             "hyper-rustls": Label("//third_party/rust_crates/vendor/hyper-rustls-0.27.10:hyper_rustls"),
             "loom": Label("//third_party/rust_crates/vendor/loom-0.7.2:loom"),
-            "mio": Label("//third_party/rust_crates/vendor/mio-1.2.1:mio"),
+            "mio": Label("//third_party/rust_crates/vendor/mio-1.2.4:mio"),
             "mock-omaha-server": Label("//third_party/rust_crates/vendor/mock-omaha-server-0.5.0:mock_omaha_server"),
             "notify": Label("//third_party/rust_crates/vendor/notify-8.2.0:notify"),
             "num_cpus": Label("//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus"),

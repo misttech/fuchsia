@@ -43,7 +43,7 @@ _TOKIO_HOST_DEPS = [
     "//third_party/rust_crates/ask2patch/memchr",
     "//third_party/rust_crates/forks/libc-0.2.190:libc",
     "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
-    "//third_party/rust_crates/vendor/mio-1.2.1:mio",
+    "//third_party/rust_crates/vendor/mio-1.2.4:mio",
     "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
     "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
     "//third_party/rust_crates/vendor/socket2-0.6.5:socket2",

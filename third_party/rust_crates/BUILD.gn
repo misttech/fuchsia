@@ -1197,13 +1197,13 @@ group("memoffset-0.9.1") {
 
 if (!(current_os == "fuchsia")) {
   group("mio") {
-    public_deps = [ ":mio-v1_2_1" ]
+    public_deps = [ ":mio-v1_2_4" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("mio-1.2.1") {
-    public_deps = [ ":mio-v1_2_1" ]
+  group("mio-1.2.4") {
+    public_deps = [ ":mio-v1_2_4" ]
   }
 }
 
@@ -7163,7 +7163,7 @@ rustc_library("crossterm-v0_29_0") {
   deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":parking_lot-v0_12_5" ]
   if (true) {
-    deps += [ ":mio-v1_2_1" ]
+    deps += [ ":mio-v1_2_4" ]
     deps += [ ":rustix-v1_1_5" ]
     deps += [ ":signal-hook-mio-v0_2_5" ]
     deps += [ ":signal-hook-v0_3_18" ]
@@ -13932,15 +13932,15 @@ rustc_library("miniz_oxide-v0_8_9") {
   applicable_licenses = [ ":miniz_oxide-v0_8_9.license" ]
 }
 
-license("mio-v1_2_1.license") {
+license("mio-v1_2_4.license") {
   public_package_name = "mio"
-  license_files = [ "//third_party/rust_crates/vendor/mio-1.2.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/mio-1.2.4/LICENSE" ]
 }
 
-rustc_library("mio-v1_2_1") {
+rustc_library("mio-v1_2_4") {
   crate_name = "mio"
-  source_root = "//third_party/rust_crates/vendor/mio-1.2.1/src/lib.rs"
-  output_name = "mio-136cf19d1bbfb149"
+  source_root = "//third_party/rust_crates/vendor/mio-1.2.4/src/lib.rs"
+  output_name = "mio-f6c0062563093f3d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -13962,8 +13962,8 @@ rustc_library("mio-v1_2_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=136cf19d1bbfb149",
-    "-Cextra-filename=-136cf19d1bbfb149",
+    "-Cmetadata=f6c0062563093f3d",
+    "-Cextra-filename=-f6c0062563093f3d",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"log\"",
     "--cfg=feature=\"net\"",
@@ -13973,7 +13973,7 @@ rustc_library("mio-v1_2_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mio-v1_2_1.license" ]
+  applicable_licenses = [ ":mio-v1_2_4.license" ]
 }
 
 license("mock-omaha-server.mock-omaha-server-v0_5_0.license") {
@@ -14694,11 +14694,11 @@ rustc_library("notify-v8_2_0") {
   deps += [ ":notify-types-v2_1_0" ]
   if (false || false || false || false || false) {
     deps += [ ":kqueue-v1_2_0" ]
-    deps += [ ":mio-v1_2_1" ]
+    deps += [ ":mio-v1_2_4" ]
   }
   if (current_os == "linux" || false) {
     deps += [ ":inotify-v0_11_5" ]
-    deps += [ ":mio-v1_2_1" ]
+    deps += [ ":mio-v1_2_4" ]
   }
   if (current_os == "mac") {
     deps += [ ":bitflags-v2_13_2" ]
@@ -22049,7 +22049,7 @@ rustc_library("signal-hook-mio-v0_2_5") {
 
   deps = []
   deps += [ ":libc-v0_2_190" ]
-  deps += [ ":mio-v1_2_1" ]
+  deps += [ ":mio-v1_2_4" ]
   deps += [ ":signal-hook-v0_3_18" ]
 
   rustenv = []
@@ -22063,7 +22063,7 @@ rustc_library("signal-hook-mio-v0_2_5") {
   ]
 
   aliased_deps = {
-    mio_1_0 = ":mio-v1_2_1.actual"
+    mio_1_0 = ":mio-v1_2_4.actual"
   }
   visibility = [ ":*" ]
 
@@ -23997,12 +23997,12 @@ rustc_library("tokio-v1_53_1") {
 
   deps = []
   deps += [ ":bytes-v1_12_1" ]
-  deps += [ ":mio-v1_2_1" ]
+  deps += [ ":mio-v1_2_4" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":tokio-macros-v2_7_2($host_toolchain)" ]
   if (true && current_os == "linux") {
     deps += [ ":libc-v0_2_190" ]
-    deps += [ ":mio-v1_2_1" ]
+    deps += [ ":mio-v1_2_4" ]
   }
   if (!(current_cpu == "wasm32") || (false && !false)) {
     deps += [ ":socket2-v0_6_5" ]
@@ -24020,7 +24020,7 @@ rustc_library("tokio-v1_53_1") {
     deps += [ ":bytes-v1_12_1" ]
     deps += [ ":libc-v0_2_190" ]
     deps += [ ":memchr-v2_8_3" ]
-    deps += [ ":mio-v1_2_1" ]
+    deps += [ ":mio-v1_2_4" ]
     deps += [ ":num_cpus-v1_17_0" ]
     deps += [ ":signal-hook-registry-v1_4_8" ]
     deps += [ ":socket2-v0_6_5" ]
