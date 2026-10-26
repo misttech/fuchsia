@@ -489,6 +489,12 @@ class HandoffPrep {
   //
   // Note that by the time this has been called the UART driver has been taken
   // and no more logging is permitted.
+  //
+  // Another responsibility of this call is to clear the phys exception
+  // handlers. While it would be nice to preserve exception handling as a
+  // safety net until the kernel is able to install its own handlers, this is
+  // fraught as, per the previous point, the UART driver has been taken and its
+  // state is no longer known.
   [[noreturn]] void ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info);
 
   auto kernel_virtual_entry() const { return abi_spec_->entry; }

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/x86/descriptor-regs.h>
 #include <lib/arch/x86/msr.h>
 #include <lib/code-patching/code-patches.h>
 #include <lib/zbi-format/zbi.h>
@@ -26,6 +27,8 @@ void HandoffPrep::ArchConstructKernelAddressSpace() {}
 
 void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) {
   ZX_DEBUG_ASSERT_MSG(!abi.shadow_call_stack_base, "Shadow call stack not supported on x86");
+
+  arch::LoadIdt(arch::GdtRegister64{.limit = 0, .base = 0});
 
   uint32_t gsbase_low = static_cast<uint32_t>(abi.thread_abi_pointer);
   uint32_t gsbase_high = static_cast<uint32_t>(abi.thread_abi_pointer >> 32);

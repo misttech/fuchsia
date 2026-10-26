@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/arm64/system.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/code-patching/code-patches.h>
 #include <lib/zbi-format/driver-config.h>
@@ -249,6 +250,11 @@ void HandoffPrep::ArchDoHandoff(ZirconAbi abi, const ArchPatchInfo& patch_info) 
   ArchPhysHandoff& arch_handoff = handoff_->arch_handoff;
 
   arch_handoff.alternate_vbar = patch_info.alternate_vbar;
+
+  auto cleared_vbar = arch::ArmVectorBaseAddressRegister{}.set_reg_value(0);
+  arch::ArmCurrentEl::Read().ForEachEl(
+      arch::ArmVbarEl1{cleared_vbar}, arch::ArmVbarEl2{cleared_vbar},
+      arch::ArmVbarEl3{cleared_vbar}, [](auto&& vbar) { vbar.Write(); });
 
   __asm__ volatile(
       // We want the kernel's main to be at the root of the call stack, so

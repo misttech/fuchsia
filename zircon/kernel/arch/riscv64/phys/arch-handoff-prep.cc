@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/riscv64/system.h>
 #include <lib/code-patching/code-patches.h>
 #include <zircon/assert.h>
 
@@ -21,6 +22,8 @@ void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
                                            ktl::span<const ktl::byte> payload) {
   ZX_DEBUG_ASSERT(handoff_);
   ArchPhysHandoff& arch_handoff = handoff_->arch_handoff;
+
+  arch::RiscvStvec::Write(uint64_t{0});
 
   switch (header.type) {
     case ZBI_TYPE_KERNEL_DRIVER: {
