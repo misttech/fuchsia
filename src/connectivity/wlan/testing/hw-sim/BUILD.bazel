@@ -1,0 +1,81 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "wlan-hw-sim",
+    testonly = True,
+    srcs = [
+        "src/config.rs",
+        "src/event/action.rs",
+        "src/event/branch.rs",
+        "src/event/buffered.rs",
+        "src/event/convert.rs",
+        "src/event/extract.rs",
+        "src/event/filter.rs",
+        "src/event/mod.rs",
+        "src/lib.rs",
+        "src/netdevice_helper.rs",
+        "src/test_utils.rs",
+        "src/wlancfg_helper.rs",
+    ],
+    edition = "2024",
+    # @bazel2gn:skip
+    lint_config = "//build/config/rust/lints:clippy_warn_default",
+    visibility = ["//src/connectivity/wlan/testing/hw-sim/test:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
+        "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
+        "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+        "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
+        "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
+        "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
+        "//sdk/fidl/fuchsia.wlan.mlme:fuchsia.wlan.mlme_rust",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_rust",
+        "//sdk/fidl/fuchsia.wlan.tap:fuchsia.wlan.tap_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/lib/network-device/rust",
+        "//src/connectivity/wlan/lib/common/rust:wlan-common",
+        "//src/connectivity/wlan/lib/eapol",
+        "//src/connectivity/wlan/lib/fidl-ext:wlan-fidl-ext",
+        "//src/connectivity/wlan/lib/frame_writer:wlan-frame-writer",
+        "//src/connectivity/wlan/lib/ieee80211",
+        "//src/connectivity/wlan/lib/rsn:wlan-rsn",
+        "//src/connectivity/wlan/tests/helpers/realm-factory/fidl:test.wlan.realm_rust",
+        "//src/connectivity/wlan/tests/helpers/test-realm-helpers",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-sync",
+        "//src/testing/realm_client/rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "wlan-hw-sim_test",
+    crate = ":wlan-hw-sim",
+)
+
+fx_unittest_package(
+    name = "wlan-hw-sim-lib-tests",
+    unit_tests = [":wlan-hw-sim_test"],
+    visibility = ["//src/connectivity/wlan:__pkg__"],
+)
