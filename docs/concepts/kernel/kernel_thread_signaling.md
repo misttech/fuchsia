@@ -84,10 +84,13 @@ for suspend, `THREAD_SIGNAL_SUSPEND`, and a bit for kill, `THREAD_SIGNAL_KILL`.
 Requesting a thread to suspend or terminate is achieved by setting the
 appropriate bit on the target Thread object and then, depending on the target's
 state, poking it in some way to ensure it reaches a safe point in a timely
-fashion.  The exact type of poke depends on the target thread's state:
+fashion.  The bit is set with an atomic OR while holding the target thread's
+lock.  The exact type of poke depends on the target thread's state:
 sleep/blocked, suspended, or running.  Note, there are two flavors of
 sleeping/blocked, interruptible and uninterruptible.  We'll focus on
-interruptible and ignore uninterruptible.
+interruptible.  If the target is blocked uninterruptibly, the sender simply sets
+the bit and the signal is acted on at the next safe point after the thread
+wakes up on its own.
 
 ### Sleeping or Blocked
 
@@ -108,7 +111,13 @@ Eventually, when the stack has unwound, the thread will be at the edge, a safe
 point.  It is here, just before returning to user mode, that the thread checks
 its signals once more and acts on them by calling
 [`arch_iframe_process_pending_signals()`] or
-[`x86_syscall_process_pending_signals()`].
+[`x86_syscall_process_pending_signals()`].  Both of these end up in
+[`Thread::Current::ProcessPendingSignals()`], which handles kill before suspend
+and keeps going until there are no signals left.
+
+One thing worth noting about the blocked case is that unblocking a thread
+requires locking the entire priority inheritance chain that the thread is part
+of.  If the sender can't get all of those locks it backs off and retries.
 
 ### Suspended
 
@@ -188,7 +197,8 @@ IPI, which causes thread B to check for pending signals:
 ```
 interrupt_handler()
 ---- interrupt ----
-PortDispatcher::Dequeue()
+Semaphore::wait()
+PortDispatcher::dequeue()
 sys_port_wait()
 syscall_dispatch()
 ---- syscall ----
@@ -196,6 +206,10 @@ vdso
 zx_port_wait()
 user code
 ```
+
+The frame names in the following diagrams are those of the Rust implementation.
+The C++ `WaitQueue::BlockEtc()` and others are thin wrappers over the same
+code.
 
 However, this time the interrupt handler sees that it was invoked in kernel
 context rather than user context so it does not suspend itself.  Instead it
@@ -205,9 +219,9 @@ there are no packets available.  Thread B sees there are no packets available
 and prepares to block:
 
 ```
-WaitQueue::BlockEtcPreamble()
-WaitQueue::BlockEtc()
-PortDispatcher::Dequeue()
+WaitQueue::block_etc_preamble()
+Semaphore::wait()
+PortDispatcher::dequeue()
 sys_port_wait()
 syscall_dispatch()
 ---- syscall ----
@@ -217,13 +231,16 @@ user code
 ```
 
 Just before blocking, it checks for pending signals and sees that it has been
-asked to suspend.  Instead of blocking it returns `ZX_ERR_INTERNAL_INTR_RETRY`
-and the callstack unwinds to the edge, just prior to returning to user mode:
+asked to suspend.  [`Thread::check_kill_or_suspend_signal()`] returns
+`ZX_ERR_INTERNAL_INTR_KILLED` if the kill bit is set and
+`ZX_ERR_INTERNAL_INTR_RETRY` if only the suspend bit is set.  Instead of
+blocking, thread B returns `ZX_ERR_INTERNAL_INTR_RETRY` and the callstack
+unwinds to the edge, just prior to returning to user mode:
 
 ```
-WaitQueue::BlockEtcPreabmle()   ZX_ERR_INTERNAL_INTR_RETRY
-WaitQueue::BlockEtc()                       |
-PortDispatcher::Dequeue()                   |
+WaitQueue::block_etc_preamble() ZX_ERR_INTERNAL_INTR_RETRY
+Semaphore::wait()                           |
+PortDispatcher::dequeue()                   |
 sys_port_wait()                             |
 syscall_dispatch()                          V
 ---- syscall ----
@@ -259,9 +276,9 @@ it is retried by the vDSO:
 
 ```
 blocked                           ZX_ERR_INTERNAL_INTR_RETRY
-WaitQueue::BlockEtcPostamble()                         |
-WaitQueue::BlockEtc()                                  |
-PortDispatcher::Dequeue()                              |
+WaitQueueBase::block_etc_postamble()                   |
+Semaphore::wait()                                      |
+PortDispatcher::dequeue()                              |
 sys_port_wait()                                        |
 syscall_dispatch()                                     |
 ---- syscall ----                                      |      A
@@ -277,9 +294,9 @@ unblocking it (with `ZX_OK`):
 
 ```
 blocked                            ZX_OK
-WaitQueue::BlockEtcPostamble()       |
-WaitQueue::BlockEtc()                |
-PortDispatcher::Dequeue()            V
+WaitQueueBase::block_etc_postamble() |
+Semaphore::wait()                    |
+PortDispatcher::dequeue()            V
 sys_port_wait()
 syscall_dispatch()
 ---- syscall ----
@@ -296,7 +313,7 @@ executes:
 ```
 interrupt_handler()
 ---- interrupt ----
-PortDispatcher::Dequeue()
+PortDispatcher::dequeue()
 sys_port_wait()
 syscall_dispatch()
 ---- syscall ----
@@ -349,10 +366,13 @@ The key points to take away are:
    periodically check for pending signals and return if any are set.
 
 
-[`Thread::Suspend`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/kernel/thread.cc;drc=4d61c1c41f71b5a0f13f67cb154c5fd3ef7fb23f;l=347
-[`Thread::Kill`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/kernel/thread.cc;drc=4d61c1c41f71b5a0f13f67cb154c5fd3ef7fb23f;l=616
-[`arch_iframe_process_pending_signals()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/arch/arm64/exceptions_c.cc;drc=4d61c1c41f71b5a0f13f67cb154c5fd3ef7fb23f;l=506
-[`x86_syscall_process_pending_signals()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/arch/x86/faults.cc;drc=4d61c1c41f71b5a0f13f67cb154c5fd3ef7fb23f;l=526
+[`Thread::Suspend`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/include/kernel/thread.h;l=858;drc=f16b887f4148eb346aec8ed4abc5d8825de154f4
+[`Thread::Kill`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/include/kernel/thread.h;l=868;drc=f16b887f4148eb346aec8ed4abc5d8825de154f4
+[`Thread::SuspendOrKillInternal`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/kernel/thread.cc;l=512;drc=f16b887f4148eb346aec8ed4abc5d8825de154f4
+[`Thread::Current::ProcessPendingSignals()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/kernel/thread.cc;l=1380;drc=f16b887f4148eb346aec8ed4abc5d8825de154f4
+[`Thread::check_kill_or_suspend_signal()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/kernel/thread.rs;l=1083;drc=f16b887f4148eb346aec8ed4abc5d8825de154f4
+[`arch_iframe_process_pending_signals()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/arch/arm64/exceptions_c.cc;l=615;drc=b07c2008ea00c1854c66fc30648e518a27b6fd34
+[`x86_syscall_process_pending_signals()`]: https://cs.opensource.google/fuchsia/fuchsia/+/main:zircon/kernel/arch/x86/exceptions_c.cc;l=607;drc=80c3a245853c67fc4dfdc68e6470f26951f506c1
 [`zx_task_suspend()`]: /reference/syscalls/task_suspend.md
 [`zx_task_kill()`]: /reference/syscalls/task_kill.md
 [`zx_port_wait()`]: /reference/syscalls/port_wait.md
