@@ -11,7 +11,7 @@
 
 #include <hwreg/bitfields.h>
 
-#include "src/devices/pci/drivers/pci/capabilities.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 #include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {

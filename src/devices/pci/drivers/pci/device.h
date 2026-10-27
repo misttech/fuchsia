@@ -30,12 +30,12 @@
 #include "src/devices/pci/drivers/pci/allocation.h"
 #include "src/devices/pci/drivers/pci/bar_info.h"
 #include "src/devices/pci/drivers/pci/bus_device_interface.h"
-#include "src/devices/pci/drivers/pci/capabilities.h"
 #include "src/devices/pci/drivers/pci/capabilities/msi.h"
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
 #include "src/devices/pci/drivers/pci/capabilities/pci_express.h"
 #include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 #include "src/devices/pci/lib/cpp/config.h"
 
 namespace pci {

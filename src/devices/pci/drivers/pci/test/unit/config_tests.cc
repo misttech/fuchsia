@@ -13,6 +13,7 @@
 
 #include "src/devices/pci/drivers/pci/config.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace pci {
@@ -331,5 +332,57 @@ TEST_F(PciConfigBaseTests, ProxyConfigGetView) {
 
 TEST_F(PciConfigBaseTests, MmioConfigGetView) { MmioConfigGetViewImpl(pciroot()); }
 TEST_F(PciConfigExtendedTests, MmioConfigGetView) { MmioConfigGetViewImpl(pciroot()); }
+
+TEST_F(PciConfigBaseTests, FindCapability) {
+  auto& ecam = pciroot().ecam();
+  auto cfg = ecam.CreateMmioConfig(kDefaultBdf1);
+  auto view = ecam.get_config_view(kDefaultBdf1);
+
+  // If Status.has_capabilities_list is false, FindCapability must return std::nullopt.
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80));
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciExpress), std::nullopt);
+
+  config::Status.FromValue(0).set_has_capabilities_list(1).WriteTo(cfg.get());
+
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0));
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciExpress), std::nullopt);
+
+  // Reserved low bits in CapabilitiesPtr and capability next pointers must be masked off.
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80 | ~kCapabilityPtrMask));
+  uint8_t cap_80[2] = {static_cast<uint8_t>(std::to_underlying(Capability::Id::kPciExpress)),
+                       static_cast<uint8_t>(0x90 | ~kCapabilityPtrMask)};
+  view.WriteBuffer(0x80, cap_80, sizeof(cap_80));
+  uint8_t cap_90[2] = {static_cast<uint8_t>(std::to_underlying(Capability::Id::kMsiX)), 0x00};
+  view.WriteBuffer(0x90, cap_90, sizeof(cap_90));
+
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciExpress), 0x80);
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kMsiX), 0x90);
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciPowerManagement), std::nullopt);
+
+  // A capability pointer into the config header (below kCapPtrMinValid) must be rejected
+  // even if those bytes match the target capability ID.
+  constexpr uint8_t kBelowHeaderOffset = kCapPtrMinValid - 2 * kCapabilityAlignment;
+  view.WriteBuffer(kBelowHeaderOffset, cap_90, sizeof(cap_90));
+  cfg->Write(Config::kCapabilitiesPtr, kBelowHeaderOffset);
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kMsiX), std::nullopt);
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80));
+  cap_80[1] = kBelowHeaderOffset;
+  view.WriteBuffer(0x80, cap_80, sizeof(cap_80));
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kMsiX), std::nullopt);
+
+  // Offset kCapPtrMaxValid is rejected by the last-DWORD guard.
+  CapabilityHdr dummy_hdr{};
+  EXPECT_FALSE(ReadCapability(*cfg, kCapPtrMaxValid, &dummy_hdr));
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(kCapPtrMaxValid));
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciExpress), std::nullopt);
+
+  // A cyclic capability chain must terminate via the loop guard.
+  cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80));
+  cap_80[1] = 0x90;
+  view.WriteBuffer(0x80, cap_80, sizeof(cap_80));
+  cap_90[1] = 0x80;
+  view.WriteBuffer(0x90, cap_90, sizeof(cap_90));
+  EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciPowerManagement), std::nullopt);
+}
 
 }  // namespace pci

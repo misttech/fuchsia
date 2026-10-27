@@ -8,70 +8,15 @@
 #include <span>
 
 #include <fbl/string_buffer.h>
-#include <hwreg/bitfields.h>
 
 #include "src/devices/pci/drivers/pci/capabilities/msi.h"
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
 #include "src/devices/pci/drivers/pci/capabilities/pci_express.h"
 #include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/device.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 
 namespace pci {
-
-struct CapabilityHdr {
-  uint8_t id;
-  uint8_t ptr;
-};
-
-bool ReadCapability(Config& cfg, uint8_t offset, CapabilityHdr* header) {
-  if (offset == 0 || (offset & 0xfc) == 0xfc) {
-    return false;
-  }
-
-  // Read the id (at offset + 0x0) and pointer to the next cap (at offset + 1
-  // The lower two bits must be masked off per PCI Local Bus Spec 6.7.
-  // In the case of PCIe, the ptr field also contains the revision number of
-  // the capability and that can be handled in the ParseExtCapabilities()
-  // method.
-  header->id = cfg.Read(PciReg8(offset));
-  header->ptr = cfg.Read(PciReg8(static_cast<uint16_t>(offset + 1u))) & static_cast<uint8_t>(~0x3);
-  return true;
-}
-
-// PCI Express Base Spec 7.6
-struct ExtCapabilityIdReg : public hwreg::RegisterBase<ExtCapabilityIdReg, uint32_t> {
-  DEF_FIELD(31, 20, offset);
-  DEF_FIELD(19, 16, version);
-  DEF_FIELD(15, 0, id);
-
-  static auto Get(uint16_t offset) { return hwreg::RegisterAddr<ExtCapabilityIdReg>(offset); }
-};
-
-struct ExtCapabilityHdr {
-  uint16_t id;
-  uint16_t ptr;
-  uint8_t version;
-};
-
-bool ReadExtCapability(Config& cfg, uint16_t offset, ExtCapabilityHdr* header) {
-  if (offset == 0 || (offset & 0xffc) == 0xffc) {
-    return false;
-  }
-
-  auto reg = ExtCapabilityIdReg::Get(offset).ReadFrom(&cfg);
-  uint16_t id = static_cast<uint16_t>(reg.id());
-  if (id == 0xffff) {
-    return false;
-  }
-
-  // Extended capabilities start with a 16 bit id, followed by a 4 bit version
-  // and a 12 bit pointer to the next offset. Like standard capabilities, the bottom
-  // 2 bits off the offset must be masked off.
-  header->id = id;
-  header->ptr = static_cast<uint16_t>(reg.offset() & ~0x3);
-  header->version = static_cast<uint8_t>(reg.version());
-  return true;
-}
 
 namespace {
 // The methods here provide common helper functions that are useful to both

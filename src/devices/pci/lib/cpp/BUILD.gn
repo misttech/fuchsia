@@ -6,6 +6,7 @@ import("//build/cpp/library_headers.gni")
 
 library_headers("headers") {
   public = [
+    "capabilities.h",
     "config.h",
     "include/lib/pci/constants.h",
     "include/lib/pci/hw.h",

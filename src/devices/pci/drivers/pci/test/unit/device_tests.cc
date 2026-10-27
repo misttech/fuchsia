@@ -18,7 +18,6 @@
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
 
-#include "src/devices/pci/drivers/pci/capabilities.h"
 #include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/device.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_allocator.h"
@@ -27,6 +26,7 @@
 #include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_upstream_node.h"
 #include "src/devices/pci/drivers/pci/test/fakes/test_device.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 #include "src/devices/pci/lib/cpp/config.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/lib/testing/predicates/status.h"

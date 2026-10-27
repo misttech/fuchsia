@@ -4,7 +4,7 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_PCI_EXPRESS_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_PCI_EXPRESS_H_
 
-#include "src/devices/pci/drivers/pci/capabilities.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 
 namespace pci {
 

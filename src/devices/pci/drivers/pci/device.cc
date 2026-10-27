@@ -40,6 +40,7 @@
 #include "src/devices/pci/drivers/pci/composite.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
 #include "src/devices/pci/drivers/pci/upstream_node.h"
+#include "src/devices/pci/lib/cpp/capabilities.h"
 
 #define RETURN_STATUS(level, status, format, ...)                                   \
   do {                                                                              \
