@@ -47,11 +47,6 @@ class _FuchsiaCmds:
     ]
 
     @staticmethod
-    def battery_manager_command(running: bool) -> list[str]:
-        action = "start" if running else "stop"
-        return ["component", action, "/core/battery_manager"]
-
-    @staticmethod
     def display_power_ssh_command(power_on: bool) -> str:
         state = "on" if power_on else "off"
         return f"display-tweak panel --power {state}"
@@ -156,7 +151,6 @@ class SystemPowerStateControllerUsingUsbCli(
         )
 
         self._set_display_power(power_on=False)
-        self._set_battery_manager_running(running=False)
         self._drop_session_power_lease()
         try:
             await super().suspend_resume(
@@ -164,7 +158,6 @@ class SystemPowerStateControllerUsingUsbCli(
                 resume_mode=resume_mode,
             )
         finally:
-            self._set_battery_manager_running(running=True)
             self._set_display_power(power_on=True)
 
     def _set_display_power(self, power_on: bool) -> None:
@@ -181,30 +174,6 @@ class SystemPowerStateControllerUsingUsbCli(
             )
         except errors.HoneydewError as err:
             _LOGGER.warning("Failed to power %s display panel: %s", state, err)
-
-    def _set_battery_manager_running(self, running: bool) -> None:
-        """Start or stop `/core/battery_manager` around suspend.
-
-        On workbench configurations with a battery, `/core/battery_manager`
-        holds a `charging_block_suspension` wake lease that prevents SAG from
-        entering suspend if charger/fuel-gauge disconnect updates are not yet
-        propagated.
-        """
-        action = "start" if running else "stop"
-        _LOGGER.info(
-            "Running `ffx component %s /core/battery_manager` on '%s'...",
-            action,
-            self._device_name,
-        )
-        try:
-            self._ffx.run(
-                _FuchsiaCmds.battery_manager_command(running=running),
-                machine=ffx_types.MachineFormat.RAW,
-            )
-        except errors.HoneydewError as err:
-            _LOGGER.warning(
-                "Failed to %s /core/battery_manager: %s", action, err
-            )
 
     def _drop_session_power_lease(self) -> None:
         """Drops the session power lease prior to suspend."""

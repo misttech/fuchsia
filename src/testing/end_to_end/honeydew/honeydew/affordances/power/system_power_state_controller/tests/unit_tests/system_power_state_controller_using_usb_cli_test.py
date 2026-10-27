@@ -219,28 +219,25 @@ class SystemPowerStateControllerUsingUsbCliTests(
         )
 
     def test_pre_post_suspend_helpers_log_warnings_on_error(self) -> None:
-        """Test display, battery_manager, and session lease helpers log warnings on FFX errors."""
+        """Test display and session lease helpers log warnings on FFX errors."""
         self.mock_ffx.run_ssh_cmd.side_effect = ffx_errors.FfxCommandError(
             "ssh error"
         )
         self.mock_ffx.run.side_effect = ffx_errors.FfxCommandError("ffx error")
 
         self.controller._set_display_power(power_on=False)
-        self.controller._set_battery_manager_running(running=False)
         self.controller._drop_session_power_lease()
 
     def test_pre_post_suspend_helpers_propagate_unexpected_exceptions(
         self,
     ) -> None:
-        """Test display, battery_manager, and session lease helpers propagate
-        unexpected exceptions (e.g. Mobly signals)."""
+        """Test display and session lease helpers propagate unexpected
+        exceptions (e.g. Mobly signals)."""
         self.mock_ffx.run_ssh_cmd.side_effect = signals.TestAbortAll("abort")
         self.mock_ffx.run.side_effect = signals.TestAbortAll("abort")
 
         with self.assertRaises(signals.TestAbortAll):
             self.controller._set_display_power(power_on=False)
-        with self.assertRaises(signals.TestAbortAll):
-            self.controller._set_battery_manager_running(running=False)
         with self.assertRaises(signals.TestAbortAll):
             self.controller._drop_session_power_lease()
 
