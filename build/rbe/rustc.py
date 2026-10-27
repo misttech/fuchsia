@@ -84,8 +84,9 @@ def _rustc_command_scanner() -> argparse.ArgumentParser:
         help="Specify where transitive dependencies can be found",
     )
     for f in _RUSTC_FUSED_FLAGS:
+        flag_names = [f, "--codegen"] if f == "-C" else [f]
         parser.add_argument(
-            f,
+            *flag_names,
             type=str,
             action="append",
             dest="{}_flags".format(f.lstrip("-")),
@@ -132,10 +133,36 @@ class RustcInput(object):
 
 def is_linkable(f: str) -> bool:
     # f might not be a Path
-    return any(
+    return not f.startswith("-") and any(
         f.endswith(suffix)
         for suffix in (".a", ".o", ".so", ".dylib", ".so.debug", ".ld")
     )
+
+
+def _expand_link_arg_flags(c_flags: Iterable[str]) -> Iterable[str]:
+    """Extract linker arguments in order from -C link-arg and -C link-args flags.
+
+    -C link-arg=<arg> passes a single argument to the linker.
+    -C link-args=<args> splits <args> on spaces into multiple linker arguments.
+    Compiler-driver forwarding flags (-Wl,arg1,arg2,...) are also unpacked.
+    """
+    raw_args: list[str] = []
+    for flag in c_flags:
+        key, sep, value = flag.partition("=")
+        if sep != "=":
+            continue
+        if key == "link-arg":
+            raw_args.append(value)
+        elif key == "link-args":
+            raw_args.extend(value.split())
+
+    for arg in raw_args:
+        if arg.startswith("-Wl,"):
+            for subarg in arg[len("-Wl,") :].split(","):
+                if subarg:
+                    yield subarg
+        else:
+            yield arg
 
 
 def find_direct_inputs(command: Iterable[str]) -> Iterable[RustcInput]:
@@ -442,49 +469,78 @@ class RustAction(object):
         self._c_sysroot: Path | None = None
         self._use_ld: Path | None = None
         self._link_reproducer: Path | None = None
+        self._link_map_output: Path | None = None
         self._want_sysroot_libgcc = False
-        self._link_arg_files: Sequence[Path] = []
-        self._linker_scripts: Sequence[Path] = []
+        self._link_arg_files: list[Path] = []
+        self._linker_scripts: list[Path] = []
+        self._link_arg_flags: Sequence[str] = list(
+            _expand_link_arg_flags(self._attributes.C_flags)
+        )
+        self._process_link_args()
+
+    def _process_link_args(self) -> None:
         link_arg_iter = iter(self._link_arg_flags)
         for arg in link_arg_iter:
             if arg == "-lgcc":
                 self._want_sysroot_libgcc = True
                 continue
-            left, sep, right = arg.partition("=")
-            if left == "--sysroot":
-                self._c_sysroot = Path(right)
-                continue
-            if left == "-fuse-ld":
-                self._use_ld = Path(right)
-                continue
-            if left == "--soname":
-                # `-Clink-arg=--soname=foo.so` is intended to set the DT_SONAME
-                # for the shared object and is not an input or output file that
-                # needs to be relativized.
-                continue
-            if left == "--reproduce":
-                self._link_reproducer = Path(right)
-                continue
 
-            # Linker scripts can be passed via -T or --script.
-            # They can be fused (-Tpath) or separate (-T path).
-            script_path = None
-            if arg == "-T" or arg == "--script":
-                try:
-                    script_path = next(link_arg_iter)
-                except StopIteration:
-                    # Trailing -T without arg, ignore for now
+            if arg.startswith("-"):
+                # Linker switches accept either single-dash (-opt) or
+                # double-dash (--opt), and take values either with '='
+                # (-opt=val, --opt=val) or as the next argument (-opt val,
+                # --opt val).
+                opt = arg[2:] if arg.startswith("--") else arg[1:]
+                name, sep, value = opt.partition("=")
+
+                if sep == "":
+                    if name in (
+                        "sysroot",
+                        "fuse-ld",
+                        "soname",
+                        "h",
+                        "dynamic-linker",
+                        "reproduce",
+                        "Map",
+                        "script",
+                        "T",
+                        "Ttext",
+                        "Tdata",
+                        "Tbss",
+                        "Ttext-segment",
+                        "Trodata-segment",
+                        "Tldata-segment",
+                    ):
+                        try:
+                            value = next(link_arg_iter)
+                        except StopIteration:
+                            continue
+                    elif arg.startswith("-T"):
+                        # Fused -T<script> (e.g. -Tpath/to/script.ld).
+                        name = "T"
+                        value = arg[2:]
+                    else:
+                        continue
+
+                if name == "sysroot":
+                    self._c_sysroot = Path(value)
+                elif name == "fuse-ld":
+                    self._use_ld = Path(value)
+                elif name in ("soname", "h", "dynamic-linker"):
+                    # `-soname=foo.so` / `--soname=foo.so` / `-h foo.so` is
+                    # intended to set the DT_SONAME for the shared object and
+                    # is not an input or output file that needs to be
+                    # relativized.
                     pass
-            elif arg.startswith("-T"):
-                script_path = arg[2:]
-            elif arg.startswith("--script="):
-                script_path = arg[len("--script=") :]
-
-            if script_path:
-                # Filter out symbol assignments like -Tfoo=0x1234.
-                # Same logic as C++ wrapper.
-                if "=" not in script_path:
-                    self._linker_scripts.append(Path(script_path))
+                elif name == "reproduce":
+                    self._link_reproducer = Path(value)
+                elif name == "Map":
+                    self._link_map_output = Path(value)
+                elif name in ("script", "T"):
+                    # Filter out symbol assignments like -Tfoo=0x1234.
+                    # Same logic as C++ wrapper.
+                    if "=" not in value:
+                        self._linker_scripts.append(Path(value))
                 continue
 
             if is_linkable(arg):
@@ -619,20 +675,12 @@ class RustAction(object):
         return [Path(p) for p in self._linker_scripts]
 
     @property
-    def _link_arg_flags(self) -> Sequence[str]:
-        return self._C_flags.get("link-arg", [])
-
-    @property
     def link_arg_files(self) -> Sequence[Path]:
         return [Path(p) for p in self._link_arg_files]
 
     @property
     def link_map_output(self) -> Path | None:
-        # The linker can produce a .map output file.
-        for arg in self._C_flags.get("link-args", []):
-            if arg.startswith("--Map="):
-                return Path(_remove_prefix(arg, "--Map="))
-        return None
+        return self._link_map_output
 
     def default_rust_sysroot(self) -> Path:
         """This is the relative location of rust sysroot, when unspecified."""

@@ -278,30 +278,50 @@ class RustActionTests(unittest.TestCase):
 
     def test_link_reproducer(self) -> None:
         repro_archive = Path("path/to/repro.tar")
-        r = rustc.RustAction(
-            [
-                "../tools/rustc",
-                f"-Clink-arg=--reproduce={repro_archive}",
-                "../foo/lib.rs",
-                "-o",
-                "foo.rlib",
-            ]
-        )
-        self.assertEqual(r.link_reproducer, repro_archive)
-        self.assertIn(repro_archive, r.extra_output_files())
+        for opts in (
+            [f"-Clink-arg=--reproduce={repro_archive}"],
+            [f"-Clink-arg=-reproduce={repro_archive}"],
+            ["-Clink-arg=--reproduce", f"-Clink-arg={repro_archive}"],
+            ["-Clink-arg=-reproduce", f"-Clink-arg={repro_archive}"],
+            [f"-Clink-args=--reproduce={repro_archive}"],
+            [f"-Clink-args=-reproduce={repro_archive}"],
+            [f"-Clink-args=--reproduce {repro_archive}"],
+            [f"-Clink-args=-reproduce {repro_archive}"],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc"]
+                + opts
+                + [
+                    "../foo/lib.rs",
+                    "-o",
+                    "foo.rlib",
+                ]
+            )
+            self.assertEqual(r.link_reproducer, repro_archive)
+            self.assertIn(repro_archive, r.extra_output_files())
 
     def test_c_sysroot(self) -> None:
         c_sysroot = Path("../path/to/platform/sysroot")
-        r = rustc.RustAction(
-            [
-                "../tools/rustc",
-                f"-Clink-arg=--sysroot={c_sysroot}",
-                "../foo/lib.rs",
-                "-o",
-                "foo.rlib",
-            ]
-        )
-        self.assertEqual(r.c_sysroot, c_sysroot)
+        for opts in (
+            [f"-Clink-arg=--sysroot={c_sysroot}"],
+            [f"-Clink-arg=-sysroot={c_sysroot}"],
+            ["-Clink-arg=--sysroot", f"-Clink-arg={c_sysroot}"],
+            ["-Clink-arg=-sysroot", f"-Clink-arg={c_sysroot}"],
+            [f"-Clink-args=--sysroot={c_sysroot}"],
+            [f"-Clink-args=-sysroot={c_sysroot}"],
+            [f"-Clink-args=--sysroot {c_sysroot}"],
+            [f"-Clink-args=-sysroot {c_sysroot}"],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc"]
+                + opts
+                + [
+                    "../foo/lib.rs",
+                    "-o",
+                    "foo.rlib",
+                ]
+            )
+            self.assertEqual(r.c_sysroot, c_sysroot)
 
     def test_rust_sysroot(self) -> None:
         rust_sysroot = Path("../path/to/rust/sysroot")
@@ -320,16 +340,22 @@ class RustActionTests(unittest.TestCase):
 
     def test_fuse_ld(self) -> None:
         ld = Path("gold")
-        r = rustc.RustAction(
-            [
-                "../tools/rustc",
-                f"-Clink-arg=-fuse-ld={ld}",
-                "../foo/lib.rs",
-                "-o",
-                "foo.rlib",
-            ]
-        )
-        self.assertEqual(r.use_ld, ld)
+        for opts in (
+            [f"-Clink-arg=-fuse-ld={ld}"],
+            [f"-Clink-arg=--fuse-ld={ld}"],
+            [f"-Clink-args=-fuse-ld={ld}"],
+            [f"-Clink-args=--fuse-ld={ld}"],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc"]
+                + opts
+                + [
+                    "../foo/lib.rs",
+                    "-o",
+                    "foo.rlib",
+                ]
+            )
+            self.assertEqual(r.use_ld, ld)
 
     def test_rust_sysroot_default(self) -> None:
         working_dir = Path("/home/project/build")
@@ -436,6 +462,12 @@ class RustActionTests(unittest.TestCase):
                 "-C",
                 f"link-arg={link_args[1]}",
             ],
+            [f"-Clink-args={link_args[0]} {link_args[1]}"],
+            ["-C", f"link-args={link_args[0]} {link_args[1]}"],
+            [f"-Clink-arg={link_args[0]}", f"-Clink-args={link_args[1]}"],
+            [
+                f"-Clink-args=--push-state -Bstatic -l:libunwind.a {link_args[0]} {link_args[1]} --pop-state"
+            ],
         ):
             r = rustc.RustAction(
                 ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
@@ -446,6 +478,7 @@ class RustActionTests(unittest.TestCase):
         scripts = list(_paths(["obj/foo/this.ld", "obj/bar/that.ld"]))
         for opts in (
             [f"-Clink-arg=-T{scripts[0]}", f"-Clink-arg=--script={scripts[1]}"],
+            [f"-Clink-arg=-T={scripts[0]}", f"-Clink-arg=-script={scripts[1]}"],
             [
                 "-C",
                 f"link-arg=-T{scripts[0]}",
@@ -458,6 +491,16 @@ class RustActionTests(unittest.TestCase):
                 "-Clink-arg=--script",
                 f"-Clink-arg={scripts[1]}",
             ],
+            [
+                "-Clink-arg=-T",
+                f"-Clink-arg={scripts[0]}",
+                "-Clink-arg=-script",
+                f"-Clink-arg={scripts[1]}",
+            ],
+            [f"-Clink-args=-T {scripts[0]} --script {scripts[1]}"],
+            [f"-Clink-args=-T {scripts[0]} -script {scripts[1]}"],
+            [f"-Clink-args=-T{scripts[0]} -script={scripts[1]}"],
+            [f"-Clink-arg=-Wl,-T,{scripts[0]},-script,{scripts[1]}"],
         ):
             r = rustc.RustAction(
                 ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
@@ -465,31 +508,56 @@ class RustActionTests(unittest.TestCase):
             self.assertEqual(r.linker_scripts, scripts)
 
     def test_linker_script_symbol_assignment_filtered(self) -> None:
-        opts = ["-Clink-arg=-Tfoo=0x1234"]
-        r = rustc.RustAction(
-            ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
-        )
-        self.assertEqual(r.linker_scripts, [])
+        for opts in (
+            ["-Clink-arg=-Tfoo=0x1234"],
+            ["-Clink-arg=-Ttext=0x1234"],
+            ["-Clink-args=-Ttext 0x1234 -Tdata 0x5678 -Tbss 0x9abc"],
+            ["-Clink-arg=-Ttext", "-Clink-arg=0x1234"],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
+            )
+            self.assertEqual(r.linker_scripts, [])
 
     def test_link_map_output(self) -> None:
-        r = rustc.RustAction(
-            [
-                "../tools/rustc",
-                "../foo/lib.rs",
-                "-o",
-                "foo.rlib",
-                "-Clink-args=--Map=./obj/foo.rlib.map",
-            ]
-        )
         map_file = Path("obj/foo.rlib.map")
-        self.assertEqual(r.link_map_output, map_file)
-        self.assertIn(map_file, set(r.extra_output_files()))
+        for opts in (
+            ["-Clink-args=--Map=./obj/foo.rlib.map"],
+            ["-Clink-args=-Map=./obj/foo.rlib.map"],
+            ["-Clink-args=--Map ./obj/foo.rlib.map"],
+            ["-Clink-args=-Map ./obj/foo.rlib.map"],
+            ["-Clink-arg=--Map=./obj/foo.rlib.map"],
+            ["-Clink-arg=-Map=./obj/foo.rlib.map"],
+            ["-Clink-arg=--Map", "-Clink-arg=./obj/foo.rlib.map"],
+            ["-Clink-arg=-Map", "-Clink-arg=./obj/foo.rlib.map"],
+            ["-Clink-args=-Wl,--Map=./obj/foo.rlib.map"],
+            ["-Clink-args=-Wl,-Map=./obj/foo.rlib.map"],
+            ["-Clink-arg=-Wl,--Map,./obj/foo.rlib.map"],
+            ["-Clink-arg=-Wl,-Map,./obj/foo.rlib.map"],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc", "../foo/lib.rs", "-o", "foo.rlib"] + opts
+            )
+            self.assertEqual(r.link_map_output, map_file)
+            self.assertIn(map_file, set(r.extra_output_files()))
 
     def test_soname(self) -> None:
         soname = "foo.so"
         for opts in (
             [f"-Clink-arg=--soname={soname}"],
+            [f"-Clink-arg=-soname={soname}"],
+            [f"-Clink-arg=-h={soname}"],
             ["-C", f"link-arg=--soname={soname}"],
+            ["-C", f"link-arg=-soname={soname}"],
+            ["-Clink-arg=--soname", f"-Clink-arg={soname}"],
+            ["-Clink-arg=-soname", f"-Clink-arg={soname}"],
+            ["-Clink-arg=-h", f"-Clink-arg={soname}"],
+            [f"-Clink-args=--soname={soname}"],
+            [f"-Clink-args=-soname={soname}"],
+            [f"-Clink-args=--soname {soname}"],
+            [f"-Clink-args=-soname {soname}"],
+            [f"-Clink-args=-h {soname}"],
+            [f"-Clink-arg=-Wl,-soname,{soname}"],
         ):
             r = rustc.RustAction(
                 ["../tools/rustc"]
@@ -500,7 +568,7 @@ class RustActionTests(unittest.TestCase):
                     "foo.rlib",
                 ]
             )
-            self.assertNotIn(soname, r.link_arg_files)
+            self.assertNotIn(Path(soname), r.link_arg_files)
             self.assertEqual([], r.link_arg_files)
 
     def test_direct_inputs(self) -> None:
