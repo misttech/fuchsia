@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "component_manager_config",
+    srcs = [
+        "src/compile.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/lib/assembly/platform_configuration:__pkg__",
+        "//tools/component_manager_config:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/lib/cm_config",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json5",
+        "//tools/lib/cml",
+    ],
+)
+
+host_rustc_test(
+    name = "component_manager_config_test",
+    crate = ":component_manager_config",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
