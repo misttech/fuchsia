@@ -53,14 +53,20 @@ fn estimate_params(num_items: usize) -> (usize, usize) {
     let bits = std::cmp::max(bits, 8).next_power_of_two();
     let m = bits as f64;
 
-    // Then, solve for a minimal `k` such that the probability of FP is <= TARGET_FP_RATE.
-    let mut k: f64 = 0.0;
-    let mut fp_rate = 1.0;
-    while fp_rate > TARGET_FP_RATE {
-        k += 1.0;
-        fp_rate = (1f64 - (-k / (m / n)).exp()).powf(k);
+    // The false positive rate when using `k` hashes.
+    let fp_rate = |k: usize| (1f64 - (-(k as f64) / (m / n)).exp()).powf(k as f64);
+
+    // Then, find the smallest `k` such that the probability of FP is <= TARGET_FP_RATE.
+    //
+    // As `k` grows, the FP rate falls until it reaches a minimum and then rises again.  Usually
+    // the target is met before reaching the minimum, but occasionally (e.g. for 291,725 items)
+    // the filter size is so close to the limit that no `k` meets the target.  In that case, we
+    // stop at the minimum, which is the best we can do.
+    let mut k = 1;
+    while fp_rate(k) > TARGET_FP_RATE && fp_rate(k + 1) < fp_rate(k) {
+        k += 1;
     }
-    (bits as usize, k.round() as usize)
+    (bits as usize, k)
 }
 
 /// A read-only handle to a bloom filter.  To create a bloom filter, use `BloomFilterWriter`.
@@ -262,6 +268,17 @@ mod tests {
         assert_eq!(estimate_params(5000), (131072, 4));
         assert_eq!(estimate_params(50000), (1048576, 4));
         assert_eq!(estimate_params(5_000_000), (134217728, 4));
+    }
+
+    #[test]
+    fn estimated_params_target_fp_rate_unreachable() {
+        // For these counts, no number of hashes meets the target FP rate, so the best (10) is used.
+        // These used to loop forever.
+        assert_eq!(estimate_params(291_725), (4194304, 10));
+        assert_eq!(estimate_params(583_449), (8388608, 10));
+        assert_eq!(estimate_params(583_450), (8388608, 10));
+        assert_eq!(estimate_params(1_166_897), (16777216, 10));
+        assert_eq!(estimate_params(9_335_205), (134217728, 10));
     }
 
     const TEST_KEYS: [i32; 4] = [0, 65535, i32::MAX, i32::MIN];
