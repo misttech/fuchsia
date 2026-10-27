@@ -2193,12 +2193,14 @@ void brcmf_return_roam_conf(struct net_device* ndev, const uint8_t* selected_bss
 std::vector<uint8_t> brcmf_find_ssid_in_ies(const uint8_t* ie, size_t ie_len) {
   std::vector<uint8_t> ssid;
   size_t offset = 0;
-  while (offset < ie_len) {
+  while (offset + TLV_HDR_LEN <= ie_len) {
     uint8_t type = ie[offset];
     uint8_t length = ie[offset + TLV_LEN_OFF];
+    if (length > ie_len - (offset + TLV_HDR_LEN)) {
+      break;  // Malformed element so reject it
+    }
     if (type == WLAN_IE_TYPE_SSID) {
-      size_t ssid_len = std::min<size_t>(length, ie_len - (offset + TLV_HDR_LEN));
-      ssid_len = std::min<size_t>(ssid_len, fuchsia_wlan_ieee80211::kMaxSsidByteLen);
+      size_t ssid_len = std::min<size_t>(length, fuchsia_wlan_ieee80211::kMaxSsidByteLen);
       auto start = ie + offset + TLV_HDR_LEN;
       ssid = std::vector<uint8_t>(start, start + ssid_len);
       break;
