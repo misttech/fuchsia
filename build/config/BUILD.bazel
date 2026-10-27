@@ -281,6 +281,49 @@ build_flags(
 )
 # LINT.ThenChange(BUILD.bazel:default_include_dirs)
 
+# LINT.IfChange(linker_gc)
+build_flags(
+    name = "linker_gc",
+    subflags = [
+        ":linker_gc.compiler",
+        ":linker_gc.linker",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# NOTE: This assumes is_pecoff == false in Bazel.
+compiler_build_flags(
+    name = "linker_gc.linker",
+    # These are the link-time flags to take advantage of the code generation
+    # flags in build_flags("linker_gc.compiler").
+    linker_flags = ["--gc-sections"],
+    visibility = ["//visibility:private"],
+)
+
+# These are the code-generation flags.
+build_flags(
+    name = "linker_gc.compiler",
+    cflags = [
+        "-fdata-sections",
+        "-ffunction-sections",
+    ],
+    # Just to be safe, pass them to the linker too.
+    ldflags = [
+        "-fdata-sections",
+        "-ffunction-sections",
+    ],
+    # `-Zfunction-sections` flag controls both text and data sections.
+    rustflags = ["-Zfunction-sections"],
+    visibility = ["//visibility:private"],
+)
+
+build_flags(
+    name = "default_linker_gc",
+    subflags = [":linker_gc"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:linker_gc)
+
 # LINT.IfChange(dwarf_version)
 # This uses a custom rule to extract the value of the
 # dwarf_version at analysis time and generate a target

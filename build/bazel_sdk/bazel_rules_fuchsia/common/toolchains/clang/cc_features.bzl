@@ -363,21 +363,21 @@ def get_default_compile_flags_feature(
         default_system_flags,
         _flag_configs.color_diagnostics,
         _flag_configs.pic,
-        _flag_configs.linker_gc,
         _flag_configs.no_frame_pointers,
         _flag_configs.default_warnings,
         _flag_configs.ffp_contract_off,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (auto_var_init,
-    # default_debuginfo, libcpp_remove_transitive_includes, relative_paths,
-    # symbol_visibility_hidden, thread_safety_annotations).
+    # default_debuginfo, default_linker_gc, libcpp_remove_transitive_includes,
+    # relative_paths, symbol_visibility_hidden, thread_safety_annotations).
     # NOTE: //build/config/fuchsia:zircon_asserts (ZX_ASSERT_LEVEL) is not
     # supported OOT.
     oot_only_cflags = [] if use_default_build_flags else [
         _flag_configs.auto_var_init,
         _flag_configs.debuginfo,
         _flag_configs.libcpp_remove_transitive_includes,
+        _flag_configs.linker_gc,
         _flag_configs.relpath_debug_info,
         _flag_configs.symbol_visibility_hidden,
         _flag_configs.thread_safety_annotations,
@@ -414,13 +414,14 @@ def get_default_compile_flags_feature(
         _flag_configs.driver_mode,
         _flag_configs.color_diagnostics,
         _flag_configs.no_frame_pointers,
-        _flag_configs.linker_gc,
     ]
 
     # Already in @fuchsia_build_info//default_build_flags (default_debuginfo,
-    # no_exceptions, icf, relative_paths, shared_library_config):
+    # default_linker_gc, no_exceptions, icf, relative_paths,
+    # shared_library_config):
     oot_only_ldflags = [] if use_default_build_flags else [
         _flag_configs.debuginfo,
+        _flag_configs.linker_gc,
         _flag_configs.no_exceptions,
         _flag_configs.no_rtti,
         _flag_configs.icf,

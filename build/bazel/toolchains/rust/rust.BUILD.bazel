@@ -105,10 +105,6 @@ _DEFAULT_COMMON_EXEC_RUST_FLAGS = [
     # GN: //build/config:rust-depinfo
     "-Zbinary-dep-depinfo",
 
-    # GN: //build/config:linker_gc.compiler
-    # `-Zfunction-sections` flag controls both text and data sections.
-    "-Zfunction-sections",
-
     # GN: //build/config/linux:compiler, which has no build_flags() port yet.
     # GN only applies it on Linux, while Bazel also applies it to Fuchsia
     # targets.

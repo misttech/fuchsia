@@ -426,6 +426,7 @@ config("default_include_dirs") {
 
 # LINT.ThenChange(BUILD.bazel:default_include_dirs)
 
+# LINT.IfChange(linker_gc)
 variant("linker_gc") {
   configs = [
     ":linker_gc.compiler",
@@ -464,6 +465,8 @@ config("linker_gc.compiler") {
 config("default_linker_gc") {
   configs = [ ":linker_gc" ]
 }
+
+# LINT.ThenChange(BUILD.bazel:linker_gc)
 
 # LINT.IfChange(linker_string_merging)
 compiler_config("linker_string_merging") {
