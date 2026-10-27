@@ -477,16 +477,11 @@ impl Event {
 
                 // If we failed to lock, we need to drop the queue lock, then try again.
                 if !locked {
+                    core::hint::cold_path();
                     return TransactionResult::BACKOFF;
                 }
 
-                // Success.  If we not an auto-reset event, or we failed to find anyone to
-                // wake, make sure to set the event to the signaled state.
                 let has_threads_to_wake = !unblock_list.is_empty();
-                if (flags & FLAGS_AUTOUNSIGNAL) == 0 || !has_threads_to_wake {
-                    event.result.store(Status::result_into_raw(wait_result), Ordering::Relaxed);
-                }
-
                 if has_threads_to_wake {
                     // If we have a queue_to_own, we will perform a few operations with the
                     // following actors and objects:
@@ -537,6 +532,7 @@ impl Event {
                         };
                         drop(front_proof);
                         if assigned.is_err() {
+                            core::hint::cold_path();
                             while let Some(t) = unblock_list.as_mut().as_list().pop_front() {
                                 // SAFETY: `t` is blocked in `event.wait` (so live); its lock was
                                 // acquired by `lock_for_wake_*_in_place` in this transaction with
@@ -546,7 +542,18 @@ impl Event {
                             return TransactionResult::BACKOFF;
                         }
                     }
+                }
 
+                // Success.  If we are not an auto-reset event, or we failed to find anyone to
+                // wake, make sure to set the event to the signaled state.
+                //
+                // This is done only after the assign-owner step can no longer back off, so a retry
+                // does not find the event already signaled with waiters still queued.
+                if (flags & FLAGS_AUTOUNSIGNAL) == 0 || !has_threads_to_wake {
+                    event.result.store(Status::result_into_raw(wait_result), Ordering::Relaxed);
+                }
+
+                if has_threads_to_wake {
                     for t in unblock_list.as_list_ref().iter() {
                         debug_assert!(t.lock().is_held(token));
                         // SAFETY: `t`'s lock was acquired by `lock_for_wake_*_in_place` in this
@@ -771,13 +778,18 @@ pub unsafe extern "C" fn rust_event_destroy(event: *mut Event) {
 #[unittest::suite(name = "event_rust")]
 mod tests {
     use super::{AutounsignalEvent, Event, FLAGS_AUTOUNSIGNAL, FLAGS_NONE, MAGIC, NOT_SIGNALED};
-    use crate::kconcurrent::{IRQ_SAVE_OPTION, clt_tag, single_chain_lock_guard_owned};
+    use crate::kconcurrent::{
+        ChainLockTransaction, IRQ_SAVE_OPTION, OwnerGuard, TransactionResult, clt_tag,
+        single_chain_lock_guard_owned,
+    };
     use crate::kernel::deadline::Deadline;
     use crate::kernel::owned_wait_queue::OwnedWaitQueue;
     use crate::kernel::thread::{self, DEFAULT_PRIORITY, Interruptible, ThreadPtr};
-    use crate::platform_rs::timer::{DurationMono, InstantMono, current_mono_time, zx_usec};
+    use crate::platform_rs::timer::{
+        DurationMono, InstantMono, current_mono_time, zx_msec, zx_usec,
+    };
     use core::ffi::c_void;
-    use core::sync::atomic::Ordering;
+    use core::sync::atomic::{AtomicBool, AtomicI64, Ordering};
     use pin_init::stack_pin_init;
     use unittest::{
         assert_eq, assert_true, expect_eq, expect_err, expect_false, expect_true, subtest,
@@ -1135,6 +1147,8 @@ mod tests {
         pin_init::stack_pin_init!(let owq = OwnedWaitQueue::init());
         // Keeps the woken waiter from exiting (and disowning `owq`) before the owner is checked.
         pin_init::stack_pin_init!(let gate = Event::init_unsignaled());
+        // Dropped after `waiters` (declared later), so the waiter has exited by then.
+        let _owq_reset = OwqReset(&owq);
         let ctx = WaitCtx::ten_seconds(&event, &gate);
         let mut waiters = Waiters::<1>::spawn(&ctx);
         unittest::assert_true!(waiters.all_spawned_and_blocked());
@@ -1147,6 +1161,118 @@ mod tests {
 
         gate.signal();
         expect_eq!(waiters.join(0), ZX_ERR_CANCELED);
+        expect_true!(event.is_signaled());
+        expect_eq!(queue_count(&event), 0);
+    }
+
+    /// Shared with a helper thread that holds `owq`'s lock in its own (older) transaction until
+    /// `hold_until`, so a younger transaction trying to acquire it has to back off.
+    struct HolderCtx {
+        owq: *const OwnedWaitQueue,
+        held: AtomicBool,
+        hold_until: AtomicI64,
+    }
+
+    extern "C" fn holder_entry(arg: *mut c_void) -> i32 {
+        // SAFETY: `arg` is the `HolderCtx` the spawning test keeps alive until it joins us.
+        let ctx = unsafe { &*arg.cast::<HolderCtx>() };
+        // SAFETY: The spawning test also keeps the `owq` alive until it joins us.
+        let owq = unsafe { &*ctx.owq };
+        ChainLockTransaction::until_done(IRQ_SAVE_OPTION, clt_tag!("event_rust_holder"), |token| {
+            // Held first-in-chain in a finalized transaction, released when `_guard` drops.
+            let _guard = OwnerGuard::new(owq, token);
+            ChainLockTransaction::finalize(token);
+            // Interrupts stay disabled on the holder's CPU for the whole hold, so keep it short.
+            let hold_until = current_mono_time().0 + zx_msec(3);
+            ctx.hold_until.store(hold_until, Ordering::Relaxed);
+            // Release/Acquire on `held` also publishes the Relaxed `hold_until` store and the
+            // `owq` lock acquisition above to the test thread's reads after it observes `held`.
+            ctx.held.store(true, Ordering::Release);
+            while current_mono_time().0 < hold_until {
+                core::hint::spin_loop();
+            }
+            TransactionResult::DONE
+        });
+        0
+    }
+
+    /// Resets the owner of an `OwnedWaitQueue` on drop, so an early test return never leaves the
+    /// queue owned when it is destroyed.
+    struct OwqReset<'a>(&'a OwnedWaitQueue);
+
+    impl Drop for OwqReset<'_> {
+        fn drop(&mut self) {
+            self.0.reset_owner_if_no_waiters();
+        }
+    }
+
+    /// `signal_etc` backs off on a held queue to own and still wakes the waiter on retry.
+    #[test]
+    fn test_event_signal_etc_assign_owner_backoff() {
+        pin_init::stack_pin_init!(let event = Event::init_unsignaled());
+        pin_init::stack_pin_init!(let owq = OwnedWaitQueue::init());
+        // Keeps the woken waiter from exiting (and disowning `owq`) before the owner is checked.
+        pin_init::stack_pin_init!(let gate = Event::init_unsignaled());
+        // Dropped after `waiters` (declared later), so the waiter has exited by then.
+        let _owq_reset = OwqReset(&owq);
+        let ctx = WaitCtx::ten_seconds(&event, &gate);
+        let mut waiters = Waiters::<1>::spawn(&ctx);
+        unittest::assert_true!(waiters.all_spawned_and_blocked());
+        let waiter = waiters.get(0);
+
+        // The holder's transaction starts first, so it is older than the one `signal_etc` opens
+        // and `assign_owner_locked` must back off until the holder releases the lock.
+        let holder_ctx = HolderCtx {
+            owq: core::ptr::from_ref(&*owq),
+            held: AtomicBool::new(false),
+            hold_until: AtomicI64::new(0),
+        };
+        // SAFETY: `holder_ctx` and `owq` outlive the thread, which is joined below.
+        let holder = unsafe {
+            thread::spawn(
+                c"event_rust_holder".as_ptr(),
+                holder_entry,
+                core::ptr::from_ref(&holder_ctx).cast_mut().cast(),
+            )
+        };
+        unittest::assert_true!(holder.is_ok(), "failed to spawn the holder");
+        let holder = holder.expect("checked above");
+
+        // Poll finely: the hold window is only 3ms, and a coarse poll could miss it entirely
+        // (entering `signal_etc` after the holder has already released the lock). The cap keeps
+        // the overall timeout at 5s.
+        let mut held = false;
+        for _ in 0..500_000 {
+            held = holder_ctx.held.load(Ordering::Acquire);
+            if held {
+                break;
+            }
+            let _ = thread::sleep_relative(DurationMono(zx_usec(10)));
+        }
+        let hold_until = holder_ctx.hold_until.load(Ordering::Relaxed);
+
+        let entered = current_mono_time().0;
+        event.signal_etc(Err(Status::BAD_STATE), Some(&*owq));
+        let finished = current_mono_time().0;
+        // SAFETY: The holder is joined exactly once.
+        let holder_status = unsafe { holder.join(InstantMono::INFINITE) };
+
+        expect_true!(held);
+        // On a single CPU the holder may already have released the lock by the time `signal_etc`
+        // is entered, in which case the contention window was missed and the check below would be
+        // vacuous; only enforce it when the window was hit.
+        if entered < hold_until {
+            // The owner assignment cannot have completed while the holder had the lock.
+            expect_true!(finished >= hold_until);
+        }
+        expect_true!(holder_status == Ok(0));
+
+        expect_true!(owq_owner(&owq) == Some(waiter));
+        owq.reset_owner_if_no_waiters();
+        expect_true!(owq_owner(&owq).is_none());
+
+        gate.signal();
+        expect_eq!(waiters.join(0), ZX_ERR_BAD_STATE);
         expect_true!(event.is_signaled());
         expect_eq!(queue_count(&event), 0);
     }
