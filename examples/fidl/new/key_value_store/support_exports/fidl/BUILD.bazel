@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Builds the FIDL library into a set of language specific bindings. Bindings for
+# a given language may be imported by depending on this target, followed by a
+# language-specific underscore:
+#
+#   ":examples.keyvaluestore.supportexports_rust"
+#   ":examples.keyvaluestore.supportexports_cpp"
+#   ...and so on
+#
+fidl_library(
+    name = "examples.keyvaluestore.supportexports",
+    srcs = ["key_value_store.test.fidl"],
+    # TODO(https://fxbug.dev/381096879): Fix lint warnings and remove.
+    excluded_checks = [
+        "vector-bounds-not-specified",
+        "wrong-prefix-for-platform-source-library",
+    ],
+    visibility = ["//examples/fidl/new/key_value_store/support_exports:__subpackages__"],
+    deps = ["//zircon/vdso/zx"],
+)
