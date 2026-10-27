@@ -19,11 +19,9 @@ source_set("vm") {
     "anonymous_page_request_ffi.cc",
     "arch_vm_aspace_ffi.cc",
     "compression.cc",
-    "compression_ffi.cc",
     "compressor.cc",
     "evictor.cc",
     "kstack.cc",
-    "lz4_compressor.cc",
     "page_queues.cc",
     "page_source.cc",
     "page_source_ffi.cc",
@@ -36,7 +34,6 @@ source_set("vm") {
     "pmm_ffi.cc",
     "pmm_node.cc",
     "scanner.cc",
-    "slot_page_storage.cc",
     "stream_size_manager.cc",
     "vm.cc",
     "vm_address_region.cc",
@@ -60,7 +57,6 @@ source_set("vm") {
   deps = [
     "//src/lib/lazy_init",
     "//src/lib/zbitl",
-    "//third_party/lz4",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/btree",
@@ -82,11 +78,6 @@ source_set("vm") {
     "//zircon/system/ulib/affine",
     "//zircon/system/ulib/ffl",
     "//zircon/system/ulib/pretty",
-  ]
-
-  defines = [
-    "LZ4_STATIC_LINKING_ONLY",
-    "LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION",
   ]
 }
 
@@ -1312,68 +1303,32 @@ kernel_bindgen_crate("compression-bindings") {
   edition = "2024"
   notice_year = 2026
 
-  function_allowlist = [
-    "cpp_vm_compressed_storage_free_instance",
-    "cpp_vm_compressed_storage_get_ref_counted",
-    "cpp_vm_slot_page_storage_create",
-    "cpp_vm_compressed_storage_store",
-    "cpp_vm_compressed_storage_free",
-    "cpp_vm_compressed_storage_compressed_data",
-    "cpp_vm_compressed_storage_get_metadata",
-    "cpp_vm_compressed_storage_set_metadata",
-    "cpp_vm_compressed_storage_dump",
-    "cpp_vm_compressed_storage_get_memory_usage",
-    "cpp_vm_compression_strategy_free_instance",
-    "cpp_vm_compression_strategy_get_ref_counted",
-    "cpp_vm_lz4_compressor_create",
-    "cpp_vm_compression_strategy_compress",
-    "cpp_vm_compression_strategy_decompress",
-    "cpp_vm_compression_strategy_dump",
-  ]
   type_allowlist = [
-    "VmCompressedStorage",
-    "VmCompressedStorage_MemoryUsage",
-    "VmCompressionStrategy",
     "VmCompression",
     "VmCompression_CompressorGuard",
   ]
   opaque_types = [
-    "VmCompressedStorage",
-    "VmCompressionStrategy",
     "VmCompression",
     "VmCompression_CompressorGuard",
   ]
-  function_blocklist = [
-    "VmCompressedStorage_.*",
-    "VmCompressionStrategy_.*",
-    "VmCompression_.*",
-  ]
+  function_blocklist = [ "VmCompression_.*" ]
 
   # These are listed individually rather than as "VmCompression_.*" because a
   # wildcard would also block VmCompression_CompressorGuard, which is
   # allowlisted above.
   type_blocklist = [
-    "VmCompressedStorage_CompressedRef",
-    "VmCompressionStrategy_CompressResult",
-    "VmCompressionStrategy_FailTag",
-    "VmCompressionStrategy_ZeroTag",
     "VmCompression_CompressedRef",
     "VmCompression_PageAndMetadata",
     "VmCompressor",
     "VmCompressor_PageAndMetadata",
-    "vm_page_t",
     "zx_status_t",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
-  deps = [
-    ":compressor-bindings",
-    ":page-bindings",
-  ]
+  deps = [ ":compressor-bindings" ]
 
   raw_lines = [
     "#![no_std]",
-    "use page_bindings::vm_page_t;",
     "pub use compressor_bindings::VmCompressor;",
   ]
 }
@@ -1737,7 +1692,6 @@ source_set("tests") {
   testonly = true
   sources = [
     "unittests/aspace_unittest.cc",
-    "unittests/compression_unittest.cc",
     "unittests/continuous_attribution_unittest.cc",
     "unittests/evictor_unittest.cc",
     "unittests/page_queues_unittest.cc",
@@ -1750,7 +1704,6 @@ source_set("tests") {
   ]
   deps = [
     ":vm-rs-unittests",
-    "//third_party/lz4",
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
   ]

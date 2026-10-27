@@ -11,15 +11,6 @@
 
 void VmCompression::fbl_recycle() { rust_vm_compression_recycle(this); }
 
-// static
-fbl::RefPtr<VmCompression> VmCompression::Create(fbl::RefPtr<VmCompressedStorage> storage,
-                                                 fbl::RefPtr<VmCompressionStrategy> strategy,
-                                                 size_t compression_threshold) {
-  VmCompression* raw = rust_vm_compression_create(
-      fbl::ExportToRawPtr(&storage), fbl::ExportToRawPtr(&strategy), compression_threshold);
-  return fbl::ImportFromRawPtr(raw);
-}
-
 void VmCompression::Decompress(CompressedRef ref, void* page_dest, uint32_t* metadata_dest) {
   *metadata_dest = 0;
   rust_vm_compression_decompress(this, ref.value(), page_dest, metadata_dest);

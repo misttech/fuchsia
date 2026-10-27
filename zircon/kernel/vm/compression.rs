@@ -13,23 +13,23 @@ use crate::platform_rs::timer::{
 use crate::vm::compressor::{
     CompressResult, CompressedRef, FailTag, PageAndMetadata, VmCompressor,
 };
+use crate::vm::lz4_compressor::VmLz4Compressor;
 use crate::vm::page::VmPagePtr;
+use crate::vm::slot_page_storage::VmSlotPageStorage;
 use crate::vm::vm::{vm_ktrace_duration, vm_ktrace_duration_begin, vm_ktrace_duration_end};
-use crate::vm::{lz4_compressor, physmap, pmm, slot_page_storage};
+use crate::vm::{physmap, pmm};
 use boot_options::{BootOptions, CompressionStorageStrategy, CompressionStrategy};
 use compression_bindings as bindings;
 use core::array;
 use core::ffi::c_void;
-use core::marker::{PhantomData, PhantomPinned};
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::NonNull;
-use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr, ref_counted};
+use fbl::{Recyclable, RefCounted, RefPtr, ref_counted};
 use kalloc::Box;
 use kprint::kprintln;
 use ksync::{KMutex, KMutexGuard, RawMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
-use zr::Opaque;
 use zx_status::Status;
 
 define_kcounter!(PAGES_DECOMPRESSED, "vm.reclamation.pages_decompressed", Sum);
@@ -39,44 +39,12 @@ define_kcounter!(PAGES_DECOMPRESSED, "vm.reclamation.pages_decompressed", Sum);
 pub const NUM_LOG_BUCKETS: usize = 8;
 
 /// Memory usage statistics for [`VmCompressedStorage`].
-#[repr(C)]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MemoryUsage {
     pub uncompressed_content_bytes: u64,
     pub compressed_storage_bytes: u64,
     pub compressed_storage_used_bytes: u64,
 }
-
-// Compile-time layout assertions for MemoryUsage.
-zr::static_assert!(
-    core::mem::size_of::<MemoryUsage>()
-        == core::mem::size_of::<bindings::VmCompressedStorage_MemoryUsage>()
-);
-zr::static_assert!(
-    core::mem::align_of::<MemoryUsage>()
-        == core::mem::align_of::<bindings::VmCompressedStorage_MemoryUsage>()
-);
-zr::static_assert!(
-    core::mem::offset_of!(MemoryUsage, uncompressed_content_bytes)
-        == core::mem::offset_of!(
-            bindings::VmCompressedStorage_MemoryUsage,
-            uncompressed_content_bytes
-        )
-);
-zr::static_assert!(
-    core::mem::offset_of!(MemoryUsage, compressed_storage_bytes)
-        == core::mem::offset_of!(
-            bindings::VmCompressedStorage_MemoryUsage,
-            compressed_storage_bytes
-        )
-);
-zr::static_assert!(
-    core::mem::offset_of!(MemoryUsage, compressed_storage_used_bytes)
-        == core::mem::offset_of!(
-            bindings::VmCompressedStorage_MemoryUsage,
-            compressed_storage_used_bytes
-        )
-);
 
 /// Statistics for [`VmCompression`].
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -202,81 +170,6 @@ pub unsafe trait VmCompressedStorage: Send + Sync {
     fn get_memory_usage(&self) -> MemoryUsage;
 }
 
-// This forwarding impl exists so that a ref-counted storage, in practice the C++ shim
-// `RefPtr<VmSlotPageStorage>`, can be passed to `VmCompression::new` and stored as a
-// `Pin<Box<dyn VmCompressedStorage>>`. The C++ shim is opaque and only ever lives behind a
-// `RefPtr`, so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressedStorage>` is not
-// possible since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait
-// gives an owned, sized value that can be type erased.
-//
-// TODO: This can be removed once the C++ `VmCompressedStorage` implementations (and therefore
-// `VmSlotPageStorage`) have been ported to Rust, at which point storage implementations can be
-// passed to `VmCompression::new` by value, unless there is a need for shared ownership of a
-// storage instance.
-//
-// SAFETY: `RefPtr<T>` delegates all `VmCompressedStorage` methods directly to `T`, which upholds
-// the `VmCompressedStorage` safety contract.
-unsafe impl<T: VmCompressedStorage + HasRefCount + Recyclable> VmCompressedStorage for RefPtr<T> {
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::store`].
-    #[inline]
-    unsafe fn store(
-        &self,
-        page: VmPagePtr,
-        len: usize,
-    ) -> (Option<CompressedRef>, Option<VmPagePtr>) {
-        // SAFETY: Discharged by caller's `# Safety` precondition.
-        unsafe { (**self).store(page, len) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::free`].
-    #[inline]
-    unsafe fn free(&self, reference: CompressedRef) {
-        // SAFETY: Discharged by caller's `# Safety` precondition.
-        unsafe { (**self).free(reference) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::compressed_data`].
-    #[inline]
-    unsafe fn compressed_data(&self, reference: CompressedRef) -> (&[u8], u32) {
-        // SAFETY: Discharged by caller's `# Safety` precondition.
-        unsafe { (**self).compressed_data(reference) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::get_metadata`].
-    #[inline]
-    unsafe fn get_metadata(&self, reference: CompressedRef) -> u32 {
-        // SAFETY: Discharged by caller's `# Safety` precondition.
-        unsafe { (**self).get_metadata(reference) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::set_metadata`].
-    #[inline]
-    unsafe fn set_metadata(&self, reference: CompressedRef, metadata: u32) {
-        // SAFETY: Discharged by caller's `# Safety` precondition.
-        unsafe { (**self).set_metadata(reference, metadata) }
-    }
-
-    #[inline]
-    fn dump(&self) {
-        (**self).dump()
-    }
-
-    #[inline]
-    fn get_memory_usage(&self) -> MemoryUsage {
-        (**self).get_memory_usage()
-    }
-}
-
 /// Result of a [`VmCompressionStrategy::compress`] attempt.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StrategyCompressResult {
@@ -329,320 +222,6 @@ pub unsafe trait VmCompressionStrategy: Send + Sync {
 
     /// Perform an information dump of the internal state to the debuglog.
     fn dump(&self);
-}
-
-// This forwarding impl exists so that a ref-counted strategy, in practice the C++ shim
-// `RefPtr<VmLz4Compressor>`, can be passed to `VmCompression::new` and stored as a
-// `Pin<Box<dyn VmCompressionStrategy>>`. The C++ shim is opaque and only ever lives behind a
-// `RefPtr`, so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressionStrategy>` is
-// not possible since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait
-// gives an owned, sized value that can be type erased.
-//
-// TODO: This can be removed once the C++ `VmCompressionStrategy` implementations (and therefore
-// `VmLz4Compressor`) have been ported to Rust, at which point strategy implementations can be
-// passed to `VmCompression::new` by value, unless there is a need for shared ownership of a
-// strategy instance.
-//
-// SAFETY: `RefPtr<T>` delegates all `VmCompressionStrategy` methods directly to `T`, which upholds
-// the `VmCompressionStrategy` safety contract.
-unsafe impl<T: VmCompressionStrategy + HasRefCount + Recyclable> VmCompressionStrategy
-    for RefPtr<T>
-{
-    #[inline]
-    fn compress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) -> StrategyCompressResult {
-        (**self).compress(src, dst)
-    }
-
-    #[inline]
-    fn decompress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) {
-        (**self).decompress(src, dst)
-    }
-
-    #[inline]
-    fn dump(&self) {
-        (**self).dump()
-    }
-}
-
-/// Rust shim wrapping the C++ `VmSlotPageStorage` (`VmCompressedStorage`) implementation.
-#[repr(C)]
-pub struct VmSlotPageStorage {
-    // Safety invariant: Any `&VmSlotPageStorage` reference points to a live, initialized C++
-    // `VmCompressedStorage` instance managed via `fbl::RefPtr`.
-    raw: Opaque<bindings::VmCompressedStorage>,
-    phantom: PhantomData<PhantomPinned>,
-}
-
-impl HasRefCount for VmSlotPageStorage {
-    fn ref_count(&self) -> &RefCounted {
-        // SAFETY: `self.as_raw()` points to a live C++ `VmCompressedStorage`, and
-        // `cpp_vm_compressed_storage_get_ref_counted` returns a valid pointer to its
-        // `fbl::RefCounted` base subobject.
-        let raw = unsafe { bindings::cpp_vm_compressed_storage_get_ref_counted(self.as_raw()) };
-        // SAFETY: `raw` points to a valid `fbl::RefCounted` with the same representation as Rust
-        // `fbl::RefCounted`.
-        unsafe { &*(raw.cast::<RefCounted>()) }
-    }
-}
-
-// SAFETY: `VmSlotPageStorage` wraps a C++ `fbl::RefCounted<VmCompressedStorage>` object that
-// is destroyed via `cpp_vm_compressed_storage_free_instance`.
-unsafe impl Recyclable for VmSlotPageStorage {
-    /// # Safety
-    ///
-    /// `ptr` must point to a valid `VmSlotPageStorage` instance whose reference count has
-    /// reached zero.
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: By `Recyclable::recycle` contract, `ptr` points to a valid instance whose
-        // reference count has reached zero.
-        unsafe { bindings::cpp_vm_compressed_storage_free_instance(ptr.as_ptr().cast()) };
-    }
-}
-
-// SAFETY: C++ `VmCompressedStorage` implementations are thread-safe ("Instances of this class may
-// be accessed concurrently").
-unsafe impl Send for VmSlotPageStorage {}
-// SAFETY: C++ `VmCompressedStorage` implementations synchronize internal state across concurrent
-// callers.
-unsafe impl Sync for VmSlotPageStorage {}
-
-impl VmSlotPageStorage {
-    /// Creates a new C++ `VmSlotPageStorage` instance wrapped in a [`RefPtr`].
-    pub fn create() -> Option<RefPtr<Self>> {
-        // SAFETY: `cpp_vm_slot_page_storage_create` returns either null on allocation failure or
-        // an exported `RefPtr<VmCompressedStorage>` with a reference count of 1.
-        unsafe {
-            let raw = bindings::cpp_vm_slot_page_storage_create();
-            RefPtr::try_from_raw(raw.cast::<Self>())
-        }
-    }
-
-    /// Domain-specific conversion: returns raw pointer for `bindings::VmCompressedStorage`.
-    #[inline]
-    pub fn as_raw(&self) -> *mut bindings::VmCompressedStorage {
-        self.raw.get()
-    }
-}
-
-// SAFETY: C++ `VmCompressedStorage` implementations (such as `VmSlotPageStorage`) uphold the
-// storage contract: `Store` returns either null or a uniquely owned PMM page in the `Alloc` state,
-// and any returned `CompressedRef` is a valid slot reference distinct from `TEMP_REFERENCE_VALUE`
-// that remains valid until `Free`.
-unsafe impl VmCompressedStorage for VmSlotPageStorage {
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::store`].
-    unsafe fn store(
-        &self,
-        page: VmPagePtr,
-        len: usize,
-    ) -> (Option<CompressedRef>, Option<VmPagePtr>) {
-        let mut raw_ref: u32 = 0;
-        let mut raw_page = core::ptr::null_mut();
-        // SAFETY: By this trait method's `# Safety` contract, `page` is a valid, uniquely owned
-        // page in the `Alloc` state with `len <= page::SIZE` initialized bytes, and `self.as_raw()`
-        // points to a live C++ `VmCompressedStorage`.
-        let stored = unsafe {
-            bindings::cpp_vm_compressed_storage_store(
-                self.as_raw(),
-                page.as_ffi(),
-                len,
-                &mut raw_ref,
-                &mut raw_page,
-            )
-        };
-        let compress_ref = if stored { Some(CompressedRef::new(raw_ref)) } else { None };
-        // SAFETY: `raw_page` is either null or a valid `vm_page_t*` returned by `Store`.
-        let returned_page = unsafe { VmPagePtr::from_ffi(raw_page) };
-        (compress_ref, returned_page)
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::free`].
-    unsafe fn free(&self, reference: CompressedRef) {
-        // SAFETY: By this trait method's `# Safety` contract, `reference` is a valid, live
-        // compressed reference belonging to `self` that is not used again.
-        unsafe {
-            bindings::cpp_vm_compressed_storage_free(self.as_raw(), reference.value());
-        }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::compressed_data`].
-    unsafe fn compressed_data(&self, reference: CompressedRef) -> (&[u8], u32) {
-        let mut metadata: u32 = 0;
-        let mut len: usize = 0;
-        // SAFETY: By this trait method's `# Safety` contract, `reference` is a valid, live
-        // compressed reference belonging to `self` that remains live for the returned slice's
-        // lifetime.
-        let data_ptr = unsafe {
-            bindings::cpp_vm_compressed_storage_compressed_data(
-                self.as_raw(),
-                reference.value(),
-                &mut metadata,
-                &mut len,
-            )
-        };
-        assert!(!data_ptr.is_null());
-        // SAFETY: `cpp_vm_compressed_storage_compressed_data` returns a valid pointer to `len`
-        // initialized bytes that remain valid and unmodified while `reference` is not freed.
-        let slice = unsafe { core::slice::from_raw_parts(data_ptr.cast::<u8>(), len) };
-        (slice, metadata)
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::get_metadata`].
-    unsafe fn get_metadata(&self, reference: CompressedRef) -> u32 {
-        // SAFETY: By this trait method's `# Safety` contract, `reference` is a valid, live
-        // compressed reference belonging to `self` and access is synchronized by the caller.
-        unsafe {
-            bindings::cpp_vm_compressed_storage_get_metadata(self.as_raw(), reference.value())
-        }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must uphold the `# Safety` contract of [`VmCompressedStorage::set_metadata`].
-    unsafe fn set_metadata(&self, reference: CompressedRef, metadata: u32) {
-        // SAFETY: By this trait method's `# Safety` contract, `reference` is a valid, live
-        // compressed reference belonging to `self` and access is synchronized by the caller.
-        unsafe {
-            bindings::cpp_vm_compressed_storage_set_metadata(
-                self.as_raw(),
-                reference.value(),
-                metadata,
-            );
-        }
-    }
-
-    fn dump(&self) {
-        // SAFETY: `self.as_raw()` points to a live C++ `VmCompressedStorage`.
-        unsafe {
-            bindings::cpp_vm_compressed_storage_dump(self.as_raw());
-        }
-    }
-
-    fn get_memory_usage(&self) -> MemoryUsage {
-        // SAFETY: `self.as_raw()` points to a live C++ `VmCompressedStorage`, and `MemoryUsage` is
-        // layout-verified against `VmCompressedStorage_MemoryUsage` via `zr::static_assert!`.
-        let usage = unsafe { bindings::cpp_vm_compressed_storage_get_memory_usage(self.as_raw()) };
-        MemoryUsage {
-            uncompressed_content_bytes: usage.uncompressed_content_bytes,
-            compressed_storage_bytes: usage.compressed_storage_bytes,
-            compressed_storage_used_bytes: usage.compressed_storage_used_bytes,
-        }
-    }
-}
-
-/// Rust shim wrapping the C++ `VmLz4Compressor` (`VmCompressionStrategy`) implementation.
-#[repr(C)]
-pub struct VmLz4Compressor {
-    // Safety invariant: Any `&VmLz4Compressor` reference points to a live, initialized
-    // C++ `VmCompressionStrategy` instance managed via `fbl::RefPtr`.
-    raw: Opaque<bindings::VmCompressionStrategy>,
-    phantom: PhantomData<PhantomPinned>,
-}
-
-impl HasRefCount for VmLz4Compressor {
-    fn ref_count(&self) -> &RefCounted {
-        // SAFETY: `self.as_raw()` points to a live C++ `VmCompressionStrategy`, and
-        // `cpp_vm_compression_strategy_get_ref_counted` returns a valid pointer to its
-        // `fbl::RefCounted` base subobject.
-        let raw = unsafe { bindings::cpp_vm_compression_strategy_get_ref_counted(self.as_raw()) };
-        // SAFETY: `raw` points to a valid `fbl::RefCounted` with the same representation as Rust
-        // `fbl::RefCounted`.
-        unsafe { &*(raw.cast::<RefCounted>()) }
-    }
-}
-
-// SAFETY: `VmLz4Compressor` wraps a C++ `fbl::RefCounted<VmCompressionStrategy>` object
-// that is destroyed via `cpp_vm_compression_strategy_free_instance`.
-unsafe impl Recyclable for VmLz4Compressor {
-    /// # Safety
-    ///
-    /// `ptr` must point to a valid `VmLz4Compressor` instance whose reference count has
-    /// reached zero.
-    unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: By `Recyclable::recycle` contract, `ptr` points to a valid instance whose
-        // reference count has reached zero.
-        unsafe { bindings::cpp_vm_compression_strategy_free_instance(ptr.as_ptr().cast()) };
-    }
-}
-
-// SAFETY: C++ `VmCompressionStrategy` implementations are thread-safe ("Instances of this class
-// may be accessed concurrently").
-unsafe impl Send for VmLz4Compressor {}
-// SAFETY: C++ `VmCompressionStrategy` implementations are stateless or internally synchronized
-// across concurrent callers.
-unsafe impl Sync for VmLz4Compressor {}
-
-impl VmLz4Compressor {
-    /// Creates a new C++ `VmLz4Compressor` instance wrapped in a [`RefPtr`].
-    pub fn create() -> Option<RefPtr<Self>> {
-        // SAFETY: `cpp_vm_lz4_compressor_create` returns either null on allocation failure or an
-        // exported `RefPtr<VmCompressionStrategy>` with a reference count of 1.
-        unsafe {
-            let raw = bindings::cpp_vm_lz4_compressor_create();
-            RefPtr::try_from_raw(raw.cast::<Self>())
-        }
-    }
-
-    /// Domain-specific conversion: returns raw pointer for `bindings::VmCompressionStrategy`.
-    #[inline]
-    pub fn as_raw(&self) -> *mut bindings::VmCompressionStrategy {
-        self.raw.get()
-    }
-}
-
-// SAFETY: C++ `VmCompressionStrategy` implementations (such as `VmLz4Compressor`) uphold the
-// strategy contract: `Compress` initializes the first `size <= dst.len()` bytes of `dst` when
-// returning a compressed size, and `Decompress` initializes all `page::SIZE` bytes of `dst`.
-unsafe impl VmCompressionStrategy for VmLz4Compressor {
-    fn compress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) -> StrategyCompressResult {
-        assert_eq!(src.len(), page::SIZE);
-        let mut size: usize = 0;
-        // SAFETY: `self.as_raw()` is a live `VmCompressionStrategy`, `src` points to `page::SIZE`
-        // readable bytes, and `dst` points to `dst.len()` writable bytes.
-        let tag = unsafe {
-            bindings::cpp_vm_compression_strategy_compress(
-                self.as_raw(),
-                src.as_ptr().cast::<c_void>(),
-                dst.as_mut_ptr().cast::<c_void>(),
-                dst.len(),
-                &mut size,
-            )
-        };
-        match tag {
-            0 => StrategyCompressResult::Compressed(size),
-            1 => StrategyCompressResult::Zero,
-            2 => StrategyCompressResult::Fail,
-            _ => unreachable!(),
-        }
-    }
-
-    fn decompress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) {
-        assert_eq!(dst.len(), page::SIZE);
-        // SAFETY: `self.as_raw()` is a live `VmCompressionStrategy`, `src` points to `src.len()`
-        // readable bytes, and `dst` points to `page::SIZE` writable bytes.
-        unsafe {
-            bindings::cpp_vm_compression_strategy_decompress(
-                self.as_raw(),
-                src.as_ptr().cast::<c_void>(),
-                src.len(),
-                dst.as_mut_ptr().cast::<c_void>(),
-            );
-        }
-    }
-
-    fn dump(&self) {
-        // SAFETY: `self.as_raw()` points to a live C++ `VmCompressionStrategy`.
-        unsafe {
-            bindings::cpp_vm_compression_strategy_dump(self.as_raw());
-        }
-    }
 }
 
 /// We always add `InstantMonoTicks` to any data that we store, so ensure that the maximum
@@ -901,7 +480,7 @@ impl VmCompression {
 
         let storage = match boot_options.compression_storage_strategy {
             CompressionStorageStrategy::Slot => {
-                let Some(storage) = slot_page_storage::VmSlotPageStorage::create() else {
+                let Some(storage) = VmSlotPageStorage::create() else {
                     kprintln!("[ZRAM]: Failed to create slot compressed storage area");
                     return None;
                 };
@@ -922,7 +501,7 @@ impl VmCompression {
 
         let strategy = match boot_options.compression_strategy {
             CompressionStrategy::Lz4 => {
-                let Some(strategy) = lz4_compressor::VmLz4Compressor::create() else {
+                let Some(strategy) = VmLz4Compressor::create() else {
                     kprintln!("[ZRAM]: Failed to create lz4 compressor");
                     return None;
                 };
@@ -1454,44 +1033,6 @@ pub unsafe extern "C" fn rust_vm_compression_recycle(compression: *mut VmCompres
     // `VmCompression::recycle`).
     unsafe {
         VmCompression::recycle(NonNull::new_unchecked(compression));
-    }
-}
-
-/// Creates a new `VmCompression` from C++ `VmCompressedStorage` and `VmCompressionStrategy`
-/// pointers.
-///
-/// # Safety
-///
-/// `storage` and `strategy` must be non-null raw pointers exported via `fbl::ExportToRawPtr` with
-/// an owned reference count.
-// SAFETY: Globally unique symbol name matching the C declaration in `vm/compression_ffi.h`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_compression_create(
-    storage: *mut bindings::VmCompressedStorage,
-    strategy: *mut bindings::VmCompressionStrategy,
-    compression_threshold: usize,
-) -> *mut VmCompression {
-    assert!(!storage.is_null());
-    assert!(!strategy.is_null());
-    // SAFETY: By this function's `# Safety` precondition, `storage` and `strategy` are non-null
-    // and were exported from `fbl::RefPtr` via `fbl::ExportToRawPtr`.
-    let (storage_ref, strategy_ref) = unsafe {
-        (
-            RefPtr::from_raw(storage.cast::<VmSlotPageStorage>()),
-            RefPtr::from_raw(strategy.cast::<VmLz4Compressor>()),
-        )
-    };
-    let Ok(boxed_storage) = Box::try_new(storage_ref) else {
-        return core::ptr::null_mut();
-    };
-    let pinned_storage = Pin::new(boxed_storage);
-    let Ok(boxed_strategy) = Box::try_new(strategy_ref) else {
-        return core::ptr::null_mut();
-    };
-    let pinned_strategy = Pin::new(boxed_strategy);
-    match VmCompression::new(pinned_storage, pinned_strategy, compression_threshold) {
-        Ok(compression) => RefPtr::into_raw(compression).cast_mut(),
-        Err(_) => core::ptr::null_mut(),
     }
 }
 
