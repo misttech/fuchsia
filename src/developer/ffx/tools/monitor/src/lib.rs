@@ -62,6 +62,10 @@ struct LogContext {
 struct IntentionalDisconnectRecord {
     nodename: String,
     timestamp: u64,
+    /// True if the notice was ignored because the target was already
+    /// disconnected when it arrived.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    ignored: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -159,6 +163,27 @@ struct AggregationsState {
 }
 
 impl AggregationsState {
+    /// Records that `nodename` is expected to disconnect intentionally, so that
+    /// its next vanish is classified as intentional.
+    ///
+    /// Returns false, and records nothing, if the target is already
+    /// disconnected: there is no upcoming vanish for the notice to describe,
+    /// and keeping it would mis-classify a later, unrelated disconnect once
+    /// the target has reconnected.
+    fn note_intentional_disconnect(&mut self, nodename: &str) -> bool {
+        let already_disconnected = matches!(
+            self.devices.get(nodename).and_then(|d| d.last_seen_state.as_ref()),
+            Some(DeviceState::Disconnected)
+        );
+        if already_disconnected {
+            log::info!(
+                "Ignoring intentional disconnect notice for {nodename}: target is already disconnected"
+            );
+            return false;
+        }
+        self.pending_intentional_disconnects.insert(nodename.to_string());
+        true
+    }
     fn update(&mut self, entry: &LogEntry) {
         if self.start_time.is_none() {
             self.start_time = Some(entry.timestamp);
@@ -728,9 +753,12 @@ async fn run_log_manager(mut log_receiver: mpsc::UnboundedReceiver<LogMessage>) 
                 logs.push(entry);
             }
             LogMessage::IntentionalDisconnect(nodename, timestamp) => {
-                intentional_disconnect_records
-                    .push(IntentionalDisconnectRecord { nodename: nodename.clone(), timestamp });
-                state.pending_intentional_disconnects.insert(nodename);
+                let armed = state.note_intentional_disconnect(&nodename);
+                intentional_disconnect_records.push(IntentionalDisconnectRecord {
+                    nodename,
+                    timestamp,
+                    ignored: !armed,
+                });
             }
             LogMessage::Flush(log_path, aggregations_path, reply) => {
                 let logs_to_write = logs.clone();
@@ -939,14 +967,20 @@ mod tests {
         state.update(&make_entry(2000, 100, vec![make_target("A", "N")]));
 
         // Time 2500: Intentional disconnect requested (Record 1)
-        intentional_disconnect_records
-            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 2500 });
-        state.pending_intentional_disconnects.insert("A".to_string());
+        intentional_disconnect_records.push(IntentionalDisconnectRecord {
+            nodename: "A".to_string(),
+            timestamp: 2500,
+            ignored: false,
+        });
+        assert!(state.note_intentional_disconnect("A"));
 
         // Time 2600: Redundant Intentional disconnect requested (Record 2)
-        intentional_disconnect_records
-            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 2600 });
-        state.pending_intentional_disconnects.insert("A".to_string());
+        intentional_disconnect_records.push(IntentionalDisconnectRecord {
+            nodename: "A".to_string(),
+            timestamp: 2600,
+            ignored: false,
+        });
+        assert!(state.note_intentional_disconnect("A"));
 
         // Time 3000: A drops intentionally
         state.update(&make_entry(3000, 100, vec![]));
@@ -964,9 +998,12 @@ mod tests {
         state.update(&make_entry(6000, 100, vec![make_target("A", "Y")]));
 
         // Time 6500: Intentional disconnect requested (Record 3)
-        intentional_disconnect_records
-            .push(IntentionalDisconnectRecord { nodename: "A".to_string(), timestamp: 6500 });
-        state.pending_intentional_disconnects.insert("A".to_string());
+        intentional_disconnect_records.push(IntentionalDisconnectRecord {
+            nodename: "A".to_string(),
+            timestamp: 6500,
+            ignored: false,
+        });
+        assert!(state.note_intentional_disconnect("A"));
 
         // Time 7000: A drops intentionally
         state.update(&make_entry(7000, 100, vec![]));
@@ -1006,6 +1043,40 @@ mod tests {
         assert_eq!(intentional_disconnect_records[0].timestamp, 2500);
         assert_eq!(intentional_disconnect_records[1].timestamp, 2600);
         assert_eq!(intentional_disconnect_records[2].timestamp, 6500);
+    }
+
+    #[test]
+    fn test_intentional_disconnect_ignored_while_already_disconnected() {
+        let mut state = AggregationsState::default();
+
+        // A notice for a target the monitor has never seen is kept: there is
+        // no evidence that the target is disconnected.
+        assert!(state.note_intentional_disconnect("A"));
+        state.update(&make_entry(0, 100, vec![make_target("A", "Y")]));
+        state.update(&make_entry(1000, 100, vec![]));
+        assert_eq!(state.devices["A"].intentional_target_vanished_count, 1);
+
+        // A is now disconnected. A notice received in this state has nothing
+        // to describe and must not be armed for a later vanish.
+        assert!(!state.note_intentional_disconnect("A"));
+        assert!(state.pending_intentional_disconnects.is_empty());
+
+        // A reconnects, then drops for an unrelated reason: unexpected.
+        state.update(&make_entry(2000, 100, vec![make_target("A", "Y")]));
+        state.update(&make_entry(3000, 100, vec![]));
+        let dev_a = &state.devices["A"];
+        assert_eq!(dev_a.target_vanished_count, 2);
+        assert_eq!(dev_a.intentional_target_vanished_count, 1);
+        assert_eq!(dev_a.unexpected_target_vanished_count, 1);
+
+        // Once reconnected, a notice is honoured again.
+        state.update(&make_entry(4000, 100, vec![make_target("A", "N")]));
+        assert!(state.note_intentional_disconnect("A"));
+        state.update(&make_entry(5000, 100, vec![]));
+        let dev_a = &state.devices["A"];
+        assert_eq!(dev_a.target_vanished_count, 3);
+        assert_eq!(dev_a.intentional_target_vanished_count, 2);
+        assert_eq!(dev_a.unexpected_target_vanished_count, 1);
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
