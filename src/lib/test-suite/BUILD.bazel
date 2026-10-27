@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//tools/fidl/measure-tape:measure_tape.bzl", "measure_tape")
+
+package(default_applicable_licenses = ["//:license"])
+
+measure_tape(
+    name = "measure_tape_for_case",
+    fidls = ["//sdk/fidl/fuchsia.test"],
+    target_binding = "hlcpp",
+    target_types = ["fuchsia.test/Case"],
+)
+
+fx_cc_library(
+    name = "test_suite_lib",
+    srcs = [
+        "test_suite.cc",
+    ],
+    hdrs = [
+        "test_suite.h",
+    ],
+    visibility = [
+        "//src/sys/component_manager/tests:__subpackages__",
+        "//src/sys/test_manager/tests/test_data:__pkg__",
+    ],
+    deps = [
+        ":measure_tape_for_case",
+        "//sdk/fidl/fuchsia.test:fuchsia.test_hlcpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/sys/cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+    ],
+    alwayslink = True,
+)

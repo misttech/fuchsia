@@ -1097,7 +1097,7 @@ group("fshost_non_recovery") {
 }
 
 group("fshost_storage") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/storage/memfs:package" ]
+  deps = []
 }
 
 group("fshost_storage_host_fxfs") {

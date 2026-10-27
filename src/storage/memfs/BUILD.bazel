@@ -1,0 +1,138 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+# The in-memory filesystem implementation.
+fx_cc_library(
+    name = "lib",
+    srcs = [
+        "dnode.cc",
+        "dnode.h",
+        "memfs.cc",
+        "vnode.cc",
+        "vnode.h",
+        "vnode_dir.cc",
+        "vnode_file.cc",
+        "vnode_vmo.cc",
+        "vnode_vmo.h",
+    ],
+    hdrs = [
+        "memfs.h",
+        "vnode_dir.h",
+        "vnode_file.h",
+    ],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.fs:fuchsia.fs_cpp",
+        "//sdk/lib/syslog/cpp",
+        "//zircon/third_party/ulib/safemath",
+    ],
+    # TODO(https://fxbug.dev/293618742): Remove uses of memfs as a library. Tests should use /tmp in
+    # tests instead of running their own memfs instances.
+    visibility = [
+        "//src/lib/loader_service:__pkg__",
+        "//src/storage/conformance/conformance_harness/memfs:__pkg__",
+        "//src/storage/memfs/test:__pkg__",
+        "//src/sys/component_manager/tests/rights:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/async",
+        "//sdk/lib/fidl/cpp/wire",
+        "//src/storage/lib/vfs/cpp",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+# A C++ wrapper around ":lib" that handles setup and tear-down.
+fx_cc_library(
+    name = "cpp",
+    srcs = ["mounted_memfs.cc"],
+    hdrs = ["mounted_memfs.h"],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/fidl/cpp/wire",
+    ],
+    # TODO(https://fxbug.dev/293618742): Remove uses of memfs as a library. Tests should use /tmp in
+    # tests instead of running their own memfs instances.
+    visibility = [
+        "//src/storage/lib/vfs/cpp:__pkg__",
+        "//src/storage/memfs/test:__pkg__",
+    ],
+    deps = [
+        ":lib",
+        "//sdk/lib/async",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+# @bazel2gn:raw_attribute:output_name = "memfs"
+fx_cc_binary(
+    name = "memfs_bin",
+    srcs = ["component.cc"],
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/fdio",
+        "//sdk/lib/fidl/cpp/wire",
+        "//sdk/lib/scheduler/cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/storage/lib/vfs/cpp",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+    ],
+)
+
+fx_packaged_binary(
+    name = "memfs_packaged_bin",
+    binary = ":memfs_bin",
+    binary_name = "memfs",
+)
+
+fx_component_manifest(
+    name = "memfs_component_manifest",
+    component_name = "memfs",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/memfs.cml",
+)
+
+fx_component(
+    name = "memfs_component",
+    compiled_manifest = ":memfs_component_manifest",
+    component_name = "memfs",
+    visibility = [
+        "//src/connectivity/wlan:__subpackages__",
+        "//src/developer/memory/monitor/tests:__pkg__",
+        "//src/storage:__subpackages__",
+        "//src/sys:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [":memfs_packaged_bin"],
+)
+
+fx_package(
+    name = "package",
+    package_name = "memfs",
+    components = [":memfs_component"],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

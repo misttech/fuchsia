@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/cc:fx_cc_library_headers.bzl",
+    "fx_cc_library_headers",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/lib/scheduler/role.h"],
+)
+
+fx_cc_library(
+    name = "cpp",
+    srcs = ["role.cc"],
+    # @bazel2gn:skip
+    copts = ["-I."],
+    visibility = [
+        "//sdk/lib/scheduler/cpp/tests:__pkg__",
+        "//src/cobalt/bin/app:__pkg__",
+        "//src/developer/memory/monitor:__pkg__",
+        "//src/graphics:__subpackages__",
+        "//src/media/audio/services/device_registry:__pkg__",
+        "//src/performance/ktrace_provider:__pkg__",
+        "//src/storage:__subpackages__",
+        "//src/tests/microbenchmarks:__pkg__",
+        "//src/ui:__subpackages__",
+        "//src/zircon/bin/role_manager/tests/profile:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":headers",
+        "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
+        "//sdk/lib/component/incoming/cpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)

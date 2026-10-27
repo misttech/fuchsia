@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "service_broker",
+    edition = "2024",
+    visibility = ["//src/sys/component_manager:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/sys/lib/cm_types",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "service_broker_lib_test"
+rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_component(
+    name = "service-broker-unittests-component",
+    binary = ":lib_test",
+    component_name = "service-broker-unittests",
+)
+
+fx_package(
+    name = "service-broker-unittests-package",
+    package_name = "service-broker-unittests",
+    test_components = [":service-broker-unittests-component"],
+)
+
+fx_test(
+    name = "service-broker-unittests",
+    package = ":service-broker-unittests-package",
+)

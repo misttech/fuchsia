@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This library contains declarations of operations supported by Scudo on
+# Fuchsia.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "scudo",
+    hdrs = ["mallopt.h"],
+    visibility = [
+        # Please discuss with the owners before adding a dependency.
+        "//src/developer/forensics/utils:__pkg__",
+        "//src/developer/memory/metrics:__pkg__",
+    ],
+    alwayslink = True,
+)
+
+rustc_library(
+    name = "rust",
+    srcs = ["lib.rs"],
+    crate_name = "scudo",
+    crate_root = "lib.rs",
+    edition = "2024",
+    visibility = [
+        # Please discuss with the owners before adding a dependency.
+        "//src/devices/bin/driver-host:__pkg__",
+        # Purges memory after all drivers that can be loaded are loaded on boot-up.
+        "//src/devices/bin/driver_manager_rust:__pkg__",
+        # Depends on this crate for mallopt binding
+        "//src/performance/memory/attribution/monitor:__pkg__",
+        "//src/sys/component_manager:__pkg__",
+    ],
+)

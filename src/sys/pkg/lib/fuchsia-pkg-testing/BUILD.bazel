@@ -3,12 +3,12 @@
 # found in the LICENSE file.
 
 load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
 
 package(default_applicable_licenses = ["//:license"])
 
-# The unit tests (`:fuchsia-pkg-testing_test` and `:fuchsia-pkg-testing-tests`)
-# stay in BUILD.gn because `:fuchsia-pkg-testing-tests` packages
-# `//src/connectivity/network/dns:component`,
+# The test package (`:fuchsia-pkg-testing-tests`) stays in BUILD.gn because it
+# packages `//src/connectivity/network/dns:component`,
 # `//src/connectivity/network/netstack3:component-for-tests`, and
 # `//src/storage/tools/blobfs-compression`, which remain in GN.
 rustc_library(
@@ -92,5 +92,22 @@ rustc_library(
         "//third_party/rust_crates/vendor:tokio",
         "//third_party/rust_crates/vendor:tokio-rustls",
         "//third_party/rust_crates/vendor:walkdir",
+    ],
+)
+
+# The library is defined in BUILD.bazel. Its unit tests stay in GN because
+# fuchsia-pkg-testing-tests packages //src/connectivity/network/dns:component,
+# //src/connectivity/network/netstack3:component-for-tests, and
+# //src/storage/tools/blobfs-compression.
+# @bazel2gn:raw_attribute:output_name = "fuchsia_pkg_testing_lib_test"
+rustc_test(
+    name = "fuchsia-pkg-testing_test",
+    crate = ":fuchsia-pkg-testing",
+    disable_clippy = True,  # @bazel2gn:skip
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
     ],
 )

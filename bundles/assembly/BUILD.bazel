@@ -3303,7 +3303,7 @@ assembly_input_bundle(
         },
     ],
     bootfs_packages = [
-        "//bundles/assembly/bazel_inputs/src/storage/memfs:package",
+        "//src/storage/memfs:package",
     ],
 )
 
