@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+host_rustc_test(
+    name = "tests",
+    srcs = ["src/lib.rs"],
+    crate_name = "traceable_error_derive_tests",
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/developer/ffx/lib/traceable_error/derive:lib",
+    ],
+    visibility = [
+        "//src/developer/ffx:__pkg__",
+        "//src/developer/ffx/lib/traceable_error/derive:__pkg__",
+    ],
+    deps = [
+        "//src/developer/ffx/lib/traceable_error:lib",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)

@@ -6,7 +6,6 @@ import("//build/bazel/bazel_test_suite.gni")
 import("//build/host.gni")
 import("//build/images/paths.gni")
 import("//build/sdk/sdk_host_tool.gni")
-import("//build/testing/host_test.gni")
 import("//build/testing/host_test_data.gni")
 import("//build/tools/json_merge/json_merge.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
@@ -294,6 +293,7 @@ group("tests") {
     "plugins/package/far/extract:ffx_package_far_extract_test($host_toolchain)",
     "plugins/platform/preflight:tests($host_toolchain)",
     "plugins/target:tests($host_toolchain)",
+    "plugins/target/default:ffx_target_default_test($host_toolchain)",
     "plugins/trace:tests($host_toolchain)",
     "plugins/version:ffx_version_test($host_toolchain)",
     "tests($host_toolchain)",
