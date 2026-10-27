@@ -31,6 +31,7 @@
 #include <array>
 #include <memory>
 #include <shared_mutex>
+#include <vector>
 
 #include <wlan/drivers/components/network_port.h>
 
@@ -159,10 +160,13 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
       uint8_t port_id, const char* name, uint16_t iface_id);
   zx_status_t AddWlanFullmacDevice();
   zx_status_t RemoveWlanFullmacDevice();
+  void CompleteDestroy(zx_status_t status);
 
   std::shared_mutex lock_;
   wireless_dev* wdev_ = nullptr;  // lock_ is used as a RW lock on wdev_
-  bool destroying_ __TA_GUARDED(lock_) = false;
+  // Non-empty while interface destruction is in flight; front() initiated the destroy.
+  std::vector<fit::callback<void(zx_status_t)>> destroy_callbacks_ __TA_GUARDED(lock_);
+  bool destroyed_ __TA_GUARDED(lock_) = false;
   wlan::brcmfmac::Device* device_ = nullptr;
   fuchsia_wlan_common::WlanMacRole role_;
   std::string name_;

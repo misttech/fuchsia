@@ -13,6 +13,7 @@
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/wlan_interface.h"
 
+#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
@@ -182,22 +183,39 @@ zx_status_t WlanInterface::RemoveWlanFullmacDevice() {
   return ZX_OK;
 }
 
-void WlanInterface::DestroyIface(fit::callback<void(zx_status_t)>&& on_complete) {
-  // Use this to asynchronously call on_complete.
-  auto call_on_complete = [on_complete = std::move(on_complete)](zx_status_t status) mutable {
-    async::PostTask(
-        fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-        [status, on_complete = std::move(on_complete)]() mutable { on_complete(status); });
-  };
-
+void WlanInterface::CompleteDestroy(zx_status_t status) {
+  std::vector<fit::callback<void(zx_status_t)>> callbacks;
   {
     std::lock_guard lock(lock_);
-    if (destroying_) {
-      // Interface already destroyed or in the process of being destroyed, nothing to do.
-      call_on_complete(ZX_ERR_NOT_FOUND);
+    ZX_DEBUG_ASSERT(!destroy_callbacks_.empty());
+    callbacks = std::move(destroy_callbacks_);
+    destroyed_ = (status == ZX_OK);
+  }
+  async::PostTask(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                  [status, callbacks = std::move(callbacks)]() mutable {
+                    for (auto& callback : callbacks) {
+                      callback(status);
+                    }
+                  });
+}
+
+void WlanInterface::DestroyIface(fit::callback<void(zx_status_t)>&& on_complete) {
+  {
+    std::lock_guard lock(lock_);
+    if (destroyed_) {
+      // Interface already destroyed, nothing to do.
+      async::PostTask(
+          fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+          [on_complete = std::move(on_complete)]() mutable { on_complete(ZX_ERR_NOT_FOUND); });
       return;
     }
-    destroying_ = true;
+    const bool already_destroying = !destroy_callbacks_.empty();
+    destroy_callbacks_.push_back(std::move(on_complete));
+    if (already_destroying) {
+      // Interface is in the process of being destroyed; on_complete will be called when it
+      // finishes.
+      return;
+    }
   }
 
   zx_status_t status = RemoveWlanFullmacDevice();
@@ -208,19 +226,19 @@ void WlanInterface::DestroyIface(fit::callback<void(zx_status_t)>&& on_complete)
     // In that case, we don't return here to try deleting the iface from firmware again to avoid
     // having an iface in firmware that we can never delete.
     if (status != ZX_ERR_BAD_STATE) {
-      call_on_complete(status);
+      CompleteDestroy(status);
       return;
     }
   }
 
-  RemovePort([this, call_on_complete = std::move(call_on_complete)](zx_status_t status) mutable {
+  RemovePort([this](zx_status_t status) {
     // ZX_ERR_NOT_FOUND means the port was most likely already removed. This makes sense if the
     // request to destroy the interface came about as a result of the removal of the port or if
     // the netdevice child closed (thus calling Removed on the port) before interface
     // destruction was initiated. In that case continue with the interface removal.
     if (status != ZX_OK && status != ZX_ERR_NOT_FOUND) {
       BRCMF_ERR("Failed to remove port: %s", zx_status_get_string(status));
-      call_on_complete(status);
+      CompleteDestroy(status);
       return;
     }
     wireless_dev* wdev = take_wdev();
@@ -228,10 +246,10 @@ void WlanInterface::DestroyIface(fit::callback<void(zx_status_t)>&& on_complete)
     if (status = brcmf_cfg80211_del_iface(device_->drvr()->config, wdev); status != ZX_OK) {
       BRCMF_ERR("Failed to del iface, status: %s", zx_status_get_string(status));
       set_wdev(wdev);
-      call_on_complete(status);
+      CompleteDestroy(status);
       return;
     }
-    call_on_complete(ZX_OK);
+    CompleteDestroy(ZX_OK);
   });
 }
 

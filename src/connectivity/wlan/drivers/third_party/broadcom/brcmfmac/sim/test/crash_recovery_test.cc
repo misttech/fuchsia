@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/async/cpp/task.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
 
@@ -368,6 +369,41 @@ TEST_F(CrashRecoveryTest, RecoveryFailureDestroysIfaces) {
     EXPECT_NULL(device->GetClientInterface());
     EXPECT_NULL(device->GetSoftApInterface());
   });
+}
+
+TEST_F(CrashRecoveryTest, DestroyAllIfacesWhileDestroyIfaceInFlight) {
+  InitWithInterface();
+  uint32_t dev_count = DeviceCount();
+
+  libsync::Completion destroy_iface_done;
+  libsync::Completion destroy_all_ifaces_done;
+  zx_status_t destroy_iface_status = ZX_ERR_INTERNAL;
+
+  // Trigger DestroyIface followed by a posted DestroyAllIfaces task on the driver dispatcher while
+  // the asynchronous RemovePort call from DestroyIface is still in flight.
+  WithSimDevice([&](brcmfmac::SimDevice* device) {
+    device->DestroyIface(client_ifc_.iface_id_, [&](zx_status_t status) {
+      destroy_iface_status = status;
+      destroy_iface_done.Signal();
+    });
+    async::PostTask(fdf::Dispatcher::GetCurrent()->async_dispatcher(), [&, device]() {
+      device->DestroyAllIfaces([&]() {
+        EXPECT_TRUE(destroy_iface_done.signaled());
+        destroy_all_ifaces_done.Signal();
+      });
+    });
+  });
+
+  destroy_iface_done.Wait();
+  destroy_all_ifaces_done.Wait();
+
+  EXPECT_OK(destroy_iface_status);
+  WaitForDeviceCount(dev_count - 1);
+  WithSimDevice([&](brcmfmac::SimDevice* device) { EXPECT_NULL(device->GetClientInterface()); });
+
+  // Verify the interface can be recreated cleanly after concurrent destruction.
+  RecreateClientIface();
+  WaitForDeviceCount(dev_count);
 }
 
 }  // namespace wlan::brcmfmac
