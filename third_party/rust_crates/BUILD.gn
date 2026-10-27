@@ -158,11 +158,11 @@ group("async-lock-3.4.2") {
 }
 
 group("async-ringbuf") {
-  public_deps = [ ":async-ringbuf-v0_3_9" ]
+  public_deps = [ ":async-ringbuf-v0_3_10" ]
 }
 
-group("async-ringbuf-0.3.9") {
-  public_deps = [ ":async-ringbuf-v0_3_9" ]
+group("async-ringbuf-0.3.10") {
+  public_deps = [ ":async-ringbuf-v0_3_10" ]
 }
 
 group("async-stream") {
@@ -4082,19 +4082,19 @@ rustc_library("async-notify-v0_3_4") {
   applicable_licenses = [ ":async-notify-v0_3_4.license" ]
 }
 
-license("async-ringbuf-v0_3_9.license") {
+license("async-ringbuf-v0_3_10.license") {
   public_package_name = "async_ringbuf"
   license_files = [
-    "//third_party/rust_crates/vendor/async-ringbuf-0.3.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/async-ringbuf-0.3.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/async-ringbuf-0.3.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/async-ringbuf-0.3.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("async-ringbuf-v0_3_9") {
+rustc_library("async-ringbuf-v0_3_10") {
   crate_name = "async_ringbuf"
   source_root =
-      "//third_party/rust_crates/vendor/async-ringbuf-0.3.9/src/lib.rs"
-  output_name = "async_ringbuf-bed1c90c4e966a90"
+      "//third_party/rust_crates/vendor/async-ringbuf-0.3.10/src/lib.rs"
+  output_name = "async_ringbuf-5ece2ea8ee6b608"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -4106,14 +4106,14 @@ rustc_library("async-ringbuf-v0_3_9") {
 
   deps = []
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":ringbuf-v0_5_2" ]
+  deps += [ ":ringbuf-v0_5_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bed1c90c4e966a90",
-    "-Cextra-filename=-bed1c90c4e966a90",
+    "-Cmetadata=5ece2ea8ee6b608",
+    "-Cextra-filename=-5ece2ea8ee6b608",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -4121,7 +4121,7 @@ rustc_library("async-ringbuf-v0_3_9") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-ringbuf-v0_3_9.license" ]
+  applicable_licenses = [ ":async-ringbuf-v0_3_10.license" ]
 }
 
 license("async-stream-v0_3_6.license") {
@@ -19154,18 +19154,18 @@ rustc_library("ring-v0_17_14") {
   applicable_licenses = [ ":ring-v0_17_14.license" ]
 }
 
-license("ringbuf-v0_5_2.license") {
+license("ringbuf-v0_5_3.license") {
   public_package_name = "ringbuf"
   license_files = [
-    "//third_party/rust_crates/vendor/ringbuf-0.5.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ringbuf-0.5.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ringbuf-0.5.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ringbuf-0.5.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("ringbuf-v0_5_2") {
+rustc_library("ringbuf-v0_5_3") {
   crate_name = "ringbuf"
-  source_root = "//third_party/rust_crates/vendor/ringbuf-0.5.2/src/lib.rs"
-  output_name = "ringbuf-83d463d98fd110a1"
+  source_root = "//third_party/rust_crates/vendor/ringbuf-0.5.3/src/lib.rs"
+  output_name = "ringbuf-3e20f321eef28d57"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -19184,15 +19184,15 @@ rustc_library("ringbuf-v0_5_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=83d463d98fd110a1",
-    "-Cextra-filename=-83d463d98fd110a1",
+    "-Cmetadata=3e20f321eef28d57",
+    "-Cextra-filename=-3e20f321eef28d57",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ringbuf-v0_5_2.license" ]
+  applicable_licenses = [ ":ringbuf-v0_5_3.license" ]
 }
 
 license("rkyv-v0_8_18.license") {
