@@ -111,7 +111,7 @@ eui48 = { version = "1.1.0", default-features = false, features = ["serde", "dis
 event-listener = "5.4.2"
 fatfs = "0.3.6"
 figment = "0.10.19"
-flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 flyweights = { version = "0.1.5", features = ["serde"] }
 foreign-types = "0.3.1"
 fragile = "3.0.0"
@@ -460,6 +460,7 @@ windows-result-0_3_4 = { package = "windows-result", path = "empty/windows-resul
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
 windows-sys-0_60_2 = { package = "windows-sys", path = "empty/windows-sys-0.60.2" }
 windows-sys-0_61_2 = { package = "windows-sys", path = "empty/windows-sys-0.61.2" }
+zlib-rs = { path = "empty/zlib-rs" }
 # keep-sorted end
 
 ### Forks: vendored crates whose code doesn't match the upstream version

@@ -382,7 +382,7 @@ _NORMAL_DEPENDENCIES = {
             "event-listener": Label("//third_party/rust_crates/vendor/event-listener-5.4.2:event_listener"),
             "fatfs": Label("//third_party/rust_crates/vendor/fatfs-0.3.6:fatfs"),
             "figment": Label("//third_party/rust_crates/vendor/figment-0.10.19:figment"),
-            "flate2": Label("//third_party/rust_crates/vendor/flate2-1.1.9:flate2"),
+            "flate2": Label("//third_party/rust_crates/vendor/flate2-1.1.10:flate2"),
             "flyweights": Label("//third_party/rust_crates/vendor/flyweights-0.1.5:flyweights"),
             "foreign-types": Label("//third_party/rust_crates/vendor/foreign-types-0.3.2:foreign_types"),
             "fragile": Label("//third_party/rust_crates/vendor/fragile-3.0.0:fragile"),

@@ -37,6 +37,7 @@
                     "third_party/rust_crates/empty/windows-sys-0.52.0",
                     "third_party/rust_crates/empty/windows-sys-0.60.2",
                     "third_party/rust_crates/empty/windows-sys-0.61.2",
+                    "third_party/rust_crates/empty/zlib-rs",
                     "third_party/rust_crates/forks/libm",
                     "third_party/rust_crates/forks/zstd-sys",
                     "third_party/rust_crates/vendor/ansi_term-0.12.1",
