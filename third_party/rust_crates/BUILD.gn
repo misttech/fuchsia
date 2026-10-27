@@ -990,11 +990,11 @@ group("humansize-2.1.3") {
 }
 
 group("hyper") {
-  public_deps = [ ":hyper-v1_11_1" ]
+  public_deps = [ ":hyper-v1_12_0" ]
 }
 
-group("hyper-1.11.1") {
-  public_deps = [ ":hyper-v1_11_1" ]
+group("hyper-1.12.0") {
+  public_deps = [ ":hyper-v1_12_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -11954,15 +11954,15 @@ rustc_library("hybrid-array-v0_4_13") {
   applicable_licenses = [ ":hybrid-array-v0_4_13.license" ]
 }
 
-license("hyper-v1_11_1.license") {
+license("hyper-v1_12_0.license") {
   public_package_name = "hyper"
-  license_files = [ "//third_party/rust_crates/vendor/hyper-1.11.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/hyper-1.12.0/LICENSE" ]
 }
 
-rustc_library("hyper-v1_11_1") {
+rustc_library("hyper-v1_12_0") {
   crate_name = "hyper"
-  source_root = "//third_party/rust_crates/vendor/hyper-1.11.1/src/lib.rs"
-  output_name = "hyper-97e8e1f59ff832fe"
+  source_root = "//third_party/rust_crates/vendor/hyper-1.12.0/src/lib.rs"
+  output_name = "hyper-2a5e3825d8e7a069"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11972,7 +11972,6 @@ rustc_library("hyper-v1_11_1") {
   deps += [ ":tokio-v1_53_1" ]
   deps += [ ":atomic-waker-v1_1_2" ]
   deps += [ ":bytes-v1_12_1" ]
-  deps += [ ":futures-channel-v0_3_34" ]
   deps += [ ":futures-core-v0_3_34" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":http-v1_5_0" ]
@@ -11987,8 +11986,8 @@ rustc_library("hyper-v1_11_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=97e8e1f59ff832fe",
-    "-Cextra-filename=-97e8e1f59ff832fe",
+    "-Cmetadata=2a5e3825d8e7a069",
+    "-Cextra-filename=-2a5e3825d8e7a069",
     "--cfg=feature=\"client\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"http1\"",
@@ -11997,7 +11996,7 @@ rustc_library("hyper-v1_11_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hyper-v1_11_1.license" ]
+  applicable_licenses = [ ":hyper-v1_12_0.license" ]
 }
 
 license("hyper-rustls-v0_27_10.license") {
@@ -12024,7 +12023,7 @@ rustc_library("hyper-rustls-v0_27_10") {
   deps += [ ":tokio-v1_53_1" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":rustls-native-certs-v0_8_4" ]
   deps += [ ":rustls-v0_23_46" ]
   deps += [ ":tokio-rustls-v0_26_6" ]
@@ -12070,7 +12069,7 @@ rustc_library("hyper-util-v0_1_20") {
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":http-v1_5_0" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":socket2-v0_6_5" ]
   deps += [ ":tower-service-v0_3_3" ]
@@ -13996,7 +13995,7 @@ rustc_binary("mock-omaha-server.mock-omaha-server-v0_5_0") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":mock-omaha-server-v0_5_0" ]
   deps += [ ":omaha_client-v0_4_1" ]
@@ -14049,7 +14048,7 @@ rustc_test("mock-omaha-server.mock-omaha-server-v0_5_0.test") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":mock-omaha-server-v0_5_0" ]
   deps += [ ":omaha_client-v0_4_1" ]
@@ -14103,7 +14102,7 @@ rustc_library("mock-omaha-server-v0_5_0") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
@@ -14160,7 +14159,7 @@ rustc_test("mock-omaha-server-v0_5_0.test") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":omaha_client-v0_4_1" ]
   deps += [ ":p256-v0_14_0" ]
@@ -15252,7 +15251,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":http-body-v1_1_0" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":itertools-v0_14_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":p256-v0_14_0" ]
@@ -24895,7 +24894,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":http-body-util-v0_1_5" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":percent-encoding-v2_3_2" ]
@@ -24949,7 +24948,7 @@ rustc_test("tuf-v0_3_0-beta14.test") {
   deps += [ ":http-body-util-v0_1_5" ]
   deps += [ ":http-v1_5_0" ]
   deps += [ ":hyper-util-v0_1_20" ]
-  deps += [ ":hyper-v1_11_1" ]
+  deps += [ ":hyper-v1_12_0" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":maplit-v1_0_2" ]
