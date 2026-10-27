@@ -133,9 +133,6 @@ impl LogsArtifactsContainer {
                 next = stream.next() => {
                     let Some(next) = next else { break };
                     match next {
-                        Ok(LogSinkRequest::ConnectStructured { socket, .. }) => {
-                            self.buffer.add_socket(socket);
-                        }
                         Ok(LogSinkRequest::WaitForInterestChange { responder }) => {
                             // If the interest has changed since we last reported it, we'll report
                             // it below.

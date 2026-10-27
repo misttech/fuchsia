@@ -206,18 +206,6 @@ impl<N: Node> Connection<N> {
     /// Handle a [`NodeRequest`].
     async fn handle_request(&mut self, req: fio::NodeRequest) -> Result<ConnectionState, Error> {
         match req {
-            #[cfg(any(
-                fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "29")
-            ))]
-            fio::NodeRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                trace::duration!("storage", "Node::Clone");
-                crate::common::send_on_open_with_error(
-                    flags.contains(fio::OpenFlags::DESCRIBE),
-                    object,
-                    Status::NOT_SUPPORTED,
-                );
-            }
             fio::NodeRequest::Clone { request, control_handle: _ } => {
                 trace::duration!("storage", "Node::Clone");
                 // Suppress any errors in the event a bad `request` channel was provided.

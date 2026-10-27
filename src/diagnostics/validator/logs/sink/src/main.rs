@@ -83,7 +83,6 @@ async fn demux_fidl(
 
     match stream.next().await.unwrap()? {
         LogSinkRequest::WaitForInterestChange { responder } => Ok((ring_buffer, responder)),
-        LogSinkRequest::ConnectStructured { .. } => Err(anyhow!("ConnectStructured unexpected")),
         LogSinkRequest::_UnknownMethod { .. } => unreachable!(),
     }
 }

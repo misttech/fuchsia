@@ -76,17 +76,6 @@ impl<T: Symlink> Connection<T> {
     // Returns true if the connection should terminate.
     async fn handle_request(&mut self, req: fio::SymlinkRequest) -> Result<bool, fidl::Error> {
         match req {
-            #[cfg(any(
-                fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "29")
-            ))]
-            fio::SymlinkRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                crate::common::send_on_open_with_error(
-                    flags.contains(fio::OpenFlags::DESCRIBE),
-                    object,
-                    Status::NOT_SUPPORTED,
-                );
-            }
             fio::SymlinkRequest::Clone { request, control_handle: _ } => {
                 self.handle_clone(ServerEnd::new(request.into_channel()))
                     .trace(trace::trace_future_args!("storage", "Symlink::Clone"))

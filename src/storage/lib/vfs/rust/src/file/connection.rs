@@ -569,18 +569,6 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         req: fio::FileRequest,
     ) -> Result<ConnectionState, Error> {
         match req {
-            #[cfg(any(
-                fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "29")
-            ))]
-            fio::FileRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                trace::duration!("storage", "File::DeprecatedClone");
-                crate::common::send_on_open_with_error(
-                    flags.contains(fio::OpenFlags::DESCRIBE),
-                    object,
-                    Status::NOT_SUPPORTED,
-                );
-            }
             fio::FileRequest::Clone { request, control_handle: _ } => {
                 trace::duration!("storage", "File::Clone");
                 this.as_mut().handle_clone(ServerEnd::new(request.into_channel()));
