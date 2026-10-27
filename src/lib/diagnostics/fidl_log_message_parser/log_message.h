@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_LOG_MESSAGE_H_
-#define SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_LOG_MESSAGE_H_
+#ifndef SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_LOG_MESSAGE_H_
+#define SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_LOG_MESSAGE_H_
 
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
@@ -15,7 +15,7 @@
 
 #include <src/lib/diagnostics/log/message/rust/cpp-log-decoder/log_decoder.h>
 
-namespace diagnostics::accessor2logger {
+namespace diagnostics::fidl_log_message_parser {
 
 // Custom deleter for MessageParser. MessageParser is allocated across the Rust FFI
 // boundary via `fuchsia_new_message_parser()` and must be freed using
@@ -104,6 +104,6 @@ fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::
                  std::string>
 ConvertFormattedFxtToLogMessages(std::span<const uint8_t> data, bool expect_extended_attribution);
 
-}  // namespace diagnostics::accessor2logger
+}  // namespace diagnostics::fidl_log_message_parser
 
-#endif  // SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_LOG_MESSAGE_H_
+#endif  // SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_LOG_MESSAGE_H_

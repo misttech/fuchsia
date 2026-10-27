@@ -64,7 +64,7 @@ source_set("src") {
     "//src/developer/forensics/utils:logs",
     "//src/developer/forensics/utils:storage_size",
     "//src/developer/forensics/utils/redact",
-    "//src/lib/diagnostics/accessor2logger",
+    "//src/lib/diagnostics/fidl_log_message_parser",
   ]
 
   deps = [

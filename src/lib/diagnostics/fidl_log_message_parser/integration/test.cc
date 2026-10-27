@@ -12,7 +12,7 @@
 #include <iterator>
 
 #include <gtest/gtest.h>
-#include <src/lib/diagnostics/accessor2logger/log_message.h>
+#include <src/lib/diagnostics/fidl_log_message_parser/log_message.h>
 
 const char* TAG = "integration_test";
 
@@ -48,8 +48,8 @@ std::vector<fuchsia::logger::LogMessage> GetLogs() {
   std::vector<fuchsia::logger::LogMessage> ret;
   EXPECT_EQ(ZX_OK, iterator->GetNext(&result));
   for (auto& content : result.response().batch) {
-    auto result =
-        diagnostics::accessor2logger::ConvertFormattedContentToLogMessages(std::move(content));
+    auto result = diagnostics::fidl_log_message_parser::ConvertFormattedContentToLogMessages(
+        std::move(content));
     if (result.is_error()) {
       EXPECT_TRUE(false) << "Received an error: " << result.error();
       return {};
@@ -69,7 +69,7 @@ std::vector<fuchsia::logger::LogMessage> GetLogs() {
 
 const size_t EXPECTED_LOGS = 3;
 
-TEST(Accessor2Logger, ConversionWorks) {
+TEST(fidl_log_message_parser, ConversionWorks) {
   WriteLogs();
   auto logs = GetLogs();
   while (logs.size() != EXPECTED_LOGS) {
@@ -95,7 +95,7 @@ TEST(Accessor2Logger, ConversionWorks) {
   EXPECT_GT(logs[1].pid, 0u);
   EXPECT_GT(logs[1].tid, 0u);
   EXPECT_EQ(logs[1].msg,
-            "[src/lib/diagnostics/accessor2logger/integration/test.cc(26)] Hello warning");
+            "[src/lib/diagnostics/fidl_log_message_parser/integration/test.cc(26)] Hello warning");
   ASSERT_EQ(logs[1].tags.size(), 1u);
   EXPECT_EQ(logs[1].tags[0], TAG);
   EXPECT_EQ(logs[1].severity, static_cast<int8_t>(fuchsia::logger::LogLevelFilter::WARN));
@@ -104,7 +104,7 @@ TEST(Accessor2Logger, ConversionWorks) {
   EXPECT_GT(logs[2].pid, 0u);
   EXPECT_GT(logs[2].tid, 0u);
   EXPECT_EQ(logs[2].msg,
-            "[src/lib/diagnostics/accessor2logger/integration/test.cc(27)] Hello error");
+            "[src/lib/diagnostics/fidl_log_message_parser/integration/test.cc(27)] Hello error");
   ASSERT_EQ(logs[2].tags.size(), 1u);
   EXPECT_EQ(logs[2].tags[0], TAG);
   EXPECT_EQ(logs[2].severity, static_cast<int8_t>(fuchsia::logger::LogLevelFilter::ERROR));

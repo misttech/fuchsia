@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_TEST_SUPPORT_H_
-#define SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_TEST_SUPPORT_H_
+#ifndef SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_TEST_SUPPORT_H_
+#define SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_TEST_SUPPORT_H_
 
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
@@ -17,7 +17,7 @@
 #include <string_view>
 #include <vector>
 
-namespace diagnostics::accessor2logger::testing {
+namespace diagnostics::fidl_log_message_parser::testing {
 
 // Encodes a log record into raw FXT bytes using fuchsia_logging::LogBuffer.
 std::vector<uint8_t> BuildFxtRecord(zx::basic_time<ZX_CLOCK_BOOT> timestamp,
@@ -45,6 +45,6 @@ fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::
                  std::string>
 ConvertFormattedContentForTest(fuchsia::diagnostics::FormattedContent content);
 
-}  // namespace diagnostics::accessor2logger::testing
+}  // namespace diagnostics::fidl_log_message_parser::testing
 
-#endif  // SRC_LIB_DIAGNOSTICS_ACCESSOR2LOGGER_TEST_SUPPORT_H_
+#endif  // SRC_LIB_DIAGNOSTICS_FIDL_LOG_MESSAGE_PARSER_TEST_SUPPORT_H_

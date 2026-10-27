@@ -20,7 +20,7 @@
 #include "src/developer/forensics/feedback_data/log_buffer.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/developer/forensics/utils/storage_size.h"
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/log_message.h"
 
 namespace forensics::feedback_data::system_log_recorder {
 
@@ -63,7 +63,7 @@ class LogCollector {
   bool started_;
 
   fuchsia::diagnostics::ArchiveAccessorPtr archive_accessor_;
-  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> iterator_;
+  std::unique_ptr<diagnostics::fidl_log_message_parser::LogBatchIterator> iterator_;
 };
 
 }  // namespace forensics::feedback_data::system_log_recorder

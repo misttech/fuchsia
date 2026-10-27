@@ -10,7 +10,7 @@ group("integration") {
   deps = [ ":package" ]
 }
 
-cc_test_executable("accessor2logger_test_bin") {
+cc_test_executable("fidl_log_message_parser_test_bin") {
   testonly = true
   sources = [ "test.cc" ]
   deps = [
@@ -18,19 +18,19 @@ cc_test_executable("accessor2logger_test_bin") {
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/diagnostics/accessor2logger",
+    "//src/lib/diagnostics/fidl_log_message_parser",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
 }
 
 fuchsia_test_component("component") {
-  deps = [ ":accessor2logger_test_bin" ]
+  deps = [ ":fidl_log_message_parser_test_bin" ]
   manifest = "meta/test_component.cml"
 }
 
 fuchsia_test_package("package") {
-  package_name = "accessor2logger-integration-test"
+  package_name = "fidl_log_message_parser-integration-test"
   test_components = [ ":component" ]
   test_specs = {
     log_settings = {

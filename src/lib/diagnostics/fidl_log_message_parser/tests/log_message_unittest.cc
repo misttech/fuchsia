@@ -14,12 +14,12 @@
 #include <optional>
 
 #include <gtest/gtest.h>
-#include <src/lib/diagnostics/accessor2logger/log_message.h>
+#include <src/lib/diagnostics/fidl_log_message_parser/log_message.h>
 #include <src/lib/fsl/vmo/strings.h>
 #include <src/lib/fxl/strings/string_printf.h>
 
 #include "lib/syslog/cpp/log_level.h"
-#include "src/lib/diagnostics/accessor2logger/test_support.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/test_support.h"
 #include "src/lib/fxl/strings/join_strings.h"
 
 using fuchsia::diagnostics::FormattedContent;
@@ -32,7 +32,8 @@ namespace {
 inline fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>>,
                         std::string>
 ConvertFormattedContentToLogMessages(FormattedContent content) {
-  return diagnostics::accessor2logger::testing::ConvertFormattedContentForTest(std::move(content));
+  return diagnostics::fidl_log_message_parser::testing::ConvertFormattedContentForTest(
+      std::move(content));
 }
 
 class FakeBatchIterator : public fuchsia::diagnostics::BatchIterator {
@@ -86,7 +87,7 @@ class LogBatchIteratorTestHelper {
     fuchsia::diagnostics::BatchIteratorPtr ptr;
     auto request = ptr.NewRequest(loop_.dispatcher());
     binding_.Bind(std::move(request), loop_.dispatcher());
-    iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+    iterator_ = std::make_unique<diagnostics::fidl_log_message_parser::LogBatchIterator>(
         std::move(ptr), fuchsia::diagnostics::Format::FXT);
   }
 
@@ -118,7 +119,7 @@ class LogBatchIteratorTestHelper {
   async::Loop loop_;
   FakeBatchIterator fake_iterator_;
   fidl::Binding<fuchsia::diagnostics::BatchIterator> binding_;
-  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> iterator_;
+  std::unique_ptr<diagnostics::fidl_log_message_parser::LogBatchIterator> iterator_;
 };
 
 class FxtToLogMessageTranscoderForTest {
@@ -1099,23 +1100,23 @@ TEST(LogMessage, MoveConstructAndAssignLogBatchIterator) {
   fuchsia::diagnostics::BatchIteratorPtr ptr;
   binding.Bind(ptr.NewRequest());
 
-  auto iterator1 = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+  auto iterator1 = std::make_unique<diagnostics::fidl_log_message_parser::LogBatchIterator>(
       std::move(ptr), fuchsia::diagnostics::Format::FXT);
 
   // Move-construct
-  diagnostics::accessor2logger::LogBatchIterator iterator2 = std::move(*iterator1);
+  diagnostics::fidl_log_message_parser::LogBatchIterator iterator2 = std::move(*iterator1);
   iterator1.reset();
 
   // Move-assign
   fuchsia::diagnostics::BatchIteratorPtr ptr2;
-  diagnostics::accessor2logger::LogBatchIterator iterator3(std::move(ptr2),
-                                                           fuchsia::diagnostics::Format::FXT);
+  diagnostics::fidl_log_message_parser::LogBatchIterator iterator3(
+      std::move(ptr2), fuchsia::diagnostics::Format::FXT);
   iterator3 = std::move(iterator2);
 }
 
 TEST(LogMessage, DecodeFxtVmo) {
   constexpr zx::duration kTimestamp = zx::sec(1234);
-  auto vmo = diagnostics::accessor2logger::testing::BuildFxtVmo(
+  auto vmo = diagnostics::fidl_log_message_parser::testing::BuildFxtVmo(
       zx::basic_time<ZX_CLOCK_BOOT>(kTimestamp.get()), FUCHSIA_LOG_INFO, "hello fxt world", 123,
       456, {"tag1", "tag2"});
   ASSERT_TRUE(vmo.is_valid());

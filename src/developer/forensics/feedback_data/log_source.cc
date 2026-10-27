@@ -15,7 +15,7 @@
 
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/lib/backoff/backoff.h"
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/log_message.h"
 
 namespace forensics::feedback_data {
 
@@ -66,7 +66,7 @@ void LogSource::Start() {
 
   fuchsia::diagnostics::BatchIteratorPtr batch_iterator;
   archive_accessor_->StreamDiagnostics(std::move(params), batch_iterator.NewRequest(dispatcher_));
-  batch_iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+  batch_iterator_ = std::make_unique<diagnostics::fidl_log_message_parser::LogBatchIterator>(
       std::move(batch_iterator), format);
   batch_iterator_->set_error_handler([this](const zx_status_t status) {
     FX_LOGS(WARNING) << "Lost connection to fuchsia.diagnostics.BatchIterator";

@@ -47,7 +47,7 @@ void LogCollector::Start(Callback callback) {
   fuchsia::diagnostics::BatchIteratorPtr batch_iterator;
   archive_accessor_->StreamDiagnostics(std::move(params), batch_iterator.NewRequest(dispatcher_));
 
-  iterator_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+  iterator_ = std::make_unique<diagnostics::fidl_log_message_parser::LogBatchIterator>(
       std::move(batch_iterator), format);
 
   iterator_->set_error_handler([this](zx_status_t status) {

@@ -34,7 +34,7 @@
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/status.h"
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/log_message.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -468,7 +468,7 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
           FX_CHECK(artifact.log()->batch());
           fuchsia::diagnostics::BatchIteratorPtr log_listener;
           log_listener.Bind(artifact.log()->batch()->TakeChannel());
-          log_listener_ = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+          log_listener_ = std::make_unique<diagnostics::fidl_log_message_parser::LogBatchIterator>(
               std::move(log_listener), fuchsia::diagnostics::Format::FXT);
           log_listener_->GetNext(
               [self = fxl::RefPtr<TestLauncher>(this)](auto res) { self->OnLog(std::move(res)); });
@@ -514,7 +514,7 @@ class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<Te
   fxl::WeakPtr<ZirconComponentManager> component_manager_;
   std::string test_url_;
   fidl::Client<fuchsia_test_manager::SuiteController> suite_controller_;
-  std::unique_ptr<diagnostics::accessor2logger::LogBatchIterator> log_listener_;
+  std::unique_ptr<diagnostics::fidl_log_message_parser::LogBatchIterator> log_listener_;
 };
 
 debug::Status ZirconComponentManager::LaunchTest(std::string url, std::optional<std::string> realm,

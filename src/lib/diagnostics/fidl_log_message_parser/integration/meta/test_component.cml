@@ -7,7 +7,7 @@
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/accessor2logger_test_bin",
+        binary: "bin/fidl_log_message_parser_test_bin",
     },
     use: [
         {

@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("accessor2logger") {
+source_set("fidl_log_message_parser") {
   sources = [
     "log_message.cc",
     "log_message.h",
@@ -37,7 +37,7 @@ source_set("test_support") {
     "//zircon/system/ulib/zx",
   ]
   deps = [
-    ":accessor2logger",
+    ":fidl_log_message_parser",
     "//src/lib/fsl",
     "//third_party/rapidjson",
   ]

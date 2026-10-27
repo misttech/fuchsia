@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/log_message.h"
 
 #include <assert.h>
 #include <lib/async/default.h>
@@ -21,7 +21,7 @@
 
 using fuchsia::diagnostics::FormattedContent;
 
-namespace diagnostics::accessor2logger {
+namespace diagnostics::fidl_log_message_parser {
 
 namespace {
 
@@ -154,4 +154,4 @@ fuchsia_logging::RawLogSeverity GetSeverityFromVerbosity(uint8_t verbosity) {
   return static_cast<fuchsia_logging::RawLogSeverity>(severity);
 }
 
-}  // namespace diagnostics::accessor2logger
+}  // namespace diagnostics::fidl_log_message_parser

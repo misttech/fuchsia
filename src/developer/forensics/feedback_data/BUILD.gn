@@ -117,7 +117,7 @@ source_set("log_source") {
   deps = [
     ":constants",
     "//sdk/lib/syslog/cpp",
-    "//src/lib/diagnostics/accessor2logger",
+    "//src/lib/diagnostics/fidl_log_message_parser",
   ]
 }
 

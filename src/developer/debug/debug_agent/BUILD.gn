@@ -160,7 +160,7 @@ static_library("lib") {
 
     deps += [
       "//sdk/lib/component/incoming/cpp",
-      "//src/lib/diagnostics/accessor2logger",
+      "//src/lib/diagnostics/fidl_log_message_parser",
     ]
 
     # Fuchsia architecture-specific files.

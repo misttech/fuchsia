@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/lib/diagnostics/accessor2logger/test_support.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/test_support.h"
 
 #include <lib/syslog/cpp/log_level.h>
 
@@ -15,10 +15,10 @@
 #include <rapidjson/error/en.h>
 #include <rapidjson/pointer.h>
 
-#include "src/lib/diagnostics/accessor2logger/log_message.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/log_message.h"
 #include "src/lib/fsl/vmo/strings.h"
 
-namespace diagnostics::accessor2logger::testing {
+namespace diagnostics::fidl_log_message_parser::testing {
 
 namespace {
 
@@ -154,8 +154,8 @@ inline fpromise::result<ParsedJsonLog, std::string> ParseSingleJsonLog(rapidjson
     if ((name == kVerbosityLabel) && it->value.IsInt()) {
       verbosity = it->value.GetInt();
       if (ret.severity != verbosity.value_or(ret.severity)) {
-        ret.severity = static_cast<int32_t>(
-            accessor2logger::GetSeverityFromVerbosity(static_cast<uint8_t>(verbosity.value())));
+        ret.severity = static_cast<int32_t>(fidl_log_message_parser::GetSeverityFromVerbosity(
+            static_cast<uint8_t>(verbosity.value())));
       }
     }
   }
@@ -371,7 +371,7 @@ fpromise::result<std::vector<fpromise::result<fuchsia::logger::LogMessage, std::
                  std::string>
 ConvertFormattedContentForTest(fuchsia::diagnostics::FormattedContent content) {
   if (content.is_fxt()) {
-    return accessor2logger::ConvertFormattedContentToLogMessages(std::move(content));
+    return fidl_log_message_parser::ConvertFormattedContentToLogMessages(std::move(content));
   }
   if (!content.is_json()) {
     return fpromise::error("Expected json or FXT content");
@@ -403,7 +403,7 @@ ConvertFormattedContentForTest(fuchsia::diagnostics::FormattedContent content) {
       output.emplace_back(fpromise::error(parsed.error()));
       continue;
     }
-    // Encode to FXT and decode through production accessor2logger.
+    // Encode to FXT and decode through production fidl_log_message_parser.
     auto fxt_bytes = BuildFxtRecordFromParsed(parsed.value());
     zx::vmo vmo;
     zx_status_t status = zx::vmo::create(fxt_bytes.size(), 0, &vmo);
@@ -424,7 +424,7 @@ ConvertFormattedContentForTest(fuchsia::diagnostics::FormattedContent content) {
     fuchsia::diagnostics::FormattedContent fxt_content;
     fxt_content.set_fxt(std::move(vmo));
     auto decoded_results =
-        accessor2logger::ConvertFormattedContentToLogMessages(std::move(fxt_content));
+        fidl_log_message_parser::ConvertFormattedContentToLogMessages(std::move(fxt_content));
     if (decoded_results.is_error()) {
       output.emplace_back(fpromise::error(decoded_results.error()));
     } else if (decoded_results.value().empty()) {
@@ -437,4 +437,4 @@ ConvertFormattedContentForTest(fuchsia::diagnostics::FormattedContent content) {
   return fpromise::ok(std::move(output));
 }
 
-}  // namespace diagnostics::accessor2logger::testing
+}  // namespace diagnostics::fidl_log_message_parser::testing

@@ -8,7 +8,7 @@
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/lib/diagnostics/accessor2logger/test_support.h"
+#include "src/lib/diagnostics/fidl_log_message_parser/test_support.h"
 #include "src/lib/fsl/vmo/strings.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -19,7 +19,7 @@ namespace {
 std::vector<fuchsia_diagnostics::FormattedContent> ToVmo(const std::vector<std::string>& json_batch,
                                                          fuchsia_diagnostics::Format format) {
   if (format == fuchsia_diagnostics::Format::kFxt) {
-    auto vmos = diagnostics::accessor2logger::testing::EncodeJsonBatchToFxtVmos(json_batch);
+    auto vmos = diagnostics::fidl_log_message_parser::testing::EncodeJsonBatchToFxtVmos(json_batch);
     std::vector<fuchsia_diagnostics::FormattedContent> fxt_batch_vmo;
     fxt_batch_vmo.reserve(vmos.size());
     for (auto& vmo : vmos) {
