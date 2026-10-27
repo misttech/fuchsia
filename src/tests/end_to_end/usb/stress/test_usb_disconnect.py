@@ -12,6 +12,11 @@ from honeydew import errors
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.typing import custom_types
 from mobly import asserts, signals, test_runner
+from usb_lib.dwc3_irq_metrics import (
+    Dwc3IrqSnapshot,
+    assert_no_dwc3_unhandled_irq_storm,
+    collect_dwc3_irq_metrics,
+)
 from usb_lib.irq_storm import (
     IrqStormSnapshot,
     assert_no_irq_storm,
@@ -135,10 +140,12 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             self.user_params.get("verify_no_irq_storm", False)
         )
         pre_disconnect_irq_snapshot: IrqStormSnapshot | None = None
+        pre_disconnect_dwc3_metrics: dict[str, Dwc3IrqSnapshot] | None = None
         if verify_no_irq_storm:
             pre_disconnect_irq_snapshot = await take_irq_storm_snapshot(
                 self.dut
             )
+            pre_disconnect_dwc3_metrics = collect_dwc3_irq_metrics(self.dut)
         self.dut.fuchsia_controller.before_usb_disconnect()
         try:
             self.dut.ffx.notify_intentional_disconnect()
@@ -177,19 +184,27 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
 
         # Outside the `finally` block so that an mDNS, link speed, or IRQ storm
         # failure cannot mask a disconnect failure.
-        if pre_disconnect_irq_snapshot is not None:
+        if (
+            pre_disconnect_irq_snapshot is not None
+            and pre_disconnect_dwc3_metrics is not None
+        ):
             # Note: `assert_no_irq_storm` checks for driver dispatcher
             # spin-loops and hardware IRQ storms across all drivers on the DUT
             # (not only USB drivers).
-            # TODO(b/568334574): Add DWC3 USB controller Inspect metrics
-            # (`root/dwc3:irq_count` and `root/dwc3:unhandled_irq_count`) check
-            # once the DWC3 driver exposes those properties in Inspect.
             post_reconnect_irq_snapshot = await take_irq_storm_snapshot(
                 self.dut
             )
+            post_reconnect_dwc3_metrics = collect_dwc3_irq_metrics(self.dut)
             assert_no_irq_storm(
                 pre_disconnect_irq_snapshot,
                 post_reconnect_irq_snapshot,
+                phase=f"iteration {iteration}",
+            )
+            assert_no_dwc3_unhandled_irq_storm(
+                pre_disconnect_dwc3_metrics,
+                post_reconnect_dwc3_metrics,
+                before_irq_snapshot=pre_disconnect_irq_snapshot,
+                after_irq_snapshot=post_reconnect_irq_snapshot,
                 phase=f"iteration {iteration}",
             )
         if self.user_params.get("verify_mdns", False):

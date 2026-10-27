@@ -17,6 +17,10 @@ TEST(Dwc3MetricsTest, InitResetsAndRecordsCorrectly) {
   metrics.Init();
 
   // Increment some events
+  metrics.IncrementIrqCount();
+  metrics.IncrementIrqCount();
+  metrics.IncrementIrqCount();
+  metrics.IncrementUnhandledIrqCount();
   metrics.IncrementEventCount(static_cast<uint32_t>(MetricEventType::kDevtDisconnect));
   metrics.IncrementEventCount(static_cast<uint32_t>(MetricEventType::kDevtDisconnect));
   metrics.IncrementEventCount(static_cast<uint32_t>(MetricEventType::kDevtUsbReset));
@@ -35,6 +39,15 @@ TEST(Dwc3MetricsTest, InitResetsAndRecordsCorrectly) {
   const auto* time_stats = hierarchy.node().get_property<inspect::UintPropertyValue>("time_stats");
   ASSERT_NE(time_stats, nullptr);
   EXPECT_GE(time_stats->value(), time_start->value());
+
+  const auto* irq_count = hierarchy.node().get_property<inspect::UintPropertyValue>("irq_count");
+  ASSERT_NE(irq_count, nullptr);
+  EXPECT_EQ(irq_count->value(), 3u);
+
+  const auto* unhandled_irq_count =
+      hierarchy.node().get_property<inspect::UintPropertyValue>("unhandled_irq_count");
+  ASSERT_NE(unhandled_irq_count, nullptr);
+  EXPECT_EQ(unhandled_irq_count->value(), 1u);
 
   // 2. Check event_counts node
   const auto* event_counts = hierarchy.GetByPath({"event_counts"});

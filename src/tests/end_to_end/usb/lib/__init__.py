@@ -4,6 +4,11 @@
 
 """Fuchsia USB End-to-End Test Common Library."""
 
+from .dwc3_irq_metrics import (
+    Dwc3IrqSnapshot,
+    assert_no_dwc3_unhandled_irq_storm,
+    collect_dwc3_irq_metrics,
+)
 from .fastboot_utils import (
     reboot_to_fastboot_mode,
     recover_to_fuchsia_mode,
@@ -45,6 +50,7 @@ __all__ = [
     "DEFAULT_BUS_ID_LOOKUP_ATTEMPTS",
     "DEFAULT_BUS_ID_LOOKUP_TIMEOUT_SEC",
     "DispatcherSnapshot",
+    "Dwc3IrqSnapshot",
     "FUNCTION_INTERFACES",
     "FUNCTION_PIDS",
     "GOOGLE_USB_VID",
@@ -53,8 +59,10 @@ __all__ = [
     "KERNEL_LOG_RE",
     "LinuxVirtualUsbPowerHub",
     "UsbPowerHubBaseTest",
+    "assert_no_dwc3_unhandled_irq_storm",
     "assert_no_irq_storm",
     "build_config_matrix",
+    "collect_dwc3_irq_metrics",
     "find_host_device",
     "find_usb_device_node",
     "get_usb_config",

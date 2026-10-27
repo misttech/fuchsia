@@ -208,7 +208,19 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
                      const zx_packet_interrupt_t* interrupt) {
   TRACE_DURATION("dwc3", "Dwc3::HandleIrq", "status", status);
 
+  // Not a hardware interrupt (e.g. the wait was canceled during shutdown): don't touch MMIO, ack,
+  // or count it.
+  if (status != ZX_OK) {
+    if (status != ZX_ERR_CANCELED) {
+      fdf::error("dwc3: irq wait failed: {}", zx_status_get_string(status));
+    }
+    return;
+  }
+
+  metrics_.IncrementIrqCount();
+
   if (!controller_started_ || !power_on_ || disconnect_in_flight_) {
+    metrics_.IncrementUnhandledIrqCount();
     // Ack but otherwise ignore interrupts that arrive while client has stopped us, while a
     // disconnect drain is in flight, or while the core is powered down. If the core is still
     // powered on, ensure event interrupts are masked to prevent level-triggered interrupts from
@@ -242,6 +254,9 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
         .set_EVNT_HANDLER_BUSY(1)
         .set_EVNTCOUNT(event_bytes)
         .WriteTo(mmio);
+  }
+  if (total_processed == 0) {
+    metrics_.IncrementUnhandledIrqCount();
   }
   metrics_.UpdateMaxEventBatch(total_processed);
 

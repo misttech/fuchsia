@@ -49,6 +49,8 @@ struct EventLogEntry {
 class Dwc3Metrics {
  public:
   void Init();
+  void IncrementIrqCount() { irq_count_++; }
+  void IncrementUnhandledIrqCount() { unhandled_irq_count_++; }
   void IncrementEventCount(uint32_t type) {
     type = std::min(type, static_cast<uint32_t>(MetricEventType::kDevtUnknown));
     event_counts_[type]++;
@@ -93,6 +95,8 @@ class Dwc3Metrics {
 
  private:
   zx_time_t time_start_{0};
+  uint64_t irq_count_{0};
+  uint64_t unhandled_irq_count_{0};
   uint64_t event_counts_[static_cast<uint32_t>(MetricEventType::kDevtNumEventTypes)]{};
   uint32_t max_event_batch_size_{0};
   uint64_t core_power_down_count_{0};

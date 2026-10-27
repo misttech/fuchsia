@@ -25,6 +25,8 @@ void Dwc3Metrics::RecordEvent(std::string message) {
 void Dwc3Metrics::Init() {
   // Initialize the local stats data
   time_start_ = zx_clock_get_boot();
+  irq_count_ = 0;
+  unhandled_irq_count_ = 0;
   for (unsigned long& event_count : event_counts_) {
     event_count = 0;
   }
@@ -52,6 +54,8 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
 
   root.RecordUint("time_start", time_start_);
   root.RecordUint("time_stats", zx_clock_get_boot());
+  root.RecordUint("irq_count", irq_count_);
+  root.RecordUint("unhandled_irq_count", unhandled_irq_count_);
   root.RecordUint("max_event_batch_size", max_event_batch_size_);
 
   auto events_node = root.CreateChild("event_counts");

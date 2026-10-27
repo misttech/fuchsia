@@ -4,6 +4,7 @@
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <lib/fit/defer.h>
+#include <lib/inspect/cpp/reader.h>
 
 #include <atomic>
 
@@ -395,6 +396,55 @@ TEST_F(Dwc3EventsTest, HandleIrqWhileStoppedMasksEventInterrupts) {
   EXPECT_EQ(evntintrptmask->load(), 1u);
   // Verify that GEVNTCOUNT was not read.
   EXPECT_EQ(gevntcount_reads->load(), 0u);
+
+  TearDownAndPowerOffDriver();
+}
+
+TEST_F(Dwc3EventsTest, HandleIrqRecordsIrqAndUnhandledIrqMetrics) {
+  SetUpAndPowerOnDriver();
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GEVNTSIZ::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback([]() -> uint32_t { return 0; });
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback([]() -> uint32_t { return 0; });
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    // 1. Canceled interrupt should be ignored and not increment irq_count.
+    Dwc3TestHelper::HandleIrq(drv, nullptr, nullptr, ZX_ERR_CANCELED, nullptr);
+
+    // 2. Interrupt while stopped (controller_started_ == false) increments both
+    // irq_count and unhandled_irq_count.
+    Dwc3TestHelper::SetPowerOn(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, false);
+    Dwc3TestHelper::HandleIrq(drv);
+
+    // 3. Interrupt while powered off (power_on_ == false) increments both.
+    Dwc3TestHelper::SetPowerOn(drv, false);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::HandleIrq(drv);
+
+    // 4. Spurious interrupt while active (GEVNTCOUNT == 0) increments both.
+    Dwc3TestHelper::SetPowerOn(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::HandleIrq(drv);
+
+    inspect::Inspector inspector = Dwc3TestHelper::RecordMetrics(drv);
+    auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
+    const auto* irq_count = hierarchy.node().get_property<inspect::UintPropertyValue>("irq_count");
+    ASSERT_NE(irq_count, nullptr);
+    EXPECT_EQ(irq_count->value(), 3u);
+
+    const auto* unhandled_irq_count =
+        hierarchy.node().get_property<inspect::UintPropertyValue>("unhandled_irq_count");
+    ASSERT_NE(unhandled_irq_count, nullptr);
+    EXPECT_EQ(unhandled_irq_count->value(), 3u);
+  });
 
   TearDownAndPowerOffDriver();
 }

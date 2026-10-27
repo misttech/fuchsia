@@ -294,6 +294,9 @@ class Dwc3TestHelper {
   static void EpEnable(Dwc3& drv, Dwc3::Endpoint& ep, bool enable) { drv.EpEnable(ep, enable); }
   static async_dispatcher_t* GetDispatcher(Dwc3& drv) { return drv.dispatcher(); }
   static void SetControllerStarted(Dwc3& drv, bool started) { drv.controller_started_ = started; }
+  static inspect::Inspector RecordMetrics(Dwc3& drv) {
+    return drv.metrics_.RecordMetrics(nullptr, &drv);
+  }
   static void HandleIrq(Dwc3& drv, async_dispatcher_t* dispatcher, async::IrqBase* irq,
                         zx_status_t status, const zx_packet_interrupt_t* interrupt) {
     drv.HandleIrq(dispatcher, irq, status, interrupt);
