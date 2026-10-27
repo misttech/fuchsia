@@ -16,6 +16,7 @@ pub mod evictor;
 pub mod fault;
 #[path = "../lib/heap/heap.rs"]
 pub mod heap;
+pub mod lz4_compressor;
 #[cfg(console_enabled)]
 mod mem_command;
 pub mod memory_stats;

@@ -4,19 +4,24 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-/// Unit tests for `VmCompression`, `VmCompressor` and `VmSlotPageStorage`.
+/// Unit tests for `VmCompression`, `VmCompressor`, `VmSlotPageStorage` and `VmLz4Compressor`.
 #[cfg(ktest)]
 #[unittest::suite]
 mod compression_rs {
-    use crate::vm::compression::{VmCompressedStorage, VmCompression, VmLz4Compressor};
+    use crate::vm::compression::{
+        StrategyCompressResult, VmCompressedStorage, VmCompression, VmCompressionStrategy,
+    };
     use crate::vm::compressor::{CompressResult, CompressedRef, PageAndMetadata};
+    use crate::vm::lz4_compressor::VmLz4Compressor;
     use crate::vm::page::VmPagePtr;
     use crate::vm::physmap::paddr_to_physmap;
     use crate::vm::pmm;
     use crate::vm::slot_page_storage::{NUM_SLOTS, SLOT_SIZE, VmSlotPageStorage};
+    use core::mem::MaybeUninit;
+    use kalloc::Box;
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
-    use unittest::{assert_ok, assert_true, expect_eq, expect_true, unwrap_ok};
+    use unittest::{assert_ok, assert_true, expect_eq, expect_true, unwrap_ok, unwrap_some};
 
     /// # Safety
     ///
@@ -456,5 +461,92 @@ mod compression_rs {
                 pmm::free_page(page);
             }
         }
+    }
+
+    /// Test that lz4 compression of compressible data can be decompressed back to the original.
+    #[test]
+    fn lz4_compress_smoke_test() {
+        let lz4 = unwrap_some!(VmLz4Compressor::create());
+
+        let mut src = unwrap_some!(Box::<[u8]>::try_new_zeroed_slice(PAGE_SIZE_USIZE).ok());
+        let mut compressed = unwrap_some!(Box::<[u8]>::try_new_uninit_slice(PAGE_SIZE_USIZE).ok());
+        let mut uncompressed =
+            unwrap_some!(Box::<[u8]>::try_new_uninit_slice(PAGE_SIZE_USIZE).ok());
+
+        // Cannot generate random data, as it might not compress, so generate something that would
+        // definitely be RLE compressible.
+        for (i, byte) in src.iter_mut().enumerate() {
+            *byte = ((i / 128) & 0xff) as u8;
+        }
+
+        let result = lz4.compress(&src, &mut compressed);
+        assert_true!(matches!(result, StrategyCompressResult::Compressed(_)));
+        let StrategyCompressResult::Compressed(compressed_size) = result else {
+            unreachable!();
+        };
+
+        // SAFETY: `compress` initialized the first `compressed_size` bytes of `compressed`.
+        let compressed = unsafe { compressed[..compressed_size].assume_init_ref() };
+        lz4.decompress(compressed, &mut uncompressed);
+        // SAFETY: `decompress` initialized all `PAGE_SIZE_USIZE` bytes of `uncompressed`.
+        let uncompressed = unsafe { uncompressed.assume_init() };
+        expect_true!(*src == *uncompressed);
+    }
+
+    /// Test that lz4 compression detects zero pages, even with a restricted output size.
+    #[test]
+    fn lz4_zero_dedupe_test() {
+        let lz4 = unwrap_some!(VmLz4Compressor::create());
+
+        let mut zero = unwrap_some!(Box::<[u8]>::try_new_zeroed_slice(PAGE_SIZE_USIZE).ok());
+        let mut dst = unwrap_some!(Box::<[u8]>::try_new_uninit_slice(PAGE_SIZE_USIZE).ok());
+
+        // Check the zero page is determined to be zero.
+        expect_true!(lz4.compress(&zero, &mut dst) == StrategyCompressResult::Zero);
+
+        // Restricting the output size somewhat significantly should not prevent zero detection.
+        const MAX_SIZE: usize = if PAGE_SIZE_USIZE == 0x4000 { 128 } else { 64 };
+        const {
+            assert!(
+                PAGE_SIZE_USIZE == 0x1000 || PAGE_SIZE_USIZE == 0x4000,
+                "update test to handle 64k pages"
+            )
+        };
+        expect_true!(lz4.compress(&zero, &mut dst[..MAX_SIZE]) == StrategyCompressResult::Zero);
+
+        // Setting a byte should prevent zero detection.
+        zero[4] = 1;
+        expect_true!(matches!(
+            lz4.compress(&zero, &mut dst),
+            StrategyCompressResult::Compressed(_)
+        ));
+    }
+
+    /// Test that lz4 compression fails cleanly, without overrunning `dst`, when it does not fit.
+    #[test]
+    fn lz4_compress_fail_test() {
+        let lz4 = unwrap_some!(VmLz4Compressor::create());
+
+        let mut src = unwrap_some!(Box::<[u8]>::try_new_zeroed_slice(PAGE_SIZE_USIZE).ok());
+        let mut dst = unwrap_some!(Box::<[u8]>::try_new_uninit_slice(PAGE_SIZE_USIZE).ok());
+        const LIMIT: usize = 8;
+        const SENTINEL: u8 = 0xaa;
+        dst.fill(MaybeUninit::new(SENTINEL));
+
+        // Compressible, non-zero data that cannot fit in `LIMIT` bytes must fail, and must not
+        // write beyond the provided output. `src` contains `PAGE_SIZE_USIZE / 128 >= 32` distinct
+        // byte values, each of which must appear as a literal at least once in an LZ4 block, so it
+        // can never compress into `LIMIT` bytes.
+        for (i, byte) in src.iter_mut().enumerate() {
+            *byte = ((i / 128) & 0xff) as u8;
+        }
+        expect_true!(lz4.compress(&src, &mut dst[..LIMIT]) == StrategyCompressResult::Fail);
+        // SAFETY: `dst` was filled with `MaybeUninit::new(SENTINEL)` above and only `dst[..LIMIT]`
+        // was passed to `compress`, so `dst[LIMIT..]` remains initialized.
+        expect_true!(unsafe { dst[LIMIT..].assume_init_ref() }.iter().all(|&b| b == SENTINEL));
+
+        // A zero page whose compressed form is truncated must report failure, not a zero page.
+        src.fill(0);
+        expect_true!(lz4.compress(&src, &mut dst[..4]) == StrategyCompressResult::Fail);
     }
 }

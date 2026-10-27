@@ -15,12 +15,13 @@ use crate::vm::compressor::{
 };
 use crate::vm::page::VmPagePtr;
 use crate::vm::vm::{vm_ktrace_duration, vm_ktrace_duration_begin, vm_ktrace_duration_end};
-use crate::vm::{physmap, pmm, slot_page_storage};
+use crate::vm::{lz4_compressor, physmap, pmm, slot_page_storage};
 use boot_options::{BootOptions, CompressionStorageStrategy, CompressionStrategy};
 use compression_bindings as bindings;
 use core::array;
 use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
+use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr, ref_counted};
@@ -290,7 +291,15 @@ pub enum StrategyCompressResult {
 
 /// Defines the interface for different compression algorithms.
 /// Instances of this trait may be accessed concurrently.
-pub trait VmCompressionStrategy: Send + Sync {
+///
+/// # Safety
+///
+/// Implementers must ensure that:
+/// 1. If [`compress`][Self::compress] returns [`StrategyCompressResult::Compressed`], the returned
+///    size is `<= dst.len()` and the first `size` bytes of `dst` have been initialized.
+/// 2. When [`decompress`][Self::decompress] returns, all `page::SIZE` bytes of `dst` have been
+///    initialized.
+pub unsafe trait VmCompressionStrategy: Send + Sync {
     /// Attempt to compress the data at `src` into `dst`. The input data is assumed to be
     /// `page::SIZE` in length, and the amount of output data is constrained by `dst.len()`.
     /// `compress` will never write more than `dst.len()` bytes to `dst`.
@@ -305,7 +314,7 @@ pub trait VmCompressionStrategy: Send + Sync {
     /// No guarantee on the alignment of `src` or `dst` is provided, and the caller is free to
     /// provide slices with arbitrary byte alignment.
     /// TODO(https://fxbug.dev/42138396): Consider requiring an alignment if needed by compressors.
-    fn compress(&self, src: &[u8], dst: &mut [u8]) -> StrategyCompressResult;
+    fn compress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) -> StrategyCompressResult;
 
     /// Decompress the data at `src` into `dst`. The input is assumed to have been produced by
     /// [`compress`][Self::compress] and this method cannot fail. Similar to the input of
@@ -316,7 +325,7 @@ pub trait VmCompressionStrategy: Send + Sync {
     /// provide slices with arbitrary byte alignment.
     /// TODO(https://fxbug.dev/42138396): Consider requiring an alignment if needed by
     /// decompressors.
-    fn decompress(&self, src: &[u8], dst: &mut [u8]);
+    fn decompress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]);
 
     /// Perform an information dump of the internal state to the debuglog.
     fn dump(&self);
@@ -324,23 +333,28 @@ pub trait VmCompressionStrategy: Send + Sync {
 
 // This forwarding impl exists so that a ref-counted strategy, in practice the C++ shim
 // `RefPtr<VmLz4Compressor>`, can be passed to `VmCompression::new` and stored as a
-// `Box<dyn VmCompressionStrategy>`. The C++ shim is opaque and only ever lives behind a `RefPtr`,
-// so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressionStrategy>` is not possible
-// since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait gives an
-// owned, sized value that can be type erased.
+// `Pin<Box<dyn VmCompressionStrategy>>`. The C++ shim is opaque and only ever lives behind a
+// `RefPtr`, so it cannot be held or boxed by value, and `RefPtr<dyn VmCompressionStrategy>` is
+// not possible since `Recyclable` requires `Sized`. Making `RefPtr<T>` itself implement the trait
+// gives an owned, sized value that can be type erased.
 //
 // TODO: This can be removed once the C++ `VmCompressionStrategy` implementations (and therefore
 // `VmLz4Compressor`) have been ported to Rust, at which point strategy implementations can be
 // passed to `VmCompression::new` by value, unless there is a need for shared ownership of a
 // strategy instance.
-impl<T: VmCompressionStrategy + HasRefCount + Recyclable> VmCompressionStrategy for RefPtr<T> {
+//
+// SAFETY: `RefPtr<T>` delegates all `VmCompressionStrategy` methods directly to `T`, which upholds
+// the `VmCompressionStrategy` safety contract.
+unsafe impl<T: VmCompressionStrategy + HasRefCount + Recyclable> VmCompressionStrategy
+    for RefPtr<T>
+{
     #[inline]
-    fn compress(&self, src: &[u8], dst: &mut [u8]) -> StrategyCompressResult {
+    fn compress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) -> StrategyCompressResult {
         (**self).compress(src, dst)
     }
 
     #[inline]
-    fn decompress(&self, src: &[u8], dst: &mut [u8]) {
+    fn decompress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) {
         (**self).decompress(src, dst)
     }
 
@@ -583,8 +597,11 @@ impl VmLz4Compressor {
     }
 }
 
-impl VmCompressionStrategy for VmLz4Compressor {
-    fn compress(&self, src: &[u8], dst: &mut [u8]) -> StrategyCompressResult {
+// SAFETY: C++ `VmCompressionStrategy` implementations (such as `VmLz4Compressor`) uphold the
+// strategy contract: `Compress` initializes the first `size <= dst.len()` bytes of `dst` when
+// returning a compressed size, and `Decompress` initializes all `page::SIZE` bytes of `dst`.
+unsafe impl VmCompressionStrategy for VmLz4Compressor {
+    fn compress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) -> StrategyCompressResult {
         assert_eq!(src.len(), page::SIZE);
         let mut size: usize = 0;
         // SAFETY: `self.as_raw()` is a live `VmCompressionStrategy`, `src` points to `page::SIZE`
@@ -606,7 +623,7 @@ impl VmCompressionStrategy for VmLz4Compressor {
         }
     }
 
-    fn decompress(&self, src: &[u8], dst: &mut [u8]) {
+    fn decompress(&self, src: &[u8], dst: &mut [MaybeUninit<u8>]) {
         assert_eq!(dst.len(), page::SIZE);
         // SAFETY: `self.as_raw()` is a live `VmCompressionStrategy`, `src` points to `src.len()`
         // readable bytes, and `dst` points to `page::SIZE` writable bytes.
@@ -698,7 +715,7 @@ impl<'a> CompressorGuard<'a> {
 pub struct VmCompression {
     /// References to the backing storage and compression strategies.
     storage: Pin<Box<dyn VmCompressedStorage>>,
-    strategy: Box<dyn VmCompressionStrategy>,
+    strategy: Pin<Box<dyn VmCompressionStrategy>>,
     /// Pages must compress to less than or equal to this threshold for compression to be
     /// considered a success. The largest amount we might need to store is larger than this, as
     /// this threshold does not include the 8 bytes we add on as a timestamp for when a page was
@@ -746,16 +763,20 @@ pub struct VmCompression {
 // `fbl::RefPtr<VmCompression>` have identical pointer representations.
 zr::static_assert!(core::mem::offset_of!(VmCompression, ref_count) == 0);
 
-// SAFETY: `VmCompression` owns no thread-affine state: `storage` and `strategy` are `Send`, the
+// SAFETY: `VmCompression` owns no thread-affine state: the `kalloc::Box`es holding `storage` and
+// `strategy` have no `Send` impls, but each uniquely owns its pointee, and the pointees
+// `dyn VmCompressedStorage` and `dyn VmCompressionStrategy` are `Send` by supertrait bound. The
 // `buffer_page` is a PMM page that may be freed from any thread, and `instance` only refers back to
 // this `VmCompression` through a pointer whose validity does not depend on the current thread.
 unsafe impl Send for VmCompression {}
-// SAFETY: `VmCompression` is only `!Sync` because `instance: VmCompressor` is `!Sync`. Sharing it
-// is sound because `instance` is private and is only reachable either through a `CompressorGuard`,
-// which holds `instance_lock` and so gives one owner at a time, or through the temporary reference
+// SAFETY: `VmCompression` is `!Sync` because `instance: VmCompressor` is `!Sync`, and because the
+// `kalloc::Box`es holding `storage` and `strategy` have no `Sync` impls. Sharing it is sound
+// because `instance` is private and is only reachable either through a `CompressorGuard`, which
+// holds `instance_lock` and so gives one owner at a time, or through the temporary reference
 // methods, which only access the fields of `instance` that the VMO lock protects (as required by
 // their `# Safety` preconditions). `buffer_page` is guarded by `compression_lock`, `storage` and
-// `strategy` are `Sync`, and the statistics are atomics.
+// `strategy` only give shared access to pointees that are `Sync` by supertrait bound, and the
+// statistics are atomics.
 unsafe impl Sync for VmCompression {}
 
 #[pinned_drop]
@@ -783,10 +804,12 @@ impl VmCompression {
     /// Constructs a compression manager using the given storage and compression strategies. The
     /// `compression_threshold` is the number of bytes above which a compression is considered to
     /// have failed and should not be considered worth storing.
+    /// The `strategy` is taken as `Pin<Box<C>>`, like `storage`, since strategies may hold pinned
+    /// state such as a `KMutex`.
     /// TODO(https://fxbug.dev/42138396): Limit total amount of pages stored.
     pub fn new<S, C>(
         storage: Pin<Box<S>>,
-        strategy: C,
+        strategy: Pin<Box<C>>,
         compression_threshold: usize,
     ) -> Result<RefPtr<Self>, Status>
     where
@@ -802,10 +825,14 @@ impl VmCompression {
         // SAFETY: The contents of `storage` were pinned when passed in and have not been moved.
         let storage = unsafe { Pin::new_unchecked(storage) };
 
-        let boxed_strategy = Box::try_new(strategy).map_err(|_| Status::NO_MEMORY)?;
+        // SAFETY: The strategy is not moved out of its heap allocation, which is pinned again
+        // below.
+        let boxed_strategy = unsafe { Pin::into_inner_unchecked(strategy) };
         let raw_strategy: *mut dyn VmCompressionStrategy = Box::<C>::into_raw(boxed_strategy);
         // SAFETY: `raw_strategy` was just produced by `Box::<C>::into_raw` from a `kalloc::Box`.
         let strategy: Box<dyn VmCompressionStrategy> = unsafe { Box::from_raw(raw_strategy) };
+        // SAFETY: The contents of `strategy` were pinned when passed in and have not been moved.
+        let strategy = unsafe { Pin::new_unchecked(strategy) };
 
         let compression_threshold = ensure_threshold(compression_threshold);
         // Ensure we can steal space to store the compression timestamp.
@@ -895,7 +922,7 @@ impl VmCompression {
 
         let strategy = match boot_options.compression_strategy {
             CompressionStrategy::Lz4 => {
-                let Some(strategy) = VmLz4Compressor::create() else {
+                let Some(strategy) = lz4_compressor::VmLz4Compressor::create() else {
                     kprintln!("[ZRAM]: Failed to create lz4 compressor");
                     return None;
                 };
@@ -982,15 +1009,14 @@ impl VmCompression {
         // page exclusively owned under `compression_lock`.
         let buffer_addr = physmap::paddr_to_physmap(unsafe { buffer_page.paddr() });
         assert!(buffer_addr.0 != 0);
-        let buffer_ptr = core::ptr::with_exposed_provenance_mut::<u8>(buffer_addr.0);
+        let buffer_ptr = core::ptr::with_exposed_provenance_mut::<MaybeUninit<u8>>(buffer_addr.0);
         // The slices over the source and buffer pages are confined to this block so that they
         // cannot be used after ownership of the buffer page is passed to the storage below.
         let storage_size = {
             // SAFETY: By this function's `# Safety` precondition, `page_src` is valid for reads of
             // `page::SIZE` initialized bytes and does not overlap the buffer page. By the
-            // `buffer_page` safety invariant and the kernel physmap invariant, `buffer_ptr` points
-            // to `page::SIZE` initialized bytes in the physmap that are valid for reads and
-            // exclusive writes while `compression_lock` is held.
+            // `buffer_page` safety invariant, `buffer_ptr` points to `page::SIZE` bytes in the
+            // physmap that are valid for exclusive writes while `compression_lock` is held.
             let (src_slice, buffer_slice) = unsafe {
                 (
                     core::slice::from_raw_parts(page_src, page::SIZE),
@@ -1030,7 +1056,8 @@ impl VmCompression {
             let now = timer_current_mono_ticks();
             // This slice operation is bounds checked, and so also guarantees that
             // `storage_size <= page::SIZE` even if the strategy returned an invalid size.
-            buffer_slice[compressed_size..storage_size].copy_from_slice(&now.0.to_ne_bytes());
+            buffer_slice[compressed_size..storage_size]
+                .copy_from_slice(&now.0.to_ne_bytes().map(MaybeUninit::new));
             storage_size
         };
 
@@ -1040,11 +1067,14 @@ impl VmCompression {
         // VMO lock and requests compression results.
         let buffer_page = buffer_page_slot.take().unwrap();
         // SAFETY: By the `buffer_page` safety invariant, `buffer_page` is a valid, uniquely owned
-        // allocated page in the `Alloc` state that is not in any list, containing `storage_size`
-        // initialized bytes starting at offset 0. `storage_size` includes the timestamp so is
-        // non-zero, and `storage_size <= page::SIZE` was guaranteed by the bounds checked
-        // timestamp write above. By `VmCompressedStorage::store`'s safety postcondition, any
-        // returned `page` satisfies the `buffer_page` safety invariant.
+        // allocated page in the `Alloc` state that is not in any list. By
+        // `VmCompressionStrategy::compress`'s safety postcondition, the first `compressed_size`
+        // bytes of `buffer_page` were initialized, and the timestamp write above initialized
+        // `compressed_size..storage_size`, so `buffer_page` contains `storage_size` initialized
+        // bytes starting at offset 0. `storage_size` includes the timestamp so is non-zero, and
+        // `storage_size <= page::SIZE` was guaranteed by the bounds checked timestamp write above.
+        // By `VmCompressedStorage::store`'s safety postcondition, any returned `page` satisfies
+        // the `buffer_page` safety invariant.
         let (maybe_ref, page) = unsafe { self.storage.store(buffer_page, storage_size) };
         *buffer_page_slot = page;
 
@@ -1072,9 +1102,9 @@ impl VmCompression {
     ///    instance that is owned by the caller and not used again after this call.
     /// 2. If `reference` is the temporary reference, the caller holds the VMO lock for the VMO
     ///    that owns the temporary reference.
-    /// 3. `page_dest` is a non-null pointer to `page::SIZE` initialized bytes, valid for reads and
-    ///    exclusive writes for the duration of this call, that does not overlap any compressed
-    ///    storage or the page backing the temporary reference.
+    /// 3. `page_dest` is a non-null pointer valid for exclusive writes of `page::SIZE` bytes for
+    ///    the duration of this call, that does not overlap any compressed storage or the page
+    ///    backing the temporary reference.
     /// 4. If `reference` is not the temporary reference, no chain lock transaction is active and
     ///    the current thread's lock is not held, as the current thread's runtime is measured.
     pub unsafe fn decompress(
@@ -1119,9 +1149,11 @@ impl VmCompression {
             // Decompress the data, excluding our timestamp, and measure how long decompression
             // takes.
             // SAFETY: By this function's `# Safety` precondition, `page_dest` is non-null, valid
-            // for reads and exclusive writes of `page::SIZE` initialized bytes for the duration of
-            // this call, and does not overlap `src`.
-            let dst_slice = unsafe { core::slice::from_raw_parts_mut(page_dest, page::SIZE) };
+            // for exclusive writes of `page::SIZE` bytes for the duration of this call, and does
+            // not overlap `src`.
+            let dst_slice = unsafe {
+                core::slice::from_raw_parts_mut(page_dest.cast::<MaybeUninit<u8>>(), page::SIZE)
+            };
             // SAFETY: By this function's `# Safety` precondition, as `reference` is not the
             // temporary reference, no chain lock transaction is active and the current thread's
             // lock is not held.
@@ -1453,7 +1485,11 @@ pub unsafe extern "C" fn rust_vm_compression_create(
         return core::ptr::null_mut();
     };
     let pinned_storage = Pin::new(boxed_storage);
-    match VmCompression::new(pinned_storage, strategy_ref, compression_threshold) {
+    let Ok(boxed_strategy) = Box::try_new(strategy_ref) else {
+        return core::ptr::null_mut();
+    };
+    let pinned_strategy = Pin::new(boxed_strategy);
+    match VmCompression::new(pinned_storage, pinned_strategy, compression_threshold) {
         Ok(compression) => RefPtr::into_raw(compression).cast_mut(),
         Err(_) => core::ptr::null_mut(),
     }
