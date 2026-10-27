@@ -22,8 +22,8 @@ impl SimpleWriter {
     /// given streams underlying it.
     pub fn new_buffers<'a, O, E>(stdout: O, stderr: E) -> Self
     where
-        O: Write + 'static,
-        E: Write + 'static,
+        O: Write + Send + Sync + 'static,
+        E: Write + Send + Sync + 'static,
     {
         Self(Writer::new_buffers(stdout, stderr))
     }
@@ -51,7 +51,7 @@ impl ToolIO for SimpleWriter {
         self.line(value)
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
+    fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
         self.0.stderr()
     }
 }

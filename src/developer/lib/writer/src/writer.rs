@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::io::{stderr, stdout, Write};
+use std::io::{Write, stderr, stdout};
 
 use crate::TestBuffers;
 
 /// An object that can be used to produce output, with no support for outputting
 /// structured machine-interpretable output.
 pub struct Writer {
-    stdout: Box<dyn Write>,
-    stderr: Box<dyn Write>,
+    stdout: Box<dyn Write + Send + Sync>,
+    stderr: Box<dyn Write + Send + Sync>,
 }
 
 impl Writer {
@@ -18,8 +18,8 @@ impl Writer {
     /// given streams underlying it.
     pub fn new_buffers<'a, O, E>(stdout: O, stderr: E) -> Self
     where
-        O: Write + 'static,
-        E: Write + 'static,
+        O: Write + Send + Sync + 'static,
+        E: Write + Send + Sync + 'static,
     {
         let stdout = Box::new(stdout);
         let stderr = Box::new(stderr);
@@ -37,8 +37,8 @@ impl Writer {
         Self::new_buffers(test_writer.stdout.clone(), test_writer.stderr.clone())
     }
 
-    pub fn stderr(&mut self) -> &mut dyn Write {
-        &mut self.stderr
+    pub fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
+        &mut *self.stderr
     }
 }
 

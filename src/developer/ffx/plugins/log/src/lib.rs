@@ -1352,7 +1352,7 @@ ffx log --force-set-severity.
         fn is_machine(&self) -> bool {
             false
         }
-        fn stderr(&mut self) -> &mut dyn std::io::Write {
+        fn stderr(&mut self) -> &mut (dyn std::io::Write + Send + Sync) {
             self
         }
         fn item(&mut self, _value: &Self::OutputItem) -> ffx_writer::Result<()> {

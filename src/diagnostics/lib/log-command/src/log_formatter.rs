@@ -1245,7 +1245,7 @@ mod test {
             false
         }
 
-        fn stderr(&mut self) -> &mut dyn std::io::Write {
+        fn stderr(&mut self) -> &mut (dyn std::io::Write + Send + Sync) {
             self
         }
 

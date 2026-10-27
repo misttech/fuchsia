@@ -40,7 +40,7 @@ impl ToolIO for NullWriter {
         unimplemented!()
     }
 
-    fn stderr(&mut self) -> &mut dyn std::io::Write {
+    fn stderr(&mut self) -> &mut (dyn std::io::Write + Send + Sync) {
         unimplemented!()
     }
 

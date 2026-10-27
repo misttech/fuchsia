@@ -4,10 +4,9 @@
 
 use event_listener::Event;
 use futures::AsyncWrite;
-use std::cell::RefCell;
 use std::io::Write;
 use std::pin::Pin;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 /// Provides shared memory buffers (in the form of [`TestBuffer`]s for stdout
@@ -24,8 +23,8 @@ pub struct TestBuffers {
 /// at runtime.
 #[derive(Clone, Default, Debug)]
 pub struct TestBuffer {
-    inner: Rc<RefCell<Vec<u8>>>,
-    event: Rc<Event>,
+    inner: Arc<Mutex<Vec<u8>>>,
+    event: Arc<Event>,
 }
 
 impl TestBuffers {
@@ -70,7 +69,7 @@ impl TestBuffers {
 impl TestBuffer {
     /// Destroys self and returns the inner buffer as a vector.
     pub fn into_inner(self) -> Vec<u8> {
-        self.inner.take().into()
+        std::mem::take(&mut *self.inner.lock().unwrap())
     }
 
     /// Destroys self and returns the inner buffer as a string.
@@ -89,11 +88,11 @@ impl TestBuffer {
 impl Write for TestBuffer {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.event.notify(usize::MAX);
-        self.inner.borrow_mut().write(buf)
+        self.inner.lock().unwrap().write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.inner.borrow_mut().flush()
+        self.inner.lock().unwrap().flush()
     }
 }
 
@@ -103,12 +102,12 @@ impl AsyncWrite for TestBuffer {
         _cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        let size = self.inner.borrow_mut().write(buf);
+        let size = self.inner.lock().unwrap().write(buf);
         Poll::Ready(size)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        match self.inner.borrow_mut().flush() {
+        match self.inner.lock().unwrap().flush() {
             Ok(_) => Poll::Ready(Ok(())),
             Err(e) => Poll::Ready(Err(e)),
         }

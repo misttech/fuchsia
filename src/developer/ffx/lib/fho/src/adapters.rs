@@ -139,8 +139,8 @@ pub(crate) mod tests {
             false
         }
 
-        fn stderr(&mut self) -> &mut dyn std::io::Write {
-            todo!()
+        fn stderr(&mut self) -> &mut (dyn std::io::Write + Send + Sync) {
+            self
         }
 
         fn item(&mut self, _value: &Self::OutputItem) -> writer::Result<()>

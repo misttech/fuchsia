@@ -19,8 +19,8 @@ impl<T> JsonWriter<T> {
     /// given streams underlying it.
     pub fn new_buffers<'a, O, E>(format: Option<Format>, stdout: O, stderr: E) -> Self
     where
-        O: Write + 'static,
-        E: Write + 'static,
+        O: Write + Send + Sync + 'static,
+        E: Write + Send + Sync + 'static,
     {
         let simple_writer = Writer::new_buffers(stdout, stderr);
         let _p = Default::default();
@@ -48,7 +48,7 @@ impl<T> JsonWriter<T> {
         self.simple_writer
     }
 
-    pub fn stderr(&mut self) -> &mut dyn Write {
+    pub fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
         self.simple_writer.stderr()
     }
 
@@ -144,16 +144,18 @@ where
 {
     match format {
         Format::Json => {
-            serde_json::to_writer(&mut out, output)?;
-            writeln!(out)?;
-            out.flush()?;
+            let mut buf = serde_json::to_vec(output)?;
+            buf.push(b'\n');
+            out.write_all(&buf)?;
+            out.flush().map_err(Into::into)
         }
         Format::JsonPretty => {
-            serde_json::to_writer_pretty(&mut out, output)?;
+            let buf = serde_json::to_vec_pretty(output)?;
+            out.write_all(&buf)?;
+            out.flush().map_err(Into::into)
         }
-        Format::Raw => {}
+        Format::Raw => Ok(()),
     }
-    Ok(())
 }
 
 impl<T> ToolIO for JsonWriter<T>
@@ -173,7 +175,7 @@ where
         }
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
+    fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
         self.stderr()
     }
 
@@ -362,5 +364,66 @@ mod test {
   }
 }"#
         );
+    }
+
+    #[test]
+    fn test_concurrent_format_output_does_not_interleave_json_lines() {
+        use std::sync::{Arc, Barrier, Mutex};
+
+        #[derive(Clone)]
+        struct YieldingBuffer(Arc<Mutex<Vec<u8>>>);
+
+        impl Write for YieldingBuffer {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                std::thread::yield_now();
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let shared = YieldingBuffer(Arc::new(Mutex::new(Vec::new())));
+        let num_threads = 8;
+        let items_per_thread = 50;
+        let barrier = Arc::new(Barrier::new(num_threads));
+        let mut handles = Vec::with_capacity(num_threads);
+
+        for tid in 0..num_threads {
+            let mut out = shared.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(std::thread::spawn(move || {
+                barrier.wait();
+                for seq in 0..items_per_thread {
+                    let payload = serde_json::json!({
+                        "thread": tid,
+                        "seq": seq,
+                        "nested": {
+                            "alpha": "value_a",
+                            "beta": "value_b",
+                            "gamma": [1, 2, 3, 4, 5],
+                        }
+                    });
+                    format_output(Format::Json, &mut out, &payload).unwrap();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let raw = String::from_utf8(shared.0.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = raw.lines().collect();
+        assert_eq!(lines.len(), num_threads * items_per_thread);
+        for line in lines {
+            let parsed: serde_json::Value =
+                serde_json::from_str(line).expect("each line must be a complete valid JSON object");
+            assert!(parsed.get("thread").is_some());
+            assert!(parsed.get("seq").is_some());
+            assert_eq!(parsed["nested"]["alpha"], "value_a");
+        }
     }
 }

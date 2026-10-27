@@ -141,7 +141,7 @@ impl ToolIO for CommandOutputMachineWriter {
         self.inner.item(&v)
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
+    fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
         self.inner.stderr()
     }
 }

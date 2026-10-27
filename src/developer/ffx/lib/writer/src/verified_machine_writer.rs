@@ -22,8 +22,8 @@ where
 {
     pub fn new_buffers<'a, O, E>(format: Option<Format>, stdout: O, stderr: E) -> Self
     where
-        O: Write + 'static,
-        E: Write + 'static,
+        O: Write + Send + Sync + 'static,
+        E: Write + Send + Sync + 'static,
     {
         Self { machine_writer: MachineWriter::new_buffers(format, stdout, stderr) }
     }
@@ -145,7 +145,7 @@ where
         self.machine_writer.item(value)
     }
 
-    fn stderr(&mut self) -> &mut dyn Write {
+    fn stderr(&mut self) -> &mut (dyn Write + Send + Sync) {
         self.machine_writer.stderr()
     }
 }

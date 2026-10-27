@@ -14,7 +14,7 @@ use crate::{Error, Result};
 // [`crate::MachineWriter`] and [`crate::VerifiedMachineWriter`],
 /// and [`crate::SimpleWriter`]. These provide either type-safe,
 /// type-safe with schema, or string-only output respectively.
-pub trait ToolIO: Write + Sized {
+pub trait ToolIO: Write + Send + Sync + Sized {
     /// The type of object that is expected for the [`Self::item`] call (or
     /// any machine output writing functions that may be added by an
     /// implementation)
@@ -39,7 +39,7 @@ pub trait ToolIO: Write + Sized {
     fn is_machine(&self) -> bool;
 
     /// Returns an error stream that errors can be written to.
-    fn stderr(&mut self) -> &mut dyn Write;
+    fn stderr(&mut self) -> &mut (dyn Write + Send + Sync);
 
     /// Writes the value to standard output without a newline.
     ///
