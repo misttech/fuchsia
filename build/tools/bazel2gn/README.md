@@ -230,6 +230,15 @@ Most Bazel `tags` have no GN equivalent and are ignored, except:
     Comment annotations such as `# @bazel2gn:path_overwrite:` and
     `# @bazel2gn:raw_overwrite:` are forwarded onto the generated GN
     dependencies, allowing toolchain qualifiers (e.g. `($current_toolchain)`).
+*   `exclude_toolchain_tags=<tag>` on Rust binary, dylib, and test rules (and on
+    library rules with `with_unit_tests`, where it only affects the unit test) is
+    ignored by Bazel, and converted to GN `exclude_toolchain_tags`, so the GN
+    target isn't built in toolchains (variants) with `<tag>`, such as
+    `heapdump`. This is the Rust counterpart of `disable_instrumentation = True`
+    on `fx_cc_binary()`, which becomes `exclude_toolchain_tags = [
+    "instrumented" ]`.
+    TODO(https://fxbug.dev/578022348): Add canonical Bazel support for excluding
+    Rust targets from toolchain variants (e.g. heapdump).
 
 ```bzl
 rustc_binary(
@@ -238,6 +247,7 @@ rustc_binary(
     tags = [
         "assert_no_deps=//third_party/rust_crates/vendor:regex",
         "assert_no_deps=//third_party/rust_crates/vendor:serde_json5",  # @bazel2gn:path_overwrite://third_party/rust_crates:serde_json5($current_toolchain)
+        "exclude_toolchain_tags=heapdump",
     ],
 )
 ```
@@ -251,6 +261,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:regex",
     "//third_party/rust_crates:serde_json5($current_toolchain)",
   ]
+  exclude_toolchain_tags = [ "heapdump" ]
 }
 ```
 

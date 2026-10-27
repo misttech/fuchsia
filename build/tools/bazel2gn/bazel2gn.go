@@ -347,6 +347,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	var name string
 	var remainingArgs []*syntax.BinaryExpr
 	var wrappingConditions []string
+	var hasWithUnitTests bool
 	for _, arg := range expr.Args {
 		binaryExpr, ok := arg.(*syntax.BinaryExpr)
 		if !ok || binaryExpr.Op != syntax.EQ {
@@ -368,6 +369,11 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		ident, ok := binaryExpr.X.(*syntax.Ident)
 		if !ok {
 			return nil, fmt.Errorf("unexpected node type on the left hand side of binary expression in target definition, want syntax.Ident, got %T", binaryExpr.X)
+		}
+		if ident.Name == "with_unit_tests" || ident.Name == "with_host_unit_tests" {
+			if rhsIdent, ok := unwrapParenExpr(binaryExpr.Y).(*syntax.Ident); !ok || rhsIdent.Name != "False" {
+				hasWithUnitTests = true
+			}
 		}
 		if attrsToOmit[ident.Name] {
 			continue
@@ -433,7 +439,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 
 	// Loop through all args again to actually build the content of this target.
 	for _, arg := range remainingArgs {
-		lines, err := attrAssignmentToGN(arg, bazelRule, compiledActionOutputs, appendAspectHints)
+		lines, err := attrAssignmentToGN(arg, bazelRule, compiledActionOutputs, appendAspectHints, hasWithUnitTests)
 		if err != nil {
 			return nil, fmt.Errorf("converting Bazel attribute to GN: %v", err)
 		}
@@ -692,7 +698,7 @@ func selectHasDefault(expr *syntax.CallExpr) bool {
 // NOTE: Assignment is a special binary expression with operator =.
 //
 // [0] https://github.com/bazelbuild/starlark/blob/master/spec.md#assignments
-func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActionOutputs map[string]string, appendAspectHints bool) ([]string, error) {
+func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActionOutputs map[string]string, appendAspectHints bool, hasWithUnitTests bool) ([]string, error) {
 	lhs, ok := expr.X.(*syntax.Ident)
 	if !ok {
 		return nil, fmt.Errorf("expecting an identifier on the left hand side of attribute assignment, got %T", expr.X)
@@ -750,9 +756,10 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string, compiledActio
 		return genruleCmdToGN(expr.Y)
 	}
 
-	// Intercept tags attribute to sync assert_no_deps.
+	// Intercept tags attribute to sync assert_no_deps and
+	// exclude_toolchain_tags.
 	if attrName == "tags" {
-		return tagsToGN(expr.Y)
+		return tagsToGN(expr.Y, bazelRule, hasWithUnitTests)
 	}
 
 	// Intercept rustenv attribute to convert dict to list of strings.

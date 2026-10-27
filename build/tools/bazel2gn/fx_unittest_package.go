@@ -163,7 +163,7 @@ func fxUnittestPackageToGN(call *syntax.CallExpr) ([]string, error) {
 	}
 
 	if visArg != nil {
-		lines, err := attrAssignmentToGN(visArg, "fx_unittest_package", nil /*compiledActionOutputs*/, false /*appendAspectHints*/)
+		lines, err := attrAssignmentToGN(visArg, "fx_unittest_package", nil /*compiledActionOutputs*/, false /*appendAspectHints*/, false /*hasWithUnitTests*/)
 		if err != nil {
 			return nil, fmt.Errorf("converting fx_unittest_package visibility: %v", err)
 		}
