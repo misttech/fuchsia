@@ -1524,11 +1524,11 @@ group("pin-init-0.3.0") {
 }
 
 group("pin-project") {
-  public_deps = [ ":pin-project-v1_1_11" ]
+  public_deps = [ ":pin-project-v1_1_13" ]
 }
 
-group("pin-project-1.1.11") {
-  public_deps = [ ":pin-project-v1_1_11" ]
+group("pin-project-1.1.13") {
+  public_deps = [ ":pin-project-v1_1_13" ]
 }
 
 group("pin-project-lite") {
@@ -5242,7 +5242,7 @@ rustc_library("bt-bass-v0_0_1") {
   deps += [ ":futures-v0_3_34" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":pin-project-v1_1_11" ]
+  deps += [ ":pin-project-v1_1_13" ]
   deps += [ ":thiserror-v2_0_21" ]
 
   rustenv = []
@@ -5391,7 +5391,7 @@ rustc_library("bt-pacs-v0_0_1") {
   deps += [ ":bt-gatt-v0_0_1" ]
   deps += [ ":futures-v0_3_34" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":pin-project-v1_1_11" ]
+  deps += [ ":pin-project-v1_1_13" ]
   deps += [ ":thiserror-v2_0_21" ]
 
   rustenv = []
@@ -10395,7 +10395,7 @@ rustc_library("futures-test-v0_3_34") {
   deps += [ ":futures-sink-v0_3_34" ]
   deps += [ ":futures-task-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":pin-project-v1_1_11" ]
+  deps += [ ":pin-project-v1_1_13" ]
 
   rustenv = []
 
@@ -15255,7 +15255,7 @@ rustc_library("omaha_client-v0_4_1") {
   deps += [ ":itertools-v0_14_0" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":p256-v0_14_0" ]
-  deps += [ ":pin-project-v1_1_11" ]
+  deps += [ ":pin-project-v1_1_13" ]
   deps += [ ":pkcs8-v0_11_0" ]
   deps += [ ":pretty_assertions-v1_4_1" ]
   deps += [ ":rand-v0_9_5" ]
@@ -16468,52 +16468,52 @@ rustc_macro("pin-init-internal-v0_3_0") {
   applicable_licenses = [ ":pin-init-internal-v0_3_0.license" ]
 }
 
-license("pin-project-v1_1_11.license") {
+license("pin-project-v1_1_13.license") {
   public_package_name = "pin_project"
   license_files = [
-    "//third_party/rust_crates/vendor/pin-project-1.1.11/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pin-project-1.1.11/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pin-project-1.1.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pin-project-1.1.13/LICENSE-MIT",
   ]
 }
 
-rustc_library("pin-project-v1_1_11") {
+rustc_library("pin-project-v1_1_13") {
   crate_name = "pin_project"
-  source_root = "//third_party/rust_crates/vendor/pin-project-1.1.11/src/lib.rs"
-  output_name = "pin_project-b853f81adb49e1ee"
+  source_root = "//third_party/rust_crates/vendor/pin-project-1.1.13/src/lib.rs"
+  output_name = "pin_project-aef84f4a09786b5d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":pin-project-internal-v1_1_11($host_toolchain)" ]
+  deps += [ ":pin-project-internal-v1_1_13($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b853f81adb49e1ee",
-    "-Cextra-filename=-b853f81adb49e1ee",
+    "-Cmetadata=aef84f4a09786b5d",
+    "-Cextra-filename=-aef84f4a09786b5d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pin-project-v1_1_11.license" ]
+  applicable_licenses = [ ":pin-project-v1_1_13.license" ]
 }
 
-license("pin-project-internal-v1_1_11.license") {
+license("pin-project-internal-v1_1_13.license") {
   public_package_name = "pin_project_internal"
   license_files = [
-    "//third_party/rust_crates/vendor/pin-project-internal-1.1.11/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pin-project-internal-1.1.11/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pin-project-internal-1.1.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pin-project-internal-1.1.13/LICENSE-MIT",
   ]
 }
 
-rustc_macro("pin-project-internal-v1_1_11") {
+rustc_macro("pin-project-internal-v1_1_13") {
   crate_name = "pin_project_internal"
   source_root =
-      "//third_party/rust_crates/vendor/pin-project-internal-1.1.11/src/lib.rs"
-  output_name = "pin_project_internal-b3828fd626d6bcd9"
+      "//third_party/rust_crates/vendor/pin-project-internal-1.1.13/src/lib.rs"
+  output_name = "pin_project_internal-a9e92b5bcc9fd28c"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -16528,13 +16528,13 @@ rustc_macro("pin-project-internal-v1_1_11") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b3828fd626d6bcd9",
-    "-Cextra-filename=-b3828fd626d6bcd9",
+    "-Cmetadata=a9e92b5bcc9fd28c",
+    "-Cextra-filename=-a9e92b5bcc9fd28c",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pin-project-internal-v1_1_11.license" ]
+  applicable_licenses = [ ":pin-project-internal-v1_1_13.license" ]
 }
 
 license("pin-project-lite-v0_2_17.license") {

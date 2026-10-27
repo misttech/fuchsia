@@ -87,6 +87,6 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-sink-0.3.34:futures_sink",
         "//third_party/rust_crates/vendor/futures-task-0.3.34:futures_task",
         "//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util",
-        "//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project",
+        "//third_party/rust_crates/vendor/pin-project-1.1.13:pin_project",
     ],
 )
