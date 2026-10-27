@@ -4,11 +4,11 @@
 
 #include "bootbyte.h"
 
-#include <lib/zbi-format/internal/efi.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 
 #include <efi/runtime-services.h>
+#include <efi/zircon.h>
 
 char16_t kBootbyteVariableName[] = ZIRCON_BOOTBYTE_EFIVAR;
 efi_guid kZirconVendorGuid = ZIRCON_VENDOR_GUID;

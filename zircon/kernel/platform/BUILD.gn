@@ -17,8 +17,7 @@ source_set("platform") {
     "debug.cc",
     "debug_ffi.cc",
     "efi.cc",
-    "efi_bootbyte.cc",
-    "efi_crashlog.cc",
+    "efi_ffi.cc",
     "mapped_crashlog.cc",
     "power_ffi.cc",
     "timer_ffi.cc",
@@ -122,6 +121,10 @@ kernel_rust_mod("platform-rs") {
   source_root = "platform.rs"
   sources = [
     "debug.rs",
+    "efi.rs",
+    "efi_bootbyte.rs",
+    "efi_crashlog.rs",
+    "efi_ffi.rs",
     "halt_helper.rs",
     "halt_token.rs",
     "platform.rs",
@@ -138,6 +141,8 @@ kernel_rust_mod("platform-rs") {
     "//src/lib/zr",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/efi:efi-rs",
+    "//zircon/kernel/lib/libc:rust",
     "//zircon/system/ulib/affine/rust:affine",
   ]
 }
