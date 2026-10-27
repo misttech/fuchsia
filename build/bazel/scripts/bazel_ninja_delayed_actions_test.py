@@ -17,7 +17,6 @@ from bazel_ninja_delayed_actions import (
     compute_sources_by_owner,
     read_extra_bazel_targets,
     should_update_stamp,
-    validate_export_test_packages_owners,
     validate_extra_bazel_targets,
 )
 
@@ -175,37 +174,6 @@ class ValidateExtraBazelTargetsTest(unittest.TestCase):
             },
             _target_infos(("//a:stamp", _HOST), ("//b:stamp", _FUCHSIA)),
         )
-
-
-class ValidateExportTestPackagesOwnersTest(unittest.TestCase):
-    def _infos(self, *exporters: str) -> BazelTargetInfosMap:
-        return BazelTargetInfosMap(
-            [
-                {
-                    "bazel_target": target,
-                    "bazel_platform_label": _FUCHSIA,
-                    "bazel_platform_config": "fuchsia",
-                    "ninja_depfile": f"gen/{target}.d",
-                    "gn_targets_manifest": f"gen/{target}.manifest",
-                    "stamp_path": f"obj/{target}.stamp",
-                    "update_rust_project": False,
-                    "export_test_packages": True,
-                    "type": "file",
-                    "bazel_file": f"bazel-out/{target}",
-                    "ninja_file": f"obj/{target}",
-                }
-                for target in exporters
-            ]
-        )
-
-    def test_one_owner(self) -> None:
-        validate_export_test_packages_owners(self._infos("//a:stamp"))
-
-    def test_two_owners(self) -> None:
-        with self.assertRaisesRegex(ValueError, "//a:stamp, //b:stamp"):
-            validate_export_test_packages_owners(
-                self._infos("//a:stamp", "//b:stamp")
-            )
 
 
 class ComputeSourcesByOwnerTest(unittest.TestCase):

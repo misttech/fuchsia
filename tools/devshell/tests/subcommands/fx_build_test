@@ -189,16 +189,8 @@ EOF
   export FX_REMOTE_BUILD_METRICS=0
 
   # fuchsia-vendored-python is used to run helper scripts like count-ninja-actions.py.
-  # Make it a pass-through to the real host python in the test environment,
-  # except for bazel_test_packages.py, which needs a real Bazel output base, so
-  # its invocations are only recorded.
+  # Make it a pass-through to the real host python in the test environment.
   cat > "${BT_TEMP_DIR}/scripts/fuchsia-vendored-python.mock_side_effects" <<EOF
-for arg in "\$@"; do
-  if [[ "\$arg" == */build/bazel/scripts/bazel_test_packages.py ]]; then
-    echo "\$@" >> "${BT_TEMP_DIR}/bazel_test_packages.calls"
-    exit 0
-  fi
-done
 exec "$(command -v python3)" "\$@"
 EOF
 
@@ -521,8 +513,6 @@ TEST_fx-build-with-bazel-label-with-config-host() {
     BT_EXPECT grep -q -e "--config=host" stdout.txt
     BT_EXPECT grep -q -e "--override_repository=gn_targets+=.*/build/bazel/local_repositories/empty_gn_targets" stdout.txt
     BT_EXPECT grep -q -e "@//src/foo" stdout.txt
-    # Only device test packages are exported.
-    BT_EXPECT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/bazel_test_packages.calls"
 }
 
 TEST_fx-build-with-bazel-label-after-fuchsia-platform() {
@@ -536,8 +526,6 @@ TEST_fx-build-with-bazel-label-after-fuchsia-platform() {
     BT_EXPECT grep -q -e "--config=fuchsia_platform" stdout.txt
     BT_EXPECT grep -q -e "--override_repository=gn_targets+=.*/build/bazel/tests_json.gn_targets" stdout.txt
     BT_EXPECT grep -q -e "@//src/foo" stdout.txt
-    # The packages that Bazel rebuilt are exported for `fx test`.
-    BT_EXPECT grep -q -e "--incremental" "${BT_TEMP_DIR}/bazel_test_packages.calls"
 }
 
 TEST_fx-build-with-bazel-label-before-fuchsia-platform() {

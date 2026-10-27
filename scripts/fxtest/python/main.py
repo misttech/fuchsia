@@ -486,7 +486,7 @@ class AsyncMain:
     _BAZEL_TEST_PACKAGE_MANIFESTS_PATH = [
         "bazel_test_packages.list",
     ]
-    # LINT.ThenChange(//build/bazel/scripts/bazel_test_packages.py:bazel_test_packages_list)
+    # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:bazel_test_packages_list)
 
     def __init__(
         self,

@@ -16,7 +16,6 @@ _SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 import bazel_tests_utils
-from bazel_test_packages import export_path_for_manifest
 from build_utils import BazelPaths, MockCommandRunner
 
 
@@ -329,8 +328,9 @@ class BazelTestsUtilsTest(unittest.TestCase):
             self.bazel_paths, command_runner=mock_runner
         ).tests
 
-        package_manifest = export_path_for_manifest(
-            "bazel-out/my_test/package_manifest.json"
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
+        package_manifest = (
+            f"{execroot_path}/bazel-out/my_test/package_manifest.json"
         )
         self.assertEqual(
             tests_json,
@@ -526,6 +526,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             "fuchsia-pkg://fuchsia.com/my-test-package#meta/my_test.cm",
         )
 
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
         packages_list = (
             self.bazel_paths.ninja_build_dir / "bazel_test_packages.list"
         )
@@ -534,9 +535,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
             {
                 "content": {
                     "manifests": [
-                        export_path_for_manifest(
-                            "bazel-out/my_test/package_manifest.json"
-                        )
+                        f"{execroot_path}/bazel-out/my_test/package_manifest.json"
                     ]
                 },
                 "version": "1",
@@ -627,6 +626,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
         # The barriered test is excluded from tests_json and grouped_tests, but
         # its package manifest is included in bazel_test_packages.list and its
         # BUILD.bazel is tracked in inputs.
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
         packages_list = (
             self.bazel_paths.ninja_build_dir / "bazel_test_packages.list"
         )
@@ -635,15 +635,9 @@ class BazelTestsUtilsTest(unittest.TestCase):
             {
                 "content": {
                     "manifests": [
-                        export_path_for_manifest(
-                            "bazel-out/barriered_test/package_manifest.json"
-                        ),
-                        export_path_for_manifest(
-                            "bazel-out/suite_test/package_manifest.json"
-                        ),
-                        export_path_for_manifest(
-                            "bazel-out/top_test/package_manifest.json"
-                        ),
+                        f"{execroot_path}/bazel-out/barriered_test/package_manifest.json",
+                        f"{execroot_path}/bazel-out/suite_test/package_manifest.json",
+                        f"{execroot_path}/bazel-out/top_test/package_manifest.json",
                     ]
                 },
                 "version": "1",

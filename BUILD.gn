@@ -2275,11 +2275,6 @@ build_api_module("nuc11_fastboot_images_location") {
 #                 Bazel as top-level command line targets alongside 'bazel_target'.
 #     - Type: string
 #
-#   export_test_packages:
-#     - Optional: Whether to export the Bazel test packages to the Ninja build directory
-#                 after building. See bazel_test_packages.py.
-#     - Type: bool
-#
 #   debug_symbols_manifest:
 #     - Optional: Path in the ninja outdir to write the debug symbols manifest to.
 #     - Type: string

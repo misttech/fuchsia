@@ -284,14 +284,6 @@ invocations merge this list into `all_package_manifests.list` and publish its
 packages into `amber-files`, while `fx test` also merges it directly when
 building specific test targets on demand.
 
-The manifests in this list, and in the `package_manifests` of the `tests.json`
-entries, aren't the ones in the Bazel output base. Right after Bazel builds the
-test packages, the build hardlinks their blobs into the Ninja build directory
-and writes copies of their manifests that point at those blobs (see
-`//build/bazel/scripts/bazel_test_packages.py`). Bazel only guarantees that an
-output is on disk at the end of an invocation that requested it, so a later
-Bazel invocation could otherwise delete files that these consumers need.
-
 ## Testing libraries in both build systems {#tests-in-both-build-systems}
 
 While a library is used by targets in both build systems, run its tests in both

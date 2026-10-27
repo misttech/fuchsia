@@ -114,25 +114,6 @@ declare_args() {
 #     for actions whose Bazel targets don't have such outputs, e.g. ones listed
 #     in `extra_bazel_targets_file`.
 #
-#   export_test_packages: (optional)
-#     A boolean (default=false). Set it to true to export the Bazel test
-#     packages listed in `$root_build_dir/bazel_test_packages.list` (written
-#     at `gn gen` time by //build/bazel/scripts/bazel_tests_utils.py) to the
-#     Ninja build directory right after the Bazel invocation that includes
-#     this action. See //build/bazel/scripts/bazel_test_packages.py.
-#
-#     Consumers like the amber-files publish then read files owned by the
-#     Ninja build, which a later Bazel invocation can't delete. Reading the
-#     Bazel output base directly isn't safe: every invocation replants the
-#     `execroot/_main/external/` symlinks with only the repositories it
-#     needs, and with `--remote_download_outputs=toplevel` Bazel only
-#     guarantees that an output is on disk at the end of an invocation that
-#     requested it.
-#
-#     At most one bazel_action() may set this (//build/bazel/target_tests),
-#     because all exports share one directory, from which each export deletes
-#     the files of packages that aren't in the list.
-#
 #   copy_outputs: (optional)
 #     A list of scopes, where each item describes a Bazel output and a
 #     corresponding Ninja output location (where the Bazel build artifact
@@ -343,9 +324,6 @@ template("bazel_action") {
 
     _copy_debug_symbols =
         defined(invoker.copy_debug_symbols) && invoker.copy_debug_symbols
-
-    _export_test_packages =
-        defined(invoker.export_test_packages) && invoker.export_test_packages
 
     _copy_outputs = []
     if (defined(invoker.copy_outputs)) {
@@ -721,7 +699,6 @@ template("bazel_action") {
         "//build/bazel/scripts/bazel_label_mapper.py",
         "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
         "//build/bazel/scripts/bazel_source_path_mapper.py",
-        "//build/bazel/scripts/bazel_test_packages.py",
         "//build/bazel/scripts/build_utils.py",
         "//build/bazel/scripts/stdio_redirection.py",
         "//build/bazel/scripts/thread_pool_helpers.py",
@@ -856,10 +833,6 @@ template("bazel_action") {
                     rebase_path(invoker.extra_bazel_targets_file,
                                 root_build_dir)
               }
-
-              # Whether to export the Bazel test packages to the Ninja build
-              # directory after building.
-              export_test_packages = _export_test_packages
 
               if (invoker.command == "build") {
                 debug_symbols_manifest = _rebased_debug_symbols_manifest

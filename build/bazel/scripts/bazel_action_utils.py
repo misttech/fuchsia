@@ -89,7 +89,6 @@ class BazelTargetInfo(object):
     update_rust_project: bool = False
     copy_debug_symbols: bool = False
     extra_bazel_targets_file: str | None = None
-    export_test_packages: bool = False
     debug_symbols_manifest: str | None = None
     copy_outputs: list[FileOutput] = dataclasses.field(default_factory=list)
     directory_outputs: list[DirectoryOutput] = dataclasses.field(
@@ -125,7 +124,6 @@ class BazelTargetInfosMap(object):
             update_rust_project = entry["update_rust_project"]
             copy_debug_symbols = entry.get("copy_debug_symbols", False)
             extra_bazel_targets_file = entry.get("extra_bazel_targets_file")
-            export_test_packages = entry.get("export_test_packages", False)
             debug_symbols_manifest = entry.get("debug_symbols_manifest")
             target_info = self._targets.setdefault(
                 (bazel_target, bazel_platform_label),
@@ -139,7 +137,6 @@ class BazelTargetInfosMap(object):
                     update_rust_project=update_rust_project,
                     copy_debug_symbols=copy_debug_symbols,
                     extra_bazel_targets_file=extra_bazel_targets_file,
-                    export_test_packages=export_test_packages,
                     debug_symbols_manifest=debug_symbols_manifest,
                 ),
             )

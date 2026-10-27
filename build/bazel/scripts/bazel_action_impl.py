@@ -22,7 +22,6 @@ import bazel_action_utils
 import bazel_label_mapper
 import bazel_rust_analyzer_utils
 import bazel_source_path_mapper
-import bazel_test_packages
 import build_utils
 import stdio_redirection
 import thread_pool_helpers
@@ -116,7 +115,6 @@ class BazelActionOutputs(object):
     packages: list[bazel_action_utils.PackageOutput]
     final_symlinks: list[bazel_action_utils.FinalSymlinkOutput]
     copy_debug_symbols: bool = False
-    export_test_packages: bool = False
 
     def __len__(self) -> int:
         return (
@@ -430,28 +428,6 @@ class BazelActionRunner(object):
                 f"Inspecting {len(outputs)} outputs from Bazel for copying back to GN/Ninja..."
             )
         all_output_files = output_copier.copy(outputs, time_profile)
-
-        if command == "build" and outputs.export_test_packages:
-            # Do this now, while the packages' files are top-level outputs of
-            # the invocation that just finished. A later invocation could
-            # rebuild some of them as non-top-level outputs and leave them
-            # missing from disk, or replant the execroot without the external
-            # repositories that some of their blobs come from.
-            time_profile.start(
-                "export_test_packages",
-                "Export Bazel test packages to the Ninja build directory",
-            )
-            try:
-                bazel_test_packages.export_packages(
-                    self.paths,
-                    bazel_test_packages.read_packages_list(
-                        self.paths.ninja_build_dir
-                    ),
-                )
-            except (OSError, KeyError, ValueError) as e:
-                raise BazelActionError(
-                    f"Failed to export Bazel test packages: {e}"
-                ) from e
 
         # Perform the merging of debug symbols data, and optionally copy
         # and write the output to a manifest.
@@ -1082,7 +1058,6 @@ def merge_target_info_outputs(
     package_outputs: list[bazel_action_utils.PackageOutput] = []
     final_symlink_outputs: list[bazel_action_utils.FinalSymlinkOutput] = []
     copy_debug_symbols = False
-    export_test_packages = False
 
     # This is the set of gn input targets manifests
     gn_target_manifests: set[Path] = set()
@@ -1093,7 +1068,6 @@ def merge_target_info_outputs(
         package_outputs.extend(target_info.package_outputs)
         final_symlink_outputs.extend(target_info.final_symlink_outputs)
         copy_debug_symbols |= target_info.copy_debug_symbols
-        export_test_packages |= target_info.export_test_packages
 
         gn_target_manifests.add(Path(target_info.gn_targets_manifest))
 
@@ -1104,7 +1078,6 @@ def merge_target_info_outputs(
             package_outputs,
             final_symlink_outputs,
             copy_debug_symbols,
-            export_test_packages,
         ),
         list(gn_target_manifests),
     )

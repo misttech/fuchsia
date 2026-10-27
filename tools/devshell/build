@@ -787,19 +787,6 @@ function main {
       (fx-run-bazel "${is_logging}" "$(fx-get-bazel)" build "${bazel_build_args[@]}")
       status=$?
 
-      # Consumers of bazel_test_packages.list (e.g. `fx test`) read copies of
-      # the Bazel test packages exported to the Ninja build directory.
-      # //build/bazel/target_tests normally exports them, but this build
-      # bypasses it, so export the packages that Bazel has rebuilt since they
-      # were last exported.
-      if [[ "${status}" -eq 0 && -n "${has_bazel_fuchsia_platform_flag}" ]]; then
-        "${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" -S \
-          "${FUCHSIA_DIR}/build/bazel/scripts/bazel_test_packages.py" \
-          --ninja-build-dir "${FUCHSIA_BUILD_DIR}" \
-          --incremental
-        status=$?
-      fi
-
       # Note: for now, these build events are not tracked as this feature is still experimental.
   else
     if [[ "${#gn_targets[@]}" -gt 0 ]]; then
