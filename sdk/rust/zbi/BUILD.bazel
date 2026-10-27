@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "zbi",
+    actual = "//sdk/fidl/zbi:zbi_zither.rust",
+    visibility = [
+        "//sdk/lib/driver_test_realm/tests:__pkg__",
+        "//src/bringup/bin/device-name-provider/tests/fake_boot_items:__pkg__",
+        "//src/hwinfo:__pkg__",
+        "//src/lib/assembly/zbi:__pkg__",
+        "//src/power/metrics-logger:__pkg__",
+        "//src/security/lib/scrutiny:__subpackages__",
+        "//src/security/tests/pkg_test/fake_boot_arguments:__pkg__",
+        "//src/starnix/kernel/runner:__pkg__",
+        "//src/storage/fshost:__subpackages__",
+        "//zircon/kernel:__subpackages__",
+    ],
+)
