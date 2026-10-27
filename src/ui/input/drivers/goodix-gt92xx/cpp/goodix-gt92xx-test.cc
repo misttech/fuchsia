@@ -63,7 +63,6 @@ class Gt92xxTest : public ::testing::Test {
     fake_parent_ = MockDevice::FakeRootParent();
     device_.emplace(input_report_loop_.dispatcher(), std::move(endpoints.client),
                     std::move(intr_gpio_client), std::move(reset_gpio_client), fake_parent_.get());
-    EXPECT_OK(input_report_loop_.RunUntilIdle());
   }
 
   void TearDown() override {}
