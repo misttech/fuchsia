@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::check::PreflightCheckResult::*;
-use crate::check::{PreflightCheck, PreflightCheckResult};
+use crate::check::PreflightCheckResult;
 use crate::command_runner::CommandRunner;
-use crate::config::*;
+use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::{Context, Result, anyhow};
-use async_trait::async_trait;
 
 const LINUX_PACKAGES: &[&str] = &["curl", "git", "unzip"];
 const MACOS_MINIMUM_MAJOR_VERSION: u32 = 10;
@@ -48,12 +46,15 @@ impl<'a> BuildPrereqs<'a> {
             }
         }
         if !missing.is_empty() {
-            return Ok(Failure(
+            return Ok(PreflightCheckResult::Failure(
                 format!("Some build dependencies are missing: {}", missing.join(", ")),
                 Some(format!("To resolve, run: sudo apt-get install {}", missing.join(" "))),
             ));
         }
-        Ok(Success(format!("Found all needed build dependencies: {}", LINUX_PACKAGES.join(", "))))
+        Ok(PreflightCheckResult::Success(format!(
+            "Found all needed build dependencies: {}",
+            LINUX_PACKAGES.join(", ")
+        )))
     }
 
     fn did_find_linux_arm(&self) -> Result<bool, anyhow::Error> {
@@ -74,7 +75,7 @@ impl<'a> BuildPrereqs<'a> {
             || (*major_version == MACOS_MINIMUM_MAJOR_VERSION
                 && *minor_version < MACOS_MINIMUM_MINOR_VERSION)
         {
-            return Ok(Failure(
+            return Ok(PreflightCheckResult::Failure(
                 format!(
                     "MacOS version {}.{} is less than the minimum required version {}.{}",
                     major_version,
@@ -88,15 +89,18 @@ impl<'a> BuildPrereqs<'a> {
 
         // Check for Apple Silicon.
         if self.did_find_apple_silicon()? {
-            return Ok(Warning("Apple Silicon is not officially supported. Unofficially, you can build from a terminal started with `arch -x86_64 /bin/zsh`.".to_string()));
+            return Ok(PreflightCheckResult::Warning("Apple Silicon is not officially supported. Unofficially, you can build from a terminal started with `arch -x86_64 /bin/zsh`.".to_string()));
         }
 
         let (status, stdout, _stderr) = (self.command_runner)(&vec!["xcode-select", "-p"])
             .context("Failed to run xcode-select")?;
         Ok(if status.success() {
-            Success(format!("Xcode command line tools found at {}", stdout.trim()))
+            PreflightCheckResult::Success(format!(
+                "Xcode command line tools found at {}",
+                stdout.trim()
+            ))
         } else {
-            Failure(
+            PreflightCheckResult::Failure(
                 "Xcode command line tools not installed.".to_string(),
                 Some(
                     "Download Xcode from the App Store and run `xcode-select --install`."
@@ -134,12 +138,9 @@ impl<'a> BuildPrereqs<'a> {
         }
         Ok(false)
     }
-}
 
-#[async_trait(?Send)]
-impl PreflightCheck for BuildPrereqs<'_> {
     /// Returns Ok() if all build prerequisites are present on the system.
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
+    pub async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
         match &config.system {
             OperatingSystem::Linux => self.run_linux().await,
             OperatingSystem::MacOS(major_version, minor_version) => {

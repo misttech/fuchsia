@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::check::PreflightCheckResult::*;
-use crate::check::{PreflightCheck, PreflightCheckResult};
+use crate::check::PreflightCheckResult;
 use crate::command_runner::CommandRunner;
-use crate::config::*;
+use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -54,30 +52,27 @@ impl<'a> EmuAcceleration<'a> {
     async fn run_linux(&self) -> Result<PreflightCheckResult> {
         let supports_virtualization = linux_check_cpu_virtualization(self.command_runner)?;
         if !supports_virtualization {
-            return Ok(Warning(NO_CPU_VIRT_MESSAGE.to_string()));
+            return Ok(PreflightCheckResult::Warning(NO_CPU_VIRT_MESSAGE.to_string()));
         }
         let (status, _, _) = (self.command_runner)(&vec!["test", "-r", "/dev/kvm"])?;
         if !status.success() {
-            return Ok(Warning(format!(
+            return Ok(PreflightCheckResult::Warning(format!(
                 "{} To resolve, {}",
                 NO_KVM_MESSAGE, NO_KVM_RESOLUTION_MESSAGE
             )));
         }
-        Ok(Success(SUCCESS_MESSAGE_LINUX.to_string()))
+        Ok(PreflightCheckResult::Success(SUCCESS_MESSAGE_LINUX.to_string()))
     }
 
     async fn run_macos(&self) -> Result<PreflightCheckResult> {
         let (status, stdout, _) = (self.command_runner)(&vec!["sysctl", "kern.hv_support"])?;
         if status.success() && stdout.trim() == "kern.hv_support: 1" {
-            return Ok(Success(SUCCESS_MESSAGE_MACOS.to_string()));
+            return Ok(PreflightCheckResult::Success(SUCCESS_MESSAGE_MACOS.to_string()));
         }
-        Ok(Warning(WARNING_MESSAGE_MACOS.to_string()))
+        Ok(PreflightCheckResult::Warning(WARNING_MESSAGE_MACOS.to_string()))
     }
-}
 
-#[async_trait(?Send)]
-impl PreflightCheck for EmuAcceleration<'_> {
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
+    pub async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
         match &config.system {
             OperatingSystem::Linux => self.run_linux().await,
             OperatingSystem::MacOS(..) => self.run_macos().await,

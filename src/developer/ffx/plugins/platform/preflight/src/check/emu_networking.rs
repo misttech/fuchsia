@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::check::PreflightCheckResult::*;
-use crate::check::{PreflightCheck, PreflightCheckResult};
+use crate::check::PreflightCheckResult;
 use crate::command_runner::CommandRunner;
-use crate::config::*;
+use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::Result;
-use async_trait::async_trait;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -39,9 +37,12 @@ impl<'a> EmuNetworking<'a> {
     fn ensure_is_same_user(&self, id_string: &str) -> Result<PreflightCheckResult> {
         let (_status, stdout, _) = (self.command_runner)(&vec!["id", "-u"])?;
         Ok(if stdout.trim() == id_string.trim() {
-            Success(SUCCESS_MESSAGE_LINUX.to_string())
+            PreflightCheckResult::Success(SUCCESS_MESSAGE_LINUX.to_string())
         } else {
-            Warning(format!("{}. To resolve, {}", NO_TUNTAP_MESSAGE, NO_TUNTAP_RESOLUTION_MESSAGE))
+            PreflightCheckResult::Warning(format!(
+                "{}. To resolve, {}",
+                NO_TUNTAP_MESSAGE, NO_TUNTAP_RESOLUTION_MESSAGE
+            ))
         })
     }
 
@@ -50,20 +51,19 @@ impl<'a> EmuNetworking<'a> {
         let caps = TUNTAP_RE.captures(&stdout);
         match &caps {
             Some(c) => self.ensure_is_same_user(&c[1]),
-            None => Ok(Warning(format!(
+            None => Ok(PreflightCheckResult::Warning(format!(
                 "{}. To resolve, {}",
                 NO_TUNTAP_MESSAGE, NO_TUNTAP_RESOLUTION_MESSAGE
             ))),
         }
     }
-}
 
-#[async_trait(?Send)]
-impl PreflightCheck for EmuNetworking<'_> {
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
+    pub async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
         match &config.system {
             OperatingSystem::Linux => self.run_linux().await,
-            OperatingSystem::MacOS(..) => Ok(Success(SUCCESS_MESSAGE_MACOS.to_string())),
+            OperatingSystem::MacOS(..) => {
+                Ok(PreflightCheckResult::Success(SUCCESS_MESSAGE_MACOS.to_string()))
+            }
         }
     }
 }

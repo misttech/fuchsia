@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::check::PreflightCheckResult::*;
-use crate::check::{PreflightCheck, PreflightCheckResult};
+use crate::check::PreflightCheckResult;
 use crate::command_runner::CommandRunner;
-use crate::config::*;
+use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::{Context, Result, anyhow};
-use async_trait::async_trait;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -130,7 +128,7 @@ impl<'a> FemuGraphics<'a> {
         let cards = self.linux_find_supported_graphics_cards()?;
 
         if cards.is_empty() {
-            return Ok(Warning(format!(
+            return Ok(PreflightCheckResult::Warning(format!(
                 NO_GRAPHICS_WARNING!(),
                 chipsets = linux_find_graphics_cards(self.command_runner)?.join(", ")
             )));
@@ -141,9 +139,12 @@ impl<'a> FemuGraphics<'a> {
             Ok(match self.linux_get_nvidia_driver_version() {
                 Ok(driver_version) => {
                     if driver_version >= NVIDIA_REQ_DRIVER_VERSION {
-                        Success(format!("Found supported graphics hardware: {}", cards.join(", ")))
+                        PreflightCheckResult::Success(format!(
+                            "Found supported graphics hardware: {}",
+                            cards.join(", ")
+                        ))
                     } else {
-                        Warning(format!(
+                        PreflightCheckResult::Warning(format!(
                             "Found supported graphics hardware but nVidia driver version {}.{} is older than required version {}.{}. Download the required version at https://www.nvidia.com/download/driverResults.aspx/160175",
                             driver_version.0,
                             driver_version.1,
@@ -152,14 +153,17 @@ impl<'a> FemuGraphics<'a> {
                         ))
                     }
                 }
-                Err(e) => Warning(format!(
+                Err(e) => PreflightCheckResult::Warning(format!(
                     "Found supported graphics hardware: {}; nVidia hardware couldn't be detected: {}",
                     cards.join(", "),
                     e
                 )),
             })
         } else {
-            Ok(Success(format!("Found supported graphics hardware: {}", cards.join(", "))))
+            Ok(PreflightCheckResult::Success(format!(
+                "Found supported graphics hardware: {}",
+                cards.join(", ")
+            )))
         }
     }
 
@@ -174,19 +178,19 @@ impl<'a> FemuGraphics<'a> {
         let cards = self.macos_find_supported_graphics_cards()?;
 
         Ok(if cards.is_empty() {
-            Warning(format!(
+            PreflightCheckResult::Warning(format!(
                 NO_GRAPHICS_WARNING!(),
                 chipsets = macos_find_graphics_cards(self.command_runner)?.join(", ")
             ))
         } else {
-            Success(format!("Found supported graphics hardware: {}", cards.join(", ")))
+            PreflightCheckResult::Success(format!(
+                "Found supported graphics hardware: {}",
+                cards.join(", ")
+            ))
         })
     }
-}
 
-#[async_trait(?Send)]
-impl PreflightCheck for FemuGraphics<'_> {
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
+    pub async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
         match &config.system {
             OperatingSystem::Linux => self.run_linux().await,
             OperatingSystem::MacOS(..) => self.run_macos().await,

@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::PreflightConfig;
-use anyhow::Result;
-use async_trait::async_trait;
 use std::fmt;
 
 pub mod build_prereqs;
@@ -44,15 +41,6 @@ pub enum RunSummary {
 
     /// Some failures, and at least one is not recoverable.
     Failure,
-}
-
-#[async_trait(?Send)]
-pub trait PreflightCheck {
-    /// Runs the check with `config`.
-    ///
-    /// Returns `Ok(PreflightCheckResult)` if the check was able to execute
-    /// to completion, and `Err()` otherwise.
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult>;
 }
 
 impl fmt::Display for RunSummary {

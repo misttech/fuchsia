@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::check::PreflightCheckResult::*;
-use crate::check::{PreflightCheck, PreflightCheckResult};
+use crate::check::PreflightCheckResult;
 use crate::command_runner::CommandRunner;
-use crate::config::*;
+use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::Result;
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 
 const SSH_NOT_FOUND_ERROR: &str = "Did not find an ssh binary on the path for the current user.";
@@ -25,32 +23,31 @@ impl<'a> SshChecks<'a> {
     pub fn new(command_runner: &'a CommandRunner, context: &'a EnvironmentContext) -> Self {
         SshChecks { command_runner, context }
     }
-}
 
-#[async_trait(?Send)]
-impl PreflightCheck for SshChecks<'_> {
     /// Returns Ok() if there is an ssh binary present and an ssh config directory in $HOME
-    async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
+    pub async fn run(&self, config: &PreflightConfig) -> Result<PreflightCheckResult> {
         let (ssh_status, _stdout, __stderr) = (self.command_runner)(&vec!["which", "ssh"])?;
         if !ssh_status.success() {
             return match &config.system {
-                OperatingSystem::Linux => Ok(Failure(
+                OperatingSystem::Linux => Ok(PreflightCheckResult::Failure(
                     SSH_NOT_FOUND_ERROR.to_string(),
                     Some(SSH_NOT_FOUND_RESOLUTION_MESSAGE.to_string()),
                 )),
-                OperatingSystem::MacOS(..) => Ok(Failure(SSH_NOT_FOUND_ERROR.to_string(), None)),
+                OperatingSystem::MacOS(..) => {
+                    Ok(PreflightCheckResult::Failure(SSH_NOT_FOUND_ERROR.to_string(), None))
+                }
             };
         }
         let home = self.context.env_var("HOME")?;
         let (ssh_config_status, _stdout, _stderr) =
             (self.command_runner)(&vec!["test", "-d", &format!("{}/.ssh", home)])?;
         if !ssh_config_status.success() {
-            return Ok(Failure(
+            return Ok(PreflightCheckResult::Failure(
                 SSH_CONFIG_NOT_FOUND_ERROR.to_string(),
                 Some(SSH_CONFIG_NOT_FOUND_RESOLUTION_MESSAGE.to_string()),
             ));
         }
-        Ok(Success(SUCCESS_MESSAGE.to_string()))
+        Ok(PreflightCheckResult::Success(SUCCESS_MESSAGE.to_string()))
     }
 }
 

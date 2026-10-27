@@ -4,7 +4,7 @@
 
 use crate::config::{OperatingSystem, PreflightConfig};
 use anyhow::{Result, anyhow};
-use check::{PreflightCheck, PreflightCheckResult, RunSummary, summarize_results};
+use check::{PreflightCheckResult, RunSummary, summarize_results};
 use ffx_preflight_args::PreflightCommand;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
@@ -88,20 +88,7 @@ pub async fn preflight_cmd_impl<W: Write>(
     writer: &mut W,
 ) -> Result<()> {
     let config = PreflightConfig { system: get_operating_system()? };
-    let checks: Vec<Box<dyn PreflightCheck + '_>> = vec![
-        Box::new(check::build_prereqs::BuildPrereqs::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
-        Box::new(check::femu_graphics::FemuGraphics::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
-        Box::new(check::emu_networking::EmuNetworking::new(&command_runner::SYSTEM_COMMAND_RUNNER)),
-        Box::new(check::emu_acceleration::EmuAcceleration::new(
-            &command_runner::SYSTEM_COMMAND_RUNNER,
-        )),
-        Box::new(check::ssh_checks::SshChecks::new(
-            &command_runner::SYSTEM_COMMAND_RUNNER,
-            context,
-        )),
-    ];
-
-    let results = run_preflight_checks(&checks, &config).await?;
+    let results = run_preflight_checks(context, &config).await?;
     if cmd.json {
         writeln!(writer, "{}", serde_json::to_string(&json::results_to_json(&results)?)?)?;
     } else {
@@ -114,14 +101,26 @@ pub async fn preflight_cmd_impl<W: Write>(
 }
 
 async fn run_preflight_checks(
-    checks: &[Box<dyn PreflightCheck + '_>],
+    context: &ffx_config::EnvironmentContext,
     config: &PreflightConfig,
 ) -> Result<Vec<check::PreflightCheckResult>> {
-    let mut results = vec![];
-    for check in checks {
-        results.push(check.run(&config).await?);
-    }
-    Ok(results)
+    Ok(vec![
+        check::build_prereqs::BuildPrereqs::new(&command_runner::SYSTEM_COMMAND_RUNNER)
+            .run(config)
+            .await?,
+        check::femu_graphics::FemuGraphics::new(&command_runner::SYSTEM_COMMAND_RUNNER)
+            .run(config)
+            .await?,
+        check::emu_networking::EmuNetworking::new(&command_runner::SYSTEM_COMMAND_RUNNER)
+            .run(config)
+            .await?,
+        check::emu_acceleration::EmuAcceleration::new(&command_runner::SYSTEM_COMMAND_RUNNER)
+            .run(config)
+            .await?,
+        check::ssh_checks::SshChecks::new(&command_runner::SYSTEM_COMMAND_RUNNER, context)
+            .run(config)
+            .await?,
+    ])
 }
 
 async fn report_result_analytics(results: &Vec<PreflightCheckResult>) {
@@ -244,7 +243,6 @@ fn write_preflight_result<W: Write>(
 mod test {
     use super::*;
     use crate::command_runner::ExitStatus;
-    use async_trait::async_trait;
 
     #[fuchsia::test]
     fn output_width_uses_terminal_columns_or_falls_back() {
@@ -387,21 +385,10 @@ mod test {
         Ok(())
     }
 
-    struct SuccessCheck {}
-
-    #[async_trait(?Send)]
-    impl PreflightCheck for SuccessCheck {
-        async fn run(&self, _config: &PreflightConfig) -> Result<PreflightCheckResult> {
-            Ok(PreflightCheckResult::Success("This check passed!".to_string()))
-        }
-    }
-
     #[fuchsia::test]
     async fn run_checks_success() -> Result<()> {
-        let config = PreflightConfig { system: OperatingSystem::Linux };
-        let checks: Vec<Box<dyn PreflightCheck>> = vec![Box::new(SuccessCheck {})];
+        let results = vec![PreflightCheckResult::Success("This check passed!".to_string())];
         let mut buf = Vec::new();
-        let results = run_preflight_checks(&checks, &config).await?;
         let result = write_preflight_results(&mut buf, &results, DEFAULT_OUTPUT_WIDTH);
         let output = String::from_utf8(buf)?;
         // Check for the various output strings.
@@ -411,36 +398,17 @@ mod test {
         result
     }
 
-    struct FailPermanentCheck {}
-    struct FailRecoverableCheck {}
-
-    #[async_trait(?Send)]
-    impl PreflightCheck for FailPermanentCheck {
-        async fn run(&self, _config: &PreflightConfig) -> Result<PreflightCheckResult> {
-            Ok(PreflightCheckResult::Failure("Oh no...".to_string(), None))
-        }
-    }
-
-    #[async_trait(?Send)]
-    impl PreflightCheck for FailRecoverableCheck {
-        async fn run(&self, _config: &PreflightConfig) -> Result<PreflightCheckResult> {
-            Ok(PreflightCheckResult::Failure(
-                "We will get through this.".to_string(),
-                Some("Take a deep breath and try again.".to_string()),
-            ))
-        }
-    }
-
     #[fuchsia::test]
     async fn run_checks_fail_nonrecoverable() -> Result<()> {
-        let config = PreflightConfig { system: OperatingSystem::Linux };
-        let checks: Vec<Box<dyn PreflightCheck>> = vec![
-            Box::new(SuccessCheck {}),
-            Box::new(FailPermanentCheck {}),
-            Box::new(FailRecoverableCheck {}),
+        let results = vec![
+            PreflightCheckResult::Success("This check passed!".to_string()),
+            PreflightCheckResult::Failure("Oh no...".to_string(), None),
+            PreflightCheckResult::Failure(
+                "We will get through this.".to_string(),
+                Some("Take a deep breath and try again.".to_string()),
+            ),
         ];
         let mut buf = Vec::new();
-        let results = run_preflight_checks(&checks, &config).await?;
         let result = write_preflight_results(&mut buf, &results, DEFAULT_OUTPUT_WIDTH);
         let output = String::from_utf8(buf)?;
         // Check for the various output strings.
@@ -467,14 +435,18 @@ mod test {
 
     #[fuchsia::test]
     async fn run_checks_fail_recoverable() -> Result<()> {
-        let config = PreflightConfig { system: OperatingSystem::Linux };
-        let checks: Vec<Box<dyn PreflightCheck>> = vec![
-            Box::new(SuccessCheck {}),
-            Box::new(FailRecoverableCheck {}),
-            Box::new(FailRecoverableCheck {}),
+        let results = vec![
+            PreflightCheckResult::Success("This check passed!".to_string()),
+            PreflightCheckResult::Failure(
+                "We will get through this.".to_string(),
+                Some("Take a deep breath and try again.".to_string()),
+            ),
+            PreflightCheckResult::Failure(
+                "We will get through this.".to_string(),
+                Some("Take a deep breath and try again.".to_string()),
+            ),
         ];
         let mut buf = Vec::new();
-        let results = run_preflight_checks(&checks, &config).await?;
         let result = write_preflight_results(&mut buf, &results, DEFAULT_OUTPUT_WIDTH);
         let output = String::from_utf8(buf)?;
         // Check for the various output strings.

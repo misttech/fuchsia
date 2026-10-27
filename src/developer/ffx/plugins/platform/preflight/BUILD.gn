@@ -52,7 +52,6 @@ ffx_plugin("ffx_preflight") {
   ]
   args_sources = [ "src/args.rs" ]
   edition = "2024"
-  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
   sdk_category = "not-yet-specified"
   version = "0.1.0"
   visibility = [
@@ -89,7 +88,6 @@ if (is_host) {
       "src/lib.rs",
     ]
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     deps = [
              ":ffx_preflight_args",
              "//src/developer/ffx/config:lib",
