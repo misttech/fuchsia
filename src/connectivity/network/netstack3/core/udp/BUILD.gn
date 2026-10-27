@@ -2,137 +2,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/rust/rustc_library.gni")
-import("//src/connectivity/rustc_library_with_features.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-rustc_library_with_features("netstack3-udp") {
-  edition = "2024"
-  configs += [ "//build/config/rust/lints:deny_unused_results" ]
-  check_cfgs = [ "test" ]
-  sources = [
-    "src/base.rs",
-    "src/counters.rs",
-    "src/diagnostics.rs",
-    "src/lib.rs",
+bazel_test_suite("bazel_tests") {
+  target_tests = [
+    "//src/connectivity/network/netstack3/core/udp:netstack3-core-udp-test",
   ]
-  deps = [
-    "//src/connectivity/lib/net-types",
-    "//src/connectivity/lib/packet-formats",
-    "//src/connectivity/network/netstack3/core/lock-order",
-    "//src/lib/network/packet",
-    "//third_party/rust_crates:derivative",
-    "//third_party/rust_crates:either",
-    "//third_party/rust_crates:log",
-    "//third_party/rust_crates:siphasher",
-    "//third_party/rust_crates:smallvec",
-    "//third_party/rust_crates:thiserror",
+  host_tests = [
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-host-test",
   ]
-
-  _testutils_deps =
-      [ "//src/connectivity/network/netstack3/core/macros:netstack3-macros" ]
-
-  configs += [ "//src/connectivity/network/netstack3:netstack3_configs" ]
-
-  feature_sets = [
-    {
-      features = []
-      deps += [
-        "//src/connectivity/network/netstack3/core/base:netstack3-base",
-        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram",
-        "//src/connectivity/network/netstack3/core/filter:netstack3-filter",
-        "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
-      ]
-    },
-
-    {
-      target_name = "netstack3-udp-testutils"
-      testonly = true
-      features = [
-        "testutils",
-        "instrumented",
-      ]
-      deps += _testutils_deps
-      deps += [
-        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
-        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
-        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
-        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
-      ]
-    },
-    {
-      target_name = "netstack3-udp-benchmarks"
-      testonly = true
-      features = [ "testutils" ]
-      deps += _testutils_deps
-      deps += [
-        "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
-        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-benchmarks",
-        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
-        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
-      ]
-      configs += [ "//src/connectivity/network/netstack3/core:benchmark" ]
-    },
-    {
-      target_name = "netstack3-udp-instrumented"
-      with_unit_tests = true
-      features = [ "instrumented" ]
-      non_test_deps = [
-        "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented",
-        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-instrumented",
-        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-instrumented",
-        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-instrumented",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
-      ]
-      test_deps = [
-        "//src/connectivity/lib/ip-test-macro",
-        "//src/connectivity/lib/net-declare",
-        "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
-        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
-        "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
-        "//src/connectivity/network/netstack3/core/hashmap",
-        "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
-        "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
-        "//third_party/rust_crates:assert_matches",
-        "//third_party/rust_crates:itertools",
-        "//third_party/rust_crates:test-case",
-      ]
-      test_deps += _testutils_deps
-    },
-  ]
-  if (is_host) {
-    feature_sets += [
-      {
-        target_name = "netstack3-udp-loom"
-        features = [
-          "testutils",
-          "instrumented",
-        ]
-        testonly = true
-        deps += _testutils_deps
-        deps += [
-          "//src/connectivity/network/netstack3/core/base:netstack3-base-loom",
-          "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-loom",
-          "//src/connectivity/network/netstack3/core/filter:netstack3-filter-loom",
-          "//src/connectivity/network/netstack3/core/ip:netstack3-ip-loom",
-          "//src/connectivity/network/netstack3/core/trace:netstack3-trace-loom",
-        ]
-        configs += [ "//src/connectivity/network/netstack3/core:loom" ]
-      },
-    ]
-  }
-}
-
-fuchsia_unittest_package("netstack3-core-udp-test") {
-  deps = [ ":netstack3-udp-instrumented_test" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_tests",
     ":netstack3-udp-instrumented_test($host_toolchain)",
     "tests",
   ]
@@ -142,4 +26,218 @@ group("tests") {
   if (!is_coverage || target_cpu != "arm64") {
     deps += [ ":netstack3-core-udp-test" ]
   }
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+config("check_cfg_flags") {
+  rustflags = [
+    "--check-cfg=cfg(test)",
+    "--check-cfg=cfg(feature, values(\"testutils\", \"instrumented\"))",
+  ]
+}
+_COMMON_SRCS = [
+  "src/base.rs",
+  "src/counters.rs",
+  "src/diagnostics.rs",
+  "src/lib.rs",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_SRCS" ])
+
+_COMMON_BUILD_FLAGS = [
+  ":check_cfg_flags",
+  "//build/config/rust/lints:deny_unused_results",
+  "//src/connectivity/network/netstack3:netstack3_configs",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_BUILD_FLAGS" ])
+
+_COMMON_PROC_MACRO_DEPS = [ "//third_party/rust_crates:derivative" ]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_PROC_MACRO_DEPS" ])
+
+_COMMON_DEPS = [
+  "//src/connectivity/lib/net-types",
+  "//src/connectivity/lib/packet-formats",
+  "//src/connectivity/network/netstack3/core/lock-order",
+  "//src/lib/network/packet",
+  "//third_party/rust_crates:either",
+  "//third_party/rust_crates:log",
+  "//third_party/rust_crates:siphasher",
+  "//third_party/rust_crates:smallvec",
+  "//third_party/rust_crates:thiserror",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_DEPS" ])
+
+_TESTUTILS_PROC_MACRO_DEPS =
+    [ "//src/connectivity/network/netstack3/core/macros:netstack3-macros" ]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_TESTUTILS_PROC_MACRO_DEPS" ])
+
+rustc_library("netstack3-udp") {
+  sources = _COMMON_SRCS
+  configs += _COMMON_BUILD_FLAGS
+  edition = "2024"
+  proc_macro_deps = _COMMON_PROC_MACRO_DEPS
+  visibility = [
+    ":*",
+    "//src/connectivity/network/netstack3/core:*",
+  ]
+  deps =
+      _COMMON_DEPS + [
+        "//src/connectivity/network/netstack3/core/base:netstack3-base",
+        "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram",
+        "//src/connectivity/network/netstack3/core/filter:netstack3-filter",
+        "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
+        "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
+      ]
+}
+rustc_library("netstack3-udp-testutils") {
+  testonly = true
+  sources = _COMMON_SRCS
+  configs += _COMMON_BUILD_FLAGS
+  features = [
+    "testutils",
+    "instrumented",
+  ]
+  crate_name = "netstack3_udp"
+  edition = "2024"
+  proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS
+  visibility = [
+    ":*",
+    "//src/connectivity/network/netstack3/core:*",
+  ]
+  deps = _COMMON_DEPS + [
+           "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+           "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
+           "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+           "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+           "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+         ]
+}
+rustc_library("netstack3-udp-benchmarks") {
+  testonly = true
+  sources = _COMMON_SRCS
+  configs += _COMMON_BUILD_FLAGS +
+             [ "//src/connectivity/network/netstack3/core:benchmark" ]
+  features = [ "testutils" ]
+  crate_name = "netstack3_udp"
+  edition = "2024"
+  proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS
+  visibility = [
+    ":*",
+    "//src/connectivity/network/netstack3/core:*",
+  ]
+  deps = _COMMON_DEPS + [
+           "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
+           "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-benchmarks",
+           "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
+           "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
+           "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+         ]
+}
+rustc_library("netstack3-udp-instrumented") {
+  sources = _COMMON_SRCS
+  configs += _COMMON_BUILD_FLAGS
+  features = [ "instrumented" ]
+  crate_name = "netstack3_udp"
+  edition = "2024"
+  proc_macro_deps = _COMMON_PROC_MACRO_DEPS
+  visibility = [
+    ":*",
+    "//src/connectivity/network/netstack3/core:*",
+  ]
+  deps = _COMMON_DEPS + [
+           "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented",
+           "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-instrumented",
+           "//src/connectivity/network/netstack3/core/filter:netstack3-filter-instrumented",
+           "//src/connectivity/network/netstack3/core/ip:netstack3-ip-instrumented",
+           "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+         ]
+}
+if (is_host) {
+  rustc_library("netstack3-udp-loom") {
+    testonly = true
+    sources = _COMMON_SRCS
+    configs += _COMMON_BUILD_FLAGS +
+               [ "//src/connectivity/network/netstack3/core:loom" ]
+    features = [
+      "testutils",
+      "instrumented",
+    ]
+    crate_name = "netstack3_udp"
+    edition = "2024"
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS
+    visibility = [
+      ":*",
+      "//src/connectivity/network/netstack3/core:*",
+    ]
+    deps = _COMMON_DEPS + [
+             "//src/connectivity/network/netstack3/core/base:netstack3-base-loom",
+             "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-loom",
+             "//src/connectivity/network/netstack3/core/filter:netstack3-filter-loom",
+             "//src/connectivity/network/netstack3/core/ip:netstack3-ip-loom",
+             "//src/connectivity/network/netstack3/core/trace:netstack3-trace-loom",
+           ]
+  }
+}
+rustc_test("netstack3-udp-instrumented_test") {
+  sources = _COMMON_SRCS
+  configs += _COMMON_BUILD_FLAGS
+  features = [ "instrumented" ]
+  edition = "2024"
+  proc_macro_deps = _COMMON_PROC_MACRO_DEPS + _TESTUTILS_PROC_MACRO_DEPS +
+                    [ "//src/connectivity/lib/ip-test-macro" ]
+  deps = _COMMON_DEPS + [
+           "//src/connectivity/lib/net-declare",
+           "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+           "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
+           "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+           "//src/connectivity/network/netstack3/core/hashmap",
+           "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+           "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+           "//third_party/rust_crates:assert_matches",
+           "//third_party/rust_crates:itertools",
+           "//third_party/rust_crates:test-case",
+         ]
+}
+fuchsia_unittest_package("netstack3-core-udp-test") {
+  package_name = "netstack3-core-udp-test-gn"
+  component_name = "netstack3-core-udp-test"
+  deps = [ ":netstack3-udp-instrumented_test" ]
 }
