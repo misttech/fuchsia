@@ -61,6 +61,7 @@ class RustActionTests(unittest.TestCase):
         self.assertIsNone(r.c_sysroot)
         self.assertIsNone(r.use_ld)
         self.assertIsNone(r.link_reproducer)
+        self.assertEqual(r.linker_attributes, rustc.LinkerAttributes())
         self.assertEqual(r.native, [])
         self.assertEqual(r.explicit_link_arg_files, [])
         self.assertEqual(r.externs, {})
@@ -570,6 +571,32 @@ class RustActionTests(unittest.TestCase):
             )
             self.assertNotIn(Path(soname), r.link_arg_files)
             self.assertEqual([], r.link_arg_files)
+
+    def test_linker_attributes(self) -> None:
+        r = rustc.RustAction(
+            [
+                "../tools/rustc",
+                "../foo/lib.rs",
+                "-o",
+                "foo.rlib",
+                "-Clink-arg=--sysroot=../sysroot",
+                "-Clink-arg=-fuse-ld=lld",
+                "-Clink-arg=--reproduce=repro.tar",
+                "-Clink-args=-Map=foo.map -lgcc -Tfoo.ld obj/bar.a",
+            ]
+        )
+        self.assertEqual(
+            r.linker_attributes,
+            rustc.LinkerAttributes(
+                c_sysroot=Path("../sysroot"),
+                use_ld=Path("lld"),
+                link_reproducer=Path("repro.tar"),
+                link_map_output=Path("foo.map"),
+                want_sysroot_libgcc=True,
+                link_arg_files=[Path("obj/bar.a")],
+                linker_scripts=[Path("foo.ld")],
+            ),
+        )
 
     def test_direct_inputs(self) -> None:
         input1 = Path("obj/foo/this.a")

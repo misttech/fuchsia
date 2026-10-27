@@ -165,6 +165,92 @@ def _expand_link_arg_flags(c_flags: Iterable[str]) -> Iterable[str]:
             yield arg
 
 
+@dataclasses.dataclass
+class LinkerAttributes(object):
+    """Linker-related attributes parsed from -C link-arg / -C link-args."""
+
+    c_sysroot: Path | None = None
+    use_ld: Path | None = None
+    link_reproducer: Path | None = None
+    link_map_output: Path | None = None
+    want_sysroot_libgcc: bool = False
+    link_arg_files: list[Path] = dataclasses.field(default_factory=list)
+    linker_scripts: list[Path] = dataclasses.field(default_factory=list)
+
+
+def _parse_link_args(link_args: Iterable[str]) -> LinkerAttributes:
+    """Parse flattened linker arguments into a LinkerAttributes struct."""
+    attrs = LinkerAttributes()
+    link_arg_iter = iter(link_args)
+    for arg in link_arg_iter:
+        if arg == "-lgcc":
+            attrs.want_sysroot_libgcc = True
+            continue
+
+        if arg.startswith("-"):
+            # Linker switches accept either single-dash (-opt) or
+            # double-dash (--opt), and take values either with '='
+            # (-opt=val, --opt=val) or as the next argument (-opt val,
+            # --opt val).
+            opt = arg[2:] if arg.startswith("--") else arg[1:]
+            name, sep, value = opt.partition("=")
+
+            if sep == "":
+                if name in (
+                    "sysroot",
+                    "fuse-ld",
+                    "soname",
+                    "h",
+                    "dynamic-linker",
+                    "reproduce",
+                    "Map",
+                    "script",
+                    "T",
+                    "Ttext",
+                    "Tdata",
+                    "Tbss",
+                    "Ttext-segment",
+                    "Trodata-segment",
+                    "Tldata-segment",
+                ):
+                    try:
+                        value = next(link_arg_iter)
+                    except StopIteration:
+                        continue
+                elif arg.startswith("-T"):
+                    # Fused -T<script> (e.g. -Tpath/to/script.ld).
+                    name = "T"
+                    value = arg[2:]
+                else:
+                    continue
+
+            if name == "sysroot":
+                attrs.c_sysroot = Path(value)
+            elif name == "fuse-ld":
+                attrs.use_ld = Path(value)
+            elif name in ("soname", "h", "dynamic-linker"):
+                # `-soname=foo.so` / `--soname=foo.so` / `-h foo.so` is
+                # intended to set the DT_SONAME for the shared object and
+                # is not an input or output file that needs to be
+                # relativized.
+                pass
+            elif name == "reproduce":
+                attrs.link_reproducer = Path(value)
+            elif name == "Map":
+                attrs.link_map_output = Path(value)
+            elif name in ("script", "T"):
+                # Filter out symbol assignments like -Tfoo=0x1234.
+                # Same logic as C++ wrapper.
+                if "=" not in value:
+                    attrs.linker_scripts.append(Path(value))
+            continue
+
+        if is_linkable(arg):
+            attrs.link_arg_files.append(Path(arg))
+
+    return attrs
+
+
 def find_direct_inputs(command: Iterable[str]) -> Iterable[RustcInput]:
     for tok in command:
         if tok.endswith(".rs"):
@@ -465,86 +551,17 @@ class RustAction(object):
             if v  # ignore empty lists
         }
 
-        # post-process some flags
-        self._c_sysroot: Path | None = None
-        self._use_ld: Path | None = None
-        self._link_reproducer: Path | None = None
-        self._link_map_output: Path | None = None
-        self._want_sysroot_libgcc = False
-        self._link_arg_files: list[Path] = []
-        self._linker_scripts: list[Path] = []
+        # post-process linker flags
         self._link_arg_flags: Sequence[str] = list(
             _expand_link_arg_flags(self._attributes.C_flags)
         )
-        self._process_link_args()
+        self._linker_attributes: LinkerAttributes = _parse_link_args(
+            self._link_arg_flags
+        )
 
-    def _process_link_args(self) -> None:
-        link_arg_iter = iter(self._link_arg_flags)
-        for arg in link_arg_iter:
-            if arg == "-lgcc":
-                self._want_sysroot_libgcc = True
-                continue
-
-            if arg.startswith("-"):
-                # Linker switches accept either single-dash (-opt) or
-                # double-dash (--opt), and take values either with '='
-                # (-opt=val, --opt=val) or as the next argument (-opt val,
-                # --opt val).
-                opt = arg[2:] if arg.startswith("--") else arg[1:]
-                name, sep, value = opt.partition("=")
-
-                if sep == "":
-                    if name in (
-                        "sysroot",
-                        "fuse-ld",
-                        "soname",
-                        "h",
-                        "dynamic-linker",
-                        "reproduce",
-                        "Map",
-                        "script",
-                        "T",
-                        "Ttext",
-                        "Tdata",
-                        "Tbss",
-                        "Ttext-segment",
-                        "Trodata-segment",
-                        "Tldata-segment",
-                    ):
-                        try:
-                            value = next(link_arg_iter)
-                        except StopIteration:
-                            continue
-                    elif arg.startswith("-T"):
-                        # Fused -T<script> (e.g. -Tpath/to/script.ld).
-                        name = "T"
-                        value = arg[2:]
-                    else:
-                        continue
-
-                if name == "sysroot":
-                    self._c_sysroot = Path(value)
-                elif name == "fuse-ld":
-                    self._use_ld = Path(value)
-                elif name in ("soname", "h", "dynamic-linker"):
-                    # `-soname=foo.so` / `--soname=foo.so` / `-h foo.so` is
-                    # intended to set the DT_SONAME for the shared object and
-                    # is not an input or output file that needs to be
-                    # relativized.
-                    pass
-                elif name == "reproduce":
-                    self._link_reproducer = Path(value)
-                elif name == "Map":
-                    self._link_map_output = Path(value)
-                elif name in ("script", "T"):
-                    # Filter out symbol assignments like -Tfoo=0x1234.
-                    # Same logic as C++ wrapper.
-                    if "=" not in value:
-                        self._linker_scripts.append(Path(value))
-                continue
-
-            if is_linkable(arg):
-                self._link_arg_files.append(Path(arg))
+    @property
+    def linker_attributes(self) -> LinkerAttributes:
+        return self._linker_attributes
 
     @property
     def env(self) -> Sequence[str]:
@@ -593,11 +610,11 @@ class RustAction(object):
 
     @property
     def want_sysroot_libgcc(self) -> bool:
-        return self._want_sysroot_libgcc
+        return self._linker_attributes.want_sysroot_libgcc
 
     @property
     def link_reproducer(self) -> Path | None:
-        return self._link_reproducer
+        return self._linker_attributes.link_reproducer
 
     @property
     def target(self) -> str | None:
@@ -663,7 +680,7 @@ class RustAction(object):
 
     @property
     def use_ld(self) -> Path | None:
-        return self._use_ld
+        return self._linker_attributes.use_ld
 
     @property
     def linker(self) -> Path | None:
@@ -672,15 +689,15 @@ class RustAction(object):
 
     @property
     def linker_scripts(self) -> Sequence[Path]:
-        return [Path(p) for p in self._linker_scripts]
+        return [Path(p) for p in self._linker_attributes.linker_scripts]
 
     @property
     def link_arg_files(self) -> Sequence[Path]:
-        return [Path(p) for p in self._link_arg_files]
+        return [Path(p) for p in self._linker_attributes.link_arg_files]
 
     @property
     def link_map_output(self) -> Path | None:
-        return self._link_map_output
+        return self._linker_attributes.link_map_output
 
     def default_rust_sysroot(self) -> Path:
         """This is the relative location of rust sysroot, when unspecified."""
@@ -707,7 +724,7 @@ class RustAction(object):
 
     @property
     def c_sysroot(self) -> Path | None:
-        return self._c_sysroot
+        return self._linker_attributes.c_sysroot
 
     @property
     def native(self) -> Sequence[Path]:
