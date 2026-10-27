@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::ffi::{c_char, c_int, c_void};
+use core::ffi::{VaList, c_char, c_int, c_void};
 use core::fmt;
 use core::mem::{align_of, size_of};
 
@@ -72,4 +72,22 @@ impl fmt::Write for FILE {
         let ret = unsafe { write(self.ptr, c_chars, s.len()) };
         if ret < 0 { Err(fmt::Error) } else { Ok(()) }
     }
+}
+
+unsafe extern "C" {
+    /// Writes formatted output to `f`, matching `<stdio.h>` `fprintf`.
+    ///
+    /// # Safety
+    ///
+    /// `f` must point to a valid `FILE`. `fmt` must be non-null and point to a valid
+    /// NUL-terminated C format string whose format specifiers match the variadic arguments.
+    pub fn fprintf(f: *mut FILE, fmt: *const c_char, ...) -> c_int;
+
+    /// Writes `VaList` formatted output to `f`, matching `<stdio.h>` `vfprintf`.
+    ///
+    /// # Safety
+    ///
+    /// `f` must point to a valid `FILE`. `fmt` must be non-null and point to a valid
+    /// NUL-terminated C format string whose format specifiers match the arguments in `ap`.
+    pub fn vfprintf(f: *mut FILE, fmt: *const c_char, ap: VaList<'_>) -> c_int;
 }

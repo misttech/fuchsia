@@ -6,5 +6,6 @@
 
 pub mod boot_constants;
 pub mod debug;
+mod debug_ffi;
 pub mod init;
 pub mod version;

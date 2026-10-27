@@ -12,11 +12,11 @@ use crate::platform_rs::power::{
     PlatformHaltAction, ZirconCrashReason, platform_halt, platform_panic_start,
 };
 
-/// Printed before the panic message, matching the C++ `PanicStart()` banner.
+/// Printed before the panic message, matching the [`super::debug::panic_start`] banner.
 const PANIC_HEADER: &str = "\n*** KERNEL PANIC (Rust):\n*** ";
 
 /// Written after the panic message: once to end it, and once more to separate it
-/// from the stack trace, matching the C++ `PanicFinish()`.
+/// from the stack trace, matching [`super::debug::panic_finish`].
 const NEWLINE: &str = "\n";
 
 unsafe extern "C" {

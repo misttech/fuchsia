@@ -12,8 +12,10 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(clippy::new_without_default)]
+#![allow(internal_features)]
 #![feature(atomic_volatile)]
 #![feature(cfg_sanitize)]
+#![feature(link_llvm_intrinsics)]
 #![feature(sanitize)]
 
 #[allow(unused_imports)]

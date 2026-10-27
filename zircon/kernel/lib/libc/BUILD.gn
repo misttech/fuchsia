@@ -116,6 +116,7 @@ rustc_library("rust") {
     "src/lib.rs",
     "src/stdio.rs",
     "src/stdio/string_file.rs",
+    "src/string.rs",
   ]
   deps = [ "." ]
 }

@@ -25,11 +25,10 @@ group("top") {
 }
 
 source_set("debug") {
-  sources = [ "debug.cc" ]
+  sources = [ "debug_ffi.cc" ]
   deps = [
-    "//zircon/kernel/dev/hw_rng",
-    "//zircon/kernel/lib/crashlog",
-    "//zircon/kernel/platform",
+    ":top_rust",
+    "//zircon/kernel/lib/ktl:headers",
   ]
 }
 
@@ -89,6 +88,7 @@ kernel_rust_mod("top_rust") {
   sources = [
     "boot_constants.rs",
     "debug.rs",
+    "debug_ffi.rs",
     "init.rs",
     "mod.rs",
     "version.rs",
@@ -96,6 +96,13 @@ kernel_rust_mod("top_rust") {
   deps = [
     "//src/lib/kprint",
     "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/dev/hw_rng",
+    "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/init:init_rust",
+    "//zircon/kernel/lib/libc",
+    "//zircon/kernel/lib/libc:rust",
+    "//zircon/kernel/platform",
+    "//zircon/kernel/platform:platform-rs",
   ]
 }

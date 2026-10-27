@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ops;
+
 use affine::Ratio;
 use zx_types::{ZX_TIME_INFINITE, ZX_TIME_INFINITE_PAST};
 
@@ -101,6 +103,15 @@ pub struct InstantMonoTicks(pub i64);
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstantBoot(pub i64);
+
+impl ops::Sub<InstantBoot> for InstantBoot {
+    type Output = DurationBoot;
+
+    #[inline]
+    fn sub(self, rhs: InstantBoot) -> DurationBoot {
+        DurationBoot(self.0.saturating_sub(rhs.0))
+    }
+}
 
 /// Boot timeline instant in ticks.
 #[repr(transparent)]

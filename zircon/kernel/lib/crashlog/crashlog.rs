@@ -6,11 +6,37 @@
 
 //! Crashlog recovery and console commands.
 
+use core::cell::UnsafeCell;
+
 use fbl::RefPtr;
+use libc::stdio::FILE;
 
 use crate::vm::vm_object::VmObject;
 
+/// Wrapper for [`stdout_panic_buffer`] allowing raw mutable [`FILE`] pointers to be obtained
+/// without forming shared Rust references across C++ initialization or panic writes.
+#[repr(transparent)]
+pub struct StdoutPanicBuffer(UnsafeCell<FILE>);
+
+zr::static_assert_size_and_align!(StdoutPanicBuffer, 16, 8);
+
+impl StdoutPanicBuffer {
+    /// Returns a raw mutable pointer to the underlying [`FILE`].
+    #[inline]
+    pub const fn as_mut_ptr(&self) -> *mut FILE {
+        self.0.get()
+    }
+}
+
+// SAFETY: `stdout_panic_buffer` is initialized during single-threaded early boot before secondary
+// CPUs start, and its `FILE` callback forwards to `panic_buffer` and `gStdoutNoPersist`, matching
+// C++ global access semantics.
+unsafe impl Sync for StdoutPanicBuffer {}
+
 unsafe extern "C" {
+    /// A `FILE` that writes to both `stdout` and the global `panic_buffer`.
+    pub static stdout_panic_buffer: StdoutPanicBuffer;
+
     /// Returns the stashed recovered crashlog VMO as a raw pointer, or null if none is stashed.
     ///
     /// # Safety

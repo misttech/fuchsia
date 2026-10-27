@@ -35,7 +35,9 @@ kernel_rust_mod("crashlog-rs") {
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/kprint",
+    "//src/lib/zr",
     "//zircon/kernel/lib/console:console_rs",
+    "//zircon/kernel/lib/libc:rust",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }

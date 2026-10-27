@@ -44,10 +44,10 @@ fbl::RefPtr<VmObject> crashlog_get_stashed();
 
 extern PanicBuffer panic_buffer;
 
+extern "C" {
+
 // A FILE that writes to both |stdout| and the global |panic_buffer|.
 extern FILE stdout_panic_buffer;
-
-extern "C" {
 
 // Writes `data` to both the console and the global panic buffer, exactly as
 // `fprintf(&stdout_panic_buffer, ...)` does from C++. This lets the Rust panic
