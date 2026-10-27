@@ -37,7 +37,6 @@ use trust_dns_resolver::config::{
 };
 use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 use trust_dns_resolver::{NameServerStats, lookup};
-use unicode_xid::UnicodeXID as _;
 
 #[derive(Debug, Clone)]
 /// A type wrapping the underlying resolver.
@@ -391,7 +390,9 @@ fn enum_variant_string(variant: &impl std::fmt::Debug) -> String {
     // We just want to keep the part of the debug string that indicates
     // which enum variant this is.
     // See https://doc.rust-lang.org/reference/identifiers.html
-    match debug.find(|c: char| !c.is_xid_continue() && !c.is_xid_start()) {
+    match debug.find(|c: char| {
+        !unicode_xid::UnicodeXID::is_xid_continue(c) && !unicode_xid::UnicodeXID::is_xid_start(c)
+    }) {
         Some(i) => debug[..i].to_string(),
         None => debug,
     }
