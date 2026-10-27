@@ -229,7 +229,6 @@ TEST(MemfsTests, TestMemfsCloseDuringAccess) {
 
 TEST(MemfsTests, TestMemfsOverflow) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
-  ASSERT_EQ(loop.StartThread(), ZX_OK);
 
   // Create a memfs filesystem, acquire a file descriptor
   zx::result result = memfs::Memfs::Create(loop.dispatcher(), "<tmp>");
@@ -269,7 +268,6 @@ TEST(MemfsTests, TestMemfsOverflow) {
 
 TEST(MemfsTests, TestMemfsDetachLinkedFilesystem) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
-  ASSERT_EQ(loop.StartThread(), ZX_OK);
 
   // Create a memfs filesystem, acquire a file descriptor
   zx::result result = memfs::Memfs::Create(loop.dispatcher(), "<tmp>");
