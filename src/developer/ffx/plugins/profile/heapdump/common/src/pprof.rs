@@ -59,7 +59,7 @@ fn instantiate_symbolizer(
 
     let mut symbolizer = ffx_symbolize::Symbolizer::with_context(context)?;
     let mut symbolizer_module_ids = HashMap::new();
-    for (region_starting_address, region) in referenced_regions {
+    for (region_starting_address, region) in iter_sorted_by_key(referenced_regions) {
         let base = region_starting_address.wrapping_sub(region.vaddr);
         let module_id = symbolizer_module_ids
             .entry((region.build_id.clone(), base))
