@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "sdk",
+    srcs = [
+        "src/lib.rs",
+        "src/sdk.rs",
+    ],
+    crate_name = "assembly_sdk",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/plugins/assembly:__pkg__",
+        "//src/developer/ffx/plugins/product/create_old:__pkg__",
+    ],
+    deps = [
+        "//src/developer/ffx/config:lib",
+        "//src/lib/assembly/tool",
+        "//src/lib/utf8_path",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+host_rustc_test(
+    name = "sdk_test",
+    crate = ":sdk",
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//src/lib/assembly/test_util",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
