@@ -21,6 +21,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/lib/clock"
+	"go.fuchsia.dev/fuchsia/tools/lib/color"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
 func TestRun(t *testing.T) {
@@ -290,6 +292,13 @@ func TestRun(t *testing.T) {
 		script := writeScript(t, fmt.Sprintf(
 			`#!/bin/bash
 			sleep %d </dev/null >/dev/null 2>&1 &
+			pid=$!
+			for i in $(seq 1 100); do
+				if [ -f "/proc/$pid/comm" ] && [ "$(cat /proc/$pid/comm 2>/dev/null)" = "sleep" ]; then
+					break
+				fi
+				sleep 0.01
+			done
 			exit 0`, sleepDuration),
 		)
 
@@ -300,6 +309,82 @@ func TestRun(t *testing.T) {
 
 		if output := waitForNoProcessMatching(t, fmt.Sprintf("sleep %d", sleepDuration)); output != "" {
 			t.Errorf("Expected background sleep process to be killed on command exit, but pgrep found: %s", output)
+		}
+	})
+
+	t.Run("should log leftover processes and kill process group when command fails", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("Skipping on Mac because setting pgid doesn't work")
+		}
+		rand.Seed(time.Now().UTC().UnixNano())
+		sleepDuration := rand.Intn(10000) + 20000
+
+		script := writeScript(t, fmt.Sprintf(
+			`#!/bin/bash
+			sleep %d </dev/null >/dev/null 2>&1 &
+			pid=$!
+			for i in $(seq 1 100); do
+				if [ -f "/proc/$pid/comm" ] && [ "$(cat /proc/$pid/comm 2>/dev/null)" = "sleep" ]; then
+					break
+				fi
+				sleep 0.01
+			done
+			exit 247`, sleepDuration),
+		)
+
+		var logBuf bytes.Buffer
+		logCtx := logger.WithLogger(ctx, logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+		r := Runner{}
+		if err := r.Run(logCtx, []string{script}, RunOptions{Setpgid: true}); err == nil {
+			t.Fatalf("Expected script to fail with non-zero exit code")
+		}
+
+		logs := logBuf.String()
+		// The entire host process tree should NOT be dumped on command failure.
+		if strings.Contains(logs, "Running processes:") {
+			t.Errorf("Expected full process tree NOT to be dumped on command failure, got logs:\n%s", logs)
+		}
+		// The group kill must say what it killed.
+		if !strings.Contains(logs, "Killing 1 process(es) in process group") || !strings.Contains(logs, fmt.Sprintf("comm: %q, cmdline: %q", "sleep", fmt.Sprintf("sleep %d", sleepDuration))) {
+			t.Errorf("Expected the killed orphan to be named in the process group kill log, got logs:\n%s", logs)
+		}
+
+		if output := waitForNoProcessMatching(t, fmt.Sprintf("sleep %d", sleepDuration)); output != "" {
+			t.Errorf("Expected background sleep process to be killed on command failure, but pgrep found: %s", output)
+		}
+	})
+
+	t.Run("should not warn when a command without Setpgid fails", func(t *testing.T) {
+		script := writeScript(t, "#!/bin/bash\nexit 1")
+
+		var logBuf bytes.Buffer
+		logCtx := logger.WithLogger(ctx, logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+		r := Runner{}
+		if err := r.Run(logCtx, []string{script}, RunOptions{}); err == nil {
+			t.Fatalf("Expected script to fail with non-zero exit code")
+		}
+		if logs := logBuf.String(); strings.Contains(logs, "Running processes:") || strings.Contains(logs, "process group") {
+			t.Errorf("Expected no process dump or process group warnings for a failed command without Setpgid, got logs:\n%s", logs)
+		}
+	})
+
+	t.Run("should not warn when the process group is already empty on exit", func(t *testing.T) {
+		if runtime.GOOS == "darwin" {
+			t.Skip("Skipping on Mac because setting pgid doesn't work")
+		}
+		script := writeScript(t, "#!/bin/bash\nexit 0")
+
+		var logBuf bytes.Buffer
+		logCtx := logger.WithLogger(ctx, logger.NewLogger(logger.DebugLevel, color.NewColor(color.ColorNever), &logBuf, &logBuf, ""))
+
+		r := Runner{}
+		if err := r.Run(logCtx, []string{script}, RunOptions{Setpgid: true}); err != nil {
+			t.Fatalf("Expected script to succeed, but got: %s", err)
+		}
+		if logs := logBuf.String(); strings.Contains(logs, "process group") {
+			t.Errorf("Expected no process group kill logging for an empty process group, got logs:\n%s", logs)
 		}
 	})
 }

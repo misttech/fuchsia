@@ -56,6 +56,9 @@ if (is_host) {
       ":*",
       "//tools:*",
     ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
+    deps = [
+      "//third_party/golibs:github.com/google/go-cmp/cmp",
+      "//tools/lib/color",
+    ]
   }
 }

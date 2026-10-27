@@ -154,6 +154,9 @@ type procInfo struct {
 	comm string
 	// cmdline is the command line arguments of the process.
 	cmdline string
+	// state is the single-letter process state from /proc/<pid>/status
+	// (e.g. "S" sleeping, "R" running, "Z" zombie).
+	state string
 	// children are the child processes.
 	children []*procInfo
 }
@@ -224,8 +227,10 @@ func (s *processSet) render() []string {
 	return lines
 }
 
-// loadProcessSet reads the /proc filesystem to collect information about all running processes.
-func loadProcessSet(ctx context.Context) (*processSet, error) {
+// loadProcessSet reads the /proc filesystem to collect information about
+// running processes. If targetPgid > 0, only live (non-zombie) processes in
+// that process group are included.
+func loadProcessSet(ctx context.Context, targetPgid int) (*processSet, error) {
 	dir, err := os.Open("/proc")
 	if err != nil {
 		return nil, err
@@ -243,43 +248,74 @@ func loadProcessSet(ctx context.Context) (*processSet, error) {
 		if err != nil {
 			continue
 		}
-
-		p := &procInfo{pid: pid}
-
-		if comm, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
-			p.comm = strings.TrimSpace(string(comm))
-		} else if !errors.Is(err, os.ErrNotExist) {
-			logger.Debugf(ctx, "failed to read /proc/%d/comm: %v", pid, err)
-		}
-
-		if cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-			p.cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " "))
-		} else if !errors.Is(err, os.ErrNotExist) {
-			logger.Debugf(ctx, "failed to read /proc/%d/cmdline: %v", pid, err)
-		}
-
-		if status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid)); err == nil {
-			for _, line := range strings.Split(string(status), "\n") {
-				if strings.HasPrefix(line, "PPid:") {
-					ppidStr := strings.TrimSpace(strings.TrimPrefix(line, "PPid:"))
-					if ppid, err := strconv.Atoi(ppidStr); err == nil {
-						p.ppid = ppid
-					}
-					break
-				}
+		if targetPgid > 0 {
+			if got, err := syscall.Getpgid(pid); err != nil || got != targetPgid {
+				continue
 			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			logger.Debugf(ctx, "failed to read /proc/%d/status: %v", pid, err)
+		}
+		p := readProcInfo(ctx, pid)
+		if targetPgid > 0 && (p.state == "Z" || (p.comm == "" && p.cmdline == "")) {
+			// Skip zombies, and processes that exited between the pgid check
+			// and the /proc read (nothing left to report).
+			continue
 		}
 		procs[pid] = p
 	}
 	return &processSet{procs: procs}, nil
 }
 
+// readProcInfo reads comm, cmdline, parent pid and state of `pid` from /proc.
+func readProcInfo(ctx context.Context, pid int) *procInfo {
+	p := &procInfo{pid: pid}
+
+	if comm, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+		p.comm = strings.TrimSpace(string(comm))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		logger.Debugf(ctx, "failed to read /proc/%d/comm: %v", pid, err)
+	}
+
+	if cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
+		p.cmdline = strings.TrimSpace(strings.ReplaceAll(string(cmdline), "\x00", " "))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		logger.Debugf(ctx, "failed to read /proc/%d/cmdline: %v", pid, err)
+	}
+
+	if status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid)); err == nil {
+		for _, line := range strings.Split(string(status), "\n") {
+			if strings.HasPrefix(line, "PPid:") {
+				ppidStr := strings.TrimSpace(strings.TrimPrefix(line, "PPid:"))
+				if ppid, err := strconv.Atoi(ppidStr); err == nil {
+					p.ppid = ppid
+				}
+			} else if strings.HasPrefix(line, "State:") {
+				// Format: "State:\tS (sleeping)".
+				if fields := strings.Fields(strings.TrimPrefix(line, "State:")); len(fields) > 0 {
+					p.state = fields[0]
+				}
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		logger.Debugf(ctx, "failed to read /proc/%d/status: %v", pid, err)
+	}
+	return p
+}
+
+// processesInGroup returns the live (non-zombie) processes in process group
+// `pgid`, according to /proc. Zombies are already dead and only waiting to
+// be reaped, so they are not reported.
+func processesInGroup(ctx context.Context, pgid int) *processSet {
+	set, err := loadProcessSet(ctx, pgid)
+	if err != nil {
+		logger.Debugf(ctx, "failed to load processes: %v", err)
+		return &processSet{}
+	}
+	return set
+}
+
 // This is an inhouse implementation of `ps` for Linux which isn't guaranteed to
 // be available on all the systems we run on.
 func logRunningProcesses(ctx context.Context) {
-	set, err := loadProcessSet(ctx)
+	set, err := loadProcessSet(ctx, 0)
 	if err != nil {
 		logger.Errorf(ctx, "failed to load processes: %v", err)
 		return
@@ -346,14 +382,30 @@ func WaitForCmd(ctx context.Context, cmd *exec.Cmd) error {
 // killProcess makes a best-effort attempt at killing the subprocess specified
 // by `cmd`, along with all of its child processes if `pgidSet` is true.
 func killProcess(ctx context.Context, cmd *exec.Cmd, pgidSet bool) {
-	logger.Debugf(ctx, "killing process %d", cmd.Process.Pid)
-	pgid := cmd.Process.Pid
+	pid := cmd.Process.Pid
+	target := pid
 	if pgidSet {
 		// Negating the process ID means interpret it as a process group ID, so
-		// we kill the subprocess and all of its children.
-		pgid = -pgid
+		// we kill the subprocess and all of its children. Enumerate the group
+		// first so the log shows what is actually being killed; once the
+		// command itself has exited this is usually empty.
+		target = -pid
+		// Signal 0 checks for existence only: ESRCH means the group is
+		// already empty, which is the common case after a clean exit, so
+		// skip the /proc scan and the log line entirely.
+		if errors.Is(syscall.Kill(target, 0), syscall.ESRCH) {
+			return
+		}
+		if procs := processesInGroup(ctx, pid); len(procs.procs) > 0 {
+			logger.Warningf(ctx, "Killing %d process(es) in process group %d of %v:\n%s",
+				len(procs.procs), pid, cmd.Args, strings.Join(procs.render(), "\n"))
+		} else {
+			logger.Debugf(ctx, "no live processes left in process group %d of %v", pid, cmd.Args)
+		}
+	} else {
+		logger.Debugf(ctx, "killing process %d: %v", pid, cmd.Args)
 	}
-	if err := syscall.Kill(pgid, syscall.SIGKILL); err != nil {
+	if err := syscall.Kill(target, syscall.SIGKILL); err != nil {
 		// ESRCH is "no such process", meaning the process has already exited.
 		if !errors.Is(err, syscall.ESRCH) {
 			logger.Debugf(ctx, "killed cmd %v with error: %s", cmd.Args, err)
