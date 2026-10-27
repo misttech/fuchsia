@@ -850,7 +850,6 @@ mod test {
     }
 
     struct FakeInstanceGetter;
-    #[async_trait::async_trait(?Send)]
     impl InstanceGetter for FakeInstanceGetter {
         async fn get_monikers_from_query(
             &self,
@@ -927,7 +926,6 @@ mod test {
         };
 
         struct FakeInstanceGetterEmpty;
-        #[async_trait::async_trait(?Send)]
         impl InstanceGetter for FakeInstanceGetterEmpty {
             async fn get_monikers_from_query(
                 &self,
@@ -1685,7 +1683,6 @@ mod test {
         map: std::collections::HashMap<String, Vec<Moniker>>,
     }
 
-    #[async_trait::async_trait(?Send)]
     impl InstanceGetter for MultiFakeInstanceGetter {
         async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
             Ok(self.map.get(query).cloned().unwrap_or_default())

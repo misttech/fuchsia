@@ -18,6 +18,7 @@ pub use log_socket_stream::OneOrMany;
 use moniker::Moniker;
 use selectors::{SelectorExt, sanitize_moniker_for_selectors};
 use std::borrow::Cow;
+use std::future::Future;
 use std::io::Write;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -30,8 +31,8 @@ mod log_formatter;
 mod log_socket_stream;
 pub use filter::{FuzzyMatchWarning, LogFilterCriteria, disambiguate_queried_monikers};
 pub use log_formatter::{
-    BootTimeAccessor, DefaultLogFormatter, FormatterError, LogData, LogEntry, Symbolize,
-    TIMESTAMP_FORMAT, Timestamp, WriterContainer, dump_logs_from_socket,
+    BootTimeAccessor, DefaultLogFormatter, FormatterError, LogData, LogEntry, NoOpSymbolizer,
+    Symbolize, TIMESTAMP_FORMAT, Timestamp, WriterContainer, dump_logs_from_socket,
 };
 pub use log_socket_stream::{JsonDeserializeError, LogsDataStream};
 
@@ -775,13 +776,14 @@ impl LogError {
 }
 
 /// Trait used to get available instances given a moniker query.
-#[async_trait::async_trait(?Send)]
 pub trait InstanceGetter {
-    async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError>;
+    fn get_monikers_from_query(
+        &self,
+        query: &str,
+    ) -> impl Future<Output = Result<Vec<Moniker>, LogError>>;
 }
 
 #[cfg(not(feature = "ctf"))]
-#[async_trait::async_trait(?Send)]
 impl InstanceGetter for RealmQueryProxy {
     async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
         Ok(get_instances_from_query(query, self)
@@ -793,7 +795,6 @@ impl InstanceGetter for RealmQueryProxy {
 }
 
 #[cfg(feature = "ctf")]
-#[async_trait::async_trait(?Send)]
 impl InstanceGetter for RealmQueryProxy {
     async fn get_monikers_from_query(&self, _query: &str) -> Result<Vec<Moniker>, LogError> {
         unreachable!("get_monikers_from_query is not supported in CTF tests.");
@@ -1163,7 +1164,6 @@ fn log_interest_selector(s: &str) -> Result<OneOrMany<LogInterestSelector>, Stri
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use async_trait::async_trait;
     use fidl::endpoints::create_proxy;
     use flex_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsRequest};
     use futures_util::StreamExt;
@@ -1177,7 +1177,6 @@ mod test {
         expected_selector: Option<String>,
     }
 
-    #[async_trait(?Send)]
     impl InstanceGetter for FakeInstanceGetter {
         async fn get_monikers_from_query(&self, query: &str) -> Result<Vec<Moniker>, LogError> {
             if let Some(expected) = &self.expected_selector {

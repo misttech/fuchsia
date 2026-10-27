@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use agents::{EnvironmentSource, SystemEnvironment, is_invoked_by_agent};
-use async_trait::async_trait;
 use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsProperty, Severity};
 use error::LogError;
 use fdomain_client::fidl::Proxy;
@@ -57,15 +56,6 @@ pub struct LogTool {
     cmd: LogCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
     context: EnvironmentContext,
-}
-
-struct NoOpSymoblizer;
-
-#[async_trait(?Send)]
-impl Symbolize for NoOpSymoblizer {
-    async fn symbolize(&self, entry: LogEntry) -> Option<LogEntry> {
-        Some(entry)
-    }
 }
 
 fho::embedded_plugin!(LogTool);
@@ -267,10 +257,6 @@ where
     C: Clock,
     E: EnvironmentSource,
 {
-    let symbolizer_channel: Box<dyn Symbolize> = match symbolizer {
-        Some(inner) => Box::new(inner),
-        None => Box::new(NoOpSymoblizer {}),
-    };
     let disable_reconnect = cmd.disable_reconnect();
     let mut stream_mode = get_stream_mode(cmd.clone())?;
     // This plugin needs special logic to handle reconnects as logging should tolerate
@@ -372,7 +358,7 @@ where
         let result = dump_logs_from_socket(
             connection.log_socket,
             &mut formatter,
-            symbolizer_channel.as_ref(),
+            &symbolizer,
             include_timestamp,
         )
         .await;
@@ -429,8 +415,9 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use log_command_fdomain::{
-        LogData, LogFilterArgs, OneOrMany, RawDumpCommand, RawWatchCommand, SymbolizeMode,
-        TIMESTAMP_FORMAT, TimeFormat, parse_seconds_string_as_duration, parse_time, parse_utc_time,
+        LogData, LogFilterArgs, NoOpSymbolizer, OneOrMany, RawDumpCommand, RawWatchCommand,
+        SymbolizeMode, TIMESTAMP_FORMAT, TimeFormat, parse_seconds_string_as_duration, parse_time,
+        parse_utc_time,
     };
     use moniker::Moniker;
     use selectors::parse_log_interest_selector;
@@ -489,7 +476,7 @@ mod tests {
         let writer = CommandOutputMachineWriter::new_test(None, &buffers);
 
         let result =
-            log_main(writer, cmd, None::<NoOpSymoblizer>, rcs_connector, false, clock, env).await;
+            log_main(writer, cmd, None::<NoOpSymbolizer>, rcs_connector, false, clock, env).await;
 
         match result {
             Ok(()) => Ok(buffers.into_stdout_str()),
@@ -662,7 +649,7 @@ ffx log --force-set-severity.
         let handle = fasync::Task::local(log_main(
             writer,
             cmd,
-            None::<NoOpSymoblizer>,
+            None::<NoOpSymbolizer>,
             rcs_connector,
             false,
             clock,

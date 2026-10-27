@@ -9,7 +9,6 @@ use crate::{
     TimeFormat,
 };
 use anyhow::Result;
-use async_trait::async_trait;
 use diagnostics_data::{
     Data, LogTextColor, LogTextDisplayOptions, LogTextPresenter, LogTimeDisplayFormat, Logs,
     LogsData, LogsDataBuilder, LogsField, LogsProperty, Severity, Timezone,
@@ -19,6 +18,7 @@ use futures_util::stream::FuturesUnordered;
 use futures_util::{StreamExt, select};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use std::future::Future;
 use std::io::Write;
 use std::time::Duration;
 use thiserror::Error;
@@ -85,12 +85,26 @@ impl Display for LogEntry {
 }
 
 /// A trait for symbolizing log entries
-#[async_trait(?Send)]
 pub trait Symbolize {
     /// Symbolizes a LogEntry and optionally produces a result.
     /// The symbolizer may choose to discard the result.
     /// This method may be called multiple times concurrently.
-    async fn symbolize(&self, entry: LogEntry) -> Option<LogEntry>;
+    fn symbolize(&self, entry: LogEntry) -> impl Future<Output = Option<LogEntry>>;
+}
+
+impl<S: Symbolize> Symbolize for Option<S> {
+    async fn symbolize(&self, entry: LogEntry) -> Option<LogEntry> {
+        match self {
+            Some(s) => s.symbolize(entry).await,
+            None => Some(entry),
+        }
+    }
+}
+
+impl<S: Symbolize + ?Sized> Symbolize for &S {
+    fn symbolize(&self, entry: LogEntry) -> impl Future<Output = Option<LogEntry>> {
+        (**self).symbolize(entry)
+    }
 }
 
 async fn handle_value<S>(one: Data<Logs>, symbolizer: &S) -> Option<LogEntry>
@@ -324,7 +338,6 @@ fn utc_to_boot(boot_ts: Timestamp, utc: Timestamp) -> Timestamp {
     Timestamp::from_nanos(utc.into_nanos() - boot_ts.into_nanos())
 }
 
-#[async_trait(?Send)]
 impl<W> LogFormatter for DefaultLogFormatter<W>
 where
     W: Write + ToolIO<OutputItem = LogEntry>,
@@ -670,7 +683,6 @@ where
 /// Symbolizer that does nothing.
 pub struct NoOpSymbolizer;
 
-#[async_trait(?Send)]
 impl Symbolize for NoOpSymbolizer {
     async fn symbolize(&self, entry: LogEntry) -> Option<LogEntry> {
         Some(entry)
@@ -678,17 +690,19 @@ impl Symbolize for NoOpSymbolizer {
 }
 
 /// Trait for formatting logs one at a time.
-#[async_trait(?Send)]
 pub trait LogFormatter {
     /// Formats a log entry and writes it to the output.
-    async fn push_log(&mut self, log_entry: LogEntry) -> Result<LogProcessingResult, LogError>;
+    fn push_log(
+        &mut self,
+        log_entry: LogEntry,
+    ) -> impl Future<Output = Result<LogProcessingResult, LogError>>;
 
     /// Returns true if the formatter is configured to output in UTC time format.
     fn is_utc_time_format(&self) -> bool;
 
     /// Flushes any buffered logs.
-    async fn flush(&mut self) -> Result<(), LogError> {
-        Ok(())
+    fn flush(&mut self) -> impl Future<Output = Result<(), LogError>> {
+        async { Ok(()) }
     }
 }
 
@@ -730,7 +744,6 @@ mod test {
         }
     }
 
-    #[async_trait(?Send)]
     impl LogFormatter for FakeFormatter {
         async fn push_log(&mut self, log_entry: LogEntry) -> Result<LogProcessingResult, LogError> {
             self.logs.push(log_entry);
@@ -749,7 +762,6 @@ mod test {
         *entry.data.as_target_log_mut().unwrap().msg_mut().unwrap() = msg.into();
     }
 
-    #[async_trait(?Send)]
     impl Symbolize for FakeFuchsiaSymbolizer {
         async fn symbolize(&self, mut entry: LogEntry) -> Option<LogEntry> {
             set_log_msg(&mut entry, "Fuchsia");
@@ -779,7 +791,6 @@ mod test {
         super::dump_logs_from_socket(socket, formatter, symbolizer, false).await
     }
 
-    #[async_trait(?Send)]
     impl Symbolize for FakeSymbolizerCallback {
         async fn symbolize(&self, mut input: LogEntry) -> Option<LogEntry> {
             self.should_discard.set(!self.should_discard.get());

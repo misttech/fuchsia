@@ -8,7 +8,6 @@
 //! writes them to disk.
 
 use anyhow::Error;
-use async_trait::async_trait;
 use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, LogSettingsMarker, StreamParameters};
 use fidl_fuchsia_sys2::RealmQueryMarker;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
@@ -29,7 +28,6 @@ impl Symbolizer {
     }
 }
 
-#[async_trait(?Send)]
 impl Symbolize for Symbolizer {
     async fn symbolize(&self, entry: LogEntry) -> Option<LogEntry> {
         Some(entry)

@@ -75,7 +75,6 @@ where
     disabled: Cell<bool>,
 }
 
-#[async_trait::async_trait(?Send)]
 impl<T> Symbolize for TransactionalSymbolizer<T>
 where
     T::Stdin: AsyncWrite + Unpin + Debug,
@@ -797,8 +796,8 @@ mod tests {
             TransactionalSymbolizer::new(FakeProcess::new(stdin_sender, stdout_receiver)),
             Ok(value) => value
         );
-        let mut symbolize_task_0 = symbolizer.symbolize(txn);
-        let mut symbolize_task_1 = symbolizer.symbolize(txn_2);
+        let mut symbolize_task_0 = std::pin::pin!(symbolizer.symbolize(txn));
+        let mut symbolize_task_1 = std::pin::pin!(symbolizer.symbolize(txn_2));
         // Both tasks should be in pending state until symbolizer transactions complete.
         assert_eq!(fake_waker.clone().poll_while_woke(symbolize_task_0.as_mut()), Poll::Pending);
         assert_eq!(fake_waker.clone().poll_while_woke(symbolize_task_1.as_mut()), Poll::Pending);
@@ -877,8 +876,8 @@ mod tests {
             TransactionalSymbolizer::new(FakeProcess::new(stdin_sender, stdout_receiver)),
             Ok(value) => value
         );
-        let mut symbolize_task_0 = symbolizer.symbolize(txn);
-        let mut symbolize_task_1 = symbolizer.symbolize(txn_2);
+        let mut symbolize_task_0 = std::pin::pin!(symbolizer.symbolize(txn));
+        let mut symbolize_task_1 = std::pin::pin!(symbolizer.symbolize(txn_2));
         // Task should be pending initially.
         assert_eq!(fake_waker.clone().poll_while_woke(symbolize_task_0.as_mut()), Poll::Pending);
         let mut reader = BufReader::new(stdin_receiver).lines();
@@ -911,7 +910,7 @@ mod tests {
             TransactionalSymbolizer::new(FakeProcess::new(stdin_sender, stdout_receiver)),
             Ok(value) => value
         );
-        let mut symbolize_task_0 = symbolizer.symbolize(txn);
+        let mut symbolize_task_0 = std::pin::pin!(symbolizer.symbolize(txn));
         // Task should be pending initially.
         assert_eq!(fake_waker.clone().poll_while_woke(symbolize_task_0.as_mut()), Poll::Pending);
         let mut reader = BufReader::new(stdin_receiver).lines();

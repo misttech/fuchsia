@@ -31,7 +31,6 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:async-trait",
   ]
 
   sources = [ "src/main.rs" ]
