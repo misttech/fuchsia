@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from enum import Enum
 from pathlib import Path
 
@@ -275,7 +276,8 @@ def run_mypy_checks(
     Returns:
         int: returncode if type checking was successful, else error returncode
     """
-    fuchsia_dir = Path(__file__).parent.parent.parent
+    # Paths must be absolute because mypy runs in an empty directory.
+    fuchsia_dir = Path(__file__).parent.parent.parent.absolute()
     config_path = fuchsia_dir / "pyproject.toml"
     pylibs_dir = fuchsia_dir / "third_party" / "pylibs"
     prebuilt_dir = fuchsia_dir / "prebuilt" / "third_party"
@@ -284,51 +286,65 @@ def run_mypy_checks(
         build_dir / "host_x64" / "obj" / "third_party" / "pylibs" / "mypy"
     )
     try:
-        return subprocess.run(
-            (
-                [
-                    sys.executable,
-                    "-B",
-                    "-S",
-                    "-m",
-                    "mypy",
-                ]
-                + (
+        # Run mypy from an empty directory so that imports can only resolve to
+        # files the target staged in app_dir. mypy always adds its working
+        # directory to the import search path. In the build directory, an
+        # import of a module the target forgot to depend on could resolve to
+        # an unrelated directory of the same name that another action created
+        # there (e.g. out/<dir>/bazel_test_packages/), so type checking would
+        # pass or fail depending on what else had already been built. app_dir
+        # itself doesn't work either: a target that stages an __init__.py
+        # makes app_dir a package, and mypy then finds each of its modules
+        # under two different names and errors out.
+        with tempfile.TemporaryDirectory() as empty_dir:
+            return subprocess.run(
+                (
                     [
-                        # TODO(https://fxbug.dev/345717802): Disabling cache to temporarily resolve this flake.
-                        # see https://github.com/python/mypy/issues/7276 for details on similar issue.
-                        "--no-incremental",
+                        sys.executable,
+                        "-B",
+                        "-S",
+                        "-m",
+                        "mypy",
                     ]
-                    if not with_incremental_cache
-                    else (
+                    + (
                         [
-                            "--cache-dir",
-                            str(cache_dir),
+                            # TODO(https://fxbug.dev/345717802): Disabling cache to temporarily resolve this flake.
+                            # see https://github.com/python/mypy/issues/7276 for details on similar issue.
+                            "--no-incremental",
+                        ]
+                        if not with_incremental_cache
+                        else (
+                            [
+                                "--cache-dir",
+                                str(cache_dir.absolute()),
+                            ]
+                        )
+                    )
+                    + [
+                        "--config-file",
+                        str(config_path),
+                        os.path.abspath(app_dir),
+                    ]
+                ),
+                cwd=empty_dir,
+                env={
+                    "PYTHONPATH": os.pathsep.join(
+                        [
+                            str(fuchsia_dir),
+                            str(pylibs_dir / "mypy" / "src"),
+                            str(pylibs_dir / "mypy_extensions" / "src"),
+                            str(
+                                pylibs_dir / "typing_extensions" / "src" / "src"
+                            ),
+                            str(prebuilt_dir / "pathspec-py3"),
+                            str(librt_dir.resolve()),
                         ]
                     )
-                )
-                + [
-                    "--config-file",
-                    str(config_path),
-                    app_dir,
-                ]
-            ),
-            env={
-                "PYTHONPATH": os.pathsep.join(
-                    [
-                        str(fuchsia_dir),
-                        str(pylibs_dir / "mypy" / "src"),
-                        str(pylibs_dir / "mypy_extensions" / "src"),
-                        str(pylibs_dir / "typing_extensions" / "src" / "src"),
-                        str(prebuilt_dir / "pathspec-py3"),
-                        str(librt_dir.resolve()),
-                    ]
-                )
-            },
-            capture_output=True,
-            text=True,
-            check=True,
-        ).returncode
+                },
+                capture_output=True,
+                text=True,
+                check=True,
+            ).returncode
     except subprocess.CalledProcessError as e:
         if e.returncode != 0:
             if with_incremental_cache:
@@ -340,7 +356,13 @@ def run_mypy_checks(
                     with_incremental_cache=False,
                 )
             if e.stdout:
-                refactored_out = convert_mypy_output(e.stdout, src_map)
+                refactored_out = convert_mypy_output(
+                    e.stdout,
+                    {
+                        os.path.abspath(path): source
+                        for path, source in src_map.items()
+                    },
+                )
                 print(
                     f"\nPlease fix the following Mypy errors:\n{refactored_out}\n",
                     file=sys.stderr,
@@ -374,9 +396,11 @@ def convert_mypy_output(output: str, src_map: dict[str, str]) -> str:
     for i, line in enumerate(output_lines):
         match = source_matcher.search(line)
         if match:
+            # Only rewrite the leading path, which may be short enough now
+            # that it's relative to app_dir to also appear in the message.
             source = match.group(1)
-            output_lines[i] = line.replace(
-                source, src_map[source].replace("../../", "")
+            output_lines[i] = (
+                src_map[source].replace("../../", "") + line[match.end(1) :]
             )
 
     return "\n".join(output_lines)
