@@ -6,16 +6,15 @@ use anyhow::Context;
 use fidl_fuchsia_memory_heapdump_client::{
     self as fheapdump_client, CollectorError, ProcessSelector, SnapshotReceiverProxy,
 };
-use fuchsia_inspect::ArrayProperty;
+use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex as SyncMutex;
 use futures::StreamExt;
 use futures::lock::Mutex as AsyncMutex;
+use itertools::Itertools;
 use log::{info, warn};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
-
-use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
-use fuchsia_async as fasync;
 use zx::Koid;
 
 use crate::process::Process;
@@ -46,14 +45,11 @@ impl Registry {
             let processes = this.list_processes();
             let inspector = fuchsia_inspect::Inspector::default();
             let root = inspector.root();
-            let names = root.create_string_array("names", processes.len());
-            let koids = root.create_uint_array("koids", processes.len());
-            for (i, (koid, name)) in processes.iter().enumerate() {
-                names.set(i, name);
-                koids.set(i, koid.raw_koid());
+            for (koid, name) in processes.iter() {
+                root.record_child(koid.raw_koid().to_string(), |node| {
+                    node.record_string("name", name);
+                });
             }
-            root.record(names);
-            root.record(koids);
             Box::pin(async move { Ok(inspector) })
         });
     }
@@ -286,6 +282,7 @@ impl Registry {
             .lock()
             .iter()
             .map(|(koid, process)| (*koid, process.get_name().to_string()))
+            .sorted_by_key(|(koid, _)| *koid)
             .collect()
     }
 
@@ -358,11 +355,13 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::{create_proxy, create_proxy_and_stream, create_request_stream};
+    use fuchsia_inspect::Inspector;
     use futures::channel::oneshot;
     use futures::pin_mut;
     use heapdump_snapshot::ThreadInfo;
-    use itertools::{Itertools, assert_equal};
+    use itertools::assert_equal;
     use std::rc::Rc;
     use test_case::test_case;
     use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
@@ -821,5 +820,31 @@ mod tests {
         };
         proxy.download_stored_snapshot(request).expect("FIDL channel error");
         receive_and_assert_error(receiver_stream, CollectorError::StoredSnapshotNotFound).await;
+    }
+
+    #[fuchsia::test]
+    async fn test_inspect() {
+        let name1 = "fake-1";
+        let koid1 = Koid::from_raw(1234);
+        let (process1, _signal1) = FakeProcess::new(name1, koid1, false);
+
+        let name2 = "fake-2";
+        let koid2 = Koid::from_raw(5678);
+        let (process2, _signal2) = FakeProcess::new(name2, koid2, false);
+
+        let (registry, _proxy) = create_registry_and_proxy([process1, process2]);
+        let inspector = Inspector::default();
+        registry.register_inspect(inspector.root());
+
+        assert_data_tree!(inspector, root: {
+            processes: {
+                "1234": {
+                    name: "fake-1",
+                },
+                "5678": {
+                    name: "fake-2",
+                },
+            }
+        });
     }
 }
