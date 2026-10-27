@@ -7,6 +7,9 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "src/developer/forensics/exceptions/constants.h"
 #include "src/lib/fsl/handles/object_info.h"
@@ -117,31 +120,31 @@ CrashReportBuilder& CrashReportBuilder::SetGwpAsanExceptionType(std::string exce
 
 const std::optional<std::string>& CrashReportBuilder::ProcessName() const { return process_name_; }
 
-fuchsia::feedback::CrashReport CrashReportBuilder::Consume() {
+fuchsia_feedback::CrashReport CrashReportBuilder::Consume() {
   FX_CHECK(process_name_.has_value()) << "Need a process name";
   FX_CHECK(thread_name_.has_value()) << "Need a thread name";
   FX_CHECK(is_valid_) << "Consume can only be called once";
   is_valid_ = false;
 
-  using namespace fuchsia::feedback;
-  CrashReport crash_report;
+  fuchsia_feedback::CrashReport crash_report;
 
   // Always fatal crash.
-  crash_report.set_is_fatal(true);
+  crash_report.is_fatal(true);
 
   // Program name.
   const std::string program_name =
       (component_url_.has_value()) ? component_url_.value() : process_name_.value();
-  crash_report.set_program_name(program_name.substr(0, fuchsia::feedback::MAX_PROGRAM_NAME_LENGTH));
+  crash_report.program_name(program_name.substr(0, fuchsia_feedback::kMaxProgramNameLength));
 
   // Program uptime.
   if (process_uptime_.has_value()) {
-    crash_report.set_program_uptime(process_uptime_->get());
+    crash_report.program_uptime(process_uptime_->get());
   }
 
   // Extra annotations.
-  auto AddAnnotation = [&crash_report](const std::string& key, const std::string& value) {
-    crash_report.mutable_annotations()->push_back(Annotation{.key = key, .value = value});
+  std::vector<fuchsia_feedback::Annotation> annotations;
+  auto AddAnnotation = [&annotations](const std::string& key, const std::string& value) {
+    annotations.emplace_back(key, value);
   };
   if (!component_url_.has_value()) {
     AddAnnotation("debug.crash.component.url.set", "false");
@@ -153,68 +156,65 @@ fuchsia::feedback::CrashReport CrashReportBuilder::Consume() {
     AddAnnotation("crash.gwp_asan.exception-type", gwp_asan_exception_type_.value());
   }
   AddAnnotation(kCrashProcessStateKey, process_already_terminated_ ? "terminated" : "in exception");
+  crash_report.annotations(std::move(annotations));
 
   // Process and thread names/koids.
-  NativeCrashReport native_crash_report;
-  native_crash_report.set_process_name(process_name_.value());
-  if (process_koid_.has_value()) {
-    native_crash_report.set_process_koid(process_koid_.value());
-  }
-  native_crash_report.set_thread_name(thread_name_.value());
-  if (thread_koid_.has_value()) {
-    native_crash_report.set_thread_koid(thread_koid_.value());
-  }
+  fuchsia_feedback::NativeCrashReport native_crash_report;
+  native_crash_report.process_name(process_name_.value());
+  native_crash_report.process_koid(process_koid_);
+  native_crash_report.thread_name(thread_name_.value());
+  native_crash_report.thread_koid(thread_koid_);
 
   // Minidump.
   FX_CHECK(minidump_.has_value() || exception_expired_ || process_already_terminated_ ||
            minidump_skipped_);
   if (minidump_.has_value()) {
-    fuchsia::mem::Buffer mem_buffer;
-    minidump_.value().get_size(&mem_buffer.size);
-    mem_buffer.vmo = std::move(minidump_.value());
+    uint64_t size = 0;
+    minidump_.value().get_size(&size);
+    native_crash_report.minidump(fuchsia_mem::Buffer(std::move(minidump_.value()), size));
     minidump_ = std::nullopt;
-    native_crash_report.set_minidump(std::move(mem_buffer));
   } else if (exception_expired_) {
-    crash_report.set_crash_signature("fuchsia-no-minidump-exception-expired");
+    crash_report.crash_signature("fuchsia-no-minidump-exception-expired");
   } else if (process_already_terminated_) {
-    crash_report.set_crash_signature("fuchsia-no-minidump-process-terminated");
+    crash_report.crash_signature("fuchsia-no-minidump-process-terminated");
   }
 
-  crash_report.set_specific_report(SpecificCrashReport::WithNative(std::move(native_crash_report)));
+  crash_report.specific_report(
+      fuchsia_feedback::SpecificCrashReport::WithNative(std::move(native_crash_report)));
 
   // Crash signature overwrite on channel/port overflow. Overwrite any no-minidump signatures
   // previously set since these are more informative.
   if (exception_reason_.has_value()) {
     switch (exception_reason_.value()) {
       case ExceptionReason::kChannelOverflow:
-        crash_report.set_crash_signature(fxl::StringPrintf(
-            "fuchsia-%s-channel-overflow", Sanitize(process_name_.value()).c_str()));
+        crash_report.crash_signature(fxl::StringPrintf("fuchsia-%s-channel-overflow",
+                                                       Sanitize(process_name_.value()).c_str()));
         break;
       case ExceptionReason::kPortObserverOverflow:
-        crash_report.set_crash_signature(fxl::StringPrintf(
-            "fuchsia-%s-port-observer-overflow", Sanitize(process_name_.value()).c_str()));
+        crash_report.crash_signature(fxl::StringPrintf("fuchsia-%s-port-observer-overflow",
+                                                       Sanitize(process_name_.value()).c_str()));
         break;
       case ExceptionReason::kPortPacketOverflow:
-        crash_report.set_crash_signature(fxl::StringPrintf(
-            "fuchsia-%s-port-packet-overflow", Sanitize(process_name_.value()).c_str()));
+        crash_report.crash_signature(fxl::StringPrintf("fuchsia-%s-port-packet-overflow",
+                                                       Sanitize(process_name_.value()).c_str()));
         break;
       case ExceptionReason::kPageFaultIo:
-        crash_report.set_crash_signature("fuchsia-page_fault-io");
+        crash_report.crash_signature("fuchsia-page_fault-io");
         break;
       case ExceptionReason::kPageFaultIoDataIntegrity:
-        crash_report.set_crash_signature("fuchsia-page_fault-io_data_integrity");
+        crash_report.crash_signature("fuchsia-page_fault-io_data_integrity");
         break;
       case ExceptionReason::kPageFaultBadState:
-        crash_report.set_crash_signature("fuchsia-page_fault-bad_state");
+        crash_report.crash_signature("fuchsia-page_fault-bad_state");
         break;
       case ExceptionReason::kPageFaultNoMemory:
-        crash_report.set_crash_signature("fuchsia-page_fault-no_memory");
+        crash_report.crash_signature("fuchsia-page_fault-no_memory");
         break;
       case ExceptionReason::kPageFaultTimedOut:
-        crash_report.set_crash_signature("fuchsia-page_fault-timed_out");
+        crash_report.crash_signature("fuchsia-page_fault-timed_out");
         break;
       case ExceptionReason::kArm64UnknownException:
-        crash_report.set_crash_signature("fuchsia-arm64-unknown-exception");
+        crash_report.crash_signature("fuchsia-arm64-unknown-exception");
         break;
     }
   }

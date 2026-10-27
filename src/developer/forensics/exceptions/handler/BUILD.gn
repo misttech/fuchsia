@@ -26,6 +26,7 @@ source_set("lib") {
   public_deps = [
     "//sdk/fidl/fuchsia.driver.crash:fuchsia.driver.crash_cpp",
     "//sdk/fidl/fuchsia.exception:fuchsia.exception_hlcpp",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_hlcpp",
@@ -46,6 +47,7 @@ source_set("lib") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp_hlcpp_conversion",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/exceptions:constants",

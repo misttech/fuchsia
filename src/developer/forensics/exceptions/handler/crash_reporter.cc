@@ -3,6 +3,7 @@
 
 #include "src/developer/forensics/exceptions/handler/crash_reporter.h"
 
+#include <fidl/fuchsia.feedback/cpp/hlcpp_conversion.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/string.h>
 #include <lib/fpromise/bridge.h>
@@ -187,7 +188,8 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
                    builder = std::move(builder)](const fpromise::result<>& result) mutable {
               return OneShotCall<fuchsia::feedback::CrashReporter,
                                  &fuchsia::feedback::CrashReporter::FileReport>(
-                  dispatcher, services, kFileReportTimeout, builder.Consume());
+                  dispatcher, services, kFileReportTimeout,
+                  fidl::NaturalToHLCPP(builder.Consume()));
             })
             .then([wake_lease_result = std::move(wake_lease_result),
                    component_info = std::move(component_info), callback = std::move(callback)](

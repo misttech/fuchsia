@@ -5,7 +5,7 @@
 #ifndef SRC_DEVELOPER_FORENSICS_EXCEPTIONS_HANDLER_REPORT_BUILDER_H_
 #define SRC_DEVELOPER_FORENSICS_EXCEPTIONS_HANDLER_REPORT_BUILDER_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmo.h>
@@ -35,7 +35,7 @@ class CrashReportBuilder {
 
   const std::optional<std::string>& ProcessName() const;
 
-  fuchsia::feedback::CrashReport Consume();
+  fuchsia_feedback::CrashReport Consume();
 
  private:
   std::optional<std::string> process_name_;
