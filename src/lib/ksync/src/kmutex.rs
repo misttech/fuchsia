@@ -199,7 +199,6 @@ impl<Class: LockClass, M> core::fmt::Debug for KMutex<Class, M> {
 /// The guard is pinned in memory to ensure that its `lock_entry` pointer remains safe and valid
 /// inside the C++ loop detector active thread list.
 #[repr(C)]
-#[pin_data(PinnedDrop)]
 pub struct KMutexGuard<
     'a,
     Class: LockClass,
@@ -208,7 +207,6 @@ pub struct KMutexGuard<
 > {
     mutex: Option<&'a KMutex<Class, M>>,
 
-    #[pin]
     lock_entry: M::LockEntry,
 
     state: P::GuardState,
@@ -360,12 +358,13 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
     }
 }
 
-#[pinned_drop]
-impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> PinnedDrop
-    for KMutexGuard<'a, Class, M, P>
-{
-    fn drop(self: Pin<&mut Self>) {
-        self.release();
+// Not `#[pin_data(PinnedDrop)]`, whose generated `Drop` is not `#[inline]`.
+impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> Drop for KMutexGuard<'a, Class, M, P> {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: A guard is only created pinned, by `new_with_args`, and `self` is not moved
+        // after it is dropped.
+        unsafe { Pin::new_unchecked(self) }.release();
     }
 }
 
