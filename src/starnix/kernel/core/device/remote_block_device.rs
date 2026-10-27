@@ -52,7 +52,7 @@ impl RemoteBlockDevice {
         let block_client = SyncBlockClient::new(&kernel.kthreads, block)?;
         let device = Arc::new(Self { block_client });
         let device_weak = Arc::<RemoteBlockDevice>::downgrade(&device);
-        registry.add_device(
+        registry.add_major_device(
             kernel,
             device_name.as_ref(),
             DeviceMetadata::new(

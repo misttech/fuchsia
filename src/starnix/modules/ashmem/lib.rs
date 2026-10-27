@@ -37,9 +37,7 @@ use std::sync::Arc;
 pub fn ashmem_device_init(kernel: &Kernel) {
     let registry = &kernel.device_registry;
 
-    registry
-        .register_misc_device(kernel, "ashmem".into(), AshmemDevice::new())
-        .expect("can register ashmem");
+    registry.add_misc_device(kernel, "ashmem".into(), AshmemDevice::new()).expect("can add ashmem");
 }
 
 #[derive(Clone)]

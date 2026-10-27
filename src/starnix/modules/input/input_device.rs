@@ -310,7 +310,7 @@ impl InputDevice {
             },
         );
 
-        Ok(registry.register_device_with_dir(
+        Ok(registry.add_device_with_dir(
             kernel,
             format!("event{minor}").as_str().into(),
             DeviceMetadata::new(

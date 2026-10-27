@@ -137,7 +137,7 @@ fn register_hvdcp_opti_devices(
     // those sysfs paths.
     // /dev/qbg
     let qbg_service = service_proxy.clone();
-    let qbg_dev = registry.register_device(
+    let qbg_dev = registry.add_device(
         kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
@@ -150,7 +150,7 @@ fn register_hvdcp_opti_devices(
 
     // /dev/qbg_battery
     let battery_service = service_proxy;
-    let qbg_battery_dev = registry.register_device(
+    let qbg_battery_dev = registry.add_device(
         kernel,
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),

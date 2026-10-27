@@ -111,6 +111,6 @@ pub fn init(kernel: &Arc<Kernel>) {
     let device = ConsentSyncHandle(file_backend);
 
     registry
-        .register_dyn_device(kernel, "consent".into(), registry.objects.starnix_class(), device)
-        .expect("can register consent device");
+        .add_dyn_device(kernel, "consent".into(), registry.objects.starnix_class(), device)
+        .expect("can add consent device");
 }

@@ -156,7 +156,7 @@ impl UsbDeviceManager {
         self.devices.lock().insert(devt, device.clone());
 
         let device_clone = device.clone();
-        let registered_device = kernel.device_registry.add_device(
+        let registered_device = kernel.device_registry.add_major_device(
             kernel,
             sysname.as_bytes().into(),
             metadata,

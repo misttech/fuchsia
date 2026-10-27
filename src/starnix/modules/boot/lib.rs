@@ -112,8 +112,8 @@ impl BootedDevice {
     pub fn register(self, kernel: &Kernel) {
         let registry = &kernel.device_registry;
         registry
-            .register_dyn_device(kernel, "booted".into(), registry.objects.starnix_class(), self)
-            .expect("can register booted device");
+            .add_dyn_device(kernel, "booted".into(), registry.objects.starnix_class(), self)
+            .expect("can add booted device");
     }
 
     pub fn start_relay(&self, kernel: &Kernel, booted_receiver: LockupDetectorReceiver<bool>) {

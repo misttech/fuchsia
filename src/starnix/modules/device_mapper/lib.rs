@@ -224,7 +224,7 @@ impl DmDevice {
             ..Default::default()
         });
         let device_weak = Arc::<DmDevice>::downgrade(&device);
-        let k_device = registry.add_device(
+        let k_device = registry.add_major_device(
             current_task.kernel(),
             dm_device_name.as_ref(),
             DeviceMetadata::new(

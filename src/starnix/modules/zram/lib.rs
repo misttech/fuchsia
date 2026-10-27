@@ -57,7 +57,7 @@ pub fn zram_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let zram_device = ZramDevice::default();
     let zram_device_clone = zram_device.clone();
     let registry = &kernel.device_registry;
-    registry.register_device_with_dir(
+    registry.add_device_with_dir(
         kernel,
         "zram0".into(),
         DeviceMetadata::new("zram0".into(), DeviceId::new(ZRAM_MAJOR, 0), DeviceMode::Block),

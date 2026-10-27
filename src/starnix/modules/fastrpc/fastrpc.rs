@@ -966,13 +966,13 @@ pub fn fastrpc_device_init(kernel: &Kernel) {
     let device = FastRPCDevice::new(device);
     let registry = &kernel.device_registry;
     registry
-        .register_dyn_device(
+        .add_dyn_device(
             kernel,
             "adsprpc-smd-secure".into(),
             registry.objects.get_or_create_class("fastrpc".into()),
             device,
         )
-        .expect("Can register heap device");
+        .expect("Can add heap device");
 }
 
 #[cfg(test)]

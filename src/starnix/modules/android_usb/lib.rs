@@ -178,7 +178,7 @@ pub fn usb_device_init(kernel: &Arc<Kernel>) -> Result<Device, Errno> {
     let shared_state = Arc::new(AtomicU8::new(UsbGadgetState::Disconnected as u8));
     let state_clone = shared_state.clone();
 
-    let device = registry.register_dyn_device_with_dir(
+    let device = registry.add_dyn_device_with_dir(
         kernel,
         "android0".into(),
         android_usb_class,

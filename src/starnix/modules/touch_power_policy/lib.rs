@@ -33,13 +33,8 @@ impl TouchPowerPolicyDevice {
     pub fn register(self, kernel: &Kernel) {
         let registry = &kernel.device_registry;
         registry
-            .register_dyn_device(
-                kernel,
-                "touch_standby".into(),
-                registry.objects.starnix_class(),
-                self,
-            )
-            .expect("can register touch_standby device");
+            .add_dyn_device(kernel, "touch_standby".into(), registry.objects.starnix_class(), self)
+            .expect("can add touch_standby device");
     }
 
     pub fn start_relay(

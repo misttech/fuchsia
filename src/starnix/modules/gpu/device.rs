@@ -30,11 +30,11 @@ pub fn gpu_device_init(kernel: &Kernel) {
         .build();
 
     registry
-        .register_dyn_device(
+        .add_dyn_device(
             kernel,
             "virtio-gpu".into(),
             registry.objects.starnix_class(),
             create_gpu_device,
         )
-        .expect("can register virtio-gpu");
+        .expect("can add virtio-gpu");
 }

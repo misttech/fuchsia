@@ -178,7 +178,7 @@ impl DeviceRegistration {
     /// Creates a `Pending` registration for `device`, which will be registered with `kernel`
     /// under `device_id` on the first call to `ensure_registered`.
     ///
-    /// `device` must not already be registered: `DeviceRegistry::register_device` silently
+    /// `device` must not already be registered: `DeviceRegistry::add_device_with_dir` silently
     /// overwrites an existing minor device entry, so a double registration would otherwise only
     /// surface as a warning log.
     fn pending(kernel: Arc<Kernel>, device: crate::InputDevice, device_id: DeviceId) -> Self {

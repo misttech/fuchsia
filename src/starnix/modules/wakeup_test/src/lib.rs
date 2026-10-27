@@ -39,7 +39,7 @@ pub fn register_wakeup_test_device(kernel: &Arc<Kernel>) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
     let device = WakeupTestDevice::new(kernel);
-    registry.register_device(
+    registry.add_device(
         kernel,
         "wakeup_test0".into(),
         DeviceMetadata::new("wakeup_test0".into(), DeviceId::new(0, 0), DeviceMode::Char),

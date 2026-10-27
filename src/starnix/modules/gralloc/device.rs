@@ -29,11 +29,11 @@ impl DeviceOps for GrallocDevice {
 pub fn gralloc_device_init(kernel: &Kernel) {
     let registry = &kernel.device_registry;
     registry
-        .register_dyn_device(
+        .add_dyn_device(
             kernel,
             "virtgralloc0".into(),
             registry.objects.starnix_class(),
             GrallocDevice,
         )
-        .expect("can register virtgralloc0");
+        .expect("can add virtgralloc0");
 }

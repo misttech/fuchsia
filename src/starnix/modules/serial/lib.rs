@@ -162,7 +162,7 @@ pub fn register_serial_device(
     let name = FsString::from(format!("ttyS{}", index));
 
     let registry = &kernel.device_registry;
-    registry.register_device(
+    registry.add_device(
         kernel,
         name.as_ref(),
         DeviceMetadata::new(

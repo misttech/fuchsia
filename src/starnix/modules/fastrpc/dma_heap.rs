@@ -106,7 +106,7 @@ pub fn dma_heap_device_register<A: Alloc>(kernel: &Kernel, name: &str, allocator
     let device = DmaHeapDevice::new(allocator);
     let registry = &kernel.device_registry;
     registry
-        .register_dyn_device_with_devname(
+        .add_dyn_device_with_devname(
             kernel,
             name.into(),
             format!("dma_heap/{}", name).as_str().into(),
@@ -114,5 +114,5 @@ pub fn dma_heap_device_register<A: Alloc>(kernel: &Kernel, name: &str, allocator
             build_device_directory,
             device,
         )
-        .expect("Can register heap device");
+        .expect("Can add heap device");
 }

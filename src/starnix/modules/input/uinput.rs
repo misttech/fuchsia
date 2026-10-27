@@ -54,7 +54,7 @@ pub fn register_uinput_device(
     let registry = &kernel.device_registry;
     let misc_class = registry.objects.misc_class();
     let device = UinputDevice::new(input_relay_handle);
-    registry.register_device(
+    registry.add_device(
         kernel,
         "uinput".into(),
         DeviceMetadata::new("uinput".into(), device_id::DeviceId::UINPUT, DeviceMode::Char),

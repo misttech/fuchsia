@@ -61,7 +61,7 @@ pub fn mmcblk_stub_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let name = FsString::from("mmcblk0");
     let device = Arc::new(MmcBlockDevice);
     let device_weak = Arc::downgrade(&device);
-    registry.register_device_with_dir(
+    registry.add_device_with_dir(
         kernel,
         name.as_ref(),
         DeviceMetadata::new(name.clone(), DeviceId::MMCBLK0, DeviceMode::Block),

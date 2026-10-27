@@ -33,7 +33,7 @@ impl DeviceOps for RtcDevice {
 pub fn rtc_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
     registry
-        .register_dyn_device(kernel, "rtc0".into(), registry.objects.rtc_class(), RtcDevice)
+        .add_dyn_device(kernel, "rtc0".into(), registry.objects.rtc_class(), RtcDevice)
         .inspect(|dev| log_debug!("registered RTC device: {dev:?}"))
         .map(|_| ())
 }

@@ -65,7 +65,7 @@ fn register_datachannel_devices(kernel: &Kernel) {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             let device_class = registry.objects.get_or_create_class("nanohub".into());
-            match registry.register_dyn_device(
+            match registry.add_dyn_device(
                 kernel,
                 name.as_bytes().into(),
                 device_class,
@@ -77,7 +77,7 @@ fn register_datachannel_devices(kernel: &Kernel) {
                 Ok(device) => {
                     scope.add_scoped_device(device);
                 }
-                Err(e) => log_warn!("Failed to register datachannel device: {:?}", e),
+                Err(e) => log_warn!("Failed to add datachannel device: {:?}", e),
             }
         },
     );
@@ -197,13 +197,13 @@ async fn register_serial_device(kernel: Arc<Kernel>) {
                         // of that major device.
                         let registry = &kernel.device_registry;
                         registry
-                            .register_dyn_device(
+                            .add_dyn_device(
                                 &kernel,
                                 "ttyHS1".into(),
                                 registry.objects.tty_class(),
                                 serial_device,
                             )
-                            .expect("Can register serial device");
+                            .expect("Can add serial device");
                         break;
                     }
                 }

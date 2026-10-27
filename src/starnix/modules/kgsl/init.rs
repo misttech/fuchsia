@@ -35,7 +35,5 @@ pub fn kgsl_device_init(kernel: &Kernel) {
     let class = registry.objects.get_or_create_class("kgsl".into());
     let builder = KgslDeviceBuilder {};
 
-    registry
-        .register_dyn_device(kernel, "kgsl-3d0".into(), class, builder)
-        .expect("can register kgsl-3d0");
+    registry.add_dyn_device(kernel, "kgsl-3d0".into(), class, builder).expect("can add kgsl-3d0");
 }

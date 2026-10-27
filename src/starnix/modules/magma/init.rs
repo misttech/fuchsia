@@ -59,8 +59,8 @@ pub fn module_init(kernel: &Kernel, args: &[&str]) -> Result<(), Error> {
     let builder = MagmaDeviceBuilder { supported_vendors };
 
     registry
-        .register_dyn_device(kernel, "magma0".into(), registry.objects.starnix_class(), builder)
-        .expect("can register magma0");
+        .add_dyn_device(kernel, "magma0".into(), registry.objects.starnix_class(), builder)
+        .expect("can add magma0");
     crate::gpu_class_directory::register_gpu_devices(kernel, GpuDeviceConfig::default());
     Ok(())
 }

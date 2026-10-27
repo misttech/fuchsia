@@ -187,7 +187,7 @@ impl LoopDevice {
         let block_class = registry.objects.block_class();
         let device = Arc::new(Self { number: minor, state: Default::default() });
         let device_weak = Arc::<LoopDevice>::downgrade(&device);
-        let k_device = registry.add_device(
+        let k_device = registry.add_major_device(
             kernel,
             loop_device_name.as_ref(),
             DeviceMetadata::new(

@@ -130,12 +130,12 @@ pub fn register_socket_tunnel_device(
     let device_class = registry.objects.get_or_create_class(dev_class_name);
 
     registry
-        .register_dyn_device_with_dir(
+        .add_dyn_device_with_dir(
             kernel,
             dev_node_name.into(),
             device_class,
             build_directory,
             SocketTunnelFile::new(socket_label.to_owned()),
         )
-        .expect("Can register socket tunnel file");
+        .expect("Can add socket tunnel file");
 }

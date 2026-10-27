@@ -145,7 +145,7 @@ impl Modules {
             "boot_notifier" => starnix_modules_boot::module_init(kernel, args)?,
             "data_collection_consent_sync" => consent_sync_init(kernel),
             "device_mapper" => {
-                registry.register_device(
+                registry.add_device(
                     kernel,
                     "device-mapper".into(),
                     DeviceMetadata::new(
@@ -179,7 +179,7 @@ impl Modules {
             "gralloc" => gralloc_device_init(kernel),
             "hvdcp_opti" => hvdcp_opti_init(kernel),
             "hw_random" => {
-                registry.register_device(
+                registry.add_device(
                     kernel,
                     "hw_random".into(),
                     DeviceMetadata::new("hwrng".into(), DeviceId::HW_RANDOM, DeviceMode::Char),
@@ -189,7 +189,7 @@ impl Modules {
             }
             "kgsl" => kgsl_device_init(kernel),
             "loop" => {
-                registry.register_device(
+                registry.add_device(
                     kernel,
                     "loop-control".into(),
                     DeviceMetadata::new(
@@ -217,7 +217,7 @@ impl Modules {
             "rtc" => rtc_device_init(kernel)?,
             "thermal" => starnix_modules_thermal::module_init(kernel, args)?,
             "tun" => {
-                registry.register_device(
+                registry.add_device(
                     kernel,
                     "tun".into(),
                     DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
@@ -479,7 +479,7 @@ fn init_framebuffer_module(
 /// `kernel.kthreads`, so this function must be called after `kernel.kthreads` has been initialized.
 pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
-    registry.register_device(
+    registry.add_device(
         kernel,
         "fuse".into(),
         DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),

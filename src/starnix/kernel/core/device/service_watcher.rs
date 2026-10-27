@@ -842,12 +842,12 @@ mod tests {
                     let misc_dev = scope.add_scoped_device(
                         kernel
                             .device_registry
-                            .register_misc_device(
+                            .add_misc_device(
                                 kernel,
                                 "watcher_misc".into(),
                                 simple_device_ops::<DevNull>,
                             )
-                            .expect("register misc device"),
+                            .expect("add misc device"),
                     );
                     devts_for_bind.lock().push(misc_dev.metadata().expect("metadata").devt);
                     let _ = event_tx.unbounded_send(format!("bind:{name}"));
@@ -930,12 +930,12 @@ mod tests {
                     scope.add_scoped_device(
                         kernel
                             .device_registry
-                            .register_misc_device(
+                            .add_misc_device(
                                 kernel,
                                 "watcher_replace_misc".into(),
                                 simple_device_ops::<DevNull>,
                             )
-                            .expect("register misc device"),
+                            .expect("add misc device"),
                     );
                     let _ = event_tx.unbounded_send(format!("bind:{current_gen}"));
                 },
