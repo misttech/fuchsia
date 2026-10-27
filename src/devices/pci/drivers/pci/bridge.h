@@ -53,8 +53,8 @@ class Bridge : public pci::Device, public UpstreamNode {
   void Unplug() final __TA_EXCLUDES(dev_lock_);
 
  protected:
-  zx::result<> AllocateBars() final __TA_EXCLUDES(dev_lock_);
-  zx::result<> AllocateBridgeWindowsLocked() __TA_REQUIRES(dev_lock_);
+  zx::result<> AllocateBars() final __TA_EXCLUDES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
+  zx::result<> AllocateBridgeWindowsLocked() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   zx_status_t SetBusMasteringUpstream(bool enabled) override;
   void Disable() final __TA_EXCLUDES(dev_lock_);
 

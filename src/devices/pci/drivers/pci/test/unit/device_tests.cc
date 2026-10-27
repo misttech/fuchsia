@@ -600,10 +600,10 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
       fbl::AutoLock lock(dev.dev_lock());
       ASSERT_OK(dev.SetBusMastering(false));
     }
-    EXPECT_FALSE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    EXPECT_FALSE(config::Command.ReadFrom(dev.config().get()).bus_master());
 
     EXPECT_EQ(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1), ZX_ERR_NOT_SUPPORTED);
-    EXPECT_FALSE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    EXPECT_FALSE(config::Command.ReadFrom(dev.config().get()).bus_master());
     upstream().DisableDownstream();
     upstream().UnplugDownstream();
   }
@@ -627,10 +627,10 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
       fbl::AutoLock lock(dev.dev_lock());
       ASSERT_OK(dev.SetBusMastering(true));
     }
-    EXPECT_TRUE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    EXPECT_TRUE(config::Command.ReadFrom(dev.config().get()).bus_master());
 
     EXPECT_EQ(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1), ZX_ERR_NOT_SUPPORTED);
-    EXPECT_TRUE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    EXPECT_TRUE(config::Command.ReadFrom(dev.config().get()).bus_master());
     upstream().DisableDownstream();
     upstream().UnplugDownstream();
   }

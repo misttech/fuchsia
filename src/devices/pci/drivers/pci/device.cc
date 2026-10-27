@@ -126,7 +126,6 @@ Device::~Device() {
   // disabled and disable IRQs.
   DisableInterrupts();
   SetBusMastering(false);
-  ModifyCmd(/*clr_bits=*/kCommandIoEn | kCommandMemEn, /*set_bits=*/0);
   // TODO(cja/https://fxbug.dev/42108123): Remove this after porting is finished.
   zxlogf(TRACE, "%s [%s] dtor finished", is_bridge() ? "bridge" : "device", cfg_->addr());
 }
@@ -167,7 +166,10 @@ zx_status_t Device::InitInterrupts() {
   // Disable all interrupt modes until a driver enables the preferred method.
   // The legacy interrupt is disabled by hand because our Enable/Disable methods
   // for doing so need to interact with the Shared IRQ lists in Bus.
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/kCommandIntDisable);
+  {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().ReadFrom(cfg_.get()).set_interrupt_disable(true).WriteTo(cfg_.get());
+  }
   irqs_.legacy_vector = 0;
 
   if (caps_.msi) {
@@ -330,30 +332,6 @@ zx_status_t Device::InitLocked() {
   return ZX_OK;
 }
 
-zx_status_t Device::ModifyCmd(uint16_t clr_bits, uint16_t set_bits) {
-  const fbl::AutoLock dev_lock(&dev_lock_);
-  // In order to keep internal bookkeeping coherent, and interactions between
-  // MSI/MSI-X and Legacy IRQ mode safe, API users may not directly manipulate
-  // the legacy IRQ enable/disable bit.  Just ignore them if they try to
-  // manipulate the bit via the modify cmd API.
-  // TODO(cja) This only applies to PCI(e)
-  clr_bits = static_cast<uint16_t>(clr_bits & ~kCommandIntDisable);
-  set_bits = static_cast<uint16_t>(set_bits & ~kCommandIntDisable);
-
-  if (plugged_in_) {
-    ModifyCmdLocked(clr_bits, set_bits);
-    return ZX_OK;
-  }
-
-  return ZX_ERR_UNAVAILABLE;
-}
-
-void Device::ModifyCmdLocked(uint16_t clr_bits, uint16_t set_bits) {
-  fbl::AutoLock cmd_reg_lock(&cmd_reg_lock_);
-  cfg_->Write(Config::kCommand,
-              static_cast<uint16_t>((cfg_->Read(Config::kCommand) & ~clr_bits) | set_bits));
-}
-
 void Device::Disable() {
   const fbl::AutoLock dev_lock(&dev_lock_);
   DisableLocked();
@@ -369,7 +347,10 @@ void Device::DisableLocked() {
   // off device initiated accesses to the bus, disable legacy interrupts.
   // Basically, prevent the device from doing anything from here on out.
   disabled_ = true;
-  AssignCmdLocked(kCommandIntDisable);
+  {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().FromValue(0).set_interrupt_disable(true).WriteTo(cfg_.get());
+  }
 
   // Release all BAR allocations back into the pool they came from.
   for (auto& bar : bars_) {
@@ -383,8 +364,10 @@ zx_status_t Device::SetBusMastering(bool enabled) {
     return ZX_ERR_BAD_STATE;
   }
 
-  ModifyCmdLocked(enabled ? /*clr_bits=*/0 : /*set_bits=*/kCommandBusMasterEn,
-                  enabled ? /*clr_bits=*/kCommandBusMasterEn : /*set_bits=*/0);
+  {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().ReadFrom(cfg_.get()).set_bus_master(enabled).WriteTo(cfg_.get());
+  }
   return upstream_->SetBusMasteringUpstream(enabled);
 }
 
@@ -399,16 +382,23 @@ void Device::WriteBar(uint8_t bar_id, uint32_t low, std::optional<uint32_t> high
 // IO and Memory access accordingly.
 zx_status_t Device::WriteBarInformation(const Bar& bar) {
   // Now write the allocated address space to the BAR.
-  uint16_t cmd_backup = ReadCmdLocked();
   // Figure out the IO type of the bar and disable that while we adjust the bar address.
-  uint16_t mem_io_en_flag = (bar.is_mmio) ? kCommandMemEn : kCommandIoEn;
-  ModifyCmdLocked(/*clr_bits=*/mem_io_en_flag, /*set_bits=*/0);
+  fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+  auto cmd_backup = CommandRegLocked().ReadFrom(cfg_.get());
+  if (bar.is_mmio) {
+    CommandRegLocked()
+        .FromValue(cmd_backup.reg_value())
+        .set_memory_space(false)
+        .WriteTo(cfg_.get());
+  } else {
+    CommandRegLocked().FromValue(cmd_backup.reg_value()).set_io_space(false).WriteTo(cfg_.get());
+  }
 
   const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
   const uint32_t type_bits = cfg_->Read(Config::kBar(bar.bar_id)) & ~addr_mask;
   WriteBar(bar.bar_id, (static_cast<uint32_t>(bar.address) & addr_mask) | type_bits,
            bar.is_64bit ? std::optional(static_cast<uint32_t>(bar.address >> 32)) : std::nullopt);
-  AssignCmdLocked(cmd_backup);
+  cmd_backup.WriteTo(cfg_.get());
   return ZX_OK;
 }
 
@@ -420,11 +410,17 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   Bar bar{};
   const uint32_t orig_bar_val = cfg_->Read(Config::kBar(bar_id));
   uint32_t bar_val = orig_bar_val;
+  auto reg = config::BaseAddress(bar_id).FromValue(bar_val);
 
   bar.bar_id = bar_id;
-  bar.is_mmio = (bar_val & kBarIoTypeMask) == kBarIoTypeMmio;
-  bar.is_64bit = bar.is_mmio && ((bar_val & kBarMmioTypeMask) == kBarMmioType64Bit);
-  bar.is_prefetchable = bar.is_mmio && (bar_val & kBarMmioPrefetchMask);
+  bar.is_mmio = !reg.is_io_space();
+  if (bar.is_mmio) {
+    bar.is_64bit = (reg.mmio().type() == config::MmioBaseAddressReg::kType64Bit);
+    bar.is_prefetchable = reg.mmio().is_prefetchable();
+  } else {
+    bar.is_64bit = false;
+    bar.is_prefetchable = false;
+  }
   const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
   const uint32_t type_bits = orig_bar_val & ~addr_mask;
 
@@ -450,16 +446,20 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // until the probe operation has been completed. Hopefully these special
   // systems are quiescent at this point in time, otherwise they might see
   // some minor glitching while access is disabled.
-  uint16_t cmd_backup = ReadCmdLocked();
-  bool enabled = !!(cmd_backup & (bar.is_mmio ? kCommandMemEn : kCommandIoEn));
-  ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn, /*set_bits=*/0);
-  auto restore_cmd = fit::defer(
-      [this, cmd_backup]() __TA_NO_THREAD_SAFETY_ANALYSIS { AssignCmdLocked(cmd_backup); });
+  fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+  auto cmd_backup = CommandRegLocked().ReadFrom(cfg_.get());
+  bool enabled = bar.is_mmio ? cmd_backup.memory_space() : cmd_backup.io_space();
+  CommandRegLocked()
+      .FromValue(cmd_backup.reg_value())
+      .set_memory_space(false)
+      .set_io_space(false)
+      .WriteTo(cfg_.get());
+  auto restore_cmd = fit::defer([this, &cmd_backup] { cmd_backup.WriteTo(cfg_.get()); });
   if (enabled) {
     // For enabled devices save the original address in the BAR. If the device
     // is enabled then we should assume the bios configured it and we should
     // attempt to retain the BAR allocation.
-    bar.address = orig_bar_val & addr_mask;
+    bar.address = bar.is_mmio ? reg.mmio().base_address() : reg.io().base_address();
     if (bar.is_mmio && bar.is_64bit) {
       bar.address |= static_cast<uint64_t>(cfg_->Read(Config::kBar(bar_id + 1))) << 32;
     }
@@ -468,12 +468,14 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // Write ones to figure out the size of the BAR
   cfg_->Write(Config::kBar(bar_id), UINT32_MAX);
   bar_val = cfg_->Read(Config::kBar(bar_id));
+  auto size_reg = config::BaseAddress(bar_id).FromValue(bar_val);
+  uint32_t size_base = bar.is_mmio ? size_reg.mmio().base_address() : size_reg.io().base_address();
   // BARs that are not wired up return all zeroes on read after probing.
-  if (bar_val == 0 || (!bar.is_64bit && (bar_val & addr_mask) == 0)) {
+  if (bar_val == 0 || (!bar.is_64bit && size_base == 0)) {
     return zx::ok();
   }
 
-  uint64_t size_mask = ~(bar_val & addr_mask);
+  uint64_t size_mask = ~size_base;
   if (bar.is_mmio && bar.is_64bit) {
     // Get the high 32 bits of size for the 64 bit BAR by repeating the
     // steps of writing 1s and then reading the value of the next BAR.
@@ -630,8 +632,14 @@ void Device::AllocatePreassignedBarsLocked() {
       // The firmware-assigned address could not be reserved. Disable decoding
       // and clear the BAR register now so it cannot conflict with allocations
       // made for other devices before this BAR is reallocated.
-      uint16_t mem_io_en_flag = (bar.is_mmio) ? kCommandMemEn : kCommandIoEn;
-      ModifyCmdLocked(/*clr_bits=*/mem_io_en_flag, /*set_bits=*/0);
+      {
+        fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+        if (bar.is_mmio) {
+          CommandRegLocked().ReadFrom(cfg_.get()).set_memory_space(false).WriteTo(cfg_.get());
+        } else {
+          CommandRegLocked().ReadFrom(cfg_.get()).set_io_space(false).WriteTo(cfg_.get());
+        }
+      }
       const uint32_t addr_mask = (bar.is_mmio) ? kBarMmioAddrMask : kBarPioAddrMask;
       const uint32_t type_bits = cfg_->Read(Config::kBar(bar.bar_id)) & ~addr_mask;
       WriteBar(bar.bar_id, type_bits, bar.is_64bit ? std::optional(0u) : std::nullopt);
@@ -647,7 +655,14 @@ zx::result<> Device::AllocateBars() {
 
   // Preserve any decode bits already enabled on a bridge for its downstream
   // I/O or memory windows before we manipulate the command register for BARs.
-  uint16_t mem_io_en_flags = is_bridge() ? (ReadCmdLocked() & (kCommandMemEn | kCommandIoEn)) : 0;
+  bool enable_mmio = false;
+  bool enable_pio = false;
+  if (is_bridge()) {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    auto cmd = CommandRegLocked().ReadFrom(cfg_.get());
+    enable_mmio = cmd.memory_space();
+    enable_pio = cmd.io_space();
+  }
 
   AllocatePreassignedBarsLocked();
 
@@ -669,7 +684,12 @@ zx::result<> Device::AllocateBars() {
   // Allocate BARs for the device while keeping decoding disabled so that
   // command register decode bits are only enabled once all BARs are programmed.
   if (!bar_allocation_order.empty()) {
-    ModifyCmdLocked(/*clr_bits=*/kCommandMemEn | kCommandIoEn, /*set_bits=*/0);
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked()
+        .ReadFrom(cfg_.get())
+        .set_memory_space(false)
+        .set_io_space(false)
+        .WriteTo(cfg_.get());
   }
   for (auto bar_id : bar_allocation_order) {
     if (auto result = AllocateBar(bar_id); result.is_error()) {
@@ -681,11 +701,23 @@ zx::result<> Device::AllocateBars() {
 
   for (const auto& bar : bars_) {
     if (bar && bar->allocation) {
-      mem_io_en_flags |= bar->is_mmio ? kCommandMemEn : kCommandIoEn;
+      if (bar->is_mmio) {
+        enable_mmio = true;
+      } else {
+        enable_pio = true;
+      }
     }
   }
-  if (mem_io_en_flags != 0) {
-    ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/mem_io_en_flags);
+  if (enable_mmio || enable_pio) {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    auto cmd = CommandRegLocked().ReadFrom(cfg_.get());
+    if (enable_mmio) {
+      cmd.set_memory_space(true);
+    }
+    if (enable_pio) {
+      cmd.set_io_space(true);
+    }
+    cmd.WriteTo(cfg_.get());
   }
 
   return zx::ok();

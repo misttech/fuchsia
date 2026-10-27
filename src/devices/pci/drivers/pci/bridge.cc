@@ -15,6 +15,7 @@
 
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
+#include <fbl/auto_lock.h>
 
 #include "src/devices/pci/drivers/pci/allocation.h"
 #include "src/devices/pci/drivers/pci/bus.h"
@@ -217,7 +218,8 @@ zx::result<> Bridge::AllocateBridgeWindowsLocked() {
            "[%s] Error configuring I/O window (%s), I/O bars downstream will be unavailable!\n",
            cfg_->addr(), result.status_string());
   } else if (io_base_ <= io_limit_) {
-    ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/kCommandIoEn);
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().ReadFrom(cfg_.get()).set_io_space(true).WriteTo(cfg_.get());
   }
   result =
       configure_window(upstream_->mmio_regions(), mmio_regions_, mem_base_, mem_limit_, "mmio");
@@ -226,7 +228,8 @@ zx::result<> Bridge::AllocateBridgeWindowsLocked() {
            "[%s] Error configuring MMIO window (%s), MMIO bars downstream will be unavailable!\n",
            cfg_->addr(), result.status_string());
   } else if (mem_base_ <= mem_limit_) {
-    ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/kCommandMemEn);
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().ReadFrom(cfg_.get()).set_memory_space(true).WriteTo(cfg_.get());
   }
   result = configure_window(upstream_->pf_mmio_regions(), pf_mmio_regions_, pf_mem_base_,
                             pf_mem_limit_, "pf_mmio");
@@ -236,7 +239,8 @@ zx::result<> Bridge::AllocateBridgeWindowsLocked() {
            "unavailable!\n",
            cfg_->addr(), result.status_string());
   } else if (pf_mem_base_ <= pf_mem_limit_) {
-    ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/kCommandMemEn);
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    CommandRegLocked().ReadFrom(cfg_.get()).set_memory_space(true).WriteTo(cfg_.get());
   }
 
   return zx::ok();

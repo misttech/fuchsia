@@ -203,12 +203,14 @@ zx_status_t Device::AckLegacyIrq() {
 }
 
 void Device::EnableLegacyIrq() {
-  ModifyCmdLocked(/*clr_bits=*/pci::kCommandIntDisable, /*set_bits=*/0);
+  fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+  CommandRegLocked().ReadFrom(cfg_.get()).set_interrupt_disable(false).WriteTo(cfg_.get());
   irqs_.legacy_disabled = false;
 }
 
 void Device::DisableLegacyIrq() {
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/pci::kCommandIntDisable);
+  fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+  CommandRegLocked().ReadFrom(cfg_.get()).set_interrupt_disable(true).WriteTo(cfg_.get());
   irqs_.legacy_disabled = true;
 }
 
@@ -240,8 +242,7 @@ zx_status_t Device::EnableLegacy() {
     return status;
   }
 
-  ModifyCmdLocked(/*clr_bits=*/pci::kCommandIntDisable, /*set_bits=*/0);
-  irqs_.legacy_disabled = false;
+  EnableLegacyIrq();
   irqs_.mode = fpci::InterruptMode::kLegacy;
   irqs_.legacy_pin = cfg_->Read(Config::kInterruptPin);
   return ZX_OK;
@@ -258,7 +259,11 @@ zx_status_t Device::EnableMsi(uint32_t irq_cnt) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  const bool was_bus_mastering = (ReadCmdLocked() & pci::kCommandBusMasterEn) != 0;
+  bool was_bus_mastering;
+  {
+    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
+    was_bus_mastering = CommandRegLocked().ReadFrom(cfg_.get()).bus_master();
+  }
   // Bus mastering must be enabled to generate MSI messages.
   const zx_status_t status = SetBusMastering(true);
   if (status != ZX_OK) {
@@ -329,8 +334,7 @@ zx_status_t Device::EnableMsix(uint32_t irq_cnt) {
 }
 
 zx_status_t Device::DisableLegacy() {
-  ModifyCmdLocked(/*clr_bits=*/0, /*set_bits=*/pci::kCommandIntDisable);
-  irqs_.legacy_disabled = true;
+  DisableLegacyIrq();
 
   const zx_status_t status = bdi_->RemoveFromSharedIrqList(this, irqs_.legacy_vector);
   if (status != ZX_OK) {

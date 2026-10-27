@@ -28,7 +28,7 @@ class FakeMmioConfig final : public MmioConfig {
       : MmioConfig(bdf, view) {}
   void MockBarProbeSideEffects(uint32_t bar_id) const {
     uint32_t bar_val = MmioConfig::Read(Config::kBar(bar_id));
-    auto reg = config::BaseAddress::Get().FromValue(bar_val);
+    auto reg = config::BaseAddress(bar_id).FromValue(bar_val);
 
     // When probing a BAR, the hardware writes a 0 in every valid bit used
     // for an address. The least significant address bit set represents the
@@ -51,9 +51,9 @@ class FakeMmioConfig final : public MmioConfig {
     size = ~(size - 1);
 
     if (reg.is_io_space()) {
-      reg.io()->set_base_address(size);
+      reg.set_reg_value(reg.io().set_base_address(size).reg_value());
     } else {
-      reg.mmio()->set_base_address(size);
+      reg.set_reg_value(reg.mmio().set_base_address(size).reg_value());
     }
     MmioConfig::Write(Config::kBar(bar_id), reg.reg_value());
   }

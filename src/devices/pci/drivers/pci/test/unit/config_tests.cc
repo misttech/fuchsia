@@ -228,6 +228,55 @@ void ConfigReadWriteIntegrationImpl(pci::Config* cfg, FakePciType0Config* dev) {
   cfg->Write(Config::kMaxLatency, ++value);
   EXPECT_EQ(value, dev->max_latency());
   EXPECT_EQ(value, cfg->Read(Config::kMaxLatency));
+
+  cfg->Write<uint8_t>(0xA5, Config::kRevisionId.offset());
+  EXPECT_EQ(0xA5u, dev->revision_id());
+  EXPECT_EQ(0xA5u, cfg->Read<uint8_t>(Config::kRevisionId.offset()));
+
+  cfg->Write<uint16_t>(0x5A5A, Config::kSubsystemId.offset());
+  EXPECT_EQ(0x5A5Au, dev->subsystem_id());
+  EXPECT_EQ(0x5A5Au, cfg->Read<uint16_t>(Config::kSubsystemId.offset()));
+
+  cfg->Write<uint32_t>(0x12345678, Config::kExpansionRomAddress.offset());
+  EXPECT_EQ(0x12345678u, dev->expansion_rom_address());
+  EXPECT_EQ(0x12345678u, cfg->Read<uint32_t>(Config::kExpansionRomAddress.offset()));
+
+  config::Command.FromValue(0).set_io_space(1).set_memory_space(1).set_bus_master(1).WriteTo(cfg);
+  auto command = config::Command.ReadFrom(cfg);
+  EXPECT_TRUE(command.io_space());
+  EXPECT_TRUE(command.memory_space());
+  EXPECT_TRUE(command.bus_master());
+  EXPECT_FALSE(command.interrupt_disable());
+  EXPECT_EQ(command.reg_value(), dev->command());
+
+  config::Status.FromValue(0).set_has_capabilities_list(1).set_fast_b2b_capable(1).WriteTo(cfg);
+  auto status = config::Status.ReadFrom(cfg);
+  EXPECT_TRUE(status.has_capabilities_list());
+  EXPECT_TRUE(status.fast_b2b_capable());
+  EXPECT_FALSE(status.interrupt_status());
+  EXPECT_EQ(status.reg_value(), dev->status());
+
+  config::BaseAddress(0)
+      .FromValue(0)
+      .mmio()
+      .set_base_address(0xABCD0000)
+      .set_is_prefetchable(1)
+      .set_type(config::MmioBaseAddressReg::kType64Bit)
+      .WriteTo(cfg);
+  auto read_bar = config::BaseAddress(0).ReadFrom(cfg);
+  EXPECT_FALSE(read_bar.is_io_space());
+  EXPECT_TRUE(read_bar.mmio().is_prefetchable());
+  EXPECT_EQ(read_bar.mmio().type(), config::MmioBaseAddressReg::kType64Bit);
+  EXPECT_EQ(0xABCD0000u, read_bar.mmio().base_address());
+  EXPECT_EQ(read_bar.reg_value(), dev->base_address[0].mmio64);
+
+  config::BaseAddress(1).FromValue(0).io().set_is_io_space(1).set_base_address(0xFF00).WriteTo(cfg);
+  auto read_io_bar = config::BaseAddress(1).ReadFrom(cfg);
+  EXPECT_TRUE(read_io_bar.is_io_space());
+  EXPECT_EQ(0xFF00u, read_io_bar.io().base_address());
+  EXPECT_EQ(read_io_bar.reg_value(), dev->base_address[1].io.value);
+  EXPECT_TRUE(dev->base_address[1].io.is_io_space());
+  EXPECT_EQ(0xFF00u >> 2, dev->base_address[1].io.address());
 }
 
 void MmioConfigGetViewImpl(FakePciroot& pciroot) {

@@ -473,7 +473,7 @@ void Bus::HandleLegacyIrq(async_dispatcher_t* dispatcher, async::Irq* irq, zx_st
     if (entry->wait.is_pending() || device->irqs().legacy_disabled) {
       continue;
     }
-    config::Status dev_status = {.value = device->config()->Read(Config::kStatus)};
+    auto dev_status = config::Status.ReadFrom(device->config().get());
     if (dev_status.interrupt_status() || board_config_.use_intx_workaround()) {
       // Legacy (INTx) interrupts are level-triggered: the device holds its
       // interrupt line asserted until its driver services the device and

@@ -131,23 +131,12 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // The methods here are locking versions that are used primarily by the PCI
   // protocol implementation in device_protocol.cc.
 
-  // Modify bits in the device's command register (in the device config space),
-  // clearing the bits specified by clr_bits and setting the bits specified by set
-  // bits.  Specifically, the operation will be applied as...
-  //
-  // WR(cmd, (RD(cmd) & ~clr) | set)
-  //
-  // @param clr_bits The mask of bits to be cleared.
-  // @param clr_bits The mask of bits to be set.
-  // @return A zx_status_t indicating success or failure of the operation.
-  zx_status_t ModifyCmd(uint16_t clr_bits, uint16_t set_bits) __TA_EXCLUDES(dev_lock_);
-
   // Enable or disable bus mastering in a device's configuration.
   //
   // @param enable If true, allow the device to access main system memory as a bus
   // master.
   // @return A zx_status_t indicating success or failure of the operation.
-  zx_status_t SetBusMastering(bool enabled) __TA_REQUIRES(dev_lock_);
+  zx_status_t SetBusMastering(bool enabled) __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
 
   // Enable or disable PIO access in a device's configuration.
   //
@@ -224,8 +213,8 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // Legacy IRQs are automatically re-armed via ZX_VIRTUAL_INTERRUPT_UNTRIGGERED;
   // AckLegacyIrq is a no-op.
   zx_status_t AckLegacyIrq() __TA_REQUIRES(dev_lock_);
-  void EnableLegacyIrq() __TA_REQUIRES(dev_lock_);
-  void DisableLegacyIrq() __TA_REQUIRES(dev_lock_);
+  void EnableLegacyIrq() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
+  void DisableLegacyIrq() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
 
   zx::result<PowerManagementCapability::PowerState> GetPowerState() __TA_EXCLUDES(dev_lock_);
 
@@ -282,21 +271,11 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
 
   zx_status_t Init() __TA_EXCLUDES(dev_lock_);
   zx_status_t InitLocked() __TA_REQUIRES(dev_lock_);
-  zx_status_t InitInterrupts() __TA_REQUIRES(dev_lock_);
+  zx_status_t InitInterrupts() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
 
-  // Read the value of the Command register, requires the dev_lock.
-  uint16_t ReadCmdLocked() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_) {
-    fbl::AutoLock cmd_lock(&cmd_reg_lock_);
-    return cfg_->Read(Config::kCommand);
-  }
-  void ModifyCmdLocked(uint16_t clr_bits, uint16_t set_bits) __TA_REQUIRES(dev_lock_)
-      __TA_EXCLUDES(cmd_reg_lock_);
-  void AssignCmdLocked(uint16_t value) __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_) {
-    ModifyCmdLocked(UINT16_MAX, value);
-  }
-
-  bool IoEnabled() __TA_REQUIRES(dev_lock_) { return ReadCmdLocked() & pci::kCommandIoEn; }
-  bool MmioEnabled() __TA_REQUIRES(dev_lock_) { return ReadCmdLocked() & pci::kCommandMemEn; }
+  // Returns the Command register address, requiring cmd_reg_lock_ to be held.
+  // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+  auto CommandRegLocked() const __TA_REQUIRES(cmd_reg_lock_) { return config::Command; }
 
   zx_status_t ProbeCapabilities() __TA_REQUIRES(dev_lock_);
   zx_status_t ParseCapabilities() __TA_REQUIRES(dev_lock_);
@@ -310,7 +289,7 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // Probes a BAR's configuration. If it is already allocated it will try to
   // reserve the existing address window for it so that devices configured by system
   // firmware can be maintained as much as possible.
-  zx::result<> ProbeBar(uint8_t bar_id) __TA_REQUIRES(dev_lock_);
+  zx::result<> ProbeBar(uint8_t bar_id) __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   void ProbeBars() __TA_REQUIRES(dev_lock_);
   // Allocates address space for a BAR out of any suitable allocators.
   zx::result<std::unique_ptr<PciAllocation>> AllocateFromUpstream(const Bar& bar,
@@ -318,17 +297,18 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
       __TA_REQUIRES(dev_lock_);
   void WriteBar(uint8_t bar_id, uint32_t low, std::optional<uint32_t> high = std::nullopt)
       __TA_REQUIRES(dev_lock_);
-  zx_status_t WriteBarInformation(const Bar& bar) __TA_REQUIRES(dev_lock_);
+  zx_status_t WriteBarInformation(const Bar& bar) __TA_REQUIRES(dev_lock_)
+      __TA_EXCLUDES(cmd_reg_lock_);
   // Allocates address space for a BAR if it does not already exist.
   zx::result<> AllocateBar(uint8_t bar_id) __TA_REQUIRES(dev_lock_);
-  void AllocatePreassignedBarsLocked() __TA_REQUIRES(dev_lock_);
+  void AllocatePreassignedBarsLocked() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   void AllocatePreassignedBars() __TA_EXCLUDES(dev_lock_);
   // Called a device to configure (probe/allocate) its BARs
   zx::result<> AllocateBarsLocked() __TA_REQUIRES(dev_lock_);
   // Called by an UpstreamNode to configure the BARs of a device downstream.
   // Bridge implements it so it can allocate its bridge windows and own BARs before
   // configuring downstream BARs..
-  virtual zx::result<> AllocateBars() __TA_EXCLUDES(dev_lock_);
+  virtual zx::result<> AllocateBars() __TA_EXCLUDES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   zx::result<> ConfigureCapabilities() __TA_EXCLUDES(dev_lock_);
   zx::result<std::pair<zx::msi, msi_allocation_info_t>> AllocateMsi(uint32_t irq_cnt)
       __TA_REQUIRES(dev_lock_);
@@ -339,7 +319,7 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // only in a read only fashion).  BAR windows, bus mastering, and interrupts
   // will all be disabled.
   virtual void Disable() __TA_EXCLUDES(dev_lock_);
-  void DisableLocked() __TA_REQUIRES(dev_lock_);
+  void DisableLocked() __TA_REQUIRES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
 
   mutable fbl::Mutex dev_lock_;
   mutable fbl::Mutex cmd_reg_lock_;    // Protection for access to the command register.

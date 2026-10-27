@@ -15,68 +15,86 @@
 #include <zircon/types.h>
 
 #include <memory>
+#include <type_traits>
 
 #include <hwreg/bitfields.h>
 
 namespace pci {
+
+class Config;
+
 namespace config {
 
 // Fields correspond to the name in the PCI Local Bus Spec section 6.2.
-struct Command {
-  uint16_t value;
+struct CommandReg : public hwreg::RegisterBase<CommandReg, uint16_t> {
   // 15-11 are reserved preserve.
-  DEF_SUBBIT(value, 10, interrupt_disable);
-  DEF_SUBBIT(value, 9, fast_back_to_back_enable);
-  DEF_SUBBIT(value, 8, serr_enable);
+  DEF_BIT(10, interrupt_disable);
+  DEF_BIT(9, fast_back_to_back_enable);
+  DEF_BIT(8, serr_enable);
   // 7 is reserved preserve.
-  DEF_SUBBIT(value, 6, parity_error_response);
-  DEF_SUBBIT(value, 5, vga_palette_snoop);
-  DEF_SUBBIT(value, 4, memory_write_and_invalidate_enable);
-  DEF_SUBBIT(value, 3, special_cycles);
-  DEF_SUBBIT(value, 2, bus_master);
-  DEF_SUBBIT(value, 1, memory_space);
-  DEF_SUBBIT(value, 0, io_space);
+  DEF_BIT(6, parity_error_response);
+  DEF_BIT(5, vga_palette_snoop);
+  DEF_BIT(4, memory_write_and_invalidate_enable);
+  DEF_BIT(3, special_cycles);
+  DEF_BIT(2, bus_master);
+  DEF_BIT(1, memory_space);
+  DEF_BIT(0, io_space);
 };
+inline const hwreg::RegisterAddr<CommandReg> Command(pci::kConfigCommand);
 
-struct Status {
-  uint16_t value;
-  DEF_SUBBIT(value, 15, detected_parity_error);
-  DEF_SUBBIT(value, 14, signaled_system_error);
-  DEF_SUBBIT(value, 13, received_master_abort);
-  DEF_SUBBIT(value, 12, received_target_abort);
-  DEF_SUBBIT(value, 11, signaled_target_abort);
-  DEF_SUBFIELD(value, 10, 9, devsel_timing);
-  DEF_SUBBIT(value, 8, master_data_parity_error);
-  DEF_SUBBIT(value, 7, fast_b2b_capable);
+// Status register (PCI Local Bus Spec section 6.2.3, PCIe Base Spec section 7.5.1.1.4).
+// Bits 8 and 11-15 are RW1C. Writes must set only the bits to be cleared (no read-modify-write).
+struct StatusReg : public hwreg::RegisterBase<StatusReg, uint16_t> {
+  DEF_BIT(15, detected_parity_error);
+  DEF_BIT(14, signaled_system_error);
+  DEF_BIT(13, received_master_abort);
+  DEF_BIT(12, received_target_abort);
+  DEF_BIT(11, signaled_target_abort);
+  DEF_FIELD(10, 9, devsel_timing);
+  DEF_BIT(8, master_data_parity_error);
+  DEF_BIT(7, fast_b2b_capable);
   // 6 is reserved preserve.
-  DEF_SUBBIT(value, 5, capable_66mhz);
-  DEF_SUBBIT(value, 4, has_capabilities_list);
-  DEF_SUBBIT(value, 3, interrupt_status);
-  // 2-0 are reserved preserve.
+  DEF_BIT(5, capable_66mhz);
+  DEF_BIT(4, has_capabilities_list);
+  DEF_BIT(3, interrupt_status);
+  // 2-1 are reserved preserve.
+  DEF_BIT(0, immediate_readiness);
 };
+inline const hwreg::RegisterAddr<StatusReg> Status(pci::kConfigStatus);
 
 // The layout of a Base Address Register changes based on its type.
 // PCI Local Bus Spec section 6.2.5.1.
-struct IoBaseAddress;
-struct MmioBaseAddress;
-struct BaseAddress : public hwreg::RegisterBase<BaseAddress, uint32_t> {
-  DEF_RSVDZ_BIT(1);
-  DEF_BIT(0, is_io_space);
-
-  IoBaseAddress* io() { return reinterpret_cast<IoBaseAddress*>(this); }
-  MmioBaseAddress* mmio() { return reinterpret_cast<MmioBaseAddress*>(this); }
-  static auto Get() { return hwreg::RegisterAddr<BaseAddress>(0); }
-};
-
-struct IoBaseAddress : public BaseAddress {
+struct IoBaseAddressReg : public hwreg::RegisterBase<IoBaseAddressReg, uint32_t> {
   DEF_UNSHIFTED_FIELD(31, 2, base_address);
+  DEF_BIT(0, is_io_space);
 };
 
-struct MmioBaseAddress : public BaseAddress {
+struct MmioBaseAddressReg : public hwreg::RegisterBase<MmioBaseAddressReg, uint32_t> {
+  static constexpr uint32_t kType32Bit = 0b00;
+  static constexpr uint32_t kType64Bit = 0b10;
+
   DEF_UNSHIFTED_FIELD(31, 4, base_address);
   DEF_BIT(3, is_prefetchable);
-  DEF_BIT(2, is_64_bit);
+  DEF_FIELD(2, 1, type);
+  DEF_BIT(0, is_io_space);
 };
+
+struct BaseAddressReg : public hwreg::RegisterBase<BaseAddressReg, uint32_t> {
+  // Bit 1 is reserved in I/O BARs and part of the 2-bit type field in MMIO BARs.
+  DEF_BIT(0, is_io_space);
+
+  IoBaseAddressReg io() const {
+    return hwreg::RegisterAddr<IoBaseAddressReg>(reg_addr()).FromValue(reg_value());
+  }
+  MmioBaseAddressReg mmio() const {
+    return hwreg::RegisterAddr<MmioBaseAddressReg>(reg_addr()).FromValue(reg_value());
+  }
+};
+inline hwreg::RegisterAddr<BaseAddressReg> BaseAddress(uint32_t bar_id) {
+  ZX_DEBUG_ASSERT(bar_id < pci::kMaxBarCount);
+  return hwreg::RegisterAddr<BaseAddressReg>(
+      static_cast<uint32_t>(pci::kConfigBaseAddresses + (bar_id * sizeof(uint32_t))));
+}
 
 }  // namespace config
 
@@ -229,6 +247,38 @@ class Config {
   virtual void Write(PciReg8 addr, uint8_t val) const = 0;
   virtual void Write(PciReg16 addr, uint16_t val) const = 0;
   virtual void Write(PciReg32 addr, uint32_t val) const = 0;
+
+  // Sized configuration space accessors used by hwreg for register I/O and direct raw-offset
+  // access.
+  template <typename IntType, typename = std::enable_if_t<std::is_unsigned_v<IntType> &&
+                                                          !std::is_same_v<IntType, bool>>>
+  IntType Read(uint32_t offset) const {
+    static_assert(sizeof(IntType) == 1 || sizeof(IntType) == 2 || sizeof(IntType) == 4,
+                  "Invalid PCI config access size");
+    ZX_DEBUG_ASSERT(offset <= UINT16_MAX);
+    if constexpr (sizeof(IntType) == 1) {
+      return Read(PciReg8(static_cast<uint16_t>(offset)));
+    } else if constexpr (sizeof(IntType) == 2) {
+      return Read(PciReg16(static_cast<uint16_t>(offset)));
+    } else {
+      return Read(PciReg32(static_cast<uint16_t>(offset)));
+    }
+  }
+
+  template <typename IntType, typename = std::enable_if_t<std::is_unsigned_v<IntType> &&
+                                                          !std::is_same_v<IntType, bool>>>
+  void Write(IntType val, uint32_t offset) const {
+    static_assert(sizeof(IntType) == 1 || sizeof(IntType) == 2 || sizeof(IntType) == 4,
+                  "Invalid PCI config access size");
+    ZX_DEBUG_ASSERT(offset <= UINT16_MAX);
+    if constexpr (sizeof(IntType) == 1) {
+      Write(PciReg8(static_cast<uint16_t>(offset)), val);
+    } else if constexpr (sizeof(IntType) == 2) {
+      Write(PciReg16(static_cast<uint16_t>(offset)), val);
+    } else {
+      Write(PciReg32(static_cast<uint16_t>(offset)), val);
+    }
+  }
   virtual ~Config() = default;
 
  protected:
