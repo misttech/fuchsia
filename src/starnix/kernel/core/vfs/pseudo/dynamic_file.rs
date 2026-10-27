@@ -351,7 +351,7 @@ impl<Source: SequenceFileSource> DynamicFileState<Source> {
 pub struct DynamicFileBuf(VecDeque<u8>);
 impl DynamicFileBuf {
     pub fn write(&mut self, data: &[u8]) {
-        self.0.extend(data.iter().copied());
+        self.0.extend(data);
     }
     pub fn write_iter<I>(&mut self, data: I)
     where
@@ -364,6 +364,13 @@ impl DynamicFileBuf {
         std::io::Write::write_fmt(&mut self.0, args).map_err(|_| errno!(EINVAL))?;
         let end_size = self.0.len();
         Ok(end_size - start_size)
+    }
+}
+
+#[cfg(test)]
+impl From<DynamicFileBuf> for Vec<u8> {
+    fn from(buf: DynamicFileBuf) -> Self {
+        buf.0.into()
     }
 }
 

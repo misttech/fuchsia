@@ -10,6 +10,7 @@ use crate::mm::{
 };
 use crate::vfs::FileMapping;
 use crate::vfs::aio::AioContext;
+use crate::vfs::pseudo::dynamic_file::DynamicFileBuf;
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
 use fuchsia_inspect::HistogramProperty;
@@ -98,7 +99,7 @@ impl Mapping {
         self.flags = new_flags;
     }
 
-    /// Maximum [`Access`] permissions allowed for this mapping, used by [`Mapping::vm_flags`] to
+    /// Maximum [`Access`] permissions allowed for this mapping, used by [`Mapping::write_vm_flags`] to
     /// report `mr`, `mw`, and `me` in `/proc/[pid]/smaps` (see `proc_pid_smaps(5)`).
     fn max_access(&self) -> Access {
         match self.name() {
@@ -272,66 +273,73 @@ impl Mapping {
         !self.flags.contains(MappingFlags::SHARED) && self.flags.contains(MappingFlags::ANONYMOUS)
     }
 
-    pub fn vm_flags(&self) -> String {
-        let mut string = String::default();
+    pub fn write_vm_flags(&self, sink: &mut DynamicFileBuf) {
+        // Linux defines ~38 three-byte VmFlags mnemonics ("xx ", <= 114 bytes), of which Starnix
+        // currently emits at most 15 (45 bytes).
+        let mut buf = [0u8; 128];
+        let mut len = 0;
+        let mut push = |flag: &[u8]| {
+            buf[len..len + flag.len()].copy_from_slice(flag);
+            len += flag.len();
+        };
         let max_access = self.max_access();
         // From <https://man7.org/linux/man-pages/man5/proc_pid_smaps.5.html>:
         //
         // rd   -   readable
         if self.flags.contains(MappingFlags::READ) {
-            string.push_str("rd ");
+            push(b"rd ");
         }
         // wr   -   writable
         if self.flags.contains(MappingFlags::WRITE) {
-            string.push_str("wr ");
+            push(b"wr ");
         }
         // ex   -   executable
         if self.flags.contains(MappingFlags::EXEC) {
-            string.push_str("ex ");
+            push(b"ex ");
         }
         // sh   -   shared
         if self.flags.contains(MappingFlags::SHARED) && max_access.contains(Access::WRITE) {
-            string.push_str("sh ");
+            push(b"sh ");
         }
         // mr   -   may read
         if max_access.contains(Access::READ) {
-            string.push_str("mr ");
+            push(b"mr ");
         }
         // mw   -   may write
         if max_access.contains(Access::WRITE) {
-            string.push_str("mw ");
+            push(b"mw ");
         }
         // me   -   may execute
         if max_access.contains(Access::EXEC) {
-            string.push_str("me ");
+            push(b"me ");
         }
         // ms   -   may share
         if self.flags.contains(MappingFlags::SHARED) {
-            string.push_str("ms ");
+            push(b"ms ");
         }
         // gd   -   stack segment grows down
         if self.flags.contains(MappingFlags::GROWSDOWN) {
-            string.push_str("gd ");
+            push(b"gd ");
         }
         // pf   -   pure PFN range
         // dw   -   disabled write to the mapped file
         // lo   -   pages are locked in memory
         if self.flags.contains(MappingFlags::LOCKED) {
-            string.push_str("lo ");
+            push(b"lo ");
         }
         // io   -   memory mapped I/O area
         // sr   -   sequential read advise provided
         // rr   -   random read advise provided
         // dc   -   do not copy area on fork
         if self.flags.contains(MappingFlags::DONTFORK) {
-            string.push_str("dc ");
+            push(b"dc ");
         }
         // de   -   do not expand area on remapping
         if self.flags.contains(MappingFlags::DONT_EXPAND) {
-            string.push_str("de ");
+            push(b"de ");
         }
         // ac   -   area is accountable
-        string.push_str("ac ");
+        push(b"ac ");
         // nr   -   swap space is not reserved for the area
         // ht   -   area uses huge tlb pages
         // sf   -   perform synchronous page faults (since Linux 4.15)
@@ -339,7 +347,7 @@ impl Mapping {
         // ar   -   architecture specific flag
         // wf   -   wipe on fork (since Linux 4.14)
         if self.flags.contains(MappingFlags::WIPEONFORK) {
-            string.push_str("wf ");
+            push(b"wf ");
         }
         // dd   -   do not include area into core dump
         // sd   -   soft-dirty flag (since Linux 3.13)
@@ -349,11 +357,11 @@ impl Mapping {
         // mg   -   mergeable advise flag
         // um   -   userfaultfd missing pages tracking (since Linux 4.3)
         if self.flags.contains(MappingFlags::UFFD_MISSING) {
-            string.push_str("um");
+            push(b"um ");
         }
         // uw   -   userfaultfd wprotect pages tracking (since Linux 4.3)
         // ui   -   userfaultfd minor fault pages tracking (since Linux 5.13)
-        string
+        sink.write(&buf[..len]);
     }
 }
 

@@ -33,6 +33,7 @@ use flyweights::FlyByteStr;
 use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
@@ -5861,8 +5862,9 @@ fn write_map(
     )?;
     let fill_to_name = |sink: &mut DynamicFileBuf| {
         // The filename goes at >= the 74th column (73rd when zero indexed)
-        for _ in line_length..73 {
-            sink.write(b" ");
+        const SPACES: [u8; 73] = [b' '; 73];
+        if line_length < SPACES.len() {
+            sink.write(&SPACES[line_length..]);
         }
     };
     match &map.name() {
@@ -6018,7 +6020,7 @@ impl ProcSmapsFile {
         state: &MemoryManagerState,
         zx_mappings: &[zx::MapInfo],
     ) -> Vec<u64> {
-        let mut committed_bytes_vec = Vec::new();
+        let mut committed_bytes_vec = Vec::with_capacity(zx_mappings.len());
         let mut zx_idx = 0;
         for (mm_range, mm_mapping) in state.mappings.iter() {
             let mm_start = mm_range.start.ptr();
@@ -6113,7 +6115,7 @@ impl DynamicFileSource for ProcSmapsFile {
             Self::compute_committed_bytes(&mm, &state, zx_mappings)
         });
 
-        let mut share_count_cache: HashMap<zx::Koid, u64> = HashMap::default();
+        let mut share_count_cache: FxHashMap<zx::Koid, u64> = FxHashMap::default();
 
         for ((mm_range, mm_mapping), committed_bytes) in
             state.mappings.iter().zip(committed_bytes_vec.into_iter())
@@ -6123,11 +6125,27 @@ impl DynamicFileSource for ProcSmapsFile {
             let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
             let rss_kb = committed_bytes / 1024;
 
-            let share_count = if rss_kb == 0 {
-                // If there is no memory, share_count has no effect (all below is 0)
-                1
+            if rss_kb == 0 {
+                // Keep the zeroed fields in the format string literal so `write!` copies them as
+                // static slices instead of formatting and padding 8 separate zero integers at
+                // runtime.
+                write!(
+                    sink,
+                    "Size:           {size_kb:>8} kB\n\
+                     Rss:                   0 kB\n\
+                     Pss:                   0 kB\n\
+                     Shared_Clean:          0 kB\n\
+                     Shared_Dirty:          0 kB\n\
+                     Private_Clean:         0 kB\n\
+                     Private_Dirty:         0 kB\n\
+                     Anonymous:             0 kB\n\
+                     KernelPageSize: {page_size_kb:>8} kB\n\
+                     MMUPageSize:    {page_size_kb:>8} kB\n\
+                     Locked:                0 kB\n\
+                     VmFlags: "
+                )?;
             } else {
-                match state.get_mapping_backing(mm_mapping) {
+                let share_count = match state.get_mapping_backing(mm_mapping) {
                     MappingBacking::Memory(backing) => {
                         let memory = backing.memory();
                         let koid = memory.get_koid();
@@ -6148,37 +6166,39 @@ impl DynamicFileSource for ProcSmapsFile {
                     MappingBacking::PrivateAnonymous => {
                         1 // Private mapping
                     }
-                }
-            };
+                };
 
-            let is_shared = share_count > 1;
+                let is_shared = share_count > 1;
 
-            let pss_kb = if is_shared { rss_kb / share_count } else { rss_kb };
+                let pss_kb = if is_shared { rss_kb / share_count } else { rss_kb };
 
-            track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
-            let (shared_dirty_kb, private_dirty_kb) = (0, 0);
-            let shared_clean_kb = if is_shared { rss_kb } else { 0 };
-            let private_clean_kb = if is_shared { 0 } else { rss_kb };
+                track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
+                let (shared_dirty_kb, private_dirty_kb) = (0, 0);
+                let shared_clean_kb = if is_shared { rss_kb } else { 0 };
+                let private_clean_kb = if is_shared { 0 } else { rss_kb };
 
-            let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
-            let locked_kb =
-                if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
-            writeln!(
-                sink,
-                "Size:           {size_kb:>8} kB\n\
-                 Rss:            {rss_kb:>8} kB\n\
-                 Pss:            {pss_kb:>8} kB\n\
-                 Shared_Clean:   {shared_clean_kb:>8} kB\n\
-                 Shared_Dirty:   {shared_dirty_kb:>8} kB\n\
-                 Private_Clean:  {private_clean_kb:>8} kB\n\
-                 Private_Dirty:  {private_dirty_kb:>8} kB\n\
-                 Anonymous:      {anonymous_kb:>8} kB\n\
-                 KernelPageSize: {page_size_kb:>8} kB\n\
-                 MMUPageSize:    {page_size_kb:>8} kB\n\
-                 Locked:         {locked_kb:>8} kB\n\
-                 VmFlags: {}",
-                mm_mapping.vm_flags()
-            )?;
+                let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
+                let locked_kb =
+                    if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
+                write!(
+                    sink,
+                    "Size:           {size_kb:>8} kB\n\
+                     Rss:            {rss_kb:>8} kB\n\
+                     Pss:            {pss_kb:>8} kB\n\
+                     Shared_Clean:   {shared_clean_kb:>8} kB\n\
+                     Shared_Dirty:   {shared_dirty_kb:>8} kB\n\
+                     Private_Clean:  {private_clean_kb:>8} kB\n\
+                     Private_Dirty:  {private_dirty_kb:>8} kB\n\
+                     Anonymous:      {anonymous_kb:>8} kB\n\
+                     KernelPageSize: {page_size_kb:>8} kB\n\
+                     MMUPageSize:    {page_size_kb:>8} kB\n\
+                     Locked:         {locked_kb:>8} kB\n\
+                     VmFlags: "
+                )?;
+            }
+
+            mm_mapping.write_vm_flags(sink);
+            sink.write(b"\n");
 
             track_stub!(TODO("https://fxbug.dev/297444691"), "optional smaps fields");
         }
@@ -6624,6 +6644,144 @@ mod tests {
         let adusted_mapping_flags = mapping_flags.with_access_flags(new_access_flags);
         assert_eq!(adusted_mapping_flags.access_flags(), new_access_flags);
         assert_eq!(adusted_mapping_flags.options(), options);
+    }
+
+    #[::fuchsia::test]
+    fn test_write_vm_flags() {
+        let options = MappingOptions::ANONYMOUS;
+        let access_flags = ProtectionFlags::READ | ProtectionFlags::WRITE;
+        let mapping_flags = MappingFlags::from_access_flags_and_options(access_flags, options);
+        let mapping = Mapping::with_name(
+            MappingBacking::PrivateAnonymous,
+            mapping_flags,
+            MappingName::None,
+            MappingMode::Eager,
+        );
+        let mut sink = DynamicFileBuf::default();
+        mapping.write_vm_flags(&mut sink);
+        let bytes: Vec<u8> = sink.into();
+        let str_flags = std::str::from_utf8(&bytes).unwrap();
+        assert!(str_flags.contains("rd "));
+        assert!(str_flags.contains("wr "));
+        assert!(str_flags.contains("mr "));
+        assert!(str_flags.contains("mw "));
+        assert!(str_flags.contains("ac "));
+
+        // Exhaustive test covering all 15 VM flags:
+        // rd, wr, ex, sh, mr, mw, me, ms, gd, lo, wf, dc, de, ac, and um.
+        let all_access = ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC;
+        let all_options = MappingOptions::SHARED
+            | MappingOptions::GROWSDOWN
+            | MappingOptions::DONTFORK
+            | MappingOptions::WIPEONFORK
+            | MappingOptions::DONT_EXPAND;
+        let mut exhaustive_flags =
+            MappingFlags::from_access_flags_and_options(all_access, all_options);
+        exhaustive_flags |= MappingFlags::LOCKED | MappingFlags::UFFD_MISSING;
+
+        let mapping_all = Mapping::with_name(
+            MappingBacking::PrivateAnonymous,
+            exhaustive_flags,
+            MappingName::None,
+            MappingMode::Eager,
+        );
+        let mut sink_all = DynamicFileBuf::default();
+        mapping_all.write_vm_flags(&mut sink_all);
+        let bytes_all: Vec<u8> = sink_all.into();
+        let str_all = std::str::from_utf8(&bytes_all).unwrap();
+
+        // Verify the exact full sequence
+        assert_eq!(str_all, "rd wr ex sh mr mw me ms gd lo dc de ac wf um ");
+    }
+
+    #[::fuchsia::test]
+    async fn test_pad_to_column_boundaries() {
+        spawn_kernel_and_run(async |current_task| {
+            let mm = current_task.mm().unwrap();
+            let state = mm.state.read();
+            let fs_context = current_task.fs();
+            let mapping_flags = MappingFlags::from_access_flags_and_options(
+                ProtectionFlags::READ,
+                MappingOptions::ANONYMOUS,
+            );
+            let range = UserAddress::from(0x10000)..UserAddress::from(0x20000);
+
+            // Named mapping: verify name starts at column 74 (0-indexed byte 73).
+            let mapping_vdso = Mapping::with_name(
+                MappingBacking::PrivateAnonymous,
+                mapping_flags,
+                MappingName::Vdso,
+                MappingMode::Eager,
+            );
+            let mut sink_named = DynamicFileBuf::default();
+            write_map(
+                &current_task.task,
+                Some(&fs_context),
+                &mut sink_named,
+                &state,
+                &range,
+                &mapping_vdso,
+            )
+            .expect("write_map");
+            let bytes_named: Vec<u8> = sink_named.into();
+            assert_eq!(&bytes_named[..40], b"00010000-00020000 r--p 00000000 00:00 0 ");
+            assert_eq!(&bytes_named[40..73], &[b' '; 33]);
+            assert_eq!(&bytes_named[73..], b"[vdso]\n");
+
+            // Anonymous unnamed mapping: verify trailing spaces omitted.
+            let mapping_anon = Mapping::with_name(
+                MappingBacking::PrivateAnonymous,
+                mapping_flags,
+                MappingName::None,
+                MappingMode::Eager,
+            );
+            let mut sink = DynamicFileBuf::default();
+            write_map(
+                &current_task.task,
+                Some(&fs_context),
+                &mut sink,
+                &state,
+                &range,
+                &mapping_anon,
+            )
+            .expect("write_map");
+            let bytes: Vec<u8> = sink.into();
+            let line = std::str::from_utf8(&bytes).unwrap();
+            assert_eq!(line, "00010000-00020000 r--p 00000000 00:00 0 \n");
+            let trimmed = &line[..line.len() - 1];
+            assert!(trimmed.len() < 73, "Anonymous mapping line should not be padded to column 73");
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_proc_smaps_generation() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let _uncommitted = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+                let gap = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+                let committed = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+                current_task.mm().unwrap().unmap(gap, *PAGE_SIZE as usize).expect("unmap gap");
+                current_task.write_memory(committed, &[0x42; 16]).expect("write committed page");
+                let mm = current_task.mm().unwrap();
+                assert_eq!(mm.get_mapping_count(), 2);
+                let smaps = ProcSmapsFile {
+                    mm: Arc::downgrade(&mm),
+                    target: TaskContainer::from_task(&current_task.task),
+                };
+                let mut sink = DynamicFileBuf::default();
+                smaps.generate(current_task, &mut sink).expect("generate");
+                let bytes: Vec<u8> = sink.into();
+                let content = std::str::from_utf8(&bytes).unwrap();
+                let page_kb = *PAGE_SIZE / 1024;
+                assert!(content.contains("Size:"));
+                assert!(content.contains("Rss:                   0 kB"));
+                assert!(content.contains(&format!("Rss:            {page_kb:>8} kB")));
+                assert!(content.contains("VmFlags:"));
+            },
+            KernelFeatures { cached_zx_map_info_bytes: 4096, ..Default::default() },
+        )
+        .await;
     }
 
     #[::fuchsia::test]
