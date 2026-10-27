@@ -14,11 +14,7 @@ from framework import (
     register_check,
 )
 
-from .visibility_utils import (
-    ALLOWED_VENDOR_TARGET_VISIBILITY_LABELS,
-    VENDOR_VISIBILITY_REFERENCE_URL,
-    has_disallowed_vendor_target_visibility,
-)
+from .visibility_utils import ALLOWED_VENDOR_TARGET_VISIBILITY_LABELS
 
 _REFERENCE_URL = "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/build_files#avoid-package-default-visibility"
 
@@ -26,13 +22,6 @@ _BROAD_VISIBILITY_ERROR_MSG = (
     "Do not use `default_visibility` in `package()` for broad visibility "
     "(such as `//visibility:public` or top-level `__subpackages__`). "
     "Specify `visibility` on individual targets instead."
-)
-
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in `default_visibility`. "
-    'Only `"//vendor:__pkg__"`, `"//vendor:__subpackages__"`, '
-    '`"//vendor/google:__pkg__"`, and `"//vendor/google:__subpackages__"` '
-    "are permitted in public Fuchsia code."
 )
 
 _NARROW_VISIBILITY_WARNING_MSG = (
@@ -74,6 +63,7 @@ class PackageDefaultVisibilityCheck(BazelCheck):
 
     name = "bazel_package_default_visibility"
     file_kinds = frozenset({FileKind.BUILD})
+    supports_allowlist = True
 
     def check_call(self, fc: FileContext, call: CallInfo) -> None:
         if (
@@ -82,14 +72,7 @@ class PackageDefaultVisibilityCheck(BazelCheck):
         ):
             return
         kw = call.keywords["default_visibility"]
-        if has_disallowed_vendor_target_visibility(kw.value):
-            fc.report(
-                _VENDOR_ERROR_MSG,
-                kw,
-                level="error",
-                url=VENDOR_VISIBILITY_REFERENCE_URL,
-            )
-        elif _has_broad_visibility(kw.value):
+        if _has_broad_visibility(kw.value):
             fc.report(
                 _BROAD_VISIBILITY_ERROR_MSG,
                 kw,
@@ -97,9 +80,9 @@ class PackageDefaultVisibilityCheck(BazelCheck):
                 url=_REFERENCE_URL,
             )
         else:
-            # Reaching here means visibility is not broad and does not reference
-            # disallowed vendor subpaths (e.g., narrow subpackages or allowed vendor
-            # root labels). Emit a warning recommending target-level visibility.
+            # Reaching here means visibility is not broad (e.g., narrow
+            # subpackages or allowed vendor root labels). Emit a warning
+            # recommending target-level visibility.
             fc.report(
                 _NARROW_VISIBILITY_WARNING_MSG,
                 kw,

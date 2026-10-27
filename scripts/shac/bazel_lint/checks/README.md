@@ -127,10 +127,28 @@ Each check is implemented as a small module in this directory that subclasses
   tracking bug required). Authors should clearly document the reason for each
   exemption in comments. Use [`allowlists/`](../allowlists/README.md) instead
   for temporary exceptions that require a tracking bug.
+* `supports_allowlist: bool` - Controls whether temporary bug-tracked exemptions
+  in [`allowlists/<name>.json`](../allowlists/README.md) are permitted for this
+  check:
+  * Defaults to `False`. Authors should determine whether there are reasonable
+    use cases for allowing exceptions to the check, such as to unblock work
+    where the check cannot be reasonably resolved, or whether the check is
+    non-negotiable.
+  * Set to `True` when there are reasonable use cases for temporary, bug-tracked
+    exceptions (for example, while migrating existing targets or to unblock work
+    where the check cannot be reasonably resolved), **even if there are
+    currently zero violations and no `allowlists/<name>.json` file on disk**.
+    When `True`, `allowlists/<name>.json` is optional (if no file exists on
+    disk, the allowlist is empty).
+  * Leave as `False` when a check is **non-negotiable** and violations must
+    never be committed or allowlisted (for example, `bazel_vendor_paths`, where
+    vendor subpaths must never be referenced in public Fuchsia code). When
+    `False`, no allowlist is loaded and the linter fails if
+    `allowlists/<name>.json` exists on disk.
 * `supports_targets_allowlist: bool` - Controls whether entries in
   `allowlists/<name>.json` that specify a single file `"path"` may also specify
   a `"targets"` list to exempt only specific rule/macro targets in that file
-  rather than the entire file:
+  rather than the entire file (requires `supports_allowlist = True`):
   * Set to `True` when a check's findings are associated with named targets
     (e.g., `call.target_name` in `check_call()` or `s.enclosing_call.target_name`
     in `check_string()`) and the check passes `targets=(...)` to `fc.report()`

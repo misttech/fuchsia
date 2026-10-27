@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from allowlist import Allowlist, load_allowlist
+from allowlist import Allowlist, AllowlistError, load_allowlist
 from framework import (
     REGISTRY,
     BazelCheck,
@@ -127,10 +127,18 @@ def main(argv: list[str] | None = None) -> int:
         allowlist_path = _resolve_allowlist_path(
             check.name, root=root, allowlists_dir=args.allowlists_dir
         )
-        allowlist = load_allowlist(
-            allowlist_path,
-            supports_targets_allowlist=check.supports_targets_allowlist,
-        )
+        if check.supports_allowlist:
+            allowlist: Allowlist | None = load_allowlist(
+                allowlist_path,
+                supports_targets_allowlist=check.supports_targets_allowlist,
+            )
+        elif allowlist_path.is_file():
+            raise AllowlistError(
+                f"{allowlist_path}: allowlist file is not permitted for check "
+                f"'{check.name}' (supports_allowlist = False)"
+            )
+        else:
+            allowlist = None
         for file_path in args.files:
             all_findings.extend(
                 _check_file(

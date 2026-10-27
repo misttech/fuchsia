@@ -36,8 +36,13 @@ class in [`../checks/`](../checks/README.md) rather than in an allowlist file.
 ## File Naming
 
 Each allowlist file is named `<shac_check_name>.json` (for example,
-`bazel_target_visibility.json`). If no `<shac_check_name>.json` file exists for
-a check, that check has no allowlisted exceptions.
+`bazel_target_visibility.json`). Only checks that set
+`supports_allowlist = True` on their `BazelCheck` class may have an allowlist
+file; creating a `.json` file for a check with `supports_allowlist = False`
+(such as `bazel_vendor_paths`) is rejected with an `AllowlistError`. For checks
+with `supports_allowlist = True`, the `.json` file is optional: if no
+`<shac_check_name>.json` file exists on disk, that check has no allowlisted
+exceptions.
 
 ## Format
 

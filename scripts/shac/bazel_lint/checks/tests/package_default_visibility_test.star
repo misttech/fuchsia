@@ -17,14 +17,6 @@ _BROAD_ERROR_MSG = (
     "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/build_files#avoid-package-default-visibility."
 )
 
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in `default_visibility`. " +
-    'Only `"//vendor:__pkg__"`, `"//vendor:__subpackages__"`, ' +
-    '`"//vendor/google:__pkg__"`, and `"//vendor/google:__subpackages__"` ' +
-    "are permitted in public Fuchsia code. " +
-    "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-reference-vendor-subpaths."
-)
-
 _NARROW_WARNING_MSG = (
     "Prefer specifying `visibility` on individual targets rather than setting " +
     "`default_visibility` in `package()`. `default_visibility` should only be " +
@@ -133,48 +125,6 @@ def test_narrow_package_default_visibility_warnings():
         ),
     ))
 
-def test_disallowed_vendor_package_default_visibility():
-    res = _run_package_default_visibility_test({
-        "disallowed_vendor_pkg/BUILD.bazel": 'package(default_visibility = ["//vendor/foo:__pkg__"])\n',
-        "disallowed_vendor_relative/BUILD.bazel": 'package(default_visibility = ["vendor/foo:__pkg__"])\n',
-        "disallowed_vendor_sub/BUILD.bazel": 'package(default_visibility = ["//vendor/google/foo:__subpackages__"])\n',
-        "disallowed_vendor_typo/BUILD.bazel": 'package(default_visibility = ["//vendorfoo:__pkg__"])\n',
-    })
-    asserts.eq(res.findings, (
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "disallowed_vendor_pkg/BUILD.bazel",
-            line = 1,
-            col = 9,
-            end_col = 54,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "disallowed_vendor_relative/BUILD.bazel",
-            line = 1,
-            col = 9,
-            end_col = 52,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "disallowed_vendor_sub/BUILD.bazel",
-            line = 1,
-            col = 9,
-            end_col = 69,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "disallowed_vendor_typo/BUILD.bazel",
-            line = 1,
-            col = 9,
-            end_col = 53,
-        ),
-    ))
-
 def test_allowed_package_default_visibility():
     res = _run_package_default_visibility_test({
         "clean/BUILD.bazel": 'package(default_applicable_licenses = ["//:license"])\n',
@@ -186,5 +136,4 @@ def run_package_default_visibility_tests():
     """Runs all package_default_visibility tests."""
     test_broad_package_default_visibility_errors()
     test_narrow_package_default_visibility_warnings()
-    test_disallowed_vendor_package_default_visibility()
     test_allowed_package_default_visibility()

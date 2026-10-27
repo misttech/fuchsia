@@ -324,6 +324,98 @@ class TestFramework(unittest.TestCase):
         )
         self.assertTrue(check.is_path_exempt_by_policy("tools/foo/BUILD.bazel"))
 
+    def test_register_check_targets_without_supports_allowlist_raises(
+        self,
+    ) -> None:
+        class InvalidTargetsWithoutAllowlist(framework.BazelCheck):
+            name = "invalid_targets_without_allowlist"
+            file_kinds = frozenset({framework.FileKind.BUILD})
+            supports_allowlist = False
+            supports_targets_allowlist = True
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "'supports_targets_allowlist = True' requires 'supports_allowlist = True'",
+        ):
+            framework.register_check(InvalidTargetsWithoutAllowlist)
+
+    def test_supports_allowlist_false_rejects_allowlist_and_skips_loading(
+        self,
+    ) -> None:
+        check = SimpleCheckForTests()
+        self.assertFalse(check.supports_allowlist)
+
+        # `run_check_on_contents` fails if `supports_allowlist` is False and an
+        # allowlist instance is passed.
+        with self.assertRaisesRegex(
+            ValueError,
+            "does not support allowlists \\(supports_allowlist = False\\)",
+        ):
+            framework.run_check_on_contents(
+                check,
+                'x = "//foo:bar"\n',
+                "src/BUILD.bazel",
+                allowlist=allowlist_mod.Allowlist(),
+            )
+
+        with mock.patch("importlib.import_module"), mock.patch.dict(
+            framework.REGISTRY,
+            {"simple_check_for_tests": check},
+            clear=True,
+        ), tempfile.TemporaryDirectory() as tmpdir:
+            build_file = Path(tmpdir) / "BUILD.bazel"
+            build_file.write_text('tool = "//foo:bar"\n')
+            allowlists_dir = Path(tmpdir) / "allowlists"
+            allowlists_dir.mkdir()
+
+            # When no allowlist file exists on disk, `main.main` does not call
+            # `load_allowlist` and passes `allowlist=None`.
+            with mock.patch.object(
+                main, "load_allowlist"
+            ) as mock_load_al, io.StringIO() as mock_stdout, mock.patch.object(
+                sys, "stdout", mock_stdout
+            ):
+                ret = main.main(
+                    [
+                        "--check",
+                        "simple_check_for_tests",
+                        "--root",
+                        str(tmpdir),
+                        "--allowlists-dir",
+                        str(allowlists_dir),
+                        "--json",
+                        str(build_file),
+                    ]
+                )
+                self.assertEqual(ret, main.EXIT_OK)
+                mock_load_al.assert_not_called()
+
+            # When an allowlist file exists on disk for a check with
+            # `supports_allowlist = False`, `main.main` fails with EXIT_ERROR.
+            (allowlists_dir / "simple_check_for_tests.json").write_text(
+                json.dumps({"entries": []})
+            )
+            with io.StringIO() as mock_stderr, mock.patch.object(
+                sys, "stderr", mock_stderr
+            ):
+                ret = main.main(
+                    [
+                        "--check",
+                        "simple_check_for_tests",
+                        "--root",
+                        str(tmpdir),
+                        "--allowlists-dir",
+                        str(allowlists_dir),
+                        "--json",
+                        str(build_file),
+                    ]
+                )
+                self.assertEqual(ret, main.EXIT_ERROR)
+                self.assertIn(
+                    "allowlist file is not permitted for check 'simple_check_for_tests'",
+                    mock_stderr.getvalue(),
+                )
+
     def test_register_check_python_overriding_check_load_raises(self) -> None:
         class InvalidPythonCheckLoad(framework.BazelCheck):
             name = "invalid_python_check_load"
@@ -873,6 +965,7 @@ my_rule = rule(
             file_kinds = frozenset(
                 {framework.FileKind.BUILD, framework.FileKind.BZL}
             )
+            supports_allowlist = True
             supports_targets_allowlist = True
 
             def check_load(

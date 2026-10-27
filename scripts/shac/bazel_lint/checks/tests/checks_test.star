@@ -8,6 +8,7 @@ load("./load_visibility_test.star", "run_load_visibility_tests")
 load("./package_default_visibility_test.star", "run_package_default_visibility_tests")
 load("./root_package_labels_test.star", "run_root_package_labels_tests")
 load("./target_visibility_test.star", "run_target_visibility_tests")
+load("./vendor_paths_test.star", "run_vendor_paths_tests")
 
 def test_bazel_lint_checks():
     """Executes all registered bazel_lint check test suites."""
@@ -17,4 +18,5 @@ def test_bazel_lint_checks():
     run_package_default_visibility_tests()
     run_root_package_labels_tests()
     run_target_visibility_tests()
+    run_vendor_paths_tests()
     # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)

@@ -12,24 +12,13 @@ from framework import (
     register_check,
 )
 
-from .visibility_utils import (
-    PUBLIC_VISIBILITY_REFERENCE_URL,
-    VENDOR_VISIBILITY_REFERENCE_URL,
-    is_disallowed_vendor_target_visibility,
-)
+from .visibility_utils import PUBLIC_VISIBILITY_REFERENCE_URL
 
 _ERROR_MSG = (
     'Do not use `"//visibility:public"`. '
     "Scope visibility to specific packages or subtrees "
     '(e.g., `"//src:__subpackages__"`), or `"//:__subpackages__"` '
     "if truly needed across the codebase."
-)
-
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in target visibility. "
-    'Only `"//vendor:__pkg__"`, `"//vendor:__subpackages__"`, '
-    '`"//vendor/google:__pkg__"`, and `"//vendor/google:__subpackages__"` '
-    "are permitted in public Fuchsia code."
 )
 
 
@@ -49,6 +38,7 @@ class TargetVisibilityCheck(BazelCheck):
         # different repository.
         "build/config/**",
     )
+    supports_allowlist = True
     supports_targets_allowlist = True
 
     def check_string(self, fc: FileContext, s: StringInfo) -> None:
@@ -71,15 +61,4 @@ class TargetVisibilityCheck(BazelCheck):
                 s.value,
                 level="error",
                 url=PUBLIC_VISIBILITY_REFERENCE_URL,
-            )
-        elif (
-            s.keyword_arg == "visibility"
-            and is_disallowed_vendor_target_visibility(s.value)
-        ):
-            fc.report_string(
-                _VENDOR_ERROR_MSG,
-                s.node,
-                s.value,
-                level="error",
-                url=VENDOR_VISIBILITY_REFERENCE_URL,
             )

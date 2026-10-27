@@ -18,8 +18,6 @@ from framework import (
 from .visibility_utils import (
     LOAD_VISIBILITY_REFERENCE_URL,
     PUBLIC_VISIBILITY_REFERENCE_URL,
-    VENDOR_VISIBILITY_REFERENCE_URL,
-    is_disallowed_vendor_load_visibility,
     is_load_visibility,
 )
 
@@ -28,12 +26,6 @@ _PUBLIC_ERROR_MSG = (
     "Specify the packages or subtrees that may load this file "
     '(e.g., `visibility(["//src/..."])`), or `visibility("private")` '
     "if only used within the same package."
-)
-
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in load visibility. "
-    'Only `"//vendor/..."` and `"//vendor/google/..."` '
-    "are permitted in public Fuchsia code."
 )
 
 _BROAD_WARNING_MSG = (
@@ -97,14 +89,6 @@ class LoadVisibilityCheck(BazelCheck):
                     "public",
                     level="error",
                     url=PUBLIC_VISIBILITY_REFERENCE_URL,
-                )
-            elif is_disallowed_vendor_load_visibility(node.value):
-                fc.report_string(
-                    _VENDOR_ERROR_MSG,
-                    node,
-                    node.value,
-                    level="error",
-                    url=VENDOR_VISIBILITY_REFERENCE_URL,
                 )
             elif node.value == "//..." and not _is_broad_visibility_exempt(
                 fc.path

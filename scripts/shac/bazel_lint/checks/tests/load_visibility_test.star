@@ -18,13 +18,6 @@ _PUBLIC_ERROR_MSG = (
     "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-use-public-visibility."
 )
 
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in load visibility. " +
-    'Only `"//vendor/..."` and `"//vendor/google/..."` ' +
-    "are permitted in public Fuchsia code. " +
-    "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-reference-vendor-subpaths."
-)
-
 _BROAD_WARNING_MSG = (
     'Avoid broad `visibility(["//..."])` in `.bzl` files outside ' +
     "`//build/bazel/rules/`. Prefer scoping load visibility to specific " +
@@ -74,39 +67,6 @@ def test_disallowed_public_visibility():
             line = 1,
             col = 13,
             end_col = 19,
-        ),
-    ))
-
-def test_disallowed_vendor_subpaths():
-    res = _run_load_visibility_test({
-        "src/bad_vendor.bzl": 'visibility(["//vendor/google/secret/..."])\n',
-        "src/relative_vendor.bzl": 'visibility(["vendor/foo/..."])\n',
-        "src/typo_vendor.bzl": 'visibility(["//vendorfoo/..."])\n',
-    })
-    asserts.eq(res.findings, (
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/bad_vendor.bzl",
-            line = 1,
-            col = 14,
-            end_col = 40,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/relative_vendor.bzl",
-            line = 1,
-            col = 14,
-            end_col = 28,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/typo_vendor.bzl",
-            line = 1,
-            col = 14,
-            end_col = 29,
         ),
     ))
 
@@ -187,7 +147,6 @@ def test_ignored_calls():
 def run_load_visibility_tests():
     """Runs all load_visibility tests."""
     test_disallowed_public_visibility()
-    test_disallowed_vendor_subpaths()
     test_broad_load_visibility_warnings()
     test_allowed_load_visibility()
     test_build_bazel_rules_exemption()

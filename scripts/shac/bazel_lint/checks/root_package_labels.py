@@ -12,9 +12,9 @@ their subpackage (e.g. `//foo:bar` or `//foo/bar`).
 """
 
 from framework import (
+    ALL_BAZEL_FILE_KINDS,
     BazelCheck,
     FileContext,
-    FileKind,
     StringInfo,
     register_check,
 )
@@ -98,14 +98,8 @@ class RootPackageLabelsCheck(BazelCheck):
     """Checks file content for disallowed workspace root package labels."""
 
     name = "bazel_disallowed_workspace_root_package_labels"
-    file_kinds = frozenset(
-        {
-            FileKind.BUILD,
-            FileKind.BZL,
-            FileKind.MODULE,
-            FileKind.WORKSPACE,
-        }
-    )
+    file_kinds = ALL_BAZEL_FILE_KINDS
+    supports_allowlist = True
 
     def check_string(self, fc: FileContext, s: StringInfo) -> None:
         label = s.value

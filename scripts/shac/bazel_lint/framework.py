@@ -32,6 +32,16 @@ class FileKind(enum.Enum):
 # LINT.ThenChange(//scripts/shac/bazel.star:file_globs)
 
 
+ALL_BAZEL_FILE_KINDS: frozenset[FileKind] = frozenset(
+    {
+        FileKind.BUILD,
+        FileKind.BZL,
+        FileKind.MODULE,
+        FileKind.WORKSPACE,
+    }
+)
+
+
 def classify_file(rel_path: str) -> FileKind:
     """Classifies a repository-relative path into a `FileKind`.
 
@@ -694,12 +704,14 @@ class BazelCheck:
     # `allowlists/<name>.json` instead for temporary exceptions that require a
     # tracking bug.
     policy_exempt_globs: tuple[str, ...] = ()
-    # Whether entries in `allowlists/<name>.json` for a single file `"path"`
-    # may specify `"targets": [...]` to scope exemptions to specific named
-    # rules/macros (via their `name` attribute) instead of the entire file.
-    # Functions and rules without a `name` parameter (such as `exports_files()`
-    # and `package()`) do not have a target name and require a whole-file
-    # `"path"` entry without `"targets"`. Requires `supports_allowlist = True`.
+    # Controls whether temporary bug-tracked exemptions in
+    # `allowlists/<name>.json` are permitted for this check. Defaults to `False`.
+    # Authors should determine whether there are reasonable use cases for
+    # allowing exceptions to the check, such as to unblock work where the check
+    # cannot be reasonably resolved, or whether the check is non-negotiable
+    # (such as `bazel_vendor_paths`, where vendor subpaths must never be
+    # referenced in public Fuchsia code).
+    supports_allowlist: bool = False
     supports_targets_allowlist: bool = False
 
     def is_path_exempt_by_policy(self, rel_path: str) -> bool:
@@ -768,6 +780,11 @@ def register_check(check_cls: type[BazelCheck]) -> type[BazelCheck]:
                 f"{check_cls.__name__}: policy_exempt_globs pattern '{pattern}' "
                 "must use Bazel glob() syntax (e.g. 'dir/**' instead of 'dir/')"
             )
+    if instance.supports_targets_allowlist and not instance.supports_allowlist:
+        raise ValueError(
+            f"{check_cls.__name__}: 'supports_targets_allowlist = True' "
+            "requires 'supports_allowlist = True'"
+        )
     if (
         FileKind.PYTHON in instance.file_kinds
         and check_cls.check_load is not BazelCheck.check_load
@@ -790,6 +807,10 @@ def run_check_on_contents(
     allowlist: Allowlist | None = None,
 ) -> list[Finding]:
     """Runs `check` on in-memory `content` for `rel_path`."""
+    if not check.supports_allowlist and allowlist is not None:
+        raise ValueError(
+            f"Check '{check.name}' does not support allowlists (supports_allowlist = False)"
+        )
     kind = classify_file(rel_path)
     if kind not in check.file_kinds:
         raise ValueError(

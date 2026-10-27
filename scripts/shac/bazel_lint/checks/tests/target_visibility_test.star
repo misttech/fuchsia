@@ -18,14 +18,6 @@ _ERROR_MSG = (
     "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-use-public-visibility."
 )
 
-_VENDOR_ERROR_MSG = (
-    "Do not include vendor subpaths in target visibility. " +
-    'Only `"//vendor:__pkg__"`, `"//vendor:__subpackages__"`, ' +
-    '`"//vendor/google:__pkg__"`, and `"//vendor/google:__subpackages__"` ' +
-    "are permitted in public Fuchsia code. " +
-    "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-reference-vendor-subpaths."
-)
-
 def _run_target_visibility_test(files):
     return run_lint_test(
         _bazel_target_visibility,
@@ -77,50 +69,6 @@ def my_macro():
         ),
     ))
 
-def test_disallowed_vendor_target_visibility():
-    res = _run_target_visibility_test({
-        "src/BUILD.bazel": """
-filegroup(
-    name = "bad_vendor_target",
-    visibility = ["//vendor/google/secret:__pkg__"],
-)
-filegroup(
-    name = "relative_vendor_target",
-    visibility = ["vendor/foo:__pkg__"],
-)
-filegroup(
-    name = "typo_vendor_target",
-    visibility = ["//vendorfoo:__pkg__"],
-)
-""",
-    })
-    asserts.eq(res.findings, (
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/BUILD.bazel",
-            line = 4,
-            col = 20,
-            end_col = 50,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/BUILD.bazel",
-            line = 8,
-            col = 20,
-            end_col = 38,
-        ),
-        testing.finding(
-            level = "error",
-            message = _VENDOR_ERROR_MSG,
-            filepath = "src/BUILD.bazel",
-            line = 12,
-            col = 20,
-            end_col = 39,
-        ),
-    ))
-
 def test_allowed_target_visibility():
     res = _run_target_visibility_test({
         "src/BUILD.bazel": """
@@ -159,6 +107,5 @@ def test_policy_exempt_directories():
 def run_target_visibility_tests():
     """Runs all target_visibility tests."""
     test_disallowed_public_target_visibility()
-    test_disallowed_vendor_target_visibility()
     test_allowed_target_visibility()
     test_policy_exempt_directories()

@@ -708,13 +708,6 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "src/developer/ffx/fidl/BUILD.bazel",
-            "targets": [
-                "fuchsia.developer.ffx"
-            ],
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "src/developer/ffx/frontends/ffx/BUILD.bazel",
             "targets": [
                 "ffx"

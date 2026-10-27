@@ -486,6 +486,15 @@ _bazel_target_visibility = _make_bazel_lint_check(
     enforcement = "unchanged_lines_warning_only",
 )
 
+# Reports an error when public Fuchsia Bazel files reference private
+# //vendor/... subpaths.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_vendor_paths = _make_bazel_lint_check(
+    "bazel_vendor_paths",
+    applies_to_globs = _ALL_BAZEL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 def register_bazel_checks():
     """Registers all Bazel shac checks."""
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
@@ -500,4 +509,5 @@ def register_bazel_checks():
     shac.register_check(_bazel_load_visibility)
     shac.register_check(_bazel_package_default_visibility)
     shac.register_check(_bazel_target_visibility)
+    shac.register_check(_bazel_vendor_paths)
     # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)
