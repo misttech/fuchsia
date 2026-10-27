@@ -4,14 +4,12 @@
 
 redirects:
   # Legacy cleanup
-  - from: /docs/development/build/gn_concepts/best_practices.md
+  - from: /docs/development/build/build_system/best_practices.md
     to: /docs/development/build/gn_concepts/templates.md
 
   # Shifted GN/Build System Concepts
   - from: /docs/development/build/build_system/intro.md
     to: /docs/development/build/gn_concepts/intro.md
-  - from: /docs/development/build/gn_root_targets.md
-    to: /docs/development/build/gn_concepts/root_targets.md
   - from: /docs/development/build/build_system/bundles.md
     to: /docs/development/build/gn_concepts/bundles.md
   - from: /docs/development/build/build_system/best_practices_templates.md
