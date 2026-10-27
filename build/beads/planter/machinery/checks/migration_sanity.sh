@@ -4833,9 +4833,9 @@ for pkg_dir in sorted(candidate_dirs):
     # another directory's test package) or a kept GN test package above the sentinel.
     def is_component_or_gn_packaged_rust_test(test_bin_name):
         gn_kept = gn_kept_pkg_test_deps_by_dir.get(pkg_dir, set())
-        if False:
-            return True
         bin_labels = {test_bin_name, f":{test_bin_name}", f"//{pkg_dir}:{test_bin_name}"}
+        if set(bin_labels) & gn_kept:
+            return True
         pkg_bin_labels = set(bin_labels)
         for cname, (crule, ckws, _) in calls.items():
             if (
@@ -5062,7 +5062,12 @@ for pkg_dir in sorted(candidate_dirs):
             idx -= 1
         if any("@bazel2gn:skip" in l for l in btext_lines[idx + 1 : line - 1]):
             continue
-        out_name = (str_val(kws.get("binary_name")) if rule == "rustc_test" else None) or str_val(kws.get("crate_name")) or tname
+        raw_output_name = None
+        for l in btext_lines[idx + 1 : line - 1]:
+            m_out = re.search(r'@bazel2gn:raw_attribute:output_name\s*=\s*"([^"]+)"', l)
+            if m_out:
+                raw_output_name = m_out.group(1)
+        out_name = raw_output_name or (str_val(kws.get("binary_name")) if rule == "rustc_test" else None) or str_val(kws.get("crate_name")) or tname
         effective_out = out_name.replace("-", "_")
         if is_generic_rust_test_output_name(effective_out):
             findings.append({
