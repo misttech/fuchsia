@@ -89,6 +89,7 @@ package_group(
         "//src/developer/ffx/plugins/sdk",
         "//src/developer/ffx/tools/bluetooth/common",
         "//src/lib/analytics/rust",
+        "//src/lib/assembly/assembled_system",
         "//src/lib/assembly/util",
         "//src/lib/diagnostics/log/rust",
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust",

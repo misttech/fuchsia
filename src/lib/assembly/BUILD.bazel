@@ -12,6 +12,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
+        "//src/lib/assembly/assembled_system:assembled_system_test",
         "//src/lib/assembly/base_package:base_package_test",
         "//src/lib/assembly/blob_size:blob_size_test",
         "//src/lib/assembly/blobfs:blobfs_test",
@@ -24,8 +25,10 @@ test_suite(
         "//src/lib/assembly/package_copy:package_copy_test",
         "//src/lib/assembly/package_list:package_list_test",
         "//src/lib/assembly/package_utils:package_utils_test",
+        "//src/lib/assembly/partitions_config:partitions_config_test",
         "//src/lib/assembly/product_input_bundle:product_input_bundle_test",
         "//src/lib/assembly/test_util:test_util_test",
         "//src/lib/assembly/update_packages_manifest:update_packages_manifest_test",
+        "//src/lib/assembly/zbi:zbi_test",
     ],
 )

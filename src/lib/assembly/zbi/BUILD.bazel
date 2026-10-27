@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "zbi",
+    srcs = [
+        "src/lib.rs",
+        "src/zbi.rs",
+        "src/zbi_items.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly/assembled_system:__pkg__"],
+    deps = [
+        "//sdk/rust/zbi",
+        "//src/lib/assembly/constants",
+        "//src/lib/assembly/image_assembly_config",
+        "//src/lib/assembly/tool",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+host_rustc_test(
+    name = "zbi_test",
+    crate = ":zbi",
+    visibility = ["//src/lib/assembly:__pkg__"],
+)
