@@ -14212,8 +14212,8 @@ rustc_library("mockall-v0_15_0") {
   deps += [ ":downcast-v0_11_0" ]
   deps += [ ":fragile-v2_0_1" ]
   deps += [ ":mockall_derive-v0_15_0($host_toolchain)" ]
-  deps += [ ":predicates-tree-v1_0_12" ]
-  deps += [ ":predicates-v3_1_3" ]
+  deps += [ ":predicates-tree-v1_0_13" ]
+  deps += [ ":predicates-v3_1_4" ]
   deps += [ "//build/validate:non_production_tag" ]
 
   rustenv = []
@@ -17045,18 +17045,18 @@ rustc_library("ppv-lite86-v0_2_21") {
   applicable_licenses = [ ":ppv-lite86-v0_2_21.license" ]
 }
 
-license("predicates-v3_1_3.license") {
+license("predicates-v3_1_4.license") {
   public_package_name = "predicates"
   license_files = [
-    "//third_party/rust_crates/vendor/predicates-3.1.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/predicates-3.1.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/predicates-3.1.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/predicates-3.1.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("predicates-v3_1_3") {
+rustc_library("predicates-v3_1_4") {
   crate_name = "predicates"
-  source_root = "//third_party/rust_crates/vendor/predicates-3.1.3/src/lib.rs"
-  output_name = "predicates-97a83999f0d0d7f1"
+  source_root = "//third_party/rust_crates/vendor/predicates-3.1.4/src/lib.rs"
+  output_name = "predicates-28ed9716e740f65f"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17064,34 +17064,34 @@ rustc_library("predicates-v3_1_3") {
 
   deps = []
   deps += [ ":anstyle-v1_0_14" ]
-  deps += [ ":predicates-core-v1_0_9" ]
+  deps += [ ":predicates-core-v1_0_10" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=97a83999f0d0d7f1",
-    "-Cextra-filename=-97a83999f0d0d7f1",
+    "-Cmetadata=28ed9716e740f65f",
+    "-Cextra-filename=-28ed9716e740f65f",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":predicates-v3_1_3.license" ]
+  applicable_licenses = [ ":predicates-v3_1_4.license" ]
 }
 
-license("predicates-core-v1_0_9.license") {
+license("predicates-core-v1_0_10.license") {
   public_package_name = "predicates_core"
   license_files = [
-    "//third_party/rust_crates/vendor/predicates-core-1.0.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/predicates-core-1.0.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/predicates-core-1.0.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/predicates-core-1.0.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("predicates-core-v1_0_9") {
+rustc_library("predicates-core-v1_0_10") {
   crate_name = "predicates_core"
   source_root =
-      "//third_party/rust_crates/vendor/predicates-core-1.0.9/src/lib.rs"
-  output_name = "predicates_core-eec89fe69e30e302"
+      "//third_party/rust_crates/vendor/predicates-core-1.0.10/src/lib.rs"
+  output_name = "predicates_core-17b01dfff14a35df"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17103,48 +17103,48 @@ rustc_library("predicates-core-v1_0_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=eec89fe69e30e302",
-    "-Cextra-filename=-eec89fe69e30e302",
+    "-Cmetadata=17b01dfff14a35df",
+    "-Cextra-filename=-17b01dfff14a35df",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":predicates-core-v1_0_9.license" ]
+  applicable_licenses = [ ":predicates-core-v1_0_10.license" ]
 }
 
-license("predicates-tree-v1_0_12.license") {
+license("predicates-tree-v1_0_13.license") {
   public_package_name = "predicates_tree"
   license_files = [
-    "//third_party/rust_crates/vendor/predicates-tree-1.0.12/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/predicates-tree-1.0.12/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/predicates-tree-1.0.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/predicates-tree-1.0.13/LICENSE-MIT",
   ]
 }
 
-rustc_library("predicates-tree-v1_0_12") {
+rustc_library("predicates-tree-v1_0_13") {
   crate_name = "predicates_tree"
   source_root =
-      "//third_party/rust_crates/vendor/predicates-tree-1.0.12/src/lib.rs"
-  output_name = "predicates_tree-2edfa1533b69257a"
+      "//third_party/rust_crates/vendor/predicates-tree-1.0.13/src/lib.rs"
+  output_name = "predicates_tree-6867f7a0bcdc97b1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":predicates-core-v1_0_9" ]
+  deps += [ ":predicates-core-v1_0_10" ]
   deps += [ ":termtree-v0_5_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2edfa1533b69257a",
-    "-Cextra-filename=-2edfa1533b69257a",
+    "-Cmetadata=6867f7a0bcdc97b1",
+    "-Cextra-filename=-6867f7a0bcdc97b1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":predicates-tree-v1_0_12.license" ]
+  applicable_licenses = [ ":predicates-tree-v1_0_13.license" ]
 }
 
 license("prefix-trie-v0_8_4.license") {
