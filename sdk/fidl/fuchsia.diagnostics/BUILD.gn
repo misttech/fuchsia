@@ -35,6 +35,7 @@ fidl("fuchsia.diagnostics") {
     "log_settings.fidl",
     "overview.fidl",
     "reader.fidl",
+    "salt.fidl",
     "sample.fidl",
     "selector.fidl",
     "severity.fidl",

@@ -1,0 +1,21 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+library fuchsia.diagnostics;
+
+/// Length in bytes of the per-boot random salt returned by [`SaltProvider`].
+@available(added=HEAD)
+const SALT_SIZE uint32 = 32;
+
+/// Provides a per-boot random 32-byte salt for deterministic, correlation-preserving
+/// hashing of sensitive identifiers (such as MAC addresses, BSSIDs, and SSIDs) across
+/// components in diagnostics logs and Inspect.
+@discoverable(server="platform")
+@available(added=HEAD)
+open protocol SaltProvider {
+    /// Returns the 32-byte per-boot random salt.
+    flexible GetSalt() -> (struct {
+        salt array<uint8, SALT_SIZE>;
+    });
+};

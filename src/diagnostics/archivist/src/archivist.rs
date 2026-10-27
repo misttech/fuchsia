@@ -18,6 +18,7 @@ use crate::logs::shared_buffer::Buffer;
 use crate::pipeline::PipelineManager;
 use archivist_config::Config;
 use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_process_lifecycle::LifecycleRequestStream;
 use fuchsia_async as fasync;
 use fuchsia_component::runtime::DictionaryRouterReceiver;
@@ -72,6 +73,9 @@ pub struct Archivist {
 
     /// The server handling fuchsia.diagnostics.Sample
     sample_server: Arc<SampleServer>,
+
+    /// Per-boot random salt served by `fuchsia.diagnostics.SaltProvider`.
+    salt: [u8; fdiagnostics::SALT_SIZE as usize],
 }
 
 impl Archivist {
@@ -195,6 +199,9 @@ impl Archivist {
             }
         }
 
+        let mut salt = [0u8; fdiagnostics::SALT_SIZE as usize];
+        zx::cprng_draw(&mut salt);
+
         Self {
             accessor_server,
             log_server,
@@ -209,6 +216,7 @@ impl Archivist {
             freeze_server,
             incoming_events_scope,
             sample_server,
+            salt,
         }
     }
 
@@ -281,6 +289,7 @@ impl Archivist {
             event_router,
             flush_server: _flush_server,
             sample_server: _sample_server,
+            salt: _salt,
         } = self;
 
         // Start ingesting events.
@@ -369,6 +378,14 @@ impl Archivist {
             log_settings_server.spawn(stream);
         });
 
+        // Serve fuchsia.diagnostics.SaltProvider
+        let salt = self.salt;
+        let salt_scope = self.general_scope.new_child_with_name("SaltProvider");
+        svc_dir.add_fidl_service(move |stream: fdiagnostics::SaltProviderRequestStream| {
+            debug!("fuchsia.diagnostics.SaltProvider connection");
+            salt_scope.spawn(Self::serve_salt_provider(stream, salt));
+        });
+
         // Serve fuchsia.component.runtime.DictionaryRouter
         let router_scope =
             self.servers_scope.new_child_with_name("fuchsia.component.runtime.DictionaryRouter");
@@ -380,5 +397,47 @@ impl Archivist {
                 futures::future::ready(Ok(Some(accessors_dict.clone()))).boxed()
             }));
         });
+    }
+
+    async fn serve_salt_provider(
+        mut stream: fdiagnostics::SaltProviderRequestStream,
+        salt: [u8; fdiagnostics::SALT_SIZE as usize],
+    ) {
+        while let Ok(Some(request)) = stream.try_next().await {
+            match request {
+                fdiagnostics::SaltProviderRequest::GetSalt { responder } => {
+                    let _ = responder.send(&salt);
+                }
+                fdiagnostics::SaltProviderRequest::_UnknownMethod {
+                    ordinal, method_type, ..
+                } => {
+                    warn!(ordinal, method_type:?; "Unknown request on SaltProvider");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::create_proxy_and_stream;
+
+    #[fuchsia::test]
+    async fn salt_provider_returns_consistent_salt() {
+        let mut expected_salt = [0u8; fdiagnostics::SALT_SIZE as usize];
+        zx::cprng_draw(&mut expected_salt);
+
+        let scope = fasync::Scope::new();
+        let (proxy1, stream1) = create_proxy_and_stream::<fdiagnostics::SaltProviderMarker>();
+        let (proxy2, stream2) = create_proxy_and_stream::<fdiagnostics::SaltProviderMarker>();
+        scope.spawn(Archivist::serve_salt_provider(stream1, expected_salt));
+        scope.spawn(Archivist::serve_salt_provider(stream2, expected_salt));
+
+        let salt1 = proxy1.get_salt().await.expect("get_salt 1");
+        let salt2 = proxy2.get_salt().await.expect("get_salt 2");
+        assert_eq!(salt1, expected_salt);
+        assert_eq!(salt1, salt2);
+        assert_ne!(salt1, [0u8; fdiagnostics::SALT_SIZE as usize]);
     }
 }

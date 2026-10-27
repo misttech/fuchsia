@@ -36,6 +36,7 @@
         },
         {
             protocol: [
+                "fuchsia.diagnostics.SaltProvider",
                 "fuchsia.inspect.InspectSink",
                 "fuchsia.logger.LogSink",
             ],
