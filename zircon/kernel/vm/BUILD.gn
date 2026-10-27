@@ -758,6 +758,26 @@ kernel_bindgen_crate("vmm-bindings") {
   ]
 }
 
+kernel_bindgen_crate("vm-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/vm.h" ]
+  non_rust_deps = [ ":vm" ]
+  output_name = "vm_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  var_allowlist = [ "zero_page_paddr" ]
+  type_blocklist = [ "paddr_t" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+
+  edition = "2024"
+  raw_lines = [
+    "#![no_std]",
+    "use zx_types::zx_paddr_t as paddr_t;",
+  ]
+}
+
 kernel_bindgen_crate("vm-address-region-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_address_region_ffi.h" ]
@@ -1603,6 +1623,7 @@ kernel_rust_mod("vm-rs") {
     ":pmm-node-bindings",
     ":vm-address-region-bindings",
     ":vm-aspace-bindings",
+    ":vm-bindings",
     ":vm-constants-rs",
     ":vm-cow-pages-bindings",
     ":vm-fault-bindings",

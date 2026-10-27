@@ -9,6 +9,7 @@ use crate::kernel::types::PAddr;
 use core::ffi::{CStr, c_char, c_void};
 use core::pin::Pin;
 use lazy_init::{LazyInit, NoCheck};
+use vm_bindings as bindings;
 
 unsafe extern "C" {
     fn cpp_vaddr_to_paddr(va: *const c_void) -> PAddr;
@@ -20,6 +21,14 @@ unsafe extern "C" {
 /// Converts a kernel virtual address to a physical address.
 pub fn vaddr_to_paddr(va: *const c_void) -> PAddr {
     unsafe { cpp_vaddr_to_paddr(va) }
+}
+
+/// Return the physical address of the zero page.
+#[inline]
+pub fn vm_get_zero_page_paddr() -> PAddr {
+    // SAFETY: `zero_page_paddr` is written once during single-threaded early boot in `vm_init`
+    // before interrupts or secondary CPUs are enabled, and is never modified afterward.
+    PAddr(unsafe { bindings::zero_page_paddr })
 }
 
 /// Evaluates whether VM ktracing is enabled at the requested level.
