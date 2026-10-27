@@ -781,8 +781,8 @@
     },
     {
         "package": "fuchsia/tools/ninjatrace/linux-amd64",
-        "version": "git_revision:fc76ac2674b7a93d2297afa6c129a8a9d3b3a309",
-        "instance_id": "cPyYTY5MUBmu_GDH9L1M2vabpybagzj-u4zoEcR4YMMC"
+        "version": "git_revision:05bbc38fc8fcdec5ec01cbbef31a50ae41865aa9",
+        "instance_id": "L4EDPNOMpBPEBocqu8s_BuaVvGyHMTpyiJ8AMQNprIsC"
     },
     {
         "package": "fuchsia/tools/rsclient/linux-amd64",
