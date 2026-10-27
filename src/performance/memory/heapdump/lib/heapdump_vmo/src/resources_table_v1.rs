@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use memory_mapped_vmo::MemoryMappedVmo;
+use memory_mapped_vmo::{ReadOnlyMemoryMappedVmo, ReadWriteMemoryMappedVmo};
 use std::alloc::Layout;
 use std::mem::{align_of, size_of, size_of_val};
 use zerocopy::FromBytes;
@@ -68,7 +68,7 @@ pub struct ThreadInfo {
 /// that can be used by ResourcesTableReader to read data back without even having to know about the
 /// hash table.
 pub struct ResourcesTableWriter {
-    storage: MemoryMappedVmo,
+    storage: ReadWriteMemoryMappedVmo,
     watermark: usize, // Offset of the first unallocated byte.
 }
 
@@ -81,7 +81,7 @@ impl ResourcesTableWriter {
     /// structure, readers should only read through the ResourceKeys we create, that are guaranteed
     /// to point to VMO sections that have already been populated.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableWriter, crate::Error> {
-        let storage = unsafe { MemoryMappedVmo::new_readwrite(vmo)? };
+        let storage = unsafe { ReadWriteMemoryMappedVmo::new(vmo)? };
         if storage.vmo_size() < size_of::<StackBucketHeads>() {
             return Err(crate::Error::BufferTooSmall);
         } else if storage.vmo_size() - 1 > Offset::MAX as usize {
@@ -229,7 +229,7 @@ impl ResourcesTableWriter {
 
 /// Mediates read access to a VMO written by ResourcesTableWriter.
 pub struct ResourcesTableReader {
-    storage: MemoryMappedVmo,
+    storage: ReadOnlyMemoryMappedVmo,
 }
 
 impl ResourcesTableReader {
@@ -238,7 +238,7 @@ impl ResourcesTableReader {
     /// Only using ResourceKeys received from the corresponding ResourcesTableWriter satisfies
     /// this requirement.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<ResourcesTableReader, crate::Error> {
-        let storage = unsafe { MemoryMappedVmo::new_readonly(vmo)? };
+        let storage = unsafe { ReadOnlyMemoryMappedVmo::new(vmo)? };
         Ok(ResourcesTableReader { storage })
     }
 
@@ -259,7 +259,7 @@ impl ResourcesTableReader {
 }
 
 fn get_compressed_stack_trace(
-    storage: &MemoryMappedVmo,
+    storage: &ReadOnlyMemoryMappedVmo,
     byte_offset: usize,
 ) -> Result<&[u8], crate::Error> {
     // Read the length.
@@ -270,7 +270,7 @@ fn get_compressed_stack_trace(
 }
 
 fn set_compressed_stack_trace(
-    storage: &mut MemoryMappedVmo,
+    storage: &mut ReadWriteMemoryMappedVmo,
     byte_offset: usize,
     compressed_stack_trace: &[u8],
 ) -> Result<(), crate::Error> {

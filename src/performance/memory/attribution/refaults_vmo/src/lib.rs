@@ -5,7 +5,7 @@
 pub mod atomic_vec;
 pub use atomic_vec::{AtomicBitVec, Growable, NoOverflow, Overflow};
 
-use memory_mapped_vmo::MemoryMappedVmo;
+use memory_mapped_vmo::{ReadOnlyMemoryMappedVmo, ReadWriteMemoryMappedVmo};
 use std::sync::atomic::{AtomicU64, Ordering};
 use zx::Rights;
 
@@ -18,15 +18,16 @@ use zx::Rights;
 /// - `fault_count_ptr` (offset 8): total pages supplied by the userspace pager.
 pub struct PageFaultCounter {
     vmo: zx::Vmo,
-    _storage: MemoryMappedVmo,
+    _storage: ReadOnlyMemoryMappedVmo,
     refault_count_ptr: *const AtomicU64,
     fault_count_ptr: *const AtomicU64,
 }
 
 // SAFETY: both `vmo` and `_storage` are Send, and they are not modified once created (thus, they
 // are Sync). `refault_count_ptr` and `fault_count_ptr` are pointers pointing to the memory mapped
-// region managed by `MemoryMappedVmo`. They are valid as long as `_storage` is valid, and are not
-// invalidated by moving `PageFaultCounter` as the memory mapped region stays in the same place.
+// region managed by `ReadOnlyMemoryMappedVmo`. They are valid as long as `_storage` is valid, and
+// are not invalidated by moving `PageFaultCounter` as the memory mapped region stays in the same
+// place.
 unsafe impl Send for PageFaultCounter {}
 unsafe impl Sync for PageFaultCounter {}
 
@@ -41,14 +42,19 @@ impl PageFaultCounter {
         vmo.set_name(&zx::Name::new_lossy("page_fault_counter"))?;
 
         // SAFETY: all accesses to [storage] are synchronized (through Atomics).
-        let mut storage: MemoryMappedVmo = unsafe { MemoryMappedVmo::new_readwrite(&vmo)? };
+        let mut storage = unsafe { ReadWriteMemoryMappedVmo::new(&vmo)? };
         let refault_count_ptr: *const AtomicU64 = storage
             .get_object_mut::<AtomicU64>(REFAULT_OFFSET)
             .map_err(|_| zx::Status::INVALID_ARGS)?;
         let fault_count_ptr: *const AtomicU64 = storage
             .get_object_mut::<AtomicU64>(FAULT_OFFSET)
             .map_err(|_| zx::Status::INVALID_ARGS)?;
-        Ok(PageFaultCounter { vmo, _storage: storage, refault_count_ptr, fault_count_ptr })
+        Ok(PageFaultCounter {
+            vmo,
+            _storage: storage.into_readonly(),
+            refault_count_ptr,
+            fault_count_ptr,
+        })
     }
 
     /// Creates a new read-only PageFaultCounter from the provided VMO. The VMO must have the
@@ -58,7 +64,7 @@ impl PageFaultCounter {
             return Err(zx::Status::INVALID_ARGS);
         }
         // SAFETY: all accesses to [storage] are synchronized (through Atomics).
-        let storage: MemoryMappedVmo = unsafe { MemoryMappedVmo::new_readonly(&vmo)? };
+        let storage = unsafe { ReadOnlyMemoryMappedVmo::new(&vmo)? };
         let refault_count_ptr: *const AtomicU64 = storage
             .get_object::<AtomicU64>(REFAULT_OFFSET)
             .map_err(|_| zx::Status::INVALID_ARGS)?;

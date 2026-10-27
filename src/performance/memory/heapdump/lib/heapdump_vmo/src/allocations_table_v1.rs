@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use memory_mapped_vmo::MemoryMappedVmo;
+use memory_mapped_vmo::{ReadOnlyMemoryMappedVmo, ReadWriteMemoryMappedVmo};
 use static_assertions::const_assert;
 use std::collections::HashSet;
 use std::mem::{align_of, size_of};
@@ -76,7 +76,7 @@ fn compute_nodes_count(num_bytes: usize) -> Result<usize, crate::Error> {
 /// list heads, one for each bucket, is stored at the beginning of the VMO. The remaining part of
 /// the VMO contains the linked list nodes.
 pub struct AllocationsTableWriter {
-    storage: MemoryMappedVmo,
+    storage: ReadWriteMemoryMappedVmo,
 
     // Free nodes are managed by a simple watermark allocator and the capacity of the hash table
     // (i.e. the maximum number of nodes) is fixed.
@@ -100,7 +100,7 @@ impl AllocationsTableWriter {
     /// The caller must guarantee that the `vmo` is not accessed by others while the returned
     /// instance is alive. However, it always safe to take a snapshot and read that instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableWriter, crate::Error> {
-        let storage = unsafe { MemoryMappedVmo::new_readwrite(vmo)? };
+        let storage = unsafe { ReadWriteMemoryMappedVmo::new(vmo)? };
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
         let mut result = AllocationsTableWriter {
@@ -336,7 +336,7 @@ impl AllocationsTableWriter {
 
 /// Mediates read access to a VMO written by AllocationsTableWriter.
 pub struct AllocationsTableReader {
-    storage: MemoryMappedVmo,
+    storage: ReadOnlyMemoryMappedVmo,
     max_num_nodes: usize,
 }
 
@@ -346,7 +346,7 @@ impl AllocationsTableReader {
     /// instance is alive, usually by taking a snapshot of the VMO that AllocationsTableWriter
     /// operates on and then reading the snapshot instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<AllocationsTableReader, crate::Error> {
-        let storage = unsafe { MemoryMappedVmo::new_readonly(vmo)? };
+        let storage = unsafe { ReadOnlyMemoryMappedVmo::new(vmo)? };
         let max_num_nodes = compute_nodes_count(storage.vmo_size())?;
 
         Ok(AllocationsTableReader { storage, max_num_nodes })

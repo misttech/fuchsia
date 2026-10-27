@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use memory_mapped_vmo::MemoryMappedVmo;
+use memory_mapped_vmo::{ReadOnlyMemoryMappedVmo, ReadWriteMemoryMappedVmo};
 use static_assertions::const_assert;
 use std::mem::{align_of, size_of};
 use std::ops::Deref;
@@ -76,7 +76,7 @@ pub struct Frame {
 
 /// Writer for the Stacktrack VMO.
 pub struct StacktrackWriter {
-    memory: MemoryMappedVmo,
+    memory: ReadWriteMemoryMappedVmo,
     capacity: u32,
     free_head: NodeIndex,
     watermark: u32,
@@ -89,7 +89,7 @@ impl StacktrackWriter {
     /// The caller must guarantee that the `vmo` is not accessed by others while the returned
     /// instance is alive. However, it always safe to take a snapshot and read that instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<Self, crate::Error> {
-        let memory = unsafe { MemoryMappedVmo::new_readwrite(vmo)? };
+        let memory = unsafe { ReadWriteMemoryMappedVmo::new(vmo)? };
 
         let capacity = compute_node_capacity(memory.vmo_size())?;
 
@@ -201,7 +201,7 @@ impl StacktrackWriter {
 }
 
 pub struct StacktrackReader {
-    memory: MemoryMappedVmo,
+    memory: ReadOnlyMemoryMappedVmo,
     capacity: u32,
 }
 
@@ -211,7 +211,7 @@ impl StacktrackReader {
     /// instance is alive, usually by taking a snapshot of the VMO that StacktrackWriter
     /// operates on and then reading the snapshot instead.
     pub unsafe fn new(vmo: &zx::Vmo) -> Result<Self, crate::Error> {
-        let memory = unsafe { MemoryMappedVmo::new_readonly(vmo)? };
+        let memory = unsafe { ReadOnlyMemoryMappedVmo::new(vmo)? };
 
         let capacity = compute_node_capacity(memory.vmo_size())?;
 

@@ -13,7 +13,11 @@ package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "memory_mapped_vmo",
-    srcs = ["src/lib.rs"],
+    srcs = [
+        "src/lib.rs",
+        "src/memory_mapped_arc_vmo.rs",
+        "src/memory_mapped_vmo.rs",
+    ],
     edition = "2024",
     visibility = [
         "//src/performance/memory/attribution/refaults_vmo:__pkg__",

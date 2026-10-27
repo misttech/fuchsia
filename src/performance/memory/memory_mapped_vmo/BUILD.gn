@@ -34,7 +34,11 @@ bazel_test_suite("tests") {
 import("//build/tools/bazel2gn/bazel_migration.gni")
 
 rustc_library("memory_mapped_vmo") {
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/memory_mapped_arc_vmo.rs",
+    "src/memory_mapped_vmo.rs",
+  ]
   edition = "2024"
   visibility = [
     ":*",
