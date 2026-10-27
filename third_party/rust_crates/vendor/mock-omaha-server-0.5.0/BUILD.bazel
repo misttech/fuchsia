@@ -97,7 +97,7 @@ rust_library(
         "//third_party/rust_crates/vendor/hex-0.4.3:hex",
         "//third_party/rust_crates/vendor/http-body-1.1.0:http_body",
         "//third_party/rust_crates/vendor/hyper-1.12.0:hyper",
-        "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",
+        "//third_party/rust_crates/vendor/hyper-util-0.1.21:hyper_util",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
         "//third_party/rust_crates/vendor/omaha_client-0.4.1:omaha_client",
         "//third_party/rust_crates/vendor/p256-0.14.0:p256",

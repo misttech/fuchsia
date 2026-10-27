@@ -1414,14 +1414,14 @@ alias(
 )
 
 alias(
-    name = "hyper-util-0.1.20",
-    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",
+    name = "hyper-util-0.1.21",
+    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.21:hyper_util",
     tags = ["manual"],
 )
 
 alias(
     name = "hyper-util",
-    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util",
+    actual = "//third_party/rust_crates/vendor/hyper-util-0.1.21:hyper_util",
     tags = ["manual"],
 )
 
