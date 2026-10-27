@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 //! This is a lockless ring buffer modeled after https://docs.kernel.org/trace/ring-buffer-design.html
+//!
+//! See `design.md` for the design.
 use fuchsia_rcu::RcuDroppable;
 use fuchsia_runtime::vmar_root_self;
 use fuchsia_trace;
