@@ -18,7 +18,7 @@ use super::{ClassId, Policy, TypeId, U24Index};
 /// Output type mapping for a set of source types in a filename transition (policy version >= 33).
 #[derive(Debug, PartialEq, Eq, Parse, Serialize, Validate)]
 struct FilenameTransitionItem {
-    stypes: IdSet<TypeId>,
+    source_types: IdSet<TypeId>,
     out_type: TypeId,
 }
 
@@ -138,7 +138,7 @@ impl FilenameTransitions {
             .index
             .find(hash, |&i| matches_key(&self.transitions[usize::from(i)], target, class, name))?;
         let transition = &self.transitions[usize::from(*idx)];
-        let item = transition.items.iter().find(|item| item.stypes.contains(source))?;
+        let item = transition.items.iter().find(|item| item.source_types.contains(source))?;
         Some(item.out_type)
     }
 
@@ -150,7 +150,7 @@ impl FilenameTransitions {
     /// and `out_type` are stored consecutively.
     fn parse_deprecated(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         struct GroupedItem {
-            stypes: Vec<TypeId>,
+            source_types: Vec<TypeId>,
             out_type: TypeId,
         }
 
@@ -173,10 +173,10 @@ impl FilenameTransitions {
                 {
                     if let Some(item) = curr.items.last_mut().filter(|i| i.out_type == dep.out_type)
                     {
-                        item.stypes.push(dep.source_type);
+                        item.source_types.push(dep.source_type);
                     } else {
                         curr.items.push(GroupedItem {
-                            stypes: vec![dep.source_type],
+                            source_types: vec![dep.source_type],
                             out_type: dep.out_type,
                         });
                     }
@@ -190,7 +190,10 @@ impl FilenameTransitions {
                 filename: dep.filename.clone(),
                 transition_type: dep.transition_type,
                 transition_class: dep.transition_class,
-                items: vec![GroupedItem { stypes: vec![dep.source_type], out_type: dep.out_type }],
+                items: vec![GroupedItem {
+                    source_types: vec![dep.source_type],
+                    out_type: dep.out_type,
+                }],
             });
         }
         if let Some(prev) = current {
@@ -207,7 +210,7 @@ impl FilenameTransitions {
                     g.items
                         .into_iter()
                         .map(|item| FilenameTransitionItem {
-                            stypes: IdSet::from_ids(item.stypes),
+                            source_types: IdSet::from_ids(item.source_types),
                             out_type: item.out_type,
                         })
                         .collect::<Vec<_>>(),
@@ -220,12 +223,12 @@ impl FilenameTransitions {
     /// Serializes filename transitions to legacy [`DeprecatedFilenameTransition`] records (policy version <= 32).
     fn serialize_deprecated(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let items = self.transitions.iter().flat_map(|t| t.items.iter());
-        let count: usize = items.map(|item| item.stypes.count()).sum();
+        let count: usize = items.map(|item| item.source_types.count()).sum();
         let count_u32: u32 = count as u32;
         count_u32.serialize(writer)?;
         for transition in self.transitions.iter() {
             for item in transition.items.iter() {
-                for source_type in item.stypes.iter() {
+                for source_type in item.source_types.iter() {
                     let dep = DeprecatedFilenameTransition {
                         filename: transition.filename.clone(),
                         source_type,
@@ -282,7 +285,7 @@ mod tests {
         //   transition_class = 3
         //   items count = 1:
         //     item 0:
-        //       stypes IdSet: len = 1, bit u64 = 1 << 1 (type 1)
+        //       source_types IdSet: len = 1, bit u64 = 1 << 1 (type 1)
         //       out_type = 4
         let mut bytes = Vec::new();
         let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut bytes);
@@ -373,10 +376,9 @@ mod tests {
     fn test_filename_transition_policy_elements() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy");
-        let policy = Policy::parse(policy_bytes).expect("parse type_transition policy");
-        policy.validate().expect("validate type_transition policy");
+        let policy = Policy::parse_and_validate(policy_bytes);
 
-        let transitions = policy.filename_transitions();
+        let transitions = &policy.filename_transitions;
         assert_eq!(transitions.transitions.len(), 1);
 
         let source_type = policy.types().get_by_name(b"source_t").expect("look up source_t").id();

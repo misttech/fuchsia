@@ -82,7 +82,7 @@ struct BinaryTypeMetadata {
 impl Parse for Type {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let metadata = BinaryTypeMetadata::parse(cursor)?;
-        let name = cursor.read_bytes(metadata.length as usize)?.to_vec().into_boxed_slice();
+        let name = Box::from(cursor.read_bytes(metadata.length as usize)?);
 
         Ok(Self { id: metadata.id, name, properties: metadata.properties, bounds: metadata.bounds })
     }
@@ -121,8 +121,14 @@ pub struct Types {
 impl Parse for Types {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let primary_names_count = u32::parse(cursor)?;
-        cursor.set_types_count(primary_names_count);
         let ordered = Array::<Type>::parse(cursor)?;
+        if primary_names_count > ordered.len() as u32 {
+            return Err(ParseError::InvalidPrimaryNamesCount {
+                expected_at_most: ordered.len() as u32,
+                found: primary_names_count,
+            });
+        }
+        cursor.set_types_count(primary_names_count);
 
         // Build indices
         let mut by_id = Vec::with_capacity(ordered.len());
@@ -170,7 +176,14 @@ impl Serialize for Types {
 
 impl Validate for Types {
     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
-        self.ordered.validate(policy)
+        self.ordered.validate(policy)?;
+        if self.primary_names_count > self.ordered.len() as u32 {
+            return Err(ValidateError::InvalidPrimaryNamesCount {
+                expected_at_most: self.ordered.len() as u32,
+                found: self.primary_names_count,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -204,11 +217,8 @@ impl Index<TypeId> for TypeAttributeMaps {
 impl Parse for TypeAttributeMaps {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let count = cursor.types_count() as usize;
-        let mut maps = Vec::with_capacity(count);
-        for _ in 0..count {
-            maps.push(TypeSet::parse(cursor)?);
-        }
-        Ok(Self { maps: maps.into_boxed_slice() })
+        let maps = cursor.parse_elements(count)?;
+        Ok(Self { maps })
     }
 }
 

@@ -4,13 +4,12 @@
 
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::ops::Deref;
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 
 use super::error::{ParseError, SerializeError, ValidateError};
-use super::parser::{PolicyCursor, PolicyWriter};
+use super::parser::{PolicyCursor, PolicyWriter, SymbolArray};
 use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
 use super::{Policy, U24Index};
 
@@ -19,6 +18,33 @@ pub fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
     let mut state = hasher.build_hasher();
     name.hash(&mut state);
     state.finish()
+}
+
+/// Trait for slice-backed containers that can be indexed by [`IdAndNameIndexed`].
+pub trait AsSlice {
+    type Item;
+    fn as_slice(&self) -> &[Self::Item];
+}
+
+impl<T> AsSlice for &[T] {
+    type Item = T;
+    fn as_slice(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T> AsSlice for Box<[T]> {
+    type Item = T;
+    fn as_slice(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T> AsSlice for SymbolArray<T> {
+    type Item = T;
+    fn as_slice(&self) -> &[T] {
+        self.as_ref()
+    }
 }
 
 /// Container that provides $O(1)$ lookups by both policy ID and Name.
@@ -37,20 +63,47 @@ pub struct IdAndNameIndexed<C> {
     hasher: rapidhash::RapidBuildHasher,
 }
 
-impl<C, T> IdAndNameIndexed<C>
+impl<C: AsSlice> IdAndNameIndexed<C> {
+    /// Returns an iterator over the elements in the indexed collection.
+    pub fn iter(&self) -> std::slice::Iter<'_, C::Item> {
+        self.container.as_slice().iter()
+    }
+
+    /// Returns the number of elements in the indexed collection.
+    pub fn len(&self) -> usize {
+        self.container.as_slice().len()
+    }
+
+    /// Returns `true` if the indexed collection contains no elements.
+    pub fn is_empty(&self) -> bool {
+        self.container.as_slice().is_empty()
+    }
+}
+
+impl<'a, C: AsSlice> IntoIterator for &'a IdAndNameIndexed<C> {
+    type Item = &'a C::Item;
+    type IntoIter = std::slice::Iter<'a, C::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<C> IdAndNameIndexed<C>
 where
-    C: Deref<Target = [T]>,
-    T: HasPolicyId + HasName,
+    C: AsSlice,
+    C::Item: HasPolicyId + HasName,
 {
     /// Constructs a new [`IdAndNameIndexed`] wrapping the supplied `container`.
     ///
     /// Returns an error if `container` contains more than `U24Index::MAX` items.
     pub(super) fn new(container: C) -> Result<Self, ParseError> {
-        let mut id_to_index = Vec::with_capacity(container.len() + 1);
+        let items = container.as_slice();
+        let mut id_to_index = Vec::with_capacity(items.len() + 1);
         let hasher = rapidhash::RapidBuildHasher::default();
-        let mut name_to_index = HashTable::with_capacity(container.len());
+        let mut name_to_index: HashTable<U24Index> = HashTable::with_capacity(items.len());
 
-        for (index, item) in container.iter().enumerate() {
+        for (index, item) in items.iter().enumerate() {
             let id = item.id().as_u32() as usize;
             if id >= id_to_index.len() {
                 id_to_index.resize(id + 1, None);
@@ -64,8 +117,8 @@ where
             let hash = hash_name(&hasher, name);
             let Entry::Vacant(entry) = name_to_index.entry(
                 hash,
-                |&idx| container[usize::from(idx)].name() == name,
-                |&idx| hash_name(&hasher, container[usize::from(idx)].name()),
+                |&idx| items[idx].name() == name,
+                |&idx| hash_name(&hasher, items[idx].name()),
             ) else {
                 return Err(ParseError::DuplicateName { name: name.into() });
             };
@@ -73,36 +126,30 @@ where
         }
 
         id_to_index.shrink_to_fit();
-        name_to_index.shrink_to_fit(|&idx| hash_name(&hasher, container[usize::from(idx)].name()));
+        name_to_index.shrink_to_fit(|&idx| hash_name(&hasher, items[idx].name()));
 
         Ok(Self { container, id_to_index: id_to_index.into_boxed_slice(), name_to_index, hasher })
     }
 
     /// Returns a reference to the item with the specified `id`, if it exists.
-    pub fn get_by_id(&self, id: T::Id) -> Option<&T> {
+    pub fn get_by_id(&self, id: <C::Item as HasPolicyId>::Id) -> Option<&C::Item> {
         let idx = *self.id_to_index.get(id.as_u32() as usize)?;
-        idx.map(|i| &self.container[i])
+        idx.map(|i| &self.container.as_slice()[i])
     }
 
     /// Returns a reference to the item with the specified `name`, if it exists.
-    pub fn get_by_name(&self, name: &[u8]) -> Option<&T> {
+    pub fn get_by_name(&self, name: &[u8]) -> Option<&C::Item> {
+        let items = self.container.as_slice();
         let hash = hash_name(&self.hasher, name);
-        let idx = self.name_to_index.find(hash, |&idx| self.container[idx].name() == name)?;
-        Some(&self.container[*idx])
-    }
-}
-
-impl<C> Deref for IdAndNameIndexed<C> {
-    type Target = C;
-    fn deref(&self) -> &Self::Target {
-        &self.container
+        let idx = self.name_to_index.find(hash, |&idx| items[idx].name() == name)?;
+        Some(&items[*idx])
     }
 }
 
 #[cfg(test)]
-impl<C> std::ops::DerefMut for IdAndNameIndexed<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.container
+impl<T> IdAndNameIndexed<SymbolArray<T>> {
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self.container.as_mut_slice()
     }
 }
 
@@ -112,10 +159,10 @@ impl<C: Debug> Debug for IdAndNameIndexed<C> {
     }
 }
 
-impl<C, T> Parse for IdAndNameIndexed<C>
+impl<C> Parse for IdAndNameIndexed<C>
 where
-    C: Parse + Deref<Target = [T]>,
-    T: HasPolicyId + HasName,
+    C: Parse + AsSlice,
+    C::Item: HasPolicyId + HasName,
 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let container = C::parse(cursor)?;

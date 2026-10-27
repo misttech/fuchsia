@@ -995,11 +995,8 @@ impl FsNodeOps for ClassDirectory {
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
-        let id: u32 = self
-            .security_server
-            .class_id_by_name(&name.to_string())
-            .map_err(|_| errno!(EINVAL))?
-            .into();
+        let id =
+            self.security_server.class_id_by_name(&name.to_string()).map_err(|_| errno!(EINVAL))?;
 
         let fs = entry.node.fs();
         let dir = SimpleDirectory::new();

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::ops::Deref;
-
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::bitmap::IdSet;
@@ -374,11 +372,10 @@ struct ConstraintNode {
     terms: Array<ConstraintTerm>,
 }
 
-impl Deref for ConstraintNode {
-    type Target = [ConstraintTerm];
-
-    fn deref(&self) -> &Self::Target {
-        &self.terms
+impl ConstraintNode {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.terms.is_empty()
     }
 }
 
@@ -436,7 +433,60 @@ impl Constraint {
     /// Assumes that the constraint expression terms were sequenced in postfix order and validated
     /// at policy load time by [`ConstraintNode::validate`].
     pub fn evaluate(&self, source: &SecurityContext, target: &SecurityContext) -> bool {
-        evaluate_constraint(&self.constraint_expr, source, target)
+        let mut stack = BitStack::default();
+        for term in self.constraint_expr.terms.iter() {
+            match term {
+                ConstraintTerm::Not => {
+                    let arg = stack.pop();
+                    stack.push(!arg);
+                }
+                ConstraintTerm::And => {
+                    let right = stack.pop();
+                    let left = stack.pop();
+                    stack.push(left && right);
+                }
+                ConstraintTerm::Or => {
+                    let right = stack.pop();
+                    let left = stack.pop();
+                    stack.push(left || right);
+                }
+                ConstraintTerm::UserAttributeOp(operator) => {
+                    stack.push(evaluate_simple(source.user(), target.user(), *operator));
+                }
+                ConstraintTerm::RoleAttributeOp(operator) => {
+                    stack.push(evaluate_simple(source.role(), target.role(), *operator));
+                }
+                ConstraintTerm::TypeAttributeOp(operator) => {
+                    stack.push(evaluate_simple(source.type_(), target.type_(), *operator));
+                }
+                ConstraintTerm::UserNameOp(expr) => {
+                    stack.push(evaluate_name_expr(expr, source.user(), target.user()));
+                }
+                ConstraintTerm::RoleNameOp(expr) => {
+                    stack.push(evaluate_name_expr(expr, source.role(), target.role()));
+                }
+                ConstraintTerm::TypeNameOp(expr) => {
+                    stack.push(evaluate_name_expr(expr, source.type_(), target.type_()));
+                }
+                ConstraintTerm::MlsOp(operands, operator) => {
+                    let (left, right) = match operands {
+                        MlsOperands::L1L2 => (source.low_level(), target.low_level()),
+                        MlsOperands::L1H2 => (source.low_level(), target.effective_high_level()),
+                        MlsOperands::H1L2 => (source.effective_high_level(), target.low_level()),
+                        MlsOperands::H1H2 => {
+                            (source.effective_high_level(), target.effective_high_level())
+                        }
+                        MlsOperands::L1H1 => (source.low_level(), source.effective_high_level()),
+                        MlsOperands::L2H2 => (target.low_level(), target.effective_high_level()),
+                    };
+                    stack.push(evaluate_mls(left, right, *operator));
+                }
+            }
+        }
+        let result = stack.pop();
+        #[cfg(debug_assertions)]
+        debug_assert!(stack.is_empty(), "validated term sequence leaves stack empty");
+        result
     }
 }
 
@@ -482,71 +532,6 @@ impl BitStack {
     }
 }
 
-/// Evaluates a postfix constraint expression for `source` and `target`.
-///
-/// Assumes that `constraint_expr` was validated at policy load time by
-/// [`ConstraintNode::validate`].
-fn evaluate_constraint(
-    constraint_expr: &[ConstraintTerm],
-    source: &SecurityContext,
-    target: &SecurityContext,
-) -> bool {
-    let mut stack = BitStack::default();
-    for term in constraint_expr {
-        match term {
-            ConstraintTerm::Not => {
-                let arg = stack.pop();
-                stack.push(!arg);
-            }
-            ConstraintTerm::And => {
-                let right = stack.pop();
-                let left = stack.pop();
-                stack.push(left && right);
-            }
-            ConstraintTerm::Or => {
-                let right = stack.pop();
-                let left = stack.pop();
-                stack.push(left || right);
-            }
-            ConstraintTerm::UserAttributeOp(operator) => {
-                stack.push(evaluate_simple(source.user(), target.user(), *operator));
-            }
-            ConstraintTerm::RoleAttributeOp(operator) => {
-                stack.push(evaluate_simple(source.role(), target.role(), *operator));
-            }
-            ConstraintTerm::TypeAttributeOp(operator) => {
-                stack.push(evaluate_simple(source.type_(), target.type_(), *operator));
-            }
-            ConstraintTerm::UserNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.user(), target.user()));
-            }
-            ConstraintTerm::RoleNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.role(), target.role()));
-            }
-            ConstraintTerm::TypeNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.type_(), target.type_()));
-            }
-            ConstraintTerm::MlsOp(operands, operator) => {
-                let (left, right) = match operands {
-                    MlsOperands::L1L2 => (source.low_level(), target.low_level()),
-                    MlsOperands::L1H2 => (source.low_level(), target.effective_high_level()),
-                    MlsOperands::H1L2 => (source.effective_high_level(), target.low_level()),
-                    MlsOperands::H1H2 => {
-                        (source.effective_high_level(), target.effective_high_level())
-                    }
-                    MlsOperands::L1H1 => (source.low_level(), source.effective_high_level()),
-                    MlsOperands::L2H2 => (target.low_level(), target.effective_high_level()),
-                };
-                stack.push(evaluate_mls(left, right, *operator));
-            }
-        }
-    }
-    let result = stack.pop();
-    #[cfg(debug_assertions)]
-    debug_assert!(stack.is_empty(), "validated term sequence leaves stack empty");
-    result
-}
-
 fn evaluate_simple<T: Eq>(left: T, right: T, operator: ConstraintOperator) -> bool {
     match operator {
         ConstraintOperator::Eq => left == right,
@@ -577,12 +562,6 @@ mod tests {
     use super::{PolicyCursor, *};
     use crate::policy::metadata::PolicyVersion;
     use crate::policy::parser::PolicyWriter;
-
-    fn parse_and_validate(policy_bytes: &[u8]) -> Policy {
-        let policy = Policy::parse(policy_bytes).expect("parse policy");
-        policy.validate().expect("validate policy");
-        policy
-    }
 
     #[test]
     fn test_minimal_constraint_parse_and_serialize() {
@@ -705,7 +684,7 @@ mod tests {
     #[test]
     fn evaluate_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = parse_and_validate(policy_bytes);
+        let policy = Policy::parse_and_validate(policy_bytes);
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -775,7 +754,7 @@ mod tests {
     #[test]
     fn evaluate_mls_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = parse_and_validate(policy_bytes);
+        let policy = Policy::parse_and_validate(policy_bytes);
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())

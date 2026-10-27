@@ -163,6 +163,14 @@ impl Policy {
         Ok(())
     }
 
+    /// Parses and validates a [`Policy`] from raw binary data for tests.
+    #[cfg(test)]
+    pub(crate) fn parse_and_validate(data: &[u8]) -> Self {
+        let policy = Self::parse(data).expect("parse policy");
+        policy.validate().expect("validate policy");
+        policy
+    }
+
     /// Serializes the policy to binary representation.
     pub fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
         let mut policy_writer = PolicyWriter::new(self.version, writer);
@@ -233,12 +241,6 @@ impl Policy {
     /// Returns the access vector rules table.
     fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
         &self.access_vector_rules
-    }
-
-    /// Returns the list of conditional nodes.
-    #[cfg(test)]
-    fn conditional_nodes(&self) -> &[ConditionalNode] {
-        self.conditional_nodes.as_ref()
     }
 
     /// Returns the role transitions rules array.
@@ -418,19 +420,18 @@ mod parse_tests {
     fn test_object_r_role_id_validation() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
-        let mut policy = Policy::parse(policy_bytes).expect("parse minimal policy");
-        policy.validate().expect("validate minimal policy");
+        let mut policy = Policy::parse_and_validate(policy_bytes);
 
         // Swap the role ID of "object_r" (ID 1) with another role so that role ID 1 still exists
         // in the policy, but is no longer assigned to "object_r".
+        let roles = policy.roles.as_mut_slice();
         let object_r_index =
-            policy.roles.iter().position(|role| role.name() == OBJECT_R_ROLE_NAME).unwrap();
-        let other_index =
-            policy.roles.iter().position(|role| role.name() != OBJECT_R_ROLE_NAME).unwrap();
-        let object_r_id = policy.roles[object_r_index].id();
-        let other_id = policy.roles[other_index].id();
-        policy.roles[object_r_index].set_id(other_id);
-        policy.roles[other_index].set_id(object_r_id);
+            roles.iter().position(|role| role.name() == OBJECT_R_ROLE_NAME).unwrap();
+        let other_index = roles.iter().position(|role| role.name() != OBJECT_R_ROLE_NAME).unwrap();
+        let object_r_id = roles[object_r_index].id();
+        let other_id = roles[other_index].id();
+        roles[object_r_index].set_id(other_id);
+        roles[other_index].set_id(object_r_id);
 
         let mut serialized = Vec::new();
         policy.serialize(&mut serialized).expect("serialize modified policy");

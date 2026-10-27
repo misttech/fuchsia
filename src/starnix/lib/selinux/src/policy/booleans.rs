@@ -4,7 +4,7 @@
 
 use std::num::NonZeroU32;
 
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
 
 use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
@@ -20,7 +20,7 @@ pub struct ConditionalBooleanTag;
 pub type ConditionalBooleanId = IdType<NonZeroU32, ConditionalBooleanTag>;
 
 /// Parsed SELinux conditional boolean definition.
-#[derive(Debug, Validate, HasName, HasPolicyId)]
+#[derive(Debug, HasName, HasPolicyId)]
 pub struct ConditionalBoolean {
     id: ConditionalBooleanId,
     active: bool,
@@ -31,6 +31,16 @@ impl ConditionalBoolean {
     /// Returns whether this conditional boolean is active (true).
     pub fn active(&self) -> bool {
         self.active
+    }
+}
+
+impl Validate for ConditionalBoolean {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
+        self.id.validate(policy)?;
+        self.active.validate(policy)?;
+        std::str::from_utf8(&self.name)
+            .map_err(|_| ValidateError::NonUtf8String { name: self.name.as_ref().into() })?;
+        Ok(())
     }
 }
 
@@ -104,8 +114,7 @@ mod tests {
     fn test_conditional_booleans() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/conditional_policy");
-        let policy = Policy::parse(policy_bytes).expect("parse conditional policy");
-        policy.validate().expect("validate conditional policy");
+        let policy = Policy::parse_and_validate(policy_bytes);
 
         let booleans = policy.conditional_booleans();
         let first = booleans.get_by_name(b"test_cond_first").expect("test_cond_first");

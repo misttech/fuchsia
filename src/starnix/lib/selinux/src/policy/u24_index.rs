@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::ops::{Index, IndexMut};
+use std::ops::Index;
 
 use thiserror::Error;
 
@@ -33,7 +33,7 @@ impl TryFrom<usize> for U24Index {
             let bytes = (value as u32).to_le_bytes();
             Ok(Self([bytes[0], bytes[1], bytes[2]]))
         } else {
-            Err(U24IndexOverflow(value))
+            Err(U24IndexOverflow { index: value })
         }
     }
 }
@@ -46,20 +46,16 @@ impl<T> Index<U24Index> for [T] {
     }
 }
 
-impl<T> IndexMut<U24Index> for [T] {
-    fn index_mut(&mut self, index: U24Index) -> &mut Self::Output {
-        &mut self[usize::from(index)]
-    }
-}
-
 /// Error returned when an integer index exceeds [`U24Index::MAX`].
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
-#[error("index value {0} exceeds 24-bit maximum (16,777,215)")]
-pub struct U24IndexOverflow(usize);
+#[error("index value {index} exceeds 24-bit maximum (16,777,215)")]
+pub struct U24IndexOverflow {
+    index: usize,
+}
 
 impl From<U24IndexOverflow> for ParseError {
     fn from(err: U24IndexOverflow) -> Self {
-        ParseError::IndexOutOfRange { index: err.0, max: U24Index::MAX }
+        ParseError::IndexOutOfRange { index: err.index, max: U24Index::MAX }
     }
 }
 

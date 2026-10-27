@@ -32,13 +32,12 @@ impl Parse for Permission {
         let length = u32::parse(cursor)? as usize;
         let id_val = u32::parse(cursor)?;
 
-        // Validate permission ID range (1..=32) during parsing
-        if id_val == 0 || id_val > 32 {
-            return Err(ParseError::InvalidId { value: id_val });
-        }
+        // Validate permission ID range (1..=32) during parsing.
+        let id = PermissionId::from_u32(id_val)
+            .filter(|id| id.as_u32() <= 32)
+            .ok_or(ParseError::InvalidId { value: id_val })?;
 
         let name = Box::from(cursor.read_bytes(length)?);
-        let id = PermissionId::from_u32(id_val).ok_or(ParseError::InvalidId { value: id_val })?;
 
         Ok(Self { id, name })
     }

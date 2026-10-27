@@ -7,14 +7,13 @@ use thiserror::Error;
 
 use super::bitmap::MAP_NODE_BITS;
 use super::metadata::{
-    CONFIG_MLS_FLAG, POLICYDB_SIGNATURE, POLICYDB_STRING_MAX_LENGTH, POLICYDB_VERSION_MAX,
-    POLICYDB_VERSION_MIN, SELINUX_MAGIC,
+    CONFIG_MLS_FLAG, POLICYDB_SIGNATURE, POLICYDB_VERSION_MAX, POLICYDB_VERSION_MIN, SELINUX_MAGIC,
 };
 use super::rules::{RuleKey, RuleKind};
 use crate::InitialSid;
 
 /// Errors that may be encountered parsing a binary policy.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum ParseError {
     #[error("expected MLS-enabled flag ({CONFIG_MLS_FLAG:#032b}), but found {found_config:#032b}")]
     ConfigMissingMlsFlag { found_config: u32 },
@@ -28,12 +27,16 @@ pub enum ParseError {
     InvalidEnumValue { enum_name: &'static str, value: u64 },
     #[error("expected extensible bitmap high bit to be {expected}, but found {found}")]
     InvalidExtensibleBitmapHighBit { expected: u32, found: u32 },
+    #[error("invalid extensible bitmap item start bit: {found_start_bit}")]
+    InvalidExtensibleBitmapItemStartBit { found_start_bit: u32 },
     #[error(
         "expected extensible bitmap item size to be exactly {MAP_NODE_BITS}, but found {found_size}"
     )]
     InvalidExtensibleBitmapItemSize { found_size: u32 },
     #[error("invalid ID value: {value}")]
     InvalidId { value: u32 },
+    #[error("expected primary names count <= {expected_at_most}, but found {found}")]
+    InvalidPrimaryNamesCount { expected_at_most: u32, found: u32 },
     #[error("expected data item of type {type_name} ({type_size} bytes), but found {num_bytes}")]
     MissingData { type_name: &'static str, type_size: usize, num_bytes: usize },
     #[error("expected end of policy, but found {num_bytes} additional bytes")]
@@ -61,7 +64,7 @@ pub enum ParseError {
 }
 
 /// Errors that may be encountered validating a binary policy.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum ValidateError {
     #[error("invalid sequence of terms in constraint expression")]
     InvalidConstraintTermSequence,
@@ -84,10 +87,6 @@ pub enum ValidateError {
     #[error("expected signature {POLICYDB_SIGNATURE:?}, but found {found_signature:?}")]
     InvalidSignature { found_signature: BString },
     #[error(
-        "expected signature length in range [0, {POLICYDB_STRING_MAX_LENGTH}], but found {found_length}"
-    )]
-    InvalidSignatureLength { found_length: u32 },
-    #[error(
         "expected extensible bitmap item start bit to be multiple of item size {found_size}, but found {found_start_bit}"
     )]
     MisalignedExtensibleBitmapItemStartBit { found_start_bit: u32, found_size: u32 },
@@ -95,6 +94,8 @@ pub enum ValidateError {
     MissingInitialSid { initial_sid: InitialSid },
     #[error("missing mandatory 'object_r' role")]
     MissingObjectRRole,
+    #[error("expected UTF-8 string, but found {name:?}")]
+    NonUtf8String { name: BString },
     #[error(
         "expected extensible bitmap items to be in sorted order, but found item starting at {found_start_bit} after item that ends at {min_start}"
     )]

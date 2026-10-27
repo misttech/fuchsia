@@ -11,9 +11,6 @@ use super::traits::{Parse, Serialize, Validate};
 /// Magic number identifying a SELinux policy file.
 pub const SELINUX_MAGIC: u32 = 0xf97cff8c;
 
-/// Maximum allowed length for a signature in the policy database.
-pub const POLICYDB_STRING_MAX_LENGTH: u32 = 32;
-
 /// Expected signature prefix for a valid SELinux policy.
 pub const POLICYDB_SIGNATURE: &[u8] = b"SE Linux";
 
@@ -67,10 +64,6 @@ pub struct Signature {
 
 impl Validate for Signature {
     fn validate(&self, _policy: &super::Policy) -> Result<(), ValidateError> {
-        let len = self.value.len() as u32;
-        if len > POLICYDB_STRING_MAX_LENGTH {
-            return Err(ValidateError::InvalidSignatureLength { found_length: len });
-        }
         if self.value.as_ref() != POLICYDB_SIGNATURE {
             return Err(ValidateError::InvalidSignature {
                 found_signature: self.value.as_ref().into(),
@@ -177,8 +170,7 @@ impl Validate for Config {
     }
 }
 
-/// Contains various count fields representing the size of different registries
-/// and tables in the policy.
+/// Element counts for registries and tables in the binary policy.
 #[derive(Debug, Parse, Serialize, Validate)]
 pub struct Counts {
     /// Number of symbols in the symbol table.

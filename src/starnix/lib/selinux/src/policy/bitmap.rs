@@ -75,7 +75,12 @@ impl Parse for ExtensibleBitmap {
         }
         let items = Array::<BinaryMapItem>::parse(cursor)?;
         let bitmap = Self { items };
-        let calculated_high_bit = bitmap.high_bit();
+        let calculated_high_bit = match bitmap.items.last() {
+            Some(last) => last.start_bit.checked_add(MAP_NODE_BITS).ok_or(
+                ParseError::InvalidExtensibleBitmapItemStartBit { found_start_bit: last.start_bit },
+            )?,
+            None => 0,
+        };
         if meta.high_bit != calculated_high_bit {
             return Err(ParseError::InvalidExtensibleBitmapHighBit {
                 expected: calculated_high_bit,
@@ -102,7 +107,7 @@ impl ExtensibleBitmap {
     /// Returns the high bit limit of this bitmap (rounded up to the next node boundary).
     #[inline]
     fn high_bit(&self) -> u32 {
-        self.items.last().map_or(0, |item| item.start_bit + MAP_NODE_BITS)
+        self.items.last().map_or(0, |item| item.start_bit.saturating_add(MAP_NODE_BITS))
     }
 
     /// Returns `true` if the `index`'th bit in this bitmap is a 1-bit.
@@ -319,7 +324,12 @@ impl Validate for ExtensibleBitmap {
                     min_start,
                 });
             }
-            min_start = item_start_bit + MAP_NODE_BITS;
+            min_start = item_start_bit.checked_add(MAP_NODE_BITS).ok_or(
+                ValidateError::MisalignedExtensibleBitmapItemStartBit {
+                    found_start_bit: item_start_bit,
+                    found_size: MAP_NODE_BITS,
+                },
+            )?;
         }
 
         Ok(())
@@ -404,7 +414,7 @@ impl<'a> Iterator for BitIter<'a> {
 /// If `WITH_ID_ZERO` is `false` (default), the zeroth bit of the bitmap corresponds to
 /// identifier value one. If `true` (including a slot for ID 0), the first bit (index 1) corresponds to identifier value one.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Parse, Serialize)]
-pub struct IdSet<T: PolicyId, const WITH_ID_ZERO: bool = false> {
+pub struct IdSet<T, const WITH_ID_ZERO: bool = false> {
     bitmap: ExtensibleBitmap,
     _phantom: PhantomData<T>,
 }
@@ -480,12 +490,12 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSet<T, WITH_ID_ZERO> {
 
 /// Builder for constructing [`IdSet`]s dynamically.
 #[derive(Debug, Clone)]
-pub struct IdSetBuilder<T: PolicyId, const WITH_ID_ZERO: bool = false> {
+pub struct IdSetBuilder<T, const WITH_ID_ZERO: bool = false> {
     builder: ExtensibleBitmapBuilder,
     _phantom: PhantomData<T>,
 }
 
-impl<T: PolicyId, const WITH_ID_ZERO: bool> Default for IdSetBuilder<T, WITH_ID_ZERO> {
+impl<T, const WITH_ID_ZERO: bool> Default for IdSetBuilder<T, WITH_ID_ZERO> {
     fn default() -> Self {
         Self { builder: ExtensibleBitmapBuilder::new(), _phantom: PhantomData }
     }
@@ -555,7 +565,7 @@ impl<T: Copy> IdSpan<T> {
 
 /// Iterator over contiguous spans of IDs in an [`IdSet`].
 #[derive(Clone)]
-pub struct SpansIter<'a, T: PolicyId, const WITH_ID_ZERO: bool> {
+pub struct SpansIter<'a, T, const WITH_ID_ZERO: bool> {
     spans: BitSpansIter<'a>,
     _phantom: PhantomData<T>,
 }

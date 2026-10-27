@@ -48,7 +48,7 @@ pub struct PortContext {
 ///
 /// Corresponding SELinux text policy syntax: `nodecon <ipv4_addr> <netmask> <context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
-pub struct IPv4NodeContext {
+pub struct Ipv4NodeContext {
     address: u32,
     mask: u32,
     context: SecurityContext,
@@ -95,7 +95,7 @@ impl FsUse {
 ///
 /// Corresponding SELinux text policy syntax: `nodecon <ipv6_addr> <netmask> <context>`.
 #[derive(Debug, Clone, Parse, Serialize, Validate)]
-pub struct IPv6NodeContext {
+pub struct Ipv6NodeContext {
     address: [u32; 4],
     mask: [u32; 4],
     context: SecurityContext,
@@ -128,9 +128,9 @@ pub struct ObjectContexts {
     filesystems: Array<FilesystemContext>,
     ports: Array<PortContext>,
     network_interfaces: Array<NetworkInterfaceContext>,
-    ipv4_nodes: Array<IPv4NodeContext>,
+    ipv4_nodes: Array<Ipv4NodeContext>,
     fs_uses: Array<FsUse>,
-    ipv6_nodes: Array<IPv6NodeContext>,
+    ipv6_nodes: Array<Ipv6NodeContext>,
     infiniband_partition_keys: Array<InfiniBandPartitionKey>,
     infiniband_end_ports: Array<InfiniBandEndPort>,
 }
@@ -152,7 +152,7 @@ impl ObjectContexts {
     }
 
     /// Returns the IPv4 node labeling statements table.
-    pub fn ipv4_nodes(&self) -> &[IPv4NodeContext] {
+    pub fn ipv4_nodes(&self) -> &[Ipv4NodeContext] {
         &self.ipv4_nodes
     }
 
@@ -162,7 +162,7 @@ impl ObjectContexts {
     }
 
     /// Returns the IPv6 node labeling statements table.
-    pub fn ipv6_nodes(&self) -> &[IPv6NodeContext] {
+    pub fn ipv6_nodes(&self) -> &[Ipv6NodeContext] {
         &self.ipv6_nodes
     }
 
@@ -182,9 +182,9 @@ impl Parse for ObjectContexts {
         let filesystems = Array::<FilesystemContext>::parse(cursor)?;
         let ports = Array::<PortContext>::parse(cursor)?;
         let network_interfaces = Array::<NetworkInterfaceContext>::parse(cursor)?;
-        let ipv4_nodes = Array::<IPv4NodeContext>::parse(cursor)?;
+        let ipv4_nodes = Array::<Ipv4NodeContext>::parse(cursor)?;
         let fs_uses = Array::<FsUse>::parse(cursor)?;
-        let ipv6_nodes = Array::<IPv6NodeContext>::parse(cursor)?;
+        let ipv6_nodes = Array::<Ipv6NodeContext>::parse(cursor)?;
         let (infiniband_partition_keys, infiniband_end_ports) =
             if cursor.policy_version() >= PolicyVersion::MIN_INFINIBAND {
                 (
@@ -278,8 +278,7 @@ mod tests {
     fn test_object_contexts_minimal_policy() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
-        let policy = Policy::parse(policy_bytes).expect("parse minimal_policy");
-        policy.validate().expect("validate minimal_policy");
+        let policy = Policy::parse_and_validate(policy_bytes);
 
         let object_contexts = policy.object_contexts();
         assert!(object_contexts.filesystems().is_empty());

@@ -53,11 +53,8 @@ impl Parse for CommonSymbol {
 
         let name = Box::from(cursor.read_bytes(header.name_len as usize)?);
 
-        let mut permissions_vec = Vec::with_capacity(header.permissions_count as usize);
-        for _ in 0..header.permissions_count {
-            permissions_vec.push(Permission::parse(cursor)?);
-        }
-        let permissions = IdAndNameIndexed::new(permissions_vec.into_boxed_slice())?;
+        let permissions =
+            IdAndNameIndexed::new(cursor.parse_elements(header.permissions_count as usize)?)?;
 
         let id = CommonSymbolId::from_u32(header.id)
             .ok_or(ParseError::InvalidId { value: header.id })?;

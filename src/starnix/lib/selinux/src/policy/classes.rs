@@ -142,18 +142,10 @@ impl Parse for Class {
         let common_name = Box::from(cursor.read_bytes(common_name_len)?);
 
         let permissions_count = metadata.permission_count as usize;
-        let mut permissions = Vec::with_capacity(permissions_count);
-        for _ in 0..permissions_count {
-            permissions.push(Permission::parse(cursor)?);
-        }
-        let permissions = IdAndNameIndexed::new(permissions.into_boxed_slice())?;
+        let permissions = IdAndNameIndexed::new(cursor.parse_elements(permissions_count)?)?;
 
         let constraint_count = metadata.constraint_count as usize;
-        let mut constraints = Vec::with_capacity(constraint_count);
-        for _ in 0..constraint_count {
-            constraints.push(Constraint::parse(cursor)?);
-        }
-        let constraints = constraints.into_boxed_slice();
+        let constraints = cursor.parse_elements(constraint_count)?;
 
         let validate_transitions = Array::<ConstraintTerm>::parse(cursor)?;
         let defaults = ClassDefaults::parse(cursor)?;
