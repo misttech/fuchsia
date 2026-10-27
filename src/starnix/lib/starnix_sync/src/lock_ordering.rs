@@ -303,6 +303,7 @@ lock_ordering! {
     // Terminal Levels. No lock level should ever be defined after this.
     // Can be used for any locks that is never acquired before any other lock.
     // keep-sorted start
+    Terminal(ActivityGovernorProxyLock),
     Terminal(AioEventsLock),
     Terminal(AndroidUsbCcToggleEnableLock),
     Terminal(AuditDenyCountsLock),
