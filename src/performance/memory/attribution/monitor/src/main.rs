@@ -16,7 +16,7 @@ use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
 use futures::{FutureExt, StreamExt, TryFutureExt, select};
 use log::{error, info, warn};
-use periodic_monitoring::periodic_monitoring;
+use periodic_monitoring::{ManualMonitoringData, ManualMonitoringEvent, periodic_monitoring};
 use resources::Job;
 use snapshot::AttributionSnapshot;
 use stalls::StallProvider;
@@ -125,6 +125,8 @@ async fn main() -> Result<()> {
         fmetrics::MetricEventLoggerFactoryMarker,
     >()?)
     .await?;
+    let (manual_monitoring_tx, manual_monitoring_rx) =
+        futures::channel::mpsc::unbounded::<ManualMonitoringEvent>();
     let mut periodic_collection = fuchsia_async::Task::local({
         let attribution_data_provider = fast_attribution_data_provider.clone();
         let stall_provider = stall_provider.clone();
@@ -141,6 +143,7 @@ async fn main() -> Result<()> {
                 &metric_event_logger,
                 &*bucket_definitions,
                 root_node.create_child("logger"),
+                manual_monitoring_rx,
             )
             .await
         }
@@ -202,6 +205,7 @@ async fn main() -> Result<()> {
                         kernel_stats.clone(),
                         stall_provider.clone(),
                         page_fault_tracker.clone(),
+                        manual_monitoring_tx.clone(),
                     )
                     .inspect_err(|error| warn!(error:%; ""))
                     .await
@@ -256,6 +260,7 @@ async fn serve_client_stream(
     kernel_stats_proxy: fkernel::StatsProxy,
     stall_provider: impl StallProvider,
     page_fault_tracker: impl PageFaultProvider,
+    manual_monitoring_tx: futures::channel::mpsc::UnboundedSender<ManualMonitoringEvent>,
 ) -> Result<()> {
     while let Some(request) = stream.next().await.transpose()? {
         match request {
@@ -267,6 +272,7 @@ async fn serve_client_stream(
                     page_fault_tracker.clone(),
                     bucket_definitions,
                     snapshot,
+                    &manual_monitoring_tx,
                 )
                 .await
                 {
@@ -298,6 +304,7 @@ async fn serve_client_stream(
                     page_fault_tracker.clone(),
                     bucket_definitions,
                     snapshot,
+                    &manual_monitoring_tx,
                 )
                 .await
                 {
@@ -322,24 +329,42 @@ async fn provide_snapshot(
     page_fault_tracker: impl PageFaultProvider,
     bucket_definitions: &[BucketDefinition],
     snapshot: zx::Socket,
+    manual_monitoring_tx: &futures::channel::mpsc::UnboundedSender<ManualMonitoringEvent>,
 ) -> Result<()> {
     duration!(CATEGORY_MEMORY_CAPTURE, c"provide_snapshot");
+    let _ = manual_monitoring_tx.unbounded_send(ManualMonitoringEvent::Started);
+    let timestamp = BootInstant::get();
     let attribution_data = attribution_data_provider.get_attribution_data()?;
 
+    let (memory_stats, compression_stats) = futures::try_join!(
+        kernel_stats_proxy.get_memory_stats(),
+        kernel_stats_proxy.get_memory_stats_compression()
+    )?;
     let kernel_stats = fattribution_plugin::KernelStatistics {
-        memory_stats: Some(kernel_stats_proxy.get_memory_stats().await?),
-        compression_stats: Some(kernel_stats_proxy.get_memory_stats_compression().await?),
+        memory_stats: Some(memory_stats.clone()),
+        compression_stats: Some(compression_stats.clone()),
         ..Default::default()
     };
 
     let memory_stalls = stall_provider.get_stall_info()?;
     let attribution_snapshot = AttributionSnapshot::new(
-        attribution_data,
+        &attribution_data,
         kernel_stats,
         memory_stalls,
         page_fault_tracker,
         bucket_definitions,
     );
+    let (done_tx, done_rx) = futures::channel::oneshot::channel();
+    let _ = manual_monitoring_tx.unbounded_send(ManualMonitoringEvent::Completed(Box::new(
+        ManualMonitoringData {
+            timestamp,
+            attribution_data,
+            kmem_stats: memory_stats,
+            kmem_stats_compression: compression_stats,
+            done_tx: Some(done_tx),
+        },
+    )));
+    let _ = done_rx.await;
     attribution_snapshot.serve(snapshot).await
 }
 

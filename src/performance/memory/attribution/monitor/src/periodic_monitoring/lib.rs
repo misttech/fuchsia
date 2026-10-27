@@ -4,13 +4,16 @@
 use anyhow::{Context, Result};
 use attribution_processing::digest::{BucketDefinition, Digest};
 use attribution_processing::summary::MemorySummary;
-use attribution_processing::{AttributionDataProvider, ProcessedAttributionData, attribute_vmos};
+use attribution_processing::{
+    AttributionData, AttributionDataProvider, ProcessedAttributionData, attribute_vmos,
+};
 use fuchsia_async::WakeupTime;
 use fuchsia_inspect::{ArrayProperty, Node, StringProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_trace::{category_enabled, duration};
 use fuchsia_trace_observer::TraceObserver;
-use futures::{TryFutureExt, join, try_join};
+use futures::stream::FusedStream;
+use futures::{FutureExt, Stream, StreamExt, TryFutureExt, join, select, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
 use stalls::refaults::PageFaultProvider;
@@ -19,6 +22,8 @@ use traces::{CATEGORY_MEMORY_CAPTURE, CATEGORY_MEMORY_SUPPRESS_PERIODIC};
 
 use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_metrics as fmetrics;
+
+const PERIODIC_MONITORING_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_minutes(5);
 
 /// Waits while periodic monitoring is suppressed (`is_suppressed() == true`), awaiting
 /// `on_state_changed()` between checks. Breaks out and falls through if `on_state_changed()`
@@ -32,6 +37,67 @@ async fn wait_while_periodic_suppressed<Fut, T, E>(
     while is_suppressed() {
         if on_state_changed().await.is_err() {
             break;
+        }
+    }
+}
+
+/// Data collected during an on-demand snapshot that can be reused to update Inspect historical
+/// data without performing a redundant periodic collection.
+pub struct ManualMonitoringData {
+    pub timestamp: zx::BootInstant,
+    pub attribution_data: AttributionData,
+    pub kmem_stats: fkernel::MemoryStats,
+    pub kmem_stats_compression: fkernel::MemoryStatsCompression,
+    pub done_tx: Option<futures::channel::oneshot::Sender<()>>,
+}
+
+/// Notification sent by the on-demand snapshot handler to `periodic_monitoring`.
+pub enum ManualMonitoringEvent {
+    /// Signals that an on-demand snapshot has started, resetting the periodic timer immediately
+    /// so a periodic collection does not race with the in-progress snapshot.
+    Started,
+    /// Delivers the collected snapshot data to be recorded in Inspect history and resets the
+    /// periodic timer.
+    Completed(Box<ManualMonitoringData>),
+}
+
+/// Waits for [PERIODIC_MONITORING_INTERVAL], restarting the countdown when an on-demand snapshot
+/// starts and returning `Some(data)` immediately if a completed manual snapshot newer than
+/// `last_timestamp` arrives to be recorded in Inspect history, or `None` when the periodic timer
+/// fires. Queued events are drained and coalesced so only the newest `Completed` snapshot is
+/// processed.
+async fn wait_for_next_collection(
+    manual_events: &mut (impl FusedStream<Item = ManualMonitoringEvent> + Unpin),
+    last_timestamp: zx::BootInstant,
+) -> Option<Box<ManualMonitoringData>> {
+    let mut timer = std::pin::pin!(PERIODIC_MONITORING_INTERVAL.into_timer().fuse());
+    loop {
+        select! {
+            _ = timer => return None,
+            first_event = manual_events.select_next_some() => {
+                timer.set(PERIODIC_MONITORING_INTERVAL.into_timer().fuse());
+                let mut latest_completed: Option<Box<ManualMonitoringData>> = None;
+                let mut next_event = Some(first_event);
+                while let Some(event) = next_event {
+                    if let ManualMonitoringEvent::Completed(data) = event {
+                        let is_newer_than_last = data.timestamp > last_timestamp;
+                        let is_newer_than_candidate = latest_completed
+                            .as_ref()
+                            .is_none_or(|prev| data.timestamp >= prev.timestamp);
+                        if is_newer_than_last && is_newer_than_candidate {
+                            latest_completed = Some(data);
+                        }
+                    }
+                    next_event = if manual_events.is_terminated() {
+                        None
+                    } else {
+                        manual_events.next().now_or_never().flatten()
+                    };
+                }
+                if latest_completed.is_some() {
+                    return latest_completed;
+                }
+            }
         }
     }
 }
@@ -50,31 +116,58 @@ pub async fn periodic_monitoring(
     metric_event_logger: &fmetrics::MetricEventLoggerProxy,
     bucket_definitions: &[BucketDefinition],
     inspect_root: Node,
+    manual_events: impl Stream<Item = ManualMonitoringEvent> + Unpin,
 ) -> Result<()> {
-    let mut _current; // Ensure the inspect property is kept as long as necessary.
+    let mut _current: Option<StringProperty> = None; // Ensure the inspect property is kept as long as necessary.
     let mut bucket_list_node = std::cell::OnceCell::new();
     let bucket_names = std::cell::OnceCell::new();
     let bucket_codes = cobalt::prepare_bucket_codes(bucket_definitions);
     let trace_observer = TraceObserver::new();
+    let mut manual_events = manual_events.fuse();
+    let mut manual_collection: Option<Box<ManualMonitoringData>> = None;
     loop {
-        // Defer periodic collection while a trace session with `memory:suppress_periodic` is
-        // actively recording so the expensive VMO/VMAR walk does not perturb traced benchmarks.
-        wait_while_periodic_suppressed(
-            || category_enabled(CATEGORY_MEMORY_SUPPRESS_PERIODIC),
-            || trace_observer.on_state_changed(),
-        )
-        .await;
-        {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"periodic_monitoring");
-            let timestamp = zx::BootInstant::get();
-            // Retrieve (concurrently) the data necessary to perform the aggregation.
-            let (kmem_stats, kmem_stats_compression) = try_join!(
-                kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
-                kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
+        if manual_collection.is_none() {
+            // Defer periodic collection while a trace session with `memory:suppress_periodic` is
+            // actively recording so the expensive VMO/VMAR walk does not perturb traced benchmarks.
+            wait_while_periodic_suppressed(
+                || category_enabled(CATEGORY_MEMORY_SUPPRESS_PERIODIC),
+                || trace_observer.on_state_changed(),
             )
-            .with_context(|| "Failed to get kernel memory stats")?;
-            // This is the very expensive operation.
-            let attribution_data = attribute_vmos(attribution_data_service.get_attribution_data()?);
+            .await;
+        }
+        let mut manual_done_tx = None;
+        let timestamp = {
+            duration!(CATEGORY_MEMORY_CAPTURE, c"periodic_monitoring");
+            let (timestamp, kmem_stats, kmem_stats_compression, raw_attribution_data) =
+                match manual_collection.take() {
+                    None => {
+                        let timestamp = zx::BootInstant::get();
+                        // Retrieve (concurrently) the data necessary to perform the aggregation.
+                        let (kmem_stats, kmem_stats_compression) = try_join!(
+                            kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
+                            kernel_stats_proxy
+                                .get_memory_stats_compression()
+                                .map_err(anyhow::Error::from)
+                        )
+                        .with_context(|| "Failed to get kernel memory stats")?;
+                        // This is the very expensive operation.
+                        let raw_attribution_data =
+                            attribution_data_service.get_attribution_data()?;
+                        (timestamp, kmem_stats, kmem_stats_compression, raw_attribution_data)
+                    }
+                    Some(manual) => {
+                        let ManualMonitoringData {
+                            timestamp,
+                            attribution_data,
+                            kmem_stats,
+                            kmem_stats_compression,
+                            done_tx,
+                        } = *manual;
+                        manual_done_tx = done_tx;
+                        (timestamp, kmem_stats, kmem_stats_compression, attribution_data)
+                    }
+                };
+            let attribution_data = attribute_vmos(raw_attribution_data);
             let digest = Digest::compute(
                 &attribution_data,
                 &kmem_stats,
@@ -82,8 +175,13 @@ pub async fn periodic_monitoring(
                 bucket_definitions,
                 false,
             )?;
-            _current =
-                update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
+            drop(_current.take());
+            _current = Some(update_inspect_summary(
+                attribution_data,
+                timestamp,
+                &kmem_stats,
+                &inspect_root,
+            ));
             cobalt::upload_metrics(
                 timestamp,
                 &kmem_stats,
@@ -114,13 +212,18 @@ pub async fn periodic_monitoring(
                 &mut bucket_list_node,
                 &inspect_root,
             )?;
-        }
-        join!(
-            fuchsia_async::Task::local(async {
+            timestamp
+        };
+        let (_, next) = join!(
+            fuchsia_async::Task::local(async move {
                 let _ = scudo::mallopt(scudo::M_PURGE_ALL, 0);
+                if let Some(done_tx) = manual_done_tx {
+                    let _ = done_tx.send(());
+                }
             }),
-            zx::MonotonicDuration::from_minutes(5).into_timer()
+            wait_for_next_collection(&mut manual_events, timestamp)
         );
+        manual_collection = next;
     }
 }
 
@@ -317,8 +420,8 @@ mod tests {
         )
     }
 
-    fn get_attribution_data() -> ProcessedAttributionData {
-        attribute_vmos(AttributionData {
+    fn get_raw_attribution_data() -> AttributionData {
+        AttributionData {
             principals_vec: vec![Principal {
                 identifier: GlobalPrincipalIdentifier(NonZero::new(1).unwrap()),
                 description: Some(PrincipalDescription::Component("principal".to_owned())),
@@ -345,7 +448,11 @@ mod tests {
                 subject: GlobalPrincipalIdentifier(NonZero::new(1).unwrap()),
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
-        })
+        }
+    }
+
+    fn get_attribution_data() -> ProcessedAttributionData {
+        attribute_vmos(get_raw_attribution_data())
     }
 
     #[derive(Clone)]
@@ -511,7 +618,6 @@ mod tests {
 
     #[test]
     fn test_wait_while_periodic_suppressed_defers_while_category_enabled() {
-        use futures::StreamExt;
         use std::cell::{Cell, RefCell};
 
         let mut exec = fuchsia_async::TestExecutor::new();
@@ -550,5 +656,188 @@ mod tests {
         assert!(exec.run_until_stalled(&mut wait_fut).is_pending());
         tx.unbounded_send(Err(zx::Status::BAD_STATE)).unwrap();
         assert!(exec.run_until_stalled(&mut wait_fut).is_ready());
+    }
+
+    struct CountingAttributionDataProvider {
+        call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    impl AttributionDataProvider for CountingAttributionDataProvider {
+        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
+            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(get_raw_attribution_data())
+        }
+    }
+
+    #[test]
+    fn test_periodic_monitoring_reuses_manual_and_resets_timer() -> Result<()> {
+        let mut exec = fuchsia_async::TestExecutor::new_with_fake_time();
+        let start = exec.now();
+
+        let (kernel_stats_proxy, mut kernel_stats_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fkernel::StatsMarker>();
+        let _kernel_stats_task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(request)) = kernel_stats_stream.next().await {
+                let (mem_stats, comp_stats) = get_kernel_stats();
+                match request {
+                    fkernel::StatsRequest::GetMemoryStats { responder } => {
+                        let _ = responder.send(&mem_stats);
+                    }
+                    fkernel::StatsRequest::GetMemoryStatsCompression { responder } => {
+                        let _ = responder.send(&comp_stats);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        });
+
+        let (metric_event_logger, mut metric_event_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fmetrics::MetricEventLoggerMarker>();
+        let _metrics_task = fuchsia_async::Task::local(async move {
+            while let Some(Ok(request)) = metric_event_stream.next().await {
+                if let fmetrics::MetricEventLoggerRequest::LogMetricEvents { responder, .. } =
+                    request
+                {
+                    let _ = responder.send(Ok(()));
+                }
+            }
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let attribution_provider =
+            CountingAttributionDataProvider { call_count: std::sync::atomic::AtomicUsize::new(0) };
+        let stall_provider = FakeStallProvider {};
+        let page_fault_provider = FakePageFaultProvider { refault_count: 300, fault_count: 400 };
+        let (tx, rx) = futures::channel::mpsc::unbounded::<ManualMonitoringEvent>();
+
+        let mut monitoring_fut = std::pin::pin!(periodic_monitoring(
+            kernel_stats_proxy,
+            &attribution_provider,
+            &stall_provider,
+            &page_fault_provider,
+            &metric_event_logger,
+            &[],
+            inspector.root().create_child("logger"),
+            rx,
+        ));
+
+        // Initial periodic collection runs immediately at t = 0.
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Advance 4 minutes (< 5 minutes): no new periodic collection yet.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(4));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Signal an on-demand snapshot start at t = 4m, resetting the 5-minute countdown.
+        tx.unbounded_send(ManualMonitoringEvent::Started).unwrap();
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+
+        // At t = 6m (past the initial 5m deadline, but only 2m after the reset), no collection.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(6));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // At t = 9m (5m after the reset at t = 4m), the periodic timer fires.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(9));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+        // At t = 10m, send a stale manual collection (timestamp = 1ns) followed by two new
+        // manual collections back-to-back; only the newest valid one should be recorded, and
+        // `get_attribution_data()` must NOT be called again.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(10));
+        let (kmem_stats, kmem_stats_compression) = get_kernel_stats();
+        let (stale_done_tx, mut stale_done_rx) = futures::channel::oneshot::channel();
+        tx.unbounded_send(ManualMonitoringEvent::Completed(Box::new(ManualMonitoringData {
+            timestamp: zx::BootInstant::from_nanos(1),
+            attribution_data: get_raw_attribution_data(),
+            kmem_stats: kmem_stats.clone(),
+            kmem_stats_compression: kmem_stats_compression.clone(),
+            done_tx: Some(stale_done_tx),
+        })))
+        .unwrap();
+
+        let base_ts = zx::BootInstant::get() + zx::BootDuration::from_seconds(10);
+        let newer_ts = base_ts + zx::BootDuration::from_seconds(1);
+        let (superseded_done_tx, mut superseded_done_rx) = futures::channel::oneshot::channel();
+        tx.unbounded_send(ManualMonitoringEvent::Completed(Box::new(ManualMonitoringData {
+            timestamp: base_ts,
+            attribution_data: get_raw_attribution_data(),
+            kmem_stats: kmem_stats.clone(),
+            kmem_stats_compression: kmem_stats_compression.clone(),
+            done_tx: Some(superseded_done_tx),
+        })))
+        .unwrap();
+
+        let (done_tx, mut done_rx) = futures::channel::oneshot::channel();
+        tx.unbounded_send(ManualMonitoringEvent::Completed(Box::new(ManualMonitoringData {
+            timestamp: newer_ts,
+            attribution_data: get_raw_attribution_data(),
+            kmem_stats,
+            kmem_stats_compression,
+            done_tx: Some(done_tx),
+        })))
+        .unwrap();
+
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        // Manual reuse must not invoke `get_attribution_data()`.
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+        // Completion acks for the processed and dropped snapshots have all resolved.
+        assert!(matches!(done_rx.try_recv(), Ok(Some(()))));
+        assert!(stale_done_rx.try_recv().is_err());
+        assert!(superseded_done_rx.try_recv().is_err());
+
+        // Next periodic collection is scheduled 5m after the manual completion at t = 10m:
+        // at t = 14m it has not fired yet, and at t = 15m it fires.
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(14));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+        exec.set_fake_time(start + fuchsia_async::MonotonicDuration::from_minutes(15));
+        assert!(exec.run_until_stalled(&mut monitoring_fut).is_pending());
+        assert_eq!(attribution_provider.call_count.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        drop(monitoring_fut);
+
+        // Verify Inspect tree has `buckets`, `current`, and 4 measurements ("0" from t=0,
+        // "1" from t=9m, "2" from the coalesced manual snapshot at `newer_ts`, and "3" from t=15m).
+        let mut assert_fut = std::pin::pin!(async {
+            assert_data_tree!(inspector, root: {
+                logger: contains {
+                    buckets: vec![
+                        "Undigested",
+                        "Orphaned",
+                        "Kernel",
+                        "Free",
+                        "[Addl]PagerTotal",
+                        "[Addl]PagerNewest",
+                        "[Addl]PagerOldest",
+                        "[Addl]DiscardableLocked",
+                        "[Addl]DiscardableUnlocked",
+                        "[Addl]ZramCompressedBytes",
+                        "[Addl]PopulatedAnonymousBytes",
+                    ],
+                    current: regex::Regex::new(r"^Time: \d+ VMO: 6B Free: 2B\nprincipal: 2KiB; resource 2KiB 2KiB 2KiB").unwrap(),
+                    measurements: {
+                        "0": contains {
+                            timestamp: NonZeroIntProperty,
+                        },
+                        "1": contains {
+                            timestamp: NonZeroIntProperty,
+                        },
+                        "2": contains {
+                            timestamp: newer_ts.into_nanos(),
+                        },
+                        "3": contains {
+                            timestamp: NonZeroIntProperty,
+                        },
+                    },
+                },
+            });
+        });
+        assert!(exec.run_until_stalled(&mut assert_fut).is_ready());
+        Ok(())
     }
 }
