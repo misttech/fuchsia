@@ -100,7 +100,6 @@ class AdbShellTest : public zxtest::Test, public loop_fixture::RealLoop {
   AdbShellTest() : shell_loop_(&kAsyncLoopConfigNeverAttachToThread) {}
 
   void SetUp() override {
-    shell_loop_.StartThread("adb-shell-test-shell");
     incoming_ = std::make_unique<component::OutgoingDirectory>(dispatcher());
     ASSERT_OK(incoming_->AddUnmanagedProtocol<fuchsia_dash::Launcher>(
         [this](fidl::ServerEnd<fuchsia_dash::Launcher> server_end) {
