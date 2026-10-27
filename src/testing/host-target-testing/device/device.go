@@ -886,7 +886,7 @@ func (c *Client) Flash(
 	publicKey ssh.PublicKey,
 ) error {
 	flasher := ffxTool.Flasher()
-	flasher.SetDiscoveryTimeout(12000)
+	flasher.SetDiscoveryTimeout(30000)
 	flasher.SetRetries(3)
 	flasher.SetRetrySleep(c.flashRetrySleep)
 	flasher.SetSSHPublicKey(publicKey)
