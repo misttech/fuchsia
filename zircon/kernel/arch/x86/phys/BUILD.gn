@@ -221,12 +221,13 @@ if (current_toolchain == default_toolchain) {
   # environment makes it a Linux/x86 (bzImage) compatible kernel image that
   # requires a boot loader that prefers the 64-bit boot protocol.
   source_set("linuxboot64") {
-    sources = [ "linuxboot64-header.S" ]
+    sources = [ "linuxboot-header.S" ]
     configs += [ ":ikconfig.config" ]
     libs = [ "./linuxboot.ld" ]
     deps = [
       ":linuxboot-asm",
       ":linuxboot-init",
+      "//zircon/kernel/lib/arch",
     ]
   }
 

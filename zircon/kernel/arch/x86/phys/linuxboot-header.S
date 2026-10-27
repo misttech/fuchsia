@@ -10,6 +10,19 @@
 
 #include "linuxboot-asm.h"
 
+// This file is assembled in two environments:
+//
+//  * In kernel.phys32, it heads a fixed-address 32-bit phys executable.  The
+//    16-bit and 32-bit boot protocols both land in start32.S.  The 64-bit
+//    protocol lands in a stub that crashes unless linuxbiboot.S overrides it
+//    with an embedded 64-bit executable (see linuxbiboot_executable.gni).
+//
+//  * In kernel.phys, it heads a position-independent 64-bit phys executable.
+//    The 64-bit boot protocol lands in start.S.  The 16-bit and 32-bit
+//    protocols are not yet supported there and crash.
+//
+// The `__i386__` conditionals below mark the places where the two differ.
+
 // Selectors into gLinuxbootGdt, defined below.
 #define LINUXBOOT_CODE32_SEL (1 << 3)
 #define LINUXBOOT_DATA32_SEL (2 << 3)
@@ -156,6 +169,14 @@
   .org BOOT_PARAMS_HDR + SETUP_HEADER_KERNEL_ALIGNMENT
   .int 0x1000
 
+#ifndef __i386__
+  // The 64-bit build is position-independent, so any (aligned) load address
+  // is fine.  The 32-bit build is linked at a fixed address and leaves this
+  // clear.
+  .org BOOT_PARAMS_HDR + SETUP_HEADER_RELOCATABLE_KERNEL
+  .byte 1
+#endif
+
   // Load addresses must be aligned to 4KiB (1 << 12).
   // As above, only relevant if using the 64-bit boot protocol.
   .org BOOT_PARAMS_HDR + SETUP_HEADER_MIN_ALIGNMENT
@@ -163,8 +184,7 @@
 
   // The value (XLF_KERNEL_64 | XLF_CAN_BE_LOADED_ABOVE_4G), here indicates a
   // 64-bit kernel that can both use the 64-bit protocol and accept all
-  // addresses of interest being past the 4GiB barrier (that's how this is set
-  // in linuxboot64-header.S).
+  // addresses of interest being past the 4GiB barrier.
   //
   // In a pure phys32 image, LINUXBOOT_XLOADFLAGS is undefined and so filled as
   // zero: no flags set in xloadflags, so the image can be loaded using the
@@ -174,7 +194,14 @@
   // In a bi-arch image, LINUXBOOT_XLOADFLAGS will be defined to set the
   // xloadflags value above.  Linux64Entry will be defined to point directly to
   // _start (in start.S), preempting the weak definition below.
+  //
+  // The 64-bit build is always a 64-bit kernel, so it just says so.
+#ifdef __i386__
   .weak LINUXBOOT_XLOADFLAGS
+#else
+  .label LINUXBOOT_XLOADFLAGS, local, notype, \
+      XLF_KERNEL_64 | XLF_CAN_BE_LOADED_ABOVE_4G
+#endif
   .org BOOT_PARAMS_HDR + SETUP_HEADER_XLOADFLAGS
   .short LINUXBOOT_XLOADFLAGS
 
@@ -377,10 +404,15 @@
 .p2align 12, 0
 .label LINUXBOOT_SETUP_SIZE, global, notype, . - zero_page
 
-// This matches the fixed LINUXBOOT_LOAD_ADDRESS, but the assembler doesn't
+// This is the load address.  In the 32-bit build, it matches the fixed
+// LINUXBOOT_LOAD_ADDRESS defined by linuxboot32.ld, but the assembler doesn't
 // know what absolute addresses will be, so it needs to refer to it only as a
-// label defined in this file.
+// label defined in this file.  In the 64-bit build, this label is itself the
+// definition of LINUXBOOT_LOAD_ADDRESS that linuxboot.ld uses.
 .label LinuxBase
+#ifndef __i386__
+.label LINUXBOOT_LOAD_ADDRESS, global
+#endif
 
 // This is the entrypoint for bootloaders using the 32-bit Linux boot protocol.
 // The data earlier in the image is not actually part of what's loaded into
@@ -390,9 +422,13 @@
 // anywhere in the address space, not necessarily in the low 4GiB, and the boot
 // loader jumps to 0x200 past here in 64-bit mode.
 .function Linux32Entry, nosection=nosection
-  // Jump to the start32.S entry point at its fixed address.
-  mov $Phys32Entry, %eax
-  jmp *%eax
+#ifdef __i386__
+  // Jump to the start32.S entry point.
+  jmp Phys32Entry
+#else
+  // Not supported yet in the 64-bit build; only the 64-bit protocol is.
+  ud2
+#endif
 .end_function
 
 # Add the in-kernel config file, which is gzipped.
@@ -401,10 +437,12 @@
 .incbin IKCONFIG_FILE
 .ascii "IKCFG_ED"
 
-// The 64-bit boot protocol always jumps here.  Just trampoline to where the
-// entry point for 64-bit mode is defined elsewhere.
+// The 64-bit boot protocol always jumps here.
 .org Linux32Entry + ENTRY64_OFFSET
 .code64
+#ifdef __i386__
+// Just trampoline to where the entry point for 64-bit mode is defined
+// elsewhere.
 .function Linux64Trampoline, nosection=nosection
   jmp Linux64Entry
 .end_function
@@ -415,6 +453,16 @@
 0:ud2
   jmp 0b
 .end_function
+
+#else
+
+// The CPU is in 64-bit mode with an identity-mapping page table and %rsi
+// pointing to boot_params, which is just what start.S expects.
+.function Linux64Entry, nosection=nosection
+  jmp _start
+.end_function
+
+#endif
 
 // This is the GDT used by the entry code in this file: by the 16-bit entry
 // path to enter 32-bit protected mode.  It's only for that transition; the

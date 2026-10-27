@@ -39,11 +39,11 @@
 // actually a "fat" binary of a sort, with completely separate 64-bit binary
 // embedded within.
 //
-// The 64-bit binary is linked separately using raw-header.S rather than
-// linuxboot64-header.S, so instead of any kind of header the image starts
-// immediately with a jump instruction the generic phys start.S entry point
-// _start.  That code already expects the bootloader data pointer in %rsi,
-// where the Linux/x86 boot protocol passes boot_params.
+// The 64-bit binary is linked separately using raw-header.S rather than the
+// 64-bit build of linuxboot-header.S, so instead of any kind of header the
+// image starts immediately with a jump instruction the generic phys start.S
+// entry point _start.  That code already expects the bootloader data pointer
+// in %rsi, where the Linux/x86 boot protocol passes boot_params.
 
 // This is placed as an RODATA object because it's not really code from the
 // perspective of the "outer" 32-bit phys executable.  The whole image is in
