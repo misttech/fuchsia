@@ -1,0 +1,100 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_package.bzl",
+    "fx_package",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "fake_netstack",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//sdk/fidl/fuchsia.net.power:fuchsia.net.power_rust",
+        "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",
+        "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats",
+        "//src/lib/async-utils",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/network/fidl_fuchsia_net_ext",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fake_netstack_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "fake_netstack",
+)
+
+fx_component_manifest(
+    name = "fake-netstack-manifest",
+    testonly = True,
+    component_name = "fake-netstack",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fake-netstack.cml",
+)
+
+fx_component(
+    name = "fake-netstack",
+    testonly = True,
+    compiled_manifest = ":fake-netstack-manifest",
+    component_name = "fake-netstack",
+    visibility = ["//src/connectivity/network/tests/benchmarks/socket-loopback:__pkg__"],
+    deps = [":fake_netstack_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "component-dropin-manifest",
+    testonly = True,
+    component_name = "netstack3",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/fake-netstack.cml",
+)
+
+# Used only by the Bazel fx_package target below.
+# @bazel2gn:skip
+fx_component(
+    name = "component-dropin",
+    testonly = True,
+    compiled_manifest = ":component-dropin-manifest",
+    component_name = "netstack3",
+    deps = [":fake_netstack_packaged_bin"],
+)
+
+fx_package(
+    name = "fake-netstack-pkg",
+    package_name = "netstack",
+    testonly = True,
+    components = [":component-dropin"],
+)
