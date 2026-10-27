@@ -1,0 +1,169 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+fidl_library(
+    name = "fidl",
+    testonly = True,
+    srcs = ["counter.test.fidl"],
+    library_name = "fuchsia.netemul.test",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component",
+        "//sdk/fidl/fuchsia.io",
+        "//zircon/vdso/zx",
+    ],
+)
+
+rustc_binary(
+    name = "bin",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "counter",
+    edition = "2024",
+    deps = [
+        ":config_lib",
+        ":fidl_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    testonly = True,
+    binary = ":bin",
+    binary_name = "counter",
+)
+
+fx_component_manifest(
+    name = "counter_manifest",
+    component_name = "counter",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/counter.cml",
+)
+
+fx_component(
+    name = "counter",
+    testonly = True,
+    compiled_manifest = ":counter_manifest",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "counter-alternative_manifest",
+    testonly = True,
+    component_name = "counter-alternative",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/counter-alternative.cml",
+)
+
+fx_component(
+    name = "counter-alternative",
+    testonly = True,
+    compiled_manifest = ":counter-alternative_manifest",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "devfs-subdir-user_manifest",
+    testonly = True,
+    component_name = "devfs-subdir-user",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/devfs-subdir-user.cml",
+)
+
+fx_component(
+    name = "devfs-subdir-user",
+    testonly = True,
+    compiled_manifest = ":devfs-subdir-user_manifest",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "counter-without-program_manifest",
+    testonly = True,
+    component_name = "counter-without-program",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/counter-without-program.cml",
+)
+
+fx_component(
+    name = "counter-without-program",
+    testonly = True,
+    compiled_manifest = ":counter-without-program_manifest",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "counter-with-shutdown_manifest",
+    testonly = True,
+    component_name = "counter-with-shutdown",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/counter-with-shutdown.cml",
+)
+
+fx_component(
+    name = "counter-with-shutdown",
+    testonly = True,
+    compiled_manifest = ":counter-with-shutdown_manifest",
+    visibility = ["//src/connectivity/network/testing/netemul/service:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "config_lib",
+    cm_label = ":counter_manifest",
+    crate_name = "counter_config",
+)

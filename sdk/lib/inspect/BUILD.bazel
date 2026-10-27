@@ -46,20 +46,7 @@ cml_shard(
         ":use.shard",
     ],
     shard = "client.shard.cml",
-    visibility = [
-        "//src/connectivity/policy/http-client:__pkg__",
-        "//src/connectivity/wlan:__subpackages__",
-        "//src/power/shutdown-shim:__subpackages__",
-        "//src/sys/component_manager/tests/structured_config/client_integration/cpp_elf:__pkg__",
-        "//src/sys/pkg/bin/omaha-client:__pkg__",
-        "//src/sys/pkg/bin/pkg-cache:__pkg__",
-        "//src/sys/pkg/bin/pkg-resolver:__pkg__",
-        "//src/sys/pkg/bin/system-update-checker:__pkg__",
-        "//src/sys/pkg/bin/system-update-committer:__pkg__",
-        "//src/sys/pkg/bin/system-update-configurator:__pkg__",
-        "//src/sys/pkg/bin/system-updater:__pkg__",
-        "//src/ui/bin/tiling_wm:__pkg__",
-    ],
+    visibility = ["//src:__subpackages__"],
 )
 
 # Require dependent components to include required capabilities in their
