@@ -6,9 +6,12 @@ package targets
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -144,5 +147,143 @@ func TestPlaceInFastbootNonZeroExitIncludesStderr(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "dmc health-check failed:") || !strings.Contains(err.Error(), "stderr diagnostic failure") {
 		t.Fatalf("placeInFastboot() error = %q, want stderr included in error message", err.Error())
+	}
+}
+
+func TestDeviceStartClosesSerialWatcherSocket(t *testing.T) {
+	testCases := []struct {
+		name              string
+		connectionTimeout time.Duration
+		sendBootSignature bool
+		cancelAfterAccept bool
+		wantErrContains   string
+		wantErrIs         error
+	}{
+		{
+			name:              "boot signature received",
+			connectionTimeout: 10 * time.Second,
+			sendBootSignature: true,
+		},
+		{
+			name:              "boot timeout",
+			connectionTimeout: 100 * time.Millisecond,
+			wantErrContains:   "timed out after",
+		},
+		{
+			name:              "parent context cancellation",
+			connectionTimeout: 10 * time.Second,
+			cancelAfterAccept: true,
+			wantErrIs:         context.Canceled,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sockPath := filepath.Join(t.TempDir(), "serial.sock")
+			listener, err := net.Listen("unix", sockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var (
+				mu   sync.Mutex
+				conn net.Conn
+			)
+			accepted := make(chan struct{})
+			clientClosed := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c, acceptErr := listener.Accept()
+				if acceptErr != nil {
+					if !errors.Is(acceptErr, net.ErrClosed) {
+						t.Errorf("Accept() failed: %v", acceptErr)
+					}
+					return
+				}
+				mu.Lock()
+				conn = c
+				mu.Unlock()
+				defer c.Close()
+				close(accepted)
+				var buf [1]byte
+				_, _ = c.Read(buf[:])
+				close(clientClosed)
+			}()
+
+			base, err := newGenericFuchsia(context.Background(), "fuchsia-node-test", sockPath, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dev := &Device{
+				genericFuchsiaTarget: base,
+				config: DeviceConfig{
+					Network: NetworkProperties{Nodename: "fuchsia-node-test"},
+				},
+			}
+			dev.SetConnectionTimeout(tc.connectionTimeout)
+			defer dev.Stop()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer func() {
+				_ = listener.Close()
+				mu.Lock()
+				if conn != nil {
+					_ = conn.Close()
+				}
+				mu.Unlock()
+				wg.Wait()
+			}()
+			defer cancel()
+
+			startDone := make(chan error, 1)
+			go func() {
+				startDone <- dev.Start(ctx, nil, "", false)
+			}()
+
+			select {
+			case <-accepted:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for serial watcher to connect")
+			}
+
+			if tc.sendBootSignature {
+				mu.Lock()
+				c := conn
+				mu.Unlock()
+				if _, writeErr := c.Write([]byte(bootedLogSignature + "\n")); writeErr != nil {
+					t.Fatalf("Write() failed: %v", writeErr)
+				}
+			}
+			if tc.cancelAfterAccept {
+				cancel()
+			}
+
+			select {
+			case err = <-startDone:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for Start() to return")
+			}
+			wantErr := tc.wantErrContains != "" || tc.wantErrIs != nil
+			if wantErr {
+				if err == nil {
+					t.Fatal("Start() = nil, want error")
+				}
+				if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+					t.Errorf("Error() = %q, want substring %q", err.Error(), tc.wantErrContains)
+				}
+				if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("Start() error = %v, want %v", err, tc.wantErrIs)
+				}
+			} else if err != nil {
+				t.Fatalf("Start() = %v, want nil", err)
+			}
+			select {
+			case <-clientClosed:
+			case <-time.After(2 * time.Second):
+				t.Errorf("expected serial watcher socket to be closed promptly")
+			}
+		})
 	}
 }

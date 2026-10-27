@@ -259,7 +259,9 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 		}
 	}
 
-	bootedLogChan := make(chan error)
+	bootedLogChan := make(chan error, 1)
+	bootWaitCtx, cancelBootWait := context.WithCancel(ctx)
+	defer cancelBootWait()
 	if serialSocketPath != "" {
 		// Start searching for the string before we reboot, otherwise we can miss it.
 		go func() {
@@ -269,8 +271,23 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 				bootedLogChan <- fmt.Errorf("%s: %w", serialconstants.FailedToOpenSerialSocketMsg, err)
 				return
 			}
-			defer socket.Close()
-			_, err = iomisc.ReadUntilMatchString(ctx, socket, bootedLogSignature)
+			// Close the socket when bootWaitCtx is canceled (on Start exit or parent
+			// cancellation) so a blocked Read unblocks and the goroutine exits cleanly.
+			stopClose := context.AfterFunc(bootWaitCtx, func() {
+				_ = socket.Close()
+			})
+			defer func() {
+				// unregister the AfterFunc
+				stopClose()
+				_ = socket.Close()
+			}()
+			// Use context.WithoutCancel so ReadUntilMatchString relies solely on socket
+			// closure above to unblock, avoiding the data race on buf and lastReadSize
+			// in iomisc.ReadUntilMatch when context cancellation races with an active Read.
+			_, err = iomisc.ReadUntilMatchString(context.WithoutCancel(ctx), socket, bootedLogSignature)
+			if ctx.Err() != nil {
+				err = ctx.Err()
+			}
 			bootedLogChan <- err
 		}()
 	}
@@ -344,6 +361,8 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 		select {
 		case err := <-bootedLogChan:
 			return err
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(connectionTimeout):
 			return fmt.Errorf("timed out after %v waiting for device to boot", connectionTimeout)
 		}
