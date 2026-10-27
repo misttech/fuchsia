@@ -352,7 +352,7 @@ mod tests {
     use crate::logs::testing::make_message;
     use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsField, LogsProperty, Severity};
     use fidl::endpoints::create_proxy;
-    use fidl_fuchsia_logger::LogSinkMarker;
+    use fidl_fuchsia_logger::{LogSinkEvent, LogSinkMarker, LogSinkOnInitRequest};
     use fuchsia_async::TimeoutExt;
     use fuchsia_sync::Mutex;
     use futures::FutureExt;
@@ -700,8 +700,12 @@ mod tests {
             let (log_sink, server_end) = create_proxy::<LogSinkMarker>();
             let log_container = repo.get_log_container(identity);
             log_container.handle_log_sink(server_end.into_stream(), scope.as_handle().clone());
-            let (client_socket, server_socket) = zx::Socket::create_datagram();
-            log_sink.connect_structured(server_socket).unwrap();
+            let Some(Ok(LogSinkEvent::OnInit {
+                payload: LogSinkOnInitRequest { buffer: Some(iob), .. },
+            })) = log_sink.take_event_stream().next().await
+            else {
+                panic!("Expected OnInit");
+            };
 
             let (sink, mut rcv) = TestSink::new();
             let cloned_repo = Arc::clone(&repo);
@@ -720,7 +724,6 @@ mod tests {
                 cursor,
                 diagnostics_log_encoding::encode::EncoderOpts::default(),
             );
-            // Wait for initial interest to ensure that the socket is registered.
             log_sink.wait_for_interest_change().await.unwrap().unwrap();
 
             encoder
@@ -733,9 +736,12 @@ mod tests {
                     ],
                 })
                 .unwrap();
-            client_socket
-                .write(&encoder.inner().get_ref()[..encoder.inner().position() as usize])
-                .unwrap();
+            iob.write(
+                Default::default(),
+                0,
+                &encoder.inner().get_ref()[..encoder.inner().position() as usize],
+            )
+            .unwrap();
             let (sender, receiver) = oneshot::channel();
             // Send the log flush command
             flush_sender.unbounded_send(sender).unwrap();

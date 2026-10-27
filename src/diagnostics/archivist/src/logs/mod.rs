@@ -60,7 +60,8 @@ mod tests {
         let fifth_packet = to_record(&fifth_message);
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![
             first_packet,
             second_packet,
@@ -84,8 +85,8 @@ mod tests {
                     "UNKNOWN": {
                         url: "fuchsia-pkg://UNKNOWN",
                         last_timestamp: AnyProperty,
-                        sockets_closed: 1u64,
-                        sockets_opened: 1u64,
+                        sockets_closed: 0u64,
+                        sockets_opened: 0u64,
                         invalid: {
                             number: 0u64,
                             bytes: 0u64,
@@ -145,10 +146,10 @@ mod tests {
             message2.severity = Severity::Error as i32;
             let packet2 = to_record(&message2);
 
-            let mut foo_stream = $harness.create_stream_from_log_reader($log_reader1);
+            let mut foo_stream = $harness.create_stream_from_log_reader($log_reader1).await;
             foo_stream.write_packet(packet);
 
-            let mut bar_stream = $harness.create_stream_from_log_reader($log_reader2);
+            let mut bar_stream = $harness.create_stream_from_log_reader($log_reader2).await;
             bar_stream.write_packet(packet2);
             drop((foo_stream, bar_stream));
 
@@ -161,8 +162,8 @@ mod tests {
                         $foo_moniker: {
                             url: "http://foo.com",
                             last_timestamp: AnyProperty,
-                            sockets_closed: 1u64,
-                            sockets_opened: 1u64,
+                            sockets_closed: 0u64,
+                            sockets_opened: 0u64,
                             invalid: {
                                 number: 0u64,
                                 bytes: 0u64,
@@ -199,8 +200,8 @@ mod tests {
                         $bar_moniker: {
                             url: "http://bar.com",
                             last_timestamp: AnyProperty,
-                            sockets_closed: 1u64,
-                            sockets_opened: 1u64,
+                            sockets_closed: 0u64,
+                            sockets_opened: 0u64,
                             invalid: {
                                 number: 0u64,
                                 bytes: 0u64,
@@ -315,7 +316,8 @@ mod tests {
         };
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -346,7 +348,8 @@ mod tests {
         };
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -380,7 +383,8 @@ mod tests {
         };
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![p, p2, p3, p4, p5]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -411,7 +415,8 @@ mod tests {
         };
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![p, p2, p3]);
         drop(stream);
         harness.filter_test(vec![lm], Some(options)).await;
@@ -452,7 +457,8 @@ mod tests {
         };
 
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(vec![p, p2]);
         drop(stream);
         harness.filter_test(vec![lm1, lm2], Some(options)).await;
@@ -528,7 +534,8 @@ mod tests {
             },
         ];
         let mut harness = TestHarness::default();
-        let mut stream = harness.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            harness.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packets(logs);
         drop(stream);
         harness.filter_test(expected_logs, None).await;

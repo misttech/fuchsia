@@ -8,21 +8,17 @@ use crate::logs::repository::LogsRepository;
 use crate::logs::servers::LogServer;
 use crate::logs::shared_buffer::create_ring_buffer;
 use crate::logs::stored_message::StoredMessage;
-use diagnostics_log_encoding::encode::{
-    Encoder, EncoderOpts, EncodingError, MutableBuffer, RecordEvent, WriteEventParams,
-};
+use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use diagnostics_log_encoding::{Argument, RawSeverity, Record};
 use diagnostics_log_types::Severity;
 use diagnostics_message::MAX_DATAGRAM_LEN;
 use fidl::prelude::*;
 use fidl_fuchsia_component as fcomponent;
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_logger::{
-    LogFilterOptions, LogMarker, LogMessage, LogProxy, LogSinkMarker, LogSinkProxy,
-    MAX_DATAGRAM_LEN_BYTES,
+    LogFilterOptions, LogMarker, LogMessage, LogProxy, LogSinkEvent, LogSinkMarker,
+    LogSinkOnInitRequest, LogSinkProxy,
 };
 use fuchsia_async as fasync;
-use fuchsia_component::client::connect_to_protocol_at_dir_svc;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
@@ -166,7 +162,8 @@ impl TestHarness {
         let mut p = to_record(&lm1);
         let mut lm2 = copy_log_message(&lm1);
         let mut lm3 = copy_log_message(&lm1);
-        let mut stream = self.create_structured_stream(Arc::new(ComponentIdentity::unknown()));
+        let mut stream =
+            self.create_structured_stream(Arc::new(ComponentIdentity::unknown())).await;
         stream.write_packet(p.clone());
 
         p.severity = Severity::Info as u8;
@@ -184,16 +181,16 @@ impl TestHarness {
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or
     /// `manager_test`.
-    pub fn create_stream_from_log_reader(
+    pub async fn create_stream_from_log_reader(
         &mut self,
         log_reader: Arc<dyn LogReader>,
     ) -> TestStream<StructuredMessageWriter> {
-        self.make_stream(log_reader)
+        self.make_stream(log_reader).await
     }
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or
     /// `manager_test`.
-    pub fn create_structured_stream(
+    pub async fn create_structured_stream(
         &mut self,
         identity: Arc<ComponentIdentity>,
     ) -> TestStream<StructuredMessageWriter> {
@@ -202,16 +199,16 @@ impl TestHarness {
             identity,
             self.scope.to_handle(),
         )))
+        .await
     }
 
-    fn make_stream<E, P>(&mut self, log_reader: Arc<dyn LogReader>) -> TestStream<E>
+    async fn make_stream<E, P>(&mut self, log_reader: Arc<dyn LogReader>) -> TestStream<E>
     where
         E: LogWriter<Packet = P>,
     {
         let _log_sink_proxy = log_reader.handle_request();
 
-        let (sin, sout) = zx::Socket::create_datagram();
-        E::connect(&_log_sink_proxy, sout);
+        let iob = E::connect(&_log_sink_proxy).await;
 
         let _alive = Arc::new(());
         self.pending_streams.push(Arc::downgrade(&_alive));
@@ -220,16 +217,17 @@ impl TestHarness {
             sinks.push(_log_sink_proxy.clone());
         }
 
-        TestStream { _alive, _log_sink_proxy, sin, _encoder: PhantomData }
+        TestStream { _alive, _log_sink_proxy, iob, _encoder: PhantomData }
     }
 }
 
-/// A `LogWriter` can connect to and send `Packets` to a LogSink over a socket.
+/// A `LogWriter` can connect to and send `Packets` to a LogSink over an IOBuffer.
+#[allow(async_fn_in_trait)]
 pub trait LogWriter {
     type Packet;
-    fn connect(log_sink: &LogSinkProxy, sout: zx::Socket);
+    async fn connect(log_sink: &LogSinkProxy) -> zx::Iob;
 
-    fn write(sout: &zx::Socket, packet: Self::Packet);
+    fn write(iob: &zx::Iob, packet: Self::Packet);
 }
 
 /// A `LogWriter` that writes `Record` to a LogSink in the structured
@@ -239,16 +237,22 @@ pub struct StructuredMessageWriter;
 impl LogWriter for StructuredMessageWriter {
     type Packet = Record<'static>;
 
-    fn connect(log_sink: &LogSinkProxy, sin: zx::Socket) {
-        log_sink.connect_structured(sin).expect("unable to connect out socket to log sink");
+    async fn connect(log_sink: &LogSinkProxy) -> zx::Iob {
+        let Some(Ok(LogSinkEvent::OnInit {
+            payload: LogSinkOnInitRequest { buffer: Some(iob), .. },
+        })) = log_sink.take_event_stream().next().await
+        else {
+            panic!("Expected OnInit");
+        };
+        iob
     }
 
-    fn write(sin: &zx::Socket, record: Record<'_>) {
+    fn write(iob: &zx::Iob, record: Record<'_>) {
         let mut buffer = Cursor::new(vec![0; MAX_DATAGRAM_LEN]);
         let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
         encoder.write_record(record).unwrap();
         let slice = &buffer.get_ref()[..buffer.position() as usize];
-        sin.write(slice).unwrap();
+        iob.write(Default::default(), 0, slice).unwrap();
     }
 }
 
@@ -372,7 +376,7 @@ impl LogReader for EventStreamLogReader {
 }
 
 pub struct TestStream<E> {
-    sin: zx::Socket,
+    iob: zx::Iob,
     _alive: Arc<()>,
     _log_sink_proxy: LogSinkProxy,
     _encoder: PhantomData<E>,
@@ -389,7 +393,7 @@ where
     }
 
     pub fn write_packet(&mut self, packet: P) {
-        E::write(&self.sin, packet);
+        E::write(&self.iob, packet);
     }
 }
 
@@ -509,102 +513,6 @@ impl TestDebugEntry {
         let mut this = Self::new(log_data);
         this.record.severity = severity;
         this
-    }
-}
-
-/// Helper to connect to log sink and make it easy to write logs to socket.
-pub struct LogSinkHelper {
-    log_sink: Option<LogSinkProxy>,
-    sock: Option<zx::Socket>,
-}
-
-impl LogSinkHelper {
-    pub fn new(directory: &fio::DirectoryProxy) -> Self {
-        let log_sink = connect_to_protocol_at_dir_svc::<LogSinkMarker>(directory)
-            .expect("cannot connect to log sink");
-        let mut s = Self { log_sink: Some(log_sink), sock: None };
-        s.sock = Some(s.connect());
-        s
-    }
-
-    pub fn connect(&self) -> zx::Socket {
-        let (sin, sout) = zx::Socket::create_datagram();
-        self.log_sink
-            .as_ref()
-            .unwrap()
-            .connect_structured(sin)
-            .expect("unable to send socket to log sink");
-        sout
-    }
-
-    /// kills current sock and creates new connection.
-    pub fn add_new_connection(&mut self) {
-        self.kill_sock();
-        self.sock = Some(self.connect());
-    }
-
-    pub fn kill_sock(&mut self) {
-        self.sock.take();
-    }
-
-    pub fn write_log(&self, msg: &str) {
-        Self::write_log_at(self.sock.as_ref().unwrap(), msg);
-    }
-
-    pub fn write_log_at(sock: &zx::Socket, msg: &str) {
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
-        let mut encoder = Encoder::new(Cursor::new(&mut buf[..]), EncoderOpts::default());
-
-        struct LogEvent<'a>(&'a str);
-
-        impl RecordEvent for LogEvent<'_> {
-            fn raw_severity(&self) -> RawSeverity {
-                Severity::Info as RawSeverity
-            }
-
-            fn file(&self) -> Option<&str> {
-                unreachable!();
-            }
-
-            fn line(&self) -> Option<u32> {
-                unreachable!();
-            }
-
-            fn target(&self) -> &str {
-                unreachable!();
-            }
-
-            fn write_arguments<B: MutableBuffer>(
-                self,
-                encoder: &mut Encoder<B>,
-            ) -> Result<(), EncodingError> {
-                encoder.write_argument(Argument::message(self.0))?;
-                Ok(())
-            }
-
-            fn timestamp(&self) -> zx::BootInstant {
-                zx::BootInstant::get()
-            }
-        }
-
-        let tags: &[&str] = &[];
-        encoder
-            .write_event(WriteEventParams {
-                event: LogEvent(msg),
-                tags,
-                metatags: std::iter::empty(),
-                pid: zx::Koid::from_raw(1),
-                tid: zx::Koid::from_raw(1),
-                dropped: 0,
-            })
-            .unwrap();
-        let end = encoder.inner().cursor();
-        let packet = &encoder.inner().get_ref()[..end];
-        sock.write(packet).unwrap();
-    }
-
-    pub fn kill_log_sink(&mut self) {
-        self.log_sink.take();
     }
 }
 
