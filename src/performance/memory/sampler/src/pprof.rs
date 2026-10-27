@@ -14,7 +14,6 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::rc::Rc;
 
 use fidl_fuchsia_memory_sampler::ModuleMap;
-use itertools::Itertools;
 
 use crate::profile_builder::{
     DeadAllocationCounter, DeallocationCounter, LiveAllocation, StackTrace,
@@ -161,7 +160,8 @@ pub fn build_profile<'a>(
         pprof.location = stack_traces
             .iter()
             .flat_map(|st| st.iter())
-            .unique()
+            .collect::<HashSet<_>>()
+            .into_iter()
             .map(|&address| pproto::Location {
                 id: address,
                 mapping_id: mp.resolve(address),
@@ -232,7 +232,8 @@ pub fn merge_same_process_profiles(
         .filter_map(|&idx| older.string_table.get(idx as usize))
         .chain(newer.comment.iter().filter_map(|&idx| newer.string_table.get(idx as usize)))
         .filter(|s| !s.is_empty())
-        .unique()
+        .collect::<HashSet<_>>()
+        .into_iter()
         .map(|s| st.intern(s))
         .collect();
     let mut pprof = init_profile(&mut st, comments);
@@ -361,7 +362,8 @@ pub fn merge_same_process_profiles(
         .sample
         .iter()
         .flat_map(|s| s.location_id.iter())
-        .unique()
+        .collect::<HashSet<_>>()
+        .into_iter()
         .map(|&address| pproto::Location {
             id: address,
             mapping_id: addr_to_mapping_id.get(&address).copied().unwrap_or(0),

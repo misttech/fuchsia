@@ -5,6 +5,7 @@
 //! This module provides an asynchronous service that can be used to
 //! regularly file crash reports via the `CrashReporter` FIDL API.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use anyhow::{Context, Error, format_err};
@@ -18,7 +19,6 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::stream::Peekable;
 use futures::{FutureExt, StreamExt, TryFutureExt};
-use itertools::Itertools;
 use zx::Vmo;
 
 const CRASH_PRODUCT_NAME: &str = "FuchsiaHeapProfile";
@@ -203,23 +203,17 @@ async fn file_report(
     if profiles.is_empty() {
         return Ok(());
     }
-    let attachments: Result<Vec<Attachment>, Error> = profiles
+    let mut final_counts: HashMap<String, usize> = HashMap::new();
+    let attachments: Vec<Attachment> = profiles
         .into_iter()
-        .chunk_by(|p| sanitize_for_attachment_key(p.process_name()))
-        .into_iter()
-        .flat_map(|(_, profiles)| profiles.enumerate())
-        .map(|(i, profile_report)| {
+        .map(|profile_report| {
             let (key, profile, size) = match profile_report {
-                ProfileReport::Final { process_name, profile, size, .. } => (
-                    format!(
-                        "{}_final_{}{}",
-                        sanitize_for_attachment_key(&process_name),
-                        i,
-                        PROFILE_ATTACHMENT_EXTENSION
-                    ),
-                    profile,
-                    size,
-                ),
+                ProfileReport::Final { process_name, profile, size, .. } => {
+                    let sanitized = sanitize_for_attachment_key(&process_name);
+                    let i =
+                        *final_counts.entry(sanitized.clone()).and_modify(|c| *c += 1).or_insert(0);
+                    (format!("{sanitized}_final_{i}{PROFILE_ATTACHMENT_EXTENSION}"), profile, size)
+                }
                 ProfileReport::Partial { process_name, profile, size, iteration, .. } => (
                     format!(
                         "{}_partial_{}{}",
@@ -231,13 +225,13 @@ async fn file_report(
                     size,
                 ),
             };
-            Ok(Attachment { key, value: Buffer { vmo: profile, size } })
+            Attachment { key, value: Buffer { vmo: profile, size } }
         })
         .collect();
     let crash_report = CrashReport {
         program_name: Some(CRASH_PROGRAM_NAME.to_string()),
         crash_signature: Some(CRASH_SIGNATURE.to_string()),
-        attachments: Some(attachments?),
+        attachments: Some(attachments),
         is_fatal: Some(false),
         ..Default::default()
     };
@@ -464,9 +458,13 @@ mod test {
         // Note: spelled out, rather than derived from
         // `PROFILE_ATTACHMENT_EXTENSION`, because the point is to pin
         // the extension that `pprof` tooling expects.
-        assert!(
-            report.attachments.as_ref().unwrap().iter().all(|a| a.key.ends_with(".pb.gz")),
-            "Attachments should be named after the profile format."
+        assert_eq!(
+            report.attachments.as_ref().unwrap().iter().map(|a| a.key.as_str()).collect::<Vec<_>>(),
+            vec![
+                "test_process_1_final_0.pb.gz",
+                "test_process_2_final_0.pb.gz",
+                "test_process_1_final_1.pb.gz",
+            ]
         );
         let attachments: Vec<(String, Vec<u8>, u64)> = report
             .attachments
