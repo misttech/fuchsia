@@ -28,6 +28,7 @@ cml_shard(
     visibility = [
         "//src/lib/fuchsia-hyper:__pkg__",
         "//src/sys/component_manager/tests/attributed_logging/components:__pkg__",
+        "//src/sys/lib/elf_runner/tests/lifecycle:__pkg__",
     ],
 )
 

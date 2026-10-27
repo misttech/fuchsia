@@ -1,0 +1,117 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "elf_runner",
+    srcs = [
+        "src/component.rs",
+        "src/component_set.rs",
+        "src/config.rs",
+        "src/crash_handler.rs",
+        "src/crash_info.rs",
+        "src/error.rs",
+        "src/lib.rs",
+        "src/logger.rs",
+        "src/memory/mod.rs",
+        "src/memory/reporter.rs",
+        "src/process_launcher.rs",
+        "src/runtime_dir.rs",
+        "src/stdout.rs",
+        "src/vdso_vmo.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = [
+        "//src/sys/component_manager:__pkg__",
+        "//src/sys/runners/dso:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//sdk/fidl/fuchsia.memory.attribution:fuchsia.memory.attribution_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/error/clonable_error",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/process_builder",
+        "//src/lib/trace/rust:trace",
+        "//src/performance/memory/attribution/server",
+        "//src/storage/lib/pseudo_fs",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/fidl-connector",
+        "//src/sys/lib/moniker",
+        "//src/sys/lib/namespace",
+        "//src/sys/lib/routing",
+        "//src/sys/lib/runner",
+        "//src/sys/lib/socket_parsing",
+        "//src/sys/lib/task-exceptions",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "elf_runner_lib_test"
+rustc_test(
+    name = "elf_runner_test",
+    crate = ":elf_runner",
+    edition = "2024",
+    deps = [
+        "//src/lib/fidl/rust/fidl_test_util",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/scoped_task",
+        "//src/sys/lib/cm_config",
+        "//src/sys/lib/library_loader",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+rustc_test(
+    name = "elf_runner_next_vdso_tests",
+    srcs = [
+        "src/logger.rs",
+        "src/next_vdso_tests.rs",
+    ],
+    crate_root = "src/next_vdso_tests.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//src/lib/diagnostics/fake-log-sink/rust",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/namespace",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)

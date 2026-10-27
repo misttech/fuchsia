@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl_test_util",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/developer:__subpackages__",
+        "//src/media/audio/lib/rust:__pkg__",
+        "//src/session:__subpackages__",
+        "//src/sys/lib/elf_runner:__pkg__",
+        "//src/testing/sl4f:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fdomain/client",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "fidl_test_util_test",
+    crate = ":fidl_test_util",
+    edition = "2024",
+    deps = [
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//src/testing/fidl:placeholders_rust",
+        "//src/testing/fidl:placeholders_rust_fdomain",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "fidl_test_util_host_test",
+    binary_name = "fidl_test_util_test",
+)
+
+fx_unittest_package(
+    name = "fidl_test_util_target_test",
+    unit_tests = [":fidl_test_util_test"],
+)

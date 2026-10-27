@@ -3,161 +3,17 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/rust/rustc_binary.gni")
-import("//build/rust/rustc_test.gni")
 
 group("lifecycle") {
   testonly = true
   deps = [ ":elf_runner_lifecycle_test" ]
 }
 
-rustc_test("lifecycle_test") {
-  source_root = "lifecycle.rs"
-  name = "lifecycle_integration_test"
-  edition = "2024"
-
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component-test",
-    "//src/sys/lib/component-events",
-  ]
-
-  sources = [ "lifecycle.rs" ]
-}
-
-rustc_binary("immediate_exit") {
-  name = "immediate_exit"
-  edition = "2024"
-  source_root = "immediate_exit_component.rs"
-
-  sources = [ "immediate_exit_component.rs" ]
-}
-
-rustc_binary("immediate_escrow") {
-  name = "immediate_escrow"
-  edition = "2024"
-  source_root = "immediate_escrow_component.rs"
-
-  sources = [ "immediate_escrow_component.rs" ]
-
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//third_party/rust_crates:log",
-  ]
-}
-
-rustc_binary("run-indefinitely") {
-  name = "run_indefinitely"
-  edition = "2024"
-  source_root = "run_indefinitely.rs"
-  sources = [ "run_indefinitely.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-  ]
-}
-
-rustc_binary("rendezvous_exit") {
-  name = "rendezvous_exit"
-  edition = "2024"
-  source_root = "rendezvous_exit_component.rs"
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//third_party/rust_crates:futures-util",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "rendezvous_exit_component.rs" ]
-}
-
-rustc_test("component_exit") {
-  source_root = "component_exit.rs"
-  name = "component_exit_integration_test"
-  edition = "2024"
-
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component-test",
-    "//src/sys/component_manager/tests/fidl:components_rust",
-    "//src/sys/lib/component-events",
-  ]
-
-  sources = [ "component_exit.rs" ]
-}
-
-rustc_test("lifecycle_timeout") {
-  source_root = "lifecycle_timeout.rs"
-  name = "lifecycle_timeout_integration_test"
-  edition = "2024"
-
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component-test",
-    "//src/sys/lib/component-events",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "lifecycle_timeout.rs" ]
-}
-
-rustc_test("lifecycle_timeout_unresponsive") {
-  source_root = "lifecycle_timeout_unresponsive.rs"
-  name = "lifecycle_timeout_unresponsive_integration_test"
-  edition = "2024"
-
-  deps = [
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component-test",
-    "//src/sys/lib/component-events",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "lifecycle_timeout_unresponsive.rs" ]
-}
-
-rustc_test("debug_started") {
-  source_root = "debug_started.rs"
-  name = "debug_started_integration_test"
-  edition = "2024"
-
-  deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component-test",
-    "//src/lib/fuchsia-fs",
-    "//src/sys/lib/component-events",
-  ]
-
-  sources = [ "debug_started.rs" ]
-}
-
-rustc_binary("unresponsive_component") {
-  source_root = "unresponsive_component.rs"
-  name = "unresponsive_component"
-  edition = "2024"
-
-  deps = [
-    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//third_party/rust_crates:futures-util",
-    "//third_party/rust_crates:log",
-  ]
-
-  sources = [ "unresponsive_component.rs" ]
-}
-
+# Retained in GN because `elf_runner_lifecycle_test` sets `parallel = 1` in
+# `test_specs` and uses `//src/lib/fuchsia-component-test` (which packages the
+# GN-only `realm_builder_server_component`), and `fuchsia_test_package` calls
+# `get_target_outputs()` on `test_components` so they must precede it in the
+# file.
 fuchsia_component("lifecycle_integration_test") {
   testonly = true
   deps = [ ":lifecycle_test" ]
@@ -188,40 +44,6 @@ fuchsia_component("debug_started_integration_test") {
   manifest = "meta/debug_started.cml"
 }
 
-fuchsia_component("lifecycle_timeout_unresponsive_root") {
-  testonly = true
-  manifest = "meta/lifecycle_timeout_unresponsive_root.cml"
-}
-
-fuchsia_component("lifecycle_timeout_unresponsive_node") {
-  testonly = true
-  deps = [ ":unresponsive_component" ]
-  manifest = "meta/lifecycle_timeout_unresponsive_node.cml"
-}
-
-fuchsia_component("lifecycle_timeout_root") {
-  testonly = true
-  manifest = "meta/lifecycle_timeout_root.cml"
-}
-
-fuchsia_component("immediate_exit_component") {
-  testonly = true
-  deps = [ ":immediate_exit" ]
-  manifest = "meta/immediate_exit_component.cml"
-}
-
-fuchsia_component("immediate_escrow_component") {
-  testonly = true
-  deps = [ ":immediate_escrow" ]
-  manifest = "meta/immediate_escrow_component.cml"
-}
-
-fuchsia_component("rendezvous_exit_component") {
-  testonly = true
-  deps = [ ":rendezvous_exit" ]
-  manifest = "meta/rendezvous_exit_component.cml"
-}
-
 fuchsia_test_package("elf_runner_lifecycle_test") {
   test_components = [
     ":lifecycle_integration_test",
@@ -243,4 +65,218 @@ fuchsia_test_package("elf_runner_lifecycle_test") {
     # `component_exit` fails when test cases are executed in parallel.
     parallel = 1
   }
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+rustc_test("lifecycle_test") {
+  sources = [ "lifecycle.rs" ]
+  output_name = "lifecycle_integration_test"
+  source_root = "lifecycle.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/sys/lib/component-events",
+  ]
+}
+rustc_binary("immediate_exit") {
+  sources = [ "immediate_exit_component.rs" ]
+  source_root = "immediate_exit_component.rs"
+  edition = "2024"
+}
+rustc_binary("immediate_escrow") {
+  sources = [ "immediate_escrow_component.rs" ]
+  source_root = "immediate_escrow_component.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:log",
+  ]
+}
+rustc_binary("run-indefinitely") {
+  sources = [ "run_indefinitely.rs" ]
+  source_root = "run_indefinitely.rs"
+  edition = "2024"
+  visibility = [
+    ":*",
+    "//src/sys/lib/elf_runner:*",
+  ]
+  deps = [
+    "//sdk/rust/zx",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+  ]
+}
+rustc_binary("rendezvous_exit") {
+  sources = [ "rendezvous_exit_component.rs" ]
+  source_root = "rendezvous_exit_component.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//third_party/rust_crates:futures-util",
+    "//third_party/rust_crates:log",
+  ]
+}
+rustc_test("component_exit") {
+  sources = [ "component_exit.rs" ]
+  output_name = "component_exit_integration_test"
+  source_root = "component_exit.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/sys/component_manager/tests/fidl:components_rust",
+    "//src/sys/lib/component-events",
+  ]
+}
+rustc_test("lifecycle_timeout") {
+  sources = [ "lifecycle_timeout.rs" ]
+  output_name = "lifecycle_timeout_integration_test"
+  source_root = "lifecycle_timeout.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/sys/lib/component-events",
+    "//third_party/rust_crates:log",
+  ]
+}
+rustc_test("lifecycle_timeout_unresponsive") {
+  sources = [ "lifecycle_timeout_unresponsive.rs" ]
+  output_name = "lifecycle_timeout_unresponsive_integration_test"
+  source_root = "lifecycle_timeout_unresponsive.rs"
+  edition = "2024"
+  deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component-test",
+    "//src/sys/lib/component-events",
+    "//third_party/rust_crates:log",
+  ]
+}
+rustc_test("debug_started") {
+  sources = [ "debug_started.rs" ]
+  output_name = "debug_started_integration_test"
+  source_root = "debug_started.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-fs",
+    "//src/sys/lib/component-events",
+  ]
+}
+rustc_binary("unresponsive_component") {
+  sources = [ "unresponsive_component.rs" ]
+  source_root = "unresponsive_component.rs"
+  edition = "2024"
+  deps = [
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//third_party/rust_crates:futures-util",
+    "//third_party/rust_crates:log",
+  ]
+}
+fuchsia_component_manifest("lifecycle_timeout_unresponsive_root-manifest") {
+  testonly = true
+  component_name = "lifecycle_timeout_unresponsive_root"
+  manifest = "meta/lifecycle_timeout_unresponsive_root.cml"
+}
+fuchsia_component("lifecycle_timeout_unresponsive_root") {
+  testonly = true
+  cm_label = ":lifecycle_timeout_unresponsive_root-manifest"
+  component_name = "lifecycle_timeout_unresponsive_root"
+}
+fuchsia_component_manifest("lifecycle_timeout_unresponsive_node-manifest") {
+  testonly = true
+  component_name = "lifecycle_timeout_unresponsive_node"
+  manifest = "meta/lifecycle_timeout_unresponsive_node.cml"
+}
+fuchsia_component("lifecycle_timeout_unresponsive_node") {
+  testonly = true
+  cm_label = ":lifecycle_timeout_unresponsive_node-manifest"
+  component_name = "lifecycle_timeout_unresponsive_node"
+  deps = [ ":unresponsive_component" ]
+}
+fuchsia_component_manifest("lifecycle_timeout_root-manifest") {
+  testonly = true
+  component_name = "lifecycle_timeout_root"
+  manifest = "meta/lifecycle_timeout_root.cml"
+}
+fuchsia_component("lifecycle_timeout_root") {
+  testonly = true
+  cm_label = ":lifecycle_timeout_root-manifest"
+  component_name = "lifecycle_timeout_root"
+}
+fuchsia_component_manifest("immediate_exit_component-manifest") {
+  testonly = true
+  component_name = "immediate_exit_component"
+  manifest = "meta/immediate_exit_component.cml"
+}
+fuchsia_component("immediate_exit_component") {
+  testonly = true
+  cm_label = ":immediate_exit_component-manifest"
+  component_name = "immediate_exit_component"
+  deps = [ ":immediate_exit" ]
+}
+fuchsia_component_manifest("immediate_escrow_component-manifest") {
+  testonly = true
+  component_name = "immediate_escrow_component"
+  manifest = "meta/immediate_escrow_component.cml"
+}
+fuchsia_component("immediate_escrow_component") {
+  testonly = true
+  cm_label = ":immediate_escrow_component-manifest"
+  component_name = "immediate_escrow_component"
+  visibility = [
+    ":*",
+    "//src/sys/lib/elf_runner:*",
+  ]
+  deps = [ ":immediate_escrow" ]
+}
+fuchsia_component_manifest("rendezvous_exit_component-manifest") {
+  testonly = true
+  component_name = "rendezvous_exit_component"
+  manifest = "meta/rendezvous_exit_component.cml"
+}
+fuchsia_component("rendezvous_exit_component") {
+  testonly = true
+  cm_label = ":rendezvous_exit_component-manifest"
+  component_name = "rendezvous_exit_component"
+  deps = [ ":rendezvous_exit" ]
 }

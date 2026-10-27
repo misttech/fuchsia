@@ -1,0 +1,109 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "scoped_task",
+    srcs = [
+        "src/lib.rs",
+        "src/zircon.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/sys/lib/elf_runner:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+# Standalone integration test binary with its own crate root (test/main.rs),
+# so it cannot use `crate = ":scoped_task"`.
+rustc_test(
+    name = "scoped_task_test",
+    srcs = ["test/main.rs"],
+    crate_root = "test/main.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+rustc_binary(
+    name = "scoped_task_test_spawner",
+    srcs = ["test/spawner.rs"],
+    crate_root = "test/spawner.rs",
+    edition = "2024",
+    deps = [
+        ":scoped_task",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+    ],
+)
+
+fx_packaged_binary(
+    name = "scoped_task_test_packaged_bin",
+    testonly = True,
+    binary = ":scoped_task_test",
+    binary_name = "scoped_task_test",
+)
+
+fx_packaged_binary(
+    name = "scoped_task_test_spawner_packaged_bin",
+    testonly = True,
+    binary = ":scoped_task_test_spawner",
+    binary_name = "scoped_task_test_spawner",
+)
+
+fx_component_manifest(
+    name = "scoped_task_test_cmp_manifest",
+    testonly = True,
+    component_name = "scoped_task_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/scoped_task_test.cml",
+)
+
+fx_test_component(
+    name = "scoped_task_test_cmp",
+    compiled_manifest = ":scoped_task_test_cmp_manifest",
+    component_name = "scoped_task_test",
+    deps = [
+        ":scoped_task_test_packaged_bin",
+        ":scoped_task_test_spawner_packaged_bin",
+    ],
+)
+
+fx_package(
+    name = "scoped-task-tests-pkg",
+    package_name = "scoped-task-tests",
+    test_components = [":scoped_task_test_cmp"],
+)
+
+fx_test(
+    name = "scoped-task-tests",
+    package = ":scoped-task-tests-pkg",
+)

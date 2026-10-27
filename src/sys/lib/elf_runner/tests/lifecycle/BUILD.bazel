@@ -1,0 +1,284 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "lifecycle_test",
+    srcs = ["lifecycle.rs"],
+    crate_name = "lifecycle_integration_test",
+    crate_root = "lifecycle.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "immediate_exit",
+    srcs = ["immediate_exit_component.rs"],
+    crate_root = "immediate_exit_component.rs",
+    edition = "2024",
+    tags = ["manual"],
+)
+
+rustc_binary(
+    name = "immediate_escrow",
+    srcs = ["immediate_escrow_component.rs"],
+    crate_root = "immediate_escrow_component.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_binary(
+    name = "run-indefinitely",
+    srcs = ["run_indefinitely.rs"],
+    crate_root = "run_indefinitely.rs",
+    edition = "2024",
+    visibility = ["//src/sys/lib/elf_runner:__pkg__"],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+rustc_binary(
+    name = "rendezvous_exit",
+    srcs = ["rendezvous_exit_component.rs"],
+    crate_root = "rendezvous_exit_component.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//third_party/rust_crates/vendor:futures-util",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "component_exit",
+    srcs = ["component_exit.rs"],
+    crate_name = "component_exit_integration_test",
+    crate_root = "component_exit.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/component_manager/tests/fidl:components_rust",
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_test(
+    name = "lifecycle_timeout",
+    srcs = ["lifecycle_timeout.rs"],
+    crate_name = "lifecycle_timeout_integration_test",
+    crate_root = "lifecycle_timeout.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "lifecycle_timeout_unresponsive",
+    srcs = ["lifecycle_timeout_unresponsive.rs"],
+    crate_name = "lifecycle_timeout_unresponsive_integration_test",
+    crate_root = "lifecycle_timeout_unresponsive.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "debug_started",
+    srcs = ["debug_started.rs"],
+    crate_name = "debug_started_integration_test",
+    crate_root = "debug_started.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-fs",
+        "//src/sys/lib/component-events",
+    ],
+)
+
+rustc_binary(
+    name = "unresponsive_component",
+    srcs = ["unresponsive_component.rs"],
+    crate_root = "unresponsive_component.rs",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//third_party/rust_crates/vendor:futures-util",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_component_manifest(
+    name = "lifecycle_timeout_unresponsive_root-manifest",
+    testonly = True,
+    component_name = "lifecycle_timeout_unresponsive_root",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:offer.shard",
+    ],
+    manifest = "meta/lifecycle_timeout_unresponsive_root.cml",
+)
+
+fx_component(
+    name = "lifecycle_timeout_unresponsive_root",
+    testonly = True,
+    compiled_manifest = ":lifecycle_timeout_unresponsive_root-manifest",
+    component_name = "lifecycle_timeout_unresponsive_root",
+)
+
+fx_packaged_binary(
+    name = "unresponsive_component_packaged_bin",
+    testonly = True,
+    binary = ":unresponsive_component",
+    binary_name = "unresponsive_component",
+)
+
+fx_component_manifest(
+    name = "lifecycle_timeout_unresponsive_node-manifest",
+    testonly = True,
+    component_name = "lifecycle_timeout_unresponsive_node",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/lifecycle_timeout_unresponsive_node.cml",
+)
+
+fx_component(
+    name = "lifecycle_timeout_unresponsive_node",
+    testonly = True,
+    compiled_manifest = ":lifecycle_timeout_unresponsive_node-manifest",
+    component_name = "lifecycle_timeout_unresponsive_node",
+    deps = [":unresponsive_component_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "lifecycle_timeout_root-manifest",
+    testonly = True,
+    component_name = "lifecycle_timeout_root",
+    includes = [
+        "//sdk/lib/inspect:offer.shard",
+        "//sdk/lib/syslog:offer.shard",
+    ],
+    manifest = "meta/lifecycle_timeout_root.cml",
+)
+
+fx_component(
+    name = "lifecycle_timeout_root",
+    testonly = True,
+    compiled_manifest = ":lifecycle_timeout_root-manifest",
+    component_name = "lifecycle_timeout_root",
+)
+
+fx_packaged_binary(
+    name = "immediate_exit_packaged_bin",
+    testonly = True,
+    binary = ":immediate_exit",
+    binary_name = "immediate_exit",
+)
+
+fx_component_manifest(
+    name = "immediate_exit_component-manifest",
+    testonly = True,
+    component_name = "immediate_exit_component",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/immediate_exit_component.cml",
+)
+
+fx_component(
+    name = "immediate_exit_component",
+    testonly = True,
+    compiled_manifest = ":immediate_exit_component-manifest",
+    component_name = "immediate_exit_component",
+    deps = [":immediate_exit_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "immediate_escrow_packaged_bin",
+    testonly = True,
+    binary = ":immediate_escrow",
+    binary_name = "immediate_escrow",
+)
+
+fx_component_manifest(
+    name = "immediate_escrow_component-manifest",
+    testonly = True,
+    component_name = "immediate_escrow_component",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/immediate_escrow_component.cml",
+)
+
+fx_component(
+    name = "immediate_escrow_component",
+    testonly = True,
+    compiled_manifest = ":immediate_escrow_component-manifest",
+    component_name = "immediate_escrow_component",
+    visibility = ["//src/sys/lib/elf_runner:__pkg__"],
+    deps = [":immediate_escrow_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "rendezvous_exit_packaged_bin",
+    testonly = True,
+    binary = ":rendezvous_exit",
+    binary_name = "rendezvous_exit",
+)
+
+fx_component_manifest(
+    name = "rendezvous_exit_component-manifest",
+    testonly = True,
+    component_name = "rendezvous_exit_component",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/rendezvous_exit_component.cml",
+)
+
+fx_component(
+    name = "rendezvous_exit_component",
+    testonly = True,
+    compiled_manifest = ":rendezvous_exit_component-manifest",
+    component_name = "rendezvous_exit_component",
+    deps = [":rendezvous_exit_packaged_bin"],
+)
