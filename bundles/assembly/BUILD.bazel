@@ -696,7 +696,10 @@ assembly_input_bundle(
         {
             "set": "bootfs",
             "package_target": "//bundles/assembly/bazel_inputs/src/devices/pci/drivers/pci:bus-pci-package",
-            "driver_components": ["meta/bus-pci.cm"],
+            "driver_components": [
+                "meta/bus-pci.cm",
+                "meta/pciroot-banjo-adapter.cm",
+            ],
         },
     ],
 )

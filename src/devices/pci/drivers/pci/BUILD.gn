@@ -39,8 +39,8 @@ source_set("user_pci") {
   ]
 
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//sdk/fidl/fuchsia.hardware.pci.root:fuchsia.hardware.pci.root_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/component/outgoing/cpp",
@@ -81,6 +81,7 @@ driver_bind_rules("pci_bind") {
   dml_label = ":pci-dml"
   tests = "meta/pci_bind_tests.json"
   deps = [
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.pci",
     "//src/devices/bind/fuchsia.platform",
   ]
@@ -115,7 +116,10 @@ fuchsia_driver_component("bus-pci") {
 
 fuchsia_driver_package("bus-pci-package") {
   package_name = "bus-pci"
-  driver_components = [ ":bus-pci" ]
+  driver_components = [
+    ":bus-pci",
+    "//src/devices/pci/drivers/pciroot-banjo-adapter:pciroot-banjo-adapter-component",
+  ]
 }
 
 group("tests") {

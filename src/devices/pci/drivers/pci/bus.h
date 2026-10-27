@@ -4,10 +4,10 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_BUS_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_BUS_H_
 
+#include <fidl/fuchsia.hardware.pci.root/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
-#include <fuchsia/hardware/pciroot/c/banjo.h>
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -24,6 +24,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -61,7 +62,6 @@ struct SharedVector {
   SharedDeviceList list;
 };
 
-using LegacyIrqs = std::unordered_map<uint32_t, pci_legacy_irq>;
 // A map of vector -> SharedVector for use in handling interrupts.
 using SharedIrqMap = std::unordered_map<uint32_t, std::unique_ptr<SharedVector>>;
 namespace PciFidl = fuchsia_hardware_pci;
@@ -77,12 +77,20 @@ class Bus : public PciBusType,
             public BusDeviceInterface {
  public:
   static zx_status_t Create(zx_device_t* parent);
-  Bus(zx_device_t* parent, const pciroot_protocol_t* pciroot, pci_platform_info_t info,
-      std::optional<fdf::MmioBuffer> ecam)
+  Bus(zx_device_t* parent, fidl::ClientEnd<fuchsia_hardware_pci_root::Root> root_client,
+      fuchsia_hardware_pci_root::PlatformInfo info, fdf::MmioBuffer ecam, bool is_extended)
       : PciBusType(parent),  // fulfills the DDK mixins
-        pciroot_(pciroot),
-        info_(info),
-        ecam_(std::move(ecam)) {}
+        root_client_(std::move(root_client)),
+        info_(std::move(info)),
+        ecam_(std::move(ecam)),
+        is_extended_(is_extended) {}
+  Bus(zx_device_t* parent, fidl::ClientEnd<fuchsia_hardware_pci_root::Root> root_client,
+      fuchsia_hardware_pci_root::PlatformInfo info,
+      fidl::ClientEnd<fuchsia_hardware_pci_root::Config> config_client)
+      : PciBusType(parent),  // fulfills the DDK mixins
+        root_client_(std::move(root_client)),
+        info_(std::move(info)),
+        config_client_(std::move(config_client)) {}
   ~Bus() override;
   // Map an ecam VMO for Bus and Config use.
   static zx::result<fdf::MmioBuffer> MapConfigRegion(zx::vmo cam_vmo);
@@ -91,7 +99,8 @@ class Bus : public PciBusType,
   // Bus Device Interface implementation
   zx_status_t LinkDevice(fbl::RefPtr<pci::Device> device) __TA_EXCLUDES(devices_lock_) final;
   zx_status_t UnlinkDevice(pci::Device* device) __TA_EXCLUDES(devices_lock_) final;
-  zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info)
+  zx_status_t AllocateMsi(uint32_t count, zx::msi* out_allocation,
+                          fuchsia_hardware_pci_root::wire::MsiAllocationInfo* out_info)
       __TA_EXCLUDES(devices_lock_) final;
   zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
                            const zx::vmo& cfg_vmo, uint64_t cfg_offset,
@@ -116,7 +125,6 @@ class Bus : public PciBusType,
   fbl::Mutex* devices_lock() __TA_RETURN_CAPABILITY(devices_lock_) { return &devices_lock_; }
   pci::DeviceTree& devices() { return devices_; }
   SharedIrqMap& shared_irqs() { return shared_irqs_; }
-  LegacyIrqs& legacy_irqs() { return legacy_irqs_; }
   const PciFidl::BoardConfiguration& board_config() { return board_config_; }
   void HandleLegacyIrq(async_dispatcher_t* dispatcher, async::Irq* irq, zx_status_t status,
                        const zx_packet_interrupt_t* interrupt, uint32_t vector);
@@ -131,9 +139,8 @@ class Bus : public PciBusType,
   // Creates a Config object for accessing the config space of the device at |bdf|.
   zx::result<std::unique_ptr<Config>> MakeConfig(fuchsia_hardware_pci::wire::Bdf bdf);
   // Scan all buses downstream from the root within the start and end
-  // bus values given to the Bus driver through Pciroot.
+  // bus values given to the Bus driver through RootService.
   zx_status_t ScanDownstream();
-  ddk::PcirootProtocolClient& pciroot() { return pciroot_; }
   // Scan a specific bus
   void ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list);
   // Returns true if a given BDF is present in the list of devices provided by
@@ -152,13 +159,11 @@ class Bus : public PciBusType,
   zx_status_t SetUpLegacyIrqHandlers() __TA_REQUIRES(devices_lock_);
 
   // members
-  ddk::PcirootProtocolClient pciroot_;
-  const pci_platform_info_t info_;
+  fidl::WireSyncClient<fuchsia_hardware_pci_root::Root> root_client_;
+  const fuchsia_hardware_pci_root::PlatformInfo info_;
   std::optional<fdf::MmioBuffer> ecam_;
-  cpp20::span<const pci_legacy_irq> irqs_;
-  cpp20::span<const pci_bdf_t> acpi_devices_;
-  cpp20::span<const pci_bdf_t> devicetree_devices_;
-  cpp20::span<const pci_irq_routing_entry_t> irq_routing_entries_;
+  const bool is_extended_ = false;
+  fidl::WireSyncClient<fuchsia_hardware_pci_root::Config> config_client_;
   PciFidl::BoardConfiguration board_config_;
 
   // All devices hang off of this Bus's root port.
@@ -169,8 +174,6 @@ class Bus : public PciBusType,
   // All devices downstream of this bus are held here. Devices are keyed by
   // BDF so they will not experience any collisions.
   pci::DeviceTree devices_ __TA_GUARDED(devices_lock_);
-  // A map of lists of devices corresponding to a give vector, keyed by vector.
-  LegacyIrqs legacy_irqs_;
   SharedIrqMap shared_irqs_ __TA_GUARDED(devices_lock_);
 
   fidl::ServerBindingGroup<fuchsia_hardware_pci::Debug> bindings_;

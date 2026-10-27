@@ -4,8 +4,9 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_ALLOCATION_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_ALLOCATION_H_
 
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <lib/ddk/debug.h>
+#include <lib/zx/eventpair.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
@@ -25,7 +26,7 @@
 // Allocations at the top level of the bus driver are provided by a
 // PciRootALlocator. This allocator serves requests from PCI Bridges & Devices
 // that are just under the root complex and fulfills them by requesting space
-// from the platform bus driver over the PciRoot protocol. When these bridges
+// from the platform bus driver over the fuchsia.hardware.pci.root protocol. When these bridges
 // allocate their windows and bars from upstream they are requesting address
 // space from the PciRootAllocator. The PciAllocations handed back to them
 // contain a base/size pair, as well as a zx::resource corresponding to the
@@ -74,10 +75,10 @@ class PciAllocation {
   virtual zx::result<zx::vmo> CreateVmo() const;
   // Create a resource for use with zx_ioports_request in the device driver.
   virtual zx::result<zx::resource> CreateResource() const;
-  pci_address_space_t type() const { return type_; }
+  fuchsia_hardware_pci_root::AddressSpace type() const { return type_; }
 
  protected:
-  PciAllocation(pci_address_space_t type, zx::resource&& resource)
+  PciAllocation(fuchsia_hardware_pci_root::AddressSpace type, zx::resource&& resource)
       : type_(type), resource_(std::move(resource)) {}
   const zx::resource& resource() { return resource_; }
 
@@ -92,7 +93,7 @@ class PciAllocation {
   //    IO permission bits.
   // This is only needed for PciRegionAllocators because PciRootAllocators do not
   // hold a backing PciAllocation object.
-  const pci_address_space_t type_;
+  const fuchsia_hardware_pci_root::AddressSpace type_;
   const zx::resource resource_;
   friend class PciRegionAllocator;
   friend class Device;
@@ -101,20 +102,15 @@ class PciAllocation {
 
 class PciRootAllocation final : public PciAllocation {
  public:
-  PciRootAllocation(const ddk::PcirootProtocolClient client, const pci_address_space_t type,
-                    zx::resource resource, zx::eventpair ep, zx_paddr_t base, size_t size)
-      : PciAllocation(type, std::move(resource)),
-        pciroot_client_(client),
-        ep_(std::move(ep)),
-        base_(base),
-        size_(size) {}
+  PciRootAllocation(const fuchsia_hardware_pci_root::AddressSpace type, zx::resource resource,
+                    zx::eventpair ep, zx_paddr_t base, size_t size)
+      : PciAllocation(type, std::move(resource)), ep_(std::move(ep)), base_(base), size_(size) {}
   ~PciRootAllocation() final = default;
 
   zx_paddr_t base() const final { return base_; }
   size_t size() const final { return size_; }
 
  private:
-  const ddk::PcirootProtocolClient pciroot_client_;
   zx::eventpair ep_;
   const zx_paddr_t base_;
   const size_t size_;
@@ -123,7 +119,7 @@ class PciRootAllocation final : public PciAllocation {
 
 class PciRegionAllocation final : public PciAllocation {
  public:
-  PciRegionAllocation(pci_address_space_t type, zx::resource&& resource,
+  PciRegionAllocation(fuchsia_hardware_pci_root::AddressSpace type, zx::resource&& resource,
                       RegionAllocator::Region::UPtr&& region)
       : PciAllocation(type, std::move(resource)), region_(std::move(region)) {}
 
@@ -152,30 +148,34 @@ class PciAllocator {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  virtual pci_address_space_t type() const { return type_; }
+  virtual fuchsia_hardware_pci_root::AddressSpace type() const {
+    ZX_ASSERT(type_.has_value());
+    return *type_;
+  }
 
  protected:
-  explicit PciAllocator(pci_address_space_t type) : type_(type) {}
+  explicit PciAllocator(fuchsia_hardware_pci_root::AddressSpace type) : type_(type) {}
   PciAllocator() = default;
 
  private:
-  pci_address_space_t type_;
+  std::optional<fuchsia_hardware_pci_root::AddressSpace> type_;
 };
 
 // PciRootAllocators are an implementation of PciAllocator designed
-// to use the Pciroot protocol for allocation, fulfilling the requirements
+// to use the fuchsia.hardware.pci.root protocol for allocation, fulfilling the requirements
 // for a PciRoot to implement the UpstreamNode interface.
 class PciRootAllocator final : public PciAllocator {
  public:
-  PciRootAllocator(ddk::PcirootProtocolClient proto, pci_address_space_t type, bool low)
-      : PciAllocator(type), pciroot_(proto), low_(low) {}
+  PciRootAllocator(const fidl::WireSyncClient<fuchsia_hardware_pci_root::Root>& root,
+                   fuchsia_hardware_pci_root::AddressSpace type, bool low)
+      : PciAllocator(type), root_(root), low_(low) {}
   ~PciRootAllocator() final = default;
   zx::result<std::unique_ptr<PciAllocation>> Allocate(std::optional<zx_paddr_t> base,
                                                       size_t size) final;
 
  private:
   // The bus driver outlives allocator objects.
-  ddk::PcirootProtocolClient const pciroot_;
+  const fidl::WireSyncClient<fuchsia_hardware_pci_root::Root>& root_;
   // This denotes whether this allocator requests memory < 4GB. More detail
   // can be found in the explanation for mmio in root.h.
   const bool low_;
@@ -192,16 +192,14 @@ class PciRegionAllocator final : public PciAllocator {
                                                       size_t size) override;
   zx_status_t SetParentAllocation(std::unique_ptr<PciAllocation> alloc) override;
   // Region allocators are unique in that they derive their time from their backing allocation.
-  pci_address_space_t type() const final {
-    if (!parent_alloc_) {
-      return PCI_ADDRESS_SPACE_NONE;
-    }
+  fuchsia_hardware_pci_root::AddressSpace type() const final {
+    ZX_ASSERT(parent_alloc_);
     return parent_alloc_->type();
   }
 
  private:
   std::unique_ptr<PciAllocation> parent_alloc_;
-  // Unlike a Root allocator which has bookkeeping handled by Pciroot, a
+  // Unlike a Root allocator which has bookkeeping handled by the PCI root, a
   // Region allocator has a backing RegionAllocator object to handle that
   // metadata.
   RegionAllocator allocator_;

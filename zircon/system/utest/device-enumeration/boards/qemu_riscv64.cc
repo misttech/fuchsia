@@ -10,7 +10,7 @@ TEST_F(DeviceEnumerationTest, QemuRiscv64Test) {
   // clang-format off
   static const char* kNodeMonikers[] = {
       "goldfish-rtc",        // goldfish-rtc
-      "PCI0.bus.00_00_0", // host bridge
+      "PCI0.pci-root.bus.00_00_0", // host bridge
       "board",            // board driver
   };
   // clang-format on

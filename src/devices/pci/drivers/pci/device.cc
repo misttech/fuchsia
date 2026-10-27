@@ -793,7 +793,7 @@ void Device::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer)
 
   ZX_DEBUG_ASSERT(bar->allocation);
   switch (bar->allocation->type()) {
-    case PCI_ADDRESS_SPACE_MEMORY: {
+    case fuchsia_hardware_pci_root::AddressSpace::kMemory: {
       zx::result<zx::vmo> result = bar->allocation->CreateVmo();
       if (result.is_ok()) {
         completer.ReplySuccess(
@@ -803,7 +803,7 @@ void Device::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer)
         RETURN_DEBUG(ZX_OK, "%u", request->bar_id);
       }
     } break;
-    case PCI_ADDRESS_SPACE_IO: {
+    case fuchsia_hardware_pci_root::AddressSpace::kIo: {
       zx::result<zx::resource> result = bar->allocation->CreateResource();
       if (result.is_ok()) {
         fidl::Arena arena;

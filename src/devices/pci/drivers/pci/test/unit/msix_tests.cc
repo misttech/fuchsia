@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
@@ -42,8 +40,8 @@ class PciCapabilityTests : public ::testing::Test {
     Bar bar = {
         .size = size,
         .bar_id = bar_id,
-        .allocation =
-            std::make_unique<FakeAllocation>(PCI_ADDRESS_SPACE_MEMORY, std::nullopt, size),
+        .allocation = std::make_unique<FakeAllocation>(
+            fuchsia_hardware_pci_root::AddressSpace::kMemory, std::nullopt, size),
     };
     return bar;
   }

@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.hardware.pci/cpp/wire.h>
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/fidl.h>
+#include <lib/async-loop/cpp/loop.h>
+#include <lib/async-loop/default.h>
 #include <lib/zx/result.h>
 #include <zircon/limits.h>
 
@@ -12,18 +13,19 @@
 #include <gtest/gtest.h>
 
 #include "src/devices/pci/drivers/pci/config.h"
-#include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
+#include "src/devices/pci/drivers/pci/test/fakes/fake_root_service.h"
 #include "src/devices/pci/lib/cpp/capabilities.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace pci {
+namespace {
 
-static constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf1 = {
+constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf1 = {
     .bus_id = 0,
     .device_id = 1,
     .function_id = 2,
 };
-static constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf2 = {
+constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf2 = {
     .bus_id = 1,
     .device_id = 2,
     .function_id = 3,
@@ -32,29 +34,35 @@ static constexpr fuchsia_hardware_pci::wire::Bdf kDefaultBdf2 = {
 template <bool IsExtended>
 class PciConfigTests : public ::testing::Test {
  public:
-  FakePciroot& pciroot() { return *pciroot_; }
-  ddk::PcirootProtocolClient& pciroot_client() { return *client_; }
+  FakeEcam& ecam() { return ecam_; }
+  const fidl::WireSyncClient<fuchsia_hardware_pci_root::Config>& config_client() {
+    return *config_client_;
+  }
 
  protected:
   void SetUp() final {
-    pciroot_ = std::make_unique<FakePciroot>(/*bus_start=*/0, /*bus_cnt=*/2, IsExtended);
-    client_ = std::make_unique<ddk::PcirootProtocolClient>(pciroot_->proto());
+    ASSERT_OK(loop_.StartThread("config-fidl-thread"));
+    auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_pci_root::Config>();
+    ASSERT_OK(endpoints);
+    config_server_.Bind(loop_.dispatcher(), std::move(endpoints->server));
+    config_client_ = std::make_unique<fidl::WireSyncClient<fuchsia_hardware_pci_root::Config>>(
+        std::move(endpoints->client));
   }
 
   void TearDown() final {
-    client_.reset();
-    pciroot_.reset();
+    config_client_.reset();
+    loop_.Shutdown();
   }
 
  private:
-  std::unique_ptr<FakePciroot> pciroot_;
-  std::unique_ptr<ddk::PcirootProtocolClient> client_;
+  async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
+  FakeEcam ecam_{/*bus_start=*/0, /*bus_cnt=*/2, IsExtended};
+  FakeConfigServer config_server_{ecam_};
+  std::unique_ptr<fidl::WireSyncClient<fuchsia_hardware_pci_root::Config>> config_client_;
 };
 
 using PciConfigBaseTests = PciConfigTests<false>;
 using PciConfigExtendedTests = PciConfigTests<true>;
-
-namespace {
 
 void DeviceConfigIntegrationImpl(FakeEcam& ecam) {
   FakePciType0Config* dev1 = ecam.get_device(kDefaultBdf1);
@@ -280,63 +288,54 @@ void ConfigReadWriteIntegrationImpl(pci::Config* cfg, FakePciType0Config* dev) {
   EXPECT_EQ(0xFF00u >> 2, dev->base_address[1].io.address());
 }
 
-void MmioConfigGetViewImpl(FakePciroot& pciroot) {
-  auto& ecam = pciroot.ecam();
+void MmioConfigGetViewImpl(FakeEcam& ecam) {
   zx::result<fdf::MmioView> view = ecam.CreateMmioConfig(kDefaultBdf1)->get_view();
   ASSERT_OK(view);
-  ASSERT_EQ(view->get_size(), pciroot.ecam().config_size());
+  ASSERT_EQ(view->get_size(), ecam.config_size());
   ASSERT_EQ(view->get_offset(), ecam.GetConfigOffset(kDefaultBdf1));
-  ASSERT_EQ(view->get_vmo()->get(), pciroot.ecam().mmio().get_vmo()->get());
+  ASSERT_EQ(view->get_vmo()->get(), ecam.mmio().get_vmo()->get());
 }
+TEST_F(PciConfigBaseTests, DeviceConfigIntegration) { DeviceConfigIntegrationImpl(ecam()); }
 
-}  // namespace
-
-TEST_F(PciConfigBaseTests, DeviceConfigIntegration) {
-  DeviceConfigIntegrationImpl(pciroot().ecam());
-}
-
-TEST_F(PciConfigExtendedTests, DeviceConfigIntegration) {
-  DeviceConfigIntegrationImpl(pciroot().ecam());
-}
+TEST_F(PciConfigExtendedTests, DeviceConfigIntegration) { DeviceConfigIntegrationImpl(ecam()); }
 
 TEST_F(PciConfigBaseTests, MmioConfigReadWrite) {
-  auto cfg = pciroot().ecam().CreateMmioConfig(kDefaultBdf1);
-  auto* dev = pciroot().ecam().get_device(kDefaultBdf1);
+  auto cfg = ecam().CreateMmioConfig(kDefaultBdf1);
+  auto* dev = ecam().get_device(kDefaultBdf1);
   ConfirmDevConfigReadResetImpl(cfg.get(), dev);
   ConfigReadWriteIntegrationImpl(cfg.get(), dev);
 }
 
 TEST_F(PciConfigExtendedTests, MmioConfigReadWrite) {
-  auto cfg = pciroot().ecam().CreateMmioConfig(kDefaultBdf1);
-  auto* dev = pciroot().ecam().get_device(kDefaultBdf1);
+  auto cfg = ecam().CreateMmioConfig(kDefaultBdf1);
+  auto* dev = ecam().get_device(kDefaultBdf1);
   ConfirmDevConfigReadResetImpl(cfg.get(), dev);
   ConfigReadWriteIntegrationImpl(cfg.get(), dev);
 }
 
 TEST_F(PciConfigBaseTests, ProxyConfigReadWrite) {
-  auto cfg = ProxyConfig::Create(kDefaultBdf1, &pciroot_client());
-  auto* dev = pciroot().ecam().get_device(kDefaultBdf1);
+  auto cfg = ProxyConfig::Create(kDefaultBdf1, config_client());
+  auto* dev = ecam().get_device(kDefaultBdf1);
   ConfigReadWriteIntegrationImpl(cfg.value().get(), dev);
 }
 
 TEST_F(PciConfigExtendedTests, ProxyConfigReadWrite) {
-  auto cfg = ProxyConfig::Create(kDefaultBdf1, &pciroot_client());
-  auto* dev = pciroot().ecam().get_device(kDefaultBdf1);
+  auto cfg = ProxyConfig::Create(kDefaultBdf1, config_client());
+  auto* dev = ecam().get_device(kDefaultBdf1);
   ConfigReadWriteIntegrationImpl(cfg.value().get(), dev);
 }
 
 TEST_F(PciConfigBaseTests, ProxyConfigGetView) {
-  auto proxy_cfg = ProxyConfig::Create(kDefaultBdf1, &pciroot_client());
+  auto proxy_cfg = ProxyConfig::Create(kDefaultBdf1, config_client());
   ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, proxy_cfg->get_view().status_value());
 }
 
-TEST_F(PciConfigBaseTests, MmioConfigGetView) { MmioConfigGetViewImpl(pciroot()); }
-TEST_F(PciConfigExtendedTests, MmioConfigGetView) { MmioConfigGetViewImpl(pciroot()); }
+TEST_F(PciConfigBaseTests, MmioConfigGetView) { MmioConfigGetViewImpl(ecam()); }
+TEST_F(PciConfigExtendedTests, MmioConfigGetView) { MmioConfigGetViewImpl(ecam()); }
 
 TEST_F(PciConfigBaseTests, FindCapability) {
-  auto& ecam = pciroot().ecam();
-  auto cfg = ecam.CreateMmioConfig(kDefaultBdf1);
-  auto view = ecam.get_config_view(kDefaultBdf1);
+  auto cfg = ecam().CreateMmioConfig(kDefaultBdf1);
+  auto view = ecam().get_config_view(kDefaultBdf1);
 
   // If Status.has_capabilities_list is false, FindCapability must return std::nullopt.
   cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80));
@@ -376,7 +375,7 @@ TEST_F(PciConfigBaseTests, FindCapability) {
   cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(kCapPtrMaxValid));
   EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciExpress), std::nullopt);
 
-  // A cyclic capability chain must terminate via the loop guard.
+  // Cyclic capability chain must terminate via the loop guard.
   cfg->Write(Config::kCapabilitiesPtr, static_cast<uint8_t>(0x80));
   cap_80[1] = 0x90;
   view.WriteBuffer(0x80, cap_80, sizeof(cap_80));
@@ -385,4 +384,5 @@ TEST_F(PciConfigBaseTests, FindCapability) {
   EXPECT_EQ(FindCapability(*cfg, Capability::Id::kPciPowerManagement), std::nullopt);
 }
 
+}  // namespace
 }  // namespace pci

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 #include <unistd.h>
@@ -22,7 +21,6 @@
 #include "src/devices/pci/drivers/pci/test/fakes/fake_allocator.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_bus.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_config.h"
-#include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_upstream_node.h"
 #include "src/devices/pci/drivers/pci/test/fakes/test_device.h"
 #include "src/devices/pci/lib/cpp/capabilities.h"
@@ -48,7 +46,7 @@ class PciDeviceTests : public ::testing::Test {
   FakeUpstreamNode& upstream() { return upstream_; }
 
   Device& CreateTestDevice(zx_device_t* parent) {
-    auto& ecam = bus_.pciroot().ecam();
+    auto& ecam = bus_.ecam();
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());
     auto view = mmio_cfg->get_view();
     EXPECT_TRUE(view.is_ok());
@@ -58,7 +56,7 @@ class PciDeviceTests : public ::testing::Test {
     return bus().get_device(bdf());
   }
   Device& CreateTestDevice(zx_device_t* parent, const uint8_t* cfg_buf, size_t cfg_size) {
-    bus_.pciroot().ecam().get_config_view(bdf()).WriteBuffer(0, cfg_buf, cfg_size);
+    bus_.ecam().get_config_view(bdf()).WriteBuffer(0, cfg_buf, cfg_size);
     return CreateTestDevice(parent);
   }
   void ConfigureDownstreamDevices() { return upstream_.ConfigureDownstreamDevices(); }
@@ -100,7 +98,7 @@ __EXPORT zx_status_t device_add_composite_spec(zx_device_t* dev, const char* nam
 // All tests below
 
 TEST_F(PciDeviceTestsExtendedCam, CreationTest) {
-  auto& ecam = bus().pciroot().ecam();
+  auto& ecam = bus().ecam();
   // This test creates a device, goes through its init sequence, links it into
   // the toplogy, and then has it linger. It will be cleaned up by TearDown()
   // releasing all objects of upstream(). If creation succeeds here and no
@@ -154,7 +152,7 @@ TEST_F(PciDeviceTestsExtendedCam, BarAllocationSizeDescendingOrder) {
 // Test a normal capability chain
 TEST_F(PciDeviceTestsCam, StdCapabilityTest) {
   // Copy the config dump into a device entry in the ecam.
-  auto& ecam = bus().pciroot().ecam();
+  auto& ecam = bus().ecam();
   ecam.get_config_view(bdf()).WriteBuffer(0, kFakeVirtioInputDeviceConfig.data(),
                                           kFakeVirtioInputDeviceConfig.max_size());
   auto cfg = ecam.CreateMmioConfig(bdf());
@@ -181,7 +179,7 @@ TEST_F(PciDeviceTestsCam, StdCapabilityTest) {
 // A device that is described by the devicetree publishes its fragment but not a
 // composite node spec: the devicetree (pci-child-visitor) owns the composite.
 TEST_F(PciDeviceTestsCam, DevicetreeDeviceSkipsCompositeSpec) {
-  auto& ecam = bus().pciroot().ecam();
+  auto& ecam = bus().ecam();
   ecam.get_config_view(bdf()).WriteBuffer(0, kFakeVirtioInputDeviceConfig.data(),
                                           kFakeVirtioInputDeviceConfig.max_size());
   auto cfg = ecam.CreateMmioConfig(bdf());
@@ -195,7 +193,7 @@ TEST_F(PciDeviceTestsCam, DevicetreeDeviceSkipsCompositeSpec) {
 // A device that is not described by the devicetree gets its composite from the
 // bus driver, as before.
 TEST_F(PciDeviceTestsCam, NonDevicetreeDeviceAddsCompositeSpec) {
-  auto& ecam = bus().pciroot().ecam();
+  auto& ecam = bus().ecam();
   ecam.get_config_view(bdf()).WriteBuffer(0, kFakeVirtioInputDeviceConfig.data(),
                                           kFakeVirtioInputDeviceConfig.max_size());
   auto cfg = ecam.CreateMmioConfig(bdf());
@@ -234,9 +232,9 @@ TEST_F(PciDeviceTestsExtendedCam, ExtendedCapabilityTest) {
 // invalid by pointing to inside the config header.
 TEST_F(PciDeviceTestsCam, InvalidPtrCapabilityTest) {
   FakeBus bus(0, 2, true);
-  FakeEcam& ecam = bus.pciroot().ecam();
-  auto raw_cfg = bus.pciroot().ecam().get_config_view(bdf());
-  auto* fake_dev = bus.pciroot().ecam().get_device(bdf());
+  FakeEcam& ecam = bus.ecam();
+  auto raw_cfg = bus.ecam().get_config_view(bdf());
+  auto* fake_dev = bus.ecam().get_device(bdf());
 
   // Two valid locations, followed by a third capability pointing at BAR 1.
   const uint8_t kCap1 = 0x80;
@@ -267,8 +265,8 @@ TEST_F(PciDeviceTestsCam, InvalidPtrCapabilityTest) {
 // funding a pointer cycle while parsing capabilities.
 TEST_F(PciDeviceTestsCam, PtrCycleCapabilityTest) {
   // Boilerplate to.get_device a corresponding to the bdf().
-  auto raw_cfg = bus().pciroot().ecam().get_config_view(bdf());
-  auto* fake_dev = bus().pciroot().ecam().get_device(bdf());
+  auto raw_cfg = bus().ecam().get_config_view(bdf());
+  auto* fake_dev = bus().ecam().get_device(bdf());
 
   // Two valid locations, followed by a third capability pointing at BAR 1.
   const uint8_t kCap1 = 0x80;
@@ -288,7 +286,7 @@ TEST_F(PciDeviceTestsCam, PtrCycleCapabilityTest) {
   raw_cfg.Write(cap_id, kCap3);
   raw_cfg.Write(kCap1, kCap3 + 1);
 
-  auto cfg = bus().pciroot().ecam().CreateMmioConfig(bdf());
+  auto cfg = bus().ecam().CreateMmioConfig(bdf());
   EXPECT_EQ(ZX_ERR_BAD_STATE,
             Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
                            /*has_acpi=*/false, /*has_devicetree=*/false));
@@ -301,8 +299,8 @@ TEST_F(PciDeviceTestsCam, PtrCycleCapabilityTest) {
 // type that only one should exist of in a system.
 TEST_F(PciDeviceTestsCam, DuplicateFixedCapabilityTest) {
   // Boilerplate to.get_device a corresponding to the bdf().
-  auto raw_cfg = bus().pciroot().ecam().get_config_view(bdf());
-  auto* fake_dev = bus().pciroot().ecam().get_device(bdf());
+  auto raw_cfg = bus().ecam().get_config_view(bdf());
+  auto* fake_dev = bus().ecam().get_device(bdf());
 
   // Two valid locations, followed by a third capability pointing at BAR 1.
   const uint8_t kCap1 = 0x80;
@@ -323,7 +321,7 @@ TEST_F(PciDeviceTestsCam, DuplicateFixedCapabilityTest) {
   raw_cfg.Write8(pcie_id, kCap3);
   raw_cfg.Write8(0, kCap3 + 1);
 
-  auto cfg = bus().pciroot().ecam().CreateMmioConfig(bdf());
+  auto cfg = bus().ecam().CreateMmioConfig(bdf());
   EXPECT_EQ(ZX_ERR_BAD_STATE,
             Device::Create(MockDevice::FakeRootParent().get(), std::move(cfg), &upstream(), &bus(),
                            /*has_acpi=*/false, /*has_devicetree=*/false));
@@ -603,7 +601,7 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
 
   // Case 1: Bus mastering disabled initially; stays disabled after rejection.
   {
-    auto& ecam = bus().pciroot().ecam();
+    auto& ecam = bus().ecam();
     ecam.get_config_view(bdf()).WriteBuffer(0, kFakeQuadroDeviceConfig.data(),
                                             kFakeQuadroDeviceConfig.max_size());
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());
@@ -628,7 +626,7 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
 
   // Case 2: Bus mastering enabled initially; stays enabled after rejection.
   {
-    auto& ecam = bus().pciroot().ecam();
+    auto& ecam = bus().ecam();
     ecam.get_config_view(bdf()).WriteBuffer(0, kFakeQuadroDeviceConfig.data(),
                                             kFakeQuadroDeviceConfig.max_size());
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.pci.root/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pci/cpp/natural_types.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
@@ -32,7 +32,7 @@
 
 #include "src/devices/pci/drivers/pci/bridge.h"
 #include "src/devices/pci/drivers/pci/bus.h"
-#include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
+#include "src/devices/pci/drivers/pci/test/fakes/fake_root_service.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
@@ -42,9 +42,19 @@ namespace pci {
 class IncomingNamespace {
  public:
   using MetadataType = fuchsia_hardware_pci::BoardConfiguration;
-  void Init(fidl::ServerEnd<fuchsia_io::Directory> outgoing_server) {
+  void Init(fidl::ServerEnd<fuchsia_io::Directory> root_server,
+            fidl::ServerEnd<fuchsia_io::Directory> board_server,
+            fidl::ServerEnd<fuchsia_io::Directory> config_server,
+            fuchsia_hardware_pci_root::RootService::InstanceHandler root_handler,
+            fuchsia_hardware_pci_root::ConfigService::InstanceHandler config_handler) {
     ASSERT_OK(metadata_server_.Serve(outgoing_, async_get_default_dispatcher()));
-    ASSERT_OK(outgoing_.Serve(std::move(outgoing_server)));
+    ASSERT_OK(
+        outgoing_.AddService<fuchsia_hardware_pci_root::RootService>(std::move(root_handler)));
+    ASSERT_OK(
+        outgoing_.AddService<fuchsia_hardware_pci_root::ConfigService>(std::move(config_handler)));
+    ASSERT_OK(outgoing_.Serve(std::move(root_server)));
+    ASSERT_OK(outgoing_.Serve(std::move(board_server)));
+    ASSERT_OK(outgoing_.Serve(std::move(config_server)));
   }
 
   void SetBoardConfig(const fuchsia_hardware_pci::BoardConfiguration& board_config) {
@@ -65,21 +75,45 @@ extern int g_pci_composite_spec_add_count;
 class PciBusTests : public ::gtest::TestLoopFixture {
  protected:
   void SetUp() final {
-    pciroot_.emplace(0, 2, /*is_extended=*/true);
+    root_server_.set_platform_info_fn([this]() { return info(); });
     parent_ = MockDevice::FakeRootParent();
     ASSERT_OK(incoming_loop_.StartThread("incoming-namespace"));
-    zx::result endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    incoming_namespace_.SyncCall(&IncomingNamespace::Init, std::move(endpoints->server));
+    zx::result root_dir_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    ASSERT_OK(root_dir_endpoints);
+    zx::result board_dir_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    ASSERT_OK(board_dir_endpoints);
+    zx::result config_dir_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+    ASSERT_OK(config_dir_endpoints);
+    incoming_namespace_.SyncCall(
+        &IncomingNamespace::Init, std::move(root_dir_endpoints->server),
+        std::move(board_dir_endpoints->server), std::move(config_dir_endpoints->server),
+        fuchsia_hardware_pci_root::RootService::InstanceHandler({
+            .root =
+                [this](fidl::ServerEnd<fuchsia_hardware_pci_root::Root> server_end) {
+                  root_server_.Bind(incoming_loop_.dispatcher(), std::move(server_end));
+                },
+        }),
+        fuchsia_hardware_pci_root::ConfigService::InstanceHandler({
+            .config =
+                [this](fidl::ServerEnd<fuchsia_hardware_pci_root::Config> server_end) {
+                  config_server_.Bind(incoming_loop_.dispatcher(), std::move(server_end));
+                },
+        }));
 
-    parent_->AddProtocol(ZX_PROTOCOL_PCIROOT, pciroot_->proto()->ops, pciroot_->proto()->ctx);
+    parent_->AddFidlService(fuchsia_hardware_pci_root::RootService::Name,
+                            std::move(root_dir_endpoints->client), "default");
+
     parent_->AddFidlService(fuchsia_hardware_pci::BoardConfiguration::kSerializableName,
-                            std::move(endpoints->client), "default");
+                            std::move(board_dir_endpoints->client), "default");
+
+    parent_->AddFidlService(fuchsia_hardware_pci_root::ConfigService::Name,
+                            std::move(config_dir_endpoints->client), "default");
   }
 
   void TearDown() final {
     parent_.reset();
-    pciroot_.reset();
     incoming_namespace_.reset();
+    incoming_loop_.Shutdown();
   }
 
   zx_device_t* parent() { return parent_.get(); }
@@ -92,10 +126,47 @@ class PciBusTests : public ::gtest::TestLoopFixture {
   void AddRoutingEntryToBus(std::optional<uint8_t> p_dev, std::optional<uint8_t> p_func,
                             uint8_t dev_id, uint8_t a, uint8_t b, uint8_t c, uint8_t d);
   void SetBoardConfiguration(fuchsia_hardware_pci::BoardConfiguration board_config);
-  FakePciroot& pciroot() { return pciroot_.value(); }
+  FakeEcam& ecam() { return ecam_; }
+  FakeRootServer& root_server() { return root_server_; }
+  fuchsia_hardware_pci_root::PlatformInfo info() const {
+    std::unique_ptr<fuchsia_hardware_pci_root::ParentBdfs> parent_bdfs;
+    if (!acpi_devices_.empty()) {
+      parent_bdfs = std::make_unique<fuchsia_hardware_pci_root::ParentBdfs>(
+          fuchsia_hardware_pci_root::ParentBdfs::WithAcpi(acpi_devices_));
+    } else if (!devicetree_devices_.empty()) {
+      parent_bdfs = std::make_unique<fuchsia_hardware_pci_root::ParentBdfs>(
+          fuchsia_hardware_pci_root::ParentBdfs::WithDevicetree(devicetree_devices_));
+    }
+    return fuchsia_hardware_pci_root::PlatformInfo{{
+        .name = "fakeroot",
+        .start_bus_num = 0,
+        .end_bus_num = 2,
+        .segment_group = 0,
+        .irq_routing = routing_entries_,
+        .parent_bdfs = std::move(parent_bdfs),
+    }};
+  }
+  std::vector<fuchsia_hardware_pci::Bdf>& devicetree_devices() { return devicetree_devices_; }
+  fidl::ClientEnd<fuchsia_hardware_pci_root::Root> CreateRootClient() {
+    auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_pci_root::Root>();
+    ZX_ASSERT(endpoints.is_ok());
+    root_server_.Bind(incoming_loop_.dispatcher(), std::move(endpoints->server));
+    return std::move(endpoints->client);
+  }
+  fidl::ClientEnd<fuchsia_hardware_pci_root::Config> CreateConfigClient() {
+    auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_pci_root::Config>();
+    ZX_ASSERT(endpoints.is_ok());
+    config_server_.Bind(incoming_loop_.dispatcher(), std::move(endpoints->server));
+    return std::move(endpoints->client);
+  }
 
- private:
-  std::optional<FakePciroot> pciroot_;
+ protected:
+  FakeEcam ecam_{0, 2, /*is_extended=*/true};
+  FakeRootServer root_server_{&ecam_};
+  FakeConfigServer config_server_{ecam_};
+  std::vector<fuchsia_hardware_pci_root::IrqRoutingEntry> routing_entries_;
+  std::vector<fuchsia_hardware_pci::Bdf> acpi_devices_;
+  std::vector<fuchsia_hardware_pci::Bdf> devicetree_devices_;
   std::shared_ptr<MockDevice> parent_;
   async::Loop incoming_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   async_patterns::TestDispatcherBound<IncomingNamespace> incoming_namespace_{
@@ -104,7 +175,7 @@ class PciBusTests : public ::gtest::TestLoopFixture {
 
 uint32_t PciBusTests::SetupTopology() {
   uint8_t idx = 1;
-  auto& ecam = pciroot_->ecam();
+  auto& ecam = ecam_;
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
       kHeaderTypeMultiFn);
   ecam.get_device({0, 0, 1})->set_vendor_id(0x8086).set_device_id(idx++);
@@ -125,7 +196,7 @@ uint32_t PciBusTests::SetupTopology() {
 
 uint32_t PciBusTests::SetupMultifunctionTopology() {
   uint8_t idx = 1;
-  auto& ecam = pciroot_->ecam();
+  auto& ecam = ecam_;
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(idx++).set_header_type(
       kHeaderTypeMultiFn);
   ecam.get_bridge({0, 0, 1})
@@ -149,19 +220,21 @@ zx::interrupt PciBusTests::AddLegacyIrqToBus(uint8_t vector) {
                                   ZX_INTERRUPT_VIRTUAL, &interrupt) == ZX_OK);
   zx::interrupt bus_interrupt;
   ZX_ASSERT(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &bus_interrupt) == ZX_OK);
-  pciroot().legacy_irqs().push_back(
-      pci_legacy_irq_t{.interrupt = bus_interrupt.release(), .vector = vector});
+  root_server_.legacy_irqs()[vector] = std::move(bus_interrupt);
 
   return interrupt;
 }
 
 void PciBusTests::AddRoutingEntryToBus(std::optional<uint8_t> p_dev, std::optional<uint8_t> p_func,
                                        uint8_t dev_id, uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
-  pciroot().routing_entries().push_back(pci_irq_routing_entry_t{
-      .port_device_id = (p_dev) ? *p_dev : static_cast<uint8_t>(PCI_IRQ_ROUTING_NO_PARENT),
-      .port_function_id = (p_func) ? *p_func : static_cast<uint8_t>(PCI_IRQ_ROUTING_NO_PARENT),
+  routing_entries_.push_back(fuchsia_hardware_pci_root::IrqRoutingEntry{{
+      .port_device_id =
+          (p_dev) ? *p_dev : static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .port_function_id =
+          (p_func) ? *p_func : static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
       .device_id = dev_id,
-      .pins = {a, b, c, d}});
+      .pins = {{a, b, c, d}},
+  }});
 }
 
 void PciBusTests::SetBoardConfiguration(fuchsia_hardware_pci::BoardConfiguration board_config) {
@@ -171,9 +244,14 @@ void PciBusTests::SetBoardConfiguration(fuchsia_hardware_pci::BoardConfiguration
 // An encapsulated pci::Bus to allow inspection of some internal state.
 class TestBus : public pci::Bus {
  public:
-  TestBus(zx_device_t* parent, const pciroot_protocol_t* pciroot, const pci_platform_info_t info,
-          std::optional<fdf::MmioBuffer> ecam)
-      : pci::Bus(parent, pciroot, info, std::move(ecam)) {}
+  TestBus(zx_device_t* parent, fidl::ClientEnd<fuchsia_hardware_pci_root::Root> root_client,
+          fuchsia_hardware_pci_root::PlatformInfo info, fdf::MmioBuffer ecam,
+          bool is_extended = true)
+      : pci::Bus(parent, std::move(root_client), std::move(info), std::move(ecam), is_extended) {}
+  TestBus(zx_device_t* parent, fidl::ClientEnd<fuchsia_hardware_pci_root::Root> root_client,
+          fuchsia_hardware_pci_root::PlatformInfo info,
+          fidl::ClientEnd<fuchsia_hardware_pci_root::Config> config_client)
+      : pci::Bus(parent, std::move(root_client), std::move(info), std::move(config_client)) {}
   virtual ~TestBus() = default;
 
   using pci::Bus::HandleDeviceLegacyIrqUntriggered;
@@ -197,11 +275,6 @@ class TestBus : public pci::Bus {
     fbl::AutoLock _(devices_lock());
     return shared_irqs().size();
   }
-
-  size_t GetLegacyIrqCount() {
-    fbl::AutoLock _(devices_lock());
-    return legacy_irqs().size();
-  }
 };
 
 // Bind tests the entire initialization path using an ECAM included via platform information.
@@ -210,64 +283,73 @@ TEST_F(PciBusTests, Bind) {
   ASSERT_OK(pci_bus_bind(nullptr, parent()));
 }
 
+TEST_F(PciBusTests, BindProxyConfig) {
+  uint32_t dev_cnt = SetupTopology();
+  root_server().set_enable_cam(false);
+  ASSERT_OK(pci_bus_bind(nullptr, parent()));
+  EXPECT_EQ(parent()->GetLatestChild()->child_count(), dev_cnt);
+}
+
+TEST_F(PciBusTests, BindFailsWhenNoRootService) {
+  auto parent = MockDevice::FakeRootParent();
+  EXPECT_EQ(pci_bus_bind(nullptr, parent.get()), ZX_ERR_NOT_SUPPORTED);
+}
+
 // The lifecycle test is done through Proxy configs to ensure we don't need to worry
 // about ownership of the vmo the MmioBuffers would share.
 TEST_F(PciBusTests, Lifecycle) {
   uint32_t dev_cnt = SetupTopology();
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), dev_cnt);
 }
 
 TEST_F(PciBusTests, BdiGetBti) {
-  pciroot().ecam().get_device({})->set_vendor_id(8086).set_device_id(8086);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  ecam().get_device({0, 0, 0})->set_vendor_id(8086).set_device_id(8086);
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
 
   zx::bti bti = {};
   ASSERT_EQ(bus->GetBti(nullptr, 0, &bti), ZX_ERR_INVALID_ARGS);
-  ASSERT_OK(bus->GetBti(bus->GetDevice({}), 0, &bti));
+  ASSERT_OK(bus->GetBti(bus->GetDevice({0, 0, 0}), 0, &bti));
 
-  zx_info_bti_t info = {};
   zx_info_bti_t info2 = {};
-  ASSERT_OK(bti.get_info(ZX_INFO_BTI, &info, sizeof(info), nullptr, nullptr));
-  ASSERT_OK(pciroot().bti().get_info(ZX_INFO_BTI, &info2, sizeof(info2), nullptr, nullptr));
-  ASSERT_EQ(info.aspace_size, info2.aspace_size);
-  ASSERT_EQ(info.minimum_contiguity, info2.minimum_contiguity);
-  ASSERT_EQ(info.pmo_count, info2.pmo_count);
-  ASSERT_EQ(info.quarantine_count, info2.quarantine_count);
+  zx_info_bti_t info3 = {};
+  ASSERT_OK(bti.get_info(ZX_INFO_BTI, &info2, sizeof(info2), nullptr, nullptr));
+  ASSERT_OK(root_server().bti().get_info(ZX_INFO_BTI, &info3, sizeof(info3), nullptr, nullptr));
+  ASSERT_EQ(info2.aspace_size, info3.aspace_size);
+  ASSERT_EQ(info2.minimum_contiguity, info3.minimum_contiguity);
+  ASSERT_EQ(info2.pmo_count, info3.pmo_count);
+  ASSERT_EQ(info2.quarantine_count, info3.quarantine_count);
 }
 
 TEST_F(PciBusTests, BdiAllocateMsi) {
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
   for (uint32_t cnt = 1; cnt <= 32; cnt *= 2) {
     zx::msi msi = {};
-    msi_allocation_info_t info = {};
-    bus->AllocateMsi(cnt, &msi, &info);
-    EXPECT_EQ(info.irq_count, cnt);
-    EXPECT_EQ(info.target_addr, 0xCAFEu);
-    EXPECT_EQ(info.target_data, 0xC0FEu);
+    fuchsia_hardware_pci_root::wire::MsiAllocationInfo msi_info = {};
+    bus->AllocateMsi(cnt, &msi, &msi_info);
+    EXPECT_EQ(msi_info.irq_count, cnt);
+    EXPECT_EQ(msi_info.target_addr, 0xCAFEu);
+    EXPECT_EQ(msi_info.target_data, 0xC0FEu);
   }
 }
 
 TEST_F(PciBusTests, BdiGetMsiHandle) {
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
   zx::msi msi = {};
-  msi_allocation_info_t info = {};
-  ASSERT_OK(bus->AllocateMsi(2, &msi, &info));
+  fuchsia_hardware_pci_root::wire::MsiAllocationInfo msi_info = {};
+  ASSERT_OK(bus->AllocateMsi(2, &msi, &msi_info));
 
   zx::vmo cfg_vmo;
   ASSERT_OK(zx::vmo::create(4096, 0, &cfg_vmo));
@@ -280,15 +362,14 @@ TEST_F(PciBusTests, BdiGetMsiHandle) {
 }
 
 TEST_F(PciBusTests, BdiLinkUnlinkDevice) {
-  pciroot().ecam().get_device({})->set_vendor_id(8086).set_device_id(8086);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  ecam().get_device({0, 0, 0})->set_vendor_id(8086).set_device_id(8086);
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
 
-  auto device = bus->GetDevice({});
-  auto reffed_device = fbl::RefPtr(bus->GetDevice({}));
+  auto device = bus->GetDevice({0, 0, 0});
+  auto reffed_device = fbl::RefPtr(bus->GetDevice({0, 0, 0}));
   EXPECT_EQ(bus->LinkDevice(reffed_device), ZX_ERR_ALREADY_EXISTS);
   EXPECT_OK(bus->UnlinkDevice(device));
   EXPECT_EQ(bus->GetDeviceCount(), 0u);
@@ -310,24 +391,52 @@ TEST_F(PciBusTests, IrqRoutingEntries) {
   for (uint32_t i = 0; i < int_cnt; i++) {
     ASSERT_OK(zx::interrupt::create(*zx::unowned_resource(ZX_HANDLE_INVALID), i,
                                     ZX_INTERRUPT_VIRTUAL, &interrupt));
-    pciroot().legacy_irqs().push_back(
-        pci_legacy_irq_t{.interrupt = interrupt.get(), .vector = i % int_mod});
-    // The bus will take ownership of this.
-    (void)interrupt.release();
+    root_server_.legacy_irqs()[(i % int_mod) + 1] = std::move(interrupt);
   }
-  pciroot().ecam().get_device({})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
+  ecam().get_device({0, 0, 0})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
 
-  pciroot().routing_entries().push_back(
-      pci_irq_routing_entry_t{.port_device_id = PCI_IRQ_ROUTING_NO_PARENT,
-                              .port_function_id = PCI_IRQ_ROUTING_NO_PARENT,
-                              .device_id = 0,
-                              .pins = {1, 2, 3, 4}});
+  routing_entries_.push_back(fuchsia_hardware_pci_root::IrqRoutingEntry{{
+      .port_device_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .port_function_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .device_id = 0,
+      .pins = {{1, 2, 3, 4}},
+  }});
 
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(int_mod, bus->GetSharedIrqCount());
+}
+
+TEST_F(PciBusTests, IrqRoutingMissingVectorSkipped) {
+  ecam().get_device({0, 0, 0})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
+  routing_entries_.push_back(fuchsia_hardware_pci_root::IrqRoutingEntry{{
+      .port_device_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .port_function_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .device_id = 0,
+      .pins = {{42, 0, 0, 0}},
+  }});
+
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  EXPECT_EQ(0u, bus->GetSharedIrqCount());
+}
+
+TEST_F(PciBusTests, IrqRoutingInjectedErrorSkipped) {
+  root_server_.set_get_legacy_interrupt_status(ZX_ERR_INTERNAL);
+  ecam().get_device({0, 0, 0})->set_vendor_id(1).set_device_id(2).set_interrupt_pin(1);
+  routing_entries_.push_back(fuchsia_hardware_pci_root::IrqRoutingEntry{{
+      .port_device_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .port_function_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      .device_id = 0,
+      .pins = {{1, 2, 3, 4}},
+  }});
+
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  EXPECT_EQ(0u, bus->GetSharedIrqCount());
 }
 
 TEST_F(PciBusTests, LegacyIrqSignalTest) {
@@ -342,10 +451,9 @@ TEST_F(PciBusTests, LegacyIrqSignalTest) {
   // SetupTopology for the device itself.
   SetupTopology();
   // These devices need interrupt pins mapped before Bus scans the topology.
-  pciroot().ecam().get_device({0, 0, 0})->set_interrupt_pin(0x1);
-  pciroot().ecam().get_device({0, 0, 1})->set_interrupt_pin(0x2);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  ecam().get_device({0, 0, 0})->set_interrupt_pin(0x1);
+  ecam().get_device({0, 0, 1})->set_interrupt_pin(0x2);
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(1u, bus->GetSharedIrqCount());
@@ -373,7 +481,7 @@ TEST_F(PciBusTests, LegacyIrqSignalTest) {
   // Timestamps of the original vector must match.
   zx::time_boot receive_time;
   zx::time_boot trigger_time = zx::clock::get_boot();
-  pciroot().ecam().get_device({0, 0, 1})->set_status(kStatusInterrupt);
+  ecam().get_device({0, 0, 1})->set_status(kStatusInterrupt);
   ASSERT_OK(interrupt.trigger(0, trigger_time));
 
   // Process the interrupt event on the DFv1 async dispatcher.
@@ -397,8 +505,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
   // kernel re-delivers the still-asserted line in a storm. The mask is cleared
   // again once the driver acknowledges. This test verifies that mask/unmask.
   fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  pciroot()
-      .ecam()
+  ecam()
       .get_device(device)
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
@@ -410,8 +517,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector,
                        /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
@@ -468,8 +574,7 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
 
 TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
   fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  pciroot()
-      .ecam()
+  ecam()
       .get_device(device)
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
@@ -479,8 +584,7 @@ TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
   zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
@@ -533,18 +637,12 @@ TEST_F(PciBusTests, LegacyInterruptLifecycle_SyncWait) {
 
 TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
   fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  pciroot()
-      .ecam()
-      .get_device(device)
-      ->set_vendor_id(0x8086)
-      .set_device_id(0x8086)
-      .set_interrupt_pin(0x1);
+  ecam().get_device(device)->set_vendor_id(0x8086).set_device_id(0x8086).set_interrupt_pin(0x1);
   constexpr uint8_t kVector = 0x10;
   AddLegacyIrqToBus(kVector);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   auto* bus_device = bus->GetDevice(device);
@@ -565,8 +663,7 @@ TEST_F(PciBusTests, LegacyInterruptAckLegacyIrqModes) {
 
 TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {
   fuchsia_hardware_pci::wire::Bdf device = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  pciroot()
-      .ecam()
+  ecam()
       .get_device(device)
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
@@ -576,8 +673,7 @@ TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {
   zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   auto* bus_device = bus->GetDevice(device);
@@ -619,27 +715,20 @@ TEST_F(PciBusTests, LegacyInterruptWaitCancellation) {
 TEST_F(PciBusTests, LegacyInterruptSharedVector_ConcurrentAssert) {
   fuchsia_hardware_pci::wire::Bdf device_a = {.bus_id = 0, .device_id = 0, .function_id = 0};
   fuchsia_hardware_pci::wire::Bdf device_b = {.bus_id = 0, .device_id = 1, .function_id = 0};
-  pciroot()
-      .ecam()
+  ecam()
       .get_device(device_a)
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
       .set_interrupt_pin(0x1)
       .set_status(kStatusInterrupt);
-  pciroot()
-      .ecam()
-      .get_device(device_b)
-      ->set_vendor_id(0x8086)
-      .set_device_id(0x8086)
-      .set_interrupt_pin(0x1);
+  ecam().get_device(device_b)->set_vendor_id(0x8086).set_device_id(0x8086).set_interrupt_pin(0x1);
   constexpr uint8_t kVector = 0x10;
   zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/1,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
@@ -679,7 +768,7 @@ TEST_F(PciBusTests, LegacyInterruptSharedVector_ConcurrentAssert) {
   ASSERT_FALSE(disabled_b());
 
   // Vector triggers again while Device A ack is pending; Device B asserts.
-  pciroot().ecam().get_device(device_b)->set_status(kStatusInterrupt);
+  ecam().get_device(device_b)->set_status(kStatusInterrupt);
   ASSERT_OK(bus_interrupt.trigger(0, zx::clock::get_boot()));
   mock_ddk::GetDriverRuntime()->RunUntilIdle();
 
@@ -704,18 +793,8 @@ TEST_F(PciBusTests, LegacyInterruptSharedVector_ConcurrentAssert) {
 TEST_F(PciBusTests, LegacyInterruptWorkaround_PendingSkip) {
   fuchsia_hardware_pci::wire::Bdf device_a = {.bus_id = 0, .device_id = 0, .function_id = 0};
   fuchsia_hardware_pci::wire::Bdf device_b = {.bus_id = 0, .device_id = 1, .function_id = 0};
-  pciroot()
-      .ecam()
-      .get_device(device_a)
-      ->set_vendor_id(0x8086)
-      .set_device_id(0x8086)
-      .set_interrupt_pin(0x1);
-  pciroot()
-      .ecam()
-      .get_device(device_b)
-      ->set_vendor_id(0x8086)
-      .set_device_id(0x8086)
-      .set_interrupt_pin(0x1);
+  ecam().get_device(device_a)->set_vendor_id(0x8086).set_device_id(0x8086).set_interrupt_pin(0x1);
+  ecam().get_device(device_b)->set_vendor_id(0x8086).set_device_id(0x8086).set_interrupt_pin(0x1);
   constexpr uint8_t kVector = 0x10;
   zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
@@ -728,8 +807,7 @@ TEST_F(PciBusTests, LegacyInterruptWorkaround_PendingSkip) {
   board_config.use_intx_workaround(true);
   SetBoardConfiguration(std::move(board_config));
 
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
 
@@ -795,8 +873,7 @@ TEST_F(PciBusTests, LegacyInterruptWorkaround_PendingSkip) {
 
 TEST_F(PciBusTests, LegacyIrqHandlerErrorAndEdgeCases) {
   fuchsia_hardware_pci::wire::Bdf device_bdf = {.bus_id = 0, .device_id = 0, .function_id = 0};
-  pciroot()
-      .ecam()
+  ecam()
       .get_device(device_bdf)
       ->set_vendor_id(0x8086)
       .set_device_id(0x8086)
@@ -807,8 +884,7 @@ TEST_F(PciBusTests, LegacyIrqHandlerErrorAndEdgeCases) {
   AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
                        /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
 
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   auto* bus_device = bus->GetDevice(device_bdf);
@@ -858,7 +934,7 @@ TEST_F(PciBusTests, LegacyIrqHandlerErrorAndEdgeCases) {
 }
 
 TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
-  auto& ecam = pciroot().ecam();
+  auto& ecam = ecam_;
 
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1).set_header_type(
       kHeaderTypeMultiFn);
@@ -867,7 +943,7 @@ TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
   ecam.get_device({0, 1, 1})->set_vendor_id(0x8086).set_device_id(4);
 
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 3u);
@@ -876,7 +952,7 @@ TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {
 TEST_F(PciBusTests, MultiFnAllFunctionsScanned) {
   uint32_t dev_cnt = SetupMultifunctionTopology();
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), dev_cnt);
@@ -886,14 +962,13 @@ TEST_F(PciBusTests, MultiFnAllFunctionsScanned) {
 // fragment from the bus driver; the bus driver does not publish a composite node
 // spec for it (the devicetree owns the composite).
 TEST_F(PciBusTests, DevicetreeDeviceSkipsCompositeSpec) {
-  auto& ecam = pciroot().ecam();
+  auto& ecam = ecam_;
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1);
-  pciroot().devicetree_devices().push_back(
-      {/*bus_id=*/0x0, /*device_id=*/0x0, /*function_id=*/0x0});
+  devicetree_devices().push_back(fuchsia_hardware_pci::Bdf{{0, 0, 0}});
 
   g_pci_composite_spec_add_count = 0;
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
@@ -903,12 +978,12 @@ TEST_F(PciBusTests, DevicetreeDeviceSkipsCompositeSpec) {
 // The same topology without the devicetree entry: the bus driver publishes a
 // composite node spec as usual.
 TEST_F(PciBusTests, NonDevicetreeDeviceAddsCompositeSpec) {
-  auto& ecam = pciroot().ecam();
+  auto& ecam = ecam_;
   ecam.get_device({0, 0, 0})->set_vendor_id(0x8086).set_device_id(1);
 
   g_pci_composite_spec_add_count = 0;
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
@@ -916,8 +991,7 @@ TEST_F(PciBusTests, NonDevicetreeDeviceAddsCompositeSpec) {
 }
 
 TEST_F(PciBusTests, MetadataEmpty) {
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   EXPECT_TRUE(owned_bus->GetBoardConfiguration().IsEmpty());
   [[maybe_unused]] auto* bus = owned_bus.release();
@@ -925,8 +999,7 @@ TEST_F(PciBusTests, MetadataEmpty) {
 
 TEST_F(PciBusTests, MetadataPopulated) {
   SetBoardConfiguration({{PciFidl::UseIntxWorkaroundType()}});
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
+  auto owned_bus = std::make_unique<TestBus>(parent(), CreateRootClient(), info(), ecam().mmio());
   ASSERT_OK(owned_bus->Initialize());
   EXPECT_FALSE(owned_bus->GetBoardConfiguration().IsEmpty());
   EXPECT_TRUE(owned_bus->GetBoardConfiguration().use_intx_workaround().has_value());
@@ -934,7 +1007,7 @@ TEST_F(PciBusTests, MetadataPopulated) {
 }
 
 TEST_F(PciBusTests, ScanBusInvalidBridgeDoesNotCrash) {
-  auto& ecam = pciroot().ecam();
+  auto& ecam = ecam_;
   ecam.get_bridge({0, 1, 0})
       ->set_vendor_id(0x8086)
       .set_device_id(1)
@@ -945,7 +1018,7 @@ TEST_F(PciBusTests, ScanBusInvalidBridgeDoesNotCrash) {
 
   g_pci_composite_spec_add_count = 0;
   auto owned_bus =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus->Initialize());
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
@@ -954,7 +1027,7 @@ TEST_F(PciBusTests, ScanBusInvalidBridgeDoesNotCrash) {
 }
 
 TEST_F(PciBusTests, BridgeWindowsSurviveBusRestart) {
-  auto& ecam = pciroot().ecam();
+  auto& ecam = ecam_;
   ecam.get_bridge({0, 1, 0})
       ->set_vendor_id(0x8086)
       .set_device_id(1)
@@ -970,7 +1043,7 @@ TEST_F(PciBusTests, BridgeWindowsSurviveBusRestart) {
 
   {
     auto owned_bus =
-        std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+        std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
     ASSERT_OK(owned_bus->Initialize());
     auto* bus = owned_bus.release();
     ASSERT_EQ(bus->GetDeviceCount(), 2u);
@@ -991,7 +1064,7 @@ TEST_F(PciBusTests, BridgeWindowsSurviveBusRestart) {
   // Initializing a second TestBus against the same ECAM must parse the preserved
   // bridge windows and re-enable bridge decoding (PCI_COMMAND_MEM_EN / PCI_COMMAND_IO_EN).
   auto owned_bus2 =
-      std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(), std::nullopt);
+      std::make_unique<TestBus>(parent(), CreateRootClient(), info(), CreateConfigClient());
   ASSERT_OK(owned_bus2->Initialize());
   auto* bus2 = owned_bus2.release();
   ASSERT_EQ(bus2->GetDeviceCount(), 2u);

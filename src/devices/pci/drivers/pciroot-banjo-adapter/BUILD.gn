@@ -15,10 +15,6 @@ fuchsia_driver_dml("pciroot-banjo-adapter-dml") {
 driver_bind_rules("pciroot-banjo-adapter-bind") {
   dml_label = ":pciroot-banjo-adapter-dml"
   bind_output = "pciroot-banjo-adapter.bindbc"
-
-  # bus-pci still binds the Banjo pciroot node directly; keep the adapter from
-  # competing for it until bus-pci moves onto fuchsia.hardware.pci.root.
-  disable_autobind = true
   deps = [
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.pci",

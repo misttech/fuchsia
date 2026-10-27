@@ -4,11 +4,13 @@
 
 #include "src/devices/pci/drivers/pci/bus.h"
 
+#include <fidl/fuchsia.hardware.pci.root/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/natural_types.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
-#include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/device.h>
+#include <lib/ddk/driver.h>
 #include <lib/ddk/metadata.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -20,7 +22,9 @@
 #include <zircon/status.h>
 #include <zircon/syscalls/port.h>
 
+#include <algorithm>
 #include <list>
+#include <set>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
@@ -33,34 +37,61 @@
 
 namespace pci {
 
-zx_status_t pci_bus_bind(void* ctx, zx_device_t* parent) {
-  pciroot_protocol_t pciroot = {};
-  zx_status_t status = device_get_protocol(parent, ZX_PROTOCOL_PCIROOT, &pciroot);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "failed to obtain pciroot protocol: %s", zx_status_get_string(status));
-    return status;
+zx_status_t pci_bus_bind(void* ctx, zx_device_t* parent) { return Bus::Create(parent); }
+
+zx_status_t Bus::Create(zx_device_t* parent) {
+  zx::result root_client_end =
+      PciBusType::DdkConnectFidlProtocol<fuchsia_hardware_pci_root::RootService::Root>(parent);
+  if (root_client_end.is_error()) {
+    zxlogf(ERROR, "failed to connect to RootService: %s", root_client_end.status_string());
+    return root_client_end.status_value();
   }
 
-  pci_platform_info_t info = {};
-  status = pciroot_get_pci_platform_info(&pciroot, &info);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "failed to obtain platform information: %s!", zx_status_get_string(status));
-    return status;
+  fidl::WireSyncClient<fuchsia_hardware_pci_root::Root> root_client(std::move(*root_client_end));
+  auto info_result = root_client->GetPlatformInfo();
+  if (!info_result.ok()) {
+    zxlogf(ERROR, "failed to send GetPlatformInfo request: %s", info_result.status_string());
+    return info_result.status();
+  }
+  if (info_result->is_error()) {
+    zxlogf(ERROR, "failed to obtain platform information from Root: %s",
+           zx_status_get_string(info_result->error_value()));
+    return info_result->error_value();
   }
 
-  // A PCI bus should have an ecam, but they are not mandatory per spec depending on the
-  // platform tables offered to us.
-  std::optional<fdf::MmioBuffer> ecam;
-  if (info.cam.vmo != ZX_HANDLE_INVALID) {
-    if (auto result = pci::Bus::MapConfigRegion(zx::vmo(info.cam.vmo)); result.is_ok()) {
-      ecam = std::move(result.value());
-    } else {
-      return result.status_value();
-    }
+  fuchsia_hardware_pci_root::PlatformInfo info = fidl::ToNatural(info_result->value()->info);
+
+  auto cam_result = root_client->GetCam();
+  if (!cam_result.ok()) {
+    zxlogf(ERROR, "failed to send GetCam request: %s", cam_result.status_string());
+    return cam_result.status();
   }
 
   fbl::AllocChecker ac;
-  auto bus = std::unique_ptr<pci::Bus>(new (&ac) pci::Bus(parent, &pciroot, info, std::move(ecam)));
+  std::unique_ptr<pci::Bus> bus;
+  if (cam_result->is_ok()) {
+    zx::result mmio_result = pci::Bus::MapConfigRegion(std::move(cam_result->value()->vmo));
+    if (mmio_result.is_error()) {
+      zxlogf(ERROR, "failed to map cam vmo: %s", mmio_result.status_string());
+      return mmio_result.status_value();
+    }
+    bus.reset(new (&ac) pci::Bus(parent, root_client.TakeClientEnd(), std::move(info),
+                                 std::move(*mmio_result), cam_result->value()->is_extended));
+  } else if (cam_result->error_value() == ZX_ERR_NOT_SUPPORTED) {
+    zx::result config_client_end =
+        PciBusType::DdkConnectFidlProtocol<fuchsia_hardware_pci_root::ConfigService::Config>(
+            parent);
+    if (config_client_end.is_error()) {
+      zxlogf(ERROR, "failed to connect to ConfigService: %s", config_client_end.status_string());
+      return config_client_end.status_value();
+    }
+    bus.reset(new (&ac) pci::Bus(parent, root_client.TakeClientEnd(), std::move(info),
+                                 std::move(*config_client_end)));
+  } else {
+    zxlogf(ERROR, "failed to get cam from Root: %s",
+           zx_status_get_string(cam_result->error_value()));
+    return cam_result->error_value();
+  }
   if (!ac.check()) {
     zxlogf(ERROR, "failed to allocate bus object");
     return ZX_ERR_NO_MEMORY;
@@ -104,23 +135,14 @@ zx_status_t Bus::Initialize() {
     board_config_ = std::move(result.value());
   }
 
-  // Stash the ops/ctx pointers for the pciroot protocol so we can pass
-  // them to the allocators provided by Pci(e)Root. The initial root is
-  // created to manage the start of the bus id range given to use by the
-  // pciroot protocol.
+  // Pass the root client to the allocators provided by Pci(e)Root. The initial root is
+  // created to manage the start of the bus id range given to us by RootService.
   fbl::AllocChecker ac;
-  root_ = std::unique_ptr<PciRoot>(new (&ac) PciRoot(info_.start_bus_num, pciroot_));
+  root_ = std::unique_ptr<PciRoot>(new (&ac) PciRoot(info_.start_bus_num(), root_client_));
   if (!ac.check()) {
     zxlogf(ERROR, "failed to allocate root");
     return ZX_ERR_NO_MEMORY;
   }
-
-  acpi_devices_ = cpp20::span<const pci_bdf_t>(info_.acpi_bdfs_list, info_.acpi_bdfs_count);
-  devicetree_devices_ =
-      cpp20::span<const pci_bdf_t>(info_.devicetree_bdfs_list, info_.devicetree_bdfs_count);
-  irqs_ = cpp20::span<const pci_legacy_irq>(info_.legacy_irqs_list, info_.legacy_irqs_count);
-  irq_routing_entries_ =
-      cpp20::span<const pci_irq_routing_entry_t>(info_.irq_routing_list, info_.irq_routing_count);
 
   // Begin our bus scan starting at our root
   ScanDownstream();
@@ -158,15 +180,12 @@ zx::result<fdf::MmioBuffer> Bus::MapConfigRegion(zx::vmo cam_vmo) {
 
 zx::result<std::unique_ptr<Config>> Bus::MakeConfig(fuchsia_hardware_pci::wire::Bdf bdf) {
   if (ecam_) {
-    zx::result result = MmioConfig::Create(bdf, ecam_.value(), info_.start_bus_num,
-                                           info_.end_bus_num, info_.cam.is_extended);
-    if (result.is_error()) {
-      return result.take_error();
-    }
-    return zx::ok(std::move(result.value()));
+    return MmioConfig::Create(bdf, ecam_.value(), info_.start_bus_num(), info_.end_bus_num(),
+                              is_extended_);
   }
 
-  return ProxyConfig::Create(bdf, &pciroot_);
+  ZX_ASSERT(config_client_.is_valid());
+  return ProxyConfig::Create(bdf, config_client_);
 }
 
 // Scan downstream starting at the bus id managed by the Bus's Root.
@@ -296,50 +315,77 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
 }
 
 bool Bus::DeviceHasAcpi(fuchsia_hardware_pci::wire::Bdf bdf) {
-  auto find_fn = [&bdf](const pci_bdf_t& entry) -> bool {
-    return bdf.bus_id == entry.bus_id && bdf.device_id == entry.device_id &&
-           bdf.function_id == entry.function_id;
+  if (!info_.parent_bdfs().has_value() ||
+      info_.parent_bdfs()->Which() != fuchsia_hardware_pci_root::ParentBdfs::Tag::kAcpi) {
+    return false;
+  }
+  const auto& bdfs = info_.parent_bdfs()->acpi().value();
+  auto find_fn = [&bdf](const fuchsia_hardware_pci::Bdf& entry) -> bool {
+    return bdf.bus_id == entry.bus_id() && bdf.device_id == entry.device_id() &&
+           bdf.function_id == entry.function_id();
   };
-  return std::find_if(acpi_devices_.begin(), acpi_devices_.end(), find_fn) !=
-         std::end(acpi_devices_);
+  return std::ranges::find_if(bdfs, find_fn) != std::end(bdfs);
 }
 
 bool Bus::DeviceHasDevicetree(fuchsia_hardware_pci::wire::Bdf bdf) {
-  auto find_fn = [&bdf](const pci_bdf_t& entry) -> bool {
-    return bdf.bus_id == entry.bus_id && bdf.device_id == entry.device_id &&
-           bdf.function_id == entry.function_id;
+  if (!info_.parent_bdfs().has_value() ||
+      info_.parent_bdfs()->Which() != fuchsia_hardware_pci_root::ParentBdfs::Tag::kDevicetree) {
+    return false;
+  }
+  const auto& bdfs = info_.parent_bdfs()->devicetree().value();
+  auto find_fn = [&bdf](const fuchsia_hardware_pci::Bdf& entry) -> bool {
+    return bdf.bus_id == entry.bus_id() && bdf.device_id == entry.device_id() &&
+           bdf.function_id == entry.function_id();
   };
-  return std::find_if(devicetree_devices_.begin(), devicetree_devices_.end(), find_fn) !=
-         std::end(devicetree_devices_);
+  return std::ranges::find_if(bdfs, find_fn) != std::end(bdfs);
 }
 
 zx_status_t Bus::SetUpLegacyIrqHandlers() {
   // Most cases devices will use MSI / MSI-X anyway so warnings are sufficient on bind failure.
-  for (auto& irq : irqs_) {
-    zx::interrupt interrupt(irq.interrupt);
+  std::set<uint32_t> vectors;
+  for (const auto& entry : info_.irq_routing()) {
+    for (uint8_t pin : entry.pins()) {
+      if (pin != 0) {
+        vectors.insert(pin);
+      }
+    }
+  }
+
+  for (uint32_t vector : vectors) {
+    fidl::WireResult result = root_client_->GetLegacyInterrupt(vector);
+    if (!result.ok()) {
+      zxlogf(WARNING, "failed to send GetLegacyInterrupt request: %s", result.status_string());
+      continue;
+    }
+    if (result->is_error()) {
+      zxlogf(WARNING, "legacy interrupt vector %#x unavailable: %s", vector,
+             zx_status_get_string(result->error_value()));
+      continue;
+    }
+
     fbl::AllocChecker ac;
     auto shared_vector = std::unique_ptr<SharedVector>(new (&ac) SharedVector());
     if (!ac.check()) {
-      zxlogf(ERROR, "failed to allocate shared vector for irq %#x", irq.vector);
+      zxlogf(ERROR, "failed to allocate shared vector for irq %#x", vector);
       return ZX_ERR_NO_MEMORY;
     }
-    shared_vector->interrupt = std::move(interrupt);
+    shared_vector->interrupt = std::move(result->value()->interrupt);
     shared_vector->irq_handler.set_object(shared_vector->interrupt.get());
-    shared_vector->irq_handler.set_handler(
-        [this, vector = irq.vector](async_dispatcher_t* dispatcher, async::Irq* irq,
-                                    zx_status_t status, const zx_packet_interrupt_t* interrupt) {
-          HandleLegacyIrq(dispatcher, irq, status, interrupt, vector);
-        });
+    shared_vector->irq_handler.set_handler([this, vector](async_dispatcher_t* dispatcher,
+                                                          async::Irq* irq, zx_status_t status,
+                                                          const zx_packet_interrupt_t* interrupt) {
+      HandleLegacyIrq(dispatcher, irq, status, interrupt, vector);
+    });
 
     zx_status_t status = shared_vector->irq_handler.Begin(dispatcher_);
     if (status != ZX_OK) {
-      zxlogf(WARNING, "failed to bind irq %#x to dispatcher: %s", irq.vector,
+      zxlogf(WARNING, "failed to bind irq %#x to dispatcher: %s", vector,
              zx_status_get_string(status));
       return status;
     }
 
     // Every vector has a list of devices associated with it that are wired to that IRQ.
-    shared_irqs_[irq.vector] = std::move(shared_vector);
+    shared_irqs_[vector] = std::move(shared_vector);
   }
 
   return ZX_OK;
@@ -362,6 +408,9 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
     // has no legacy interrupt. PCI Local Bus Spec v3 Section 2.2.6.
     if (pin == 0 && board_config_.use_intx_workaround().has_value()) {
       pin = 1;  // TODO(365837900): Re-add 'continue' here when crosvm Interrupt Pin is populated.
+    }
+    if (pin == 0 || pin > kMaxLegacyIrqPins) {
+      continue;
     }
 
     // To avoid devices all ending up on the same pin the PCI bridge spec
@@ -388,20 +437,23 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
 
     // If we didn't find a parent then the device must be a root complex endpoint.
     if (!port) {
-      port = {.device_id = PCI_IRQ_ROUTING_NO_PARENT, .function_id = PCI_IRQ_ROUTING_NO_PARENT};
+      port = {
+          .device_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+          .function_id = static_cast<uint8_t>(fuchsia_hardware_pci_root::kIrqRoutingNoParent),
+      };
     }
 
     // There must be a routing entry for a given device / root port combination
     // in order for a device's legacy IRQ to work. Attempt to find it and use
     // the newly swizzled pin value to find the hardware vector.
-    auto find_fn = [&device, port](auto& entry) -> bool {
-      return entry.port_device_id == port->device_id &&
-             entry.port_function_id == port->function_id && entry.device_id == device->dev_id();
+    auto find_fn = [&device, port](const auto& entry) -> bool {
+      return entry.port_device_id() == port->device_id &&
+             entry.port_function_id() == port->function_id && entry.device_id() == device->dev_id();
     };
 
-    auto found = std::find_if(irq_routing_entries_.begin(), irq_routing_entries_.end(), find_fn);
-    if (found != std::end(irq_routing_entries_)) {
-      uint8_t vector = found->pins[pin - 1];
+    auto found = std::find_if(info_.irq_routing().begin(), info_.irq_routing().end(), find_fn);
+    if (found != std::end(info_.irq_routing())) {
+      uint8_t vector = found->pins()[pin - 1];
       device->config()->Write(Config::kInterruptLine, vector);
       zxlogf(DEBUG, "[%s] pin %u mapped to %#x", device->config()->addr(), pin, vector);
     } else {

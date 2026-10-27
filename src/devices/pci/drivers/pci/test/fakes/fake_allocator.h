@@ -4,7 +4,7 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_ALLOCATOR_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_FAKE_ALLOCATOR_H_
 
-#include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <lib/fake-resource/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
@@ -23,8 +23,8 @@ namespace pci {
 // provide backing memory without requiring bus driver teardown tracking.
 class FakeAllocation : public PciAllocation {
  public:
-  FakeAllocation(pci_address_space_t type, std::optional<zx_paddr_t> base, size_t size,
-                 zx::resource resource = zx::resource(ZX_HANDLE_INVALID))
+  FakeAllocation(fuchsia_hardware_pci_root::AddressSpace type, std::optional<zx_paddr_t> base,
+                 size_t size, zx::resource resource = zx::resource(ZX_HANDLE_INVALID))
       : PciAllocation(type, std::move(resource)),
         base_((base.has_value()) ? *base : 0),
         size_(size) {
@@ -46,8 +46,9 @@ class FakeAllocation : public PciAllocation {
       return result;
     }
     zx_handle_t handle = ZX_HANDLE_INVALID;
-    zx_rsrc_kind_t kind =
-        (type() == PCI_ADDRESS_SPACE_MEMORY) ? ZX_RSRC_KIND_MMIO : ZX_RSRC_KIND_IOPORT;
+    zx_rsrc_kind_t kind = (type() == fuchsia_hardware_pci_root::AddressSpace::kMemory)
+                              ? ZX_RSRC_KIND_MMIO
+                              : ZX_RSRC_KIND_IOPORT;
     ZX_DEBUG_ASSERT(fake_resource_create(kind, &handle) == ZX_OK);
     return zx::ok(zx::resource(handle));
   }
@@ -68,7 +69,7 @@ struct AllocationLogEntry {
 // |FailNextAllocation|.
 class FakeAllocator : public PciAllocator {
  public:
-  explicit FakeAllocator(pci_address_space_t type) : PciAllocator(type) {}
+  explicit FakeAllocator(fuchsia_hardware_pci_root::AddressSpace type) : PciAllocator(type) {}
   // Arms the allocator to fail the next allocation. If |assigned_only| is true
   // (default), only fails allocations that request a specific base address.
   void FailNextAllocation(bool assigned_only = true) {

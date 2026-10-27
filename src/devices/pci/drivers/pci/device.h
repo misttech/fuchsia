@@ -5,6 +5,7 @@
 #define SRC_DEVICES_PCI_DRIVERS_PCI_DEVICE_H_
 
 #include <assert.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pci/cpp/wire_types.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
@@ -310,8 +311,8 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // configuring downstream BARs..
   virtual zx::result<> AllocateBars() __TA_EXCLUDES(dev_lock_) __TA_EXCLUDES(cmd_reg_lock_);
   zx::result<> ConfigureCapabilities() __TA_EXCLUDES(dev_lock_);
-  zx::result<std::pair<zx::msi, msi_allocation_info_t>> AllocateMsi(uint32_t irq_cnt)
-      __TA_REQUIRES(dev_lock_);
+  zx::result<std::pair<zx::msi, fuchsia_hardware_pci_root::wire::MsiAllocationInfo>> AllocateMsi(
+      uint32_t irq_cnt) __TA_REQUIRES(dev_lock_);
   zx_status_t VerifyAllMsisFreed() __TA_REQUIRES(dev_lock_);
 
   // Disable a device, and anything downstream of it.  The device will

@@ -20,6 +20,7 @@
 namespace pci {
 
 namespace fpci = fuchsia_hardware_pci;
+namespace fpci_root = fuchsia_hardware_pci_root;
 
 zx::result<uint32_t> Device::QueryIrqMode(fpci::InterruptMode mode) {
   const fbl::AutoLock dev_lock(&dev_lock_);
@@ -212,9 +213,10 @@ void Device::DisableLegacyIrq() {
   irqs_.legacy_disabled = true;
 }
 
-zx::result<std::pair<zx::msi, msi_allocation_info_t>> Device::AllocateMsi(uint32_t irq_cnt) {
+zx::result<std::pair<zx::msi, fpci_root::wire::MsiAllocationInfo>> Device::AllocateMsi(
+    uint32_t irq_cnt) {
   zx::msi msi;
-  msi_allocation_info_t info{};
+  fpci_root::wire::MsiAllocationInfo info{};
   zx_status_t st = bdi_->AllocateMsi(irq_cnt, &msi, &info);
   if (st != ZX_OK) {
     return zx::error(st);

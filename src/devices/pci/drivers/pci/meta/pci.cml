@@ -21,6 +21,11 @@
     ],
     use: [
         { service: "fuchsia.hardware.pci.BoardConfiguration" },
+        {
+            service: "fuchsia.hardware.pci.root.ConfigService",
+            availability: "optional",
+        },
+        { service: "fuchsia.hardware.pci.root.RootService" },
     ],
     expose: [
         {

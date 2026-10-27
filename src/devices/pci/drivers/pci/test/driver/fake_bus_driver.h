@@ -10,7 +10,6 @@
 
 #include "src/devices/pci/drivers/pci/test/driver/driver_tests.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_bus.h"
-#include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
 #include "src/devices/pci/drivers/pci/test/fakes/fake_upstream_node.h"
 
 namespace pci {
@@ -34,10 +33,10 @@ class FakeBusDriver : public FakeBusDriverType {
                            uint16_t did = PCI_TEST_DRIVER_DID);
 
   FakePciType0Config* GetDevice(fuchsia_hardware_pci::wire::Bdf bdf) {
-    return bus().pciroot().ecam().get_device(bdf);
+    return bus().ecam().get_device(bdf);
   }
   FakePciType1Config* GetBridge(fuchsia_hardware_pci::wire::Bdf bdf) {
-    return bus().pciroot().ecam().get_bridge(bdf);
+    return bus().ecam().get_bridge(bdf);
   }
 
   FakeUpstreamNode& upstream() { return upstream_; }

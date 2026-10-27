@@ -73,7 +73,7 @@ closed protocol Root {
     /// ZX_ERR_NOT_SUPPORTED when the root has no MMIO config space, in which
     /// case config space is reached through the `Config` protocol.
     strict GetCam() -> (resource struct {
-        vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP>;
+        vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.DUPLICATE | zx.Rights.TRANSFER>;
         is_extended bool;
     }) error zx.Status;
 

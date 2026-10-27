@@ -110,10 +110,10 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
 
 void Bus::GetHostBridgeInfo(GetHostBridgeInfoCompleter::Sync& completer) {
   PciFidl::wire::HostBridgeInfo info = {
-      .name = fidl::StringView::FromExternal(info_.name),
-      .start_bus_number = info_.start_bus_num,
-      .end_bus_number = info_.end_bus_num,
-      .segment_group = info_.segment_group,
+      .name = fidl::StringView::FromExternal(info_.name()),
+      .start_bus_number = info_.start_bus_num(),
+      .end_bus_number = info_.end_bus_num(),
+      .segment_group = info_.segment_group(),
   };
   completer.Reply(info);
 }

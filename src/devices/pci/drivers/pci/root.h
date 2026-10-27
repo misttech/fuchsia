@@ -44,16 +44,16 @@ class PciRoot : public UpstreamNode {
  protected:
   // PciRootAllocators can be trivially constructed because they only need
   // a way to call protocol operations. We set three of them up for the root
-  // to use for accessing address space over the pciroot protocol.
+  // to use for accessing address space over RootService.
   //
   // 1) mmio which tries to get mmio addresses < 4GB
   // 2) pf_mmio which will allocate anywhere in the mmio space
   // 3) pio which will attempt to allocate from the pio allocator
-  PciRoot(uint32_t mbus_id, ddk::PcirootProtocolClient proto)
+  PciRoot(uint32_t mbus_id, const fidl::WireSyncClient<fuchsia_hardware_pci_root::Root>& root)
       : UpstreamNode(UpstreamNode::Type::ROOT, mbus_id),
-        mmio_regions_(proto, PCI_ADDRESS_SPACE_MEMORY, true),
-        pf_mmio_regions_(proto, PCI_ADDRESS_SPACE_MEMORY, false),
-        pio_regions_(proto, PCI_ADDRESS_SPACE_IO, false) {}
+        mmio_regions_(root, fuchsia_hardware_pci_root::AddressSpace::kMemory, true),
+        pf_mmio_regions_(root, fuchsia_hardware_pci_root::AddressSpace::kMemory, false),
+        pio_regions_(root, fuchsia_hardware_pci_root::AddressSpace::kIo, false) {}
 
  private:
   PciRootAllocator mmio_regions_;
@@ -67,8 +67,9 @@ class PciRoot : public UpstreamNode {
 // The PcieRoot derived version exists for support of RCRB (root complex
 // register block), but is not implemented yet.
 class PcieRoot : public PciRoot {
-  PcieRoot(uint32_t managed_bus_id, ddk::PcirootProtocolClient proto)
-      : PciRoot(managed_bus_id, proto) {}
+  PcieRoot(uint32_t managed_bus_id,
+           const fidl::WireSyncClient<fuchsia_hardware_pci_root::Root>& root)
+      : PciRoot(managed_bus_id, root) {}
   virtual ~PcieRoot() {}
 };
 

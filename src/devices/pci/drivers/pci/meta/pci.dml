@@ -7,7 +7,7 @@
     program: {
         compat: "driver/bus-pci.so",
         colocate: "true",
-        bind: { banjo: "fuchsia.pci.BIND_PROTOCOL.ROOT" },
+        bind: { service: "fuchsia.hardware.pci.root.RootService" },
     },
     capabilities: [
         { service: "fuchsia.hardware.pci.Service" },
@@ -17,6 +17,17 @@
         {
             name: "default",
             service: "fuchsia.hardware.pci.BoardConfiguration",
+            generate_bind_rule: false,
+        },
+        {
+            name: "default",
+            service: "fuchsia.hardware.pci.root.RootService",
+            generate_bind_rule: false,
+        },
+        {
+            name: "default",
+            service: "fuchsia.hardware.pci.root.ConfigService",
+            availability: "optional",
             generate_bind_rule: false,
         },
     ],

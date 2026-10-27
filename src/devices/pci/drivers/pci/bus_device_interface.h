@@ -4,9 +4,11 @@
 // found in the LICENSE file.
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_BUS_DEVICE_INTERFACE_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_BUS_DEVICE_INTERFACE_H_
-#include <fuchsia/hardware/pciroot/c/banjo.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/wire.h>
 #include <lib/zx/bti.h>
+#include <lib/zx/interrupt.h>
 #include <lib/zx/msi.h>
+#include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <zircon/errors.h>
 
@@ -28,8 +30,8 @@ class BusDeviceInterface {
   virtual zx_status_t GetBti(const pci::Device* device, uint32_t index, zx::bti* bti) = 0;
   virtual uint16_t GetSegmentGroup() = 0;
   // Allocate |count| messagge signaled interrupts for a device.
-  virtual zx_status_t AllocateMsi(uint32_t count, zx::msi* msi,
-                                  msi_allocation_info_t* out_info) = 0;
+  virtual zx_status_t AllocateMsi(uint32_t count, zx::msi* out_allocation,
+                                  fuchsia_hardware_pci_root::wire::MsiAllocationInfo* out_info) = 0;
   virtual zx_status_t GetMsiHandle(const zx::msi& allocation, uint32_t options, uint16_t msi_id,
                                    const zx::vmo& cfg_vmo, uint64_t cfg_offset,
                                    zx::interrupt* out_interrupt) = 0;

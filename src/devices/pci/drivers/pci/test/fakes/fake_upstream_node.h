@@ -15,12 +15,12 @@ class FakeUpstreamNode : public UpstreamNode {
  public:
   FakeUpstreamNode(Type type, uint32_t mbus_id)
       : UpstreamNode(type, mbus_id),
-        pf_mmio_alloc_(PCI_ADDRESS_SPACE_MEMORY),
-        mmio_alloc_(PCI_ADDRESS_SPACE_MEMORY),
+        pf_mmio_alloc_(fuchsia_hardware_pci_root::AddressSpace::kMemory),
+        mmio_alloc_(fuchsia_hardware_pci_root::AddressSpace::kMemory),
 #ifdef __x86_64__
-        pio_alloc_(PCI_ADDRESS_SPACE_IO)
+        pio_alloc_(fuchsia_hardware_pci_root::AddressSpace::kIo)
 #elif defined(__aarch64__) || defined(__riscv)
-        pio_alloc_(PCI_ADDRESS_SPACE_MEMORY)
+        pio_alloc_(fuchsia_hardware_pci_root::AddressSpace::kMemory)
 #endif
   {
   }

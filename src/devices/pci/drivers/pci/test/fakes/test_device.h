@@ -4,7 +4,7 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_TEST_DEVICE_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_FAKES_TEST_DEVICE_H_
 
-#include <fuchsia/hardware/pciroot/c/banjo.h>
+#include <fidl/fuchsia.hardware.pci.root/cpp/fidl.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
@@ -345,23 +345,22 @@ constexpr size_t kFakeQuadroMsiXIrqCnt = 5;
 // explanation.
 static constexpr struct test_bar_info_t {
     pci_bar_type_t bar_type;
-    pci_address_space_t address_type;
+    fuchsia_hardware_pci_root::AddressSpace address_type;
     bool is_upper_half;
     uint16_t address;
     uint32_t size;
 } kTestDeviceBars[6] = {
-    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = false, .address = UINT16_MAX, .size = 16 * 1024 * 1024 },
-    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = false, .address = UINT16_MAX, .size = 256 * 1024 * 1024 },
-    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = false, .address = UINT16_MAX, .size = 1 * 1024 * 1024  },
-    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = false, .address = UINT16_MAX, .size = 32 * 1024 * 1024 },
-    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = true,  .address = UINT16_MAX, .size = 0 },
+    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = false, .address = UINT16_MAX, .size = 16 * 1024 * 1024 },
+    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = false, .address = UINT16_MAX, .size = 256 * 1024 * 1024 },
+    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = false, .address = UINT16_MAX, .size = 1 * 1024 * 1024  },
+    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = false, .address = UINT16_MAX, .size = 32 * 1024 * 1024 },
+    { .bar_type = PCI_BAR_TYPE_MMIO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = true,  .address = UINT16_MAX, .size = 0 },
 #ifdef __x86_64__
-    { .bar_type = PCI_BAR_TYPE_IO, .address_type = PCI_ADDRESS_SPACE_IO, .is_upper_half = false, .address = 0x2000,     .size = 128 },
+    { .bar_type = PCI_BAR_TYPE_IO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kIo, .is_upper_half = false, .address = 0x2000,     .size = 128 },
 #elif defined(__aarch64__) || defined(__riscv)
-    { .bar_type = PCI_BAR_TYPE_IO, .address_type = PCI_ADDRESS_SPACE_MEMORY, .is_upper_half = false, .address = 0x2000,     .size = 4096 },
+    { .bar_type = PCI_BAR_TYPE_IO, .address_type = fuchsia_hardware_pci_root::AddressSpace::kMemory, .is_upper_half = false, .address = 0x2000,     .size = 4096 },
 #else
-    // Trigger an error on unsupported architectures.
-    { .address_type = PCI_ADDRESS_SPACE_NONE }
+#error "Unsupported architecture"
 #endif
 
 
