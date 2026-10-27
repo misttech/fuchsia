@@ -126,7 +126,8 @@
                 "num_children": { "type": "integer" },
                 "num_mappings": { "type": "integer" },
                 "share_count": { "type": "integer" },
-                "committed_bytes": { "type": "integer" }
+                "committed_bytes": { "type": "integer" },
+                "committed_scaled_bytes": { "type": "integer" }
             },
             "required": [ "koid" ]
         },

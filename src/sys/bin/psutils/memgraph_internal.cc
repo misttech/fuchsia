@@ -47,10 +47,11 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
                  "\"num_mappings\": {}, "
                  "\"share_count\": {}, "
                  // TODO(https://fxbug.dev/575725855): copy-on-write? phys/paged?
-                 "\"committed_bytes\": {}}}{}",
+                 "\"committed_bytes\": {}, "
+                 "\"committed_scaled_bytes\": {}}}{}",
                  vmo->koid, static_cast<const char*>(vmo->name), vmo->size_bytes, vmo->parent_koid,
                  vmo->num_children, vmo->num_mappings, vmo->share_count, vmo->committed_bytes,
-                 delim);
+                 vmo->committed_scaled_bytes, delim);
   }
   std::println(out, "   ],");
   // List of references from this task to the VMOs listed above. May include
@@ -69,13 +70,17 @@ void print_vmos(std::ostream& out, const zx_info_vmo_t* vmos, size_t count) {
       std::print(out, "\"HANDLE\"");
       need_comma = true;
     }
+    if (vmo->flags & ZX_INFO_VMO_VIA_IOB_HANDLE) {
+      std::print(out, "{}\"IOB_HANDLE\"", need_comma ? ", " : "");
+      need_comma = true;
+    }
     if (vmo->flags & ZX_INFO_VMO_VIA_MAPPING) {
       std::print(out, "{}\"MAPPING\"", need_comma ? ", " : "");
       // Future improvement: Could use ZX_INFO_PROCESS_MAPS to include
       // specifics of how this VMO is mapped.
     }
     std::print(out, "]");
-    if (vmo->flags & ZX_INFO_VMO_VIA_HANDLE) {
+    if (vmo->flags & (ZX_INFO_VMO_VIA_HANDLE | ZX_INFO_VMO_VIA_IOB_HANDLE)) {
       need_comma = false;
       std::print(out, ", \"handle_rights\": [");
 
