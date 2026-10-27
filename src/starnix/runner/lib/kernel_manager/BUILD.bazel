@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LTO OOMs out on RBE default workers, so use bigger workers.
+# @bazel2gn:raw_attribute:if (is_lto_variant || optimize == "size_lto" || optimize == "size_thinlto") { _concurrent_jobs = concurrent_jobs.link_highmem configs += _concurrent_jobs.configs forward_variables_from(_concurrent_jobs.vars, "*") }
+rustc_library(
+    name = "kernel_manager",
+    srcs = [
+        "src/kernels.rs",
+        "src/lib.rs",
+        "src/pager.rs",
+        "src/proxy.rs",
+        "src/suspend.rs",
+    ],
+    edition = "2024",
+    lint_config = "//src/starnix/build:kernel_library_config",
+    visibility = ["//src/starnix/runner:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container_rust",
+        "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",
+        "//sdk/lib/scheduler/rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/trace/rust:trace",
+        "//src/performance/memory/attribution/refaults_vmo",
+        "//src/starnix/kernel/core",
+        "//src/starnix/lib/starnix_logging",
+        "//src/starnix/lib/starnix_sync",
+        "//src/starnix/lib/starnix_uapi",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-channel",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:scopeguard",
+    ],
+)
+
+# Bazel test packaging blocked: //src/starnix/kernel/core depends on GN-only
+# //src/starnix/kernel/vdso runtime resource.
+rustc_test(
+    name = "kernel_manager_test",
+    crate = ":kernel_manager",
+    crate_name = "kernel_manager_lib_test",
+    edition = "2024",
+    lint_config = "//src/starnix/config:starnix_clippy_lints_test",
+    deps = ["//src/lib/fuchsia"],
+)
