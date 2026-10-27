@@ -948,6 +948,125 @@ fn implicit_result_return_matches_cpp_status_check() {
 }
 
 #[test]
+fn null_check_with_question_mark_for_option() {
+    let cpp = concat!(
+        "zx_status_t lamp_set_name(Lamp* lamp, const char* name, size_t len) {\n",
+        "  if (lamp == nullptr) {\n",
+        "    return ZX_ERR_BAD_STATE;\n",
+        "  }\n",
+        "  lamp->set_name({name, len});\n",
+        "  return ZX_OK;\n",
+        "}\n",
+    );
+    let rust = concat!(
+        "pub fn lamp_set_name(lamp: Option<&mut Lamp>, name: &[u8]) -> Result<(), Status> {\n",
+        "    let lamp = lamp.ok_or(Status::BAD_STATE)?;\n",
+        "    lamp.set_name(name);\n",
+        "    Ok(())\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp, rust);
+    assert!(issues.is_empty(), "{issues:?}");
+
+    // Also works when C++ returns nullptr, matching Rust Option propagation `?`.
+    let cpp_opt = concat!(
+        "Bulb* lamp_get_bulb(Lamp* lamp) {\n",
+        "  if (lamp == nullptr) {\n",
+        "    return nullptr;\n",
+        "  }\n",
+        "  return lamp->bulb();\n",
+        "}\n",
+    );
+    let rust_opt = concat!(
+        "pub fn lamp_get_bulb(lamp: Option<&Lamp>) -> Option<&Bulb> {\n",
+        "    let lamp = lamp?;\n",
+        "    Some(lamp.bulb())\n",
+        "}\n",
+    );
+    let issues_opt = only_issues(cpp_opt, rust_opt);
+    assert!(issues_opt.is_empty(), "{issues_opt:?}");
+
+    // Mismatched error code is still reported.
+    let rust_diff_err = rust.replace("Status::BAD_STATE", "Status::INVALID_ARGS");
+    let issues_diff = only_issues(cpp, &rust_diff_err);
+    assert!(
+        issues_diff.iter().any(|m| m.contains("error codes differ") || m.contains("INVALID_ARGS")),
+        "{issues_diff:?}"
+    );
+}
+
+#[test]
+fn strlcpy_matches_bounded_slice_copy() {
+    let cpp = concat!(
+        "zx_status_t lamp_get_name(char (&out_name)[ZX_MAX_NAME_LEN], const Lamp* lamp) {\n",
+        "  memset(out_name, 0, ZX_MAX_NAME_LEN);\n",
+        "  strlcpy(out_name, lamp->name(), ZX_MAX_NAME_LEN);\n",
+        "  return ZX_OK;\n",
+        "}\n",
+    );
+    let rust = concat!(
+        "pub fn lamp_get_name(out_name: &mut [u8; ZX_MAX_NAME_LEN], lamp: &Lamp) -> Result<(), Status> {\n",
+        "    *out_name = [0; ZX_MAX_NAME_LEN];\n",
+        "    let name = lamp.name().to_bytes();\n",
+        "    // Bound the copy so the trailing NUL in `out_name` always survives.\n",
+        "    let len = name.len().min(ZX_MAX_NAME_LEN - 1);\n",
+        "    out_name[..len].copy_from_slice(&name[..len]);\n",
+        "    Ok(())\n",
+        "}\n",
+    );
+    let issues = only_issues(cpp, rust);
+    assert!(issues.is_empty(), "{issues:?}");
+}
+
+#[test]
+fn implement_dispatcher_rust_state_stays_in_cpp() {
+    let cpp_old = concat!(
+        "Lock<CriticalMutex>* LampDispatcher::get_lock() const {\n",
+        "  return rust_lamp_dispatcher_state_get_lock(&opaque_storage_);\n",
+        "}\n",
+        "LampDispatcher::~LampDispatcher() {\n",
+        "  rust_lamp_dispatcher_state_destroy(&opaque_storage_);\n",
+        "}\n",
+        "zx_status_t LampDispatcher::glow() {\n",
+        "  return ZX_OK;\n",
+        "}\n",
+    );
+    let cpp_new = concat!(
+        "IMPLEMENT_DISPATCHER_RUST_STATE(LampDispatcher, rust_lamp_dispatcher_state_get_lock,\n",
+        "                                rust_lamp_dispatcher_state_destroy)\n",
+    );
+    let rust = concat!(
+        "impl LampDispatcher {\n",
+        "    pub fn glow(&self) -> Result<(), Status> {\n",
+        "        Ok(())\n",
+        "    }\n",
+        "}\n",
+    );
+    let cs = ChangeSet {
+        cpp_old: vec![babeldiff::input::Version {
+            path: "lamp_dispatcher.cc".into(),
+            text: cpp_old.into(),
+            changed: None,
+        }],
+        cpp_new: vec![babeldiff::input::Version {
+            path: "lamp_dispatcher.cc".into(),
+            text: cpp_new.into(),
+            changed: None,
+        }],
+        rust_new: vec![babeldiff::input::Version {
+            path: "lamp_dispatcher.rs".into(),
+            text: rust.into(),
+            changed: None,
+        }],
+    };
+    let report = babeldiff::run(&cs, &Options::default(), &mut NoFinder);
+    assert_eq!(report.pairs.len(), 1);
+    assert_eq!(report.pairs[0].cpp.base, "glow");
+    assert_eq!(report.pairs[0].rust.base, "glow");
+    assert!(report.unmatched_cpp.is_empty(), "unmatched C++: {:#?}", report.unmatched_cpp);
+}
+
+#[test]
 fn do_while_matches_loop_break() {
     let cpp = "void wait_for_event(Lamp* lamp, uint32_t prev_seq, uint32_t prev_idx) {\n  do {\n    lamp->poll();\n  } while (prev_seq != lamp->seq() || lamp->idx() != prev_idx);\n}\n";
     let rust = "pub fn wait_for_event(lamp: &mut Lamp, prev_seq: u32, prev_idx: u32) {\n    loop {\n        lamp.poll();\n        if prev_seq == lamp.seq() && lamp.idx() == prev_idx {\n            break;\n        }\n    }\n}\n";
@@ -1378,11 +1497,7 @@ pub unsafe extern "C" fn rust_event_dispatcher_create() {
             changed: Some(touched_only_signal.clone()),
         }],
     };
-    let report = babeldiff::run(
-        &cs,
-        &Options::default(),
-        &mut UnchangedShimFinder(unchanged_cpp),
-    );
+    let report = babeldiff::run(&cs, &Options::default(), &mut UnchangedShimFinder(unchanged_cpp));
     let pair_names: Vec<(&str, &str, &str)> = report
         .pairs
         .iter()

@@ -119,6 +119,9 @@ impl<'a> Ctx<'a> {
                 }
                 self.declaration(n, outer, class, out);
             }
+            "expression_statement" => {
+                self.expression_statement(n, class, out);
+            }
             _ => {}
         }
     }
@@ -247,6 +250,119 @@ impl<'a> Ctx<'a> {
             units: b.units,
             calls,
             qcalls,
+            is_ffi: false,
+            is_pub: false,
+            test_only: false,
+            test_name: None,
+        });
+    }
+
+    fn expression_statement(&self, n: Node, class: &[String], out: &mut CppFile) {
+        let child = match ts::named_children(n).into_iter().next() {
+            Some(c) => c,
+            None => return,
+        };
+        if child.kind() == "call_expression" {
+            if let Some(func) = child.child_by_field_name("function") {
+                if self.text(func).trim() == "IMPLEMENT_DISPATCHER_RUST_STATE" {
+                    if let Some(args) = child.child_by_field_name("arguments") {
+                        self.implement_dispatcher_rust_state(n, args, class, out);
+                    }
+                }
+            }
+        }
+    }
+
+    fn implement_dispatcher_rust_state(
+        &self,
+        stmt: Node,
+        args: Node,
+        class: &[String],
+        out: &mut CppFile,
+    ) {
+        let children: Vec<Node> = ts::named_children(args);
+        if children.len() < 3 {
+            return;
+        }
+        let raw_class = self.text(children[0]).trim();
+        let class_name = unqualified_type(raw_class);
+        let get_lock_fn = self.text(children[1]).trim();
+        let destroy_fn = self.text(children[2]).trim();
+
+        let start = ts::line(stmt);
+        let end = ts::end_line(stmt);
+        let lines = self.lines[start - 1..end.min(self.lines.len())].to_vec();
+
+        let cls = if class.is_empty() {
+            class_name.clone()
+        } else {
+            format!("{}::{class_name}", class.join("::"))
+        };
+
+        // 1. Synthesize Class::~Class() { destroy_fn(&opaque_storage_); }
+        let dtor_base = format!("~{class_name}");
+        let dtor_full = format!("{cls}::{dtor_base}");
+        let mut dtor_b = UnitBuilder::new();
+        let mut dtor_sig_acc = FeatureAcc::default();
+        dtor_sig_acc.ident(&dtor_base);
+        let dtor_sig = dtor_sig_acc.finish(Lang::Cpp);
+        dtor_b.push(UnitKind::Signature, start, start, 0, dtor_sig);
+
+        let mut dtor_stmt_acc = FeatureAcc::default();
+        dtor_stmt_acc.call(destroy_fn);
+        dtor_stmt_acc.ident(destroy_fn);
+        dtor_stmt_acc.text = format!("{destroy_fn}(&opaque_storage_);");
+        let mut dtor_f = dtor_stmt_acc.finish(Lang::Cpp);
+        dtor_f.plumbing = true;
+        dtor_b.push(UnitKind::Stmt, start, end, 1, dtor_f);
+
+        out.functions.push(Function {
+            lang: Lang::Cpp,
+            path: self.path.to_string(),
+            name: dtor_full,
+            base: dtor_base,
+            class: Some(cls.clone()),
+            start_line: start,
+            end_line: end,
+            lines: lines.clone(),
+            units: dtor_b.units,
+            calls: vec![destroy_fn.to_string()],
+            qcalls: Vec::new(),
+            is_ffi: false,
+            is_pub: false,
+            test_only: false,
+            test_name: None,
+        });
+
+        // 2. Synthesize Lock<CriticalMutex>* Class::get_lock() const { return get_lock_fn(&opaque_storage_); }
+        let get_lock_base = "get_lock".to_string();
+        let get_lock_full = format!("{cls}::{get_lock_base}");
+        let mut lock_b = UnitBuilder::new();
+        let mut lock_sig_acc = FeatureAcc::default();
+        lock_sig_acc.ident(&get_lock_base);
+        let lock_sig = lock_sig_acc.finish(Lang::Cpp);
+        lock_b.push(UnitKind::Signature, start, start, 0, lock_sig);
+
+        let mut lock_stmt_acc = FeatureAcc::default();
+        lock_stmt_acc.call(get_lock_fn);
+        lock_stmt_acc.ident(get_lock_fn);
+        lock_stmt_acc.text = format!("return {get_lock_fn}(&opaque_storage_);");
+        let mut lock_f = lock_stmt_acc.finish(Lang::Cpp);
+        lock_f.plumbing = true;
+        lock_b.push(UnitKind::Stmt, start, end, 1, lock_f);
+
+        out.functions.push(Function {
+            lang: Lang::Cpp,
+            path: self.path.to_string(),
+            name: get_lock_full,
+            base: get_lock_base,
+            class: Some(cls),
+            start_line: start,
+            end_line: end,
+            lines,
+            units: lock_b.units,
+            calls: vec![get_lock_fn.to_string()],
+            qcalls: Vec::new(),
             is_ffi: false,
             is_pub: false,
             test_only: false,
@@ -893,21 +1009,35 @@ impl<'a> Ctx<'a> {
 
         // `Foo* x = Get(); if (!x) return ZX_ERR_X;` is how C++ spells
         // `let x = get().ok_or(X)?;`.
-        if let (Some(c), Some(t), None, false) = (cond, cons, alt, is_else_if) {
+        // A standalone `if (!x) return ZX_ERR_X;` or `if (!x) return nullptr;`
+        // is how C++ spells `?` on an Option.
+        if let (Some(c), Some(t), None) = (cond, cons, alt) {
             if let Some((var, errors)) = self.null_check(c, t) {
-                if let Some(prev) = b.units.last_mut() {
-                    if prev.kind == UnitKind::Stmt
-                        && prev.depth == depth
-                        && prev.file.is_none()
-                        && !prev.features.propagates
-                        && self.mentions(prev, &var)
-                    {
-                        prev.features.propagates = true;
-                        prev.features.errors.extend(errors);
-                        prev.end_line = ts::end_line(n);
-                        return;
+                let d = if is_else_if { depth - 1 } else { depth };
+                let has_init = c.child_by_field_name("initializer").is_some();
+                if !has_init && !is_else_if {
+                    if let Some(prev) = b.units.last_mut() {
+                        if prev.kind == UnitKind::Stmt
+                            && prev.depth == depth
+                            && prev.file.is_none()
+                            && !prev.features.propagates
+                            && self.mentions(prev, &var)
+                        {
+                            prev.features.propagates = true;
+                            prev.features.errors.extend(errors);
+                            prev.end_line = ts::end_line(n);
+                            return;
+                        }
                     }
                 }
+                if is_else_if {
+                    b.push(UnitKind::Else, line, line, depth - 1, Features::default());
+                }
+                let mut f = self.features(c, &[]);
+                f.propagates = true;
+                f.errors.extend(errors);
+                b.push(UnitKind::Stmt, line, ts::end_line(n), d, f);
+                return;
             }
         }
 
@@ -1017,8 +1147,10 @@ impl<'a> Ctx<'a> {
     /// returned.
     fn null_check(&self, cond: Node, cons: Node) -> Option<(String, Vec<String>)> {
         static NULL: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"^\(\s*(?:!\s*(\w+)(?:\.check\(\))?|(\w+)\s*==\s*nullptr|nullptr\s*==\s*(\w+))\s*\)$")
-                .unwrap()
+            Regex::new(
+                r"^\(\s*(?:!\s*(\w+)(?:\.check\(\)|\.has_value\(\))?|(\w+)\s*==\s*(?:nullptr|NULL|std::nullopt|ktl::nullopt|nullopt)|(?:nullptr|NULL|std::nullopt|ktl::nullopt|nullopt)\s*==\s*(\w+))\s*\)$",
+            )
+            .unwrap()
         });
         // `if (unlikely(!x))` tests the same thing.
         static HINT: LazyLock<Regex> =
@@ -1034,7 +1166,18 @@ impl<'a> Ctx<'a> {
         // Returning an error code, or null for a failed lookup (which Rust
         // spells `?` on an `Option`).
         let errors = crate::normalize::error_codes(self.text(ret));
-        let null = self.text(ret).trim_end_matches(';').trim() == "return nullptr";
+        let ret_text = self.text(ret).trim_end_matches(';').trim();
+        let null = matches!(
+            ret_text,
+            "return nullptr"
+                | "return NULL"
+                | "return 0"
+                | "return {}"
+                | "return {nullptr}"
+                | "return std::nullopt"
+                | "return ktl::nullopt"
+                | "return nullopt"
+        );
         (!errors.is_empty() || null).then_some((var, errors))
     }
 

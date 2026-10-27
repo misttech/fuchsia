@@ -1414,9 +1414,13 @@ pub fn analyze(inputs: Inputs, opts: &Options, finder: &mut dyn CppFinder) -> Re
     // into Rust, was edited rather than ported; its edits are listed with
     // the other C++ changes.
     let stays = |f: &Function| {
-        cpp_new_calls
-            .get(&f.name)
-            .is_some_and(|calls| !calls.iter().any(|c| c.starts_with("rust_")))
+        cpp_new_calls.get(&f.name).is_some_and(|calls| {
+            !calls.iter().any(|c| {
+                c.starts_with("rust_")
+                    && !c.ends_with("_state_get_lock")
+                    && !c.ends_with("_state_destroy")
+            })
+        })
     };
     report.unmatched_cpp = unmatched.into_iter().filter(|f| !stays(f)).collect();
     report.removed_cpp_shims = removed_shims;

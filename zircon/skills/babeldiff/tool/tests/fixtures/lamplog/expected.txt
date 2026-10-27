@@ -1,4 +1,4 @@
-babeldiff: 3 pairs, 3 issues, 21 notes; 0 C++ and 0 Rust functions unpaired, plus 1 Rust test
+babeldiff: 3 pairs, 3 issues, 18 notes; 0 C++ and 0 Rust functions unpaired, plus 1 Rust test
 issues by kind: control-flow 1, call 1, assert 1
 rubric lints: 0 issues, 1 note (file-placement 1); see the end of the report
 legend: = same  ~ note  ! issue  < only in C++  > only in Rust
@@ -7,10 +7,9 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:21-33
   Rust  zircon/kernel/lib/lamplog/src/tests.rs:25-34
   why   same class and method name
-  similarity 0.67, 0 issues, 6 notes
+  similarity 0.67, 0 issues, 5 notes
 
 > R     25  /// NoGlow
-        ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
 = C     21  bool NoGlowTest() {
   R     27  fn no_glow_test() {
 < C     22    BEGIN_TEST;
@@ -37,7 +36,6 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   flow     none
   comments 1 C++ comment: 1 identical, 0 reworded, 0 missing in Rust
   findings
-    ~ - | tests.rs:25  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
     ~ lamplog-tests.cc:22 | -  statement only in C++
     ~ lamplog-tests.cc:25 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
     ~ lamplog-tests.cc:26 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 28
@@ -48,10 +46,9 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:35-62
   Rust  zircon/kernel/lib/lamplog/src/tests.rs:36-60
   why   same class and method name
-  similarity 0.79, 0 issues, 11 notes
+  similarity 0.79, 0 issues, 10 notes
 
 > R     36  /// Flicker
-        ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
 = C     35  bool FlickerTest() {
   R     38  fn flicker_test() {
 < C     36    BEGIN_TEST;
@@ -103,7 +100,6 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   flow     loop 1
   comments 3 C++ comments: 3 identical, 0 reworded, 0 missing in Rust
   findings
-    ~ - | tests.rs:36  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
     ~ lamplog-tests.cc:36 | -  statement only in C++
     ~ lamplog-tests.cc:39 | -  statement (calls make_unique) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
     ~ lamplog-tests.cc:40 | -  statement (calls assert, check) only in C++; it is a fallible allocation checked by `ac.check()`, which the Rust makes and checks in one statement at line 39
@@ -119,10 +115,9 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
   C++   zircon/kernel/lib/lamplog/test/lamplog-tests.cc:64-76
   Rust  zircon/kernel/lib/lamplog/src/tests.rs:62-72
   why   same class and method name
-  similarity 0.65, 3 issues, 4 notes
+  similarity 0.65, 3 issues, 3 notes
 
 > R     62  /// Dim
-        ^ ~ doc comment only in Rust; its words are in a C++ comment elsewhere in the change
 = C     64  bool DimTest() {
   R     64  fn dim_test() {
 < C     65    BEGIN_TEST;
@@ -153,7 +148,6 @@ legend: = same  ~ note  ! issue  < only in C++  > only in Rust
     ! lamplog-tests.cc:68 | -  statement (calls make_unique) only in C++
     ! lamplog-tests.cc:69 | -  statement (calls assert, check) only in C++
     ! - | tests.rs:65  Rust adds a check `let Ok(mut buffer) = kalloc::Box::<[u8]>::try_new_zeroed_slice(LARGE_BUFFER_S...`, returning a value, that the C++ doesn't make
-    ~ - | tests.rs:62  doc comment only in Rust; its words are in a C++ comment elsewhere in the change
     ~ lamplog-tests.cc:65 | -  statement only in C++
     ~ - | tests.rs:66  return of a value only in Rust
     ~ lamplog-tests.cc:75 | -  statement only in C++

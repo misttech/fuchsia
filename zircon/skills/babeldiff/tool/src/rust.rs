@@ -183,7 +183,11 @@ impl<'a> Ctx<'a> {
             fold_status_tail(&mut b.units, self.lines);
         }
         for u in &mut b.units {
-            if u.kind == UnitKind::Stmt && u.file.is_none() {
+            if u.kind == UnitKind::Stmt
+                && u.file.is_none()
+                && !u.features.propagates
+                && u.features.errors.is_empty()
+            {
                 let text: String = (u.start_line..=u.end_line)
                     .filter_map(|l| self.lines.get(l - 1))
                     .map(|l| l.trim())
@@ -701,7 +705,11 @@ impl<'a> Ctx<'a> {
             if self.is_propagation(c, t) {
                 if is_else_if {
                     b.push(UnitKind::Else, line, line, d, Features::default());
-                } else if let Some(var) = is_err_var(self.text(c)) {
+                } else if let Some(var) = is_err_var(self.text(c)).or_else(|| {
+                    static NONE_CHECK: LazyLock<Regex> =
+                        LazyLock::new(|| Regex::new(r"^\s*(\w+)\.is_none\(\)\s*$").unwrap());
+                    NONE_CHECK.captures(self.text(c).trim()).map(|m| m.get(1).unwrap().as_str())
+                }) {
                     if let Some(prev) = b.units.last_mut() {
                         if prev.kind == UnitKind::Stmt
                             && prev.depth == d
@@ -856,9 +864,14 @@ impl<'a> Ctx<'a> {
     }
 
     fn is_propagation(&self, cond: Node, cons: Node) -> bool {
-        static ERR_PAT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^let\s+Err\s*\(").unwrap());
-        let err_let = cond.kind() == "let_condition" && ERR_PAT.is_match(self.text(cond).trim());
-        if !err_let && is_err_var(self.text(cond)).is_none() {
+        static ERR_PAT: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^let\s+(?:Err\s*\(|None\b)").unwrap());
+        static NONE_CHECK: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^\s*(\w+)\.is_none\(\)\s*$").unwrap());
+        let text = self.text(cond).trim();
+        let err_let = cond.kind() == "let_condition" && ERR_PAT.is_match(text);
+        let is_none = NONE_CHECK.is_match(text);
+        if !err_let && !is_none && is_err_var(text).is_none() {
             return false;
         }
         let stmts: Vec<Node> =
@@ -867,10 +880,9 @@ impl<'a> Ctx<'a> {
             return false;
         }
         let t = self.text(stmts[0]);
+        let ret_val = t.trim_start().trim_start_matches("return").trim().trim_end_matches(';');
         t.trim_start().starts_with("return")
-            && ts::classify_return(
-                t.trim_start().trim_start_matches("return").trim().trim_end_matches(';'),
-            ) == Ret::Status
+            && (ts::classify_return(ret_val) == Ret::Status || ret_val == "None")
     }
 
     fn match_expression(&self, n: Node, depth: usize, tail: bool, fcx: FnCtx, b: &mut UnitBuilder) {
@@ -1110,7 +1122,7 @@ fn type_name(t: &str) -> String {
 fn is_lock_plumbing(stmt: &str) -> bool {
     static TOKEN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(
-            r"^let\s+(?:mut\s+)?\w+\s*(?::[^=]*)?=.*(?:\.token(?:_mut)?\(\)|LockToken\s*(?:::\s*<[^>]*>\s*)?::\s*new\s*\(|\.fields(?:_mut)?\(\)|\.guard_(?:read|write)_lock\s*\()",
+            r"^let\s+(?:mut\s+)?\w+\s*(?::[^=]*)?=\s*&?\s*(?:mut\s+)?\w+\.(?:token(?:_mut)?|fields(?:_mut)?|guard_(?:read|write)_lock)\s*\(\s*\)\s*;?$|^let\s+(?:mut\s+)?\w+\s*(?::[^=]*)?=\s*LockToken\s*(?:::\s*<[^>]*>\s*)?::\s*new\s*\(",
         )
         .unwrap()
     });

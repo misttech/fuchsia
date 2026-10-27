@@ -396,6 +396,7 @@ pub fn check_with(
     switch_as_if_chain(&mut rows, cpp, rust);
     merged_checks(&mut rows, cpp, rust);
     fallible_alloc(&mut rows, cpp, rust);
+    strlcpy_semantics(&mut rows, cpp, rust);
     assert_semantics(&mut rows, cpp, rust);
     exhaustive_match(&mut rows, cpp, rust);
     conditional_compilation(&mut rows, cpp, rust);
@@ -1130,6 +1131,77 @@ fn fallible_alloc(rows: &mut [Row], cpp: &Function, rust: &Function) {
                  `{ac}.check()`"
             );
             demote(&mut rows[rust_row], &why);
+        }
+    }
+}
+
+/// Zircon implements C++ `strlcpy(dst, src, size)` in safe Rust by bounding the
+/// slice copy to `size - 1` so the trailing NUL in `dst` is preserved:
+/// ```ignore
+/// // Bound the copy so the trailing NUL in `out_name` always survives.
+/// let len = name.len().min(zx_types::ZX_MAX_NAME_LEN - 1);
+/// out_name[..len].copy_from_slice(&name[..len]);
+/// ```
+/// Babeldiff recognizes this idiom: the copy length calculation and accompanying
+/// NUL-termination comment are part of the safe Rust implementation of `strlcpy`.
+fn strlcpy_semantics(rows: &mut [Row], cpp: &Function, rust: &Function) {
+    static STRLCPY: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\bstrlcpy\s*\(").unwrap());
+    static COPY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\b(?:copy_from_slice|copy_nonoverlapping|clone_from_slice)\b").unwrap()
+    });
+    static NUL_COMMENT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)\b(?:nul|null|bound|terminat|strlcpy)\b").unwrap()
+    });
+
+    for k in 0..rows.len() {
+        let Some(ci) = rows[k].cpp else { continue };
+        let cu = &cpp.units[ci];
+        let cpp_text = code_only(&unit_text(cpp, cu));
+        if !STRLCPY.is_match(&cpp_text) {
+            continue;
+        }
+
+        // Find the corresponding Rust copy statement in row k or nearby rows.
+        let rust_copy_row = if rows[k]
+            .rust
+            .is_some_and(|rj| COPY.is_match(&code_only(&unit_text(rust, &rust.units[rj]))))
+        {
+            Some(k)
+        } else {
+            (k.saturating_sub(2)..=rows.len().min(k + 3)).find(|&idx| {
+                rows[idx]
+                    .rust
+                    .is_some_and(|rj| COPY.is_match(&code_only(&unit_text(rust, &rust.units[rj]))))
+            })
+        };
+
+        let Some(cr) = rust_copy_row else { continue };
+
+        // Clear any spurious note about strlcpy vs copy on the copy row itself:
+        rows[cr].notes.retain(|n| !n.message.contains("strlcpy"));
+
+        // Check preceding Rust-only rows for length bounding and NUL comments.
+        let start = cr.saturating_sub(4);
+        for r in &mut rows[start..cr] {
+            if r.cpp.is_some() {
+                continue;
+            }
+            let Some(rj) = r.rust else { continue };
+            let ru = &rust.units[rj];
+            if ru.kind == UnitKind::Comment {
+                let text = unit_text(rust, ru);
+                if NUL_COMMENT.is_match(&text) {
+                    r.notes.clear();
+                }
+            } else if ru.kind == UnitKind::Stmt {
+                let text = code_only(&unit_text(rust, ru));
+                if ru.features.calls.iter().any(|c| c == "min" || c == "len")
+                    || text.contains(".min(")
+                {
+                    r.notes.clear();
+                }
+            }
         }
     }
 }

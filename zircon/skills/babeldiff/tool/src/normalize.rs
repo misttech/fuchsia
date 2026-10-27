@@ -100,6 +100,8 @@ const NOISE_CALLS: &[&str] = &[
     "fields_mut",
     "get_inner",
     "into_inner",
+    "to_bytes",
+    "as_bytes",
     // ksync's token guards re-borrow a lock that is already held.
     "guard_read_lock",
     "guard_write_lock",
@@ -404,7 +406,7 @@ fn alias(n: &str) -> &str {
         "empty" | "is_empty" => "is_empty",
         "min" | "ktl_min" => "min",
         "max" | "ktl_max" => "max",
-        "memcpy" | "copy_from_slice" | "copy_nonoverlapping" => "memcpy",
+        "memcpy" | "copy_from_slice" | "copy_nonoverlapping" | "strlcpy" => "memcpy",
         "memset" | "fill" | "write_bytes" => "memset",
         "push_back" | "push" => "push",
         "kcounter_add" => "add",
