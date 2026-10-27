@@ -7,7 +7,10 @@
 #### PREBUILTS=${PREBUILT_BAZEL} ${PREBUILT_JQ} ${PREBUILT_PYTHON3}
 ### Update the Bazel vendor directory to include all necessary Bazel deps.
 
-## usage: fx update-bazel-vendor-dir
+## usage: fx update-bazel-vendor-dir [--no-build]
+##
+## Options:
+##   --no-build    Do not build prerequisite targets before running `bazel vendor`.
 ##
 ## Versions of vendored repositories are based on the content of
 ## //build/bazel/toplevel.MODULE.bazel. If any of the direct or transitive
@@ -46,13 +49,34 @@
 source "${FUCHSIA_DIR}/tools/devshell/lib/vars.sh" || exit $?
 fx-config-read
 
+do_build=true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      fx-command-help
+      exit 0
+      ;;
+    --no-build)
+      do_build=false
+      shift
+      ;;
+    *)
+      fx-error "Unknown option: $1"
+      fx-command-help
+      exit 1
+      ;;
+  esac
+done
+
 if [[ ! -d "${FUCHSIA_BUILD_DIR}" ]]; then
   fx-error "No Fuchsia build directory, please run 'fx set' or 'fx use'."
 fi
 
 # shellcheck source=/dev/null
 source "${FUCHSIA_DIR}/tools/devshell/lib/bazel_utils.sh" || exit $?
-fx-update-bazel-workspace
+if "${do_build}"; then
+  fx-update-bazel-workspace
+fi
 
 # LINT.IfChange(bazel_vendor_dir)
 readonly BAZEL_VENDOR_DIR="${FUCHSIA_DIR}/third_party/bazel_vendor"

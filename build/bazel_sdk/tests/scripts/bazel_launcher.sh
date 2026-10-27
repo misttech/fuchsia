@@ -66,10 +66,8 @@ source "${_CONFIG_FILE}"
 [[ -f "${_DOWNLOADER_CONFIG_FILE}" ]] || die "Missing downloader config file: ${_DOWNLOADER_CONFIG_FILE}"
 
 [[ -n "${_BAZEL_VENDOR_DIR}" ]] || die "Missing _BAZEL_VENDOR_DIR config variable"
-[[ -d "${_BAZEL_VENDOR_DIR}" ]] || die "Missing Bazel vendor directory: ${_BAZEL_VENDOR_DIR}"
 
 [[ -n "${_BAZEL_REGISTRY_DIR}" ]] || die "Missing _BAZEL_REGISTRY_DIR config variable"
-[[ -d "${_BAZEL_REGISTRY_DIR}" ]] || die "Missing Bazel registry directory: ${_BAZEL_REGISTRY_DIR}"
 
 [[ -v _EXPLICIT_FUCHSIA_SDK ]] || die "Missing _EXPLICIT_FUCHSIA_SDK config variable"
 
@@ -170,6 +168,8 @@ if [[ "${_BAZEL_COMMAND}" == "vendor" ]]; then
   _DOWNLOADER_ARG="--downloader_config=/dev/null"
   _REGISTRY_ARG="--registry=https://bcr.bazel.build/"
 else
+  [[ -d "${_BAZEL_VENDOR_DIR}" ]] || die "Missing Bazel vendor directory: ${_BAZEL_VENDOR_DIR}"
+  [[ -d "${_BAZEL_REGISTRY_DIR}" ]] || die "Missing Bazel registry directory: ${_BAZEL_REGISTRY_DIR}"
   _DOWNLOADER_ARG="--downloader_config=${_DOWNLOADER_CONFIG_FILE}"
   _REGISTRY_ARG="--registry=file://${_BAZEL_REGISTRY_DIR}"
 fi

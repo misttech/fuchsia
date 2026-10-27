@@ -342,6 +342,15 @@ if (is_host) {
     main_source = "trim_visibility_test.py"
     sources = [ "trim_visibility.py" ]
   }
+
+  python_library("update_bazel_vendor_dir") {
+    sources = [ "update_bazel_vendor_dir.py" ]
+  }
+
+  python_build_time_tests("update_bazel_vendor_dir_test") {
+    tests = [ "update_bazel_vendor_dir_test.py" ]
+    deps = [ ":update_bazel_vendor_dir" ]
+  }
 }
 
 group("tests") {
@@ -372,6 +381,7 @@ group("tests") {
     ":runfiles_utils_test($host_toolchain)",
     ":stdio_redirection_test($host_toolchain)",
     ":trim_visibility_test($host_toolchain)",
+    ":update_bazel_vendor_dir_test($host_toolchain)",
     ":workspace_utils_test($host_toolchain)",
   ]
 }
@@ -405,7 +415,6 @@ if (is_host) {
       "prepare-fuchsia-checkout.py",
       "refresh-bazel-compdb-bin.py",
       "symlink-directory.py",
-      "update_bazel_vendor_dir.py",
     ]
     library_deps = [
       # For copy_bazel_debug_symbols.py.
