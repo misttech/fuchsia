@@ -4,6 +4,8 @@
 
 #include "src/developer/forensics/crash_reports/reporting_policy_watcher.h"
 
+#include <zircon/errors.h>
+
 #include <optional>
 
 #include <gtest/gtest.h>
@@ -64,21 +66,10 @@ class UserReportingPolicyWatcherTest : public UnitTestFixture, public UserReport
   }
 
   void SetPrivacySettings(std::optional<bool> user_data_sharing_consent) {
-    ::fpromise::result<void, fuchsia::settings::Error> set_result;
-    fuchsia::settings::PrivacySettings settings;
-    if (user_data_sharing_consent.has_value()) {
-      settings.set_user_data_sharing_consent(user_data_sharing_consent.value());
-    }
-
-    privacy_settings_server_->Set(
-        std::move(settings),
-        [&set_result](::fpromise::result<void, fuchsia::settings::Error> result) {
-          set_result = std::move(result);
-        });
-    FX_CHECK(set_result.is_ok());
+    privacy_settings_server_->SetUserDataSharingConsent(user_data_sharing_consent);
   }
 
-  void CloseConnection() { privacy_settings_server_->CloseConnection(); }
+  void CloseConnection() { privacy_settings_server_->CloseConnection(ZX_ERR_PEER_CLOSED); }
 
  private:
   std::unique_ptr<fakes::PrivacySettings> privacy_settings_server_;

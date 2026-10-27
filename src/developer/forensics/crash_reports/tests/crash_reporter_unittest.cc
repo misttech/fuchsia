@@ -6,7 +6,6 @@
 
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/mem/cpp/fidl.h>
-#include <fuchsia/settings/cpp/fidl.h>
 #include <fuchsia/time/cpp/fidl.h>
 #include <lib/fpromise/result.h>
 #include <lib/syslog/cpp/macros.h>
@@ -62,7 +61,6 @@ using fuchsia::feedback::NativeCrashReport;
 using fuchsia::feedback::RuntimeCrashReport;
 using fuchsia::feedback::SpecificCrashReport;
 using fuchsia::feedback::TextBacktraceCrashReport;
-using fuchsia::settings::PrivacySettings;
 using inspect::testing::ChildrenMatch;
 using inspect::testing::NameMatches;
 using inspect::testing::NodeMatches;
@@ -127,14 +125,6 @@ Attachment BuildAttachment(const std::string& key, const std::string& value) {
   attachment.key = key;
   FX_CHECK(fsl::VmoFromString(value, &attachment.value));
   return attachment;
-}
-
-PrivacySettings MakePrivacySettings(const std::optional<bool> user_data_sharing_consent) {
-  PrivacySettings settings;
-  if (user_data_sharing_consent.has_value()) {
-    settings.set_user_data_sharing_consent(user_data_sharing_consent.value());
-  }
-  return settings;
 }
 
 template <typename K, typename V>
@@ -459,14 +449,7 @@ class CrashReporterTest : public UnitTestFixture {
 
   void SetPrivacySettings(std::optional<bool> user_data_sharing_consent) {
     FX_CHECK(privacy_settings_server_);
-
-    ::fpromise::result<void, fuchsia::settings::Error> set_result;
-    privacy_settings_server_->Set(
-        MakePrivacySettings(user_data_sharing_consent),
-        [&set_result](::fpromise::result<void, fuchsia::settings::Error> result) {
-          set_result = std::move(result);
-        });
-    EXPECT_TRUE(set_result.is_ok());
+    privacy_settings_server_->SetUserDataSharingConsent(user_data_sharing_consent);
   }
 
  private:
