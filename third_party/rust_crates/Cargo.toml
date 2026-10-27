@@ -306,7 +306,7 @@ zerocopy = { version = "0.8.61", features = ["derive"] }
 coset = { version = "0.4.2", features = ["std"] }
 # do not add back without verifying certificate transparency is ready to use - see https://fxbug.dev/25100
 # ct-logs = "0.6"
-der = { version = "0.8.1", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
+der = { version = "0.8.2", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
 der-0_7_10 = { package = "der", version = "0.7.10", features = ["alloc", "derive", "flagset", "oid", "zeroize"] }
 euclid = { version = "0.22.14", features = [ "serde" ] }
 flagset = "0.4.7"
