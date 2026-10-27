@@ -274,6 +274,27 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
         &mut me.token
     }
 
+    /// # Safety
+    ///
+    /// The guard has not been released.
+    #[inline]
+    pub unsafe fn token_unchecked(&self) -> &LockToken<'a, Class> {
+        debug_assert!(self.mutex.is_some(), "cannot access token of a released KMutexGuard");
+        &self.token
+    }
+
+    /// # Safety
+    ///
+    /// The guard has not been released.
+    #[inline]
+    pub unsafe fn token_mut_unchecked(self: Pin<&mut Self>) -> &mut LockToken<'a, Class> {
+        // SAFETY: Modifying the non-pinned raw `token` field does not violate pinning invariants
+        // since the token has no drop logic or pointer-location sensitivity.
+        let me = unsafe { self.get_unchecked_mut() };
+        debug_assert!(me.mutex.is_some(), "cannot access token of a released KMutexGuard");
+        &mut me.token
+    }
+
     /// Returns true if this guard currently holds the given `target` mutex instance.
     #[inline]
     pub fn is_locked_by(&self, target: &KMutex<Class, M>) -> bool {
