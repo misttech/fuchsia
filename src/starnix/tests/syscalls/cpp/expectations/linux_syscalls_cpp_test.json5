@@ -98,6 +98,7 @@
 
                 // TODO(https://fxbug.dev/328629782): Machina guest kernel has a bug.
                 "FileCapTest.RemoveFileCapabilitiesRequiresCapSetfcap",
+                "XattrTest.SecuritySelinuxRequiresCapSysAdminWhenSelinuxDisabled",
 
                 // TODO(https://fxbug.dev/436918865): Test needs to be reworked.
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",

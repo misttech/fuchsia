@@ -12,8 +12,10 @@
 #include <fbl/unique_fd.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/limits.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -119,6 +121,43 @@ TEST_F(XattrTest, SetxattrNameLengthLimits) {
   ASSERT_EQ(name_256.size(), static_cast<size_t>(XATTR_NAME_MAX + 1));
   EXPECT_THAT(setxattr(path().c_str(), name_256.c_str(), "val", 3, 0),
               SyscallFailsWithErrno(ERANGE));
+}
+
+TEST_F(XattrTest, SecuritySelinuxRequiresCapSysAdminWhenSelinuxDisabled) {
+  test_helper::ScopedTempDir selinuxfs_dir;
+  if (access("/sys/fs/selinux/enforce", F_OK) == 0 ||
+      test_helper::ScopedMount::Mount("none", selinuxfs_dir.path(), "selinuxfs", 0, nullptr)
+          .is_ok()) {
+    GTEST_SKIP() << "Requires SELinux to be disabled in the kernel.";
+  }
+
+  constexpr char kSelinuxAttr[] = "security.selinux";
+  constexpr char kVal[] = "u:object_r:unlabeled:s0";
+
+  // Without CAP_SYS_ADMIN, setting security.selinux must fail with EPERM.
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([this, kSelinuxAttr, kVal] {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    EXPECT_THAT(setxattr(path().c_str(), kSelinuxAttr, kVal, sizeof(kVal), 0),
+                SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(fsetxattr(fd(), kSelinuxAttr, kVal, sizeof(kVal), 0), SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(lsetxattr(path().c_str(), kSelinuxAttr, kVal, sizeof(kVal), 0),
+                SyscallFailsWithErrno(EPERM));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  // With CAP_SYS_ADMIN, setting security.selinux succeeds.
+  ASSERT_THAT(setxattr(path().c_str(), kSelinuxAttr, kVal, sizeof(kVal), 0), SyscallSucceeds());
+
+  // Without CAP_SYS_ADMIN, removing security.selinux must fail with EPERM.
+  helper.RunInForkedProcess([this, kSelinuxAttr] {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    EXPECT_THAT(removexattr(path().c_str(), kSelinuxAttr), SyscallFailsWithErrno(EPERM));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+
+  // With CAP_SYS_ADMIN, removing security.selinux succeeds.
+  EXPECT_THAT(removexattr(path().c_str(), kSelinuxAttr), SyscallSucceeds());
 }
 
 }  // namespace

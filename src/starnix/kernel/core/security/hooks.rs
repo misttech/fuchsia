@@ -2054,8 +2054,10 @@ pub fn path_notify(
 
 /// Returns true if the security subsystem should skip capability checks on access to the named
 /// attribute, false otherwise.
-pub fn fs_node_xattr_skipcap(name: &FsStr) -> bool {
-    common_cap::fs_node_xattr_skipcap(name) || selinux_hooks::fs_node::fs_node_xattr_skipcap(name)
+pub fn fs_node_xattr_skipcap(current_task: &CurrentTask, name: &FsStr) -> bool {
+    common_cap::fs_node_xattr_skipcap(name)
+        || (current_task.kernel().security_state.state.is_some()
+            && selinux_hooks::fs_node::fs_node_xattr_skipcap(name))
 }
 
 /// This is called by Starnix even for filesystems which support extended attributes, unlike Linux
@@ -2509,11 +2511,11 @@ mod tests {
         create_task, create_task_with_security_context, spawn_kernel_and_run,
         spawn_kernel_with_selinux_and_run,
     };
-    use linux_uapi::XATTR_NAME_SELINUX;
+    use linux_uapi::{XATTR_NAME_CAPS, XATTR_NAME_SELINUX};
     use selinux::InitialSid;
     use starnix_uapi::auth::{
-        CAP_SYS_PTRACE, PTRACE_MODE_ATTACH, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_NOAUDIT,
-        PTRACE_MODE_READ_FSCREDS,
+        CAP_SYS_ADMIN, CAP_SYS_PTRACE, PTRACE_MODE_ATTACH, PTRACE_MODE_ATTACH_REALCREDS,
+        PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS,
     };
     use starnix_uapi::signals::SIGTERM;
     use std::ffi::CString;
@@ -2943,6 +2945,83 @@ mod tests {
             .expect("set_xattr(security.selinux) failed");
 
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn fs_node_xattr_skipcap_requires_active_lsm() {
+        spawn_kernel_and_run(async |current_task| {
+            let node = &testing::create_test_file(current_task).entry.node;
+            let mount = &current_task.fs().root().mount;
+
+            assert!(!fs_node_xattr_skipcap(current_task, XATTR_NAME_SELINUX.to_bytes().into()));
+            assert!(fs_node_xattr_skipcap(current_task, XATTR_NAME_CAPS.to_bytes().into()));
+
+            let mut creds = Credentials::clone(&current_task.current_creds());
+            creds.cap_effective &= !CAP_SYS_ADMIN;
+            current_task.set_creds(creds);
+
+            assert_eq!(
+                node.set_xattr(
+                    current_task,
+                    mount,
+                    XATTR_NAME_SELINUX.to_bytes().into(),
+                    VALID_SECURITY_CONTEXT.into(),
+                    XattrOp::Set,
+                ),
+                error!(EPERM)
+            );
+            assert_eq!(
+                node.remove_xattr(current_task, mount, XATTR_NAME_SELINUX.to_bytes().into()),
+                error!(EPERM)
+            );
+        })
+        .await;
+
+        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+            let node = &testing::create_test_file(current_task).entry.node;
+            let mount = &current_task.fs().root().mount;
+
+            assert!(fs_node_xattr_skipcap(current_task, XATTR_NAME_SELINUX.to_bytes().into()));
+            assert!(fs_node_xattr_skipcap(current_task, XATTR_NAME_CAPS.to_bytes().into()));
+
+            let mut creds = Credentials::clone(&current_task.current_creds());
+            creds.cap_effective &= !CAP_SYS_ADMIN;
+            current_task.set_creds(creds);
+
+            assert_eq!(
+                node.set_xattr(
+                    current_task,
+                    mount,
+                    XATTR_NAME_SELINUX.to_bytes().into(),
+                    VALID_SECURITY_CONTEXT.into(),
+                    XattrOp::Set,
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                node.remove_xattr(current_task, mount, XATTR_NAME_SELINUX.to_bytes().into()),
+                Ok(())
+            );
+        })
+        .await;
+
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, _security_server| {
+            let node = &testing::create_test_file(current_task).entry.node;
+            let mount = &current_task.fs().root().mount;
+
+            assert!(fs_node_xattr_skipcap(current_task, XATTR_NAME_SELINUX.to_bytes().into()));
+            assert!(fs_node_xattr_skipcap(current_task, XATTR_NAME_CAPS.to_bytes().into()));
+
+            let mut creds = Credentials::clone(&current_task.current_creds());
+            creds.cap_effective &= !CAP_SYS_ADMIN;
+            current_task.set_creds(creds);
+
+            assert_eq!(
+                node.remove_xattr(current_task, mount, XATTR_NAME_SELINUX.to_bytes().into()),
+                error!(EACCES)
+            );
         })
         .await;
     }

@@ -5,6 +5,7 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#include <optional>
 #include <string>
 
 #include <fbl/unique_fd.h>
@@ -398,6 +399,38 @@ TEST(XattrTest, RemoveSelinuxNotPermitted) {
   }));
 }
 
+std::optional<bool> g_pre_policy_skipcap_passed;
+
+TEST(XattrTest, PrePolicySecuritySelinuxSkipsCapSysAdmin) {
+  ASSERT_TRUE(g_pre_policy_skipcap_passed.has_value());
+  EXPECT_TRUE(*g_pre_policy_skipcap_passed);
+}
+
 }  // namespace
 
-extern std::string DoPrePolicyLoadWork() { return "xattr_access_policy"; }
+extern std::string DoPrePolicyLoadWork() {
+  test_helper::ScopedTempFD file;
+
+  // When SELinux is enabled in the kernel but no policy has been loaded yet, the VFS
+  // CAP_SYS_ADMIN check is skipped for `security.selinux` (allowing unprivileged modification and
+  // removal on an owned file), while other `security.*` extended attributes still require
+  // CAP_SYS_ADMIN.
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_ADMIN);
+    EXPECT_THAT(SetXattr(file.name(), kSelinuxAttrName, kTestFileLabel), SyscallSucceeds());
+    EXPECT_THAT(fsetxattr(file.fd(), kSelinuxAttrName, kTestFileLabel, sizeof(kTestFileLabel), 0),
+                SyscallSucceeds());
+    EXPECT_THAT(
+        lsetxattr(file.name().c_str(), kSelinuxAttrName, kTestFileLabel, sizeof(kTestFileLabel), 0),
+        SyscallSucceeds());
+    EXPECT_THAT(removexattr(file.name().c_str(), kSelinuxAttrName), SyscallSucceeds());
+    EXPECT_THAT(SetXattr(file.name(), kTestSecurityAttrName, kTestAttrValue),
+                SyscallFailsWithErrno(EPERM));
+    EXPECT_THAT(removexattr(file.name().c_str(), kTestSecurityAttrName),
+                SyscallFailsWithErrno(EPERM));
+  });
+  g_pre_policy_skipcap_passed = helper.WaitForChildren();
+
+  return "xattr_access_policy";
+}

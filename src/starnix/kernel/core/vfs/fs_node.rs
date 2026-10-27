@@ -2327,7 +2327,7 @@ impl FsNode {
         } else if name.starts_with(XATTR_SECURITY_PREFIX.to_bytes()) {
             if access == Access::WRITE {
                 // Writes require `CAP_SYS_ADMIN`, unless the LSM owning `name` specifies to skip.
-                if !security::fs_node_xattr_skipcap(name) {
+                if !security::fs_node_xattr_skipcap(current_task, name) {
                     security::check_task_capable(current_task, CAP_SYS_ADMIN)
                         .map_err(enodata_if_read)?;
                 }
