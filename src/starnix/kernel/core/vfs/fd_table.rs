@@ -765,17 +765,22 @@ impl FdTable {
         }
     }
 
-    /// Returns a vector of all current file descriptors in the table.
-    pub fn get_all_fds(&self) -> Vec<FdNumber> {
+    /// Invokes `f` with each current file descriptor in the table.
+    pub fn for_each_fd<F: FnMut(FdNumber)>(&self, mut f: F) {
         let scope = RcuReadScope::new();
         let view = self.read_entries(&scope);
-        view.slice
-            .iter()
-            .enumerate()
-            .filter_map(|(index, encoded_entry)| {
-                if encoded_entry.is_none() { None } else { Some(FdNumber::from_raw(index as i32)) }
-            })
-            .collect()
+        for (index, encoded_entry) in view.slice.iter().enumerate() {
+            if !encoded_entry.is_none() {
+                f(FdNumber::from_raw(index as i32));
+            }
+        }
+    }
+
+    /// Returns a vector of all current file descriptors in the table.
+    pub fn get_all_fds(&self) -> Vec<FdNumber> {
+        let mut fds = Vec::new();
+        self.for_each_fd(|fd| fds.push(fd));
+        fds
     }
 
     /// Executes `predicate(file) => maybe_replacement` on every non-empty table entry.
@@ -1019,6 +1024,23 @@ mod test {
             // When fd_table_clone is dropped, it should not panic because the above add() call
             // failed to insert an entry.
             drop(fd_table_clone);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_fd_table_for_each_fd() {
+        spawn_kernel_and_run(async |current_task| {
+            let files = SharedFdTable::default();
+            let file1 = SyslogFile::new_file(&current_task);
+            let file2 = SyslogFile::new_file(&current_task);
+
+            let fd1 = add(&current_task, &files, file1).unwrap();
+            let fd2 = add(&current_task, &files, file2).unwrap();
+
+            let mut visited = Vec::new();
+            files.for_each_fd(|fd| visited.push(fd));
+            assert_eq!(visited, vec![fd1, fd2]);
         })
         .await;
     }

@@ -24,11 +24,11 @@ use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     CallbackSymlinkNode, CheckAccessReason, CloseFreeSafe, DirEntry, DirEntryOps,
-    DirectoryEntryType, DirentSink, FdNumber, FileObject, FileOps, FileSystemHandle, FsNode,
-    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, ProcMountinfoFile, ProcMountsFile,
-    SeekTarget, StatxFlags, SymlinkTarget, default_seek, emit_dotdot, fileops_impl_directory,
-    fileops_impl_noop_sync, fileops_impl_seekable, fileops_impl_unbounded_seek,
-    fs_node_impl_dir_readonly, fs_node_impl_dir_readonly_ops,
+    DirectoryEntryType, DirentSink, FdFlags, FdNumber, FdTable, FileObject, FileOps,
+    FileSystemHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    ProcMountinfoFile, ProcMountsFile, SeekTarget, StatxFlags, SymlinkTarget, default_seek,
+    emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
+    fileops_impl_unbounded_seek, fs_node_impl_dir_readonly, fs_node_impl_dir_readonly_ops,
 };
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{DynamicLockDepRwLock, LockDepReadGuard};
@@ -435,8 +435,9 @@ impl FsNodeOps for FdDirectory {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         let task = self.target.get_task()?;
-        let fds = task.files().map_or_else(|_| Vec::new(), |files| files.get_all_fds());
-        Ok(VecDirectory::new_file(fds_to_directory_entries(fds)))
+        let entries =
+            task.files().map_or_else(|_| Vec::new(), |files| fds_to_directory_entries(&files));
+        Ok(VecDirectory::new_file(entries))
     }
 
     fn lookup(
@@ -693,40 +694,72 @@ impl FsNodeOps for FdInfoDirectory {
             .check_ptrace_access_mode(PTRACE_MODE_READ_FSCREDS, &task)
             .map_err(|_| errno!(EACCES))?;
 
-        let fds = task.files().map_or_else(|_| Vec::new(), |files| files.get_all_fds());
-        Ok(VecDirectory::new_file(fds_to_directory_entries(fds)))
+        let entries =
+            task.files().map_or_else(|_| Vec::new(), |files| fds_to_directory_entries(&files));
+        Ok(VecDirectory::new_file(entries))
     }
 
     fn lookup(
         &self,
         entry: &DirEntry,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let task = self.target.get_task()?;
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
-        let file = task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
-        let pos = file.offset.read();
-        let flags = file.flags();
-        let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
-        if let Some(extra_fdinfo) = file.extra_fdinfo(current_task) {
-            data.extend_from_slice(extra_fdinfo.as_slice());
-        }
+        // Verify that the FD exists at lookup time. We intentionally do not store the
+        // `FileHandle` in `FdInfoFile` to avoid pinning the file in memory after the FD is
+        // closed, and to reflect live `FD_CLOEXEC` flags and closed/reassigned FDs on read.
+        task.files()?.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         Ok(entry.node.fs().create_node_and_allocate_node_id(
-            BytesFile::new_node(data),
+            FdInfoFile::new_node(self.target.clone(), fd),
             FsNodeInfo::new(mode!(IFREG, 0o444), task.real_fscred()),
         ))
     }
 }
 
-fn fds_to_directory_entries(fds: Vec<FdNumber>) -> Vec<VecDirectoryEntry> {
-    fds.into_iter()
-        .map(|fd| VecDirectoryEntry {
+#[derive(Clone)]
+struct FdInfoFile {
+    target: TaskContainer,
+    fd: FdNumber,
+}
+
+impl FdInfoFile {
+    fn new_node(target: TaskContainer, fd: FdNumber) -> impl FsNodeOps {
+        DynamicFile::new_node(Self { target, fd })
+    }
+}
+
+impl DynamicFileSource for FdInfoFile {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        let task = self.target.get_task().map_err(|_| errno!(ENOENT))?;
+        let (file, fd_flags) = task
+            .files()
+            .map_err(|_| errno!(ENOENT))?
+            .get_allowing_opath_with_flags(self.fd)
+            .map_err(|_| errno!(ENOENT))?;
+        let pos = file.offset.read();
+        let mut flags = file.flags();
+        flags.set(OpenFlags::CLOEXEC, fd_flags.contains(FdFlags::CLOEXEC));
+        writeln!(sink, "pos:\t{}\nflags:\t0{:o}", pos, flags.bits())?;
+        if let Some(extra_fdinfo) = file.extra_fdinfo(current_task) {
+            sink.write(extra_fdinfo.as_slice());
+        }
+        Ok(())
+    }
+}
+
+fn fds_to_directory_entries(files: &FdTable) -> Vec<VecDirectoryEntry> {
+    let mut buf = itoa::Buffer::new();
+    let mut entries = Vec::new();
+    files.for_each_fd(|fd| {
+        entries.push(VecDirectoryEntry {
             entry_type: DirectoryEntryType::DIR,
-            name: fd.raw().to_string().into(),
+            name: buf.format(fd.raw()).as_bytes().into(),
             inode: None,
-        })
-        .collect()
+        });
+    });
+    entries
 }
 
 /// Directory that lists the task IDs (tid) in a process. Located at `/proc/<pid>/task/`.
@@ -771,13 +804,14 @@ impl FsNodeOps for TaskListDirectory {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         let task = self.target.get_task().map_err(|_| errno!(ENOENT))?;
+        let mut buf = itoa::Buffer::new();
         let inner = VecDirectory::new_file(
             task.thread_group()
                 .read()
                 .task_ids()
                 .map(|tid| VecDirectoryEntry {
                     entry_type: DirectoryEntryType::DIR,
-                    name: tid.to_string().into(),
+                    name: buf.format(tid).as_bytes().into(),
                     inode: None,
                 })
                 .collect(),
@@ -1717,5 +1751,65 @@ impl BytesFileOps for ClearRefsFile {
         let _task = self.target.get_task()?;
         track_stub!(TODO("https://fxbug.dev/396221597"), "/proc/pid/clear_refs");
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starnix_core::testing::{anon_test_file, spawn_kernel_and_run};
+    use starnix_core::vfs::VecOutputBuffer;
+
+    #[::fuchsia::test]
+    async fn test_fdinfo_file_lazy_and_cloexec() {
+        spawn_kernel_and_run(async move |current_task| {
+            let target_file = anon_test_file(
+                current_task,
+                Box::new(BytesFile::new(b"0123456789".to_vec())),
+                OpenFlags::RDONLY,
+            );
+            let fd = current_task
+                .files()
+                .add(current_task, target_file.clone(), FdFlags::empty())
+                .expect("add fd");
+
+            let fdinfo_file = anon_test_file(
+                current_task,
+                Box::new(DynamicFile::new(FdInfoFile {
+                    target: TaskContainer::from_task(&current_task.task),
+                    fd,
+                })),
+                OpenFlags::RDONLY,
+            );
+
+            // 1. Initial read reflects offset 0 and no O_CLOEXEC.
+            let mut buf = VecOutputBuffer::new(256);
+            let n = fdinfo_file.read_at(current_task, 0, &mut buf).expect("read fdinfo");
+            let text = String::from_utf8(buf.data()[..n].to_vec()).unwrap();
+            let expected_initial = format!("pos:\t0\nflags:\t0{:o}\n", OpenFlags::RDONLY.bits());
+            assert_eq!(text, expected_initial);
+
+            // 2. Advancing offset and setting FD_CLOEXEC are reflected lazily on next read from 0.
+            target_file.seek(current_task, SeekTarget::Set(5)).expect("seek");
+            current_task
+                .files()
+                .set_fd_flags_allowing_opath(fd, FdFlags::CLOEXEC)
+                .expect("set cloexec");
+
+            let mut buf2 = VecOutputBuffer::new(256);
+            let n2 = fdinfo_file.read_at(current_task, 0, &mut buf2).expect("read fdinfo after");
+            let text2 = String::from_utf8(buf2.data()[..n2].to_vec()).unwrap();
+            let expected_updated = format!(
+                "pos:\t5\nflags:\t0{:o}\n",
+                (OpenFlags::RDONLY | OpenFlags::CLOEXEC).bits()
+            );
+            assert_eq!(text2, expected_updated);
+
+            // 3. Closing the FD does not keep `target_file` pinned in `FdInfoFile` and subsequent
+            // reads return ENOENT.
+            current_task.files().close(fd).expect("close fd");
+            let mut buf3 = VecOutputBuffer::new(256);
+            assert_eq!(fdinfo_file.read_at(current_task, 0, &mut buf3), error!(ENOENT));
+        })
+        .await;
     }
 }
