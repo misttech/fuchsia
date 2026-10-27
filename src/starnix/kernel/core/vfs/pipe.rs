@@ -593,6 +593,11 @@ impl FileOps for PipeFileObject {
         Ok(self.pipe.lock().query_events(file.flags()))
     }
 
+    fn can_query_events_without_wait(&self) -> bool {
+        // `wait_async` only registers on the pipe's wait queue.
+        true
+    }
+
     fn fcntl(
         &self,
         file: &FileObject,

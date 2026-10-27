@@ -75,6 +75,11 @@ impl FileOps for DevNull {
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         Ok(None)
     }
+
+    fn can_query_events_without_wait(&self) -> bool {
+        // Always ready: `wait_async` and `query_events` are the stateless defaults.
+        true
+    }
 }
 
 #[derive(Default)]

@@ -154,4 +154,9 @@ impl FileOps for EventFdFileObject {
         }
         Ok(events)
     }
+
+    fn can_query_events_without_wait(&self) -> bool {
+        // `wait_async` only registers on the eventfd's wait queue.
+        true
+    }
 }

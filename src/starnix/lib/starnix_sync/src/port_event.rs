@@ -109,6 +109,12 @@ impl PortEvent {
         loop {
             match state {
                 FUTEX_WAITING => {
+                    // A deadline of ZERO (or earlier) only checks for a pending notification, which
+                    // the load above already did: zx_futex_wait() could only time out or observe a
+                    // state change that the next wait observes as well, so skip the syscall.
+                    if deadline <= zx::MonotonicInstant::ZERO {
+                        return PortWaitResult::TimedOut;
+                    }
                     let wait_deadline = *clean_deadline.get_or_insert_with(|| {
                         crate::initial_clean_deadline(deadline, clean_delay)
                     });
@@ -433,6 +439,8 @@ mod test {
     #[test_case(false, zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(100)); "blocking without object")]
     #[test_case(true, zx::MonotonicInstant::INFINITE_PAST; "non blocking with object")]
     #[test_case(false, zx::MonotonicInstant::INFINITE_PAST; "non blocking without object")]
+    #[test_case(true, zx::MonotonicInstant::ZERO; "zero deadline with object")]
+    #[test_case(false, zx::MonotonicInstant::ZERO; "zero deadline without object")]
     fn test_wait_timeout(with_object: bool, deadline: zx::MonotonicInstant) {
         const KEY: u64 = 6;
         const ASSERTED_SIGNAL: zx::Signals = zx::Signals::USER_5;
@@ -447,6 +455,33 @@ mod test {
             );
         }
         assert_eq!(event.wait(deadline), PortWaitResult::TimedOut);
+    }
+
+    #[test_case(NotifyKind::Interrupt, true; "interrupt with object")]
+    #[test_case(NotifyKind::Regular, true; "not interrupt with object")]
+    #[test_case(NotifyKind::Interrupt, false; "interrupt without object")]
+    #[test_case(NotifyKind::Regular, false; "not interrupt without object")]
+    fn test_zero_deadline_timeout_then_notify(kind: NotifyKind, with_object: bool) {
+        const KEY: u64 = 9;
+
+        let event = PortEvent::new();
+        let object = zx::Event::create();
+        if with_object {
+            assert_eq!(
+                event.object_wait_async(
+                    &object,
+                    KEY,
+                    zx::Signals::USER_4,
+                    zx::WaitAsyncOpts::empty()
+                ),
+                Ok(())
+            );
+        }
+
+        assert_eq!(event.wait(zx::MonotonicInstant::ZERO), PortWaitResult::TimedOut);
+        event.notify(kind);
+        assert_eq!(event.wait(zx::MonotonicInstant::ZERO), PortWaitResult::Notification { kind });
+        assert_eq!(event.wait(zx::MonotonicInstant::ZERO), PortWaitResult::TimedOut);
     }
 
     #[test_case(true; "with object")]

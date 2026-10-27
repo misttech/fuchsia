@@ -2116,6 +2116,52 @@ fn deadline_after_timespec(
 
 static_assertions::assert_eq_size!(uapi::__kernel_fd_set, uapi::arch32::__kernel_fd_set);
 
+const SELECT_BITS_PER_BYTE: usize = 8;
+
+fn select_sizeof<T>(_: &T) -> usize {
+    SELECT_BITS_PER_BYTE * std::mem::size_of::<T>()
+}
+
+fn is_fd_set(set: &__kernel_fd_set, fd: usize) -> bool {
+    let index = fd / select_sizeof(&set.fds_bits[0]);
+    let remainder = fd % select_sizeof(&set.fds_bits[0]);
+    set.fds_bits[index] & (1 << remainder) > 0
+}
+
+fn add_fd_to_set(set: &mut __kernel_fd_set, fd: usize) {
+    let index = fd / select_sizeof(&set.fds_bits[0]);
+    let remainder = fd % select_sizeof(&set.fds_bits[0]);
+    set.fds_bits[index] |= 1 << remainder;
+}
+
+fn requested_select_events(
+    sets: &[(FdEvents, &__kernel_fd_set, &mut __kernel_fd_set)],
+    fd: usize,
+) -> FdEvents {
+    let mut aggregated_events = FdEvents::empty();
+    for (events, fds, _) in sets.iter() {
+        if is_fd_set(fds, fd) {
+            aggregated_events |= *events;
+        }
+    }
+    aggregated_events
+}
+
+fn add_ready_fd_to_select_sets(
+    sets: &mut [(FdEvents, &__kernel_fd_set, &mut __kernel_fd_set)],
+    fd: usize,
+    ready_events: FdEvents,
+) -> i32 {
+    let mut num_fds = 0;
+    for (events, fds, fds_out) in sets.iter_mut() {
+        if events.intersects(ready_events) && is_fd_set(fds, fd) {
+            add_fd_to_set(fds_out, fd);
+            num_fds += 1;
+        }
+    }
+    num_fds
+}
+
 fn select(
     current_task: &mut CurrentTask,
     nfds: u32,
@@ -2125,27 +2171,11 @@ fn select(
     deadline: zx::MonotonicInstant,
     sigmask_addr: UserRef<pselect6_sigmask>,
 ) -> Result<i32, Errno> {
-    const BITS_PER_BYTE: usize = 8;
-
-    fn sizeof<T>(_: &T) -> usize {
-        BITS_PER_BYTE * std::mem::size_of::<T>()
-    }
-    fn is_fd_set(set: &__kernel_fd_set, fd: usize) -> bool {
-        let index = fd / sizeof(&set.fds_bits[0]);
-        let remainder = fd % sizeof(&set.fds_bits[0]);
-        set.fds_bits[index] & (1 << remainder) > 0
-    }
-    fn add_fd_to_set(set: &mut __kernel_fd_set, fd: usize) {
-        let index = fd / sizeof(&set.fds_bits[0]);
-        let remainder = fd % sizeof(&set.fds_bits[0]);
-
-        set.fds_bits[index] |= 1 << remainder;
-    }
     let read_fd_set = |addr: UserRef<__kernel_fd_set>| {
         if addr.is_null() { Ok(Default::default()) } else { current_task.read_object(addr) }
     };
 
-    if nfds as usize > BITS_PER_BYTE * std::mem::size_of::<__kernel_fd_set>() {
+    if nfds as usize > SELECT_BITS_PER_BYTE * std::mem::size_of::<__kernel_fd_set>() {
         return error!(EINVAL);
     }
 
@@ -2158,24 +2188,18 @@ fn select(
     let writefds = read_fd_set(writefds_addr)?;
     let exceptfds = read_fd_set(exceptfds_addr)?;
 
-    let sets = &[(read_events, &readfds), (write_events, &writefds), (except_events, &exceptfds)];
-    let waiter = FileWaiter::<FdNumber>::default();
-
-    for fd in 0..nfds {
-        let mut aggregated_events = FdEvents::empty();
-        for (events, fds) in sets.iter() {
-            if is_fd_set(fds, fd as usize) {
-                aggregated_events |= *events;
-            }
+    let mut readfds_out: __kernel_fd_set = Default::default();
+    let mut writefds_out: __kernel_fd_set = Default::default();
+    let mut exceptfds_out: __kernel_fd_set = Default::default();
+    let mut sets = [
+        (read_events, &readfds, &mut readfds_out),
+        (write_events, &writefds, &mut writefds_out),
+        (except_events, &exceptfds, &mut exceptfds_out),
+    ];
+    let read_signal_mask = |current_task: &CurrentTask| -> Result<Option<SigSet>, Errno> {
+        if sigmask_addr.is_null() {
+            return Ok(None);
         }
-        if !aggregated_events.is_empty() {
-            let fd = FdNumber::from_raw(fd as i32);
-            let file = current_task.get_file(fd)?;
-            waiter.add(current_task, fd, Some(&file), aggregated_events)?;
-        }
-    }
-
-    let mask = if !sigmask_addr.is_null() {
         let sigmask = current_task.read_object(sigmask_addr)?;
         let mask = if sigmask.ss.is_null() {
             current_task.read().signal_mask()
@@ -2185,38 +2209,43 @@ fn select(
             }
             current_task.read_object(sigmask.ss.into())?
         };
-        Some(mask)
-    } else {
-        None
+        Ok(Some(mask))
     };
 
-    waiter.wait(current_task, mask, deadline)?;
-
-    let mut num_fds = 0;
-    let mut readfds_out: __kernel_fd_set = Default::default();
-    let mut writefds_out: __kernel_fd_set = Default::default();
-    let mut exceptfds_out: __kernel_fd_set = Default::default();
-    let mut sets = [
-        (read_events, &readfds, &mut readfds_out),
-        (write_events, &writefds, &mut writefds_out),
-        (except_events, &exceptfds, &mut exceptfds_out),
-    ];
-    let mut ready_items = waiter.ready_items.lock();
-    for ReadyItem { key: ready_key, events: ready_events } in ready_items.drain(..) {
-        let ready_key = assert_matches::assert_matches!(
-            ready_key,
-            ReadyItemKey::FdNumber(v) => v
-        );
-
-        sets.iter_mut().for_each(|(events, fds, fds_out)| {
-            let fd = ready_key.raw() as usize;
-            if events.intersects(ready_events) && is_fd_set(fds, fd) {
-                add_fd_to_set(fds_out, fd);
-                num_fds += 1;
+    // Like Linux, only register for notifications if the call may block.
+    let num_fds = match select_without_waiting(current_task, nfds, &mut sets)? {
+        Some(num_fds) if num_fds > 0 || deadline_has_passed(deadline) => {
+            let mask = read_signal_mask(current_task)?;
+            if num_fds == 0 {
+                finish_wait_without_waiter(current_task, mask)?;
             }
-        });
-    }
-    drop(ready_items);
+            num_fds
+        }
+        _ => {
+            let waiter = FileWaiter::<FdNumber>::default();
+            for fd in 0..nfds {
+                let aggregated_events = requested_select_events(&sets, fd as usize);
+                if !aggregated_events.is_empty() {
+                    let fd = FdNumber::from_raw(fd as i32);
+                    let file = current_task.get_file(fd)?;
+                    waiter.add(current_task, fd, Some(&file), aggregated_events)?;
+                }
+            }
+            let mask = read_signal_mask(current_task)?;
+            waiter.wait(current_task, mask, deadline)?;
+            let mut ready_items = waiter.ready_items.lock();
+            let mut num_fds = 0;
+            for ReadyItem { key: ready_key, events: ready_events } in ready_items.drain(..) {
+                let ready_key = assert_matches::assert_matches!(
+                    ready_key,
+                    ReadyItemKey::FdNumber(v) => v
+                );
+                num_fds +=
+                    add_ready_fd_to_select_sets(&mut sets, ready_key.raw() as usize, ready_events);
+            }
+            num_fds
+        }
+    };
 
     let write_fd_set =
         |addr: UserRef<__kernel_fd_set>, value: __kernel_fd_set| -> Result<(), Errno> {
@@ -2229,6 +2258,38 @@ fn select(
     write_fd_set(writefds_addr, writefds_out)?;
     write_fd_set(exceptfds_addr, exceptfds_out)?;
     Ok(num_fds)
+}
+
+/// Queries the files monitored by select(2), without creating a waiter.
+///
+/// Populates the output `fd_set`s in `sets` and returns the number of ready descriptors, or `None`
+/// (with the output `fd_set`s cleared) if a file must be waited on before `query_events` reports
+/// its readiness.
+fn select_without_waiting(
+    current_task: &CurrentTask,
+    nfds: u32,
+    sets: &mut [(FdEvents, &__kernel_fd_set, &mut __kernel_fd_set)],
+) -> Result<Option<i32>, Errno> {
+    let mut num_fds = 0;
+    for fd in 0..nfds {
+        let fd_index = fd as usize;
+        let aggregated_events = requested_select_events(sets, fd_index);
+        if aggregated_events.is_empty() {
+            continue;
+        }
+        let file = current_task.get_file(FdNumber::from_raw(fd as i32))?;
+        if !file.can_query_events_without_wait() {
+            for (_, _, fds_out) in sets.iter_mut() {
+                **fds_out = Default::default();
+            }
+            return Ok(None);
+        }
+        let ready_events = file.query_events(current_task)? & aggregated_events;
+        if !ready_events.is_empty() {
+            num_fds += add_ready_fd_to_select_sets(sets, fd_index, ready_events);
+        }
+    }
+    Ok(Some(num_fds))
 }
 
 pub fn sys_pselect6(
@@ -2394,17 +2455,35 @@ fn do_epoll_pwait(
         .mm()?
         .check_plausible(events.addr(), max_events * std::mem::size_of::<EpollEvent>())?;
 
+    let wait = |current_task: &CurrentTask| -> Result<Vec<EpollEvent>, Errno> {
+        let active_events = epoll_file.wait(current_task, max_events, deadline)?;
+        if active_events.is_empty() && deadline == zx::MonotonicInstant::ZERO {
+            // A zero deadline never blocks, so nothing checked for pending signals.
+            check_wait_not_interrupted(current_task)?;
+        }
+        Ok(active_events)
+    };
     let active_events = if !user_sigmask.is_null() {
         let signal_mask = current_task.read_object(user_sigmask)?;
-        current_task.wait_with_temporary_mask(signal_mask, |current_task| {
-            epoll_file.wait(current_task, max_events, deadline)
-        })?
+        current_task.wait_with_temporary_mask(signal_mask, wait)?
     } else {
-        epoll_file.wait(current_task, max_events, deadline)?
+        wait(current_task)?
     };
 
     current_task.write_objects(events, &active_events)?;
     Ok(active_events.len())
+}
+
+/// Returns the deadline of an epoll wait for `timeout`, starting now.
+///
+/// A zero timeout yields `zx::MonotonicInstant::ZERO`, a deadline that has already passed, so that
+/// non-blocking waits neither read the clock nor take the blocking path of `Waiter::wait_until`.
+fn epoll_deadline(timeout: zx::MonotonicDuration) -> zx::MonotonicInstant {
+    if timeout == zx::MonotonicDuration::ZERO {
+        zx::MonotonicInstant::ZERO
+    } else {
+        zx::MonotonicInstant::after(timeout)
+    }
 }
 
 pub fn sys_epoll_pwait(
@@ -2415,7 +2494,7 @@ pub fn sys_epoll_pwait(
     timeout: i32,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
-    let deadline = zx::MonotonicInstant::after(duration_from_poll_timeout(timeout)?);
+    let deadline = epoll_deadline(duration_from_poll_timeout(timeout)?);
     do_epoll_pwait(current_task, epfd, events, max_events, deadline, user_sigmask)
 }
 
@@ -2427,8 +2506,49 @@ pub fn sys_epoll_pwait2(
     user_timespec: TimeSpecPtr,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
-    let deadline = deadline_after_timespec(current_task, user_timespec)?;
+    let deadline = if user_timespec.is_null() {
+        zx::MonotonicInstant::INFINITE
+    } else {
+        let timespec = current_task.read_multi_arch_object(user_timespec)?;
+        epoll_deadline(duration_from_timespec(timespec)?)
+    };
     do_epoll_pwait(current_task, epfd, events, max_events, deadline, user_sigmask)
+}
+
+/// Returns whether a wait until `deadline` would time out right away.
+fn deadline_has_passed(deadline: zx::MonotonicInstant) -> bool {
+    deadline != zx::MonotonicInstant::INFINITE && deadline <= zx::MonotonicInstant::get()
+}
+
+/// Fails with EINTR if a blocking wait would be interrupted before blocking.
+///
+/// Mirrors the check that `CurrentTask::run_in_state` performs before a `Waiter` blocks. Waits that
+/// do not block at all call it to keep reporting pending signals like a wait whose deadline has
+/// passed.
+fn check_wait_not_interrupted(current_task: &CurrentTask) -> Result<(), Errno> {
+    if current_task.is_exitted()
+        || current_task.is_work_cancelled()
+        || current_task.is_interrupt_pending()
+    {
+        return error!(EINTR);
+    }
+    Ok(())
+}
+
+/// Completes a poll(2) or select(2) call that found no file ready after its deadline passed,
+/// without the waiter that `FileWaiter::wait` would use: applies `signal_mask` and fails with
+/// EINTR if a signal is pending, exactly as `FileWaiter::wait` does in that case.
+fn finish_wait_without_waiter(
+    current_task: &mut CurrentTask,
+    signal_mask: Option<SigSet>,
+) -> Result<(), Errno> {
+    match signal_mask {
+        Some(signal_mask) => {
+            current_task.wait_with_temporary_mask(signal_mask, check_wait_not_interrupted)
+        }
+        // `FileWaiter::wait` then sets the current mask as the temporary mask, which is a no-op.
+        None => check_wait_not_interrupted(current_task),
+    }
 }
 
 struct FileWaiter<Key: Into<ReadyItemKey>> {
@@ -2512,11 +2632,19 @@ pub fn poll(
     }
 
     let mut pollfds = vec![pollfd::default(); num_fds as usize];
-    let waiter = FileWaiter::<usize>::default();
-
     for (index, poll_descriptor) in pollfds.iter_mut().enumerate() {
         *poll_descriptor = current_task.read_object(user_pollfds.at(index)?)?;
         poll_descriptor.revents = 0;
+    }
+
+    // Like Linux, only register for notifications if the call may block.
+    if let Some(num_ready) = poll_without_waiting(current_task, &mut pollfds, mask, deadline)? {
+        write_pollfds(current_task, user_pollfds, &pollfds)?;
+        return Ok(num_ready);
+    }
+
+    let waiter = FileWaiter::<usize>::default();
+    for (index, poll_descriptor) in pollfds.iter().enumerate() {
         if poll_descriptor.fd < 0 {
             continue;
         }
@@ -2549,11 +2677,65 @@ pub fn poll(
     }
     drop(ready_items);
 
+    write_pollfds(current_task, user_pollfds, &pollfds)?;
+
+    Ok(unique_ready_items.into_iter().filter(Clone::clone).count())
+}
+
+/// Polls `pollfds` by querying their files, without creating a waiter.
+///
+/// Returns the number of ready entries, after setting their `revents`, if `poll` does not need to
+/// block: an entry is ready or refers to an fd that is not open, or `deadline` has passed. Returns
+/// `None`, leaving `pollfds` untouched, if `poll` has to wait or if a file must be waited on before
+/// `query_events` reports its readiness.
+fn poll_without_waiting(
+    current_task: &mut CurrentTask,
+    pollfds: &mut [pollfd],
+    mask: Option<SigSet>,
+    deadline: zx::MonotonicInstant,
+) -> Result<Option<usize>, Errno> {
+    let mut num_ready = 0;
+    for index in 0..pollfds.len() {
+        let poll_descriptor = pollfds[index];
+        if poll_descriptor.fd < 0 {
+            continue;
+        }
+        let ready_events = match current_task.get_file(FdNumber::from_raw(poll_descriptor.fd)) {
+            Ok(file) => {
+                if !file.can_query_events_without_wait() {
+                    pollfds[..index].iter_mut().for_each(|p| p.revents = 0);
+                    return Ok(None);
+                }
+                let sought_events = FdEvents::from_bits_truncate(poll_descriptor.events as u32)
+                    | FdEvents::POLLERR
+                    | FdEvents::POLLHUP;
+                file.query_events(current_task)? & sought_events
+            }
+            Err(_) => FdEvents::POLLNVAL,
+        };
+        if !ready_events.is_empty() {
+            pollfds[index].revents = ready_events.bits() as i16;
+            num_ready += 1;
+        }
+    }
+    if num_ready == 0 {
+        if !deadline_has_passed(deadline) {
+            return Ok(None);
+        }
+        finish_wait_without_waiter(current_task, mask)?;
+    }
+    Ok(Some(num_ready))
+}
+
+fn write_pollfds(
+    current_task: &CurrentTask,
+    user_pollfds: UserRef<pollfd>,
+    pollfds: &[pollfd],
+) -> Result<(), Errno> {
     for (index, poll_descriptor) in pollfds.iter().enumerate() {
         current_task.write_object(user_pollfds.at(index)?, poll_descriptor)?;
     }
-
-    Ok(unique_ready_items.into_iter().filter(Clone::clone).count())
+    Ok(())
 }
 
 /// Calls `poll` and arranges for an interrupted call to be restarted unless a signal handler runs.
@@ -3818,6 +4000,195 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(error, errno!(ENOTDIR));
+        })
+        .await;
+    }
+
+    struct TestPollFile {
+        can_query_without_wait: bool,
+        events_before_wait: FdEvents,
+        events_after_wait: FdEvents,
+        waited: std::sync::atomic::AtomicBool,
+    }
+
+    impl TestPollFile {
+        fn new_file(
+            current_task: &CurrentTask,
+            can_query_without_wait: bool,
+            events_before_wait: FdEvents,
+            events_after_wait: FdEvents,
+        ) -> FileHandle {
+            crate::vfs::Anon::new_private_file(
+                current_task,
+                Box::new(Self {
+                    can_query_without_wait,
+                    events_before_wait,
+                    events_after_wait,
+                    waited: std::sync::atomic::AtomicBool::new(false),
+                }),
+                OpenFlags::RDWR,
+                "[test_poll]",
+            )
+        }
+    }
+
+    impl crate::vfs::FileOps for TestPollFile {
+        crate::vfs::fileops_impl_nonseekable!();
+        crate::vfs::fileops_impl_dataless!();
+        crate::vfs::fileops_impl_noop_sync!();
+
+        fn wait_async(
+            &self,
+            _file: &crate::vfs::FileObject,
+            _current_task: &CurrentTask,
+            _waiter: &Waiter,
+            _events: FdEvents,
+            _handler: EventHandler,
+        ) -> Option<crate::task::WaitCanceler> {
+            self.waited.store(true, std::sync::atomic::Ordering::Relaxed);
+            None
+        }
+
+        fn query_events(
+            &self,
+            _file: &crate::vfs::FileObject,
+            _current_task: &CurrentTask,
+        ) -> Result<FdEvents, Errno> {
+            if self.waited.load(std::sync::atomic::Ordering::Relaxed) {
+                Ok(self.events_after_wait)
+            } else {
+                Ok(self.events_before_wait)
+            }
+        }
+
+        fn can_query_events_without_wait(&self) -> bool {
+            self.can_query_without_wait
+        }
+    }
+
+    #[::fuchsia::test]
+    async fn test_poll_and_select_mixed_can_query_events_without_wait() {
+        spawn_kernel_and_run(async |current_task| {
+            let addr = map_memory(&current_task, UserAddress::default(), *PAGE_SIZE);
+
+            // In `poll`: an earlier fd that is only ready during `poll_without_waiting`, an
+            // invalid fd that sets `POLLNVAL`, a persistently ready fd, and a later fd with
+            // `can_query_events_without_wait() == false` that only becomes ready after
+            // `wait_async`. `poll_without_waiting` must roll back the earlier `revents` before
+            // falling back to `FileWaiter`.
+            let transient_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(current_task, true, FdEvents::POLLIN, FdEvents::empty()),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+            let persistent_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(
+                        current_task,
+                        true,
+                        FdEvents::POLLOUT,
+                        FdEvents::POLLOUT,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+            let wait_required_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(
+                        current_task,
+                        false,
+                        FdEvents::empty(),
+                        FdEvents::POLLIN,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            let user_pollfds = UserRef::<pollfd>::new(addr);
+            let pollfds_in = [
+                pollfd { fd: transient_fd.raw(), events: POLLIN as i16, revents: 0 },
+                pollfd { fd: 99, events: POLLIN as i16, revents: 0 },
+                pollfd { fd: persistent_fd.raw(), events: POLLOUT as i16, revents: 0 },
+                pollfd { fd: wait_required_fd.raw(), events: POLLIN as i16, revents: 0 },
+            ];
+            current_task.write_objects(user_pollfds, &pollfds_in).unwrap();
+
+            let num_ready = poll(
+                current_task,
+                user_pollfds,
+                pollfds_in.len() as i32,
+                None,
+                zx::MonotonicInstant::INFINITE,
+            )
+            .unwrap();
+            assert_eq!(num_ready, 3);
+            let pollfds_out: [pollfd; 4] = current_task.read_object(UserRef::new(addr)).unwrap();
+            assert_eq!(pollfds_out[0].revents, 0);
+            assert_eq!(pollfds_out[1].revents, starnix_uapi::POLLNVAL as i16);
+            assert_eq!(pollfds_out[2].revents, POLLOUT as i16);
+            assert_eq!(pollfds_out[3].revents, POLLIN as i16);
+
+            // In `select`: the same mix must clear the output `fd_set` bits populated before
+            // encountering the descriptor with `can_query_events_without_wait() == false`, and
+            // then fall back to `FileWaiter`.
+            let transient_select_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(current_task, true, FdEvents::POLLIN, FdEvents::empty()),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+            let persistent_select_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(
+                        current_task,
+                        true,
+                        FdEvents::POLLOUT,
+                        FdEvents::POLLOUT,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+            let wait_required_select_fd = current_task
+                .add_file(
+                    TestPollFile::new_file(
+                        current_task,
+                        false,
+                        FdEvents::empty(),
+                        FdEvents::POLLIN,
+                    ),
+                    FdFlags::empty(),
+                )
+                .unwrap();
+
+            let mut readfds: __kernel_fd_set = Default::default();
+            add_fd_to_set(&mut readfds, transient_select_fd.raw() as usize);
+            add_fd_to_set(&mut readfds, wait_required_select_fd.raw() as usize);
+            let mut writefds: __kernel_fd_set = Default::default();
+            add_fd_to_set(&mut writefds, persistent_select_fd.raw() as usize);
+
+            let readfds_addr = UserRef::<__kernel_fd_set>::new(addr);
+            let writefds_addr = readfds_addr.next().unwrap();
+            current_task.write_object(readfds_addr, &readfds).unwrap();
+            current_task.write_object(writefds_addr, &writefds).unwrap();
+
+            let nfds = (wait_required_select_fd.raw() + 1) as u32;
+            let num_fds = select(
+                current_task,
+                nfds,
+                readfds_addr,
+                writefds_addr,
+                UserRef::default(),
+                zx::MonotonicInstant::INFINITE,
+                UserRef::default(),
+            )
+            .unwrap();
+            assert_eq!(num_fds, 2);
+            let readfds_out = current_task.read_object(readfds_addr).unwrap();
+            let writefds_out = current_task.read_object(writefds_addr).unwrap();
+            assert!(!is_fd_set(&readfds_out, transient_select_fd.raw() as usize));
+            assert!(is_fd_set(&readfds_out, wait_required_select_fd.raw() as usize));
+            assert!(is_fd_set(&writefds_out, persistent_select_fd.raw() as usize));
         })
         .await;
     }

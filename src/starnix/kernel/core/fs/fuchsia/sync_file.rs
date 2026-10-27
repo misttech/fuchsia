@@ -387,6 +387,12 @@ impl FileOps for SyncFile {
         Ok(FdEvents::POLLIN)
     }
 
+    fn can_query_events_without_wait(&self) -> bool {
+        // `wait_async` only arms waits on the sync point counters, whose state `query_events`
+        // reads directly.
+        true
+    }
+
     fn read(
         &self,
         _file: &FileObject,
