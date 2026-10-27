@@ -342,6 +342,7 @@ bool MdnsTransceiver::EnsureInterfaceTransceiver(const inet::IpAddress& address,
 
     // We have an interface transceiver for this address, but its name or id
     // don't match. Destroy it and create a new one.
+    existing->Stop();
     interface_transceivers_by_address_.erase(iter);
     result_on_fail = true;
   }

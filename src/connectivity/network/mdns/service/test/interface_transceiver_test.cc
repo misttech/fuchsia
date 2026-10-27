@@ -42,6 +42,8 @@ class MdnsInterfaceTransceiverTest : public MdnsInterfaceTransceiver {
 
   using MdnsInterfaceTransceiver::InboundReady;
 
+  void CallBaseWaitForInbound() { MdnsInterfaceTransceiver::WaitForInbound(); }
+
   // Configured by the test before calling InboundReady.
   ssize_t receive_message_result_ = 0;
   std::vector<uint8_t> receive_message_packet_;
@@ -788,6 +790,126 @@ TEST(InterfaceTransceiverTest, InboundReadyReceiveMessageFailure) {
   loop.RunFor(zx::sec(10));
   EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
   EXPECT_FALSE(callback_called);
+}
+
+// Verifies transient ReceiveMessage error recovery: after the 10s retry re-arms WaitForInbound,
+// subsequent inbound traffic is received and delivered cleanly.
+TEST(InterfaceTransceiverTest, InboundReadyReceiveMessageFailureRecovery) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+  under_test.receive_message_result_ = -1;
+
+  bool callback_called = false;
+  std::unique_ptr<DnsMessage> received_msg;
+  under_test.Start([&](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {
+    callback_called = true;
+    received_msg = std::move(message);
+  });
+
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  // Trigger transient recvmsg failure.
+  under_test.InboundReady(ZX_OK, POLLIN);
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  // Before 10s elapses, WaitForInbound should still not have been called again.
+  loop.RunFor(zx::sec(9));
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  // At 10s, the retry fires and re-arms WaitForInbound.
+  loop.RunFor(zx::sec(1));
+  EXPECT_EQ(2u, under_test.wait_for_inbound_count_);
+  EXPECT_FALSE(callback_called);
+
+  // Prepare a valid inbound DNS packet and verify normal reception resumes cleanly.
+  DnsMessage inbound_msg;
+  inbound_msg.questions_.push_back(
+      std::make_shared<DnsQuestion>(DnsName("recovered.local."), DnsType::kAny));
+  inbound_msg.UpdateCounts();
+
+  std::vector<uint8_t> buffer(1024);
+  PacketWriter writer(std::move(buffer));
+  writer << inbound_msg;
+  size_t packet_size = writer.position();
+  buffer = writer.GetPacket();
+  buffer.resize(packet_size);
+
+  under_test.receive_message_result_ = 0;
+  under_test.receive_message_packet_ = std::move(buffer);
+  under_test.receive_message_source_address_ =
+      inet::SocketAddress(inet::IpAddress(169, 254, 1, 2), inet::IpPort::From_uint16_t(5353));
+  under_test.receive_message_destination_address_ = MdnsAddresses::v4_multicast().address();
+
+  under_test.InboundReady(ZX_OK, POLLIN);
+
+  EXPECT_EQ(2u, under_test.receive_message_count_);
+  EXPECT_EQ(3u, under_test.wait_for_inbound_count_);
+  EXPECT_TRUE(callback_called);
+  ASSERT_NE(nullptr, received_msg);
+  ASSERT_EQ(1u, received_msg->questions_.size());
+  EXPECT_EQ(DnsName("recovered.local."), received_msg->questions_[0]->name_);
+}
+
+// Regression test for b/521973611: destroying MdnsInterfaceTransceiver while a 10s inbound retry
+// task is pending must cancel the delayed task and not cause a use-after-free.
+TEST(InterfaceTransceiverTest, InboundReadyReceiveMessageFailureDestroyedBeforeRetry) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  alignas(MdnsInterfaceTransceiverTest) std::byte storage[sizeof(MdnsInterfaceTransceiverTest)];
+  auto* under_test =
+      new (storage) MdnsInterfaceTransceiverTest(nic_address, nic_name, nic_id, Media::kWired);
+  under_test->receive_message_result_ = -1;
+
+  under_test->Start([](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {});
+  EXPECT_EQ(1u, under_test->wait_for_inbound_count_);
+
+  // Trigger InboundReady failure to post the 10-second delayed retry task.
+  under_test->InboundReady(ZX_OK, POLLIN);
+  EXPECT_EQ(1u, under_test->receive_message_count_);
+  EXPECT_EQ(1u, under_test->wait_for_inbound_count_);
+
+  // Destroy the transceiver before the 10-second retry fires and poison its storage so any
+  // post-destruction dereference deterministically faults even without ASan.
+  under_test->~MdnsInterfaceTransceiverTest();
+  std::memset(storage, 0xfe, sizeof(storage));
+
+  // Advance past the 10-second retry window; the cancelled task must not execute.
+  loop.RunFor(zx::sec(15));
+}
+
+// Verifies that calling Stop() while a 10s inbound retry task is pending cancels the retry task
+// even when the MdnsInterfaceTransceiver instance remains alive, and that base WaitForInbound()
+// safely handles a closed/invalid socket descriptor.
+TEST(InterfaceTransceiverTest, InboundReadyReceiveMessageFailureStoppedBeforeRetry) {
+  async::TestLoop loop;
+  inet::IpAddress nic_address(1, 2, 3, 4);
+  std::string nic_name = "testnic";
+  uint32_t nic_id = 1234;
+
+  MdnsInterfaceTransceiverTest under_test(nic_address, nic_name, nic_id, Media::kWired);
+  under_test.receive_message_result_ = -1;
+
+  under_test.Start([](std::unique_ptr<DnsMessage> message, const ReplyAddress& reply_address) {});
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  // Trigger InboundReady failure to post the 10-second delayed retry task.
+  under_test.InboundReady(ZX_OK, POLLIN);
+  EXPECT_EQ(1u, under_test.receive_message_count_);
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
+
+  // Stop without destroying the transceiver and advance past 10 seconds.
+  under_test.Stop();
+  under_test.CallBaseWaitForInbound();
+  loop.RunFor(zx::sec(15));
+  EXPECT_EQ(1u, under_test.wait_for_inbound_count_);
 }
 
 // Verifies IpSubnet properties and SetInterfaces with explicit IpSubnet.

@@ -5,6 +5,7 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_MDNS_SERVICE_TRANSPORT_MDNS_INTERFACE_TRANSCEIVER_H_
 #define SRC_CONNECTIVITY_NETWORK_MDNS_SERVICE_TRANSPORT_MDNS_INTERFACE_TRANSCEIVER_H_
 
+#include <lib/async/cpp/task.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -174,6 +175,8 @@ class MdnsInterfaceTransceiver {
   uint64_t bytes_received_ = 0;
   uint64_t messages_sent_ = 0;
   uint64_t bytes_sent_ = 0;
+  async::TaskClosureMethod<MdnsInterfaceTransceiver, &MdnsInterfaceTransceiver::WaitForInbound>
+      inbound_retry_task_{this};
 
  public:
   // Disallow copy, assign and move.

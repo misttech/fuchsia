@@ -8,6 +8,7 @@
 #include <fuchsia/net/interfaces/cpp/fidl.h>
 #include <fuchsia/net/interfaces/cpp/fidl_test_base.h>
 #include <lib/fidl/cpp/binding.h>
+#include <poll.h>
 
 #include "src/connectivity/network/mdns/service/common/mdns_addresses.h"
 #include "src/connectivity/network/mdns/service/encoding/dns_reading.h"
@@ -178,6 +179,14 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
     inet::SocketAddress address;
   };
   std::vector<SentMessage> sent_messages_;
+  ssize_t receive_message_result_ = 0;
+  uint32_t* external_wait_for_inbound_count_ = nullptr;
+
+  void TriggerInboundReadyError(uint32_t* wait_count) {
+    external_wait_for_inbound_count_ = wait_count;
+    receive_message_result_ = -1;
+    InboundReady(ZX_OK, POLLIN);
+  }
 
  protected:
   enum IpVersions IpVersions() override { return ip_versions_; }
@@ -188,6 +197,16 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
   int SetOptionMulticastTtl() override { return 0; }
   int SetOptionFamilySpecific() override { return 0; }
   int Bind() override { return 0; }
+
+  void WaitForInbound() override {
+    if (external_wait_for_inbound_count_ != nullptr) {
+      ++(*external_wait_for_inbound_count_);
+    }
+  }
+
+  ssize_t ReceiveMessage(int sockfd, struct msghdr* msg, int flags) override {
+    return receive_message_result_;
+  }
 
   ssize_t SendTo(const void* buffer, size_t size, const inet::SocketAddress& address) override {
     std::vector<uint8_t> packet(static_cast<const uint8_t*>(buffer),
@@ -203,7 +222,7 @@ class StubInterfaceTransceiver : public MdnsInterfaceTransceiver {
   }
 
   bool Start(InboundMessageCallback callback) override { return true; }
-  void Stop() override {}
+  void Stop() override { MdnsInterfaceTransceiver::Stop(); }
 
  private:
   enum IpVersions ip_versions_;
@@ -736,6 +755,69 @@ TEST_F(MdnsTransceiverTests, SendMessagesByMedia) {
     EXPECT_FALSE(saw_wireless);
     EXPECT_TRUE(saw_wired);
   }
+}
+
+// Regression test for b/521973611: removing an interface after a socket receive error schedules a
+// 10-second retry task must cancel the retry and not access freed memory when the timer expires.
+TEST_F(MdnsTransceiverTests, RemoveInterfaceWithPendingInboundRetry) {
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithExisting(std::move(properties_))));
+
+  RunLoopUntilIdle();
+
+  auto* v4_transceiver =
+      static_cast<StubInterfaceTransceiver*>(transceiver_.GetInterfaceTransceiver(v4_address1_));
+  ASSERT_NE(v4_transceiver, nullptr);
+
+  uint32_t wait_for_inbound_count = 0;
+  v4_transceiver->TriggerInboundReadyError(&wait_for_inbound_count);
+  EXPECT_EQ(0u, wait_for_inbound_count);
+
+  ASSERT_TRUE(
+      fake_watcher_impl_.CompleteWatchCallback(fuchsia::net::interfaces::Event::WithRemoved(kID)));
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(transceiver_.GetInterfaceTransceiver(v4_address1_), nullptr);
+
+  RunLoopFor(zx::sec(15));
+  EXPECT_EQ(0u, wait_for_inbound_count);
+}
+
+// Regression test for b/521973611: replacing an interface transceiver for the same IP address in
+// EnsureInterfaceTransceiver while a 10-second retry task is pending must stop and cancel the old
+// transceiver's retry task before destroying it.
+TEST_F(MdnsTransceiverTests, ReplaceInterfaceWithPendingInboundRetry) {
+  RunLoopUntilIdle();
+
+  fuchsia::net::interfaces::Properties replacement;
+  ASSERT_OK(properties_.Clone(&replacement));
+  replacement.set_id(kID + 1u);
+  replacement.set_name("wlan1");
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithExisting(std::move(properties_))));
+  RunLoopUntilIdle();
+
+  auto* old_v4_transceiver =
+      static_cast<StubInterfaceTransceiver*>(transceiver_.GetInterfaceTransceiver(v4_address1_));
+  ASSERT_NE(old_v4_transceiver, nullptr);
+
+  uint32_t wait_for_inbound_count = 0;
+  old_v4_transceiver->TriggerInboundReadyError(&wait_for_inbound_count);
+  EXPECT_EQ(0u, wait_for_inbound_count);
+
+  ASSERT_TRUE(fake_watcher_impl_.CompleteWatchCallback(
+      fuchsia::net::interfaces::Event::WithAdded(std::move(replacement))));
+  RunLoopUntilIdle();
+
+  auto* new_v4_transceiver = transceiver_.GetInterfaceTransceiver(v4_address1_);
+  ASSERT_NE(new_v4_transceiver, nullptr);
+  EXPECT_EQ(kID + 1u, new_v4_transceiver->id());
+
+  RunLoopFor(zx::sec(15));
+  EXPECT_EQ(0u, wait_for_inbound_count);
 }
 
 }  // namespace mdns::test

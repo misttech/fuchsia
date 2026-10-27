@@ -92,7 +92,7 @@ MdnsInterfaceTransceiver::MdnsInterfaceTransceiver(inet::IpAddress address, cons
   FX_DCHECK(media_ == Media::kWired || media_ == Media::kWireless);
 }
 
-MdnsInterfaceTransceiver::~MdnsInterfaceTransceiver() {}
+MdnsInterfaceTransceiver::~MdnsInterfaceTransceiver() { MdnsInterfaceTransceiver::Stop(); }
 
 bool MdnsInterfaceTransceiver::Start(InboundMessageCallback callback) {
   FX_DCHECK(callback);
@@ -125,7 +125,7 @@ bool MdnsInterfaceTransceiver::Start(InboundMessageCallback callback) {
 }
 
 void MdnsInterfaceTransceiver::Stop() {
-  FX_DCHECK(socket_fd_.is_valid()) << "Stop called when stopped.";
+  inbound_retry_task_.Cancel();
   fd_waiter_.Cancel();
   socket_fd_.reset();
 }
@@ -241,6 +241,10 @@ int MdnsInterfaceTransceiver::SetOptionSharePort() {
 }
 
 void MdnsInterfaceTransceiver::WaitForInbound() {
+  if (!socket_fd_.is_valid()) {
+    return;
+  }
+
   fd_waiter_.Wait([this](zx_status_t status, uint32_t events) { InboundReady(status, events); },
                   socket_fd_.get(), POLLIN);
 }
@@ -270,8 +274,7 @@ void MdnsInterfaceTransceiver::InboundReady(zx_status_t status, uint32_t events)
   if (result < 0) {
     FX_LOGS(ERROR) << "Failed to recvmsg, " << strerror(errno);
     // Wait a bit before trying again to avoid spamming the log.
-    async::PostDelayedTask(
-        async_get_default_dispatcher(), [this]() { WaitForInbound(); }, zx::sec(10));
+    inbound_retry_task_.PostDelayed(async_get_default_dispatcher(), zx::sec(10));
     return;
   }
 
