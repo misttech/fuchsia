@@ -132,6 +132,7 @@ class SchedScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.access_point.stop_all_aps()
         self.wlanix = wlanix_testing.Wlanix(self.dut)
         self.chip = await self.wlanix.ensure_single_chip()
+        (await self.chip.proxy.set_country_code(code=list(b"US"))).unwrap()
 
     async def setup_test(self) -> None:
         await super().setup_test()
