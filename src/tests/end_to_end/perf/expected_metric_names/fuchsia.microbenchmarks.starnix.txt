@@ -16,6 +16,9 @@ fuchsia.microbenchmarks.starnix: Filesystem_ProcSelfStat/1000mappings
 fuchsia.microbenchmarks.starnix: Filesystem_ProcSelfStat/100mappings
 fuchsia.microbenchmarks.starnix: Filesystem_ProcSelfStat/10mappings
 fuchsia.microbenchmarks.starnix: Filesystem_Stat_Ext4
+fuchsia.microbenchmarks.starnix: MadviseDontNeed/4096mappings
+fuchsia.microbenchmarks.starnix: MadviseDontNeed/512mappings
+fuchsia.microbenchmarks.starnix: MadviseDontNeed/64mappings
 fuchsia.microbenchmarks.starnix: MallocFree/100bytes.free
 fuchsia.microbenchmarks.starnix: MallocFree/100bytes.malloc
 fuchsia.microbenchmarks.starnix: MallocFree/1024bytes.free
@@ -26,6 +29,9 @@ fuchsia.microbenchmarks.starnix: MallocFree/8192bytes.free
 fuchsia.microbenchmarks.starnix: MallocFree/8192bytes.malloc
 fuchsia.microbenchmarks.starnix: Memcpy/100000bytes
 fuchsia.microbenchmarks.starnix: Memcpy/1000bytes
+fuchsia.microbenchmarks.starnix: MsyncAsync/4096mappings
+fuchsia.microbenchmarks.starnix: MsyncAsync/512mappings
+fuchsia.microbenchmarks.starnix: MsyncAsync/64mappings
 fuchsia.microbenchmarks.starnix: Null
 fuchsia.microbenchmarks.starnix: Null5Step.step1
 fuchsia.microbenchmarks.starnix: Null5Step.step2
