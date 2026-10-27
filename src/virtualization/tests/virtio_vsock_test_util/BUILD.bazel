@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_vsock_test_util",
+    srcs = select({
+        "@platforms//os:fuchsia": ["src/fuchsia_main.rs"],
+        "@platforms//os:linux": ["src/linux_main.rs"],
+    }),
+    crate_root = select({
+        "@platforms//os:fuchsia": "src/fuchsia_main.rs",
+        "@platforms//os:linux": "src/linux_main.rs",
+    }),
+    edition = "2024",
+    visibility = ["//src/virtualization:__subpackages__"],
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.vsock:fuchsia.vsock_rust",
+            "//sdk/rust/zx",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia",
+            "//src/lib/fuchsia-async",
+            "//src/lib/fuchsia-component",
+            "//third_party/rust_crates/vendor:anyhow",
+            "//third_party/rust_crates/vendor:futures",
+        ],
+        "@platforms//os:linux": [
+            "//third_party/rust_crates/vendor:argh",
+            "//third_party/rust_crates/vendor:libc",
+        ],
+    }),
+)

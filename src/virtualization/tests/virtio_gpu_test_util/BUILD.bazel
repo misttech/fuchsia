@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_gpu_test_util",
+    srcs = [
+        "src/framebuffer.rs",
+        "src/linuxfb.rs",
+        "src/main.rs",
+        "src/zirconfb.rs",
+    ],
+    edition = "2024",
+    visibility = ["//src/virtualization:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+            "//sdk/rust/zx",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia-component",
+            "//third_party/rust_crates/vendor:futures",
+        ],
+        "@platforms//os:linux": [
+            "//third_party/rust_crates/vendor:libc",
+        ],
+    }),
+)
+
+rustc_test(
+    name = "virtio_gpu_test_util_test",
+    crate = ":virtio_gpu_test_util",
+)
+
+fx_unittest_package(
+    name = "virtio-gpu-test-util-tests",
+    unit_tests = [":virtio_gpu_test_util_test"],
+)

@@ -1,0 +1,18 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "memory_test_util",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/virtualization/packages/debian_guest:__pkg__",
+        "//src/virtualization/tests:__pkg__",
+    ],
+    deps = ["//third_party/rust_crates/vendor:argh"],
+)
