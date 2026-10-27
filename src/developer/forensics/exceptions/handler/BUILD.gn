@@ -29,7 +29,6 @@ source_set("lib") {
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_cpp",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_hlcpp",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
@@ -48,6 +47,7 @@ source_set("lib") {
 
   deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp_hlcpp_conversion",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/exceptions:constants",

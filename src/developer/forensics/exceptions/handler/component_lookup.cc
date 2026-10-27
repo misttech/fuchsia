@@ -5,14 +5,13 @@
 #include "src/developer/forensics/exceptions/handler/component_lookup.h"
 
 #include <fidl/fuchsia.driver.crash/cpp/fidl.h>
-#include <fuchsia/sys2/cpp/fidl.h>
+#include <fidl/fuchsia.sys2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fpromise/result.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
 #include "src/developer/forensics/utils/errors.h"
-#include "src/developer/forensics/utils/fidl_oneshot.h"
 #include "src/developer/forensics/utils/promise_timeout.h"
 #include "src/lib/fidl/contrib/fpromise/client.h"
 
@@ -28,32 +27,54 @@ constexpr std::string_view kDriverHostPattern = "bootstrap/driver-hosts:";
 ::fpromise::promise<ComponentInfo> GetInfo(async_dispatcher_t* dispatcher,
                                            const std::shared_ptr<sys::ServiceDirectory>& services,
                                            zx::duration timeout, zx_koid_t thread_koid) {
-  namespace sys = fuchsia::sys2;
-  return OneShotCall<sys::CrashIntrospect, &sys::CrashIntrospect::FindComponentByThreadKoid>(
-             dispatcher, services, timeout, thread_koid)
-      .or_else([](Error& error) { return ::fpromise::error(); })
-      .and_then([](const sys::CrashIntrospect_FindComponentByThreadKoid_Result& result)
-                    -> ::fpromise::result<ComponentInfo> {
-        if (result.is_err()) {
-          // RESOURCE_NOT_FOUND most likely means a thread from a process outside a component,
-          // which is not an error.
-          if (result.err() != fuchsia::component::Error::RESOURCE_NOT_FOUND) {
-            FX_LOGS(WARNING) << "Failed FindComponentByThreadKoid, error: "
-                             << static_cast<int>(result.err());
-          }
+  using FindComponentByThreadKoidErrors =
+      fidl::ErrorsIn<fuchsia_sys2::CrashIntrospect::FindComponentByThreadKoid>;
+
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sys2::CrashIntrospect>::Create();
+  services->Connect(fidl::DiscoverableProtocolName<fuchsia_sys2::CrashIntrospect>,
+                    server_end.TakeChannel());
+  fidl::Client<fuchsia_sys2::CrashIntrospect> client(std::move(client_end), dispatcher);
+
+  ::fpromise::promise<ComponentInfo, Error> find_component_promise =
+      fidl_fpromise::as_promise(client->FindComponentByThreadKoid({thread_koid}))
+          .or_else([](FindComponentByThreadKoidErrors& error) {
+            if (error.is_framework_error()) {
+              FX_LOGS(WARNING) << "Failed FindComponentByThreadKoid, error: " << error;
+              return ::fpromise::error(FidlErrorToForensicsError(error.framework_error()));
+            }
+
+            // RESOURCE_NOT_FOUND most likely means a thread from a process outside a component,
+            // which is not an error.
+            if (error.domain_error() == fuchsia_component::Error::kResourceNotFound) {
+              return ::fpromise::error(Error::kMissingValue);
+            }
+
+            FX_LOGS(WARNING) << "Failed FindComponentByThreadKoid, error: " << error;
+            return ::fpromise::error(Error::kBadValue);
+          })
+          .and_then(
+              [](const fuchsia_sys2::CrashIntrospectFindComponentByThreadKoidResponse& response) {
+                const fuchsia_sys2::ComponentCrashInfo& info = response.info();
+                std::string moniker = info.moniker().value_or("");
+                if (!moniker.empty() && moniker[0] == '/') {
+                  moniker = moniker.substr(1);
+                }
+                return ::fpromise::ok(ComponentInfo{
+                    .url = info.url().value_or(""),
+                    .realm_path = "",
+                    .moniker = moniker,
+                });
+              });
+
+  // Keep |client| alive until the flow completes.
+  return MakePromiseTimeout<ComponentInfo>(std::move(find_component_promise), dispatcher, timeout)
+      .then([client = std::move(client)](::fpromise::result<ComponentInfo, Error>& result)
+                -> ::fpromise::result<ComponentInfo> {
+        if (result.is_error()) {
           return ::fpromise::error();
         }
 
-        const sys::ComponentCrashInfo& info = result.response().info;
-        std::string moniker = (info.has_moniker()) ? info.moniker() : "";
-        if (!moniker.empty() && moniker[0] == '/') {
-          moniker = moniker.substr(1);
-        }
-        return ::fpromise::ok(ComponentInfo{
-            .url = (info.has_url()) ? info.url() : "",
-            .realm_path = "",
-            .moniker = moniker,
-        });
+        return ::fpromise::ok(result.take_value());
       });
 }
 
