@@ -70,7 +70,6 @@ group("tests") {
     "lib/storage:wlan-storage-tests",
     "lib/telemetry:wlan-telemetry-tests",
     "lib/trace:wlan-trace-tests",
-    "lib/wep_deprecated:wep-deprecated-tests",
     "testing/hw-sim:wlan-hw-sim-lib-tests",
     "testing/hw-sim/test:wlan-hw-sim-component-tests",
     "testing/wlan-service-util:wlan-service-util-tests",
