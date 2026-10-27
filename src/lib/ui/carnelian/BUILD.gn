@@ -22,101 +22,7 @@ declare_args() {
   use_direct_for_carnelian_examples = false
 }
 
-rustc_library("carnelian") {
-  name = "carnelian"
-  with_unit_tests = true
-  version = "0.1.0"
-  edition = "2024"
-  deps = [
-    "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
-    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
-    "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
-    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
-    "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
-    "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
-    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
-    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
-    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
-    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
-    "//sdk/rust/zx",
-    "//src/graphics/display/lib/rust/display-utils",
-    "//src/graphics/lib/compute/forma",
-    "//src/graphics/lib/compute/rive-rs",
-    "//src/lib/async-utils",
-    "//src/lib/diagnostics/inspect/runtime/rust",
-    "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fdio/rust:fdio",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/fuchsia-runtime",
-    "//src/lib/mapped-vmo",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/ui/fuchsia-framebuffer",
-    "//src/lib/ui/fuchsia-scenic",
-    "//src/lib/ui/keymaps",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:async-trait",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:png",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:smallvec",
-    "//third_party/rust_crates:static_assertions",
-    "//third_party/rust_crates:toml",
-    "//third_party/rust_crates:ttf-parser",
-  ]
-
-  test_deps = [ "//third_party/rust_crates:itertools" ]
-
-  sources = [
-    "src/app.rs",
-    "src/app/strategies.rs",
-    "src/app/strategies/base.rs",
-    "src/app/strategies/flatland.rs",
-    "src/app/strategies/framebuffer.rs",
-    "src/color.rs",
-    "src/drawing.rs",
-    "src/geometry.rs",
-    "src/input.rs",
-    "src/input/flatland.rs",
-    "src/input/key3.rs",
-    "src/input/report.rs",
-    "src/input/tests.rs",
-    "src/input_ext.rs",
-    "src/lib.rs",
-    "src/message.rs",
-    "src/render/dynamic.rs",
-    "src/render/generic/forma/composition.rs",
-    "src/render/generic/forma/context.rs",
-    "src/render/generic/forma/image.rs",
-    "src/render/generic/forma/mod.rs",
-    "src/render/generic/forma/path.rs",
-    "src/render/generic/forma/raster.rs",
-    "src/render/generic/mod.rs",
-    "src/render/mod.rs",
-    "src/render/rive.rs",
-    "src/render/shed.rs",
-    "src/scene/facets.rs",
-    "src/scene/group.rs",
-    "src/scene/layout.rs",
-    "src/scene/mod.rs",
-    "src/scene/scene.rs",
-    "src/view.rs",
-    "src/view/strategies.rs",
-    "src/view/strategies/base.rs",
-    "src/view/strategies/display_direct.rs",
-    "src/view/strategies/flatland.rs",
-  ]
-
-  inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
-
-  configs += [ ":carnelian-performance" ]
-}
-
+# LINT.IfChange(carnelian-performance)
 config("carnelian-performance") {
   # Enable all optimizations that benefit speed, even if they increase size
   configs = [ "//build/config:optimize_speed" ]
@@ -138,78 +44,10 @@ config("carnelian-performance") {
   }
 }
 
-rustc_binary("button") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/button.rs"
-  sources = [ "examples/button.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:euclid",
-  ]
-}
+# LINT.ThenChange(BUILD.bazel:carnelian-performance)
 
-rustc_binary("clockface") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/clockface.rs"
-  sources = [ "examples/clockface.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:chrono",
-    "//third_party/rust_crates:euclid",
-  ]
-}
-
-rustc_binary("font_metrics") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/font_metrics.rs"
-  sources = [ "examples/font_metrics.rs" ]
-  deps = [
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-  ]
-}
-
-rustc_binary("shapes") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/shapes.rs"
-  sources = [ "examples/shapes.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:rand",
-  ]
-}
-
-rustc_binary("designer") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/designer.rs"
-  sources = [ "examples/designer.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-  ]
-}
-
+# Stays in GN because //src/testing/fidl:placeholders_rust has no Bazel build
+# yet.
 rustc_binary("spinning_square") {
   version = "0.1.0"
   edition = "2024"
@@ -228,128 +66,19 @@ rustc_binary("spinning_square") {
   ]
 }
 
-rustc_binary("gamma") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/gamma.rs"
-  sources = [ "examples/gamma.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-  ]
-}
-
-rustc_binary("layout_gallery") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/layout_gallery.rs"
-  sources = [ "examples/layout_gallery.rs" ]
-  deps = [
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:toml",
-  ]
-}
-
-rustc_test("layout_gallery_test") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/layout_gallery.rs"
-  sources = [ "examples/layout_gallery.rs" ]
-  deps = [
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:itertools",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:serde",
-    "//third_party/rust_crates:toml",
-  ]
-}
-
-rustc_binary("png") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/png.rs"
-  sources = [ "examples/png.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:euclid",
-    "//third_party/rust_crates:png",
-  ]
-}
-
-rustc_binary("svg") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/svg.rs"
-  sources = [ "examples/svg.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:euclid",
-  ]
-}
-
-rustc_binary("rive") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/rive.rs"
-  sources = [ "examples/rive.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/graphics/lib/compute/rive-rs",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-  ]
-}
-
-rustc_binary("textgrid") {
-  version = "0.1.0"
-  edition = "2024"
-  source_root = "examples/textgrid.rs"
-  sources = [ "examples/textgrid.rs" ]
-  deps = [
-    "//sdk/rust/zx",
-    "//src/lib/trace/rust:trace",
-    "//src/lib/trace/rust:trace-provider",
-    "//src/lib/ui/carnelian",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:rustc-hash",
-  ]
-}
-
 fuchsia_unittest_package("carnelian-render-tests") {
+  package_name = "carnelian-render-tests-gn"
+  component_name = "carnelian-render-tests"
   manifest = "meta/carnelian_lib_test.cml"
   deps = [ ":carnelian_test" ]
 }
 
 fuchsia_unittest_package("carnelian-tests") {
+  package_name = "carnelian-tests-gn"
+  component_name = "carnelian-tests"
   manifest = "meta/carnelian_lib_test.cml"
   deps = [ ":carnelian_test" ]
   test_type = "system"
-}
-
-fuchsia_unittest_package("carnelian-layout-tests") {
-  deps = [ ":layout_gallery_test" ]
 }
 
 rustc_test("carnelian_integration_test_bin") {
@@ -611,4 +340,386 @@ foreach(carnelian_example_details, carnelian_examples) {
 
 group("examples") {
   public_deps = carnelian_examples_deps
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+_CARNELIAN_PERFORMANCE_RUSTC_FLAGS = []
+_CARNELIAN_PERFORMANCE_RUSTC_FLAGS += [ "-Copt-level=3" ]
+if (current_cpu == "arm64") {
+  _CARNELIAN_PERFORMANCE_RUSTC_FLAGS += [ "-Ctarget-cpu=cortex-a53" ]
+} else if (current_cpu == "x64") {
+  _CARNELIAN_PERFORMANCE_RUSTC_FLAGS += [ "-Ctarget-cpu=haswell" ]
+}
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_CARNELIAN_PERFORMANCE_RUSTC_FLAGS" ])
+
+rustc_library("carnelian") {
+  sources = [
+    "src/app.rs",
+    "src/app/strategies.rs",
+    "src/app/strategies/base.rs",
+    "src/app/strategies/flatland.rs",
+    "src/app/strategies/framebuffer.rs",
+    "src/color.rs",
+    "src/drawing.rs",
+    "src/geometry.rs",
+    "src/input.rs",
+    "src/input/flatland.rs",
+    "src/input/key3.rs",
+    "src/input/report.rs",
+    "src/input/tests.rs",
+    "src/input_ext.rs",
+    "src/lib.rs",
+    "src/message.rs",
+    "src/render/dynamic.rs",
+    "src/render/generic/forma/composition.rs",
+    "src/render/generic/forma/context.rs",
+    "src/render/generic/forma/image.rs",
+    "src/render/generic/forma/mod.rs",
+    "src/render/generic/forma/path.rs",
+    "src/render/generic/forma/raster.rs",
+    "src/render/generic/mod.rs",
+    "src/render/mod.rs",
+    "src/render/rive.rs",
+    "src/render/shed.rs",
+    "src/scene/facets.rs",
+    "src/scene/group.rs",
+    "src/scene/layout.rs",
+    "src/scene/mod.rs",
+    "src/scene/scene.rs",
+    "src/view.rs",
+    "src/view/strategies.rs",
+    "src/view/strategies/base.rs",
+    "src/view/strategies/display_direct.rs",
+    "src/view/strategies/flatland.rs",
+  ]
+  edition = "2024"
+  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
+  visibility = [
+    ":*",
+    "//src/bringup/bin/virtcon:*",
+    "//src/lib/ui/*",
+    "//src/recovery/lib/recovery-ui:*",
+    "//src/recovery/progress-ui:*",
+    "//src/recovery/system/*",
+    "//src/ui/bin/devscreen:*",
+    "//src/ui/bin/terminal:*",
+    "//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests/carnelian_pixel_client:*",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+    "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+    "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+    "//sdk/rust/zx",
+    "//src/graphics/display/lib/rust/display-utils",
+    "//src/graphics/lib/compute/forma",
+    "//src/graphics/lib/compute/rive-rs",
+    "//src/lib/async-utils",
+    "//src/lib/diagnostics/inspect/runtime/rust",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fdio/rust:fdio",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/mapped-vmo",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/ui/fuchsia-framebuffer",
+    "//src/lib/ui/fuchsia-scenic",
+    "//src/lib/ui/keymaps",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:png",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:smallvec",
+    "//third_party/rust_crates:static_assertions",
+    "//third_party/rust_crates:toml",
+    "//third_party/rust_crates:ttf-parser",
+  ]
+  configs += [ ":carnelian-performance" ]
+}
+rustc_binary("button") {
+  sources = [ "examples/button.rs" ]
+  source_root = "examples/button.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("clockface") {
+  sources = [ "examples/clockface.rs" ]
+  source_root = "examples/clockface.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:chrono",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("font_metrics") {
+  sources = [ "examples/font_metrics.rs" ]
+  source_root = "examples/font_metrics.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("shapes") {
+  sources = [ "examples/shapes.rs" ]
+  source_root = "examples/shapes.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+    "//third_party/rust_crates:rand",
+  ]
+}
+rustc_binary("designer") {
+  sources = [ "examples/designer.rs" ]
+  source_root = "examples/designer.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("gamma") {
+  sources = [ "examples/gamma.rs" ]
+  source_root = "examples/gamma.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("layout_gallery") {
+  sources = [ "examples/layout_gallery.rs" ]
+  source_root = "examples/layout_gallery.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+    "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:toml",
+  ]
+}
+rustc_test("layout_gallery_test") {
+  sources = [ "examples/layout_gallery.rs" ]
+  source_root = "examples/layout_gallery.rs"
+  edition = "2024"
+  deps = [
+           ":carnelian",
+           "//src/lib/trace/rust:trace-provider",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:euclid",
+           "//third_party/rust_crates:rand",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:toml",
+         ] + [ "//third_party/rust_crates:itertools" ]
+}
+fuchsia_unittest_package("carnelian-layout-tests") {
+  package_name = "carnelian-layout-tests-gn"
+  component_name = "carnelian-layout-tests"
+  deps = [ ":layout_gallery_test" ]
+}
+rustc_binary("png") {
+  sources = [ "examples/png.rs" ]
+  source_root = "examples/png.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:euclid",
+    "//third_party/rust_crates:png",
+  ]
+}
+rustc_binary("svg") {
+  sources = [ "examples/svg.rs" ]
+  source_root = "examples/svg.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:euclid",
+  ]
+}
+rustc_binary("rive") {
+  sources = [ "examples/rive.rs" ]
+  source_root = "examples/rive.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/graphics/lib/compute/rive-rs",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+  ]
+}
+rustc_binary("textgrid") {
+  sources = [ "examples/textgrid.rs" ]
+  source_root = "examples/textgrid.rs"
+  edition = "2024"
+  deps = [
+    ":carnelian",
+    "//sdk/rust/zx",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:rustc-hash",
+  ]
+}
+rustc_test("carnelian_test") {
+  sources = [
+    "src/app.rs",
+    "src/app/strategies.rs",
+    "src/app/strategies/base.rs",
+    "src/app/strategies/flatland.rs",
+    "src/app/strategies/framebuffer.rs",
+    "src/color.rs",
+    "src/drawing.rs",
+    "src/geometry.rs",
+    "src/input.rs",
+    "src/input/flatland.rs",
+    "src/input/key3.rs",
+    "src/input/report.rs",
+    "src/input/tests.rs",
+    "src/input_ext.rs",
+    "src/lib.rs",
+    "src/message.rs",
+    "src/render/dynamic.rs",
+    "src/render/generic/forma/composition.rs",
+    "src/render/generic/forma/context.rs",
+    "src/render/generic/forma/image.rs",
+    "src/render/generic/forma/mod.rs",
+    "src/render/generic/forma/path.rs",
+    "src/render/generic/forma/raster.rs",
+    "src/render/generic/mod.rs",
+    "src/render/mod.rs",
+    "src/render/rive.rs",
+    "src/render/shed.rs",
+    "src/scene/facets.rs",
+    "src/scene/group.rs",
+    "src/scene/layout.rs",
+    "src/scene/mod.rs",
+    "src/scene/scene.rs",
+    "src/view.rs",
+    "src/view/strategies.rs",
+    "src/view/strategies/base.rs",
+    "src/view/strategies/display_direct.rs",
+    "src/view/strategies/flatland.rs",
+  ]
+  edition = "2024"
+  proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
+  deps = [
+           "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+           "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+           "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+           "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+           "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+           "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+           "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
+           "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+           "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
+           "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+           "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+           "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+           "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+           "//sdk/rust/zx",
+           "//src/graphics/display/lib/rust/display-utils",
+           "//src/graphics/lib/compute/forma",
+           "//src/graphics/lib/compute/rive-rs",
+           "//src/lib/async-utils",
+           "//src/lib/diagnostics/inspect/runtime/rust",
+           "//src/lib/diagnostics/inspect/rust",
+           "//src/lib/fdio/rust:fdio",
+           "//src/lib/fidl/rust/fidl",
+           "//src/lib/fuchsia-async",
+           "//src/lib/fuchsia-component",
+           "//src/lib/fuchsia-runtime",
+           "//src/lib/mapped-vmo",
+           "//src/lib/trace/rust:trace",
+           "//src/lib/ui/fuchsia-framebuffer",
+           "//src/lib/ui/fuchsia-scenic",
+           "//src/lib/ui/keymaps",
+           "//third_party/rust_crates:anyhow",
+           "//third_party/rust_crates:euclid",
+           "//third_party/rust_crates:futures",
+           "//third_party/rust_crates:png",
+           "//third_party/rust_crates:serde",
+           "//third_party/rust_crates:smallvec",
+           "//third_party/rust_crates:static_assertions",
+           "//third_party/rust_crates:toml",
+           "//third_party/rust_crates:ttf-parser",
+         ] + [ "//third_party/rust_crates:itertools" ]
+  inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
+  configs += [ ":carnelian-performance" ]
+  output_name = "carnelian_lib_test"
 }

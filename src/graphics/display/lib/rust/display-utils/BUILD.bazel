@@ -1,0 +1,63 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "display-utils",
+    srcs = [
+        "src/config.rs",
+        "src/controller.rs",
+        "src/error.rs",
+        "src/image.rs",
+        "src/lib.rs",
+        "src/pixel_format.rs",
+        "src/types.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/graphics/display/bin/display-tool:__pkg__",
+        "//src/lib/ui/carnelian:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+        "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "display-utils_test",
+    crate = ":display-utils",
+    edition = "2024",
+    deps = [
+        "//src/graphics/display/lib/rust/display-mocks",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:googletest",
+    ],
+)
+
+fx_unittest_package(
+    name = "display-utils-test",
+    unit_tests = [":display-utils_test"],
+    visibility = ["//src/graphics:__pkg__"],
+)

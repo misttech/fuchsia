@@ -138,6 +138,10 @@ exports_files(
     # Unicode data, used in //src/storage/fxfs/unicode.
     ["prebuilt/third_party/ucd/UCD.zip"] +
 
+    # RobotoSlab font, compiled into //src/lib/ui/carnelian and
+    # //src/recovery/lib/recovery-ui with include_bytes!().
+    ["prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf"] +
+
     # end of list.
     [],
 )

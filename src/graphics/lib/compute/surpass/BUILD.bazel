@@ -1,0 +1,108 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "surpass",
+    srcs = [
+        "src/affine_transform.rs",
+        "src/extend.rs",
+        "src/layer.rs",
+        "src/layout/mod.rs",
+        "src/layout/slice_cache.rs",
+        "src/lib.rs",
+        "src/lines.rs",
+        "src/order.rs",
+        "src/painter/layer_workbench/mod.rs",
+        "src/painter/layer_workbench/passes/mod.rs",
+        "src/painter/layer_workbench/passes/skip_fully_covered_layers.rs",
+        "src/painter/layer_workbench/passes/skip_trivial_clips.rs",
+        "src/painter/layer_workbench/passes/tile_unchanged.rs",
+        "src/painter/mod.rs",
+        "src/painter/style.rs",
+        "src/path.rs",
+        "src/point.rs",
+        "src/rasterizer/grouped_iter.rs",
+        "src/rasterizer/mod.rs",
+        "src/rasterizer/pixel_segment.rs",
+        "src/simd/aarch64.rs",
+        "src/simd/auto.rs",
+        "src/simd/avx.rs",
+        "src/simd/mod.rs",
+        "src/transform.rs",
+    ],
+    build_flags = [":surpass-performance"],
+    edition = "2024",
+    visibility = ["//src/graphics/lib/compute:__subpackages__"],
+    deps = [
+        "//third_party/rust_crates/vendor:crossbeam-utils",
+        "//third_party/rust_crates/vendor:rayon",
+        "//third_party/rust_crates/vendor:rustc-hash",
+    ] + select({
+        "@platforms//cpu:arm64": [
+            "//third_party/rust_crates/vendor:zerocopy",
+        ],
+        "@platforms//cpu:x86_64": [
+            "//third_party/rust_crates/vendor:zerocopy",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# LINT.IfChange(surpass-performance)
+# @bazel2gn:skip
+build_flags(
+    name = "surpass-performance",
+    rustflags = select({
+        "@platforms//cpu:arm64": [
+            # TODO(https://fxbug.dev/42168343): the flag below is not added by default.
+            # It's safe to remove the line below when //build/config/arm64:cortex-a53
+            # picks up this flag.
+            # Also note that not all arm64 targets are cortex-a53.
+            # Depending on your target board this optimization flag may actually
+            # cause a regression.
+            "-Ctarget-cpu=cortex-a53",
+        ],
+        "//conditions:default": [],
+    }),
+    # Enable all optimizations that benefit speed, even if they increase size
+    subflags = [
+        "//build/config:optimize_speed",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            # TODO(https://fxbug.dev/42168719): not all x64 targets are haswell.
+            # Consider moving this to a board config.
+            "//build/config/x64:haswell",
+        ],
+        "//conditions:default": [],
+    }),
+)
+# LINT.ThenChange(BUILD.gn:surpass-performance)
+
+# TODO(https://fxbug.dev/42175080): Fix the leaks and remove this.
+# @bazel2gn:raw_attribute:deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
+rustc_test(
+    name = "surpass_test",
+    build_flags = [":surpass-performance"],
+    crate = ":surpass",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:half",
+    ],
+)
+
+fx_unittest_package(
+    name = "surpass-tests",
+    unit_tests = [":surpass_test"],
+    visibility = [
+        "//src/graphics:__pkg__",
+        "//src/graphics/lib/compute:__pkg__",
+    ],
+)

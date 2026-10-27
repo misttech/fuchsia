@@ -98,6 +98,7 @@ if (is_fuchsia) {
     edition = "2024"
     visibility = [
       ":*",
+      "//src/recovery/lib/installer:*",
       "//src/starnix/kernel/core:*",
       "//src/storage/benchmarks/fuchsia:*",
       "//src/storage/ext4:*",

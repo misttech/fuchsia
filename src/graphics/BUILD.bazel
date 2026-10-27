@@ -10,7 +10,11 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/graphics/display/lib/rust/display-mocks:display-mocks-test",
+        "//src/graphics/display/lib/rust/display-utils:display-utils-test",
+        "//src/graphics/lib/compute/forma:forma-tests",
         "//src/graphics/lib/compute/rive-rs:rive-rs-tests",
+        "//src/graphics/lib/compute/surpass:surpass-tests",
     ],
 )
 

@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "forma",
+    srcs = [
+        "src/buffer.rs",
+        "src/composition/interner.rs",
+        "src/composition/layer.rs",
+        "src/composition/mod.rs",
+        "src/composition/state.rs",
+        "src/layer.rs",
+        "src/lib.rs",
+        "src/renderer/cpu.rs",
+        "src/renderer/mod.rs",
+        "src/small_bit_set.rs",
+        "src/utils.rs",
+    ],
+    build_flags = [":forma-performance"],
+    edition = "2024",
+    visibility = [
+        "//src/graphics/lib/compute:__pkg__",
+        "//src/lib/ui/carnelian:__pkg__",
+    ],
+    deps = [
+        "//src/graphics/lib/compute/surpass",
+        "//src/lib/trace/rust:trace",
+        "//third_party/rust_crates/vendor:rustc-hash",
+    ],
+)
+
+# LINT.IfChange(forma-performance)
+# @bazel2gn:skip
+build_flags(
+    name = "forma-performance",
+    rustflags = select({
+        "@platforms//cpu:arm64": [
+            # TODO(https://fxbug.dev/42168343): the flag below is not added by default.
+            # It's safe to remove the line below when //build/config/arm64:cortex-a53
+            # picks up this flag.
+            # Also note that not all arm64 targets are cortex-a53.
+            # Depending on your target board this optimization flag may actually
+            # cause a regression.
+            "-Ctarget-cpu=cortex-a53",
+        ],
+        "//conditions:default": [],
+    }),
+    # Enable all optimizations that benefit speed, even if they increase size
+    subflags = [
+        "//build/config:optimize_speed",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            # TODO(https://fxbug.dev/42168719): not all x64 targets are haswell.
+            # Consider moving this to a board config.
+            "//build/config/x64:haswell",
+        ],
+        "//conditions:default": [],
+    }),
+)
+# LINT.ThenChange(BUILD.gn:forma-performance)
+
+# TODO(https://fxbug.dev/42133844): Fix the leaks and remove this.
+# @bazel2gn:raw_attribute:deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
+rustc_test(
+    name = "forma_test",
+    build_flags = [":forma-performance"],
+    crate = ":forma",
+    edition = "2024",
+)
+
+fx_unittest_package(
+    name = "forma-tests",
+    unit_tests = [":forma_test"],
+    visibility = [
+        "//src/graphics:__pkg__",
+        "//src/graphics/lib/compute:__pkg__",
+    ],
+)

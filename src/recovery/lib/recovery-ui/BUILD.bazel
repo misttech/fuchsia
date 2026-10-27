@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "recovery-ui",
+    srcs = [
+        "src/button.rs",
+        "src/check_network.rs",
+        "src/console.rs",
+        "src/constants.rs",
+        "src/font.rs",
+        "src/generic_view.rs",
+        "src/keyboard.rs",
+        "src/keys.rs",
+        "src/lib.rs",
+        "src/network.rs",
+        "src/progress_bar.rs",
+        "src/proxy_view_assistant.rs",
+        "src/screens.rs",
+        "src/text_field.rs",
+    ],
+    crate_features = [
+        # b/255342472 Always enable debug_console until proxy_view_assistant
+        # supports a generic overlay ViewAssistantPtr
+        "debug_console",
+        "ota_ui",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:derivative",
+    ],
+    visibility = [
+        "//src/recovery/lib:__pkg__",
+        "//src/recovery/progress-ui:__pkg__",
+        "//src/recovery/system:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//sdk/rust/zx",
+        "//src/graphics/lib/compute/rive-rs",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/ui/carnelian",
+        "//src/recovery/lib/recovery-util",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:num-traits",
+    ],
+)
+
+rustc_test(
+    name = "recovery-ui_test",
+    compile_data = [
+        "//:prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf",
+    ],
+    crate = ":recovery-ui",
+    crate_features = [
+        "debug_console",
+        "ota_ui",
+    ],
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:mockall",
+    ],
+)
+
+fx_unittest_package(
+    name = "recovery-ui-test",
+    unit_tests = [":recovery-ui_test"],
+)

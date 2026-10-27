@@ -1,0 +1,404 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+# `build_flags` cannot be used on `carnelian` because `build_flags` adds a
+# generated response file to `compile_data`, which causes `@rules_rust` to copy
+# `srcs` into `bazel-out/.../bin/` and breaks relative `include_bytes!("../../../../../...")`
+# paths in `#[cfg(test)]` modules when `carnelian_test` inherits `crate = ":carnelian"`
+# (https://fxbug.dev/516778625).
+# LINT.IfChange(carnelian-performance)
+_CARNELIAN_PERFORMANCE_RUSTC_FLAGS = ["-Copt-level=3"] + select({
+    "@platforms//cpu:arm64": ["-Ctarget-cpu=cortex-a53"],
+    "@platforms//cpu:x86_64": ["-Ctarget-cpu=haswell"],
+    "//conditions:default": [],
+})
+# LINT.ThenChange(BUILD.gn:carnelian-performance)
+
+# @bazel2gn:raw_attribute:configs += [ ":carnelian-performance" ]
+rustc_library(
+    name = "carnelian",
+    srcs = [
+        "src/app.rs",
+        "src/app/strategies.rs",
+        "src/app/strategies/base.rs",
+        "src/app/strategies/flatland.rs",
+        "src/app/strategies/framebuffer.rs",
+        "src/color.rs",
+        "src/drawing.rs",
+        "src/geometry.rs",
+        "src/input.rs",
+        "src/input/flatland.rs",
+        "src/input/key3.rs",
+        "src/input/report.rs",
+        "src/input/tests.rs",
+        "src/input_ext.rs",
+        "src/lib.rs",
+        "src/message.rs",
+        "src/render/dynamic.rs",
+        "src/render/generic/forma/composition.rs",
+        "src/render/generic/forma/context.rs",
+        "src/render/generic/forma/image.rs",
+        "src/render/generic/forma/mod.rs",
+        "src/render/generic/forma/path.rs",
+        "src/render/generic/forma/raster.rs",
+        "src/render/generic/mod.rs",
+        "src/render/mod.rs",
+        "src/render/rive.rs",
+        "src/render/shed.rs",
+        "src/scene/facets.rs",
+        "src/scene/group.rs",
+        "src/scene/layout.rs",
+        "src/scene/mod.rs",
+        "src/scene/scene.rs",
+        "src/view.rs",
+        "src/view/strategies.rs",
+        "src/view/strategies/base.rs",
+        "src/view/strategies/display_direct.rs",
+        "src/view/strategies/flatland.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    # @bazel2gn:skip
+    rustc_flags = _CARNELIAN_PERFORMANCE_RUSTC_FLAGS,
+    visibility = [
+        "//src/bringup/bin/virtcon:__pkg__",
+        "//src/lib/ui:__subpackages__",
+        "//src/recovery/lib/recovery-ui:__pkg__",
+        "//src/recovery/progress-ui:__pkg__",
+        "//src/recovery/system:__subpackages__",
+        "//src/ui/bin/devscreen:__pkg__",
+        "//src/ui/bin/terminal:__pkg__",
+        "//src/ui/tests/integration_graphics_tests/carnelian-pixel-tests/carnelian_pixel_client:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+        "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+        "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+        "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+        "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+        "//sdk/fidl/fuchsia.scenic.scheduling:fuchsia.scenic.scheduling_rust",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+        "//sdk/fidl/fuchsia.ui.app:fuchsia.ui.app_rust",
+        "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+        "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+        "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+        "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+        "//sdk/rust/zx",
+        "//src/graphics/display/lib/rust/display-utils",
+        "//src/graphics/lib/compute/forma",
+        "//src/graphics/lib/compute/rive-rs",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/mapped-vmo",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/ui/fuchsia-framebuffer",
+        "//src/lib/ui/fuchsia-scenic",
+        "//src/lib/ui/keymaps",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:png",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:smallvec",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:toml",
+        "//third_party/rust_crates/vendor:ttf-parser",
+    ],
+)
+
+rustc_binary(
+    name = "button",
+    srcs = ["examples/button.rs"],
+    crate_root = "examples/button.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "clockface",
+    srcs = ["examples/clockface.rs"],
+    crate_root = "examples/clockface.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "font_metrics",
+    srcs = ["examples/font_metrics.rs"],
+    crate_root = "examples/font_metrics.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "shapes",
+    srcs = ["examples/shapes.rs"],
+    crate_root = "examples/shapes.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+rustc_binary(
+    name = "designer",
+    srcs = ["examples/designer.rs"],
+    crate_root = "examples/designer.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "gamma",
+    srcs = ["examples/gamma.rs"],
+    crate_root = "examples/gamma.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "layout_gallery",
+    srcs = ["examples/layout_gallery.rs"],
+    crate_root = "examples/layout_gallery.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:toml",
+    ],
+)
+
+rustc_test(
+    name = "layout_gallery_test",
+    crate = ":layout_gallery",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:itertools",
+    ],
+)
+
+fx_unittest_package(
+    name = "carnelian-layout-tests",
+    unit_tests = [":layout_gallery_test"],
+)
+
+rustc_binary(
+    name = "png",
+    srcs = ["examples/png.rs"],
+    crate_root = "examples/png.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:png",
+    ],
+)
+
+rustc_binary(
+    name = "svg",
+    srcs = ["examples/svg.rs"],
+    crate_root = "examples/svg.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+    ],
+)
+
+rustc_binary(
+    name = "rive",
+    srcs = ["examples/rive.rs"],
+    crate_root = "examples/rive.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/graphics/lib/compute/rive-rs",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+    ],
+)
+
+rustc_binary(
+    name = "textgrid",
+    srcs = ["examples/textgrid.rs"],
+    crate_root = "examples/textgrid.rs",
+    edition = "2024",
+    deps = [
+        ":carnelian",
+        "//sdk/rust/zx",
+        "//src/lib/trace/rust:trace",
+        "//src/lib/trace/rust:trace-provider",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:rustc-hash",
+    ],
+)
+
+# `build_flags` cannot be used on `carnelian_test` because `build_flags` adds a
+# generated response file to `compile_data`, which causes `@rules_rust` to copy
+# `srcs` into `bazel-out/.../bin/` and breaks relative `include_bytes!("../../../../../...")`
+# paths in `#[cfg(test)]` modules (https://fxbug.dev/516778625).
+# @bazel2gn:raw_attribute:configs += [ ":carnelian-performance" ]
+# @bazel2gn:raw_attribute:output_name = "carnelian_lib_test"
+rustc_test(
+    name = "carnelian_test",
+    compile_data = [
+        "//:prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf",
+    ],
+    crate = ":carnelian",
+    edition = "2024",
+    # @bazel2gn:skip
+    rustc_flags = _CARNELIAN_PERFORMANCE_RUSTC_FLAGS,
+    deps = [
+        "//third_party/rust_crates/vendor:itertools",
+    ],
+)
+
+fx_packaged_binary(
+    name = "carnelian_test_packaged_bin",
+    testonly = True,
+    binary = ":carnelian_test",
+    binary_name = "carnelian_lib_test",
+)
+
+fx_component_manifest(
+    name = "carnelian-render-tests-manifest",
+    testonly = True,
+    component_name = "carnelian-render-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/carnelian_lib_test.cml",
+)
+
+fx_test_component(
+    name = "carnelian-render-tests-component",
+    compiled_manifest = ":carnelian-render-tests-manifest",
+    component_name = "carnelian-render-tests",
+    deps = [":carnelian_test_packaged_bin"],
+)
+
+fx_package(
+    name = "carnelian-render-tests-package",
+    package_name = "carnelian-render-tests",
+    testonly = True,
+    test_components = [":carnelian-render-tests-component"],
+)
+
+fx_test(
+    name = "carnelian-render-tests",
+    package = ":carnelian-render-tests-package",
+)
+
+fx_component_manifest(
+    name = "carnelian-tests-manifest",
+    testonly = True,
+    component_name = "carnelian-tests",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/carnelian_lib_test.cml",
+)
+
+fx_test_component(
+    name = "carnelian-tests-component",
+    compiled_manifest = ":carnelian-tests-manifest",
+    component_name = "carnelian-tests",
+    deps = [":carnelian_test_packaged_bin"],
+)
+
+fx_package(
+    name = "carnelian-tests-package",
+    package_name = "carnelian-tests",
+    testonly = True,
+    test_components = [":carnelian-tests-component"],
+)
+
+fx_test(
+    name = "carnelian-tests",
+    package = ":carnelian-tests-package",
+    test_type = "system",
+    visibility = ["//src/lib:__pkg__"],
+)

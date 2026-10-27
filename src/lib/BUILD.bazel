@@ -41,6 +41,7 @@ test_suite(
         "//src/lib/inet:libinet_tests",
         "//src/lib/listnode:listnode-package",
         "//src/lib/rust_url:rust_url_unittests",
+        "//src/lib/ui/carnelian:carnelian-tests",
         "//src/lib/watch_handler:watch-handler-tests",
     ],
 )

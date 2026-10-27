@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bootloader-message",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = [
+        "//src/recovery/integration/android:__pkg__",
+        "//src/recovery/lib:__pkg__",
+        "//src/recovery/system/android:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bstr",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "bootloader-message_test",
+    crate = ":bootloader-message",
+    edition = "2024",
+)
+
+fx_unittest_package(
+    name = "bootloader-message-tests",
+    unit_tests = [":bootloader-message_test"],
+)

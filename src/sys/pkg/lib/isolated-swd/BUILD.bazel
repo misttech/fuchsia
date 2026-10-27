@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit test package (`:isolated-swd-tests`) stays in BUILD.gn because it
+# packages GN-only components (`//src/connectivity/network/dns:component`,
+# `//src/connectivity/network/netstack3:component-for-tests`,
+# `//src/connectivity/policy/http-client:component`,
+# `//src/storage/testing:storage_driver_test_realm`,
+# `//src/storage/tools/blobfs-compression`,
+# `//src/sys/pkg/bin/pkg-resolver:production-component-and-config`,
+# `//src/sys/pkg/bin/system-updater:component`,
+# `//src/sys/pkg/bin/fake-system-update-committer`, and
+# `//src/sys/pkg/tests/pkg-resolver:empty-repo`).
+rustc_library(
+    name = "isolated-swd",
+    srcs = [
+        "src/cache.rs",
+        "src/lib.rs",
+        "src/omaha.rs",
+        "src/omaha/installer.rs",
+        "src/omaha/policy.rs",
+        "src/resolver.rs",
+        "src/updater.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/recovery/system/android:__pkg__",
+        "//src/sys/pkg/lib:__subpackages__",
+        "//src/sys/pkg/tests/isolated-ota:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/sys/pkg/fidl/fuchsia.update.installer:fuchsia.update.installer_rust",
+        "//src/sys/pkg/lib/fidl-fuchsia-update-installer-ext",
+        "//src/sys/pkg/lib/omaha-client-fuchsia",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:omaha_client",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "isolated_swd_lib_test"
+rustc_test(
+    name = "isolated-swd_test",
+    crate = ":isolated-swd",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-url",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/lib/fidl-fuchsia-pkg-ext",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing",
+        "//src/sys/pkg/testing/blobfs-ramdisk",
+        "//src/sys/pkg/testing/mock-metrics",
+        "//src/sys/pkg/testing/mock-paver",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)

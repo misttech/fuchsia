@@ -2,6 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -10,4 +28,207 @@ exports_files(
         "res/fuchsia-logo.riv",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# Generate rust library for the config
+fx_component_manifest(
+    name = "ui_config_manifest",
+    # Note: This component name is unused since this manifest target is only added
+    # to generate the rust config library
+    component_name = "config_system_recovery",
+    # Config structure is currently defined in this shard
+    manifest = "meta/shards/ui.shard.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "recovery_ui_config",
+    cm_label = ":ui_config_manifest",
+    visibility = ["//src/recovery/system/android:__pkg__"],
+)
+
+rustc_library(
+    name = "fdr_lib",
+    srcs = ["src/fdr.rs"],
+    crate_root = "src/fdr.rs",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+        "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
+        "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//src/lib/ui/carnelian",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+rustc_test(
+    name = "fdr_lib_test",
+    crate = ":fdr_lib",
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_unittest_package(
+    name = "fdr_lib_unittests",
+    unit_tests = [":fdr_lib_test"],
+)
+
+rustc_binary(
+    name = "bin_fdr",
+    srcs = ["src/main.rs"],
+    crate_name = "system_recovery_fdr",
+    edition = "2024",
+    deps = [
+        ":fdr_lib",
+        ":recovery_ui_config",
+        "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
+        "//sdk/fidl/fuchsia.recovery.policy:fuchsia.recovery.policy_rust",
+        "//sdk/rust/zx",
+        "//src/graphics/lib/compute/rive-rs",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/ui/carnelian",
+        "//src/recovery/lib/recovery-ui",
+        "//src/sys/lib/stdout-to-debuglog/rust",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+# @bazel2gn:raw_attribute:output_name = "system_recovery_fdr_bin_test"
+rustc_test(
+    name = "bin_fdr_test",
+    crate = ":bin_fdr",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_unittest_package(
+    name = "system_recovery_fdr_unittests",
+    unit_tests = [":bin_fdr_test"],
+)
+
+fx_packaged_binary(
+    name = "bin_fdr_packaged_bin",
+    binary = ":bin_fdr",
+    binary_name = "system_recovery_fdr",
+)
+
+# Start system_recovery_fdr component TODO(https://fxbug.dev/42056807)
+fx_component_manifest(
+    name = "manifest_fdr",
+    component_name = "system_recovery_fdr",
+    includes = [
+        "meta/shards/fdr.shard.cml",
+        "meta/shards/system_recovery.shard.cml",
+        "meta/shards/ui.shard.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/system_recovery_fdr.cml",
+)
+
+fx_component(
+    name = "component_fdr",
+    compiled_manifest = ":manifest_fdr",
+    visibility = ["//src/recovery/integration/system:__pkg__"],
+    deps = [":bin_fdr_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "manifest_android",
+    component_name = "system_recovery_android",
+    includes = [
+        "meta/shards/system_recovery.shard.cml",
+        "meta/shards/ui.shard.cml",
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/system_recovery_android.cml",
+)
+
+# This is used by system_recovery_fdr via the following path:
+#  system_recovery_fdr ->
+#  //src/recovery/lib/recovery-ui  ->
+#  //src/recovery/lib/recovery-util  ->
+#  //src/recovery/system:ota_lib
+rustc_library(
+    name = "ota_lib",
+    srcs = [
+        "src/config.rs",
+        "src/ota.rs",
+        "src/ota_lib.rs",
+        "src/setup.rs",
+        "src/storage.rs",
+    ],
+    crate_root = "src/ota_lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = ["//src/recovery/lib/recovery-util:__pkg__"],
+    deps = [
+        ":fdr_lib",
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/data/rust",
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-hyper",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//src/sys/pkg/lib/isolated-ota",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:hyper-util",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+rustc_test(
+    name = "ota_lib_test",
+    crate = ":ota_lib",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/lib/fidl-fuchsia-pkg-ext",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//src/sys/pkg/lib/fuchsia-pkg-testing",
+        "//src/sys/pkg/lib/fuchsia-repo",
+        "//src/sys/pkg/testing/blobfs-ramdisk",
+        "//src/sys/pkg/testing/mock-boot-arguments:lib",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:maplit",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:url",
+    ],
+)
+
+fx_unittest_package(
+    name = "ota_lib_unittests",
+    unit_tests = [":ota_lib_test"],
 )

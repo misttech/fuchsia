@@ -32,7 +32,10 @@ rustc_library("stdout-to-debuglog") {
   edition = "2024"
   visibility = [
     ":*",
-    "//src/bringup/bin/ptysvc:*",
+    "//src/bringup/bin/*",
+    "//src/devices/bin/driver-host:*",
+    "//src/devices/bin/driver_manager_rust:*",
+    "//src/recovery/system:*",
   ]
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",

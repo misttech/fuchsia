@@ -10,7 +10,12 @@ rustc_library(
     name = "stdout-to-debuglog",
     srcs = ["src/lib.rs"],
     edition = "2024",
-    visibility = ["//src/bringup/bin/ptysvc:__pkg__"],
+    visibility = [
+        "//src/bringup/bin:__subpackages__",
+        "//src/devices/bin/driver-host:__pkg__",
+        "//src/devices/bin/driver_manager_rust:__pkg__",
+        "//src/recovery/system:__pkg__",
+    ],
     deps = [
         "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
         "//sdk/rust/zx",

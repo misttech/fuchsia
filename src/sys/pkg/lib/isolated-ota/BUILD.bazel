@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "isolated-ota",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/recovery/system:__pkg__",
+        "//src/sys/pkg/lib:__pkg__",
+        "//src/sys/pkg/testing/isolated-ota-env:__pkg__",
+        "//src/sys/pkg/tests/isolated-ota:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/pkg/lib/isolated-swd",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:http",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
