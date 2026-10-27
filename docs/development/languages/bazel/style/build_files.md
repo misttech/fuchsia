@@ -123,7 +123,7 @@ not require it.
 
 ## target_compatible_with {:#target-compatible-with}
 
-### Host targets
+### Host targets {:#target-compatible-with-host-targets}
 
 Host targets (such as host tools, host tests, and host-only libraries) should
 specify `target_compatible_with = HOST_OS_CONSTRAINTS` (loaded from
@@ -133,7 +133,8 @@ developers to cross-compile tools and is necessary for host tools in the IDK
 and their dependencies.
 
 `HOST_CONSTRAINTS` from `@platforms//host:constraints.bzl` should not be used
-except by the Build team in very rare cases.
+_\[<span style="color:red">SHAC error</span>\]_ except by the Build team in very
+rare cases.
 
 <!-- Reference links -->
 

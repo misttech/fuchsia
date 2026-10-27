@@ -4,6 +4,7 @@
 
 """Runs all Starlark tests for bazel_lint checks."""
 
+load("./host_constraints_test.star", "run_host_constraints_tests")
 load("./load_visibility_test.star", "run_load_visibility_tests")
 load("./package_default_visibility_test.star", "run_package_default_visibility_tests")
 load("./root_package_labels_test.star", "run_root_package_labels_tests")
@@ -15,6 +16,7 @@ def test_bazel_lint_checks():
     """Executes all registered bazel_lint check test suites."""
 
     # LINT.IfChange(run_all_check_tests)
+    run_host_constraints_tests()
     run_load_visibility_tests()
     run_package_default_visibility_tests()
     run_root_package_labels_tests()

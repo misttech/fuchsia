@@ -8,6 +8,7 @@
 # updated when adding or removing checks.
 # LINT.IfChange(all_checks)
 from . import (
+    host_constraints,
     load_visibility,
     package_default_visibility,
     root_package_labels,

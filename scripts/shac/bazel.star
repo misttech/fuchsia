@@ -459,6 +459,15 @@ _bazel_disallowed_workspace_root_package_labels = _make_bazel_lint_check(
     applies_to_globs = _ALL_BAZEL_FILES,
 )
 
+# Reports an error when `HOST_CONSTRAINTS` is loaded from
+# `@platforms//host:constraints.bzl` or used in `target_compatible_with`.
+# TODO(https://fxbug.dev/567965595): Switch to "all" once rolled out.
+_bazel_host_constraints = _make_bazel_lint_check(
+    "bazel_host_constraints",
+    applies_to_globs = _ALL_BAZEL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 # Reports an error when visibility("public") is used and a warning when
 # visibility("//...") is used in .bzl files.
 # TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
@@ -515,6 +524,7 @@ def register_bazel_checks():
     # with checks.
     # LINT.IfChange(register_all_checks)
     shac.register_check(_bazel_disallowed_workspace_root_package_labels)
+    shac.register_check(_bazel_host_constraints)
     shac.register_check(_bazel_load_visibility)
     shac.register_check(_bazel_package_default_visibility)
     shac.register_check(_bazel_target_visibility)
