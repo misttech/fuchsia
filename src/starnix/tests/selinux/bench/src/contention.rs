@@ -215,6 +215,8 @@ fn run_with_contention(
             let stop_flag_ref = &stop_flag;
 
             scope.spawn(move || {
+                // Register like Starnix kernel threads so RCU read locks take the fast path.
+                let _rcu_registration = fuchsia_rcu::register_thread();
                 pin_thread_to_big_cores();
                 let mut step = worker_index * WORKER_STEP_STAGGER;
 
@@ -462,6 +464,8 @@ fn concurrent_access_cache_get_contended_bench(group: &mut BenchmarkGroup<'_, Wa
                 let stop_flag_ref = &stop_flag;
 
                 scope.spawn(move || {
+                    // Register like Starnix kernel threads, matching production per-CPU state.
+                    let _rcu_registration = fuchsia_rcu::register_thread();
                     pin_thread_to_big_cores();
                     let worker_miss_base =
                         CACHE_MISS_BASE_SID + (worker_index as u32) * CACHE_MISS_SID_COUNT;
