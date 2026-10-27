@@ -46,20 +46,19 @@ class PciDeviceTests : public ::testing::Test {
   FakeBus& bus() { return bus_; }
   FakeUpstreamNode& upstream() { return upstream_; }
 
-  Device& CreateTestDevice(zx_device_t* parent, const uint8_t* cfg_buf, size_t cfg_size) {
-    // Copy the config dump into a device entry in the ecam.
+  Device& CreateTestDevice(zx_device_t* parent) {
     auto& ecam = bus_.pciroot().ecam();
-    ecam.get_config_view(bdf()).WriteBuffer(0, cfg_buf, cfg_size);
-    // Create the config object for the device.
-
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());
     auto view = mmio_cfg->get_view();
     EXPECT_TRUE(view.is_ok());
     auto fake_cfg = std::make_unique<FakeMmioConfig>(bdf(), std::move(view.value()));
-    // Create and initialize the fake device.
     EXPECT_OK(Device::Create(parent, std::move(fake_cfg), &upstream(), &bus(),
                              /*has_acpi=*/false, /*has_devicetree=*/false));
     return bus().get_device(bdf());
+  }
+  Device& CreateTestDevice(zx_device_t* parent, const uint8_t* cfg_buf, size_t cfg_size) {
+    bus_.pciroot().ecam().get_config_view(bdf()).WriteBuffer(0, cfg_buf, cfg_size);
+    return CreateTestDevice(parent);
   }
   void ConfigureDownstreamDevices() { return upstream_.ConfigureDownstreamDevices(); }
 
@@ -418,8 +417,14 @@ TEST_F(PciDeviceTestsExtendedCam, NonKernelMsiAllocationDisableAndReenable) {
   // Enable MSI, map an interrupt, disable MSI, and re-enable MSI (as happens across endpoint
   // driver restarts on platforms like google-pci where PcirootAllocateMsi returns a placeholder
   // zx::event).
+  ASSERT_NE(dev.capabilities().msi, nullptr);
+  auto& msi = *dev.capabilities().msi;
+  // Write non-zero to tgt_addr_upper to simulate stale firmware state.
+  dev.config()->Write(msi.tgt_addr_upper(), 0xA5A5A5A5u);
   ASSERT_OK(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1));
   {
+    EXPECT_EQ(FakeBus::kDefaultNonKernelMsiTargetAddr, dev.config()->Read(msi.tgt_addr()));
+    EXPECT_EQ(0u, dev.config()->Read(msi.tgt_addr_upper()));
     auto irq = dev.MapInterrupt(0);
     ASSERT_OK(irq.status_value());
     EXPECT_TRUE(irq->is_valid());
@@ -522,6 +527,113 @@ TEST_F(PciDeviceTestExtendedCamBridge, PrefetchableBridgeBarMmioFallback) {
   EXPECT_TRUE(std::ranges::any_of(mmio_log, [](const AllocationLogEntry& e) {
     return e.size == kTestDeviceBars[1].size && e.succeeded;
   }));
+}
+
+TEST_F(PciDeviceTestsExtendedCam, MsixInvalidBir) {
+  // Case 1: Table BIR exceeds BAR count.
+  {
+    auto cfg_buf = kFakeVirtioInputDeviceConfig;
+    cfg_buf[kFakeVirtioInputMsixCapabilityOffset + MsixCapability::kMsixTableRegisterOffset] =
+        kMaxBarCount;
+    pci::Device& dev =
+        CreateTestDevice(MockDevice::FakeRootParent().get(), cfg_buf.data(), cfg_buf.max_size());
+    ConfigureDownstreamDevices();
+    {
+      fbl::AutoLock lock(dev.dev_lock());
+      EXPECT_TRUE(dev.disabled());
+    }
+    upstream().DisableDownstream();
+    upstream().UnplugDownstream();
+  }
+
+  // Case 2: PBA BIR exceeds BAR count.
+  {
+    auto cfg_buf = kFakeVirtioInputDeviceConfig;
+    cfg_buf[kFakeVirtioInputMsixCapabilityOffset + MsixCapability::kMsixPbaRegisterOffset] =
+        kMaxBarCount;
+    pci::Device& dev =
+        CreateTestDevice(MockDevice::FakeRootParent().get(), cfg_buf.data(), cfg_buf.max_size());
+    ConfigureDownstreamDevices();
+    {
+      fbl::AutoLock lock(dev.dev_lock());
+      EXPECT_TRUE(dev.disabled());
+    }
+    upstream().DisableDownstream();
+    upstream().UnplugDownstream();
+  }
+
+  // Case 3: Table BIR names an unimplemented BAR (BAR 0 in virtio-input config is unused).
+  {
+    auto cfg_buf = kFakeVirtioInputDeviceConfig;
+    cfg_buf[kFakeVirtioInputMsixCapabilityOffset + MsixCapability::kMsixTableRegisterOffset] = 0;
+    pci::Device& dev =
+        CreateTestDevice(MockDevice::FakeRootParent().get(), cfg_buf.data(), cfg_buf.max_size());
+    ConfigureDownstreamDevices();
+    {
+      fbl::AutoLock lock(dev.dev_lock());
+      EXPECT_TRUE(dev.disabled());
+    }
+    upstream().DisableDownstream();
+    upstream().UnplugDownstream();
+  }
+}
+
+TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
+  constexpr uint64_t kAbove4GiBAddress = 0x1'0000'1000ULL;
+
+  // Case 1: Bus mastering disabled initially; stays disabled after rejection.
+  {
+    auto& ecam = bus().pciroot().ecam();
+    ecam.get_config_view(bdf()).WriteBuffer(0, kFakeQuadroDeviceConfig.data(),
+                                            kFakeQuadroDeviceConfig.max_size());
+    auto mmio_cfg = ecam.CreateMmioConfig(bdf());
+    MsiCapability msi(*mmio_cfg, kFakeQuadroMsiCapabilityOffset);
+    MsiControlReg ctrl = {.value = mmio_cfg->Read(msi.ctrl())};
+    ctrl.set_is_64bit_capable(0);
+    mmio_cfg->Write(msi.ctrl(), ctrl.value);
+
+    bus().set_use_non_kernel_msi_allocation(true, kAbove4GiBAddress);
+    pci::Device& dev = CreateTestDevice(MockDevice::FakeRootParent().get());
+    ConfigureDownstreamDevices();
+
+    {
+      fbl::AutoLock lock(dev.dev_lock());
+      ASSERT_OK(dev.SetBusMastering(false));
+    }
+    EXPECT_FALSE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+
+    EXPECT_EQ(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1), ZX_ERR_NOT_SUPPORTED);
+    EXPECT_FALSE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    upstream().DisableDownstream();
+    upstream().UnplugDownstream();
+  }
+
+  // Case 2: Bus mastering enabled initially; stays enabled after rejection.
+  {
+    auto& ecam = bus().pciroot().ecam();
+    ecam.get_config_view(bdf()).WriteBuffer(0, kFakeQuadroDeviceConfig.data(),
+                                            kFakeQuadroDeviceConfig.max_size());
+    auto mmio_cfg = ecam.CreateMmioConfig(bdf());
+    MsiCapability msi(*mmio_cfg, kFakeQuadroMsiCapabilityOffset);
+    MsiControlReg ctrl = {.value = mmio_cfg->Read(msi.ctrl())};
+    ctrl.set_is_64bit_capable(0);
+    mmio_cfg->Write(msi.ctrl(), ctrl.value);
+
+    bus().set_use_non_kernel_msi_allocation(true, kAbove4GiBAddress);
+    pci::Device& dev = CreateTestDevice(MockDevice::FakeRootParent().get());
+    ConfigureDownstreamDevices();
+
+    {
+      fbl::AutoLock lock(dev.dev_lock());
+      ASSERT_OK(dev.SetBusMastering(true));
+    }
+    EXPECT_TRUE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+
+    EXPECT_EQ(dev.SetIrqMode(fuchsia_hardware_pci::InterruptMode::kMsi, 1), ZX_ERR_NOT_SUPPORTED);
+    EXPECT_TRUE(dev.config()->Read(Config::kCommand) & pci::kCommandBusMasterEn);
+    upstream().DisableDownstream();
+    upstream().UnplugDownstream();
+  }
 }
 
 }  // namespace pci

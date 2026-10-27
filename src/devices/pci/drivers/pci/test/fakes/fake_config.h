@@ -39,7 +39,15 @@ class FakeMmioConfig final : public MmioConfig {
     //  ~(0x000FFFFF) = 0xFFF00000
 
     uint32_t size = kTestDeviceBars[bar_id].size;
-    ZX_ASSERT(size == 0 || cpp20::has_single_bit(size));
+    if (MmioConfig::Read(Config::kVendorId) == 0x1af4) {
+      // Virtio-input config has BAR 1 and BAR 4 implemented (each 4KB), other BARs unimplemented.
+      size = (bar_id == 1 || bar_id == 4) ? 4096 : 0;
+    }
+    if (size == 0) {
+      MmioConfig::Write(Config::kBar(bar_id), 0);
+      return;
+    }
+    ZX_ASSERT(cpp20::has_single_bit(size));
     size = ~(size - 1);
 
     if (reg.is_io_space()) {
@@ -62,7 +70,10 @@ class FakeMmioConfig final : public MmioConfig {
         // querying the BAR size as long as it's not the upper half of
         // a 64 bit register.
         uint32_t bar_id = static_cast<uint32_t>((addr.offset() - Config::kBar(0).offset()) / 4);
-        if (val == UINT32_MAX && !kTestDeviceBars[bar_id].is_upper_half) {
+        bool is_upper_half = (MmioConfig::Read(Config::kVendorId) == 0x1af4)
+                                 ? (bar_id == 5)
+                                 : kTestDeviceBars[bar_id].is_upper_half;
+        if (val == UINT32_MAX && !is_upper_half) {
           MockBarProbeSideEffects(bar_id);
           break;
         }

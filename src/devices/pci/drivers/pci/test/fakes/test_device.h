@@ -370,6 +370,7 @@ static constexpr struct test_bar_info_t {
 
 // This is the configuration space dump of a virtio-input device. It should
 // contain an MSIX capability along with 5 Vendor capabilities.
+constexpr uint8_t kFakeVirtioInputMsixCapabilityOffset = 0x98;
 static std::array<uint8_t, pci::kBaseConfigSize> kFakeVirtioInputDeviceConfig = {
     0xf4, 0x1a, // Vendor Id
     0x52, 0x10, // Device Id

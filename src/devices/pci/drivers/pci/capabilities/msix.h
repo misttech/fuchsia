@@ -10,6 +10,8 @@
 #include <lib/zx/vmo.h>
 
 #include <algorithm>
+#include <optional>
+#include <span>
 #include <utility>
 
 #include <hwreg/bitfields.h>
@@ -52,13 +54,14 @@ static_assert(sizeof(MsixTable) == 16);
 // PCI Local Bus Spec 6.8.2: MSI-X Capability and Table Structure.
 class MsixCapability : public Capability {
  public:
+  static constexpr size_t kMsixPbaBitsPerEntry = 64;
   static constexpr uint8_t kMsixControlRegisterOffset = 0x2;
   static constexpr uint8_t kMsixTableRegisterOffset = 0x4;
   static constexpr uint8_t kMsixPbaRegisterOffset = 0x8;
 
   MsixCapability(const Config& cfg, uint8_t base);
 
-  zx_status_t Init(const Bar& tbar, const Bar& pbar);
+  zx_status_t Init(std::span<const std::optional<Bar>> bars);
   PciReg16 ctrl() { return ctrl_; }
   PciReg32 table() { return table_reg_; }
   PciReg32 pba() { return pba_reg_; }
@@ -92,6 +95,7 @@ class MsixCapability : public Capability {
   uint16_t table_size_;
   uint8_t table_bar_;
   uint8_t pba_bar_;
+  uint8_t max_bars_ = 0;
   bool inited_ = false;
 };
 

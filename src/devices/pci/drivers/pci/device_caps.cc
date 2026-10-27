@@ -5,6 +5,8 @@
 #include <lib/pci/hw.h>
 #include <zircon/errors.h>
 
+#include <span>
+
 #include <fbl/string_buffer.h>
 #include <hwreg/bitfields.h>
 
@@ -125,17 +127,14 @@ zx_status_t AllocateCapability(
 
 zx::result<> Device::ConfigureCapabilities() {
   const fbl::AutoLock dev_lock(&dev_lock_);
-  if (caps_.msix && bars()[caps_.msix->table_bar()].has_value() &&
-      bars()[caps_.msix->pba_bar()].has_value()) {
-    auto& msix = *caps_.msix;
-    ZX_DEBUG_ASSERT(bars()[msix.table_bar()]);
-    ZX_DEBUG_ASSERT(bars()[msix.pba_bar()]);
+  if (!caps_.msix || disabled_) {
+    return zx::ok();
+  }
 
-    const zx_status_t status = msix.Init(*bars()[msix.table_bar()], *bars()[msix.pba_bar()]);
-    if (status != ZX_OK) {
-      zxlogf(ERROR, "Failed to initialize MSI-X: %d", status);
-      return zx::error(status);
-    }
+  const zx_status_t status = caps_.msix->Init(std::span(bars().data(), bar_count()));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to initialize MSI-X: %d", status);
+    return zx::error(status);
   }
 
   return zx::ok();

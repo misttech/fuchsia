@@ -258,6 +258,7 @@ zx_status_t Device::EnableMsi(uint32_t irq_cnt) {
     return ZX_ERR_INVALID_ARGS;
   }
 
+  const bool was_bus_mastering = (ReadCmdLocked() & pci::kCommandBusMasterEn) != 0;
   // Bus mastering must be enabled to generate MSI messages.
   const zx_status_t status = SetBusMastering(true);
   if (status != ZX_OK) {
@@ -268,8 +269,22 @@ zx_status_t Device::EnableMsi(uint32_t irq_cnt) {
   auto result = AllocateMsi(irq_cnt);
   if (result.is_ok()) {
     auto [alloc, info] = std::move(result.value());
+    if (!caps_.msi->is_64bit() && (info.target_addr >> 32u) != 0) {
+      zxlogf(ERROR, "[%s] 32-bit MSI device cannot use target address %#lx", cfg_->addr(),
+             info.target_addr);
+      if (!was_bus_mastering) {
+        if (zx_status_t st = SetBusMastering(false); st != ZX_OK) {
+          zxlogf(WARNING, "[%s] Failed to restore bus mastering state: %s", cfg_->addr(),
+                 zx_status_get_string(st));
+        }
+      }
+      return ZX_ERR_NOT_SUPPORTED;
+    }
     MsiControlReg ctrl = {.value = cfg_->Read(caps_.msi->ctrl())};
-    cfg_->Write(caps_.msi->tgt_addr(), info.target_addr);
+    cfg_->Write(caps_.msi->tgt_addr(), static_cast<uint32_t>(info.target_addr));
+    if (caps_.msi->is_64bit()) {
+      cfg_->Write(caps_.msi->tgt_addr_upper(), static_cast<uint32_t>(info.target_addr >> 32u));
+    }
     cfg_->Write(caps_.msi->tgt_data(), info.target_data);
     if (ctrl.mm_capable()) {
       ctrl.set_mm_enable(MsiCapability::CountToMmc(irq_cnt));

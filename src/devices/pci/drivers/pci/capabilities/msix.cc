@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
 
+#include <lib/pci/hw.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
@@ -16,6 +17,9 @@ MsixCapability::MsixCapability(const Config& cfg, uint8_t base)
       ctrl_(PciReg16(static_cast<uint8_t>(base + kMsixControlRegisterOffset))),
       table_reg_(PciReg32(static_cast<uint8_t>(base + kMsixTableRegisterOffset))),
       pba_reg_(PciReg32(static_cast<uint8_t>(base + kMsixPbaRegisterOffset))) {
+  uint8_t header_type = cfg.Read(Config::kHeaderType) & kHeaderTypeMask;
+  max_bars_ = (header_type == kHeaderTypePciBridge) ? kBarRegsPerBridge : kMaxBarCount;
+
   MsixControlReg ctrl = {.value = cfg.Read(ctrl_)};
   // Table size is stored in the register as N-1 (PCIe Base Spec 7.7.2.2)
   table_size_ = static_cast<uint16_t>(ctrl.table_size() + 1);
@@ -31,30 +35,44 @@ MsixCapability::MsixCapability(const Config& cfg, uint8_t base)
   pba_offset_ = pba.offset();
 }
 
-zx_status_t MsixCapability::Init(const Bar& tbar, const Bar& pbar) {
+zx_status_t MsixCapability::Init(std::span<const std::optional<Bar>> bars) {
   if (inited_) {
     return ZX_ERR_BAD_STATE;
   }
 
   // Every vector has one entry in the table and in the pending bit array.
   size_t table_bytes = table_size_ * sizeof(MsixTable);
-  // Every vector has a single bit in a large contiguous bitmask.  where the
-  // smallest allocation is 64 bits.
-  size_t pba_bytes = ((table_size_ / 64) + 1) * sizeof(uint64_t);
+  // The PBA packs one pending bit per table entry into QWORDs, so it spans
+  // ceil(N / 64) QWORDs with the last partly filled (PCIe Base Spec 7.7.2, 7.7.2.9).
+  size_t pba_bytes =
+      ((table_size_ + (kMsixPbaBitsPerEntry - 1)) / kMsixPbaBitsPerEntry) * sizeof(uint64_t);
   zxlogf(TRACE, "[%s] MSI-X supports %u vector%c", addr(), table_size_,
          (table_size_ == 1) ? ' ' : 's');
   zxlogf(TRACE, "[%s] MSI-X mask table bar %u @ %#x-%#zx", addr(), table_bar_, table_offset_,
          table_offset_ + table_bytes);
   zxlogf(TRACE, "[%s] MSI-X pending table bar %u @ %#x-%#zx", addr(), pba_bar_, pba_offset_,
          pba_offset_ + pba_bytes);
-  // Treat each bar as separate to simplify the configuration logic. Size checks
-  // double as a way to ensure the bars are valid.
+
+  // Reject reserved BIRs (2-7 on Type 1 bridge headers, 6-7 on Type 0 endpoint headers;
+  // PCIe Base Spec 7.7.2.3-4) as well as unimplemented or unallocated BARs.
+  if (table_bar_ >= max_bars_ || table_bar_ >= bars.size() || !bars[table_bar_].has_value() ||
+      !bars[table_bar_]->allocation) {
+    zxlogf(ERROR, "[%s] MSI-X table BAR %u is not allocated", addr(), table_bar_);
+    return ZX_ERR_BAD_STATE;
+  }
+  const Bar& tbar = *bars[table_bar_];
   if (tbar.size < table_offset_ + table_bytes) {
     zxlogf(ERROR, "[%s] MSI-X table doesn't fit within BAR %u size of %#zx", addr(), table_bar_,
            tbar.size);
     return ZX_ERR_BAD_STATE;
   }
 
+  if (pba_bar_ >= max_bars_ || pba_bar_ >= bars.size() || !bars[pba_bar_].has_value() ||
+      !bars[pba_bar_]->allocation) {
+    zxlogf(ERROR, "[%s] MSI-X pba BAR %u is not allocated", addr(), pba_bar_);
+    return ZX_ERR_BAD_STATE;
+  }
+  const Bar& pbar = *bars[pba_bar_];
   if (pbar.size < pba_offset_ + pba_bytes) {
     zxlogf(ERROR, "[%s] MSI-X pba doesn't fit within BAR %u size of %#zx", addr(), pba_bar_,
            pbar.size);

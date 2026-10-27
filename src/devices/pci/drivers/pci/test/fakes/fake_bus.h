@@ -20,6 +20,9 @@ namespace pci {
 
 class FakeBus : public BusDeviceInterface {
  public:
+  static constexpr uint64_t kDefaultNonKernelMsiTargetAddr = 0x1000;
+  static constexpr uint32_t kDefaultNonKernelMsiTargetData = 0x10;
+
   explicit FakeBus(uint8_t bus_start, uint8_t bus_end, bool is_extended, uint16_t segment_group = 0)
       : pciroot_(bus_start, bus_end, is_extended, segment_group) {}
 
@@ -43,8 +46,8 @@ class FakeBus : public BusDeviceInterface {
         return status;
       }
       *msi = zx::msi(event.release());
-      out_info->target_addr = 0xCAFE;
-      out_info->target_data = 0xC0FE;
+      out_info->target_addr = non_kernel_msi_target_addr_;
+      out_info->target_data = kDefaultNonKernelMsiTargetData;
       out_info->irq_count = count;
       return ZX_OK;
     }
@@ -75,9 +78,11 @@ class FakeBus : public BusDeviceInterface {
     return zx::msi::create(allocation, options, msi_id, cfg_vmo, cfg_offset, out_interrupt);
   }
 
-  void set_use_non_kernel_msi_allocation(bool enable) {
+  void set_use_non_kernel_msi_allocation(bool enable,
+                                         uint64_t target_addr = kDefaultNonKernelMsiTargetAddr) {
     fbl::AutoLock devices_lock(&devices_lock_);
     use_non_kernel_msi_allocation_ = enable;
+    non_kernel_msi_target_addr_ = target_addr;
   }
 
   zx_status_t GetBti(const pci::Device* /*device*/, uint32_t /*index*/, zx::bti* /*bti*/) final {
@@ -106,6 +111,7 @@ class FakeBus : public BusDeviceInterface {
   pci::DeviceTree devices_;
   FakePciroot pciroot_;
   bool use_non_kernel_msi_allocation_ __TA_GUARDED(devices_lock_) = false;
+  uint64_t non_kernel_msi_target_addr_ __TA_GUARDED(devices_lock_) = kDefaultNonKernelMsiTargetAddr;
 };
 
 }  // namespace pci
