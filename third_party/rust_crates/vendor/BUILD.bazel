@@ -3194,14 +3194,14 @@ alias(
 )
 
 alias(
-    name = "test-case-3.3.1",
-    actual = "//third_party/rust_crates/vendor/test-case-3.3.1:test_case",
+    name = "test-case-3.4.0",
+    actual = "//third_party/rust_crates/vendor/test-case-3.4.0:test_case",
     tags = ["manual"],
 )
 
 alias(
     name = "test-case",
-    actual = "//third_party/rust_crates/vendor/test-case-3.3.1:test_case",
+    actual = "//third_party/rust_crates/vendor/test-case-3.4.0:test_case",
     tags = ["manual"],
 )
 
