@@ -22,7 +22,6 @@ impl RunConnector {
     }
 }
 
-#[async_trait::async_trait]
 impl SuiteRunnerConnector for RunConnector {
     async fn connect(&self) -> Result<ftest_manager::SuiteRunnerProxy, ConnectionError> {
         testing_lib::connect_to_suite_runner(&self.remote_control_proxy)

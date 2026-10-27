@@ -5,6 +5,7 @@
 use crate::outcome::ConnectionError;
 use flex_fuchsia_test_manager::SuiteRunnerProxy;
 use futures::lock::Mutex;
+use std::future::Future;
 
 /// Implementing this trait allows configuring the number of suites to
 /// run on a single SuiteRunner connection.
@@ -12,10 +13,9 @@ use futures::lock::Mutex;
 /// connection, n channels must be opened up front. This can cause some
 /// issues with resource limitations when a large number of tests is
 /// specified (see https://fxbug.dev/42062444).
-#[async_trait::async_trait]
 pub trait SuiteRunnerConnector {
     /// Create a new connection to SuiteRunner.
-    async fn connect(&self) -> Result<SuiteRunnerProxy, ConnectionError>;
+    fn connect(&self) -> impl Future<Output = Result<SuiteRunnerProxy, ConnectionError>> + Send;
     /// Number of suites for which a connection produced by this connector
     /// should be used.
     fn batch_size(&self) -> usize;
@@ -33,7 +33,6 @@ impl SingleRunConnector {
     }
 }
 
-#[async_trait::async_trait]
 impl SuiteRunnerConnector for SingleRunConnector {
     async fn connect(&self) -> Result<SuiteRunnerProxy, ConnectionError> {
         Ok(self.proxy.lock().await.take().expect("connect only called once"))

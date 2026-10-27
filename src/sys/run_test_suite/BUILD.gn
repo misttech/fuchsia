@@ -38,7 +38,6 @@ template("run_test_suite_lib_tmpl") {
              "//src/sys/lib/cm_rust",
              "//src/sys/lib/moniker",
              "//third_party/rust_crates:anyhow",
-             "//third_party/rust_crates:async-trait",
              "//third_party/rust_crates:futures",
              "//third_party/rust_crates:log",
              "//third_party/rust_crates:pin-project",
