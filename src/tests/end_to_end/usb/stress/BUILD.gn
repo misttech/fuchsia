@@ -203,7 +203,7 @@ if (is_host) {
     params = {
       num_iterations = 10
     }
-    environments = [ sorrel_env ]
+    environments = [ iris_env ]
     timeout_secs = 420
     honeydew_config = _honeydew_config
   }
@@ -217,7 +217,7 @@ if (is_host) {
     params = {
       num_iterations = 10
     }
-    environments = [ sorrel_env ]
+    environments = [ iris_env ]
     timeout_secs = 1200
     honeydew_config = _honeydew_config
   }
@@ -231,7 +231,7 @@ if (is_host) {
     params = {
       num_iterations = 20
     }
-    environments = [ sorrel_env ]
+    environments = [ iris_env ]
     timeout_secs = 840
     honeydew_config = _honeydew_config
   }
