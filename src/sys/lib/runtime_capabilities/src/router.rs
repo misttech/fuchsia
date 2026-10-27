@@ -195,39 +195,6 @@ impl<T: CapabilityBound> Router<T> {
     }
 }
 
-impl<T: CapabilityBound> Router<T> {
-    /// Creates a router that will always resolve with the provided capability.
-    // TODO: Should this require debug info?
-    pub fn new_ok(c: impl Into<Arc<T>>) -> Arc<Self> {
-        let v: Arc<T> = c.into();
-        Self::new(OkRouter { v })
-    }
-}
-
-#[derive(Clone)]
-struct OkRouter<T: CapabilityBound> {
-    v: Arc<T>,
-}
-
-#[async_trait]
-impl<T: CapabilityBound> Routable<T> for OkRouter<T> {
-    async fn route(
-        &self,
-        _request: RouteRequest,
-        _target: Arc<WeakInstanceToken>,
-    ) -> Result<Option<Arc<T>>, RouterError> {
-        Ok(Some(self.v.clone()))
-    }
-
-    async fn route_debug(
-        &self,
-        _request: RouteRequest,
-        _target: Arc<WeakInstanceToken>,
-    ) -> Result<CapabilitySource, RouterError> {
-        panic!("OkRouter does not handle debug routes");
-    }
-}
-
 #[derive(Clone)]
 struct DebugRouter {
     source: CapabilitySource,

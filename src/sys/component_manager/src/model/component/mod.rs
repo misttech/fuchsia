@@ -30,7 +30,7 @@ use ::routing::resolving::{
     ComponentAddress, ComponentResolutionContext, ResolvedComponent, ResolvedPackage, ResolverError,
 };
 use async_trait::async_trait;
-use capability_source::CapabilitySource;
+use capability_source::{CapabilitySource, RemotedAtSource};
 use cm_graph::DependencyNode;
 use cm_rust::{CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, NativeIntoFidl};
 use cm_types::{Name, Url};
@@ -65,12 +65,14 @@ use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use runtime_capabilities::{
-    Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
+    Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
+    WeakInstanceToken,
 };
 use std::clone::Clone;
 use std::collections::HashSet;
 use std::fmt;
 use std::ops::DerefMut;
+use std::str::FromStr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use version_history::AbiRevision;
@@ -508,44 +510,43 @@ impl ComponentInstance {
             return Err(AddDynamicChildError::DictionaryAndAdditionalInputsSet);
         }
 
-        // Merge `ChildArgs.dictionary` entries into the child sandbox.
-        if let Some(dictionary_ref) = child_args.dictionary {
+        // Merge `ChildArgs.dictionary` or `ChildArgs.additional_inputs` entries into the child
+        // sandbox.
+        let additional_inputs = if let Some(dictionary_ref) = child_args.dictionary {
             let fidl_capability = fsandbox::Capability::Dictionary(dictionary_ref);
             let any: Capability =
                 fidl_capability.try_into().map_err(|_| AddDynamicChildError::InvalidDictionary)?;
-            let dict = match any {
-                Capability::Dictionary(d) => d,
+            match any {
+                Capability::Dictionary(d) => Some(d),
                 _ => return Err(AddDynamicChildError::InvalidDictionary),
-            };
-            let child_dict_entries = child_input.capabilities();
-            for (key, value) in dict.drain() {
-                let router: Capability = match value {
-                    Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
-                    Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
-                    Capability::Dictionary(s) => Router::<Dictionary>::new_ok(s).into(),
-                    Capability::Data(d) => Router::<Data>::new_ok(d).into(),
-                    c => c,
-                };
-
-                if let Some(_) = child_dict_entries.insert(key.clone(), router) {
-                    return Err(AddDynamicChildError::StaticRouteConflict { capability_name: key });
-                }
             }
-        }
+        } else if let Some(dictionary_handle) = child_args.additional_inputs {
+            Some(
+                self.context
+                    .remote_capabilities()
+                    .get(dictionary_handle)
+                    .map_err(|_| AddDynamicChildError::InvalidDictionary)?,
+            )
+        } else {
+            None
+        };
 
-        if let Some(dictionary_handle) = child_args.additional_inputs {
-            let dictionary: Arc<Dictionary> = self
-                .context
-                .remote_capabilities()
-                .get(dictionary_handle)
-                .map_err(|_| AddDynamicChildError::InvalidDictionary)?;
+        if let Some(dictionary) = additional_inputs {
             let child_dict_entries = child_input.capabilities();
             for (key, value) in dictionary.drain() {
                 let router: Capability = match value {
-                    Capability::Connector(s) => Router::<Connector>::new_ok(s).into(),
-                    Capability::DirConnector(s) => Router::<DirConnector>::new_ok(s).into(),
-                    Capability::Dictionary(s) => Router::<Dictionary>::new_ok(s).into(),
-                    Capability::Data(d) => Router::<Data>::new_ok(d).into(),
+                    Capability::Connector(s) => {
+                        RemotedCapabilityRouter::<Connector>::new(s, self.moniker.clone()).into()
+                    }
+                    Capability::DirConnector(s) => {
+                        RemotedCapabilityRouter::<DirConnector>::new(s, self.moniker.clone()).into()
+                    }
+                    Capability::Dictionary(s) => {
+                        RemotedCapabilityRouter::<Dictionary>::new(s, self.moniker.clone()).into()
+                    }
+                    Capability::Data(d) => {
+                        RemotedCapabilityRouter::<Data>::new(d, self.moniker.clone()).into()
+                    }
                     c => c,
                 };
 
@@ -1558,6 +1559,41 @@ impl std::fmt::Debug for ComponentInstance {
             .field("startup", &self.startup)
             .field("moniker", &self.moniker)
             .finish()
+    }
+}
+
+struct RemotedCapabilityRouter<T: CapabilityBound> {
+    capability: Arc<T>,
+    moniker: Moniker,
+}
+
+impl<T: CapabilityBound> RemotedCapabilityRouter<T> {
+    fn new(capability: impl Into<Arc<T>>, moniker: Moniker) -> Arc<Router<T>> {
+        Router::new(Self { capability: capability.into(), moniker })
+    }
+}
+
+#[async_trait]
+impl<T: CapabilityBound> Routable<T> for RemotedCapabilityRouter<T> {
+    async fn route(
+        &self,
+        _request: RouteRequest,
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<Option<Arc<T>>, RouterError> {
+        Ok(Some(self.capability.clone()))
+    }
+
+    async fn route_debug(
+        &self,
+        request: RouteRequest,
+        _target: Arc<WeakInstanceToken>,
+    ) -> Result<CapabilitySource, RouterError> {
+        let type_name =
+            request.build_type_name.and_then(|s| CapabilityTypeName::from_str(s.as_str()).ok());
+        Ok(CapabilitySource::RemotedAt(RemotedAtSource {
+            moniker: self.moniker.clone(),
+            type_name,
+        }))
     }
 }
 

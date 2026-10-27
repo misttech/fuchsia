@@ -4164,3 +4164,66 @@ async fn routing_error_appears_in_inspect() {
         }
     });
 }
+
+/// Tests that routes which terminate in a capability provided to component manager using the
+/// `fuchsia.component.CreateChildArgs` table will correctly report a `CapabilitySource` on
+/// debug routes.
+#[fuchsia::test]
+async fn validate_additional_inputs_debug() {
+    let components = vec![
+        ("root", ComponentDeclBuilder::new_empty_component().collection_default("coll").build()),
+        (
+            "dynamic_child",
+            ComponentDeclBuilder::new_empty_component()
+                .use_(UseBuilder::protocol().name("foo.bar"))
+                .build(),
+        ),
+    ];
+    let test = RoutingTestBuilder::new("root", components).build().await;
+
+    let parent = test.model.root().find_and_maybe_resolve(&Moniker::root()).await.unwrap();
+
+    let additional_inputs = runtime_capabilities::Dictionary::new();
+    let (_rx, connector) = runtime_capabilities::Connector::new();
+    let _ = additional_inputs.insert("foo.bar".parse().unwrap(), connector.into());
+
+    let (dict_server_end, dict_client_end) = zx::EventPair::create();
+    parent.context.remote_capabilities().store(dict_server_end, additional_inputs).unwrap();
+
+    parent
+        .add_dynamic_child(
+            "coll".to_string(),
+            &ChildBuilder::new().name("dynamic_child").build(),
+            fcomponent::CreateChildArgs {
+                additional_inputs: Some(dict_client_end),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    let child = test
+        .model
+        .root()
+        .find_and_maybe_resolve(&"coll:dynamic_child".try_into().unwrap())
+        .await
+        .unwrap();
+    let sandbox = child.component_sandbox().await.unwrap();
+    let foo_bar_router: Arc<runtime_capabilities::Router<runtime_capabilities::Connector>> =
+        sandbox
+            .program_input
+            .namespace()
+            .get_capability(&cm_types::RelativePath::new("svc/foo.bar").unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+    let source =
+        foo_bar_router.route_debug(Default::default(), child.as_weak().into()).await.unwrap();
+    assert_eq!(
+        source,
+        CapabilitySource::RemotedAt(capability_source::RemotedAtSource {
+            moniker: Moniker::root(),
+            type_name: Some(CapabilityTypeName::Protocol),
+        })
+    );
+}

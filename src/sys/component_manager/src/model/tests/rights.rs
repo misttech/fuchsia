@@ -83,15 +83,39 @@ async fn framework_directory_rights() {
         fio::PERM_READABLE,
     )
     .unwrap();
+    struct FooDataRouter(Arc<DirConnector>);
+    #[async_trait]
+    impl Routable<DirConnector> for FooDataRouter {
+        async fn route(
+            &self,
+            _request: RouteRequest,
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<Option<Arc<DirConnector>>, RouterError> {
+            Ok(Some(self.0.clone()))
+        }
+
+        async fn route_debug(
+            &self,
+            _request: RouteRequest,
+            _target: Arc<WeakInstanceToken>,
+        ) -> Result<CapabilitySource, RouterError> {
+            Ok(CapabilitySource::Framework(capability_source::FrameworkSource {
+                capability: capability_source::InternalCapability::Directory(
+                    "foo_data".parse().unwrap(),
+                ),
+                moniker: moniker::Moniker::root(),
+            }))
+        }
+    }
     test.model
         .context()
         .add_framework_capability(
             "foo_data",
-            Router::<DirConnector>::new_ok(DirConnector::from_proxy(
+            Router::new(FooDataRouter(DirConnector::from_proxy(
                 foo_dir_proxy,
                 cm_types::RelativePath::dot(),
                 fio::PERM_READABLE,
-            )),
+            ))),
         )
         .await;
     test.check_use("b".try_into().unwrap(), CheckUse::default_directory(ExpectedResult::Ok)).await;

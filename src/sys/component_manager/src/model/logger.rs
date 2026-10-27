@@ -144,17 +144,23 @@ mod tests {
     use crate::model::component::instance::{ComponentDomain, ResolvedInstanceState};
     use crate::model::component::{Component, ComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
+    use async_trait::async_trait;
+    use capability_source::{BuiltinSource, CapabilitySource, InternalCapability};
     use cm_rust::{UseDecl, UseProtocolDecl, UseSource};
     use cm_rust_testing::ComponentDeclBuilder;
     use cm_types::{BoundedName, Path, Url};
     use directed_graph::DirectedGraph;
     use fidl::endpoints::DiscoverableProtocolMarker;
     use fidl_fuchsia_component_decl::{self as fdecl, OnTerminate};
+    use fidl_fuchsia_component_runtime::RouteRequest;
     use fidl_fuchsia_logger as flogger;
     use hooks::Hooks;
+    use router_error::RouterError;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::component_instance::ComponentInstanceInterface;
-    use runtime_capabilities::{Capability, Connector, Receiver, Router};
+    use runtime_capabilities::{
+        Capability, Connector, Receiver, Routable, Router, WeakInstanceToken,
+    };
     use std::str::FromStr;
     use std::sync::{Arc, Weak};
 
@@ -215,11 +221,32 @@ mod tests {
                 availability: cm_rust::Availability::Required,
             }))
             .build();
+        struct LogSinkRouter(Arc<Connector>);
+        #[async_trait]
+        impl Routable<Connector> for LogSinkRouter {
+            async fn route(
+                &self,
+                _request: RouteRequest,
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<Option<Arc<Connector>>, RouterError> {
+                Ok(Some(self.0.clone()))
+            }
+
+            async fn route_debug(
+                &self,
+                _request: RouteRequest,
+                _target: Arc<WeakInstanceToken>,
+            ) -> Result<CapabilitySource, RouterError> {
+                Ok(CapabilitySource::Builtin(BuiltinSource {
+                    capability: InternalCapability::Protocol(LOG_SINK_PROTOCOL.parse().unwrap()),
+                }))
+            }
+        }
         let input = ComponentInput::default();
         let (rx, connector) = Connector::new();
         let prev = input.insert_capability(
             &BoundedName::from_str(LOG_SINK_PROTOCOL).unwrap(),
-            Capability::ConnectorRouter(Router::new_ok(connector)),
+            Capability::ConnectorRouter(Router::new(LogSinkRouter(connector))),
         );
         assert!(prev.is_none());
         let (instance, resolved_state) = new_instance_with_name(name, decl, input).await;
