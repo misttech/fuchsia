@@ -170,9 +170,7 @@ zx::result<zx::interrupt> Device::MapInterrupt(uint32_t which_irq) {
                                   *msix->table_vmo(), msix->table_offset(), &interrupt);
       // Disable the function level masking now that at least one interrupt exists for the device.
       if (status == ZX_OK) {
-        MsixControlReg ctrl = {.value = cfg_->Read(caps_.msix->ctrl())};
-        ctrl.set_function_mask(0);
-        cfg_->Write(caps_.msix->ctrl(), ctrl.value);
+        caps_.msix->ctrl().ReadFrom(cfg_.get()).set_function_mask(0).WriteTo(cfg_.get());
       }
       break;
     }
@@ -285,7 +283,7 @@ zx_status_t Device::EnableMsi(uint32_t irq_cnt) {
       }
       return ZX_ERR_NOT_SUPPORTED;
     }
-    MsiControlReg ctrl = {.value = cfg_->Read(caps_.msi->ctrl())};
+    auto ctrl = caps_.msi->ctrl().ReadFrom(cfg_.get());
     cfg_->Write(caps_.msi->tgt_addr(), static_cast<uint32_t>(info.target_addr));
     if (caps_.msi->is_64bit()) {
       cfg_->Write(caps_.msi->tgt_addr_upper(), static_cast<uint32_t>(info.target_addr >> 32u));
@@ -294,8 +292,7 @@ zx_status_t Device::EnableMsi(uint32_t irq_cnt) {
     if (ctrl.mm_capable()) {
       ctrl.set_mm_enable(MsiCapability::CountToMmc(irq_cnt));
     }
-    ctrl.set_enable(1);
-    cfg_->Write(caps_.msi->ctrl(), ctrl.value);
+    ctrl.set_enable(1).WriteTo(cfg_.get());
 
     irqs_.msi_allocation = std::move(alloc);
     irqs_.mode = fpci::InterruptMode::kMsi;
@@ -322,10 +319,7 @@ zx_status_t Device::EnableMsix(uint32_t irq_cnt) {
   if (result.is_ok()) {
     auto [alloc, info] = std::move(result.value());
     // Enable MSI-X, but mask off all functions until an interrupt is mapped.
-    MsixControlReg ctrl = {.value = cfg_->Read(caps_.msix->ctrl())};
-    ctrl.set_function_mask(1);
-    ctrl.set_enable(1);
-    cfg_->Write(caps_.msix->ctrl(), ctrl.value);
+    caps_.msix->ctrl().ReadFrom(cfg_.get()).set_function_mask(1).set_enable(1).WriteTo(cfg_.get());
 
     irqs_.msi_allocation = std::move(alloc);
     irqs_.mode = fpci::InterruptMode::kMsiX;
@@ -385,9 +379,7 @@ zx_status_t Device::DisableMsi() {
     return st;
   }
 
-  MsiControlReg ctrl = {.value = cfg_->Read(caps_.msi->ctrl())};
-  ctrl.set_enable(0);
-  cfg_->Write(caps_.msi->ctrl(), ctrl.value);
+  caps_.msi->ctrl().ReadFrom(cfg_.get()).set_enable(0).WriteTo(cfg_.get());
 
   DisableMsiCommon();
   return ZX_OK;
@@ -399,10 +391,7 @@ zx_status_t Device::DisableMsix() {
     return st;
   }
 
-  MsixControlReg ctrl = {.value = cfg_->Read(caps_.msix->ctrl())};
-  ctrl.set_function_mask(1);
-  ctrl.set_enable(0);
-  cfg_->Write(caps_.msix->ctrl(), ctrl.value);
+  caps_.msix->ctrl().ReadFrom(cfg_.get()).set_function_mask(1).set_enable(0).WriteTo(cfg_.get());
 
   irqs_.msi_allocation.reset();
   return ZX_OK;

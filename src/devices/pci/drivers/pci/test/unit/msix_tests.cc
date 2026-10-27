@@ -50,22 +50,23 @@ class PciCapabilityTests : public ::testing::Test {
 
   static void ConfigureMsixCapability(Config& cfg, uint8_t tbar, uint8_t pbar, zx_paddr_t toffset,
                                       zx_paddr_t poffset, size_t vectors = 8, uint8_t base = 0) {
-    MsixControlReg ctrl{};
-    MsixTableReg table{};
-    MsixPbaReg pba{};
-
-    ctrl.set_table_size(vectors - 1);
-    table.set_offset(toffset);
-    table.set_bir(tbar);
-    pba.set_offset(poffset);
-    pba.set_bir(pbar);
-
-    cfg.Write(PciReg16(static_cast<uint16_t>(base + MsixCapability::kMsixControlRegisterOffset)),
-              ctrl.value);
-    cfg.Write(PciReg32(static_cast<uint16_t>(base + MsixCapability::kMsixTableRegisterOffset)),
-              table.reg_value());
-    cfg.Write(PciReg32(static_cast<uint16_t>(base + MsixCapability::kMsixPbaRegisterOffset)),
-              pba.reg_value());
+    hwreg::RegisterAddr<MsixControlReg>(
+        static_cast<uint16_t>(base + MsixCapability::kMsixControlRegisterOffset))
+        .FromValue(0)
+        .set_table_size(static_cast<uint16_t>(vectors - 1))
+        .WriteTo(&cfg);
+    hwreg::RegisterAddr<MsixTableReg>(
+        static_cast<uint16_t>(base + MsixCapability::kMsixTableRegisterOffset))
+        .FromValue(0)
+        .set_offset(static_cast<uint32_t>(toffset))
+        .set_bir(tbar)
+        .WriteTo(&cfg);
+    hwreg::RegisterAddr<MsixPbaReg>(
+        static_cast<uint16_t>(base + MsixCapability::kMsixPbaRegisterOffset))
+        .FromValue(0)
+        .set_offset(static_cast<uint32_t>(poffset))
+        .set_bir(pbar)
+        .WriteTo(&cfg);
   }
 
  protected:

@@ -39,11 +39,12 @@ bool ReadCapability(Config& cfg, uint8_t offset, CapabilityHdr* header) {
 }
 
 // PCI Express Base Spec 7.6
-struct ExtCapabilityIdReg {
-  uint32_t value;
-  DEF_SUBFIELD(value, 31, 20, offset);
-  DEF_SUBFIELD(value, 19, 16, version);
-  DEF_SUBFIELD(value, 15, 0, id);
+struct ExtCapabilityIdReg : public hwreg::RegisterBase<ExtCapabilityIdReg, uint32_t> {
+  DEF_FIELD(31, 20, offset);
+  DEF_FIELD(19, 16, version);
+  DEF_FIELD(15, 0, id);
+
+  static auto Get(uint16_t offset) { return hwreg::RegisterAddr<ExtCapabilityIdReg>(offset); }
 };
 
 struct ExtCapabilityHdr {
@@ -57,7 +58,7 @@ bool ReadExtCapability(Config& cfg, uint16_t offset, ExtCapabilityHdr* header) {
     return false;
   }
 
-  ExtCapabilityIdReg reg = {.value = cfg.Read(PciReg32(offset))};
+  auto reg = ExtCapabilityIdReg::Get(offset).ReadFrom(&cfg);
   uint16_t id = static_cast<uint16_t>(reg.id());
   if (id == 0xffff) {
     return false;

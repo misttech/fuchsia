@@ -22,11 +22,10 @@
 
 namespace pci {
 
-struct MsixControlReg {
-  uint16_t value;
-  DEF_SUBBIT(value, 15, enable);
-  DEF_SUBBIT(value, 14, function_mask);
-  DEF_SUBFIELD(value, 10, 0, table_size);
+struct MsixControlReg : public hwreg::RegisterBase<MsixControlReg, uint16_t> {
+  DEF_BIT(15, enable);
+  DEF_BIT(14, function_mask);
+  DEF_FIELD(10, 0, table_size);
 };
 
 struct MsixTableReg : hwreg::RegisterBase<MsixTableReg, uint32_t> {
@@ -62,9 +61,9 @@ class MsixCapability : public Capability {
   MsixCapability(const Config& cfg, uint8_t base);
 
   zx_status_t Init(std::span<const std::optional<Bar>> bars);
-  PciReg16 ctrl() { return ctrl_; }
-  PciReg32 table() { return table_reg_; }
-  PciReg32 pba() { return pba_reg_; }
+  hwreg::RegisterAddr<MsixControlReg> ctrl() const { return ctrl_; }
+  hwreg::RegisterAddr<MsixTableReg> table() const { return table_reg_; }
+  hwreg::RegisterAddr<MsixPbaReg> pba() const { return pba_reg_; }
   uint8_t table_bar() const { return table_bar_; }
   uint32_t table_offset() const { return table_offset_; }
   zx::unowned_vmo table_vmo() { return table_mmio_->get_vmo(); }
@@ -86,9 +85,9 @@ class MsixCapability : public Capability {
   MMIO_PTR MsixTable* table_;
   MMIO_PTR uint64_t* pba_;
   // Registers for capability configuration and control.
-  const PciReg16 ctrl_;
-  const PciReg32 table_reg_;
-  const PciReg32 pba_reg_;
+  const hwreg::RegisterAddr<MsixControlReg> ctrl_;
+  const hwreg::RegisterAddr<MsixTableReg> table_reg_;
+  const hwreg::RegisterAddr<MsixPbaReg> pba_reg_;
   // Read-only values cached at initialization.
   uint32_t table_offset_;
   uint32_t pba_offset_;

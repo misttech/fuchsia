@@ -14,23 +14,23 @@ namespace pci {
 
 MsixCapability::MsixCapability(const Config& cfg, uint8_t base)
     : Capability(static_cast<uint8_t>(Capability::Id::kMsiX), base, cfg.addr()),
-      ctrl_(PciReg16(static_cast<uint8_t>(base + kMsixControlRegisterOffset))),
-      table_reg_(PciReg32(static_cast<uint8_t>(base + kMsixTableRegisterOffset))),
-      pba_reg_(PciReg32(static_cast<uint8_t>(base + kMsixPbaRegisterOffset))) {
+      ctrl_(static_cast<uint16_t>(base + kMsixControlRegisterOffset)),
+      table_reg_(static_cast<uint16_t>(base + kMsixTableRegisterOffset)),
+      pba_reg_(static_cast<uint16_t>(base + kMsixPbaRegisterOffset)) {
   uint8_t header_type = cfg.Read(Config::kHeaderType) & kHeaderTypeMask;
   max_bars_ = (header_type == kHeaderTypePciBridge) ? kBarRegsPerBridge : kMaxBarCount;
 
-  MsixControlReg ctrl = {.value = cfg.Read(ctrl_)};
+  auto ctrl = ctrl_.ReadFrom(&cfg);
   // Table size is stored in the register as N-1 (PCIe Base Spec 7.7.2.2)
   table_size_ = static_cast<uint16_t>(ctrl.table_size() + 1);
 
   // Offset assumes a full 32bit width and is handled by the unshifted
   // field in the register structures.
-  auto table = MsixTableReg::Get().FromValue(cfg.Read(table_reg_));
+  auto table = table_reg_.ReadFrom(&cfg);
   table_bar_ = static_cast<uint8_t>(table.bir());
   table_offset_ = table.offset();
 
-  auto pba = MsixPbaReg::Get().FromValue(cfg.Read(pba_reg_));
+  auto pba = pba_reg_.ReadFrom(&cfg);
   pba_bar_ = static_cast<uint8_t>(pba.bir());
   pba_offset_ = pba.offset();
 }

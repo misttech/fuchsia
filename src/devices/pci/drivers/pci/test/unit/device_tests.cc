@@ -347,7 +347,7 @@ TEST_F(PciDeviceTestsExtendedCam, MsiCapabilityTest) {
   EXPECT_EQ(false, msi.supports_pvm());
 
   // MSI should be disabled by Device initialization.
-  const MsiControlReg ctrl = {.value = dev.config()->Read(msi.ctrl())};
+  auto ctrl = msi.ctrl().ReadFrom(dev.config().get());
   EXPECT_EQ(0, ctrl.enable());
 }
 
@@ -369,7 +369,7 @@ TEST_F(PciDeviceTestsExtendedCam, MsixCapabilityTest) {
   EXPECT_EQ(0x800u, msix.pba_offset());
 
   // MSI-X should be disabled by Device initialization.
-  const MsixControlReg ctrl = {.value = dev.config()->Read(msix.ctrl())};
+  auto ctrl = msix.ctrl().ReadFrom(dev.config().get());
   EXPECT_EQ(0u, ctrl.enable());
 }
 
@@ -460,9 +460,7 @@ TEST_F(PciDeviceTestsExtendedCam, PowerStateTransitions) {
                                  PowerManagementCapability::PowerState start_state,
                                  PowerManagementCapability::PowerState end_state) -> bool {
     // Manually update our starting state
-    PmcsrReg pmcsr{.value = cfg.Read(power.pmcsr())};
-    pmcsr.set_power_state(start_state);
-    cfg.Write(power.pmcsr(), pmcsr.value);
+    power.pmcsr().ReadFrom(&cfg).set_power_state(start_state).WriteTo(&cfg);
     // Time the transition
     const zx::time start_time = zx::clock::get_monotonic();
     power.SetPowerState(cfg, end_state);
@@ -588,9 +586,7 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
                                             kFakeQuadroDeviceConfig.max_size());
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());
     MsiCapability msi(*mmio_cfg, kFakeQuadroMsiCapabilityOffset);
-    MsiControlReg ctrl = {.value = mmio_cfg->Read(msi.ctrl())};
-    ctrl.set_is_64bit_capable(0);
-    mmio_cfg->Write(msi.ctrl(), ctrl.value);
+    msi.ctrl().ReadFrom(mmio_cfg.get()).set_is_64bit_capable(0).WriteTo(mmio_cfg.get());
 
     bus().set_use_non_kernel_msi_allocation(true, kAbove4GiBAddress);
     pci::Device& dev = CreateTestDevice(MockDevice::FakeRootParent().get());
@@ -615,9 +611,7 @@ TEST_F(PciDeviceTestsExtendedCam, Msi32BitAddressLimit) {
                                             kFakeQuadroDeviceConfig.max_size());
     auto mmio_cfg = ecam.CreateMmioConfig(bdf());
     MsiCapability msi(*mmio_cfg, kFakeQuadroMsiCapabilityOffset);
-    MsiControlReg ctrl = {.value = mmio_cfg->Read(msi.ctrl())};
-    ctrl.set_is_64bit_capable(0);
-    mmio_cfg->Write(msi.ctrl(), ctrl.value);
+    msi.ctrl().ReadFrom(mmio_cfg.get()).set_is_64bit_capable(0).WriteTo(mmio_cfg.get());
 
     bus().set_use_non_kernel_msi_allocation(true, kAbove4GiBAddress);
     pci::Device& dev = CreateTestDevice(MockDevice::FakeRootParent().get());

@@ -21,17 +21,16 @@ constexpr uint8_t kPmcVersion = 0b011;
 // Management Capability.
 
 // All fields in this register are read only.
-struct PmcReg {
-  uint16_t value;
+struct PmcReg : public hwreg::RegisterBase<PmcReg, uint16_t> {
   // Hardwired to 011 in this specification version.
-  DEF_SUBFIELD(value, 2, 0, version);
+  DEF_FIELD(2, 0, version);
   // Hardwired to 0 in PCIe.
-  DEF_SUBBIT(value, 3, pme_clock);
+  DEF_BIT(3, pme_clock);
   // Set if no delay is needed following a transition to state D0.
-  DEF_SUBBIT(value, 4, immediate_readiness_on_return_to_d0);
+  DEF_BIT(4, immediate_readiness_on_return_to_d0);
   // Set if the device has a special initialization sequence following a D0 transition
   // and cannot be managed entirely by the bus driver.
-  DEF_SUBBIT(value, 5, dsi);
+  DEF_BIT(5, dsi);
   // Details the auxiliary current required. Hardwired to 0 if the Data register is implemented.
   // 111 -> 375 mA
   // 110 -> 320 mA
@@ -41,31 +40,30 @@ struct PmcReg {
   // 010 -> 100 mA
   // 001 -> 55 mA
   // 000 -> 0 (self powered)
-  DEF_SUBFIELD(value, 8, 6, aux_current);
+  DEF_FIELD(8, 6, aux_current);
   // Set if D1 is supported.
-  DEF_SUBBIT(value, 9, d1_support);
+  DEF_BIT(9, d1_support);
   // Set if D2 is supported.
-  DEF_SUBBIT(value, 10, d2_support);
+  DEF_BIT(10, d2_support);
   // A bitmask corresponding to whether a given power state can generate a PME#.
   // In order from 15:11, D3cold D3hot D2 D1 D0
-  DEF_SUBFIELD(value, 15, 11, pme_support);
+  DEF_FIELD(15, 11, pme_support);
 };
 
-struct PmcsrReg {
-  uint16_t value;
+struct PmcsrReg : public hwreg::RegisterBase<PmcsrReg, uint16_t> {
   // RW. The current power state from 0 to D3hot.
-  DEF_SUBFIELD(value, 1, 0, power_state);
+  DEF_FIELD(1, 0, power_state);
   // RO. Set if function state is preserved after state transition from D3hot to
   //     D0. Otherwise, the device state is undefined.
-  DEF_SUBBIT(value, 3, no_soft_reset);
+  DEF_BIT(3, no_soft_reset);
   // RW/RWS. Set if the function is permitted to generate a PME.
-  DEF_SUBBIT(value, 8, pme_en);
+  DEF_BIT(8, pme_en);
   // RW. Controls which data to route to the Data register.
-  DEF_SUBFIELD(value, 12, 9, data_select);
+  DEF_FIELD(12, 9, data_select);
   // RO. Scaling factor for the data register.
-  DEF_SUBFIELD(value, 14, 13, data_scale);
+  DEF_FIELD(14, 13, data_scale);
   // RW. Set if the function would normally generate a PME signal.
-  DEF_SUBBIT(value, 15, pme_Status);
+  DEF_BIT(15, pme_status);
 };
 
 class PowerManagementCapability : public Capability {
@@ -95,21 +93,21 @@ class PowerManagementCapability : public Capability {
 
   PowerManagementCapability(const Config& cfg, uint8_t base)
       : Capability(std::to_underlying(Capability::Id::kPciPowerManagement), base),
-        pmc_(PciReg16(static_cast<uint16_t>(base + 0x2))),
-        pmcsr_(PciReg16(static_cast<uint16_t>(base + 0x4))),
+        pmc_(static_cast<uint16_t>(base + 0x2)),
+        pmcsr_(static_cast<uint16_t>(base + 0x4)),
         data_(PciReg8(static_cast<uint16_t>(base + 0x7))) {}
 
   void WaitForTransitionRecovery(PowerState old_state, PowerState new_state);
   PowerState GetPowerState(const pci::Config& cfg);
   void SetPowerState(const pci::Config& cfg, PowerState new_state);
 
-  PciReg16 pmc() { return pmc_; }
-  PciReg16 pmcsr() { return pmcsr_; }
+  hwreg::RegisterAddr<PmcReg> pmc() const { return pmc_; }
+  hwreg::RegisterAddr<PmcsrReg> pmcsr() const { return pmcsr_; }
 
  private:
-  const PciReg16 pmc_;             // Power Management Capabilities
-  const PciReg16 pmcsr_;           // Power Management Control/Status Register
-  [[maybe_unused]] PciReg8 data_;  // Data
+  const hwreg::RegisterAddr<PmcReg> pmc_;      // Power Management Capabilities
+  const hwreg::RegisterAddr<PmcsrReg> pmcsr_;  // Power Management Control/Status Register
+  [[maybe_unused]] PciReg8 data_;              // Data
 };
 
 }  // namespace pci
