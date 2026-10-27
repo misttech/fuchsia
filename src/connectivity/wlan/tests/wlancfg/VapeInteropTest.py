@@ -20,7 +20,6 @@ from openwrt_access_point.lib.access_point_config import (
     BssChannel,
     HtMode,
     LegacyMode,
-    SecurityOpen,
     SecurityWpa2,
     VhtMode,
 )
@@ -114,31 +113,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 f"got {got_channel}."
             )
 
-    async def test_associate_actiontec_pk5000_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = actiontec.actiontec_pk5000(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    LegacyMode(),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="actiontec_pk5000",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_actiontec_pk5000_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = actiontec.actiontec_pk5000(
@@ -165,31 +139,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_actiontec_mi424wr_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = actiontec.actiontec_mi424wr(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="actiontec_mi424wr",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_actiontec_mi424wr_24ghz_wpa2(self) -> None:
@@ -219,27 +168,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtac66u_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac66u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac66u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_asus_rtac66u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtac66u(
@@ -262,27 +190,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_asus_rtac66u_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac66u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac66u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_asus_rtac66u_5ghz_wpa2(self) -> None:
@@ -309,27 +216,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtac86u_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac86u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac86u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_asus_rtac86u_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtac86u(
@@ -351,26 +237,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_asus_rtac86u_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac86u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac86u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_asus_rtac86u_5ghz_wpa2(self) -> None:
@@ -396,26 +262,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtac5300_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac5300(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac5300",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_asus_rtac5300_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtac5300(
@@ -439,26 +285,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtac5300_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtac5300(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtac5300",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-        )
-
     async def test_associate_asus_rtac5300_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtac5300(
@@ -480,26 +306,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             password=self.password,
-        )
-
-    async def test_associate_asus_rtn56u_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtn56u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtn56u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_asus_rtn56u_24ghz_wpa2(self) -> None:
@@ -526,27 +332,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtn56u_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtn56u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtn56u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-        )
-
     async def test_associate_asus_rtn56u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtn56u(
@@ -569,26 +354,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             password=self.password,
-        )
-
-    async def test_associate_asus_rtn66u_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtn66u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtn66u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_asus_rtn66u_24ghz_wpa2(self) -> None:
@@ -615,27 +380,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_asus_rtn66u_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = asus.asus_rtn66u(
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="asus_rtn66u",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-        )
-
     async def test_associate_asus_rtn66u_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = asus.asus_rtn66u(
@@ -658,31 +402,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             password=self.password,
-        )
-
-    async def test_associate_belkin_f9k1001v5_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = belkin.belkin_f9k1001v5(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="belkin_f9k1001v5",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_belkin_f9k1001v5_24ghz_wpa2(self) -> None:
@@ -713,30 +432,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_linksys_ea4500_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_ea4500(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=40, extension="+"),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_ea4500",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_linksys_ea4500_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = linksys.linksys_ea4500(
@@ -762,30 +457,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_linksys_ea4500_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_ea4500(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_ea4500",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_linksys_ea4500_5ghz_wpa2(self) -> None:
@@ -815,30 +486,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_linksys_ea9500_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_ea9500(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    LegacyMode(),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_ea9500",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_linksys_ea9500_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = linksys.linksys_ea9500(
@@ -864,30 +511,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_linksys_ea9500_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_ea9500(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    LegacyMode(),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_ea9500",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_linksys_ea9500_5ghz_wpa2(self) -> None:
@@ -917,30 +540,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_linksys_wrt1900acv2_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_wrt1900acv2(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_wrt1900acv2",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_linksys_wrt1900acv2_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = linksys.linksys_wrt1900acv2(
@@ -966,30 +565,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_linksys_wrt1900acv2_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = linksys.linksys_wrt1900acv2(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    VhtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="linksys_wrt1900acv2",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_linksys_wrt1900acv2_5ghz_wpa2(self) -> None:
@@ -1019,30 +594,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_netgear_r7000_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = netgear.netgear_r7000(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="netgear_r7000",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_netgear_r7000_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = netgear.netgear_r7000(
@@ -1068,30 +619,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_netgear_r7000_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = netgear.netgear_r7000(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    VhtMode(bw=80),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="netgear_r7000",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_netgear_r7000_5ghz_wpa2(self) -> None:
@@ -1121,30 +648,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_netgear_wndr3400_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = netgear.netgear_wndr3400(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="netgear_wndr3400",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_netgear_wndr3400_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = netgear.netgear_wndr3400(
@@ -1172,30 +675,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_netgear_wndr3400_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = netgear.netgear_wndr3400(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    HtMode(bw=40, extension="+"),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="netgear_wndr3400",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-        )
-
     async def test_associate_netgear_wndr3400_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = netgear.netgear_wndr3400(
@@ -1221,32 +700,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             password=self.password,
-        )
-
-    async def test_associate_securifi_almond_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = securifi.securifi_almond(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="securifi_almond",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_securifi_almond_24ghz_wpa2(self) -> None:
@@ -1278,32 +731,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_tplink_archerc5_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_archerc5(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_archerc5",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_tplink_archerc5_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = tplink.tplink_archerc5(
@@ -1331,32 +758,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_tplink_archerc5_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_archerc5(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    VhtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_archerc5",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_tplink_archerc5_5ghz_wpa2(self) -> None:
@@ -1388,32 +789,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_tplink_archerc7_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_archerc7(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_archerc7",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_tplink_archerc7_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = tplink.tplink_archerc7(
@@ -1441,32 +816,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             password=self.password,
-        )
-
-    async def test_associate_tplink_archerc7_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_archerc7(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    VhtMode(bw=80),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_archerc7",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
         )
 
     async def test_associate_tplink_archerc7_5ghz_wpa2(self) -> None:
@@ -1498,31 +847,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_tplink_c1200_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_c1200(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_c1200",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-        )
-
     async def test_associate_tplink_c1200_24ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = tplink.tplink_c1200(
@@ -1551,31 +875,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             password=self.password,
         )
 
-    async def test_associate_tplink_c1200_5ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_c1200(
-                channel=BssChannel(
-                    Band.BAND_5G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                    VhtMode(bw=80),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_c1200",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-        )
-
     async def test_associate_tplink_c1200_5ghz_wpa2(self) -> None:
         if self.openwrt_ap:
             config = tplink.tplink_c1200(
@@ -1602,31 +901,6 @@ class VapeInteropTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f_wlan_policy.SecurityType.WPA2,
             expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             password=self.password,
-        )
-
-    async def test_associate_tplink_tlwr940n_24ghz_open(self) -> None:
-        if self.openwrt_ap:
-            config = tplink.tplink_tlwr940n(
-                channel=BssChannel(
-                    Band.BAND_2G,
-                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                    HtMode(bw=20),
-                ),
-                ssid=self.ssid,
-                security=SecurityOpen(),
-            )
-
-            self.openwrt_ap.configure_wifi(config)
-        else:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="tplink_tlwr940n",
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.ssid,
-            )
-        await self._save_and_connect(
-            f_wlan_policy.SecurityType.NONE,
-            expected_channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
         )
 
     async def test_associate_tplink_tlwr940n_24ghz_wpa2(self) -> None:
