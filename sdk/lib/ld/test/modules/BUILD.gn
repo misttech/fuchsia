@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler_config.gni")
 import("//build/config/lto/config.gni")
 import("//build/dist/distribution_manifest_copy.gni")
 import("//build/dist/resource.gni")
@@ -334,6 +335,10 @@ template("_test_link") {
     testonly = true
 
     output_name = main_target
+    if (defined(invoker.crate_root)) {
+      crate_name =
+          string_replace(string_replace(main_target, "-", "_"), ".", "_")
+    }
     deps = []
     public_deps = []
     ldflags = []
@@ -341,6 +346,7 @@ template("_test_link") {
                            "*",
                            [
                              "configs",
+                             "crate_name",
                              "data_deps",
                              "install_dir",
                              "output_file",
@@ -500,6 +506,8 @@ template("test_ifs_shared_library") {
   }
 }
 
+test_exclude_tags = [ "instrumentation-runtime" ]
+
 template("test_loadable_module") {
   _test_link(target_name) {
     target_type = "loadable_module"
@@ -507,7 +515,7 @@ template("test_loadable_module") {
     output_file = "$target_name.so"
     exclude_toolchain_tags = []
     forward_variables_from(invoker, "*", [ "target_type" ])
-    exclude_toolchain_tags += [ "instrumentation-runtime" ]
+    exclude_toolchain_tags += test_exclude_tags
   }
 }
 
@@ -540,7 +548,7 @@ template("test_executable") {
                                "target_type",
                              ])
       deps += [ ":test-executable$suffix" ]
-      exclude_toolchain_tags += [ "instrumentation-runtime" ]
+      exclude_toolchain_tags += test_exclude_tags
     }
   }
 }
@@ -573,10 +581,7 @@ foreach(in_process,
       "test-start.h",
     ]
     public_deps = [ "//sdk/lib/ld:standalone" ]
-    public_configs = [
-      ":semantic-interposition",
-      "//build/config:frame_pointers",
-    ]
+    public_configs = [ ":test-executable.config" ]
     sources = [ "ensure-test-thread-pointer.cc" ]
     deps = [
       ":test-module.deps",
@@ -597,6 +602,19 @@ foreach(in_process,
         deps += [ "//zircon/kernel/lib/arch" ]
       }
     }
+  }
+}
+
+compiler_config("test-executable.config") {
+  configs = [
+    ":semantic-interposition",
+    "//build/config:frame_pointers",
+  ]
+
+  if (!is_fuchsia && !rust_custom_target) {
+    # This gets referenced from the prebuilt core crate but only defined in the
+    # prebuilt std crate that the minimal tests avoid.  It's never really used.
+    rust_linker_flags = [ "-defsym=rust_eh_personality=0" ]
   }
 }
 
@@ -699,10 +717,10 @@ template("test_dep") {
   }
 }
 
-config("test-executable.in-process.config") {
+compiler_config("test-executable.in-process.config") {
   visibility = [ ":*" ]
   defines = [ "IN_PROCESS_TEST" ]
-  ldflags = [ "-Wl,-e,TestStart" ]
+  linker_flags = [ "--entry=TestStart" ]
 }
 
 test_executable("partial-page-bss") {
@@ -2129,9 +2147,36 @@ test_executable("ldsvc-config") {
   configs = [ ":ldsvc-config.libprefix" ]
 }
 
-config("ldsvc-config.libprefix") {
+compiler_config("ldsvc-config.libprefix") {
   visibility = [ ":*" ]
-  ldflags = [ "-Wl,-dynamic-linker=test-libprefix/ld.so.1" ]
+  linker_flags = [ "-dynamic-linker=test-libprefix/ld.so.1" ]
+}
+
+rust_remove_configs = [ "//build/config/rust:no_features" ]
+rust_configs = [ "//build/config/rust:panic_abort" ]
+
+test_executable("rust-basic") {
+  can_be_in_process = true
+  crate_type = "bin"
+  crate_root = "rust-basic.rs"
+  sources = [
+    "rust_panic.rs",
+    crate_root,
+  ]
+  deps = [ ":rust-dep" ]
+  remove_configs = rust_remove_configs
+  configs = rust_configs
+}
+
+test_shared_library("rust-dep") {
+  crate_type = "cdylib"
+  crate_root = "rust-dep.rs"
+  sources = [
+    "rust_panic.rs",
+    crate_root,
+  ]
+  remove_configs = rust_remove_configs
+  configs = rust_configs
 }
 
 source_set("startup-symbols") {
@@ -2184,7 +2229,7 @@ template("libc_test_executable") {
     ]
 
     # Sanitizer support not ready yet for new libc.
-    exclude_toolchain_tags = [ "uses-shadow" ]
+    exclude_toolchain_tags += [ "uses-shadow" ]
 
     # TODO(https://fxbug.dev/483475945): Work around RBE linking bug.
     configs += [ "//build/config/rbe:remote_link_scandeps_workaround" ]

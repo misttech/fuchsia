@@ -125,19 +125,8 @@ compiler_config("safe-stack-abi") {
   if (toolchain_environment == "kernel" &&
       toolchain_variant.tags + [ "asan" ] - [ "asan" ] ==
       toolchain_variant.tags) {
+    sanitize = [ "safe-stack" ]
     rustflags = [ "-Zexternal-clangrt" ]
-    rust_target_edits = [
-      {
-        key = "supported-sanitizers"
-        action = "append"
-        value = "safestack"
-      },
-      {
-        key = "default-sanitizers"
-        action = "set"
-        value = [ "safestack" ]
-      },
-    ]
   }
 }
 

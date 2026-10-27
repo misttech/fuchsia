@@ -4,9 +4,18 @@
 
 import("//build/toolchain/toolchain_environment.gni")
 
+# An Environment with any of these tags cannot use the prebuilt runtimes.
+_custom_target_tags = [
+  "custom-abi",
+  "no-compiler-abi",
+  "standalone",
+]
+
 # True iff $current_toolchain uses a custom Rust target rather than just the
 # toolchain-supplied Rust sysroot.  See //build/toolchain/rust for details.
-rust_custom_target = toolchain_environment == "kernel"
+rust_custom_target =
+    !is_efi_toolchain && toolchain_variant.tags + _custom_target_tags -
+                         _custom_target_tags != toolchain_variant.tags
 
 # Define a config() with conveniences for cross-language complexities.
 #
@@ -77,18 +86,31 @@ rust_custom_target = toolchain_environment == "kernel"
 #
 #   * rust_target_features
 #     - Optional: List of features, as used in `-Ctarget-feature=...` switches.
-#     Outside the kernel environment, these just go into $rustflags that way.
-#     In the kernel environment, they are edited into the "target-features"
-#     list from the base target, with "+feature" and "-feature" spellings
-#     replacing their earlier opposites.
+#     Outside `rust_custom_target` environments, these just go into $rustflags
+#     that way.  In `rust_custom_target` environments, they are edited into the
+#     "target-features" list from the base target, with "+feature" and
+#     "-feature" spellings replacing their earlier opposites.
+#     - Type: list(string)
+#     - Default: []
+#
+#   * sanitize, no_sanitize
+#     - Optional: List of sanitizers to enable or disable, respectively, as
+#     used in `-fsanitize=...` and `-fno-sanitize=...` switches.  For C/C++,
+#     this is implicitly ignored under `is_gcc`, so setting it doesn't need to
+#     be conditionalized.  In `rust_custom_target` environments, these are
+#     edited into the "default-sanitizers" list from the base target, with
+#     later `sanitize` and `no_sanitize` entries replacing earlier opposites.
+#     Outside `rust_custom_target` environments, `sanitize` entries go into
+#     $rustflags as `-Zsanitizer=...` switches.
 #     - Type: list(string)
 #     - Default: []
 #
 #   * rust_target_edits
-#     - Optional: This must not be set outside the kernel environment.
-#     If there are alternative $rustflags spellings, conditionalize the
-#     parameters to use $rustflags in non-kernel toolchains.  Each element
-#     is a scope describing an edit to perform to the Rust target JSON file.
+#     - Optional: This must not be set outside `rust_custom_target`
+#     environments.  If there are alternative $rustflags spellings,
+#     conditionalize the parameters to use $rustflags in non-custom-target
+#     toolchains.  Each element is a scope describing an edit to perform to the
+#     Rust target JSON file.
 #     - Type: list(scope)
 #       * key
 #         - Required: Key in the JSON dictionary.
@@ -161,6 +183,39 @@ template("compiler_config") {
     _features = invoker.rust_target_features
   }
 
+  _sanitize = []
+  if (defined(invoker.sanitize)) {
+    _sanitize = invoker.sanitize
+  }
+
+  _no_sanitize = []
+  if (defined(invoker.no_sanitize)) {
+    _no_sanitize = invoker.no_sanitize
+  }
+  assert(
+      _sanitize + _no_sanitize - _no_sanitize == _sanitize,
+      "compiler_config() cannot list the same sanitizer in both sanitize and no_sanitize")
+
+  _rust_sanitize = []
+  foreach(sanitizer, _sanitize) {
+    if (sanitizer == "safe-stack") {
+      sanitizer = "safestack"
+    }
+    _rust_sanitize += [ sanitizer ]
+  }
+
+  _rust_sanitizers = []
+  foreach(sanitizer, _no_sanitize) {
+    if (sanitizer == "safe-stack") {
+      sanitizer = "safestack"
+    }
+    _rust_sanitizers += [ "-$sanitizer" ]
+  }
+  foreach(sanitizer, _rust_sanitize) {
+    _rust_sanitizers += [ "+$sanitizer" ]
+  }
+  not_needed([ "_rust_sanitizers" ])
+
   _edits = []
   if (defined(invoker.rust_target_edits)) {
     _edits = invoker.rust_target_edits
@@ -185,10 +240,12 @@ template("compiler_config") {
                              "linker_flags",
                              "linker_llvm_flags",
                              "llvm_flags",
+                             "no_sanitize",
                              "rust_linker_flags",
                              "rust_linker_llvm_flags",
                              "rust_target_edits",
                              "rust_target_features",
+                             "sanitize",
                              "testonly",
                              "visibility",
                            ])
@@ -198,6 +255,15 @@ template("compiler_config") {
     asmflags += _c_family_flags
     cflags += _c_family_flags
     ldflags += _c_family_flags
+
+    if (!is_gcc) {
+      if (_no_sanitize != []) {
+        cflags += [ "-fno-sanitize=" + string_join(",", _no_sanitize) ]
+      }
+      if (_sanitize != []) {
+        cflags += [ "-fsanitize=" + string_join(",", _sanitize) ]
+      }
+    }
 
     foreach(arg, _llvm_flags) {
       cflags += [
@@ -235,6 +301,13 @@ template("compiler_config") {
       foreach(feature, _features) {
         rustflags += [ "-Ctarget-feature=$feature" ]
       }
+      if (_rust_sanitize != []) {
+        rustflags += [ "-Zsanitizer=" + string_join(",", _rust_sanitize) ]
+      }
+
+      # TODO(https://fxbug.dev/578289369): rustc currently has no CLI switch to
+      # negate default-sanitizers or earlier -Zsanitizer=... flags outside
+      # rust_custom_target.
     }
   }
 
@@ -251,13 +324,22 @@ template("compiler_config") {
         deps += [ "$config.rust-target-edits" ]
       }
       metadata = {
-        kernel_rust_target_edits = _edits
+        rust_custom_target_edits = _edits
         if (_features != []) {
-          kernel_rust_target_edits += [
+          rust_custom_target_edits += [
             {
               key = "features"
               action = "append"
               value = _features
+            },
+          ]
+        }
+        if (_rust_sanitizers != []) {
+          rust_custom_target_edits += [
+            {
+              key = "default-sanitizers"
+              action = "append"
+              value = _rust_sanitizers
             },
           ]
         }

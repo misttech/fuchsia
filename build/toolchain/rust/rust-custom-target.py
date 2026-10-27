@@ -114,6 +114,21 @@ def main() -> int:
                     continue
             features.append(new_feature)
 
+    def append_sanitizers(
+        output: dict[str, Any], new_sanitizers: list[str]
+    ) -> None:
+        sanitizers = output.setdefault("default-sanitizers", [])
+        supported = output.setdefault("supported-sanitizers", [])
+        for entry in new_sanitizers:
+            assert is_toggle(entry), f"Bad default-sanitizers edit: {entry=}"
+            name = entry[1:]
+            if name in sanitizers:
+                sanitizers.remove(name)
+            if entry.startswith("+"):
+                sanitizers.append(name)
+                if name not in supported:
+                    supported.append(name)
+
     def apply_edits(
         output: dict[str, Any], edits: list[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -139,6 +154,8 @@ def main() -> int:
             assert action == "append", f"Bad edit: {key=}, {action=}, {value=}"
             if key == "features":
                 append_features(value)
+            elif key == "default-sanitizers":
+                append_sanitizers(output, value)
             else:
                 output[key].append(value)
 

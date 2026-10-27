@@ -6,7 +6,6 @@
 
 import("//build/config/compilation_modes.gni")
 import("//build/config/zircon/standard.gni")
-import("//build/rust/config.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("params.gni")
@@ -230,16 +229,9 @@ template("kernel_switchset") {
         "//zircon/kernel/lib/page-map:headers.config",
       ]
 
-      # The kernel_config includes the use of the custom target.
-      # The default config for --target=$rust_target would conflict.
-      remove_common_configs = [ "//build/config/rust:target" ]
+      remove_common_configs = []
+
       configs = [
-        "//zircon/kernel/switch:abi",
-
-        # The :abi configs tree doesn't do all the work for Rust.  Instead,
-        # they contribute to the rules for creating the custom target JSON.
-        "//build/toolchain/rust:target",
-
         # This rolls up configs that don't need to be separately removable.
         "//zircon/kernel/switch:kernel_config",
       ]

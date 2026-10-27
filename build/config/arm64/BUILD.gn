@@ -11,7 +11,7 @@ import("//build/config/compiler_config.gni")
 compiler_config("arm64") {
   compiler_configs = [ ":abi" ]
 
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     # TODO(https://fxbug.dev/537458631): This is only enabled for the kernel
     # now to facilitate cross-language inlining, but it should really be part
     # of the default target features for fuchsia on aarch64. This is disabled
@@ -44,7 +44,7 @@ compiler_config("arm64") {
 compiler_config("abi") {
   visibility = [ ":*" ]
 
-  if (toolchain_environment != "kernel") {
+  if (!rust_custom_target) {
     rustflags = [
       "-Zsanitizer=shadow-call-stack",
       "-Zfixed-x18",

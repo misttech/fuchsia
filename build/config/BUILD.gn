@@ -1381,24 +1381,22 @@ config("no-template-backtrace-limit") {
 
 # LINT.ThenChange(//build/config/BUILD.bazel:no-template-backtrace-limit)
 
-config("no-stack-protector") {
-  cflags = [ "-fno-stack-protector" ]
+compiler_config("no-stack-protector") {
+  c_family_flags = [ "-fno-stack-protector" ]
 }
 
 variant("no-safe-stack") {
-  if (!is_gcc) {
-    cflags = [ "-fno-sanitize=safe-stack" ]
+  no_sanitize = [ "safe-stack" ]
+}
+
+compiler_config("no-shadow-call-stack") {
+  if (current_cpu == "arm64" || current_cpu == "riscv64") {
+    no_sanitize = [ "shadow-call-stack" ]
   }
 }
 
-config("no-shadow-call-stack") {
-  if ((current_cpu == "arm64" || current_cpu == "riscv64") && !is_gcc) {
-    cflags = [ "-fno-sanitize=shadow-call-stack" ]
-  }
-}
-
-variant("no-compiler-abi") {
-  configs = [
+compiler_config("no-compiler-abi") {
+  compiler_configs = [
     ":no-safe-stack",
     ":no-shadow-call-stack",
     ":no-stack-protector",
@@ -1696,9 +1694,39 @@ config("standalone") {
     # Make sure the unwinder isn't implicitly brought in for any reason.
     ldflags += [ "-unwindlib=none" ]
   }
+
+  rustflags = [ "-Zno-profiler-runtime" ]
 }
 
 # LINT.ThenChange(BUILD.bazel:standalone)
+
+compiler_config("nostartfiles") {
+  ldflags = [ "-nostartfiles" ]
+  if (rust_custom_target) {
+    rust_linker = "$rebased_clang_prefix/lld"
+    if (rust_rbe_enable) {
+      rustflags = [ "--remote-inputs=$rust_linker" ]
+    }
+    rust_target_edits = [
+      {
+        key = "pre-link-objects"
+        action = "unset"
+      },
+      {
+        key = "linker"
+        action = "set"
+        value = rust_linker
+      },
+      {
+        key = "linker-flavor"
+        action = "set"
+        value = "gnu-lld"
+      },
+    ]
+  } else if (!is_fuchsia) {
+    rustflags = [ "-Clink-arg=-nostartfiles" ]
+  }
+}
 
 # LINT.IfChange(bp_compression_sort)
 # Enable LLD's balanced partitioning for ordering function sections.

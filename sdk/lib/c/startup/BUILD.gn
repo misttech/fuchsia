@@ -183,6 +183,11 @@ basic_source_set("nostartfiles.basic") {
   # the underlying file gets built (and triggers relinks via depfile).
   deps = [ ":nostartfiles.ldscript" ]
   libs = get_target_outputs(deps[0])
+
+  # basic_source_set() avoids source_deps and that's why we use it to avoid
+  # circularities.  But one thing from the defaults doesn't hurt, and is still
+  # necessary in all user.basic targets.
+  deps += [ "//build/config/rust:source_deps" ]
 }
 
 # The headers for the things used across hermetic boundaries are in this

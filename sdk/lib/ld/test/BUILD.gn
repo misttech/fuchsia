@@ -73,6 +73,7 @@ source_set("load-tests") {
     "load-tests-deps.cc",
     "load-tests-failure.cc",
     "load-tests-reloc.cc",
+    "load-tests-rust.cc",
     "load-tests-symbolizer.cc",
     "load-tests-tls.cc",
     "load-tests.h",
@@ -141,11 +142,13 @@ source_set("load-tests") {
 
 # Collect all the .test-data deps used by load-tests.
 load_tests_in_process = [
+  "all-weak-symbols",
   "basic-dep",
   "indirect-deps",
   "init-fini",
   "ld-dep",
   "many-deps",
+  "one-weak-symbol",
   "partial-page-bss",
   "partial-page-bss-garbage-at-eof",
   "passive-abi-basic",
@@ -155,9 +158,8 @@ load_tests_in_process = [
   "passive-abi-stack-size",
   "relative-reloc",
   "ret17",
+  "rust-basic",
   "symbolic-namespace",
-  "one-weak-symbol",
-  "all-weak-symbols",
   "symbolic-reloc",
   "tls-desc",
   "tls-exec-only",

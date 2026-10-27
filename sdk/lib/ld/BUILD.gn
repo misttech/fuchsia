@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler_config.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/cpp/verify_public_symbols.gni")
 import("//build/toolchain/generated_ifs_file.gni")
@@ -122,13 +123,13 @@ config("abi-soname") {
   ldflags = [ "-Wl,-soname=$abi_soname" ]
 }
 
-config("abi-interp") {
+compiler_config("abi-interp") {
   if (is_fuchsia) {
     libprefix = toolchain_variant.libprefix
   } else {
     libprefix = ""
   }
-  ldflags = [ "-Wl,-dynamic-linker=$libprefix$abi_soname" ]
+  linker_flags = [ "-dynamic-linker=$libprefix$abi_soname" ]
 }
 
 # **NOTE:** The ld.ifs file generated here is the "hand-maintained" source of

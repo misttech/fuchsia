@@ -13,11 +13,7 @@ if (current_toolchain == default_toolchain) {
       strip = "--strip-sections"
       environment = "user.basic"
 
-      configs = [
-        "//build/config/zircon:user",
-        "//build/config/zircon:user-link",
-        "//build/config:no-compiler-abi",
-      ]
+      configs = [ "//build/config/zircon:user-link" ]
       source_deps = [ "//build/config/zircon:user_deps" ]
 
       executable_configs = [ "//build/config/zircon:user-executable" ]

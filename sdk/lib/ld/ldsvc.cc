@@ -53,8 +53,8 @@ zx::vmo LoaderServiceRpc(Diagnostics& diag, const zx::channel& ldsvc, const Ldsv
   uint32_t handle_count;
   status = ldsvc.call(0, zx::time::infinite(), &call, &reply_size, &handle_count);
   if (status != ZX_OK) {
-    diag.SystemError("zx_channel_call of ", call.wr_num_bytes,
-                     "bytes to loader service: ", elfldltl::ZirconError{status});
+    diag.SystemError("zx_channel_call of", call.wr_num_bytes,
+                     " bytes to loader service: ", elfldltl::ZirconError{status});
     return {};
   }
 

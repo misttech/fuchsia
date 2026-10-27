@@ -8,9 +8,11 @@ import("//build/config/compiler_config.gni")
 import("//build/dist/distribution_manifest.gni")
 import("//build/dist/distribution_manifest_copy.gni")
 import("//build/rust/config.gni")
+import("//build/toolchain/rbe.gni")
 import("//build/toolchain/toolchain_environment.gni")
 
-# This file implements the Rust custom target support for the kernel.  There
+# This file implements the Rust custom target support for the kernel and other
+# build environments where standard prebuilt runtimes cannot be used.  There
 # are two components of this: populating the JSON spec; populating the sysroot.
 #
 # The JSON target spec is populated by starting with the normal userland
@@ -95,7 +97,6 @@ stages = [
 
     # This is the initial stage that never has any crates, just `target.json`.
     crates = []
-    remove_configs = []
   },
   {
     name = "rust-bootstrap-builtins"
@@ -116,7 +117,7 @@ stages = [
 
         # This just an empty crate, but upstream provides the stub source file.
         # The upstream build.rs is adding in a copy of compiler-rt/lib/profile.
-        # But in the kernel //src/lib/llvm-profdata handles that instead.
+        # But in custom situations //src/lib/llvm-profdata handles that instead.
         crate_root = "$rustc_library_dir/$name/src/lib.rs"
         rust_sources = [ crate_root ]
       },
@@ -125,6 +126,9 @@ stages = [
     # Disable instrumentation switches that require extra crates to exist
     # already, like profiler_builtins itself.
     remove_configs = rust_instrumentation_configs
+
+    # The crate uses various special features.
+    remove_configs += [ "//build/config/rust:no_features" ]
   },
   {
     name = "rust-bootstrap-core"
@@ -145,31 +149,23 @@ stages = [
         rust_sources = [ "//build/rust/__SKIP_ENFORCEMENT__.rs" ]
       },
     ]
-    remove_configs = []
+
+    remove_configs = [ "//build/config/rust:no_features" ]
   },
   {
     name = "target"
 
-    # This is the final stage where all the normal kernel code is built.
+    # This is the final stage where all the normal custom target code is built.
     # Nothing that goes into the sysroot is _built_ in this final stage.
     crates = []
-    remove_configs = []
   },
 ]
 
-# These are implicitly in deps of normal targets because :target is listed in
-# the toolchain definition.  The special crate targets defined below avoid the
-# normal target-defining templates and so don't get these injected.
-group("target_deps") {
-}
+# In custom-target toolchains, this is reached from every target via
+# //build/config/rust:source_deps because that is in the BUILDCONFIG.gn list.
+group("source_deps") {
+  visibility = [ "//build/config/rust:source_deps" ]
 
-group("target_executable_deps") {
-}
-
-group("target_link_deps") {
-}
-
-group("target_source_deps") {
   # This needs to be in public_deps so that it counts among "direct" deps for
   # all the Rust compilation targets that have its outputs (the `target.json`
   # file) in their inputs via the config().
@@ -187,11 +183,11 @@ generated_file("rust-target-edits") {
   visibility = [ ":rust-custom-target" ]
   outputs = [ "$root_gen_dir/rust-target-edits.json" ]
   output_conversion = "json"
-  data_keys = [ "kernel_rust_target_edits" ]
+  data_keys = [ "rust_custom_target_edits" ]
   deps = [ ":rust-target-edits.prologue" ]
 
   # That must be first in the list!  Append the real deps separately.
-  deps += [ "//zircon/kernel/switch:abi.rust-target-edits" ]
+  deps += [ "//build/config/zircon:${toolchain_environment}.rust-target-edits" ]
 }
 
 group("rust-target-edits.prologue") {
@@ -200,7 +196,7 @@ group("rust-target-edits.prologue") {
     # This winds up first in the collected list.  It's just the plain
     # --target string.  Later elements are scopes to drive edits to that
     # target's default JSON spec.
-    kernel_rust_target_edits = [ rust_target ]
+    rust_custom_target_edits = [ rust_target ]
   }
 }
 
@@ -288,7 +284,7 @@ foreach(stage, stages) {
       # The custom target defined by the previous stage goes early in the list.
       # The default (final) custom target and a few other things come out.
       configs = [ ":$previous_stage" ] + default_common_binary_configs -
-                [ "//build/toolchain/rust:target" ] + stage.remove_configs -
+                [ "//build/config/rust:target" ] + stage.remove_configs -
                 stage.remove_configs
 
       # The config() confers an inputs list for the file dependency on the

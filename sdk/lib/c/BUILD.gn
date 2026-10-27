@@ -297,7 +297,6 @@ if (current_toolchain == default_toolchain) {
 } else if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
   config("libc_config") {
     configs = [
-      "//build/config/zircon:user",
       "//build/config/zircon:user-link",
       "//build/config:shared_library_config",
       "//build/config:symbol_no_undefined",

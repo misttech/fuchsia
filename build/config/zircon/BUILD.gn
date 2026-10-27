@@ -69,10 +69,6 @@ compiler_config("compiler") {
   # This is the default already on Fuchsia and maybe others, but never hurts.
   cflags = [ "-fno-common" ]
 
-  if (toolchain_environment != "kernel") {
-    configs += [ "//build/config:cpu_baseline" ]
-  }
-
   configs += [
     "//build/config:color_diagnostics",
     "//build/config:crash_diagnostics",
@@ -180,10 +176,9 @@ compiler_config("compiler") {
 
 # LINT.IfChange(nolibc)
 compiler_config("nolibc") {
-  ldflags = [
-    "-nostartfiles",
-    "-nolibc",
-  ]
+  compiler_configs = [ "//build/config:nostartfiles" ]
+
+  ldflags = [ "-nolibc" ]
   rustflags = [ "-Cdefault-linker-libraries=no" ]
 
   # Don't use -nostdlib, because the builtins (or libgcc) are what we want
@@ -288,9 +283,13 @@ config("no_maybe_uninitialized") {
 # LINT.ThenChange(BUILD.bazel:no_maybe_uninitialized)
 
 variant("user") {
-  defines = [ "_ALL_SOURCE" ]
-  configs = [ ":nolibc" ]
+  compiler_configs = [
+    "//build/config:cpu_baseline",
+    ":nolibc",
+  ]
   deps = [ "//sdk/lib/c/include:headers" ]
+
+  defines = [ "_ALL_SOURCE" ]
 
   if (is_gcc) {
     # This is the default in Clang for Fuchsia targets.  In shlib toolchains
@@ -318,7 +317,7 @@ variant("user-link") {
 
 # LINT.IfChange(user-executable)
 variant("user-executable") {
-  configs = [
+  compiler_configs = [
     ":no-dynamic-linker",
     ":nolibc",
   ]
@@ -518,4 +517,65 @@ compiler_config("hermetic_source_set.config") {
 
   # TODO(https://fxbug.dev/445786243): work around reloc rewriting bug in lld
   linker_flags += [ "--discard-none" ]
+}
+
+# For zircon_toolchain environments, ":$toolchain_environment" is the "root"
+# compiler_config() that's used both in the default configs and in the
+# //build/toolchain/rust custom target generation logic.
+#
+# It must be the **only** way that any compiler_config() in _any_ target is
+# reached that might impinge on the Rust custom target definition.  Individual
+# targets can use other compiler_configs() in their configs lists, but they
+# must only be ones for options that always translate into plain command-line
+# switches that can be used with the custom target rather than modifying it.
+# This means at least anything that rustc considers "ABI relevant", maybe more.
+#
+# This all matters most for the `rust_custom_target == true` cases, but all
+# environments use the same uniform scheme for the root config serving this
+# purpose anyway.
+
+if (is_kernel) {
+  compiler_config("kernel") {
+    compiler_configs = [ "//zircon/kernel/switch:abi" ]
+  }
+
+  # This can serve as well for phys, with //zircon/kernel/switch:abi and its
+  # subconfigs conditionalizing themselves on toolchain_environment.
+  compiler_config("kernel.phys") {
+    compiler_configs = [ ":kernel" ]
+  }
+
+  # TODO(https://fxbug.dev/578059441): remove after https://fxrev.dev/c/1919052
+  compiler_config("kernel.phys32") {
+    compiler_configs = [ ":kernel" ]
+  }
+
+  # The UEFI targets use the normal UEFI ABI settings but using the same CPU
+  # baseline as for the platform generally.
+  compiler_config("kernel.efi") {
+    compiler_configs = [ "//build/config:cpu_baseline" ]
+  }
+}
+
+# If $default_toolchain were a zircon_toolchain, it would be "user" but in fact
+# only the zircon_toolchain ones are actually defined that way.  For other
+# toolchains, instead //build/config:cpu_baseline takes the place of ":user".
+#
+# Plain ":user" is defined above using variant(), which defines ":user_deps"
+# too.  These user.* subenvironments' toolchain definitions explicitly plumb
+# ":user_deps" into their source_deps since each compiler_config() here cannot
+# individually have source_deps.
+
+compiler_config("user.basic") {
+  # user.basic is like user, but overridden to disable the Fuchsia Compiler ABI.
+  compiler_configs = [
+    ":user",
+    "//build/config:no-compiler-abi",
+  ]
+}
+
+compiler_config("user.libc") {
+  # user.libc is actually just like plain user would be, it's only different in
+  # other ways than the baseline code generation flags.
+  compiler_configs = [ ":user" ]
 }

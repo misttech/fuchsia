@@ -428,7 +428,9 @@ template("zircon_toolchain") {
     ]
   }
 
-  _link_common = {
+  # These things are common to actual links, and to rlib quasi-links.
+  # So all Rust things get this, while other links use _link_common.
+  _partial_link_common = {
     forward_variables_from(_link_concurrent_jobs, "*")
 
     lib_switch = "-l"
@@ -440,6 +442,49 @@ template("zircon_toolchain") {
 
     restat = _restat_link
     command_launcher = string_join(" ", _cxx_link_launcher)
+
+    rspfile = "${outfile}.rsp"
+    switches = []
+    linker_switches = []
+
+    rspfile_content = "{{inputs}}"
+    _rspfile_input = "'@$rspfile'"
+    if (is_pecoff) {
+      link_inputs = [
+        _rspfile_input,
+        "{{libs}}",
+        "{{solibs}}",
+      ]
+
+      # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
+      # but nothing depends on the .pdb file, then it should be OK that
+      # Ninja thinks it's an additional output but it doesn't get created.
+      debug_outfile = "{{output_dir}}/{{target_output_name}}.pdb"
+      link_outputs = [ debug_outfile ]
+    } else {
+      link_inputs = [
+        "-Wl,--start-group",
+        _rspfile_input,
+        "{{libs}}",
+        "-Wl,--end-group",
+        "{{solibs}}",
+      ]
+      depfile = "$outfile.d"
+      depsformat = "gcc"
+      switches += [ "-Wl,--dependency-file=$depfile" ]
+      mapfile = "${outfile}.map"
+      link_outputs = [ mapfile ]
+      linker_switches += [ "-Map=$mapfile" ]
+    }
+
+    # Pass-through switches for the linker are plumbed via the compiler driver.
+    foreach(arg, linker_switches) {
+      switches += [ "-Wl,$arg" ]
+    }
+  }
+
+  _link_common = {
+    forward_variables_from(_partial_link_common, "*")
 
     if (use_strip) {
       unstripped_outfile = "${outfile}.debug"
@@ -481,42 +526,10 @@ template("zircon_toolchain") {
       strip_command = []
     }
 
-    rspfile = "${outfile}.rsp"
-    switches = [
+    switches += [
       "-o",
       unstripped_outfile,
     ]
-    linker_switches = []
-
-    rspfile_content = "{{inputs}}"
-    _rspfile_input = "'@$rspfile'"
-    if (is_pecoff) {
-      link_inputs = [
-        _rspfile_input,
-        "{{libs}}",
-        "{{solibs}}",
-      ]
-
-      # This assumes "-Wl,/debug" or suchlike is in ldflags.  If it's not
-      # but nothing depends on the .pdb file, then it should be OK that
-      # Ninja thinks it's an additional output but it doesn't get created.
-      debug_outfile = "{{output_dir}}/{{target_output_name}}.pdb"
-      link_outputs = [ debug_outfile ]
-    } else {
-      link_inputs = [
-        "-Wl,--start-group",
-        _rspfile_input,
-        "{{libs}}",
-        "-Wl,--end-group",
-        "{{solibs}}",
-      ]
-      depfile = "$outfile.d"
-      depsformat = "gcc"
-      switches += [ "-Wl,--dependency-file=$depfile" ]
-      mapfile = "${outfile}.map"
-      link_outputs = [ mapfile ]
-      linker_switches += [ "-Map=$mapfile" ]
-    }
 
     post_strip_command = []
     if (use_buildidtool) {
@@ -597,27 +610,28 @@ template("zircon_toolchain") {
         "--out-file=\"$gsym_outfile.gsym\"",
       ]
     }
-
-    # Pass-through switches for the linker are plumbed via the compiler driver.
-    foreach(arg, linker_switches) {
-      switches += [ "-Wl,$arg" ]
-    }
   }
 
-  _exe_link_common = {
-    forward_variables_from(_link_common, "*")
-    outputs += link_outputs
+  _exe_common = {
     if (is_pecoff) {
       default_output_extension = ".exe"
     }
   }
 
+  _rust_exclude = [
+    "command_launcher",
+    "depsformat",
+    "lib_dir_switch",
+    "lib_switch",
+    "link_inputs",
+    "rspfile_content",
+  ]
+  if (!rustc_use_response_files) {
+    _rust_exclude += [ "rspfile" ]
+  }
+
   _rust_common = {
-    _exclude = [ "rspfile_content" ]
-    if (!rustc_use_response_files) {
-      _exclude += [ "rspfile" ]
-    }
-    forward_variables_from(_link_common, "*", _exclude)
+    forward_variables_from(_partial_link_common, "*", _rust_exclude)
     depfile = "$outfile.d"
 
     # Configure builds to be restat-friendly by preserving timestamps of
@@ -649,14 +663,7 @@ template("zircon_toolchain") {
       "--emit=dep-info=$depfile",
       "-Zdep-info-omit-d-target",
       "--emit=link",
-      "-o",
-      unstripped_outfile,
     ]
-
-    link_switches = []
-    foreach(arg, linker_switches) {
-      link_switches += [ "-Clink-arg=$arg" ]
-    }
 
     # Even though rmeta is not always needed as an output, we always use
     # emit=metadata to signal to the remote wrapper that rmetas should be used
@@ -677,6 +684,34 @@ template("zircon_toolchain") {
       ]
     } else {
       command_prefix += rust_inputs
+    }
+  }
+
+  _rust_nolink_common = {
+    forward_variables_from(_rust_common, "*", [ "runtime_outputs" ])
+    command_prefix += [
+      "-o",
+      outfile,
+    ]
+  }
+
+  _rust_link_common = {
+    forward_variables_from(_link_common, "*", _rust_exclude)
+    forward_variables_from(_rust_common,
+                           "*",
+                           [
+                             "outputs",
+                             "link_outputs",
+                           ])
+    outputs += link_outputs + [ rmeta ]
+    command_prefix += [
+      "-o",
+      unstripped_outfile,
+    ]
+
+    link_switches = []
+    foreach(arg, linker_switches) {
+      link_switches += [ "-Clink-arg=$arg" ]
     }
 
     if (verify_depfile) {
@@ -799,7 +834,9 @@ template("zircon_toolchain") {
 
     tool("link") {
       description = "LINK {{output}}"
-      forward_variables_from(_exe_link_common, "*")
+      forward_variables_from(_exe_common, "*")
+      forward_variables_from(_link_common, "*")
+      outputs += link_outputs
       _command = [ ld ] + switches + [ "{{ldflags}}" ] + link_inputs +
                  strip_command + post_strip_command
       command = string_join(" ", _command)
@@ -807,8 +844,8 @@ template("zircon_toolchain") {
 
     tool("rust_bin") {
       description = "RUST {{output}}"
-      forward_variables_from(_exe_link_common, "*")
-      forward_variables_from(_rust_common, "*")
+      forward_variables_from(_exe_common, "*")
+      forward_variables_from(_rust_link_common, "*")
       _command =
           command_prefix + link_switches + strip_command + post_strip_command
       command = string_join(" ", _command)
@@ -816,7 +853,7 @@ template("zircon_toolchain") {
 
     tool("rust_rlib") {
       description = "RUST(RLIB) {{output}}"
-      forward_variables_from(_rust_common, "*", [ "runtime_outputs" ])
+      forward_variables_from(_rust_nolink_common, "*")
       output_prefix = "lib"
       default_output_extension = ".rlib"
       _command = command_prefix
@@ -825,7 +862,7 @@ template("zircon_toolchain") {
 
     tool("rust_staticlib") {
       description = "RUST(AR) {{output}}"
-      forward_variables_from(_rust_common, "*", [ "runtime_outputs" ])
+      forward_variables_from(_rust_nolink_common, "*")
       output_prefix = "lib"
       default_output_extension = ".a"
       _command = command_prefix
@@ -834,8 +871,7 @@ template("zircon_toolchain") {
 
     tool("rust_macro") {
       description = "RUST(MACRO) {{output}}"
-      forward_variables_from(_rust_common, "*")
-      outputs += link_outputs
+      forward_variables_from(_rust_link_common, "*")
       default_output_extension = ".so"
       _command = command_prefix + [ "--extern=proc_macro" ] + link_switches +
                  strip_command + post_strip_command
@@ -854,7 +890,6 @@ template("zircon_toolchain") {
 
       _solink_common = {
         forward_variables_from(_link_common, "*")
-
         outputs += link_outputs
 
         link_command = [ ld ] + switches
@@ -880,55 +915,85 @@ template("zircon_toolchain") {
       soname_linker_switch =
           "-soname={{target_output_name}}{{output_extension}}"
 
-      tool("solink") {
-        description = "LINK_SHLIB {{output}}"
-        forward_variables_from(_solink_common, "*")
+      shlib_tools = [
+        {
+          name = "solink"
+          mnemonic = "LINK_SHLIB"
+          vars = {
+            forward_variables_from(_solink_common, "*")
 
-        output_prefix = "lib"
-
-        _command =
-            link_command + [
-              # Put the automatic -soname first so ldflags can override it.
-              "-Wl,$soname_linker_switch",
-              "{{ldflags}}",
-            ] + link_inputs + strip_command + post_strip_command
-
-        if (use_llvm_ifs) {
-          # The Ninja dependency for linking in the shared library will be the
-          # .ifs file (depend_output), though the actual linking *input* will
-          # be the link stub (link_output).  Ninja will restat the output files
-          # after running the commands.  llvm-ifs will not touch the .ifs or
-          # stub file if its contents haven't changed.  Hence Ninja will only
-          # re-run any linking commands depending on this shared library if the
-          # .ifs file has actually changed, indicating that the linking ABI has
-          # actually changed.
-          restat = true
-          depend_output = "{{output_dir}}/{{target_output_name}}.ifs"
-          link_output = "{{output_dir}}/link_stub/{{target_output_name}}.so"
-          outputs += [
-            depend_output,
-            link_output,
-          ]
-          _command += [ "&&" ]
-          if (_link_rbe_enable) {
-            _command += rbe_toolchain_vars.common_tool_prefix + [
-                          "--inputs",
-                          "\"$unstripped_outfile\"",
-                          "--output_files",
-                          "\"$depend_output,$link_output\"",
-                          "--",
-                        ]
+            # Put the automatic -soname first so ldflags can override
+            # it.
+            link_command += [
+                              "-Wl,$soname_linker_switch",
+                              "{{ldflags}}",
+                            ] + link_inputs
           }
-          _command += [
-                        llvm_ifs,
-                        "--write-if-changed",
-                        "--output-ifs=\"$depend_output\"",
-                        "--output-elf=\"$link_output\"",
-                        "\"$unstripped_outfile\"",
-                      ] + ifs_extra_switches
-        }
+        },
+        {
+          name = "rust_cdylib"
+          mnemonic = "RUST_SHLIB"
+          vars = {
+            forward_variables_from(_solink_common, "*")
+            forward_variables_from(_rust_link_common, "*")
 
-        command = string_join(" ", _command)
+            # Inject the automatic -soname before rustflags.
+            link_command = []
+            foreach(arg, command_prefix + link_switches) {
+              if (arg == "{{rustflags}}") {
+                link_command += [ "-Clink-arg=$soname_linker_switch" ]
+              }
+              link_command += [ arg ]
+            }
+          }
+        },
+      ]
+      foreach(shlib_tool, shlib_tools) {
+        tool(shlib_tool.name) {
+          description = "${shlib_tool.mnemonic} {{output}}"
+          forward_variables_from(shlib_tool.vars, "*")
+
+          output_prefix = "lib"
+
+          _command = link_command + strip_command + post_strip_command
+
+          if (use_llvm_ifs) {
+            # The Ninja dependency for linking in the shared library will be
+            # the .ifs file (depend_output), though the actual linking *input*
+            # will be the link stub (link_output). Ninja will restat the output
+            # files after running the commands. llvm-ifs will not touch the
+            # .ifs or stub file if its contents haven't changed. Hence Ninja
+            # will only re-run any linking commands depending on this shared
+            # library if the .ifs file has actually changed, indicating that
+            # the linking ABI has actually changed.
+            restat = true
+            depend_output = "{{output_dir}}/{{target_output_name}}.ifs"
+            link_output = "{{output_dir}}/link_stub/{{target_output_name}}.so"
+            outputs += [
+              depend_output,
+              link_output,
+            ]
+            _command += [ "&&" ]
+            if (_link_rbe_enable) {
+              _command += rbe_toolchain_vars.common_tool_prefix + [
+                            "--inputs",
+                            "\"$unstripped_outfile\"",
+                            "--output_files",
+                            "\"$depend_output,$link_output\"",
+                            "--",
+                          ]
+            }
+            _command += [
+                          llvm_ifs,
+                          "--write-if-changed",
+                          "--output-ifs=\"$depend_output\"",
+                          "--output-elf=\"$link_output\"",
+                          "\"$unstripped_outfile\"",
+                        ] + ifs_extra_switches
+          }
+
+          command = string_join(" ", _command)
+        }
       }
 
       tool("solink_module") {

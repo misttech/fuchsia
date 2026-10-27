@@ -13,7 +13,7 @@ compiler_config("x64") {
     "-march=x86-64-v2",
     "-mtune=generic",
   ]
-  if (toolchain_environment == "kernel") {
+  if (rust_custom_target) {
     rust_target_edits = [
       {
         key = "cpu"

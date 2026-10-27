@@ -35,30 +35,10 @@ declare_args() {
 
 # For any standalone static binary.
 compiler_config("standalone") {
-  compiler_configs = [ ":static-pic-link" ]
-
-  if (rust_custom_target) {
-    rust_linker = "$rebased_clang_prefix/lld"
-    if (rust_rbe_enable) {
-      rustflags = [ "--remote-inputs=$rust_linker" ]
-    }
-    rust_target_edits = [
-      {
-        key = "pre-link-objects"
-        action = "unset"
-      },
-      {
-        key = "linker"
-        action = "set"
-        value = rust_linker
-      },
-      {
-        key = "linker-flavor"
-        action = "set"
-        value = "gnu-lld"
-      },
-    ]
-  }
+  compiler_configs = [
+    ":static-pic-link",
+    "//build/config:nostartfiles",
+  ]
 
   configs = [
     "//build/config:no_exceptions",
@@ -198,10 +178,9 @@ config("instrumented-stack-size") {
   }
 }
 
-# This is the "top" compiler_config().  Its $compiler_configs must reach all
-# other compiler_config()s that could be reached in any way as normal config()s
-# in this toolchain.  It's paired with //build/toolchain/rust:target to roll up
-# the compiler_config() instructions for the custom Rust target.
+# This is the "top" compiler_config() that //build/config/zircon:kernel points
+# to.  Its $compiler_configs must reach all other compiler_config()s that could
+# be reached in any way as normal config()s in this toolchain.
 compiler_config("abi") {
   # These always come first, so they can enable target features that need to be
   # disabled for ABI purposes later.
@@ -211,19 +190,6 @@ compiler_config("abi") {
     "//zircon/kernel/arch/$zircon_cpu:abi",
     ":standalone",
   ]
-}
-
-# These are referenced because :abi is listed in the toolchain definition.
-group("abi_deps") {
-}
-
-group("abi_executable_deps") {
-}
-
-group("abi_link_deps") {
-}
-
-group("abi_source_deps") {
 }
 
 # This is the top config for all kernel code (after :abi).

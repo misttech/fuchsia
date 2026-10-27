@@ -330,12 +330,11 @@ declare_args() {
     {
       configs = [ "//build/config/profile:coverage-rust" ]
       tags = [
-        # Note this does not include "llvm-profdata" because that is only
-        # actually used to check if C++ code will use such instrumentation.
         "coverage",
         "coverage_rust",
         "debugdata",
         "instrumented",
+        "llvm-profdata",
         "needs-writable-globals",
       ]
     },
@@ -365,11 +364,9 @@ declare_args() {
     {
       configs = [ "//build/config/profile:profile-rust" ]
       tags = [
-        # Note that this list, as for coverage-rust above, does not include
-        # "llvm-profdata" because that is only actually used to check if C++
-        # code will use such instrumentation.
         "debugdata",
         "instrumented",
+        "llvm-profdata",
         "needs-writable-globals",
         "profile",
       ]
@@ -1533,6 +1530,7 @@ if (zircon_toolchain == false) {
     "//build/config:werror",
     "//build/config:no-template-backtrace-limit",
     "//build/config/zircon:compiler",
+    "//build/config/zircon:${zircon_toolchain.environment}",
     "//build/config:libc++-include",
     "//build/config/zircon:default_assert_level",
     "//build/config/zircon:default_icf",
@@ -1559,7 +1557,8 @@ if (zircon_toolchain == false) {
   default_executable_deps = []
 }
 
-default_common_source_deps = toolchain_variant.source_deps
+default_common_source_deps =
+    [ "//build/config/rust:source_deps" ] + toolchain_variant.source_deps
 foreach(config,
         toolchain_variant.configs + toolchain_variant.remove_common_configs -
             toolchain_variant.remove_common_configs) {
@@ -3329,6 +3328,10 @@ template("_fuchsia_shared_library") {
 
     _label = get_label_info(":$target_name", "label_with_toolchain")
 
+    if (defined(invoker.crate_type) && !defined(crate_name)) {
+      crate_name = target_name
+    }
+
     # Note: the manifest-related metadata is added to the builder target as
     # some targets (e.g. drivers) depend on it directly in the builder
     # toolchain.
@@ -4451,6 +4454,9 @@ template("rust_library") {
     _rmeta_path = rebase_path(_rmeta_path, root_build_dir)
     _searchdir_path = rebase_path(_searchdir_path, root_build_dir)
 
+    if (!defined(crate_name)) {
+      crate_name = target_name
+    }
     metadata = {
       rust_aux_externs = []
       kernel_rust_externs = []
@@ -4555,6 +4561,9 @@ template("rust_proc_macro") {
 
       if (!defined(public_deps)) {
         public_deps = []
+      }
+      if (!defined(crate_name)) {
+        crate_name = target_name
       }
       metadata = {
         rust_aux_externs = []

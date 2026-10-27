@@ -16,9 +16,11 @@
 # fit our needs. See the "Unstable features" section for more information.
 
 import("//build/board.gni")
+import("//build/config/compiler_config.gni")
 import("//build/rust/config.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/runtime/rust_runtime.gni")
+import("//build/toolchain/toolchain_environment.gni")
 
 if (is_fuchsia) {
   rust_runtime_link_config("rust-libstd-so-ldflags") {
@@ -174,10 +176,24 @@ config("2018_idioms") {
 }
 
 config("target") {
-  rustflags = [
-    "--target",
-    rust_target,
-  ]
+  if (rust_custom_target) {
+    # Note that this relies on source_deps being in the deps graph of
+    # everything that reaches this config, which :source_deps should handle.
+    configs = [ "//build/toolchain/rust:target" ]
+  } else {
+    rustflags = [
+      "--target",
+      rust_target,
+    ]
+  }
+}
+
+# This is in the default source_deps list in BUILDCONFIG.gn so that it can
+# propagate the custom target source_deps when necessary.
+group("source_deps") {
+  if (rust_custom_target) {
+    public_deps = [ "//build/toolchain/rust:source_deps" ]
+  }
 }
 
 config("cap_lints") {
