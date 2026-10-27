@@ -79,7 +79,7 @@ pub fn mmcblk_stub_device_init(kernel: &Kernel) -> Result<(), Errno> {
             track_stub!(TODO("https://fxbug.dev/488067251"), "mmcblk open device");
             Err(errno!(ENOTSUP))
         },
-    )?;
+    );
     Ok(())
 }
 

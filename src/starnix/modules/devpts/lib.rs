@@ -147,7 +147,7 @@ pub fn tty_device_init(kernel: &Kernel) -> Result<(), Errno> {
         /* parent = */ None,
         tty_class.clone(),
         build_device_directory,
-    )?;
+    );
     registry.add_device(
         kernel,
         "ptmx".into(),
@@ -155,7 +155,7 @@ pub fn tty_device_init(kernel: &Kernel) -> Result<(), Errno> {
         /* parent = */ None,
         tty_class,
         build_device_directory,
-    )?;
+    );
     Ok(())
 }
 

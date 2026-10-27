@@ -155,7 +155,7 @@ impl Modules {
                     ),
                     registry.objects.misc_class(),
                     create_device_mapper,
-                )?;
+                );
                 device_mapper_init(kernel)?;
             }
             "fastrpc" => fastrpc_device_init(kernel),
@@ -185,7 +185,7 @@ impl Modules {
                     DeviceMetadata::new("hwrng".into(), DeviceId::HW_RANDOM, DeviceMode::Char),
                     registry.objects.misc_class(),
                     simple_device_ops::<DevRandom>,
-                )?;
+                );
             }
             "kgsl" => kgsl_device_init(kernel),
             "loop" => {
@@ -199,7 +199,7 @@ impl Modules {
                     ),
                     registry.objects.misc_class(),
                     create_loop_control_device,
-                )?;
+                );
                 loop_device_init(kernel)?;
             }
             "magma" => starnix_modules_magma::module_init(kernel, args)?,
@@ -223,7 +223,7 @@ impl Modules {
                     DeviceMetadata::new("tun".into(), DeviceId::TUN, DeviceMode::Char),
                     registry.objects.misc_class(),
                     simple_device_ops::<DevTun>,
-                )?;
+                );
             }
             "usbfs" => {
                 usbfs_init(kernel).context("Failed to initialize usbfs")?;
@@ -485,7 +485,7 @@ pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
         DeviceMetadata::new("fuse".into(), DeviceId::FUSE, DeviceMode::Char),
         registry.objects.misc_class(),
         open_fuse_device,
-    )?;
+    );
     mem_device_init(kernel)?;
     tty_device_init(kernel)?;
     Ok(())

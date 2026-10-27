@@ -66,7 +66,7 @@ impl RemoteBlockDevice {
             /* parent = */ None,
             block_class,
             |device, dir| build_block_device_directory(device, device_weak, dir),
-        )?;
+        );
         Ok(device)
     }
 

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::device::kobject::Device;
-use crate::task::Kernel;
 use crate::task::waiter::WaitQueue;
+use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{FsStr, FsString};
 use starnix_sync::{LockDepMutex, NetstackDevicesLock};
 use std::collections::BTreeMap;
@@ -35,10 +35,10 @@ impl NetstackDevices {
         devices.insert(name.into(), NetstackDevice { device, interface_id });
     }
 
-    pub fn remove_device(&self, kernel: &Kernel, name: &FsStr) {
+    pub fn remove_device(&self, current_task: &CurrentTask, name: &FsStr) {
         let mut devices = self.devices.lock();
         if let Some(NetstackDevice { device, interface_id: _ }) = devices.remove(name) {
-            kernel.device_registry.remove_net_device(device);
+            current_task.kernel().device_registry.remove_device(current_task, device);
         }
     }
 

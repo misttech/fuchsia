@@ -236,7 +236,7 @@ impl DmDevice {
             /* parent = */ None,
             block_class,
             |device, dir| build_block_device_directory(device, device_weak, dir),
-        )?;
+        );
         {
             let mut state = device.state.lock();
             state.set_k_device(k_device);

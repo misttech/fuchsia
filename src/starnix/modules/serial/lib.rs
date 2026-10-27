@@ -172,6 +172,6 @@ pub fn register_serial_device(
         ),
         registry.objects.tty_class(),
         serial_device,
-    )?;
+    );
     Ok(())
 }

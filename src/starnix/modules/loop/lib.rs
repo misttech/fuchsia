@@ -201,7 +201,7 @@ impl LoopDevice {
             /* parent = */ None,
             block_class,
             |k_device, dir| build_block_device_directory(k_device, device_weak, dir),
-        )?;
+        );
         {
             let mut state = device.state.lock();
             state.set_k_device(k_device);

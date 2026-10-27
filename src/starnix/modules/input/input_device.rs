@@ -310,7 +310,7 @@ impl InputDevice {
             },
         );
 
-        registry.register_device_with_dir(
+        Ok(registry.register_device_with_dir(
             kernel,
             format!("event{minor}").as_str().into(),
             DeviceMetadata::new(
@@ -322,7 +322,7 @@ impl InputDevice {
             input_class,
             build_device_directory,
             self,
-        )
+        ))
     }
 
     /// Unregisters an input device previously registered with [`Self::register`].

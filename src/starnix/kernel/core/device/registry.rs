@@ -14,7 +14,10 @@ use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::{bug_ref, log_error};
-use starnix_sync::{DeviceRegistryStateLevel, LockDepGuard, LockDepMutex, MappedLockDepGuard};
+use starnix_sync::{
+    DeviceRegistryListenersLock, DeviceRegistryStateLevel, LockDepGuard, LockDepMutex,
+    MappedLockDepGuard,
+};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_id::{DYN_MAJOR_RANGE, DeviceId, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR};
@@ -108,11 +111,17 @@ pub fn simple_device_ops<T: Default + FileOps + 'static>(
 /// listener.
 pub type DeviceListenerKey = u64;
 
-/// A listener for uevents on devices.
+/// Listener for device uevents dispatched by [`DeviceRegistry`].
+///
+/// [`Self::on_device_event`] is called synchronously with the registry's listener lock held so
+/// that all listeners observe events in monotonic `seqnum` order. Implementations may query
+/// registered devices on [`DeviceRegistry`], but must not register or unregister listeners or
+/// dispatch further uevents while handling an event.
 pub trait DeviceListener: Send + Sync {
     fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext);
 }
 
+/// Allows directly using a function or closure as an implementation of [`DeviceListener`].
 impl<F> DeviceListener for F
 where
     F: Fn(UEventAction, Device, UEventContext) + Send + Sync,
@@ -244,8 +253,11 @@ pub struct DeviceRegistry {
     /// The KObjects for registered devices.
     pub objects: KObjectStore,
 
-    /// Mutable state for the device registry.
+    /// Mutable state for the device registry's major/minor device tables and allocators.
     state: LockDepMutex<DeviceRegistryState, DeviceRegistryStateLevel>,
+
+    /// Listeners notified when device uevents are dispatched by the registry.
+    listeners: LockDepMutex<DeviceRegistryListeners, DeviceRegistryListenersLock>,
 }
 struct DeviceRegistryState {
     /// The registered character devices.
@@ -266,11 +278,11 @@ struct DeviceRegistryState {
 
     /// The next anonymous device number to assign to a file system.
     next_anon_minor: u32,
+}
 
-    /// Listeners registered to learn about new devices being added to the registry.
-    ///
-    /// These listeners generate uevents for those devices, which populates /dev on some
-    /// systems.
+#[derive(Default)]
+struct DeviceRegistryListeners {
+    /// Listeners notified when device uevents are dispatched by the registry.
     listeners: BTreeMap<u64, Box<dyn DeviceListener>>,
 
     /// The next identifier to use for a listener.
@@ -322,8 +334,9 @@ impl DeviceRegistry {
     /// If you are still unsure, please ask an experienced Starnix contributor rather than make up
     /// a device number.
     ///
-    /// For most devices, the `create_device_sysfs_ops` parameter should be
-    /// `DeviceDirectory::new`, but some devices have custom directories in sysfs.
+    /// Uses [`build_device_directory`] to populate the standard `sysfs` directory for the device.
+    /// To populate custom `sysfs` attributes or specify a parent device, use
+    /// [`Self::register_device_with_dir`].
     ///
     /// Finally, the `dev_ops` parameter is where you provide the callback for instantiating
     /// your device.
@@ -334,7 +347,7 @@ impl DeviceRegistry {
         metadata: DeviceMetadata,
         class: Class,
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno> {
+    ) -> Device {
         self.register_device_with_dir(
             kernel,
             name,
@@ -346,11 +359,15 @@ impl DeviceRegistry {
         )
     }
 
-    /// Register a device with a custom directory populated by `build_directory`, beneath `parent`.
+    /// Registers a minor device with a custom `sysfs` directory populated by `build_directory`,
+    /// beneath `parent`.
     ///
     /// If `parent` is itself a class device then the device directory is created directly within
     /// the parent's directory, otherwise it is created within a `<class>` directory under
     /// `parent`. If `parent` is `None` then `/sys/devices/virtual` is used.
+    ///
+    /// Dispatches [`UEventAction::Add`] after creating the `sysfs` and `devtmpfs` nodes. The
+    /// returned [`Device`] can be unregistered with [`Self::remove_device`].
     ///
     /// See [`Self::register_device`] for an explanation of the other parameters.
     pub fn register_device_with_dir(
@@ -359,13 +376,13 @@ impl DeviceRegistry {
         name: &FsStr,
         metadata: DeviceMetadata,
         parent: Option<Device>,
-        class: Class,
+        subsystem: impl Into<DeviceSubsystem>,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
         dev_ops: impl DeviceOps,
-    ) -> Result<Device, Errno> {
+    ) -> Device {
         let entry = DeviceEntry::new(name.into(), dev_ops);
         self.devices(metadata.mode).register_minor(metadata.devt, entry);
-        self.add_device(kernel, name, metadata, parent, class, build_directory)
+        self.add_device(kernel, name, metadata, parent, subsystem, build_directory)
     }
 
     /// Register a dynamic device in the `MISC_MAJOR` major device number.
@@ -383,7 +400,7 @@ impl DeviceRegistry {
     ) -> Result<Device, Errno> {
         let devt = self.state.lock().misc_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(name.into(), devt, DeviceMode::Char);
-        self.register_device(kernel, name, metadata, self.objects.misc_class(), dev_ops)
+        Ok(self.register_device(kernel, name, metadata, self.objects.misc_class(), dev_ops))
     }
 
     /// Register a dynamic device with major numbers 234..255.
@@ -441,7 +458,7 @@ impl DeviceRegistry {
     ) -> Result<Device, Errno> {
         let devt = self.state.lock().dyn_chardev_allocator.allocate()?;
         let metadata = DeviceMetadata::new(devname.into(), devt, DeviceMode::Char);
-        self.register_device_with_dir(
+        Ok(self.register_device_with_dir(
             kernel,
             name,
             metadata,
@@ -449,7 +466,7 @@ impl DeviceRegistry {
             class,
             build_directory,
             dev_ops,
-        )
+        ))
     }
 
     /// Register a "silent" dynamic device with major numbers 234..255.
@@ -470,11 +487,14 @@ impl DeviceRegistry {
         Ok(metadata)
     }
 
-    /// Directly add a device to the KObjectStore.
+    /// Directly adds a numbered device to the [`KObjectStore`] and dispatches
+    /// [`UEventAction::Add`].
     ///
-    /// This function should be used only by device that have registered an entire major device
-    /// number. If you want to add a single minor device, use the `register_device` function
-    /// instead.
+    /// This function should be used only by devices that have registered an entire major device
+    /// number via [`Self::register_major`]. If you want to register a single minor device, use
+    /// [`Self::register_device`] or [`Self::register_device_with_dir`] instead.
+    ///
+    /// The returned [`Device`] can be unregistered with [`Self::remove_device`].
     ///
     /// See [`Self::register_device_with_dir`] for an explanation of the parameters.
     pub fn add_device(
@@ -485,7 +505,7 @@ impl DeviceRegistry {
         parent: Option<Device>,
         subsystem: impl Into<DeviceSubsystem>,
         build_directory: impl FnOnce(&Device, &SimpleDirectoryMutator),
-    ) -> Result<Device, Errno> {
+    ) -> Device {
         self.devices(metadata.mode).get(metadata.devt).expect("device is registered");
         let device = self.objects.create_device(
             name,
@@ -496,24 +516,30 @@ impl DeviceRegistry {
         );
 
         if kernel.features.devtmpfs {
-            devtmpfs_create_device(kernel, metadata)?;
+            if let Err(err) = devtmpfs_create_device(kernel, metadata) {
+                log_error!("Cannot create device {:?} in devtmpfs ({:?})", device, err);
+            }
         }
         self.dispatch_uevent(UEventAction::Add, device.clone());
-        Ok(device)
+        device
     }
 
-    /// Add a net device to the device registry.
+    /// Adds a network device to the device registry and dispatches [`UEventAction::Add`].
     ///
-    /// Net devices are different from other devices because they do not have a device number.
-    /// Instead, their `uevent` files have the following format:
+    /// Network devices do not have a `/dev` node or device number. Instead, in addition to
+    /// `DEVPATH` and `SUBSYSTEM=net`, their `uevent` files have the following properties:
     ///
     /// ```
     /// INTERFACE={name}
     /// IFINDEX={index}
     /// ```
     ///
-    /// Currently, we only register the net devices by name and use an empty `uevent` file. The
-    /// `address` attribute is stubbed, so that reads by userspace are tracked.
+    /// TODO(https://fxbug.dev/297438880): Populate `INTERFACE` and `IFINDEX` in the `uevent` file
+    /// and uevent netlink messages. Currently, we only register net devices by name with the
+    /// standard `DEVPATH` and `SUBSYSTEM=net` properties, and stub the `address` attribute so that
+    /// reads by userspace are tracked.
+    ///
+    /// The returned [`Device`] can be removed with [`Self::remove_device`].
     pub fn add_net_device(&self, name: &FsStr) -> Device {
         self.add_numberless_device(
             name,
@@ -528,15 +554,6 @@ impl DeviceRegistry {
                 );
             },
         )
-    }
-
-    /// Remove a net device from the device registry.
-    ///
-    /// See [`Self::add_net_device`] for more details.
-    pub fn remove_net_device(&self, device: Device) {
-        assert!(device.metadata().is_none());
-        self.dispatch_uevent(UEventAction::Remove, device.clone());
-        self.objects.remove(&device);
     }
 
     fn add_device_without_metadata(
@@ -557,13 +574,15 @@ impl DeviceRegistry {
         device
     }
 
-    /// Directly add a device without a bus or class subsystem to the [`KObjectStore`].
+    /// Directly adds a device without a bus or class subsystem to the [`KObjectStore`], populated
+    /// by `build_directory`, and dispatches [`UEventAction::Add`].
     ///
     /// Such devices typically act as structural parents for other devices, e.g. the root of a
-    /// subsystem's devices (`/sys/devices/system/cpu`). If `parent` is `None`, the device is
-    /// created directly under `/sys/devices/<name>`.
+    /// subsystem's devices (`/sys/devices/system/cpu`). If `parent` is `Some`, the device
+    /// directory is created under `parent`; otherwise it is created directly under
+    /// `/sys/devices/<name>`.
     ///
-    /// See [`Self::register_device_with_dir`] for an explanation of the parameters.
+    /// The returned [`Device`] can be removed with [`Self::remove_device`].
     pub fn add_subsystemless_device(
         &self,
         name: &FsStr,
@@ -573,13 +592,14 @@ impl DeviceRegistry {
         self.add_device_without_metadata(name, parent, /* subsystem = */ None, build_directory)
     }
 
-    /// Directly add a bus device to the [`KObjectStore`].
+    /// Directly adds a bus device to the [`KObjectStore`], populated by `build_directory`, and
+    /// dispatches [`UEventAction::Add`].
     ///
     /// If `parent` is `Some`, the device directory is created under `parent`; otherwise it is
     /// created directly under `/sys/devices/<name>`. A symlink is also created under
     /// `/sys/bus/<bus.name>/devices/<name>`.
     ///
-    /// See [`Self::register_device_with_dir`] for an explanation of the parameters.
+    /// The returned [`Device`] can be removed with [`Self::remove_device`].
     pub fn add_bus_device(
         &self,
         name: &FsStr,
@@ -590,16 +610,18 @@ impl DeviceRegistry {
         self.add_device_without_metadata(name, parent, Some(bus.into()), build_directory)
     }
 
-    /// Directly add a class device to the [`KObjectStore`] that lacks a device number.
+    /// Directly adds a class device without a device number to the [`KObjectStore`], populated by
+    /// `build_directory`, and dispatches [`UEventAction::Add`].
     ///
-    /// This function should be used by class devices that are exposed via `sysfs` or netlink and do
-    /// not have a `/dev` device node (and therefore have no major or minor device number).
+    /// This function should be used by class devices that are exposed via `sysfs` or netlink and
+    /// do not have a `/dev` device node (and therefore have no major or minor device number).
     ///
     /// If `parent` is `Some` and is itself a class device, the device directory is created under
     /// `<parent>/<name>`; otherwise it is created under `<parent>/<class.name>/<name>` (defaulting
-    /// `parent` to `/sys/devices/virtual`).
+    /// `parent` to `/sys/devices/virtual`). A symlink is also created under
+    /// `/sys/class/<class.name>/<name>`.
     ///
-    /// See [`Self::register_device_with_dir`] for an explanation of the parameters.
+    /// The returned [`Device`] can be removed with [`Self::remove_device`].
     pub fn add_numberless_device(
         &self,
         name: &FsStr,
@@ -610,11 +632,13 @@ impl DeviceRegistry {
         self.add_device_without_metadata(name, parent, Some(class.into()), build_directory)
     }
 
-    /// Unregisters `device` from sysfs, devtmpfs, and the device-number table, recycling any
-    /// dynamically allocated [`DeviceId`] and dispatching a [`UEventAction::Remove`] uevent.
+    /// Unregisters `device` from `devtmpfs`, `sysfs`, and the minor device table, recycling any
+    /// dynamically allocated [`DeviceId`] before dispatching [`UEventAction::Remove`].
+    ///
+    /// Any child devices parented under `device` must be removed before `device` itself so
+    /// removal uevents are dispatched in child-before-parent order and intermediate class
+    /// directories are cleaned up.
     pub fn remove_device(&self, current_task: &CurrentTask, device: Device) {
-        self.dispatch_uevent(UEventAction::Remove, device.clone());
-
         if let Some(metadata) = device.metadata() {
             if current_task.kernel().features.devtmpfs {
                 if let Err(err) = devtmpfs_remove_path(current_task, metadata.devname.as_ref()) {
@@ -630,21 +654,16 @@ impl DeviceRegistry {
             match metadata.mode {
                 DeviceMode::Char => {
                     state.char_devices.unregister_minor(metadata.devt);
-                    if metadata.devt.major() == MISC_MAJOR
-                        && MISC_DYNANIC_MINOR_RANGE.contains(&metadata.devt.minor())
-                    {
-                        state.misc_chardev_allocator.free(metadata.devt);
-                    } else if DYN_MAJOR_RANGE.contains(&metadata.devt.major())
-                        && DeviceMode::Char.minor_range().contains(&metadata.devt.minor())
-                    {
-                        state.dyn_chardev_allocator.free(metadata.devt);
-                    }
+                    state.misc_chardev_allocator.free(metadata.devt);
+                    state.dyn_chardev_allocator.free(metadata.devt);
                 }
                 DeviceMode::Block => {
                     state.block_devices.unregister_minor(metadata.devt);
                 }
             }
         }
+
+        self.dispatch_uevent(UEventAction::Remove, device);
     }
 
     /// Returns a list of the registered major device numbers for the given `DeviceMode` and their
@@ -694,32 +713,31 @@ impl DeviceRegistry {
         id
     }
 
-    /// Register a new listener for uevents on devices.
-    ///
-    /// Returns a key used to unregister the listener.
+    /// Registers a listener for device uevents and returns its [`DeviceListenerKey`].
     pub fn register_listener<'a>(
         &self,
         listener: impl DeviceListener + 'static,
     ) -> DeviceListenerKey {
-        let mut state = self.state.lock();
-        let key = state.next_listener_id;
-        state.next_listener_id += 1;
-        state.listeners.insert(key, Box::new(listener));
+        let mut listeners = self.listeners.lock();
+        let key = listeners.next_listener_id;
+        listeners.next_listener_id += 1;
+        listeners.listeners.insert(key, Box::new(listener));
         key
     }
 
-    /// Unregister a listener previously registered through `register_listener`.
+    /// Unregisters a listener previously registered via [`Self::register_listener`].
     pub fn unregister_listener<'a>(&self, key: &DeviceListenerKey) {
-        self.state.lock().listeners.remove(key);
+        self.listeners.lock().listeners.remove(key);
     }
 
-    /// Dispatch an uevent for the given `device`.
+    /// Dispatches a uevent with the next monotonic sequence number for `device` to all registered
+    /// listeners.
     pub fn dispatch_uevent<'a>(&self, action: UEventAction, device: Device) {
-        let mut state = self.state.lock();
-        let event_id = state.next_event_id;
-        state.next_event_id += 1;
+        let mut listeners = self.listeners.lock();
+        let event_id = listeners.next_event_id;
+        listeners.next_event_id += 1;
         let context = UEventContext { seqnum: event_id };
-        for listener in state.listeners.values() {
+        for listener in listeners.listeners.values() {
             listener.on_device_event(action, device.clone(), context);
         }
     }
@@ -757,16 +775,16 @@ impl Default for DeviceRegistry {
             misc_chardev_allocator: DeviceIdAllocator::new(misc_available),
             dyn_chardev_allocator: DeviceIdAllocator::new(dyn_available),
             next_anon_minor: 1,
-            listeners: Default::default(),
-            next_listener_id: 0,
-            next_event_id: 0,
         };
-        Self { objects: Default::default(), state: state.into() }
+        Self { objects: Default::default(), state: state.into(), listeners: Default::default() }
     }
 }
 
 /// An allocator for `DeviceId`
 struct DeviceIdAllocator {
+    /// Total ranges of device identifiers managed by this allocator.
+    ranges: Vec<Range<DeviceId>>,
+
     /// The available ranges of device types to allocate.
     ///
     /// Devices will be allocated from the back of the vector first.
@@ -778,8 +796,9 @@ impl DeviceIdAllocator {
     ///
     /// The devices will be allocated from the front of the vector first.
     fn new(mut available: Vec<Range<DeviceId>>) -> Self {
+        let ranges = available.clone();
         available.reverse();
-        Self { freelist: available }
+        Self { ranges, freelist: available }
     }
 
     /// Allocate a `DeviceId`.
@@ -797,7 +816,12 @@ impl DeviceIdAllocator {
     }
 
     /// Returns a previously allocated number to the pool so it can be reused.
+    ///
+    /// Does nothing if `id` is outside the ranges managed by this allocator.
     fn free(&mut self, id: DeviceId) {
+        if !self.ranges.iter().any(|range| range.contains(&id)) {
+            return;
+        }
         let Some(next) = id.next_minor() else {
             return;
         };
@@ -966,20 +990,18 @@ mod tests {
                 .expect("can register input");
 
             let input_class = registry.objects.get_or_create_class("input".into());
-            registry
-                .add_device(
-                    kernel,
+            registry.add_device(
+                kernel,
+                "mouse".into(),
+                DeviceMetadata::new(
                     "mouse".into(),
-                    DeviceMetadata::new(
-                        "mouse".into(),
-                        DeviceId::new(INPUT_MAJOR, 0),
-                        DeviceMode::Char,
-                    ),
-                    /* parent = */ None,
-                    input_class,
-                    build_device_directory,
-                )
-                .expect("add_device");
+                    DeviceId::new(INPUT_MAJOR, 0),
+                    DeviceMode::Char,
+                ),
+                /* parent = */ None,
+                input_class,
+                build_device_directory,
+            );
 
             assert!(registry.objects.root.lookup("class/input/mouse".into()).is_some());
             assert!(registry.objects.root.lookup("devices/virtual/input/mouse".into()).is_some());
@@ -1157,34 +1179,30 @@ mod tests {
                 .expect("can register input");
 
             let input_class = registry.objects.get_or_create_class("input".into());
-            let mouse_dev = registry
-                .add_device(
-                    kernel,
+            let mouse_dev = registry.add_device(
+                kernel,
+                "mouse".into(),
+                DeviceMetadata::new(
                     "mouse".into(),
-                    DeviceMetadata::new(
-                        "mouse".into(),
-                        DeviceId::new(INPUT_MAJOR, 0),
-                        DeviceMode::Char,
-                    ),
-                    /* parent = */ None,
-                    input_class.clone(),
-                    build_device_directory,
-                )
-                .expect("add_device");
-            let keyboard_dev = registry
-                .add_device(
-                    kernel,
+                    DeviceId::new(INPUT_MAJOR, 0),
+                    DeviceMode::Char,
+                ),
+                /* parent = */ None,
+                input_class.clone(),
+                build_device_directory,
+            );
+            let keyboard_dev = registry.add_device(
+                kernel,
+                "keyboard".into(),
+                DeviceMetadata::new(
                     "keyboard".into(),
-                    DeviceMetadata::new(
-                        "keyboard".into(),
-                        DeviceId::new(INPUT_MAJOR, 1),
-                        DeviceMode::Char,
-                    ),
-                    /* parent = */ None,
-                    input_class,
-                    build_device_directory,
-                )
-                .expect("add_device");
+                    DeviceId::new(INPUT_MAJOR, 1),
+                    DeviceMode::Char,
+                ),
+                /* parent = */ None,
+                input_class,
+                build_device_directory,
+            );
 
             assert!(registry.objects.root.lookup("devices/virtual/input/mouse".into()).is_some());
             assert!(
@@ -1266,7 +1284,7 @@ mod tests {
                 registry.objects.root.lookup("devices/virtual/net/wlan0/uevent".into()).is_some()
             );
 
-            registry.remove_net_device(wlan0);
+            registry.remove_device(&current_task, wlan0);
             assert!(registry.objects.root.lookup("class/net/wlan0".into()).is_none());
             assert!(registry.objects.root.lookup("devices/virtual/net/wlan0".into()).is_none());
         })
@@ -1352,17 +1370,95 @@ mod tests {
     }
 
     #[::fuchsia::test]
+    async fn registry_listener_can_query_registry_and_devtmpfs_collision_does_not_fail_add() {
+        spawn_kernel_with_features_and_run(
+            async |current_task| {
+                let kernel = current_task.kernel();
+                let registry = &kernel.device_registry;
+                let observed = Arc::new(starnix_sync::Mutex::new(Vec::new()));
+                let listener_observed = observed.clone();
+                let kernel_weak = Arc::downgrade(kernel);
+                let key = registry.register_listener(
+                    move |action: UEventAction, device: Device, _context: UEventContext| {
+                        let Some(kernel) = kernel_weak.upgrade() else {
+                            return;
+                        };
+                        if let Some(metadata) = device.metadata() {
+                            let is_registered = kernel
+                                .device_registry
+                                .get_device(metadata.devt, metadata.mode)
+                                .is_ok();
+                            listener_observed.lock().push((action, is_registered));
+                        }
+                    },
+                );
+
+                // First device creates `/dev/colliding_dev` in `devtmpfs`.
+                let dev1 = registry
+                    .register_misc_device(
+                        kernel,
+                        "colliding_dev".into(),
+                        simple_device_ops::<DevNull>,
+                    )
+                    .expect("register first misc device");
+                // Second device with a colliding `devtmpfs` name still succeeds and dispatches Add.
+                let dev2 = registry
+                    .register_misc_device(
+                        kernel,
+                        "colliding_dev".into(),
+                        simple_device_ops::<DevNull>,
+                    )
+                    .expect("register second misc device despite devtmpfs collision");
+
+                registry.remove_device(&current_task, dev2);
+                registry.remove_device(&current_task, dev1);
+
+                assert_eq!(
+                    std::mem::take(&mut *observed.lock()),
+                    vec![
+                        (UEventAction::Add, true),
+                        (UEventAction::Add, true),
+                        (UEventAction::Remove, false),
+                        (UEventAction::Remove, false),
+                    ]
+                );
+
+                registry.unregister_listener(&key);
+            },
+            KernelFeatures { devtmpfs: true, ..Default::default() },
+        )
+        .await;
+    }
+
+    #[::fuchsia::test]
     async fn registry_dispatches_uevents_for_bus_and_numberless_devices() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             let events = Arc::new(starnix_sync::Mutex::new(Vec::new()));
             let listener_events = events.clone();
+            let root = registry.objects.root.clone();
             let key = registry.register_listener(
                 move |action: UEventAction, device: Device, _context: UEventContext| {
+                    let path = device.path_from_depth(0);
+                    match action {
+                        UEventAction::Add => {
+                            assert!(
+                                root.lookup(path.as_ref()).is_some(),
+                                "sysfs entry for {path} must exist when Add uevent is dispatched"
+                            );
+                        }
+                        UEventAction::Remove => {
+                            assert!(
+                                root.lookup(path.as_ref()).is_none(),
+                                "sysfs entry for {path} must be removed before Remove uevent is dispatched"
+                            );
+                        }
+                        _ => {}
+                    }
                     listener_events.lock().push((
                         action,
-                        device.path_from_depth(0),
+                        path,
                         device.subsystem().map(|s| s.name().to_owned()),
                     ));
                 },
@@ -1407,7 +1503,7 @@ mod tests {
                 ]
             );
 
-            registry.remove_net_device(net_dev);
+            registry.remove_device(&current_task, net_dev);
             registry.remove_device(&current_task, class_dev);
             registry.remove_device(&current_task, bus_dev);
             registry.remove_device(&current_task, root_dev);

@@ -60,7 +60,7 @@ pub fn register_uinput_device(
         DeviceMetadata::new("uinput".into(), device_id::DeviceId::UINPUT, DeviceMode::Char),
         misc_class,
         device,
-    )?;
+    );
     Ok(())
 }
 #[derive(Clone)]

@@ -45,6 +45,6 @@ pub fn register_wakeup_test_device(kernel: &Arc<Kernel>) -> Result<(), Errno> {
         DeviceMetadata::new("wakeup_test0".into(), DeviceId::new(0, 0), DeviceMode::Char),
         misc_class,
         device,
-    )?;
+    );
     Ok(())
 }

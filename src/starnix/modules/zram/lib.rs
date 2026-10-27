@@ -65,7 +65,7 @@ pub fn zram_device_init(kernel: &Kernel) -> Result<(), Errno> {
         registry.objects.block_class(),
         |device, dir| build_zram_device_directory(device, zram_device_clone, dir),
         zram_device,
-    )?;
+    );
     Ok(())
 }
 

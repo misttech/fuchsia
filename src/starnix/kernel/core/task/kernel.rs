@@ -545,7 +545,7 @@ impl InterfacesHandler for InterfacesHandlerImpl {
 
     fn handle_deleted_link(&mut self, name: &str) {
         if let Some(kernel) = self.kernel() {
-            kernel.netstack_devices.remove_device(&kernel, name.into());
+            kernel.netstack_devices.remove_device(kernel.kthreads.system_task(), name.into());
         }
     }
 

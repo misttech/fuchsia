@@ -132,7 +132,7 @@ impl Framebuffer {
             DeviceMetadata::new("fb0".into(), DeviceId::FB0, DeviceMode::Char),
             graphics_class,
             FramebufferDevice { framebuffer: framebuffer.clone() },
-        )?;
+        );
 
         register_display_stub_devices(registry);
 

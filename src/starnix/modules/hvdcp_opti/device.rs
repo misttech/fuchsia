@@ -137,7 +137,7 @@ fn register_hvdcp_opti_devices(
     // those sysfs paths.
     // /dev/qbg
     let qbg_service = service_proxy.clone();
-    let qbg_dev = match registry.register_device(
+    let qbg_dev = registry.register_device(
         kernel,
         "qbg".into(),
         DeviceMetadata::new("qbg".into(), DeviceId::new(484, 0), DeviceMode::Char),
@@ -146,19 +146,11 @@ fn register_hvdcp_opti_devices(
               _id: DeviceId,
               _node: &NamespaceNode,
               _flags: OpenFlags| create_qbg_device(&qbg_service),
-    ) {
-        Ok(dev) => dev,
-        Err(e) => {
-            for dev in sysfs_devices.into_iter().rev() {
-                registry.remove_device(current_task, dev);
-            }
-            return Err(e);
-        }
-    };
+    );
 
     // /dev/qbg_battery
     let battery_service = service_proxy;
-    let qbg_battery_dev = match registry.register_device(
+    let qbg_battery_dev = registry.register_device(
         kernel,
         "qbg_battery".into(),
         DeviceMetadata::new("qbg_battery".into(), DeviceId::new(485, 0), DeviceMode::Char),
@@ -167,16 +159,7 @@ fn register_hvdcp_opti_devices(
               _id: DeviceId,
               _node: &NamespaceNode,
               _flags: OpenFlags| create_battery_profile_device(&battery_service),
-    ) {
-        Ok(dev) => dev,
-        Err(e) => {
-            registry.remove_device(current_task, qbg_dev);
-            for dev in sysfs_devices.into_iter().rev() {
-                registry.remove_device(current_task, dev);
-            }
-            return Err(e);
-        }
-    };
+    );
 
     for dev in sysfs_devices {
         scope.add_scoped_device(dev);
