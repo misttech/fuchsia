@@ -4,6 +4,6 @@
 
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 
-export_fuchsia_package_to_bazel("package-basic") {
-  package = "//src/connectivity/policy/netcfg:package-basic"
+export_fuchsia_package_to_bazel("package") {
+  package = "//src/connectivity/policy/netcfg:package"
 }

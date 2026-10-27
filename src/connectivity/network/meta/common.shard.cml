@@ -39,7 +39,7 @@
         },
         {
             name: "netcfg",
-            url: "fuchsia-pkg://fuchsia.com/netcfg-basic#meta/netcfg-basic.cm",
+            url: "fuchsia-pkg://fuchsia.com/netcfg#meta/netcfg.cm",
             startup: "eager",
         },
         {

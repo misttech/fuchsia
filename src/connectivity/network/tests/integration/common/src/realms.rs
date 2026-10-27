@@ -208,7 +208,7 @@ pub mod constants {
     }
     pub mod netcfg {
         pub const COMPONENT_NAME: &str = "netcfg";
-        pub const COMPONENT_URL: &str = "#meta/netcfg-basic.cm";
+        pub const COMPONENT_URL: &str = "#meta/netcfg.cm";
         pub mod fake {
             pub const COMPONENT_URL: &str = "#meta/fake_netcfg.cm";
         }

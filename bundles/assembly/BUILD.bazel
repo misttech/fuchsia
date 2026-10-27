@@ -1534,7 +1534,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/network/dns:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/http-client:google_package",
-        "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-basic",
+        "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package",
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/reachability:package",
     ],
 )

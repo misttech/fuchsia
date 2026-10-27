@@ -136,7 +136,7 @@ pub enum NetworkingConfig {
     /// out-of-tree product configurations.
     Standard,
 
-    /// Basic networking configuration (`netcfg-basic`).
+    /// Basic networking configuration (`netcfg`).
     #[default]
     Basic,
 }

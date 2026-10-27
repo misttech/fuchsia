@@ -101,9 +101,9 @@ rustc_library("lib") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
-rustc_binary("bin-basic") {
+rustc_binary("bin") {
   edition = "2024"
-  name = "netcfg_basic"
+  name = "netcfg"
   source_root = "src/main.rs"
 
   deps = [
@@ -116,15 +116,15 @@ rustc_binary("bin-basic") {
   configs += [ "//build/config/rust/lints:deny_unused_results" ]
 }
 
-fuchsia_component("component-basic") {
-  component_name = "netcfg-basic"
-  manifest = "meta/netcfg-basic.cml"
-  deps = [ ":bin-basic" ]
+fuchsia_component("component") {
+  component_name = "netcfg"
+  manifest = "meta/netcfg.cml"
+  deps = [ ":bin" ]
 }
 
-fuchsia_package("package-basic") {
-  package_name = "netcfg-basic"
-  deps = [ ":component-basic" ]
+fuchsia_package("package") {
+  package_name = "netcfg"
+  deps = [ ":component" ]
   visibility = [ "//bundles/assembly/*" ]
 }
 
