@@ -291,7 +291,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::pin_mut;
     use heapdump_snapshot::ThreadInfo;
-    use heapdump_vmo::allocations_table_v1::AllocationsTableWriter;
+    use heapdump_vmo::allocations_table_v1::{AllocationKey, AllocationsTableWriter};
     use heapdump_vmo::resources_table_v1::ResourcesTableWriter;
     use itertools::{Itertools, assert_equal};
     use std::pin::Pin;
@@ -316,7 +316,7 @@ mod tests {
     fn setup_fake_process_from_self() -> (
         fheapdump_process::RegistryRequestStream,
         Koid,
-        AllocationsTableWriter,
+        AllocationsTableWriter<1>,
         ResourcesTableWriter,
         impl Fn(&str),
     ) {
@@ -327,7 +327,8 @@ mod tests {
 
         // SAFETY: Nobody else will directly access the allocations_vmo. Readers will always take a
         // snapshot first and read that instead.
-        let allocations_writer = unsafe { AllocationsTableWriter::new(&allocations_vmo) }.unwrap();
+        let [allocations_writer] =
+            unsafe { AllocationsTableWriter::new(&allocations_vmo, &zx::Name::default()) }.unwrap();
 
         // SAFETY: All readers of this VMO will synchronize by means of the ResourceKeys.
         let resources_writer = unsafe { ResourcesTableWriter::new(&resources_vmo) }.unwrap();
@@ -472,7 +473,7 @@ mod tests {
             .unwrap();
         allocations_writer
             .insert_allocation(
-                foobar_address,
+                AllocationKey::make(foobar_address),
                 foobar_size,
                 foobar_thread_info_key,
                 foobar_stack_trace_key,
@@ -550,6 +551,7 @@ mod tests {
 
         // Send a stored snapshot called "snapshot-one" containing only a fake allocation.
         const FAKE_ALLOCATION_ADDRESS: u64 = 8888;
+        const FAKE_ALLOCATION_KEY: AllocationKey<1> = AllocationKey::make(FAKE_ALLOCATION_ADDRESS);
         const FAKE_ALLOCATION_SIZE: u64 = 120;
         const FAKE_ALLOCATION_STACK_TRACE: [u64; 2] = [12345, 67890];
         const FAKE_ALLOCATION_TIMESTAMP: zx::MonotonicInstant =
@@ -563,7 +565,7 @@ mod tests {
             .unwrap();
         allocations_writer
             .insert_allocation(
-                FAKE_ALLOCATION_ADDRESS,
+                FAKE_ALLOCATION_KEY,
                 FAKE_ALLOCATION_SIZE,
                 thread_info_key,
                 stack_trace_key,
@@ -573,7 +575,7 @@ mod tests {
         snapshot_sink_fn("snapshot-one");
 
         // Remove the allocation and send a new stored snapshot called "snapshot-two".
-        allocations_writer.erase_allocation(FAKE_ALLOCATION_ADDRESS).unwrap();
+        allocations_writer.erase_allocation(FAKE_ALLOCATION_KEY).unwrap();
         snapshot_sink_fn("snapshot-two");
 
         // Let the registry process our requests to store the named snapshots.

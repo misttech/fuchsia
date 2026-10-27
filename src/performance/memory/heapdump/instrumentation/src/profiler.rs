@@ -7,7 +7,7 @@ use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::allocations_table::AllocationsTable;
+use crate::allocations_table::{AllocationsTable, AllocationsTableShard, NUM_SHARDS};
 use crate::resources_table::{ResourceKey, ResourcesTable};
 use crate::waiter_list::WaiterList;
 use crate::{
@@ -28,14 +28,18 @@ const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 pub struct Profiler {
     snapshot_sink: fheapdump_process::SnapshotSinkV1SynchronousProxy,
     inner: Mutex<Option<ProfilerInner>>,
+    shards: [Mutex<Option<ProfilerShardedInner>>; NUM_SHARDS],
 }
 
-#[derive(Default)]
 struct ProfilerInner {
     allocations_table: AllocationsTable,
     resources_table: ResourcesTable,
-    global_stats: HeapdumpGlobalStats,
     snapshot_sink_server: Option<ServerEnd<fheapdump_process::SnapshotSinkV1Marker>>,
+}
+
+struct ProfilerShardedInner {
+    allocations_shard: AllocationsTableShard,
+    global_stats: HeapdumpGlobalStats,
     waiters: WaiterList,
 }
 
@@ -56,8 +60,21 @@ impl Default for Profiler {
         let (client, server) = create_endpoints();
         let proxy = fheapdump_process::SnapshotSinkV1SynchronousProxy::new(client.into_channel());
 
-        let inner = ProfilerInner { snapshot_sink_server: Some(server), ..Default::default() };
-        Profiler { snapshot_sink: proxy, inner: Mutex::new(Some(inner)) }
+        let (allocations_table, allocations_shards) = AllocationsTable::new();
+        let inner = ProfilerInner {
+            allocations_table,
+            resources_table: ResourcesTable::default(),
+            snapshot_sink_server: Some(server),
+        };
+        let shards = allocations_shards.map(|allocations_shard| {
+            Mutex::new(Some(ProfilerShardedInner {
+                allocations_shard,
+                global_stats: HeapdumpGlobalStats::default(),
+                waiters: WaiterList::default(),
+            }))
+        });
+
+        Profiler { snapshot_sink: proxy, inner: Mutex::new(Some(inner)), shards }
     }
 }
 
@@ -91,15 +108,21 @@ impl Profiler {
 
     pub fn teardown(&self) {
         self.inner.lock().unwrap().take().expect("profiler has already been torn down");
+        for shard in &self.shards {
+            shard.lock().unwrap().take().expect("profiler has already been torn down");
+        }
     }
 
     // Returns the global stats, or None if the Profiler has been torn down.
     pub fn get_global_stats(&self) -> Option<HeapdumpGlobalStats> {
-        let guard = self.inner.lock().unwrap();
-        match guard.as_ref() {
-            Some(inner) => Some(inner.global_stats),
-            None => None,
+        let mut total = HeapdumpGlobalStats::default();
+        for shard in &self.shards {
+            let guard = shard.lock().unwrap();
+            let shard = guard.as_ref()?;
+            total.total_allocated_bytes += shard.global_stats.total_allocated_bytes;
+            total.total_deallocated_bytes += shard.global_stats.total_deallocated_bytes;
         }
+        Some(total)
     }
 
     fn intern(
@@ -137,24 +160,27 @@ impl Profiler {
         compressed_stack_trace: &[u8],
         timestamp: zx::MonotonicInstant,
     ) {
-        let mut guard = self.inner.lock().unwrap();
-        let Some(inner) = guard.as_mut() else {
-            return;
+        let (thread_info_key, stack_trace_key) = {
+            let mut guard = self.inner.lock().unwrap();
+            let Some(inner) = guard.as_mut() else {
+                return; // The profiler has been torn down.
+            };
+            Self::intern(inner, thread_data, compressed_stack_trace)
         };
 
-        let (thread_info_key, stack_trace_key) =
-            Self::intern(inner, thread_data, compressed_stack_trace);
+        let key = AllocationsTable::compute_key(address);
+        let mut guard = self.shards[key.shard_index()].lock().unwrap();
 
         // Insert the new entry. If a duplicate is found, it means that this allocation is recycling
         // a block that was just deallocated by realloc, but for which __scudo_realloc_allocate_hook
         // (i.e. the realloc end notification) has not been executed yet.
         loop {
-            let Some(inner) = guard.as_mut() else {
+            let Some(shard) = guard.as_mut() else {
                 return; // The profiler has been torn down.
             };
 
-            if inner.allocations_table.try_record_allocation(
-                address,
+            if shard.allocations_shard.try_record_allocation(
+                key,
                 size,
                 thread_info_key,
                 stack_trace_key,
@@ -162,28 +188,29 @@ impl Profiler {
             ) {
                 // The allocation was successfully recorded. Let's update the stats too and we're
                 // done.
-                inner.global_stats.total_allocated_bytes += size;
+                shard.global_stats.total_allocated_bytes += size;
                 thread_data.local_stats.total_allocated_bytes += size;
                 return;
             }
 
-            guard = WaiterList::wait(guard, |inner| &mut inner.waiters, address, WAIT_TIMEOUT);
+            guard = WaiterList::wait(guard, |shard| &mut shard.waiters, address, WAIT_TIMEOUT);
         }
     }
 
     pub fn forget_allocation(&self, thread_data: &mut PerThreadData, address: u64) {
-        let mut guard = self.inner.lock().unwrap();
-        let Some(inner) = guard.as_mut() else {
-            return;
+        let key = AllocationsTable::compute_key(address);
+        let mut guard = self.shards[key.shard_index()].lock().unwrap();
+        let Some(shard) = guard.as_mut() else {
+            return; // The profiler has been torn down.
         };
 
-        let size = inner.allocations_table.forget_allocation(address);
+        let size = shard.allocations_shard.forget_allocation(key);
 
-        inner.global_stats.total_deallocated_bytes += size;
+        shard.global_stats.total_deallocated_bytes += size;
         thread_data.local_stats.total_deallocated_bytes += size;
 
         // Notify the waiter (if any).
-        inner.waiters.notify_one(address);
+        shard.waiters.notify_one(address);
     }
 
     pub fn update_allocation(
@@ -194,16 +221,22 @@ impl Profiler {
         compressed_stack_trace: &[u8],
         timestamp: zx::MonotonicInstant,
     ) {
-        let mut guard = self.inner.lock().unwrap();
-        let Some(inner) = guard.as_mut() else {
-            return;
+        let (thread_info_key, stack_trace_key) = {
+            let mut guard = self.inner.lock().unwrap();
+            let Some(inner) = guard.as_mut() else {
+                return; // The profiler has been torn down.
+            };
+            Self::intern(inner, thread_data, compressed_stack_trace)
         };
 
-        let (thread_info_key, stack_trace_key) =
-            Self::intern(inner, thread_data, compressed_stack_trace);
+        let key = AllocationsTable::compute_key(address);
+        let mut guard = self.shards[key.shard_index()].lock().unwrap();
+        let Some(shard) = guard.as_mut() else {
+            return; // The profiler has been torn down.
+        };
 
-        let old_size = inner.allocations_table.update_allocation(
-            address,
+        let old_size = shard.allocations_shard.update_allocation(
+            key,
             size,
             thread_info_key,
             stack_trace_key,
@@ -212,11 +245,11 @@ impl Profiler {
 
         if size > old_size {
             let delta_allocated_bytes = size - old_size;
-            inner.global_stats.total_allocated_bytes += delta_allocated_bytes;
+            shard.global_stats.total_allocated_bytes += delta_allocated_bytes;
             thread_data.local_stats.total_allocated_bytes += delta_allocated_bytes;
         } else {
             let delta_deallocated_bytes = old_size - size;
-            inner.global_stats.total_deallocated_bytes += delta_deallocated_bytes;
+            shard.global_stats.total_deallocated_bytes += delta_deallocated_bytes;
             thread_data.local_stats.total_deallocated_bytes += delta_deallocated_bytes;
         }
     }
