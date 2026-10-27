@@ -142,6 +142,9 @@ exports_files(
     # //src/recovery/lib/recovery-ui with include_bytes!().
     ["prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf"] +
 
+    # RobotoMono font, compiled into //src/lib/ui/terminal with include_bytes!().
+    ["prebuilt/third_party/fonts/robotomono/RobotoMono-Regular.ttf"] +
+
     # end of list.
     [],
 )

@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "terminal",
+    srcs = [
+        "src/lib.rs",
+        "src/paths.rs",
+        "src/renderer.rs",
+        "src/terminal_callbacks.rs",
+        "src/types.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/bringup/bin/virtcon:__pkg__",
+        "//src/lib/ui:__subpackages__",
+        "//src/ui/bin/terminal:__pkg__",
+    ],
+    deps = [
+        "//src/lib/ui/carnelian",
+        "//third_party/rust_crates/vendor:euclid",
+        "//third_party/rust_crates/vendor:rustc-hash",
+        "//third_party/rust_crates/vendor:ttf-parser",
+        "//third_party/rust_crates/vendor:vt100",
+    ],
+)
+
+rustc_test(
+    name = "terminal_test",
+    compile_data = [
+        "//:prebuilt/third_party/fonts/robotomono/RobotoMono-Regular.ttf",
+    ],
+    crate = ":terminal",
+    crate_name = "terminal_lib_test",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
