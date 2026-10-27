@@ -22,6 +22,8 @@ typedef struct {
 #define TRB_SPR (1 << 26)    // Short Packet Received
 #define TRB_TRBSTS_START 28  // TRB Status
 #define TRB_TRBSTS_BITS 4
+#define TRB_TRBSTS(s) (((s) >> TRB_TRBSTS_START) & ((1 << TRB_TRBSTS_BITS) - 1))
+#define TRB_TRBSTS_SETUP_PENDING 2
 
 // TRB control fields
 #define TRB_HWO (1 << 0)  // Hardware Owner of Descriptor

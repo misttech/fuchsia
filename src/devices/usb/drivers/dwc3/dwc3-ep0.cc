@@ -11,6 +11,7 @@
 #include <zircon/errors.h>
 
 #include <mutex>
+#include <optional>
 
 #include <fbl/algorithm.h>
 #include <usb/descriptors.h>
@@ -125,23 +126,67 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
     ep0_.in.stale_starts_to_end = 0;
   }
 
-  // Only DataOut and DataIn states need TRB read.
-  dwc3_trb_t trb{};
-  if (ep0_.state == Ep0::State::DataOut || ep0_.state == Ep0::State::DataIn) {
-    if (auto res = ep0_.shared_fifo.ReadOne(); res.is_ok()) {
-      trb = *res;
-    } else {
-      fdf::error("ReadOne failed: {}", res.status_string());
-      return;
-    }
+  if (ep0_.state == Ep0::State::DataOut && ep_num != kEp0Out) {
+    // This indicates a disagreement between the host and controller about the directionality of
+    // the data exchange. In this case, the setup packet indicated a control-write (OUT-type
+    // transfer), which would involve a DataOut packet. The controller actually received an
+    // unexpected DataIn packet from the host. To recover, gracefully stall and reset the
+    // transfer.
+    fdf::warn(
+        "host/target data direction disagreement, expected data-out, got data-in "
+        "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
+        ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+        ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
+    Ep0EndAndStall(ep0_.out);
+    Ep0QueueSetup();
+    return;
   }
-  if (ep.queued_trbs > 0) {
+  if (ep0_.state == Ep0::State::DataIn && ep_num != kEp0In) {
+    // See above, but reverse the directionality for a control-read.
+    fdf::warn(
+        "host/target data direction disagreement, expected data-in, got data-out "
+        "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
+        ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
+        ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
+    Ep0EndAndStall(ep0_.in);
+    Ep0QueueSetup();
+    return;
+  }
+  if (ep0_.state == Ep0::State::WaitZlpIn && ep_num != kEp0In) {
+    fdf::warn(
+        "host/target data direction disagreement in WaitZlpIn: expected EP0 IN ({}), got {}, request=0x{:02x}",
+        kEp0In, ep_num, ep0_.cur_setup.b_request);
+    Ep0EndAndStall(ep0_.in);
+    Ep0QueueSetup();
+    return;
+  }
+
+  auto pop_trb = [&]() -> std::optional<dwc3_trb_t> {
+    if (ep.queued_trbs == 0) {
+      return std::nullopt;
+    }
+    auto res = ep0_.shared_fifo.ReadOne();
+    if (res.is_error()) {
+      fdf::error("ReadOne failed: {}", res.status_string());
+      return std::nullopt;
+    }
     ep.queued_trbs--;
     ep0_.shared_fifo.AdvanceRead();
+    return *res;
+  };
+
+  auto trb = pop_trb();
+  if (trb.has_value() && TRB_TRBSTS(trb->status) == TRB_TRBSTS_SETUP_PENDING) {
+    ep0_.out.stalled = false;
+    Ep0QueueSetup();
+    return;
   }
 
   switch (ep0_.state) {
     case Ep0::State::Setup: {
+      if (!trb.has_value()) {
+        return;
+      }
       // Control Endpoint stall is cleared upon receiving SETUP.
       ep0_.out.stalled = false;
 
@@ -190,25 +235,12 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::DataOut: {
-      if (ep_num != kEp0Out) {
-        // This indicates a disagreement between the host and controller about the directionality of
-        // the data exchange. In this case, the setup packet indicated a control-write (OUT-type
-        // transfer), which would involve a DataOut packet. The controller actually received an
-        // unexpected DataIn packet from the host. To recover, gracefully stall and reset the
-        // transfer.
-
-        fdf::warn(
-            "host/target data direction disagreement, expected data-out, got data-in "
-            "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
-            ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
-            ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
-        Ep0EndAndStall(ep0_.out);
-        Ep0QueueSetup();
-        break;
+      if (!trb.has_value()) {
+        return;
       }
 
       const size_t expected = ep0_.cur_transfer_len;
-      const size_t remaining = TRB_BUFSIZ(trb.status);
+      const size_t remaining = TRB_BUFSIZ(trb->status);
       zx_off_t received = 0;
       if (remaining > expected) {
         fdf::error(
@@ -246,19 +278,11 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::DataIn: {
-      if (ep_num != kEp0In) {
-        // See above, but reverse the directionality for a control-read.
-        fdf::warn(
-            "host/target data direction disagreement, expected data-in, got data-out "
-            "(cur_setup: req_type=0x{:02x}, req=0x{:02x}, val=0x{:04x}, idx=0x{:04x}, len={})",
-            ep0_.cur_setup.bm_request_type, ep0_.cur_setup.b_request, ep0_.cur_setup.w_value,
-            ep0_.cur_setup.w_index, ep0_.cur_setup.w_length);
-        Ep0EndAndStall(ep0_.in);
-        Ep0QueueSetup();
-        break;
+      if (!trb.has_value()) {
+        return;
       }
       const size_t expected = ep0_.cur_transfer_len;
-      const size_t remaining = TRB_BUFSIZ(trb.status);
+      const size_t remaining = TRB_BUFSIZ(trb->status);
       zx_off_t transferred = 0;
       if (remaining > expected) {
         fdf::error(
@@ -282,19 +306,17 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       break;
     }
     case Ep0::State::WaitZlpIn: {
-      if (ep_num != kEp0In) {
-        fdf::warn(
-            "host/target data direction disagreement in WaitZlpIn: expected EP0 IN ({}), got {}, request=0x{:02x}",
-            kEp0In, ep_num, ep0_.cur_setup.b_request);
-        Ep0EndAndStall(ep0_.in);
-        Ep0QueueSetup();
-        break;
+      if (!trb.has_value()) {
+        return;
       }
       ep0_.in.total_transfers++;
       ep0_.state = Ep0::State::WaitNrdyOut;
       break;
     }
-    case Ep0::State::Status:
+    case Ep0::State::Status: {
+      if (!trb.has_value()) {
+        return;
+      }
       // Apply the latched test mode selector to DCTL.TSTCTL only after the Status stage has
       // completed, masking ULSTCHNGREQ to avoid triggering an unintended link state change.
       if (ep0_.test_mode != 0) {
@@ -304,6 +326,7 @@ void Dwc3::HandleEp0TransferCompleteEvent(uint8_t ep_num) {
       }
       Ep0QueueSetup();
       break;
+    }
     default:
       fdf::error("unexpected XferComplete state={}", ep0_.state);
       break;

@@ -2707,4 +2707,128 @@ TEST_F(UnmanagedTestFixture, XferActiveNotReadyOutsideSetupEndsActiveTransfer) {
 
   TearDownAndPowerOffDriver();
 }
+
+TEST_F(UnmanagedTestFixture, Ep0SetupPendingAbortsControlTransferAndRearmsSetup) {
+  SetUpAndPowerOnDriver();
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // 1. Setup interrupted by TRB_TRBSTS_SETUP_PENDING: must discard the superseded Setup packet
+    // without executing HandleEp0Setup or stalling EP0 OUT, and immediately re-arm Ep0QueueSetup().
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 1);
+    auto superseded_setup = MakeSetupPacket(
+        kStandardDeviceOut, fidl::ToUnderlying(fdescriptor::StandardRequest::kSetAddress), 9, 0, 0);
+    Dwc3TestHelper::WriteEp0Buffer(drv, &superseded_setup, 0, sizeof(superseded_setup));
+    dwc3_trb_t* setup_trb = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(setup_trb, nullptr);
+    setup_trb->status = (TRB_TRBSTS_SETUP_PENDING << TRB_TRBSTS_START);
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
+
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kPowered);
+    ASSERT_NE(Dwc3TestHelper::GetCurrentReadTrb(drv), nullptr);
+    EXPECT_NE(Dwc3TestHelper::GetCurrentReadTrb(drv)->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 2);
+
+    // 2. DataOut interrupted by TRB_TRBSTS_SETUP_PENDING, followed by trailing
+    // DEPEVT_XFER_NOT_READY(Control_Status) from the aborted transfer.
+    auto out_setup =
+        MakeSetupPacket(fdescriptor::EndpointDirection::kOut | fdescriptor::RequestType::kVendor |
+                            fdescriptor::RequestRecipient::kDevice,
+                        0x10, 0, 0, 16);
+    Dwc3TestHelper::SimulateSetupReceived(drv, out_setup);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 3);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataOut);
+
+    dwc3_trb_t* trb = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(trb, nullptr);
+    trb->status = (TRB_TRBSTS_SETUP_PENDING << TRB_TRBSTS_START) | TRB_BUFSIZ(512);
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
+
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    dwc3_trb_t* rearmed_after_data_out = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(rearmed_after_data_out, nullptr);
+    EXPECT_NE(rearmed_after_data_out->control & TRB_HWO, 0u);
+    // Trailing XferNotReady(Status) from the aborted DataOut transfer must preserve the newly armed
+    // Setup TRB without cancelling or re-queuing it.
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, DEPEVT_XFER_NOT_READY_STAGE_STATUS);
+    EXPECT_EQ(Dwc3TestHelper::GetCurrentReadTrb(drv), rearmed_after_data_out);
+    EXPECT_NE(rearmed_after_data_out->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 4);
+
+    // 3. DataIn interrupted by TRB_TRBSTS_SETUP_PENDING, followed by trailing
+    // DEPEVT_XFER_NOT_READY(Control_Status).
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SetEp0CurTransferLen(drv, 64);
+    dwc3_trb_t data_in_trb{};
+    data_in_trb.status = (TRB_TRBSTS_SETUP_PENDING << TRB_TRBSTS_START) | TRB_BUFSIZ(64);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, data_in_trb);
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 1);
+
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    dwc3_trb_t* rearmed_after_data_in = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(rearmed_after_data_in, nullptr);
+    EXPECT_NE(rearmed_after_data_in->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 0, DEPEVT_XFER_NOT_READY_STAGE_STATUS);
+    EXPECT_EQ(Dwc3TestHelper::GetCurrentReadTrb(drv), rearmed_after_data_in);
+    EXPECT_NE(rearmed_after_data_in->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 5);
+
+    // 4. WaitZlpIn interrupted by TRB_TRBSTS_SETUP_PENDING, followed by trailing
+    // DEPEVT_XFER_NOT_READY(Control_Status).
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::WaitZlpIn);
+    dwc3_trb_t zlp_in_trb{};
+    zlp_in_trb.status = (TRB_TRBSTS_SETUP_PENDING << TRB_TRBSTS_START);
+    Dwc3TestHelper::PushTrbToSharedFifo(drv, zlp_in_trb);
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 1);
+
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    dwc3_trb_t* rearmed_after_zlp_in = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(rearmed_after_zlp_in, nullptr);
+    EXPECT_NE(rearmed_after_zlp_in->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 0, DEPEVT_XFER_NOT_READY_STAGE_STATUS);
+    EXPECT_EQ(Dwc3TestHelper::GetCurrentReadTrb(drv), rearmed_after_zlp_in);
+    EXPECT_NE(rearmed_after_zlp_in->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 6);
+
+    // 5. Status (with latched test_mode) interrupted by TRB_TRBSTS_SETUP_PENDING must NOT issue
+    // EP0_OUT_STALL and must NOT apply test_mode to DCTL.TSTCTL.
+    auto test_setup = MakeSetupPacket(
+        kStandardDeviceOut, fidl::ToUnderlying(fdescriptor::StandardRequest::kSetFeature),
+        fidl::ToUnderlying(fdescriptor::FeatureSelector::kDeviceTestMode),
+        static_cast<uint16_t>(fidl::ToUnderlying(fdescriptor::TestModeSelector::kTestPacket) << 8),
+        0);
+    Dwc3TestHelper::SimulateSetupReceived(drv, test_setup);
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitHost);
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, DEPEVT_XFER_NOT_READY_STAGE_STATUS);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 1, 7);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Status);
+
+    dwc3_trb_t* status_trb = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(status_trb, nullptr);
+    status_trb->status = (TRB_TRBSTS_SETUP_PENDING << TRB_TRBSTS_START);
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 1);
+
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0TestMode(drv), 0u);
+    dwc3_trb_t* final_setup_trb = Dwc3TestHelper::GetCurrentReadTrb(drv);
+    ASSERT_NE(final_setup_trb, nullptr);
+    EXPECT_NE(final_setup_trb->control & TRB_HWO, 0u);
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, 0, 8);
+  });
+
+  EXPECT_EQ(DCTL::Get().FromValue(Read_DCTL()).TSTCTL(), 0u);
+  TearDownAndPowerOffDriver();
+}
 }  // namespace dwc3
