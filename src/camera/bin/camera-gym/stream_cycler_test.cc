@@ -219,9 +219,7 @@ class FakeStream : public fuchsia::camera3::testing::Stream_TestBase {
   void SetCropRegion(std::unique_ptr<fuchsia::math::RectF> region) override;
   void WatchCropRegion(WatchCropRegionCallback callback) override;
   void SetBufferCollection2(fuchsia::sysmem2::BufferCollectionTokenHandle token) override;
-  void SetBufferCollection(fuchsia::sysmem::BufferCollectionTokenHandle token) override;
   void WatchBufferCollection2(WatchBufferCollection2Callback callback) override;
-  void WatchBufferCollection(WatchBufferCollectionCallback callback) override;
   void GetNextFrame2(GetNextFrame2Callback callback) override;
 
   // Stats/Counters
@@ -239,8 +237,6 @@ class FakeStream : public fuchsia::camera3::testing::Stream_TestBase {
   TokenHandleProvider* token_handle_provider() { return token_handle_provider_; }
 
  private:
-  void WatchBufferCollectionCommon(WatchBufferCollection2Callback callback);
-
   FakeStreamServ* owner_;
   CallStat get_properties_stat_;
   CallStat set_crop_region_stat_;
@@ -484,23 +480,7 @@ void FakeStream::SetBufferCollection2(fuchsia::sysmem2::BufferCollectionTokenHan
   set_buffer_collection_stat().Enter();
 }
 
-void FakeStream::SetBufferCollection(fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-  set_buffer_collection_stat().Enter();
-}
-
 void FakeStream::WatchBufferCollection2(WatchBufferCollection2Callback callback) {
-  WatchBufferCollectionCommon(std::move(callback));
-}
-
-void FakeStream::WatchBufferCollection(WatchBufferCollectionCallback callback) {
-  WatchBufferCollectionCommon(
-      [callback = std::move(callback)](fuchsia::sysmem2::BufferCollectionTokenHandle token) {
-        std::move(callback)(
-            fuchsia::sysmem::BufferCollectionTokenHandle(std::move(token).TakeChannel()));
-      });
-}
-
-void FakeStream::WatchBufferCollectionCommon(WatchBufferCollection2Callback callback) {
   watch_buffer_collection_stat().Enter();
   if (owner()->watch_buffer_collection_remaining() > 0) {
     owner()->dec_watch_buffer_collection_remaining();

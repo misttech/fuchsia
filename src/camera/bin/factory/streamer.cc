@@ -125,16 +125,11 @@ void Streamer::ConnectToStream(uint32_t config_index, uint32_t stream_index) {
   fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
   allocate_shared_request.set_token_request(token_orig.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-  // Sysmem token channels serve both sysmem(1) and sysmem2, so we can convert here for now.
-  stream->SetBufferCollection(
-      fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>(token_orig.TakeChannel()));
-  stream->WatchBufferCollection([this, config_index, stream_index](
-                                    fuchsia::sysmem::BufferCollectionTokenHandle token_back) {
-    // Sysmem token channels serve both sysmem(1) and sysmem2, so we can convert here for now.
-    WatchBufferCollectionCallback(
-        config_index, stream_index,
-        fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(token_back.TakeChannel()));
-  });
+  stream->SetBufferCollection2(std::move(token_orig));
+  stream->WatchBufferCollection2(
+      [this, config_index, stream_index](fuchsia::sysmem2::BufferCollectionTokenHandle token_back) {
+        WatchBufferCollectionCallback(config_index, stream_index, std::move(token_back));
+      });
   device_->ConnectToStream(stream_index, std::move(stream_request));
   stream.set_error_handler(
       [this, stream_index](zx_status_t status) { DisconnectStream(stream_index); });

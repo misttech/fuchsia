@@ -200,13 +200,10 @@ void StreamCycler::ConnectToStream(uint32_t config_index, uint32_t stream_index)
   allocate_shared_request.set_token_request(token_orig.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token_orig.Unbind().TakeChannel()));
-  stream->WatchBufferCollection(
+  stream->SetBufferCollection2(token_orig.Unbind());
+  stream->WatchBufferCollection2(
       [this, image_format = std::move(image_format), config_index, stream_index,
-       &stream](fuchsia::sysmem::BufferCollectionTokenHandle token_back_v1) mutable {
-        auto token_back_v2 =
-            fuchsia::sysmem2::BufferCollectionTokenHandle(token_back_v1.TakeChannel());
+       &stream](fuchsia::sysmem2::BufferCollectionTokenHandle token_back_v2) mutable {
         // image_format must be reasonable.
         ZX_ASSERT(image_format.has_size());
         ZX_ASSERT(image_format.size().width > 0);

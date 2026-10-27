@@ -82,9 +82,8 @@ TEST_F(VirtualCameraTest, FramesReceived) {
   });
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> client_token;
   bool token_received = false;
-  stream->WatchBufferCollection(
-      [&](fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken> token_v1) {
-        auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2(
+      [&](fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token_v2) {
         client_token = std::move(token_v2);
         token_received = true;
       });

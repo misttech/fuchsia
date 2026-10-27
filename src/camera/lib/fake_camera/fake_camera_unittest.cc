@@ -123,8 +123,7 @@ TEST_F(FakeCameraTest, SetBufferCollectionInvokesCallback) {
         allocate_shared_request.set_token_request(token.NewRequest());
         allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-        stream_protocol->SetBufferCollection(
-            fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+        stream_protocol->SetBufferCollection2(token.Unbind());
       });
   RunLoopUntil([&]() { return HasFailure() || callback_invoked; });
 }

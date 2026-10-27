@@ -274,12 +274,11 @@ TEST_F(DeviceImplTest, GetFrames) {
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  stream->SetBufferCollection2(token.Unbind());
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> received_token;
   bool buffer_collection_returned = false;
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    received_token = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
+    received_token = std::move(token_v2);
     buffer_collection_returned = true;
   });
 
@@ -459,13 +458,11 @@ TEST_F(DeviceImplTest, ConfigurationSwitchingWhileAllocated) {
   fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  stream->SetBufferCollection2(token.Unbind());
   fuchsia::sysmem2::BufferCollectionPtr buffers;
   bool buffers_allocated_returned = false;
   zx::vmo vmo;
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
     fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
     bind_shared_request.set_token(std::move(token_v2));
     bind_shared_request.set_buffer_collection_request(buffers.NewRequest());
@@ -522,10 +519,8 @@ TEST_F(DeviceImplTest, ConfigurationSwitchingWhileAllocated) {
     allocate_shared_request.set_token_request(token2.NewRequest());
     allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-    stream2->SetBufferCollection(
-        fuchsia::sysmem::BufferCollectionTokenHandle(token2.Unbind().TakeChannel()));
-    stream2->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-      auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+    stream2->SetBufferCollection2(token2.Unbind());
+    stream2->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
       fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
       bind_shared_request.set_token(std::move(token_v2));
       bind_shared_request.set_buffer_collection_request(buffers2.NewRequest());
@@ -583,14 +578,12 @@ TEST_F(DeviceImplTest, RequestStreamFromController) {
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  stream->SetBufferCollection2(token.Unbind());
   fuchsia::sysmem2::BufferCollectionPtr buffers;
   SetFailOnError(buffers, "BufferCollection");
   bool buffers_allocated_returned = false;
   zx::vmo vmo;
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
     fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
     bind_shared_request.set_token(std::move(token_v2));
     bind_shared_request.set_buffer_collection_request(buffers.NewRequest());
@@ -706,11 +699,9 @@ TEST_F(DeviceImplTest, StreamClientDisconnect) {
     allocate_shared_request.set_token_request(token.NewRequest());
     allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-    stream2->SetBufferCollection(
-        fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+    stream2->SetBufferCollection2(token.Unbind());
     // Call a returning API to verify the connection status.
-    stream2->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-      auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+    stream2->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
       EXPECT_EQ(token_v2.BindSync()->Release(), ZX_OK);
       callback_received = true;
     });
@@ -1088,12 +1079,10 @@ TEST_F(DeviceImplTest, SoftwareMuteState) {
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  stream->SetBufferCollection2(token.Unbind());
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> received_token;
   watch_returned = false;
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
     received_token = std::move(token_v2);
     watch_returned = true;
   });
@@ -1287,12 +1276,10 @@ TEST_F(DeviceImplTest, HardwareMuteStateStreamFrames) {
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+  stream->SetBufferCollection2(token.Unbind());
   fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> received_token;
   watch_returned = false;
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
     received_token = std::move(token_v2);
     watch_returned = true;
   });
@@ -1552,11 +1539,9 @@ TEST_F(DeviceImplTest, DISABLED_SetBufferCollectionAgainWhileFramesHeld) {
     allocate_shared_request.set_token_request(token.NewRequest());
     allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-    stream->SetBufferCollection(
-        fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
+    stream->SetBufferCollection2(token.Unbind());
     bool frame_received = false;
-    stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-      auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+    stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
       fuchsia::sysmem2::BufferCollectionSyncPtr collection;
 
       fuchsia::sysmem2::AllocatorBindSharedCollectionRequest bind_shared_request;
@@ -1658,8 +1643,8 @@ TEST_F(DeviceImplTest, NullToken) {
   });
   device->ConnectToStream(0, stream.NewRequest());
   // Pass invalid handle
-  stream->SetBufferCollection(fuchsia::sysmem::BufferCollectionTokenHandle{});
-  stream->WatchBufferCollection([&](fuchsia::sysmem::BufferCollectionTokenHandle token) {
+  stream->SetBufferCollection2(fuchsia::sysmem2::BufferCollectionTokenHandle{});
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token) {
     ADD_FAILURE() << "Watch should not return when given an invalid token.";
   });
   auto kDelay = zx::msec(250);
@@ -1668,6 +1653,30 @@ TEST_F(DeviceImplTest, NullToken) {
 }
 
 TEST_F(DeviceImplTest, GoodToken) {
+  fuchsia::camera3::DevicePtr device;
+  SetFailOnError(device, "Device");
+  device_->GetHandler()(device.NewRequest());
+  fuchsia::camera3::StreamPtr stream;
+  SetFailOnError(stream, "Stream");
+  device->ConnectToStream(0, stream.NewRequest());
+  fuchsia::sysmem2::BufferCollectionTokenHandle token;
+
+  fuchsia::sysmem2::AllocatorAllocateSharedCollectionRequest allocate_shared_request;
+  allocate_shared_request.set_token_request(token.NewRequest());
+  allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
+
+  stream->SetBufferCollection2(std::move(token));
+  bool watch_returned = false;
+  stream->WatchBufferCollection2([&](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
+    token_v2.BindSync()->Release();
+    watch_returned = true;
+  });
+  RunLoopUntilFailureOr(watch_returned);
+}
+
+// TODO(https://fxbug.dev/577201084): Remove once API level 33 is retired and v1 token support is
+// removed.
+TEST_F(DeviceImplTest, GoodTokenV1) {
   fuchsia::camera3::DevicePtr device;
   SetFailOnError(device, "Device");
   device_->GetHandler()(device.NewRequest());
@@ -1747,10 +1756,10 @@ TEST_F(DeviceImplTest, GetFramesMultiClient) {
           [&](fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result result) {
             EXPECT_TRUE(result.is_response());
           });
-      stream->WatchBufferCollection([this](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-        auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
-        OnToken(std::move(token_v2));
-      });
+      stream->WatchBufferCollection2(
+          [this](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
+            OnToken(std::move(token_v2));
+          });
     }
     fuchsia::sysmem2::AllocatorPtr& allocator_;
   };
@@ -1763,11 +1772,9 @@ TEST_F(DeviceImplTest, GetFramesMultiClient) {
     allocate_shared_request.set_token_request(client.initial_token.NewRequest());
     allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-    client.stream->SetBufferCollection(
-        fuchsia::sysmem::BufferCollectionTokenHandle(client.initial_token.Unbind().TakeChannel()));
-    client.stream->WatchBufferCollection(
-        [client = &client](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-          auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+    client.stream->SetBufferCollection2(client.initial_token.Unbind());
+    client.stream->WatchBufferCollection2(
+        [client = &client](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
           client->OnToken(std::move(token_v2));
         });
   }
@@ -1857,10 +1864,8 @@ TEST_F(DeviceImplTest, LegacyStreamPropertiesRestored) {
   allocate_shared_request.set_token_request(token.NewRequest());
   allocator_->AllocateSharedCollection(std::move(allocate_shared_request));
 
-  stream->SetBufferCollection(
-      fuchsia::sysmem::BufferCollectionTokenHandle(token.Unbind().TakeChannel()));
-  stream->WatchBufferCollection([](fuchsia::sysmem::BufferCollectionTokenHandle token_v1) {
-    auto token_v2 = fuchsia::sysmem2::BufferCollectionTokenHandle(token_v1.TakeChannel());
+  stream->SetBufferCollection2(token.Unbind());
+  stream->WatchBufferCollection2([](fuchsia::sysmem2::BufferCollectionTokenHandle token_v2) {
     token_v2.BindSync()->Release();
   });
   RunLoopUntil([&]() {
