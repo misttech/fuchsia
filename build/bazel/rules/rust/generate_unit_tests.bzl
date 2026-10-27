@@ -116,7 +116,6 @@ _ALLOWED_PACKAGES = {
     "src/lib/assembly/shell_commands": True,
     "src/lib/assembly/subpackage_blobs_package": True,
     "src/lib/assembly/tool": True,
-    "src/lib/assembly/update_package": True,
     "src/lib/assembly/update_packages_manifest": True,
     "src/lib/assembly/util": True,
     "src/lib/assembly/validate_package": True,
