@@ -394,6 +394,10 @@ pub struct RuntimeConfig {
     /// The staging and working directory for the emulator instance.
     pub instance_directory: PathBuf,
 
+    /// Short path to the serial console UNIX domain socket.
+    #[serde(default)]
+    pub serial_socket: PathBuf,
+
     /// The verbosity level of the logs for this instance.
     pub log_level: LogLevel,
 
@@ -443,6 +447,21 @@ pub struct RuntimeConfig {
     /// - `SerialMode::Enabled(serial)` contains the generated or custom stable serial number.
     #[serde(default)]
     pub serial_number: SerialMode,
+}
+
+const DEFAULT_SERIAL_SOCKET_NAME: &str = "serial_transport";
+
+impl RuntimeConfig {
+    /// Returns the path to the emulator's serial console UNIX domain socket,
+    /// falling back to `serial_transport` inside `instance_directory` when
+    /// `serial_socket` is not explicitly configured.
+    pub fn get_serial_socket_path(&self) -> PathBuf {
+        if self.serial_socket.as_os_str().is_empty() {
+            self.instance_directory.join(DEFAULT_SERIAL_SOCKET_NAME)
+        } else {
+            self.serial_socket.clone()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
@@ -734,5 +753,20 @@ mod tests {
         assert_eq!(serialized_disabled, r#"{"status":"disabled"}"#);
         let deserialized_disabled: SerialMode = serde_json::from_str(&serialized_disabled).unwrap();
         assert_eq!(deserialized_disabled, mode_disabled);
+    }
+
+    #[test]
+    fn test_get_serial_socket_path() {
+        let mut config = RuntimeConfig {
+            instance_directory: PathBuf::from("/tmp/emu_instance"),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.get_serial_socket_path(),
+            PathBuf::from("/tmp/emu_instance/serial_transport")
+        );
+
+        config.serial_socket = PathBuf::from("/tmp/femu_s_12345");
+        assert_eq!(config.get_serial_socket_path(), PathBuf::from("/tmp/femu_s_12345"));
     }
 }

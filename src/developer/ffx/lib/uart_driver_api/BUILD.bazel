@@ -25,6 +25,7 @@ rustc_library(
     ],
     deps = [
         "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/lib/emulator_instance:lib",
         "//third_party/rust_crates/vendor:serde",
         "//third_party/rust_crates/vendor:serde_json",
         "//third_party/rust_crates/vendor:sha2",

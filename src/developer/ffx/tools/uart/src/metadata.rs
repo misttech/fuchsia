@@ -372,6 +372,13 @@ pub fn find_active_connection(
         if let Some(meta) = load_metadata_from_path(&meta_path, target, Some(target_id)) {
             return Ok(Some((meta_path, meta)));
         }
+    } else if let Ok(resolved_path) = uart_driver_api::parse_target_endpoint(target, context) {
+        let resolved_str = resolved_path.to_string_lossy();
+        let target_id = get_target_id(&resolved_str);
+        let meta_path = shared_path.join(format!("ffx_uart_{target_id}.json"));
+        if let Some(meta) = load_metadata_from_path(&meta_path, &resolved_str, Some(target_id)) {
+            return Ok(Some((meta_path, meta)));
+        }
     }
 
     Ok(scan_for_metadata_by_identifier(&shared_path, target))

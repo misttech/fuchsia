@@ -11,6 +11,7 @@ pub use errors::*;
 
 pub type Result<T> = std::result::Result<T, ConnectionError>;
 
+use emulator_instance::EmulatorInstanceInfo as _;
 use ffx_config::EnvironmentContext;
 use sha2::{Digest, Sha256};
 use std::num::NonZeroU32;
@@ -174,17 +175,49 @@ pub fn get_socket_path_from_target_path(
     validate_and_resolve_socket_path(path)
 }
 
+/// Resolves an emulator instance name to its configured serial UNIX domain socket path.
+///
+/// # Errors
+/// Returns an error if the emulator instance directory cannot be retrieved, if reading the
+/// emulator configuration fails, or if no emulator instance with `name` exists on disk.
+pub fn get_emu_uart_transport_path(name: &str, context: &EnvironmentContext) -> Result<PathBuf> {
+    let instance_dir: PathBuf = context
+        .get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
+        .map_err(|e| ConnectionError::raw(format!("Failed to get emu.instance_dir: {e}")))?;
+    let emu_instances = emulator_instance::EmulatorInstances::new(instance_dir);
+    let dir = emu_instances
+        .get_instance_dir(name, false)
+        .map_err(|e| ConnectionError::raw(format!("Failed to get instance dir for {name}: {e}")))?;
+    match emulator_instance::read_from_disk(&dir).map_err(|e| {
+        ConnectionError::raw(format!("Failed to read emulator instance {name}: {e}"))
+    })? {
+        emulator_instance::EngineOption::DoesExist(instance_data) => {
+            Ok(instance_data.get_emulator_configuration().runtime.get_serial_socket_path())
+        }
+        emulator_instance::EngineOption::DoesNotExist(_) => {
+            Err(ConnectionError::TargetNotRecognized { target: name.to_string() })
+        }
+    }
+}
+
 /// Parses a user-supplied target endpoint string into an absolute target filesystem path.
 ///
 /// Accepts:
 /// - Absolute device path starting with `/` (e.g. `/dev/ttyUSB0`)
+/// - Emulator instance name (e.g. `fuchsia-emulator`)
 ///
 /// # Errors
-/// Returns an error if the target string is not an absolute path starting with `/`.
-pub fn parse_target_endpoint(target: &str, _context: &EnvironmentContext) -> Result<PathBuf> {
+/// Returns an error if the target string is neither an absolute path nor a recognized
+/// emulator instance name.
+pub fn parse_target_endpoint(target: &str, context: &EnvironmentContext) -> Result<PathBuf> {
     // 1. Absolute Path
     if target.starts_with('/') {
         return Ok(PathBuf::from(target));
+    }
+
+    // 2. Emulator instance name
+    if let Ok(path) = get_emu_uart_transport_path(target, context) {
+        return Ok(path);
     }
 
     // Fallback:
@@ -504,5 +537,34 @@ mod tests {
         let expected_rot =
             format!("/var/log/uart/{LOG_FILE_PREFIX}.{log_id:016x}.2.{LOG_FILE_EXTENSION}");
         assert_eq!(log_rot.to_string_lossy(), expected_rot);
+    }
+
+    #[test]
+    fn test_parse_target_endpoint_emulator() {
+        let temp = tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().to_str().unwrap())
+            .build()
+            .expect("test env");
+
+        let emu_name = "test-emu-uart";
+        let emu_dir = temp.path().join(emu_name);
+        std::fs::create_dir_all(&emu_dir).unwrap();
+
+        let expected_sock = temp.path().join("femu_s_abcd");
+        let mut instance_data = emulator_instance::EmulatorInstanceData::new_with_state(
+            emu_name,
+            emulator_instance::EngineState::Running,
+        );
+        instance_data.get_emulator_configuration_mut().runtime.instance_directory = emu_dir.clone();
+        instance_data.get_emulator_configuration_mut().runtime.serial_socket =
+            expected_sock.clone();
+        emulator_instance::write_to_disk(&instance_data, &emu_dir).unwrap();
+
+        let resolved = parse_target_endpoint(emu_name, &env.context).unwrap();
+        assert_eq!(resolved, expected_sock);
+
+        let missing = parse_target_endpoint("non-existent-emu", &env.context);
+        assert!(matches!(missing, Err(ConnectionError::TargetNotRecognized { .. })));
     }
 }

@@ -1,7 +1,10 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::{EmulatorInstanceData, EmulatorInstanceError, EngineOption, EngineState, Result};
+use crate::{
+    EmulatorInstanceData, EmulatorInstanceError, EmulatorInstanceInfo, EngineOption, EngineState,
+    Result,
+};
 use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
 
@@ -39,6 +42,12 @@ impl EmulatorInstances {
     pub fn clean_up_instance_dir(&self, instance_name: &str) -> Result<()> {
         let path = self.get_instance_dir(instance_name, false)?;
         if path.exists() {
+            if let Ok(EngineOption::DoesExist(data)) = read_from_disk(&path) {
+                let socket_path =
+                    data.get_emulator_configuration().runtime.get_serial_socket_path();
+                let _ = std::fs::remove_file(socket_path);
+            }
+
             log::debug!("Removing {:?} for {:?}", path, path.as_path().file_name().unwrap());
             std::fs::remove_dir_all(&path.as_path()).map_err(|e| {
                 EmulatorInstanceError::RemoveDirectory { path: path.to_path_buf(), source: e }
@@ -267,6 +276,22 @@ mod tests {
         // Clean up an non-existing directory
         emu_instances.clean_up_instance_dir("path3").expect("cleanup path3");
         assert!(!path1.exists());
+
+        // Clean up an instance with an external serial_socket file
+        let path4 = instance_root.join("path4");
+        create_dir_all(path4.as_path())?;
+        let external_socket = instance_root.join("femu_s_external");
+        let _ = File::create(&external_socket)?;
+        assert!(external_socket.exists());
+
+        let mut instance_data = EmulatorInstanceData::new_with_state("path4", EngineState::Staged);
+        instance_data.emulator_configuration.runtime.instance_directory = path4.clone();
+        instance_data.emulator_configuration.runtime.serial_socket = external_socket.clone();
+        write_to_disk(&instance_data, &path4)?;
+
+        emu_instances.clean_up_instance_dir("path4").expect("cleanup path4");
+        assert!(!path4.exists());
+        assert!(!external_socket.exists());
         Ok(())
     }
 

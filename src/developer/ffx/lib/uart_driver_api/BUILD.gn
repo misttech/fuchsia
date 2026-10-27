@@ -60,6 +60,7 @@ if (is_host) {
     ]
     deps = [
       "//src/developer/ffx/config:lib",
+      "//src/developer/ffx/lib/emulator_instance:lib",
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
       "//third_party/rust_crates:sha2",
@@ -76,6 +77,7 @@ if (is_host) {
     edition = "2024"
     deps = [
              "//src/developer/ffx/config:lib",
+             "//src/developer/ffx/lib/emulator_instance:lib",
              "//third_party/rust_crates:serde",
              "//third_party/rust_crates:serde_json",
              "//third_party/rust_crates:sha2",
