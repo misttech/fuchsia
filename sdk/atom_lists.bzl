@@ -22,6 +22,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/driver/runtime:driver_runtime_env_idk",
     "//sdk/lib/driver/runtime:driver_runtime_idk",
     "//sdk/lib/driver/runtime:driver_runtime_testing_idk",
+    "//sdk/lib/driver/symbols:symbols_idk",
     "//sdk/lib/fidl:fidl_idk",
     "//sdk/lib/fidl/cpp:cpp_base_idk",
     "//sdk/lib/fidl/cpp:cpp_idk",
