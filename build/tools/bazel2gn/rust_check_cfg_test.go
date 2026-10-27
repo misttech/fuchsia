@@ -38,6 +38,7 @@ func TestRustcCheckCfgBuildFlags(t *testing.T) {
     cfgs = [
         "test",
         "loom",
+        "rcu_backend, values(\"rseq\", \"atomic\")",
     ],
 )
 `,
@@ -45,6 +46,7 @@ func TestRustcCheckCfgBuildFlags(t *testing.T) {
 	rustflags = [
 		"--check-cfg=cfg(test)",
 		"--check-cfg=cfg(loom)",
+		"--check-cfg=cfg(rcu_backend, values(\"rseq\", \"atomic\"))",
 	]
 }`,
 		},
