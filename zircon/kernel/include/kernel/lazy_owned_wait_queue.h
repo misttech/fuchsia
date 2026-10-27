@@ -21,6 +21,9 @@ class OwnedWaitQueuePool;
 extern "C" Lock<SpinLock>* rust_owned_wait_queue_pool_lock_get();
 
 // Global lock for OwnedWaitQueuePool.
+//
+// If this lock will be held at the same time as OwnedWaitQueue::get_lock(), then
+// OwnedWaitQueue's lock must be acquired first.
 struct OwnedWaitQueuePoolLock {
   static Lock<SpinLock>* Get() TA_RET_CAP(rust_owned_wait_queue_pool_lock_get()) {
     return rust_owned_wait_queue_pool_lock_get();

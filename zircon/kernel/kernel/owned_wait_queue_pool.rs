@@ -27,6 +27,9 @@ define_kcounter!(OWQ_POOL_EXCESS_CAPACITY, "owned_wait_queue.pool.excess_capacit
 
 ksync::declare_singleton_spinlock!(
     /// Global lock for [`OwnedWaitQueuePool`].
+    ///
+    /// If this lock will be held at the same time as [`OwnedWaitQueue`]'s lock, then
+    /// [`OwnedWaitQueue`]'s lock must be acquired first.
     pub OwnedWaitQueuePoolLock
 );
 
@@ -128,12 +131,13 @@ impl OwnedWaitQueuePool {
         }
         core::hint::cold_path();
 
-        // SAFETY: `OwnedWaitQueue::init()` initializes every field of `slot` infallibly, and the
-        // `OwnedWaitQueue` allocated in the `ObjectCache` slab slot is never moved before being
+        // SAFETY: `slot` points to valid, aligned, uninitialized storage in the `ObjectCache` slab
+        // that is initialized in place by `OwnedWaitQueue::init()` and never moved before being
         // dropped in place by `UniquePtr::drop`.
         let result = self.cache.allocate_init(unsafe {
             init_from_closure(|slot: *mut OwnedWaitQueue| -> Result<(), Status> {
-                let Ok(()) = OwnedWaitQueue::init().__pinned_init(slot);
+                let slot = &mut *slot.cast::<MaybeUninit<OwnedWaitQueue>>();
+                let _ = slot.write_pin_init(OwnedWaitQueue::init());
                 Ok(())
             })
         });
@@ -185,15 +189,6 @@ impl OwnedWaitQueuePool {
         // guarantee that no thread exit frees a queue from the pool that is still being used by a
         // stale chainlock transaction.
         // TODO(https://fxbug.dev/488166372) actually free excess OWQs
-    }
-
-    /// Acquires the pool lock for external synchronization.
-    ///
-    /// If this lock will be held at the same time as [`OwnedWaitQueue`]'s lock, then
-    /// [`OwnedWaitQueue`]'s lock must be acquired first.
-    #[inline]
-    pub fn get_lock(&self) -> &'static KSpinlock<OwnedWaitQueuePoolLock> {
-        OwnedWaitQueuePoolLock::get()
     }
 
     /// Borrow a queue from the pool.
