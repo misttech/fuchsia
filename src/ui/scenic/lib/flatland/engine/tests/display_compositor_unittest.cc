@@ -4352,11 +4352,26 @@ TEST_F(DisplayCompositorTest, ClientImageUsageInspectCounts) {
 
   EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{}));
 
-  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  auto expect_display_release_image = [&](const ImageMetadata& image,
+                                          libsync::Completion& released) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        ReleaseImage(MatchRequestField(ReleaseImage, image_id, Eq(image.identifier.ToFidl())), _))
+        .Times(1)
+        .WillOnce(testing::Invoke(
+            [&released](fuchsia_hardware_display::wire::CoordinatorReleaseImageRequest*,
+                        MockDisplayCoordinator::ReleaseImageCompleter::Sync&) {
+              released.Signal();
+            }));
+  };
+
+  libsync::Completion render_target_released;
+  expect_display_release_image(render_target_image, render_target_released);
   EXPECT_CALL(*renderer_, ReleaseBufferImage(render_target_image.identifier))
       .Times(1)
       .WillOnce(Return());
   display_compositor_->ReleaseBufferImage(render_target_image.identifier);
+  render_target_released.Wait();
   testing::Mock::VerifyAndClearExpectations(renderer_.get());
 
   EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{}));
@@ -4498,9 +4513,11 @@ TEST_F(DisplayCompositorTest, ClientImageUsageInspectCounts) {
   // Release image1 (D2D-only) first, then image4 (Unused), image5 (GPU-only), and image2 (Both)
   // one by one, verifying after each release that `Active` decrements by 1 and all four lifetime
   // bucket counts remain intact.
-  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  libsync::Completion image1_released;
+  expect_display_release_image(image1, image1_released);
   EXPECT_CALL(*renderer_, ReleaseBufferImage(_)).Times(0);
   display_compositor_->ReleaseBufferImage(image1.identifier);
+  image1_released.Wait();
   EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
                                               .total_imported = 5u,
                                               .active = 4u,
@@ -4534,9 +4551,11 @@ TEST_F(DisplayCompositorTest, ClientImageUsageInspectCounts) {
                                               .unused = 1u,
                                           }));
 
-  EXPECT_CALL(*mock_display_coordinator_, ReleaseImage(_, _)).Times(1).WillOnce(Return());
+  libsync::Completion image2_released;
+  expect_display_release_image(image2, image2_released);
   EXPECT_CALL(*renderer_, ReleaseBufferImage(image2.identifier)).Times(1).WillOnce(Return());
   display_compositor_->ReleaseBufferImage(image2.identifier);
+  image2_released.Wait();
   EXPECT_EQ(ReadClientImageUsageCounts(), (ClientImageUsageCounts{
                                               .total_imported = 5u,
                                               .active = 1u,
