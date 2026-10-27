@@ -13,37 +13,35 @@ static_library("crashlog") {
 
   complete_static_lib = true
 
-  sources = [
-    "crashlog.cc",
-    "crashlog_ffi.cc",
-    "panic_buffer.cc",
-  ]
-  deps = [
-    ":crashlog-rs",
-    "//zircon/kernel/lib/boot-options",
-    "//zircon/kernel/lib/counters",
-    "//zircon/kernel/lib/io",
-    "//zircon/kernel/object:headers",
-    "//zircon/kernel/phys/handoff",
-  ]
+  sources = [ "crashlog_ffi.cc" ]
+  deps = [ ":crashlog-rs" ]
 }
 
 kernel_rust_mod("crashlog-rs") {
-  sources = [ "crashlog.rs" ]
+  sources = [
+    "src/crashlog.rs",
+    "src/panic_buffer.rs",
+    "src/tests.rs",
+  ]
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/kprint",
+    "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:bitflags",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/console:console_rs",
     "//zircon/kernel/lib/libc:rust",
+    "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 library_headers("headers") {
-  headers = []
+  headers = [ "lib/crashlog.h" ]
   public_configs = [ ":config" ]
 }
 
@@ -58,7 +56,6 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
-  deps = [ "test" ]
 }
 
 group("phys-tests") {

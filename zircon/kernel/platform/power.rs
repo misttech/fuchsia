@@ -15,6 +15,7 @@ use boot_options::BootOptions;
 use core::ffi::{CStr, c_int};
 use core::ffi::{c_char, c_void};
 use core::ptr::{NonNull, slice_from_raw_parts_mut};
+use core::slice;
 #[cfg(console_enabled)]
 use debug::dprintf;
 
@@ -123,11 +124,6 @@ unsafe extern "C" {
         reason: ZirconCrashReason,
         amt: usize,
     );
-    fn cpp_crashlog_to_string(
-        target_ptr: *mut c_char,
-        target_len: usize,
-        reason: ZirconCrashReason,
-    ) -> usize;
     fn cpp_jtrace_invalidate();
     fn cpp_platform_serial_is_suspended() -> bool;
     fn cpp_platform_serial_suspended_at() -> InstantBoot;
@@ -188,17 +184,6 @@ impl PlatformCrashlogInterface {
     }
 }
 
-/// # Safety
-///
-/// If `target.len() > 0`, the caller must ensure that `target.cast::<c_char>()` is non-null
-/// and valid for writes of `target.len()` bytes for the duration of this call, with no
-/// concurrent accesses to that memory range.
-#[inline]
-unsafe fn crashlog_to_string(target: *mut [c_char], reason: ZirconCrashReason) -> usize {
-    // SAFETY: Discharged by the caller per this function's `# Safety` contract.
-    unsafe { cpp_crashlog_to_string(target.cast::<c_char>(), target.len(), reason) }
-}
-
 #[inline]
 fn jtrace_invalidate() {
     // SAFETY: Invalidates the global jtrace buffer (or is a no-op if jtrace is disabled).
@@ -257,8 +242,10 @@ pub fn platform_halt(suggested_action: PlatformHaltAction, reason: ZirconCrashRe
         if target.len() > 0 {
             // SAFETY: `target` was returned by `crashlog.get_render_target()` with
             // `target.len() > 0`, so it is non-null and valid for writes of `target.len()` bytes
-            // during `platform_halt`.
-            rendered_crashlog_len = unsafe { crashlog_to_string(target, reason) };
+            // during `platform_halt`. Only the halting CPU renders into it; as in C++, nothing
+            // serializes concurrent halts on several CPUs.
+            let target = unsafe { slice::from_raw_parts_mut(target.cast::<u8>(), target.len()) };
+            rendered_crashlog_len = crate::crashlog::crashlog_to_string(target, reason as u32);
         }
         crashlog.finalize(reason, rendered_crashlog_len);
     }

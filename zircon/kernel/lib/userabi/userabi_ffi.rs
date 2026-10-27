@@ -199,11 +199,6 @@ impl PlatformCrashlog {
     }
 }
 
-pub fn crashlog_stash(vmo: &VmObject) {
-    // SAFETY: `vmo.as_raw()` points to a valid `VmObject`.
-    unsafe { cpp_crashlog_stash(vmo.as_raw().cast()) }
-}
-
 pub fn boot_options_show(defaults: bool, out: &mut File<'_>) {
     // SAFETY: `out` points to a valid `File` for the duration of the call.
     unsafe { cpp_boot_options_show(defaults, out) }
@@ -235,7 +230,6 @@ pub fn arm64_print_midr_cpu_name(out: &mut File<'_>) {
 
 unsafe extern "C" {
     fn cpp_platform_crashlog_recover(tgt: *mut File<'_>) -> usize;
-    fn cpp_crashlog_stash(vmo: *mut c_void);
     fn cpp_platform_crashlog_enable_uptime_updates(enabled: bool);
     fn cpp_boot_options_show(defaults: bool, out: *mut File<'_>);
     #[cfg(enable_entropy_collector_test)]

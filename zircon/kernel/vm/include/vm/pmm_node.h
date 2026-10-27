@@ -282,8 +282,6 @@ class PmmNode {
   // For test and diagnostic purposes.
   PmmChecker* Checker() { return &checker_; }
 
-  static int64_t get_alloc_failed_count();
-
   // See |alloc_failed_no_mem_|.
   bool has_alloc_failed_no_mem() const {
     return alloc_failed_no_mem_.load(ktl::memory_order_relaxed);

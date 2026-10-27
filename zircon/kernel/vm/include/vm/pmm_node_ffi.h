@@ -70,7 +70,6 @@ void rust_pmm_node_fill_free_pages_and_arm(PmmNode* node);
 void rust_pmm_node_check_all_free_pages(PmmNode* node);
 void rust_pmm_node_poison_all_free_pages(PmmNode* node);
 bool rust_pmm_node_enable_free_page_filling(PmmNode* node, size_t fill_size, uint8_t action);
-int64_t rust_pmm_node_get_alloc_failed_count();
 void rust_pmm_node_seed_random_should_wait(PmmNode* node);
 void rust_pmm_node_report_alloc_failure(PmmNode* node, const PmmNode::AllocFailure* failure);
 void rust_pmm_node_get_first_alloc_failure(const PmmNode* node, PmmNode::AllocFailure* out_failure);

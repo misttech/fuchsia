@@ -64,7 +64,7 @@ pub mod control_region;
 #[path = "lib/counters/src/lib.rs"]
 pub mod counters;
 
-#[path = "lib/crashlog/crashlog.rs"]
+#[path = "lib/crashlog/src/crashlog.rs"]
 pub mod crashlog;
 
 #[path = "lib/debuglog/debuglog.rs"]

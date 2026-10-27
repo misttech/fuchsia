@@ -286,8 +286,6 @@ bool PmmNode::SetFreeMemorySignal(uint64_t free_lower_bound, uint64_t free_upper
 
 void PmmNode::StopReturningShouldWait() { rust_pmm_node_stop_returning_should_wait(this); }
 
-int64_t PmmNode::get_alloc_failed_count() { return rust_pmm_node_get_alloc_failed_count(); }
-
 void PmmNode::BeginLoan(VmPageDoublyLinkedList* page_list, PmmOptDelayReuse delay_reuse) {
   rust_pmm_node_begin_loan(this, page_list, delay_reuse);
 }

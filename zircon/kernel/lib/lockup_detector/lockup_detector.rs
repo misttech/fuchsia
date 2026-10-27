@@ -191,6 +191,10 @@ unsafe extern "C" {
     /// Must balance a preceding `cpp_lockup_timed_begin` call on the same CPU with preemption or
     /// interrupts disabled.
     fn cpp_lockup_timed_end();
+    /// Returns the number of times a "critical section threshold exceeded" oops was triggered.
+    fn cpp_lockup_get_critical_section_oops_count() -> i64;
+    /// Returns the number of times a "no heartbeat" oops was triggered.
+    fn cpp_lockup_get_no_heartbeat_oops_count() -> i64;
 }
 
 #[inline]
@@ -251,6 +255,20 @@ pub unsafe fn lockup_timed_begin(name: &'static CStr) {
 pub unsafe fn lockup_timed_end() {
     // SAFETY: Caller guarantees this balances `lockup_timed_begin` on the current CPU.
     unsafe { cpp_lockup_timed_end() };
+}
+
+/// Returns the number of times a "critical section threshold exceeded" oops was triggered.
+#[inline]
+pub fn lockup_get_critical_section_oops_count() -> i64 {
+    // SAFETY: Sums a kernel counter across CPUs with no preconditions.
+    unsafe { cpp_lockup_get_critical_section_oops_count() }
+}
+
+/// Returns the number of times a "no heartbeat" oops was triggered.
+#[inline]
+pub fn lockup_get_no_heartbeat_oops_count() -> i64 {
+    // SAFETY: Sums a kernel counter across CPUs with no preconditions.
+    unsafe { cpp_lockup_get_no_heartbeat_oops_count() }
 }
 
 #[cfg(console_enabled)]

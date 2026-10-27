@@ -28,8 +28,6 @@ void rust_root_job_observer_on_cancel(void* rust_ctx, zx_signals_t signals);
 void rust_root_job_observer_set_critical_process_dying();
 bool rust_root_job_observer_get_critical_process_dying();
 void rust_root_job_observer_critical_process_kill(const ProcessDispatcher* dead_process);
-void rust_root_job_observer_get_critical_process_name(char* out_name);
-zx_koid_t rust_root_job_observer_get_critical_process_koid();
 
 }  // extern "C"
 

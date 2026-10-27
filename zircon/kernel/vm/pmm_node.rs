@@ -2946,11 +2946,6 @@ unsafe extern "C" fn rust_pmm_node_enable_free_page_filling(
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn rust_pmm_node_get_alloc_failed_count() -> i64 {
-    PmmNode::get_alloc_failed_count()
-}
-
-#[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_node_seed_random_should_wait(node: *mut PmmNode) {
     // SAFETY: node is valid.
     let node = unsafe { &*node };

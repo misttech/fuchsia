@@ -395,26 +395,6 @@ pub extern "C" fn rust_root_job_observer_critical_process_kill(dead_process: &Pr
     RootJobObserver::critical_process_kill(dead_process);
 }
 
-/// Retrieves the critical process name.
-///
-/// # Safety
-///
-/// `out_name` must point to a buffer of at least `ZX_MAX_NAME_LEN` bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_root_job_observer_get_critical_process_name(out_name: *mut u8) {
-    let name = RootJobObserver::get_critical_process_name();
-    // SAFETY: caller guarantees `out_name` has room for `ZX_MAX_NAME_LEN` bytes.
-    unsafe {
-        core::ptr::copy_nonoverlapping(name.as_ptr(), out_name, ZX_MAX_NAME_LEN);
-    }
-}
-
-/// Retrieves the critical process KOID.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_root_job_observer_get_critical_process_koid() -> zx_koid_t {
-    RootJobObserver::get_critical_process_koid()
-}
-
 /// In-tree kernel unit tests for `RootJobObserver`.
 #[cfg(ktest)]
 #[unittest::suite(name = "root_job_observer")]

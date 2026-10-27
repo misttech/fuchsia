@@ -26,7 +26,6 @@ void rust_userboot_init(HandoffEnd* handoff_end);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE size_t cpp_platform_crashlog_recover(FILE* tgt);
-FFI_ALWAYS_INLINE void cpp_crashlog_stash(VmObject* vmo);
 FFI_ALWAYS_INLINE void cpp_platform_crashlog_enable_uptime_updates(bool enabled);
 FFI_ALWAYS_INLINE void cpp_boot_options_show(bool defaults, FILE* out);
 

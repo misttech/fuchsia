@@ -32,7 +32,3 @@ void PmmChecker::AssertPattern(vm_page_t* page) const {
 }
 
 void PmmChecker::PrintStatus(FILE* f) const { rust_pmm_checker_print_status(this, f); }
-
-int64_t PmmChecker::get_validation_failed_count() {
-  return rust_pmm_checker_get_validation_failed_count();
-}

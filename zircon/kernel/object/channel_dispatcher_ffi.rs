@@ -57,9 +57,3 @@ pub extern "C" fn rust_channel_dispatcher_get_message_counts(
     *current = cur as u64;
     *max = mx;
 }
-
-/// Returns the number of times a channel reached the max pending message count.
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_channel_dispatcher_get_channel_full_count() -> i64 {
-    ChannelDispatcher::get_channel_full_count()
-}

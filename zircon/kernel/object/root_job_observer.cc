@@ -24,13 +24,3 @@ bool RootJobObserver::GetCriticalProcessDying() {
 void RootJobObserver::CriticalProcessKill(fbl::RefPtr<ProcessDispatcher> dead_process) {
   rust_root_job_observer_critical_process_kill(dead_process.get());
 }
-
-ktl::array<char, ZX_MAX_NAME_LEN> RootJobObserver::GetCriticalProcessName() {
-  ktl::array<char, ZX_MAX_NAME_LEN> name{};
-  rust_root_job_observer_get_critical_process_name(name.data());
-  return name;
-}
-
-zx_koid_t RootJobObserver::GetCriticalProcessKoid() {
-  return rust_root_job_observer_get_critical_process_koid();
-}

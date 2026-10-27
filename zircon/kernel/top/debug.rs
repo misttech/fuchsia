@@ -13,7 +13,7 @@ use libc::stdio::{fprintf, vfprintf};
 use libc::string::strlen;
 use zerocopy::IntoBytes;
 
-use crate::crashlog::stdout_panic_buffer;
+use crate::crashlog::STDOUT_PANIC_BUFFER;
 use crate::hw_rng::hw_rng_get_entropy;
 use crate::platform_rs::power::{
     PlatformHaltAction, ZirconCrashReason, platform_halt, platform_panic_start,
@@ -48,7 +48,7 @@ macro_rules! get_frame {
 ///
 /// Calls should be followed by:
 ///
-///   * Calling [`fprintf`] on [`stdout_panic_buffer`] with the reason for the panic, followed by a
+///   * Calling [`fprintf`] on [`STDOUT_PANIC_BUFFER`] with the reason for the panic, followed by a
 ///     newline.
 ///
 ///   * A call to [`panic_finish`].
@@ -60,7 +60,7 @@ fn panic_start(pc: *mut c_void, frame: *mut c_void) {
     // `c_void` pointer arguments `(pc, frame)`.
     unsafe {
         fprintf(
-            stdout_panic_buffer.as_mut_ptr(),
+            STDOUT_PANIC_BUFFER.as_mut_ptr(),
             c"\n*** KERNEL PANIC (caller pc: %p, stack frame: %p):\n*** ".as_ptr(),
             pc,
             frame,
@@ -80,7 +80,7 @@ fn panic_finish() -> ! {
     // SAFETY: `stdout_panic_buffer` is a valid `FILE`, and the format string contains no format
     // specifiers.
     unsafe {
-        fprintf(stdout_panic_buffer.as_mut_ptr(), c"\n".as_ptr());
+        fprintf(STDOUT_PANIC_BUFFER.as_mut_ptr(), c"\n".as_ptr());
     }
 
     platform_halt(PlatformHaltAction::Halt, ZirconCrashReason::Panic)
@@ -117,7 +117,7 @@ pub(super) unsafe extern "C" fn vpanic(
     // SAFETY: `stdout_panic_buffer` is a valid `FILE`, and the caller guarantees `fmt` is a valid
     // NUL-terminated format string matching `ap`.
     unsafe {
-        vfprintf(stdout_panic_buffer.as_mut_ptr(), fmt, ap);
+        vfprintf(STDOUT_PANIC_BUFFER.as_mut_ptr(), fmt, ap);
     }
 
     // Add a newline to the end of the panic message if it was missing.
@@ -126,7 +126,7 @@ pub(super) unsafe extern "C" fn vpanic(
         // SAFETY: `stdout_panic_buffer` is a valid `FILE`, and the format string contains no
         // format specifiers.
         unsafe {
-            fprintf(stdout_panic_buffer.as_mut_ptr(), c"\n".as_ptr());
+            fprintf(STDOUT_PANIC_BUFFER.as_mut_ptr(), c"\n".as_ptr());
         }
     }
 
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn assert_fail_msg(
     // strings.
     unsafe {
         fprintf(
-            stdout_panic_buffer.as_mut_ptr(),
+            STDOUT_PANIC_BUFFER.as_mut_ptr(),
             c"ASSERT FAILED at (%s:%d): %s\n".as_ptr(),
             file,
             line,
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn assert_fail_msg(
     // SAFETY: `stdout_panic_buffer` is a valid `FILE`, and the caller guarantees `fmt` is a valid
     // NUL-terminated format string matching `ap`.
     unsafe {
-        vfprintf(stdout_panic_buffer.as_mut_ptr(), fmt, ap);
+        vfprintf(STDOUT_PANIC_BUFFER.as_mut_ptr(), fmt, ap);
     }
 
     // Add a newline to the end of the panic message if it was missing.
@@ -207,7 +207,7 @@ pub unsafe extern "C" fn assert_fail_msg(
         // SAFETY: `stdout_panic_buffer` is a valid `FILE`, and the format string contains no
         // format specifiers.
         unsafe {
-            fprintf(stdout_panic_buffer.as_mut_ptr(), c"\n".as_ptr());
+            fprintf(STDOUT_PANIC_BUFFER.as_mut_ptr(), c"\n".as_ptr());
         }
     }
 
@@ -232,7 +232,7 @@ pub unsafe extern "C" fn assert_fail(
     // strings.
     unsafe {
         fprintf(
-            stdout_panic_buffer.as_mut_ptr(),
+            STDOUT_PANIC_BUFFER.as_mut_ptr(),
             c"ASSERT FAILED at (%s:%d): %s\n".as_ptr(),
             file,
             line,

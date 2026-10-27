@@ -37,7 +37,6 @@ void cpp_handle_arena_dump();
 zx_status_t rust_handle_init();
 Handle* rust_handle_make(Dispatcher* dispatcher, zx_rights_t rights);
 void rust_handle_destroy(Handle* handle);
-int64_t rust_handle_get_alloc_failed_count();
 }
 
 // Callable object for destroying uniquely owned handles.
@@ -110,8 +109,6 @@ class Handle final {
 // done by Rust (see handle.rs), which reaches the arena through the cpp_handle_arena_* shims.
 class HandleTableArena {
  public:
-  static int64_t get_alloc_failed_count();
-
   using HandleGPArena = fbl::GPArena<Handle::PreserveSize, sizeof(Handle)>;
   HandleGPArena& arena() { return arena_; }
 

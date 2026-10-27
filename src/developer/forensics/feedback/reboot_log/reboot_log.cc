@@ -30,7 +30,7 @@ namespace {
 // The kernel adds this line to indicate which process caused the root job to terminate.
 //
 // It can be found at
-// https://osscs.corp.google.com/fuchsia/fuchsia/+/main:zircon/kernel/lib/crashlog/crashlog.cc;l=146;drc=e81b291e80479976c2cca9f87b600917fda48475
+// https://osscs.corp.google.com/fuchsia/fuchsia/+/main:zircon/kernel/lib/crashlog/src/crashlog.rs
 constexpr std::string_view kCriticalProcessPrefix =
     "ROOT JOB TERMINATED BY CRITICAL PROCESS DEATH: ";
 constexpr std::string_view kBeginDlog = "--- BEGIN DLOG DUMP ---";

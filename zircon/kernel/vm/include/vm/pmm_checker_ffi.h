@@ -24,7 +24,6 @@ void rust_pmm_checker_print_status(const PmmChecker* checker, FILE* f);
 void rust_pmm_checker_fill_pattern(const PmmChecker* checker, vm_page_t* page);
 bool rust_pmm_checker_validate_pattern(const PmmChecker* checker, vm_page_t* page);
 void rust_pmm_checker_assert_pattern(const PmmChecker* checker, vm_page_t* page);
-int64_t rust_pmm_checker_get_validation_failed_count();
 
 __END_CDECLS
 

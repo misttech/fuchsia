@@ -27,7 +27,6 @@ zx_status_t rust_channel_dispatcher_create(KernelHandle<ChannelDispatcher>* hand
                                            zx_rights_t* rights);
 void rust_channel_dispatcher_get_message_counts(const ChannelDispatcher* disp, uint64_t* current,
                                                 uint64_t* max);
-int64_t rust_channel_dispatcher_get_channel_full_count();
 }  // extern "C"
 
 class ChannelDispatcher final : public Dispatcher {
@@ -40,10 +39,6 @@ class ChannelDispatcher final : public Dispatcher {
   static zx_status_t Create(KernelHandle<ChannelDispatcher>* handle0,
                             KernelHandle<ChannelDispatcher>* handle1, zx_rights_t* rights) {
     return rust_channel_dispatcher_create(handle0, handle1, rights);
-  }
-
-  static int64_t get_channel_full_count() {
-    return rust_channel_dispatcher_get_channel_full_count();
   }
 
   ~ChannelDispatcher() final;

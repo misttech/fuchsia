@@ -151,6 +151,7 @@ pub use fifo_dispatcher::FifoDispatcher;
 pub use futex_context::{FutexContext, FutexId, OwnerAction, ProcessType};
 pub use guest::Guest;
 pub use guest_dispatcher::GuestDispatcher;
+pub(crate) use handle::HandleTableArena;
 pub use handle::{Handle, HandleOwner, HandleRef, HandleValue, KernelHandle};
 pub use handle_table::{
     HandleEntry, HandleTable, HandleTableLockClass, HandleTableReadGuard, HandleTableWriteGuard,

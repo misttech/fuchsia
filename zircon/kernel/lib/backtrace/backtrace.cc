@@ -38,4 +38,9 @@ extern "C" {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_backtrace_print(const Backtrace* bt) { bt->Print(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_backtrace_print_without_version(const Backtrace* bt, FILE* file) {
+  bt->PrintWithoutVersion(file);
+}
+
 }  // extern "C"

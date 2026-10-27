@@ -65,8 +65,6 @@ HandleOwner Handle::Make(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rig
 
 uint32_t Handle::Count(const Dispatcher& dispatcher) { return dispatcher.current_handle_count(); }
 
-int64_t HandleTableArena::get_alloc_failed_count() { return rust_handle_get_alloc_failed_count(); }
-
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

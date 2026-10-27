@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/boot-options/boot-options.h>
-#include <lib/crashlog.h>
 #include <lib/userabi/userboot.h>
 #include <lib/userabi/vdso.h>
 
@@ -37,10 +36,6 @@ extern "C" {
 
 FFI_ALWAYS_INLINE size_t cpp_platform_crashlog_recover(FILE* tgt) {
   return PlatformCrashlog::Get().Recover(tgt);
-}
-
-FFI_ALWAYS_INLINE void cpp_crashlog_stash(VmObject* vmo) {
-  crashlog_stash(fbl::RefPtr<VmObject>(vmo));
 }
 
 FFI_ALWAYS_INLINE void cpp_platform_crashlog_enable_uptime_updates(bool enabled) {

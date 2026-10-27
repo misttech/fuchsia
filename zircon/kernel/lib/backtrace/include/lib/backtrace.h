@@ -54,4 +54,9 @@ class Backtrace {
   FrameType first_frame_type_{ReturnAddress};
 };
 
+extern "C" {
+void cpp_backtrace_print(const Backtrace* bt);
+void cpp_backtrace_print_without_version(const Backtrace* bt, FILE* file);
+}
+
 #endif  // ZIRCON_KERNEL_LIB_BACKTRACE_INCLUDE_LIB_BACKTRACE_H_

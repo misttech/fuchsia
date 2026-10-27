@@ -4,12 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use libc::stdio::FILE;
 use object_constants_rs as object_constants;
 use zr::OpaqueBytes;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_backtrace_print(bt: *const Backtrace);
+    fn cpp_backtrace_print_without_version(bt: *const Backtrace, file: *mut FILE);
 }
 
 /// Contains an array of return address values representing a thread's backtrace.
@@ -38,6 +40,18 @@ impl Backtrace {
     pub fn print(&self) {
         // SAFETY: `self` is a valid initialized `Backtrace`.
         unsafe { cpp_backtrace_print(self) }
+    }
+
+    /// Pretty-prints this backtrace to `file` without the kernel version preamble.
+    ///
+    /// # Safety
+    ///
+    /// `file` must point to a valid `FILE` for the duration of the call.
+    #[inline]
+    pub unsafe fn print_without_version(&self, file: *mut FILE) {
+        // SAFETY: `self` is a valid initialized `Backtrace`, and the caller guarantees `file`
+        // points to a valid `FILE`.
+        unsafe { cpp_backtrace_print_without_version(self, file) }
     }
 }
 

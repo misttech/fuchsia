@@ -643,4 +643,14 @@ FFI_ALWAYS_INLINE void cpp_lockup_timed_begin(const char* name) { LOCKUP_TIMED_B
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_lockup_timed_end() { LOCKUP_TIMED_END(); }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE int64_t cpp_lockup_get_critical_section_oops_count() {
+  return lockup_get_critical_section_oops_count();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE int64_t cpp_lockup_get_no_heartbeat_oops_count() {
+  return lockup_get_no_heartbeat_oops_count();
+}
+
 }  // extern "C"

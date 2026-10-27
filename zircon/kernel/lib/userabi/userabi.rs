@@ -15,6 +15,7 @@ pub use vdso::VDso;
 use crate::counters::{
     ARENA_VMO_NAME, CounterArena, CounterDesc, DESCRIPTOR_VMO_NAME, define_kcounter,
 };
+use crate::crashlog::crashlog_stash;
 use crate::instrumentation::InstrumentationData;
 use crate::object::{
     ChannelDispatcher, HandleOwner, InitialMutability, JobDispatcher, KernelHandle, LogDispatcher,
@@ -36,7 +37,7 @@ use page::SIZE as PAGE_SIZE;
 use resource::get_resource_handle;
 #[cfg(all(target_arch = "aarch64", debug_assertions))]
 use userabi_ffi::arm64_print_midr_cpu_name;
-use userabi_ffi::{File, HandoffEndElf, PlatformCrashlog, boot_options_show, crashlog_stash};
+use userabi_ffi::{File, HandoffEndElf, PlatformCrashlog, boot_options_show};
 #[cfg(enable_entropy_collector_test)]
 use userabi_ffi::{entropy_vmo, entropy_vmo_stream_size, entropy_was_lost};
 use zr::{defer, slice_from_raw_parts_mut};
@@ -261,7 +262,7 @@ fn crashlog_to_vmo() -> Result<(RefPtr<VmObject>, usize), Status> {
 
     // Stash the recovered crashlog so that it may be inspected later from the
     // kernel console.
-    crashlog_stash(&crashlog_vmo);
+    crashlog_stash(Some(VmObjectPaged::into_vm_object(crashlog_vmo.clone())));
 
     // Now that we have recovered the old crashlog, enable crashlog uptime
     // updates.  This will cause systems with a RAM based crashlog to periodically

@@ -430,7 +430,7 @@ impl<const DURATION: i64> EventLimiter<DURATION> {
 static HANDLE_COUNT_HIGH_LOG: EventLimiter<1_000_000_000> = EventLimiter::new();
 
 /// Arena allocator managing memory slots for all `Handle` objects in the kernel.
-pub(super) struct HandleTableArena;
+pub(crate) struct HandleTableArena;
 
 impl HandleTableArena {
     /// Initializes the handle table arena.
@@ -543,7 +543,7 @@ impl HandleTableArena {
     }
 
     /// Returns the number of handle allocations that have failed since boot.
-    fn get_alloc_failed_count() -> i64 {
+    pub(crate) fn get_alloc_failed_count() -> i64 {
         HANDLE_COUNT_ALLOC_FAILED.sum_across_all_cpus()
     }
 }
@@ -986,15 +986,6 @@ pub unsafe extern "C" fn rust_handle_destroy(handle: *mut Handle) {
     if let Some(owner) = unsafe { HandleOwner::from_raw(handle) } {
         drop(owner);
     }
-}
-
-/// Returns the number of handle allocations that have failed since boot (`handles.alloc.failed`).
-///
-/// # Safety
-/// Safe to call from any context.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_handle_get_alloc_failed_count() -> i64 {
-    HandleTableArena::get_alloc_failed_count()
 }
 
 /// Tests for Handle and KernelHandle.

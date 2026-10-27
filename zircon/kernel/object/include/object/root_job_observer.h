@@ -29,9 +29,6 @@ class RootJobObserver final {
   // Record the dead process responsible for getting the root job killed.
   static void CriticalProcessKill(fbl::RefPtr<ProcessDispatcher> dead_process);
 
-  static ktl::array<char, ZX_MAX_NAME_LEN> GetCriticalProcessName();
-  static zx_koid_t GetCriticalProcessKoid();
-
  private:
   OpaqueStorage<kRootJobObserverStorageSize, kRootJobObserverStorageAlign> opaque_storage_;
 };

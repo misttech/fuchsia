@@ -473,11 +473,6 @@ unsafe extern "C" fn rust_pmm_checker_assert_pattern(
     unsafe { checker.assert_pattern(page) };
 }
 
-#[unsafe(no_mangle)]
-extern "C" fn rust_pmm_checker_get_validation_failed_count() -> i64 {
-    PmmChecker::get_validation_failed_count()
-}
-
 /// Unit tests for PmmChecker.
 #[cfg(ktest)]
 #[unittest::suite(name = "pmm_checker_rust")]
