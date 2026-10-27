@@ -70,6 +70,14 @@ inferior("loop") {
   cflags = [ "-fno-inline-functions" ]
 }
 
+inferior("infinite_loop") {
+  sources = [ "loop.cc" ]
+  defines = [ "INFINITE_LOOP" ]
+
+  # Ensure do_loop doesn't get inlined or optimized away.
+  cflags = [ "-fno-inline-functions" ]
+}
+
 inferior("async_rust") {
   type = "rustc_binary"
   edition = "2024"
@@ -189,6 +197,7 @@ fuchsia_package("zxdb_e2e_inferiors") {
     ":async_rust_multithreaded",
     ":bitfield",
     ":cpp_functions",
+    ":infinite_loop",
     ":inlined_crasher",
     ":loop",
     ":pretty_types",

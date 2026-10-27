@@ -68,6 +68,47 @@ TEST_F(ConsoleContextTest, CurrentBreakpoint) {
       << event.output.AsString();
 }
 
+TEST_F(ConsoleContextTest, ProcessPauseWithoutInitialThread) {
+  constexpr uint64_t kNewProcessKoid = 1234;
+  constexpr uint64_t kNewThreadKoid = 5678;
+
+  Target* target = session().system().CreateNewTarget(nullptr);
+  TargetImpl* target_impl = session().system().GetTargetImpls().back();
+  target_impl->CreateProcessForTesting(kNewProcessKoid, "test_proc");
+  Process* process = target->GetProcess();
+  ASSERT_TRUE(process);
+  ASSERT_TRUE(process->GetThreads().empty());
+
+  console().context().SetActiveTarget(target);
+  console().FlushOutputEvents();
+
+  debug_ipc::PauseReply pause_reply;
+  pause_reply.threads.resize(1);
+  pause_reply.threads[0].id = {.process = kNewProcessKoid, .thread = kNewThreadKoid};
+  pause_reply.threads[0].state = debug_ipc::ThreadRecord::State::kSuspended;
+  pause_reply.threads[0].stack_amount = debug_ipc::ThreadRecord::StackAmount::kMinimal;
+  pause_reply.threads[0].frames.emplace_back(0x10000, 0x2000);
+  mock_remote_api()->set_pause_reply(pause_reply);
+
+  console().ProcessInputLine("process pause");
+  loop().RunUntilNoTasks();
+
+  auto event = console().GetOutputEvent();
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "Loading 0 modules for test_proc"))
+      << event.output.AsString();
+
+  event = console().GetOutputEvent();
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "Done.")) << event.output.AsString();
+
+  event = console().GetOutputEvent();
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "PausedProcess 2"))
+      << event.output.AsString();
+
+  event = console().GetOutputEvent();
+  EXPECT_TRUE(debug::StringContains(event.output.AsString(), "0x10000 (no symbol info)"))
+      << event.output.AsString();
+}
+
 // Testing EmbeddedMode requires us to do some configuration before creating the Console object,
 // which we can't do if we use the ConsoleTest base class.
 class EmbeddedModeConsoleContext : public RemoteAPITest {

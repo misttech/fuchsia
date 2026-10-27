@@ -1,0 +1,29 @@
+[zxdb] run-component fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/infinite_loop.cm
+Launched Process 1 state=Running koid=?? name=infinite_loop.cm component=infinite_loop.cm
+
+[zxdb] detach
+Process 1 detached.
+
+[zxdb] attach --weak infinite_loop.cm
+Waiting for process matching "infinite_loop.cm".
+Attached Process 1 state=Running koid=?? name=infinite_loop.cm component=infinite_loop.cm
+
+[zxdb] sym-stat
+Process 1 symbol status
+  No known modules.
+
+[zxdb] process pause
+Loading ?? modules for infinite_loop.cm
+Done.
+PausedProcess 1 state=Running koid=?? name=infinite_loop.cm component=infinite_loop.cm
+🛑 ??
+
+[zxdb] sym-stat
+Process 1 symbol status
+  infinite_loop.cm
+    Base: 0x??
+    Build ID: ??
+    Symbols loaded: Yes
+
+[zxdb] kill
+Process 1 killed.

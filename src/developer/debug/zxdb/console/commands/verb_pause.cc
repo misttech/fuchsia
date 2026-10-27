@@ -133,14 +133,22 @@ void PauseTarget(fxl::RefPtr<CommandContext> cmd_context, Target* target, Thread
     if (!weak_process || !console_context)
       return;
 
+    Target* target = weak_process->GetTarget();
     OutputBuffer out("Paused");
-    out.Append(FormatTarget(console_context, weak_process->GetTarget()));
+    out.Append(FormatTarget(console_context, target));
     cmd_context->Output(out);
 
-    if (weak_thread) {
+    Thread* thread = weak_thread.get();
+    if (!thread && console_context->GetActiveTarget() == target) {
+      // Pausing a program immediately after starting or attaching to it won't always sync the
+      // threads before the command is initiated. Fall back to the current active thread for the
+      // target once the pause completes.
+      thread = console_context->GetActiveThreadForTarget(target);
+    }
+
+    if (thread) {
       // Thread is current, show current location.
-      cmd_context->Output(
-          FormatThreadStop(console_context, weak_thread.get(), std::nullopt, false));
+      cmd_context->Output(FormatThreadStop(console_context, thread, std::nullopt, false));
     }
   });
 }

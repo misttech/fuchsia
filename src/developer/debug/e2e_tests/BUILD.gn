@@ -146,6 +146,7 @@ if (is_host && has_board) {
         "scripts/template_functions.script",
         "scripts/until.script",
         "scripts/unwind_plt.script",
+        "scripts/weak_attach_pause.script",
       ]
     }
 

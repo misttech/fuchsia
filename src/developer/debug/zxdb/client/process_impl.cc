@@ -172,20 +172,43 @@ void ProcessImpl::SyncThreads(fit::callback<void()> callback) {
 void ProcessImpl::Pause(fit::callback<void()> on_paused) {
   debug_ipc::PauseRequest request;
   request.ids.push_back({.process = koid_, .thread = 0});
-  session()->remote_api()->Pause(
-      request, [weak_process = weak_factory_.GetWeakPtr(), on_paused = std::move(on_paused)](
-                   const Err& err, debug_ipc::PauseReply reply) mutable {
-        if (weak_process) {
-          // Save any new thread metadata (will be empty for errors so don't need to check
-          // explicitly for errors).
-          for (const auto& record : reply.threads) {
-            FX_DCHECK(record.id.process == weak_process->koid_);
-            if (ThreadImpl* thread = weak_process->GetThreadImplFromKoid(record.id.thread))
-              thread->SetMetadata(record);
+  session()->remote_api()->Pause(request, [weak_process = weak_factory_.GetWeakPtr(),
+                                           on_paused = std::move(on_paused)](
+                                              const Err& err, debug_ipc::PauseReply reply) mutable {
+    if (weak_process) {
+      auto update_threads = [weak_process, threads = std::move(reply.threads)]() {
+        if (!weak_process)
+          return;
+        // Save any new thread metadata (will be empty for errors so don't need to check
+        // explicitly for errors).
+        for (const auto& record : threads) {
+          FX_DCHECK(record.id.process == weak_process->koid_);
+          if (ThreadImpl* thread = weak_process->GetThreadImplFromKoid(record.id.thread)) {
+            thread->SetMetadata(record);
+          } else if (record.id.thread != 0) {
+            weak_process->OnThreadStarting(record);
           }
         }
-        on_paused();
-      });
+      };
+
+      // Weakly attached processes do not receive module notifications on attach and may be
+      // paused without ever hitting an exception. Synchronize the module list before updating
+      // thread stack metadata and invoking the completion callback so stack unwinding and
+      // symbol resolution have module metadata.
+      if (!err.has_error() && weak_process->symbols_.GetStatus().empty()) {
+        weak_process->GetModules(
+            false, [update_threads = std::move(update_threads), on_paused = std::move(on_paused)](
+                       const Err&, std::vector<debug_ipc::Module>) mutable {
+              update_threads();
+              on_paused();
+            });
+        return;
+      }
+
+      update_threads();
+    }
+    on_paused();
+  });
 }
 
 void ProcessImpl::Continue(bool forward_exceptions) {

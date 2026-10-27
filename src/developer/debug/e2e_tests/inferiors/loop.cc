@@ -10,4 +10,12 @@
   }
 }
 
-int main() { do_loop(5); }
+int main() {
+#if defined(INFINITE_LOOP)
+  while (true) {
+    do_loop(0);
+  }
+#else
+  do_loop(5);
+#endif
+}

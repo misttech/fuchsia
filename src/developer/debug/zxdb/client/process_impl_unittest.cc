@@ -16,6 +16,7 @@
 #include "src/developer/debug/zxdb/client/thread.h"
 #include "src/developer/debug/zxdb/client/thread_observer.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
+#include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 
 namespace zxdb {
@@ -30,12 +31,23 @@ class ProcessSink : public MockRemoteAPI {
   const debug_ipc::ResumeRequest& resume_request() const { return resume_request_; }
   int resume_count() const { return resume_count_; }
 
+  int modules_count() const { return modules_count_; }
+  void set_modules_reply(debug_ipc::ModulesReply reply) { modules_reply_ = std::move(reply); }
+
   void Resume(const debug_ipc::ResumeRequest& request,
               fit::callback<void(const Err&, debug_ipc::ResumeReply)> cb) override {
     resume_count_++;
     resume_request_ = request;
     debug::MessageLoop::Current()->PostTask(
         FROM_HERE, [cb = std::move(cb)]() mutable { cb(Err(), debug_ipc::ResumeReply()); });
+  }
+
+  void Modules(const debug_ipc::ModulesRequest& request,
+               fit::callback<void(const Err&, debug_ipc::ModulesReply)> cb) override {
+    modules_count_++;
+    debug::MessageLoop::Current()->PostTask(
+        FROM_HERE,
+        [cb = std::move(cb), reply = modules_reply_]() mutable { cb(Err(), std::move(reply)); });
   }
 
   // No-op.
@@ -49,6 +61,9 @@ class ProcessSink : public MockRemoteAPI {
  private:
   debug_ipc::ResumeRequest resume_request_;
   int resume_count_ = 0;
+
+  debug_ipc::ModulesReply modules_reply_;
+  int modules_count_ = 0;
 
   bool thread_request_made_ = false;
 };
@@ -457,6 +472,83 @@ TEST_F(ProcessImplTest, AllThreadsStopped) {
   EXPECT_TRUE(process->AllThreadsStopped());
   EXPECT_TRUE(process->AllThreadsStopped(thread1));
   EXPECT_TRUE(process->AllThreadsStopped(thread2));
+}
+
+TEST_F(ProcessImplTest, PauseLoadsModulesWhenEmpty) {
+  constexpr uint64_t kProcessKoid = 1234;
+  constexpr uint64_t kThreadKoid = 5678;
+  constexpr char kBuildId[] = "abcd";
+  constexpr uint64_t kModuleBase = 0x1000;
+  constexpr uint64_t kFrameIp = 0x1020;
+
+  Process* process = InjectProcess(kProcessKoid);
+  ASSERT_TRUE(process);
+  ASSERT_TRUE(process->GetThreads().empty());
+
+  auto module_symbols = fxl::MakeRefCounted<MockModuleSymbols>("test_module.so", kBuildId, true);
+  auto fn = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  fn->set_assigned_name("DoLoop");
+  module_symbols->AddSymbolLocations(
+      kFrameIp, {Location(kFrameIp, FileLine("loop.cc", 10), 0, SymbolContext(kModuleBase), fn)});
+  session().system().GetSymbols()->InjectModuleForTesting(kBuildId, module_symbols.get());
+
+  ASSERT_TRUE(process->GetSymbols()->GetStatus().empty());
+  EXPECT_EQ(0, sink()->modules_count());
+
+  debug_ipc::ModulesReply modules_reply;
+  modules_reply.modules.resize(1);
+  modules_reply.modules[0].name = "test_module.so";
+  modules_reply.modules[0].base = kModuleBase;
+  modules_reply.modules[0].build_id = kBuildId;
+  sink()->set_modules_reply(modules_reply);
+
+  debug_ipc::PauseReply pause_reply;
+  pause_reply.threads.resize(1);
+  pause_reply.threads[0].id = {.process = kProcessKoid, .thread = kThreadKoid};
+  pause_reply.threads[0].state = debug_ipc::ThreadRecord::State::kSuspended;
+  pause_reply.threads[0].stack_amount = debug_ipc::ThreadRecord::StackAmount::kMinimal;
+  pause_reply.threads[0].frames.emplace_back(kFrameIp, 0x2000);
+  sink()->set_pause_reply(pause_reply);
+
+  bool paused = false;
+  size_t module_count_on_pause = 0;
+  bool top_frame_symbolized_on_pause = false;
+  process->Pause([&paused, &module_count_on_pause, &top_frame_symbolized_on_pause, process]() {
+    paused = true;
+    module_count_on_pause = process->GetSymbols()->GetStatus().size();
+    if (Thread* thread = process->GetThreadFromKoid(kThreadKoid);
+        thread && !thread->GetStack().empty()) {
+      top_frame_symbolized_on_pause = thread->GetStack()[0]->GetLocation().is_symbolized();
+    }
+  });
+
+  EXPECT_FALSE(paused);
+  loop().RunUntilNoTasks();
+
+  EXPECT_TRUE(paused);
+  EXPECT_EQ(1u, module_count_on_pause);
+  EXPECT_TRUE(top_frame_symbolized_on_pause);
+  EXPECT_EQ(1, sink()->modules_count());
+  Thread* thread = process->GetThreadFromKoid(kThreadKoid);
+  ASSERT_TRUE(thread);
+  EXPECT_EQ(debug_ipc::ThreadRecord::State::kSuspended, thread->GetState());
+  ASSERT_FALSE(thread->GetStack().empty());
+  EXPECT_EQ("loop.cc", thread->GetStack()[0]->GetLocation().file_line().file());
+  EXPECT_EQ(10, thread->GetStack()[0]->GetLocation().file_line().line());
+
+  auto status = process->GetSymbols()->GetStatus();
+  ASSERT_EQ(1u, status.size());
+  EXPECT_EQ("test_module.so", status[0].name);
+  EXPECT_EQ(kModuleBase, status[0].base);
+  EXPECT_EQ(kBuildId, status[0].build_id);
+
+  // A subsequent Pause when modules are already loaded should not issue a duplicate Modules RPC.
+  bool paused_again = false;
+  process->Pause([&paused_again]() { paused_again = true; });
+  loop().RunUntilNoTasks();
+
+  EXPECT_TRUE(paused_again);
+  EXPECT_EQ(1, sink()->modules_count());
 }
 
 }  // namespace zxdb
