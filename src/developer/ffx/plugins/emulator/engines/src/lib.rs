@@ -25,6 +25,8 @@ use port_picker::{is_free_tcp_port, pick_unused_port};
 use qemu_based::crosvm::CrosvmEngine;
 use qemu_based::femu::FemuEngine;
 use qemu_based::qemu::QemuEngine;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// The EngineBuilder is used to create and configure an EmulatorEngine, while ensuring the
 /// configuration will result in a valid emulation instance.
@@ -140,8 +142,32 @@ impl EngineBuilder {
         // Set up the instance directory, now that we have enough information.
         let name = self.emulator_configuration.runtime.name.clone();
         self.emulator_configuration.runtime.engine_type = self.engine_type;
-        self.emulator_configuration.runtime.instance_directory =
+        let instance_dir =
             self.emu_instances.get_instance_dir(&name, true).map_err(anyhow::Error::from)?;
+        self.emulator_configuration.runtime.instance_directory = instance_dir.clone();
+
+        // UNIX domain socket paths are limited to 108 characters on Linux (sockaddr_un.sun_path).
+        // In isolated test environments (e.g. on LUCI builders), the instance directory path
+        // can be extremely deep, exceeding this limit and causing QEMU to fail to bind the
+        // serial port.
+        // To prevent this, we generate a unique socket path in the system temporary directory
+        // (which is typically short and writeable) and store it in the emulator configuration
+        // (engine.json). Clients read this configuration to connect directly to the short path,
+        // completely bypassing the limit without requiring fragile symlinks. We use a hash of
+        // the instance directory and the user's UID to ensure the socket path is unique and
+        // does not conflict between multiple users or different emulator instances.
+        if qemu_based::is_uart_enabled(&self.emulator_configuration)
+            && self.emulator_configuration.runtime.serial_socket.as_os_str().is_empty()
+        {
+            let mut hasher = DefaultHasher::new();
+            instance_dir.hash(&mut hasher);
+            nix::unistd::getuid().hash(&mut hasher);
+            let hash_val = hasher.finish();
+
+            let mut temp_dir = std::env::temp_dir();
+            temp_dir.push(format!("femu_s_{:x}", hash_val));
+            self.emulator_configuration.runtime.serial_socket = temp_dir;
+        }
 
         let serial_enabled = self
             .serial_enabled
@@ -391,6 +417,7 @@ mod tests {
             .engine_type(EngineType::Qemu);
 
         let engine = builder.build().await.expect("engine built");
+        assert!(engine.emu_config().runtime.serial_socket.as_os_str().is_empty());
         let serial = match &engine.emu_config().runtime.serial_number {
             SerialMode::Enabled(s) => s,
             _ => panic!(
@@ -404,6 +431,26 @@ mod tests {
             serial[3..]
                 .chars()
                 .all(|c| c.is_ascii_hexdigit() && (c.is_numeric() || c.is_uppercase()))
+        );
+
+        let mut cfg_uart = EmulatorConfiguration::default();
+        cfg_uart.runtime.name = "test-emu-uart".to_string();
+        cfg_uart.runtime.config_override = true;
+        cfg_uart.runtime.addl_kernel_args = vec!["dev.fdomain.uart=true".to_string()];
+        let engine_uart = EngineBuilder::new(&env.context, emu_instances.clone())
+            .config(cfg_uart)
+            .engine_type(EngineType::Qemu)
+            .build()
+            .await
+            .expect("uart engine built");
+        assert!(
+            engine_uart
+                .emu_config()
+                .runtime
+                .serial_socket
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("femu_s_"))
         );
 
         // 2. Disabled: Config is false.

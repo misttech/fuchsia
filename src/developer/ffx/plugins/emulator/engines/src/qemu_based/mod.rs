@@ -37,6 +37,18 @@ use std::time::{Duration, Instant};
 use std::{env, str};
 use tempfile::NamedTempFile;
 
+const FDOMAIN_UART_KERNEL_ARG: &str = "dev.fdomain.uart=true";
+const SERIAL_SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+pub(crate) fn is_uart_enabled(emu_config: &EmulatorConfiguration) -> bool {
+    emu_config.flags.kernel_args.iter().any(|arg| arg.contains(FDOMAIN_UART_KERNEL_ARG))
+        || emu_config
+            .runtime
+            .addl_kernel_args
+            .iter()
+            .any(|arg| arg.contains(FDOMAIN_UART_KERNEL_ARG))
+}
+
 pub(crate) fn make_absolute_path(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.to_path_buf())
@@ -635,13 +647,23 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
     fn validate_network_flags(&self, emu_config: &EmulatorConfiguration) -> Result<()> {
         match emu_config.host.networking {
             NetworkingMode::None => {
-                // Check for console/monitor.
+                // Check for console/monitor, or if serial connection is enabled.
                 if emu_config.runtime.console == ConsoleType::None {
-                    return_user_error!(
-                        "Running without networking enabled and no interactive console;\n\
-                        there will be no way to communicate with this emulator.\n\
-                        Restart with --console/--monitor or with networking enabled to proceed."
-                    );
+                    if is_uart_enabled(emu_config) {
+                        let message = format!(
+                            "Running without networking enabled and no interactive console. \
+                            You will be interacting with this emulator via the UART interface \
+                            'uart:{}'. Note that ffx interactions will be slow.",
+                            emu_config.runtime.name
+                        );
+                        log::info!("{message}");
+                    } else {
+                        return_user_error!(
+                            "Running without networking enabled and no interactive console;\n\
+                            there will be no way to communicate with this emulator.\n\
+                            Restart with --console/--monitor or with networking enabled to proceed."
+                        );
+                    }
                 }
             }
             NetworkingMode::Auto => {
@@ -830,7 +852,23 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             let name = self.emu_config().runtime.name.clone();
             let start = Instant::now();
             let mut connection_errors = Vec::new();
+            let serial_enabled = is_uart_enabled(self.emu_config());
             while start.elapsed().as_secs() <= startup_timeout {
+                if serial_enabled {
+                    // Wait for the serial socket file to exist before attempting to knock.
+                    // Knocking will fail immediately with a critical error if it cannot connect to
+                    // the serial driver, and the serial driver will not have started yet if the
+                    // serial socket has not been created by QEMU.
+                    let socket_path = self.emu_config().runtime.get_serial_socket_path();
+                    if !socket_path.exists() {
+                        log::debug!(
+                            "Serial socket path {:?} does not exist yet. Waiting...",
+                            socket_path
+                        );
+                        Timer::new(SERIAL_SOCKET_POLL_INTERVAL).await;
+                        continue;
+                    }
+                }
                 let compat_res = ffx_target::knock_target(
                     &TargetInfoQuery::try_from(name.clone())
                         .map_err(|e| user_error!("Invalid target specifier: {}", e))?,
@@ -2231,6 +2269,18 @@ pub(crate) mod tests {
         assert!(result.is_err());
 
         emu_config.runtime.console = ConsoleType::Console;
+        let result = engine.validate_network_flags(&emu_config);
+        assert!(result.is_ok(), "{:?}", result.unwrap_err());
+
+        // If serial is enabled in kernel args, it should pass even without console.
+        emu_config.runtime.console = ConsoleType::None;
+        emu_config.flags.kernel_args = vec!["dev.fdomain.uart=true".to_string()];
+        let result = engine.validate_network_flags(&emu_config);
+        assert!(result.is_ok(), "{:?}", result.unwrap_err());
+
+        // If serial is enabled in addl kernel args, it should pass.
+        emu_config.flags.kernel_args.clear();
+        emu_config.runtime.addl_kernel_args = vec!["dev.fdomain.uart=true".to_string()];
         let result = engine.validate_network_flags(&emu_config);
         assert!(result.is_ok(), "{:?}", result.unwrap_err());
 

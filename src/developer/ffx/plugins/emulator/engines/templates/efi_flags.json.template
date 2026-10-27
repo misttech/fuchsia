@@ -74,6 +74,11 @@
         "unix:{{runtime.instance_directory}}/serial,server,nowait,logfile={{host.log}}.serial",
     {{/if}}
 
+    {{#if runtime.serial_socket}}
+        "-serial",
+        "unix:{{runtime.serial_socket}},server,nowait",
+    {{/if}}
+
     {{#if (eq device.cpu.architecture "arm64")}}
          "-machine",
         {{#if (eq host.architecture "arm64")}}

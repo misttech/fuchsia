@@ -984,6 +984,10 @@ mod tests {
                 cpu: VirtualCpu { architecture: sdk_metadata::CpuArchitecture::X64, count: 2 },
                 ..Default::default()
             },
+            runtime: RuntimeConfig {
+                serial_socket: "/serial_transport".into(),
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1005,6 +1009,8 @@ mod tests {
             "unix:/monitor,server,nowait",
             "-serial",
             "unix:/serial,server,nowait,logfile=.serial",
+            "-serial",
+            "unix:/serial_transport,server,nowait",
             "-machine",
             "q35",
             "-fw_cfg",
