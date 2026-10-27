@@ -5,6 +5,7 @@
 use crate::ContainerStartInfo;
 use anyhow::{Error, anyhow};
 use starnix_container_structured_config::Config as ContainerStructuredConfig;
+use starnix_core::fs::tmpfs::register_selinux_test_suite_ramfs;
 use starnix_core::mm::MlockPinFlavor;
 use starnix_core::task::{Kernel, KernelFeatures, OomWatermarksMb, SystemLimits};
 use starnix_features::{Feature, FeatureAndArgs};
@@ -395,6 +396,9 @@ pub fn parse_features(
 pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Result<(), Error> {
     if features.unified_tracing {
         kernel.trace_event_manager.init_trace_observer(kernel);
+    }
+    if features.kernel.selinux_test_suite {
+        register_selinux_test_suite_ramfs(kernel);
     }
     Ok(())
 }

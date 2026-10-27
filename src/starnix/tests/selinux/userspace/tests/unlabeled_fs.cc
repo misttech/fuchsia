@@ -11,18 +11,25 @@
 #include "src/starnix/tests/selinux/userspace/base_initial_sids.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 extern std::string DoPrePolicyLoadWork() { return "file_transition_policy"; }
 
 namespace {
 
 TEST(UnlabeledFsTest, CreateFileInUnlabeledFs) {
-  // Check that `/` which is not labeled in the policy is labeled with the `unlabeled` initial SID.
-  EXPECT_EQ(GetLabel("/"), kUnlabeledInitialSid);
+  test_helper::ScopedTempDir temp_dir;
+  auto mount = ASSERT_RESULT_SUCCESS_AND_RETURN(
+      test_helper::ScopedMount::Mount("none", temp_dir.path(), "ramfs", 0, ""));
+
+  // Check that `ramfs`, which has no labeling rules in the policy, is labeled with the `unlabeled`
+  // initial SID.
+  EXPECT_EQ(GetLabel(temp_dir.path()), kUnlabeledInitialSid);
 
   ASSERT_TRUE(RunSubprocessAs("unconfined_u:unconfined_r:unconfined_t:s0", [&] {
     // Check that creating a file in an unlabeled filesystem follows transition rules.
-    auto fd = fbl::unique_fd(open("/test-file", O_CREAT, 0777));
+    std::string file_path = temp_dir.path() + "/test-file";
+    auto fd = fbl::unique_fd(open(file_path.c_str(), O_CREAT, 0777));
     ASSERT_THAT(fd.get(), SyscallSucceeds()) << "while creating file";
     EXPECT_EQ(GetLabel(fd.get()), "unconfined_u:object_r:unlabeled_unconfined_file_t:s0");
   }));

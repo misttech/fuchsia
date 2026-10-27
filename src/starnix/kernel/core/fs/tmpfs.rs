@@ -150,6 +150,18 @@ pub fn tmp_fs(
     TmpFs::new_fs_with_options(&current_task.kernel(), options)
 }
 
+/// Registers a `TmpFs`-backed `"ramfs"` filesystem for use by the SELinux test suite.
+pub fn register_selinux_test_suite_ramfs(kernel: &Kernel) {
+    let registry = kernel.expando.get::<crate::vfs::fs_registry::FsRegistry>();
+    registry.register(
+        b"ramfs".into(),
+        starnix_uapi::fs_type::FileSystemTypeFlags::empty(),
+        |current_task, options| {
+            TmpFs::new_fs_with_options_and_name(current_task.kernel(), options, "ramfs".into())
+        },
+    );
+}
+
 impl TmpFs {
     pub fn new_fs(kernel: &Kernel) -> FileSystemHandle {
         Self::new_fs_with_options(kernel, Default::default()).expect("empty options cannot fail")

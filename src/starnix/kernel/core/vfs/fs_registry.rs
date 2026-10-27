@@ -39,7 +39,7 @@ impl FsRegistry {
     {
         let entry = FsRegistryEntry { flags, create_fs: Arc::new(create_fs) };
         let existing = self.registry.lock().insert(fs_type.into(), entry);
-        assert!(existing.is_none());
+        assert!(existing.is_none(), "filesystem type {fs_type} is already registered");
     }
 
     pub fn create(

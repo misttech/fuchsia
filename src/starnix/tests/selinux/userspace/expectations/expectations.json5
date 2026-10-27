@@ -60,7 +60,8 @@
                 "SysFs/SysFsTest.SubdirectoryLabels/AppliesTypeTransitionWhenParentHasXattr",
                 "SysFs/SysFsTest.SubdirectoryLabels/UsesFscreateLabelWhenParentHasXattr",
 
-                // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
+                // TODO: https://fxbug.dev/507820778 - Default unlabeled filesystems to the
+                // `unlabeled` initial SID.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
             ],
         },
