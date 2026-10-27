@@ -14,6 +14,7 @@ filegroup(
         "__init__.py",
         "visibility_utils.py",
         # LINT.IfChange(all_check_files)
+        "bzl_require_load_visibility.py",
         "host_constraints.py",
         "load_visibility.py",
         "package_default_visibility.py",

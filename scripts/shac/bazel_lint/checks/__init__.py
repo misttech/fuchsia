@@ -8,6 +8,7 @@
 # updated when adding or removing checks.
 # LINT.IfChange(all_checks)
 from . import (
+    bzl_require_load_visibility,
     host_constraints,
     load_visibility,
     package_default_visibility,

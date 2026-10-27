@@ -1,0 +1,500 @@
+{
+    "entries": [
+        {
+            "path": "boards/vim3/vim3_features.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/assert_no_deps.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/component_manifests.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/runner.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/rust_analyzer.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/source_files.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/tests/assert_no_deps_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/tests/component_manifests_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/aspects/utils.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/assembly/developer_overrides/repository_rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/assembly/zedboot_image_args.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/bazel_idk/idk_atom_info.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/bazel_idk/tests/analysis_tests.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/bazel_idk/tests/rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/bazel_sdk/rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/bazel_version_utils.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/config/derived/compilation_modes.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/config/derived/fuchsia_cxx_version.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/debug_symbols/aspects.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/debug_symbols/tests/defs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/fuchsia_idk/repository_rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/googletest_fuchsia_sdk.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/icu/repository_rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/module_extensions.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/platforms/constraints.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rbe/rbe.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/assembly/assembly_input_bundle.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/assembly/product_configuration.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/cc/fx_cc_binary.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/cc/fx_cc_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/cc/fx_cc_library_headers.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/cipd_prebuilt.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/components/cml_shard.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/components/expect_includes.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/components/fx_component.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/components/structured_config.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/current_platform_info.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/fidl/fidl_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/golden_files.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host/defs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_cc_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_go_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_py_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_rustc_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_shac_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/host_tests/host_test_data.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/icu/icu_assembly_input_bundle.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/icu/icu_prebuilt_package.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_atom.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_cc_prebuilt_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_cc_source_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_data.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_host_tool.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_molecule.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/idk_transitions.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/private/providers.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/idk/providers.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/packages/fx_package.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/packages/fx_packaged_binary.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/packages/prebuilt_package.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/packages/tests/fx_test_validation_tests.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/packages/tests/gn_visibility_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/python/py_toolchain.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/common.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/defs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/generate_unit_tests.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_binary.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_bindgen.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_check_cfg_build_flags.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_dylib.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_embed_files.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_library_group.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_proc_macro.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/rustc_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/rust/tests/clippy_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/stamp_group.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/testing/defs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/testing/fx_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/testing/fx_test_environment.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/testing/fx_unittest_component.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/rules/testing/fx_unittest_package.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/scripts/fake_build_info/args.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/scripts/fake_build_info/platforms_flags.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/toolchains/clang/repository_rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/toolchains/clang/toolchains.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/toolchains/linux_sysroot.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/toolchains/rust/repository_rules.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/update-rustc-third-party/crate_annotation_overwrites.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/update-rustc-third-party/crate_annotations.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/bazel/versioning/rustc_api_level.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path_prefix": "build/bazel_sdk/",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/config/compilation_modes.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/config/compress_debuginfo.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/config/dwarf_version.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/config/riscv64/riscv64.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/info/info.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/json/validate_json.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/rust/cargo_toml_gen.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/rust/fidl_rust_next.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/sdk/sdk_version_history.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/testing/environments/device_types.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/tools/json_merge/json_merge.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "build/tools/json_validator/test/defs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "bundles/assembly/platform_aibs.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "products/bringup/platform_config.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "src/connectivity/wlan/lib/mlme/fullmac/wlan_fullmac_migration.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "src/developer/ffx/build/ffx_plugin.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "src/developer/ffx/build/ffx_tool.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "src/developer/ffx/lib/version/build/ffx_apply_version.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "src/starnix/modules/perfetto_consumer/lib/perfetto/rust_proto_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/boringssl/BUILD.generated.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/boringssl/BUILD.generated_tests.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/crashpad/copts.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/crashpad/includes.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/mini_chromium/buildflags.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "third_party/pigweed/repositories.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "tools/bazel-docgen/testdata/foo.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "tools/bazel-docgen/testdata/foo/foo_internal.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "tools/fidl/lib/fidlgentest/fidlgentest_go_test.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "tools/integration/testsharder/goldens.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "tools/protobuf/rust_proto_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        },
+        {
+            "path": "zircon/tools/zither/zither_library.bzl",
+            "bug": "https://fxbug.dev/570203009"
+        }
+    ]
+}

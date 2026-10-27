@@ -451,6 +451,15 @@ def _bazel_no_recursive_glob(ctx):
         description = "recursive glob patterns",
     )
 
+# Reports an error when a .bzl file does not declare top-level load
+# visibility().
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_bzl_require_load_visibility = _make_bazel_lint_check(
+    "bazel_bzl_require_load_visibility",
+    applies_to_globs = _BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 # Reports an error if a disallowed workspace root package label is used.
 # Workspace root package labels (e.g. `//:...`) should only refer to targets
 # or files defined directly in the root BUILD.bazel file.
@@ -523,6 +532,7 @@ def register_bazel_checks():
     # Ensure tests are added and the filegroups used by tests are updated along
     # with checks.
     # LINT.IfChange(register_all_checks)
+    shac.register_check(_bazel_bzl_require_load_visibility)
     shac.register_check(_bazel_disallowed_workspace_root_package_labels)
     shac.register_check(_bazel_host_constraints)
     shac.register_check(_bazel_load_visibility)

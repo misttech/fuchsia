@@ -24,7 +24,8 @@ Unlike `.gni` files, `.bzl` files support
 [load visibility][bazel-load-visibility]{:.external} to restrict from where they
 can be loaded. By default, there are no restrictions.
 
-Always specify `visibility` in `.bzl` files:
+Always specify `visibility` in `.bzl` files
+_\[<span style="color:red">SHAC error</span>\]_:
 
 * Use `visibility("private")` for any `.bzl` files not specifically intended for
   use outside the package.

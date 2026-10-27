@@ -14,6 +14,7 @@ filegroup(
         "base_test.star",
         "checks_test.star",
         # LINT.IfChange(all_check_test_files)
+        "bzl_require_load_visibility_test.star",
         "host_constraints_test.star",
         "load_visibility_test.star",
         "package_default_visibility_test.star",
