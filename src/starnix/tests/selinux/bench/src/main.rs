@@ -18,6 +18,7 @@ use selinux::{
 use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::testing::{PanickingFile, spawn_kernel_with_selinux_and_run};
+use starnix_uapi::auth::Credentials;
 use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -81,13 +82,18 @@ fn pin_thread_to_big_cores() {
 
 async fn spawn_test_kernel<F>(callback: F)
 where
-    F: AsyncFnOnce(&mut CurrentTask) + Send + Sync + 'static,
+    F: AsyncFnOnce(&mut CurrentTask, &Arc<SecurityServer>) + Send + Sync + 'static,
 {
     spawn_kernel_with_selinux_and_run(async |current_task, security_server| {
         pin_thread_to_big_cores();
         security_server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+        // Hooks skip all SELinux checks until the kernel is notified that a policy was loaded.
+        security::selinuxfs_policy_loaded(current_task);
+        // Enforce the policy, so that benchmarks fail on unexpected denials, rather than measure
+        // their audit logging.
+        security_server.set_enforcing(true);
         populate_sid_table(security_server);
-        callback(current_task).await
+        callback(current_task, security_server).await
     })
     .await;
 }
@@ -344,18 +350,26 @@ fn check_file_ioctl_access_bench(
 fn binder_transaction_bench(
     group: &mut criterion::BenchmarkGroup<'_, WallTime>,
     current_task: &'static CurrentTask,
+    security_server: &SecurityServer,
 ) {
+    // `aosp_sepolicy` does not allow `kernel` to make Binder calls to itself, but allows calls to
+    // `su`.
+    let target_sid = security_server.security_context_to_sid(b"u:r:su:s0".into()).unwrap();
     let _ = group.bench_function("binder_transaction", move |bench| {
-        let creds = current_task.current_creds();
+        let source_creds = current_task.current_creds();
+        let mut target_creds = Credentials::clone(&source_creds);
+        target_creds.security_state.current_sid = target_sid;
         bench.iter(|| {
-            let _ = black_box(security::binder_transaction(current_task, &creds, &creds).unwrap());
+            let _ = black_box(
+                security::binder_transaction(current_task, &source_creds, &target_creds).unwrap(),
+            );
         })
     });
 }
 
 fn main() {
     let mut executor = fuchsia_async::LocalExecutor::default();
-    executor.run_singlethreaded(spawn_test_kernel(async move |current_task| {
+    executor.run_singlethreaded(spawn_test_kernel(async move |current_task, security_server| {
         // SAFETY: The Criterion benchmarks run synchronously and block until completion
         // entirely within the scope of this closure. Therefore, `current_task` is guaranteed
         // to outlive the benchmark execution, making it safe to cast to a `'static` reference.
@@ -463,7 +477,7 @@ fn main() {
         file_permission_bench(&mut group, current_task);
         fs_node_permission_bench(&mut group, current_task);
         check_file_ioctl_access_bench(&mut group, current_task);
-        binder_transaction_bench(&mut group, current_task);
+        binder_transaction_bench(&mut group, current_task, security_server);
         group.finish();
     }));
 }
