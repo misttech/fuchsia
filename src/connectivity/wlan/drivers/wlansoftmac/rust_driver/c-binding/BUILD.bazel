@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_rust//rust:defs.bzl", "rust_static_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    ["bindings.h"],
+    visibility = ["//src/connectivity/wlan/drivers/wlansoftmac:__pkg__"],
+)
+
+rust_static_library(
+    name = "wlansoftmac-c",
+    srcs = ["src/lib.rs"],
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_production",
+    rustc_flags = ["-Cpanic=abort"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/wlan/drivers/wlansoftmac:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
+        "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_rust",
+        "//sdk/lib/driver/runtime/rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/wlan/drivers/wlansoftmac/rust_driver:wlansoftmac-rust",
+        "//src/connectivity/wlan/lib/ffi-transport:wlan-ffi-transport",
+        "//src/connectivity/wlan/lib/mlme/rust:wlan-mlme",
+        "//src/connectivity/wlan/lib/power_manager",
+        "//src/connectivity/wlan/lib/trace:wlan-trace",
+        "//src/lib/diagnostics/log/rust:no_startup_handle",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
