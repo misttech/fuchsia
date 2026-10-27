@@ -1,0 +1,50 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "parser",
+    srcs = ["src/lib.rs"],
+    crate_name = "energy_model_config",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:serde_derive",
+    ],
+    visibility = ["//src/power/cpu-manager/energy_model_config/validator:__pkg__"],
+    deps = [
+        "//sdk/rust/zx-types",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ],
+)
+
+rustc_test(
+    name = "parser_test",
+    crate = ":parser",
+    crate_name = "energy_model_config_lib_test",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "parser_host_test",
+    binary_name = "parser_test",
+    visibility = ["//src/power:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "energy-model-config-parser-tests",
+    unit_tests = [":parser_test"],
+    visibility = ["//src/power:__pkg__"],
+)
