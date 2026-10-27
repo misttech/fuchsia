@@ -434,6 +434,7 @@ clipboard-win = { path = "empty/clipboard-win" }
 core-foundation-sys = { path = "empty/core-foundation-sys" }
 # TODO(https://fxbug.dev/42084779): Remove when hickory-proto is upgraded to >= 0.26.4.
 critical-section = { path = "empty/critical-section" }
+crunchy = { path = "empty/crunchy" }
 document-features = { path = "empty/document-features" }
 hermit-abi = { path = "empty/hermit-abi" }
 iana-time-zone-haiku = { path = "empty/iana-time-zone-haiku" }
@@ -662,9 +663,6 @@ rustflags = []
 
 [gn.package.crossbeam-utils."0.8.23"]
 rustflags = []
-
-[gn.package.crunchy."0.2.3"]
-# Has build script but no config needed.
 
 [gn.package.der."0.7.10"]
 groups = [

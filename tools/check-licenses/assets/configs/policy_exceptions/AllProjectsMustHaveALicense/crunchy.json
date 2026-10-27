@@ -1,0 +1,13 @@
+{
+    "policy_exceptions": {
+        "AllProjectsMustHaveALicense": [
+            {
+                "bug": "576246486",
+                "description": "Empty stub that is pulled into the graph, not actually used.",
+                "paths": [
+                    "third_party/rust_crates/empty/crunchy"
+                ]
+            }
+        ]
+    }
+}

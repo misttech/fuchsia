@@ -7183,16 +7183,11 @@ rustc_library("crossterm-v0_29_0") {
   applicable_licenses = [ ":crossterm-v0_29_0.license" ]
 }
 
-license("crunchy-v0_2_3.license") {
-  public_package_name = "crunchy"
-  license_files = [ "//third_party/rust_crates/vendor/crunchy-0.2.3/LICENSE" ]
-}
-
-rustc_library("crunchy-v0_2_3") {
+rustc_library("crunchy-v0_2_4") {
   crate_name = "crunchy"
-  source_root = "//third_party/rust_crates/vendor/crunchy-0.2.3/src/lib.rs"
-  output_name = "crunchy-28e73714e3c25ade"
-  edition = "2021"
+  source_root = "//third_party/rust_crates/empty/crunchy/src/lib.rs"
+  output_name = "crunchy-28f4b918f03cc100"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -7203,15 +7198,13 @@ rustc_library("crunchy-v0_2_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=28e73714e3c25ade",
-    "-Cextra-filename=-28e73714e3c25ade",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"limit_128\"",
+    "-Cmetadata=28f4b918f03cc100",
+    "-Cextra-filename=-28f4b918f03cc100",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crunchy-v0_2_3.license" ]
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 license("crypto-bigint-v0_4_9.license") {
@@ -11030,7 +11023,7 @@ rustc_library("half-v2_7_1") {
   deps += [ ":cfg-if-v1_0_5" ]
   deps += [ ":zerocopy-v0_8_61" ]
   if (false) {
-    deps += [ ":crunchy-v0_2_3" ]
+    deps += [ ":crunchy-v0_2_4" ]
   }
 
   rustenv = []
