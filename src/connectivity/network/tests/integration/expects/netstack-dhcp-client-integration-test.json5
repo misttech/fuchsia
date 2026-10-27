@@ -13,7 +13,7 @@
             type: "expect_pass_with_err_logs",
             matchers: [
                 "client_provider_two_overlapping_clients_on_same_interface",
-                "client_handles_address_removal::test_case_*_should_stop_client_if_address_removed_with_no_terminal_event",
+                "client_handles_address_removal::should_stop_client_if_address_removed_with_no_terminal_event",
                 "client_explicitly_removes_address_when_lease_expires",
             ],
         },
