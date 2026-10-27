@@ -99,13 +99,13 @@ class BlockIoTest(unittest.TestCase):
                 "payload": {
                     "root": {
                         "ftl": {
-                            "block.read.bytes": 1000 * 4096,
+                            "block.read.kib": 1000 * 4,
                             "block.read.count": 500,
-                            "block.write.bytes": 510 * 4096,
+                            "block.write.kib": 510 * 4,
                             "block.write.count": 250,
-                            "block.flush.bytes": 10 * 4096,
+                            "block.flush.kib": 10 * 4,
                             "block.flush.count": 20,
-                            "block.trim.bytes": 100 * 4096,
+                            "block.trim.kib": 100 * 4,
                             "block.trim.count": 10,
                         }
                     }
@@ -140,13 +140,13 @@ class BlockIoTest(unittest.TestCase):
                 "payload": {
                     "root": {
                         "sdmmc_core": {
-                            "block.read.bytes": 2_000_000,
+                            "block.read.kib": 2000,
                             "block.read.count": 400,
-                            "block.write.bytes": 1_000_000,
+                            "block.write.kib": 1000,
                             "block.write.count": 200,
-                            "block.flush.bytes": 0,
+                            "block.flush.kib": 0,
                             "block.flush.count": 50,
-                            "block.trim.bytes": 500_000,
+                            "block.trim.kib": 500,
                             "block.trim.count": 25,
                         }
                     }
@@ -160,13 +160,13 @@ class BlockIoTest(unittest.TestCase):
             results,
             _expected_metrics(
                 prefix="EmmcTest",
-                read_bytes=40_000.0,
+                read_bytes=40_960.0,
                 read_ops=8.0,
-                write_bytes=20_000.0,
+                write_bytes=20_480.0,
                 write_ops=4.0,
                 flush_bytes=0.0,
                 flush_ops=1.0,
-                trim_bytes=10_000.0,
+                trim_bytes=10_240.0,
                 trim_ops=0.5,
             ),
         )
@@ -181,13 +181,13 @@ class BlockIoTest(unittest.TestCase):
                 "payload": {
                     "root": {
                         "virtio_block": {
-                            "block.read.bytes": 750_000,
+                            "block.read.kib": 750,
                             "block.read.count": 150,
-                            "block.write.bytes": 500_000,
+                            "block.write.kib": 500,
                             "block.write.count": 100,
-                            "block.flush.bytes": 0,
+                            "block.flush.kib": 0,
                             "block.flush.count": 25,
-                            "block.trim.bytes": 250_000,
+                            "block.trim.kib": 250,
                             "block.trim.count": 50,
                         }
                     }
@@ -201,13 +201,13 @@ class BlockIoTest(unittest.TestCase):
             results,
             _expected_metrics(
                 prefix="VirtioTest",
-                read_bytes=30_000.0,
+                read_bytes=30_720.0,
                 read_ops=6.0,
-                write_bytes=20_000.0,
+                write_bytes=20_480.0,
                 write_ops=4.0,
                 flush_bytes=0.0,
                 flush_ops=1.0,
-                trim_bytes=10_000.0,
+                trim_bytes=10_240.0,
                 trim_ops=2.0,
             ),
         )
@@ -222,13 +222,13 @@ class BlockIoTest(unittest.TestCase):
                 "payload": {
                     "root": {
                         "ufs": {
-                            "block.read.bytes": 4_000_000,
+                            "block.read.kib": 4000,
                             "block.read.count": 1000,
-                            "block.write.bytes": 2_000_000,
+                            "block.write.kib": 2000,
                             "block.write.count": 500,
-                            "block.flush.bytes": 0,
+                            "block.flush.kib": 0,
                             "block.flush.count": 100,
-                            "block.trim.bytes": 1_000_000,
+                            "block.trim.kib": 1000,
                             "block.trim.count": 50,
                         }
                     }
@@ -240,13 +240,13 @@ class BlockIoTest(unittest.TestCase):
             report.structured,
             _expected_metrics(
                 prefix=None,
-                read_bytes=40_000.0,
+                read_bytes=40_960.0,
                 read_ops=10.0,
-                write_bytes=20_000.0,
+                write_bytes=20_480.0,
                 write_ops=5.0,
                 flush_bytes=0.0,
                 flush_ops=1.0,
-                trim_bytes=10_000.0,
+                trim_bytes=10_240.0,
                 trim_ops=0.5,
             ),
         )
@@ -265,13 +265,13 @@ class BlockIoTest(unittest.TestCase):
                     "payload": {
                         "root": {
                             "sdmmc_core": {
-                                "block.read.bytes": 81_920,
+                                "block.read.kib": 80,
                                 "block.read.count": 20,
-                                "block.write.bytes": 40_960,
+                                "block.write.kib": 40,
                                 "block.write.count": 10,
-                                "block.flush.bytes": 0,
+                                "block.flush.kib": 0,
                                 "block.flush.count": 5,
-                                "block.trim.bytes": 4096,
+                                "block.trim.kib": 4,
                                 "block.trim.count": 1,
                             }
                         }
@@ -315,13 +315,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=50_000_000_000,
             root={
                 "sdmmc_core": {
-                    "block.read.bytes": 0,
+                    "block.read.kib": 0,
                     "block.read.count": 0,
-                    "block.write.bytes": 0,
+                    "block.write.kib": 0,
                     "block.write.count": 0,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 0,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -332,26 +332,26 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=50_000_000_000,
             root={
                 "sdmmc_core": {
-                    "block.read.bytes": 2_000_000,
+                    "block.read.kib": 2000,
                     "block.read.count": 400,
-                    "block.write.bytes": 1_000_000,
+                    "block.write.kib": 1000,
                     "block.write.count": 200,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 50,
-                    "block.trim.bytes": 500_000,
+                    "block.trim.kib": 500,
                     "block.trim.count": 25,
                 }
             },
         )
         expected = _expected_metrics(
             prefix="EmmcTest",
-            read_bytes=40_000.0,
+            read_bytes=40_960.0,
             read_ops=8.0,
-            write_bytes=20_000.0,
+            write_bytes=20_480.0,
             write_ops=4.0,
             flush_bytes=0.0,
             flush_ops=1.0,
-            trim_bytes=10_000.0,
+            trim_bytes=10_240.0,
             trim_ops=0.5,
         )
         self.assertEqual(
@@ -374,13 +374,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=50_000_000_000,
             root={
                 "ftl": {
-                    "block.read.bytes": 2_000_000,
+                    "block.read.kib": 2000,
                     "block.read.count": 400,
-                    "block.write.bytes": 1_000_000,
+                    "block.write.kib": 1000,
                     "block.write.count": 200,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 50,
-                    "block.trim.bytes": 500_000,
+                    "block.trim.kib": 500,
                     "block.trim.count": 25,
                 }
             },
@@ -389,13 +389,13 @@ class BlockIoTest(unittest.TestCase):
             storage.extract_storage_io_metrics([entry], label_prefix="FtlTest"),
             _expected_metrics(
                 prefix="FtlTest",
-                read_bytes=40_000.0,
+                read_bytes=40_960.0,
                 read_ops=8.0,
-                write_bytes=20_000.0,
+                write_bytes=20_480.0,
                 write_ops=4.0,
                 flush_bytes=0.0,
                 flush_ops=1.0,
-                trim_bytes=10_000.0,
+                trim_bytes=10_240.0,
                 trim_ops=0.5,
             ),
         )
@@ -407,13 +407,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 500_000_000,
+                    "block.read.kib": 500_000,
                     "block.read.count": 20_000,
-                    "block.write.bytes": 200_000_000,
+                    "block.write.kib": 200_000,
                     "block.write.count": 10_000,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 500,
-                    "block.trim.bytes": 10_000_000,
+                    "block.trim.kib": 10_000,
                     "block.trim.count": 100,
                 }
             },
@@ -424,13 +424,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=110_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 500_040_960,
+                    "block.read.kib": 500_040,
                     "block.read.count": 20_010,
-                    "block.write.bytes": 200_081_920,
+                    "block.write.kib": 200_080,
                     "block.write.count": 10_020,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 505,
-                    "block.trim.bytes": 10_010_000,
+                    "block.trim.kib": 10_010,
                     "block.trim.count": 102,
                 }
             },
@@ -449,7 +449,7 @@ class BlockIoTest(unittest.TestCase):
                 write_ops=2.0,
                 flush_bytes=0.0,
                 flush_ops=0.5,
-                trim_bytes=1000.0,
+                trim_bytes=1024.0,
                 trim_ops=0.2,
             ),
         )
@@ -463,13 +463,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "sdmmc_core": {
-                    "block.read.bytes": 0,
+                    "block.read.kib": 0,
                     "block.read.count": 0,
-                    "block.write.bytes": 0,
+                    "block.write.kib": 0,
                     "block.write.count": 0,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 0,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -480,13 +480,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "sdmmc_core": {
-                    "block.read.bytes": 500_000_000,
+                    "block.read.kib": 500_000,
                     "block.read.count": 20_000,
-                    "block.write.bytes": 200_000_000,
+                    "block.write.kib": 200_000,
                     "block.write.count": 10_000,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 500,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -523,13 +523,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 500_000_000,
+                    "block.read.kib": 500_000,
                     "block.read.count": 20_000,
-                    "block.write.bytes": 200_000_000,
+                    "block.write.kib": 200_000,
                     "block.write.count": 10_000,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 500,
-                    "block.trim.bytes": 10_000_000,
+                    "block.trim.kib": 10_000,
                     "block.trim.count": 100,
                 }
             },
@@ -540,13 +540,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=110_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 500_040_960,
+                    "block.read.kib": 500_040,
                     "block.read.count": 20_010,
-                    "block.write.bytes": 200_081_920,
+                    "block.write.kib": 200_080,
                     "block.write.count": 10_020,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 505,
-                    "block.trim.bytes": 10_010_000,
+                    "block.trim.kib": 10_010,
                     "block.trim.count": 102,
                 }
             },
@@ -593,7 +593,7 @@ class BlockIoTest(unittest.TestCase):
                         "ops_per_sec": 0.5,
                     },
                     "trim": {
-                        "bytes_per_sec": 1000.0,
+                        "bytes_per_sec": 1024.0,
                         "ops_per_sec": 0.2,
                     },
                 },
@@ -609,13 +609,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 1_000_000,
+                    "block.read.kib": 1000,
                     "block.read.count": 100,
-                    "block.write.bytes": 2_000_000,
+                    "block.write.kib": 2000,
                     "block.write.count": 200,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 50,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -626,13 +626,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=105_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 1_020_000,
+                    "block.read.kib": 1020,
                     "block.read.count": 105,
-                    "block.write.bytes": 2_050_000,
+                    "block.write.kib": 2050,
                     "block.write.count": 215,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 55,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -658,13 +658,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 1_000_000,
+                    "block.read.kib": 1000,
                     "block.read.count": 100,
-                    "block.write.bytes": 2_000_000,
+                    "block.write.kib": 2000,
                     "block.write.count": 200,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 50,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -690,13 +690,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=100_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 1_000_000,
+                    "block.read.kib": 1000,
                     "block.read.count": 100,
-                    "block.write.bytes": 2_000_000,
+                    "block.write.kib": 2000,
                     "block.write.count": 200,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 50,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },
@@ -707,13 +707,13 @@ class BlockIoTest(unittest.TestCase):
             timestamp_ns=105_000_000_000,
             root={
                 "ufs": {
-                    "block.read.bytes": 1_020_000,
+                    "block.read.kib": 1020,
                     "block.read.count": 105,
-                    "block.write.bytes": 2_050_000,
+                    "block.write.kib": 2050,
                     "block.write.count": 215,
-                    "block.flush.bytes": 0,
+                    "block.flush.kib": 0,
                     "block.flush.count": 55,
-                    "block.trim.bytes": 0,
+                    "block.trim.kib": 0,
                     "block.trim.count": 0,
                 }
             },

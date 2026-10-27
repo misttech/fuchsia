@@ -80,25 +80,37 @@ void BlockDevice::CompleteTxn(block_txn_t* transaction, zx_status_t status) {
   // txn could be reused.
   uint64_t request_id = transaction->request;
   if (status == ZX_OK) {
+    // Note: completions are currently processed on a single thread. If this becomes
+    // multithreaded, we should only use Add() rather than Set() here (and handle KiB
+    // alignment) to prevent out-of-order updates from causing non-monotonic changes.
     switch (transaction->operation.tag) {
-      case block_server::Operation::Tag::Read:
+      case block_server::Operation::Tag::Read: {
         read_ops_.Add(1);
-        read_bytes_.Add(static_cast<uint64_t>(transaction->operation.read.block_count) *
-                        config_.blk_size);
+        uint64_t bytes =
+            static_cast<uint64_t>(transaction->operation.read.block_count) * config_.blk_size;
+        uint64_t total = total_read_bytes_.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+        read_kib_.Set(total / 1024);
         break;
-      case block_server::Operation::Tag::Write:
+      }
+      case block_server::Operation::Tag::Write: {
         write_ops_.Add(1);
-        write_bytes_.Add(static_cast<uint64_t>(transaction->operation.write.block_count) *
-                         config_.blk_size);
+        uint64_t bytes =
+            static_cast<uint64_t>(transaction->operation.write.block_count) * config_.blk_size;
+        uint64_t total = total_write_bytes_.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+        write_kib_.Set(total / 1024);
         break;
+      }
       case block_server::Operation::Tag::Flush:
         flush_ops_.Add(1);
         break;
-      case block_server::Operation::Tag::Trim:
+      case block_server::Operation::Tag::Trim: {
         trim_ops_.Add(1);
-        trim_bytes_.Add(static_cast<uint64_t>(transaction->operation.trim.block_count) *
-                        config_.blk_size);
+        uint64_t bytes =
+            static_cast<uint64_t>(transaction->operation.trim.block_count) * config_.blk_size;
+        uint64_t total = total_trim_bytes_.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+        trim_kib_.Set(total / 1024);
         break;
+      }
       default:
         break;
     }
@@ -284,10 +296,10 @@ void BlockDevice::InitInspect(inspect::Node inspect_node) {
   write_ops_ = inspect_node_.CreateUint("block.write.count", 0);
   flush_ops_ = inspect_node_.CreateUint("block.flush.count", 0);
   trim_ops_ = inspect_node_.CreateUint("block.trim.count", 0);
-  read_bytes_ = inspect_node_.CreateUint("block.read.bytes", 0);
-  write_bytes_ = inspect_node_.CreateUint("block.write.bytes", 0);
-  flush_bytes_ = inspect_node_.CreateUint("block.flush.bytes", 0);
-  trim_bytes_ = inspect_node_.CreateUint("block.trim.bytes", 0);
+  read_kib_ = inspect_node_.CreateUint("block.read.kib", 0);
+  write_kib_ = inspect_node_.CreateUint("block.write.kib", 0);
+  flush_kib_ = inspect_node_.CreateUint("block.flush.kib", 0);
+  trim_kib_ = inspect_node_.CreateUint("block.trim.kib", 0);
 }
 
 void BlockDevice::Release() {

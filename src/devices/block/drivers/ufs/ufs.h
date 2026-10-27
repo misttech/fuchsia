@@ -161,10 +161,13 @@ struct InspectProperties {
   inspect::UintProperty write_ops;
   inspect::UintProperty flush_ops;
   inspect::UintProperty trim_ops;
-  inspect::UintProperty read_bytes;
-  inspect::UintProperty write_bytes;
-  inspect::UintProperty flush_bytes;
-  inspect::UintProperty trim_bytes;
+  inspect::UintProperty read_kib;
+  inspect::UintProperty write_kib;
+  inspect::UintProperty flush_kib;
+  inspect::UintProperty trim_kib;
+  std::atomic<uint64_t> total_read_bytes = 0;
+  std::atomic<uint64_t> total_write_bytes = 0;
+  std::atomic<uint64_t> total_trim_bytes = 0;
 };
 
 using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t data)>;

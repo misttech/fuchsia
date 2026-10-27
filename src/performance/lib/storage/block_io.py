@@ -195,9 +195,9 @@ def _resolve_driver_and_node(
 
 
 def _has_block_op_counters(node: Mapping[str, Any]) -> bool:
-    """Returns True if `node` has `.bytes` and `.count` counters for all block ops."""
+    """Returns True if `node` has `.kib` and `.count` counters for all block ops."""
     return all(
-        f"block.{op_key}.bytes" in node and f"block.{op_key}.count" in node
+        f"block.{op_key}.kib" in node and f"block.{op_key}.count" in node
         for op_key, _ in _BLOCK_OPERATIONS
     )
 
@@ -218,7 +218,7 @@ def _extract_hardware_block_rates(
     uptime_sec = float(entry.timestamp_ns) / 1e9
     return {
         op_label: (
-            int(node[f"block.{op_key}.bytes"]) / uptime_sec,
+            (int(node[f"block.{op_key}.kib"]) * 1024) / uptime_sec,
             int(node[f"block.{op_key}.count"]) / uptime_sec,
         )
         for op_key, op_label in _BLOCK_OPERATIONS
@@ -331,8 +331,8 @@ def diff_inspect_entries(
             delta_entries.append(end_entry)
             continue
         if any(
-            int(end_node[f"block.{op_key}.bytes"])
-            < int(start_node[f"block.{op_key}.bytes"])
+            int(end_node[f"block.{op_key}.kib"])
+            < int(start_node[f"block.{op_key}.kib"])
             or int(end_node[f"block.{op_key}.count"])
             < int(start_node[f"block.{op_key}.count"])
             for op_key, _ in _BLOCK_OPERATIONS
@@ -342,9 +342,9 @@ def diff_inspect_entries(
 
         delta_node = dict(end_node)
         for op_key, _ in _BLOCK_OPERATIONS:
-            delta_node[f"block.{op_key}.bytes"] = int(
-                end_node[f"block.{op_key}.bytes"]
-            ) - int(start_node[f"block.{op_key}.bytes"])
+            delta_node[f"block.{op_key}.kib"] = int(
+                end_node[f"block.{op_key}.kib"]
+            ) - int(start_node[f"block.{op_key}.kib"])
             delta_node[f"block.{op_key}.count"] = int(
                 end_node[f"block.{op_key}.count"]
             ) - int(start_node[f"block.{op_key}.count"])

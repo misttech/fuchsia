@@ -205,7 +205,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
     if (op_stats != nullptr) {
       if (status == ZX_OK) {
         op_stats->count.Add(1);
-        op_stats->bytes.Add(op_bytes);
+        op_stats->AddBytes(op_bytes);
       }
       op_stats->all.count.Add(nand_counters_.GetSum());
       op_stats->all.rate.Add(nand_counters_.GetSum());

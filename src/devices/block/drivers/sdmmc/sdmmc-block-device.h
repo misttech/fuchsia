@@ -334,10 +334,13 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
     inspect::UintProperty write_ops_;                    // Only updated from the worker thread.
     inspect::UintProperty flush_ops_;                    // Only updated from the worker thread.
     inspect::UintProperty trim_ops_;                     // Only updated from the worker thread.
-    inspect::UintProperty read_bytes_;                   // Only updated from the worker thread.
-    inspect::UintProperty write_bytes_;                  // Only updated from the worker thread.
-    inspect::UintProperty flush_bytes_;                  // Only updated from the worker thread.
-    inspect::UintProperty trim_bytes_;                   // Only updated from the worker thread.
+    inspect::UintProperty read_kib_;                     // Only updated from the worker thread.
+    inspect::UintProperty write_kib_;                    // Only updated from the worker thread.
+    inspect::UintProperty flush_kib_;                    // Only updated from the worker thread.
+    inspect::UintProperty trim_kib_;                     // Only updated from the worker thread.
+    uint64_t total_read_bytes_ = 0;                      // Only updated from the worker thread.
+    uint64_t total_write_bytes_ = 0;                     // Only updated from the worker thread.
+    uint64_t total_trim_bytes_ = 0;                      // Only updated from the worker thread.
     inspect::UintProperty serial_number_;                // Set once by the init thread.
     inspect::UintProperty clock_rate_;                   // Set once by the init thread.
     inspect::UintProperty bus_width_bits_;               // Set once by the init thread.

@@ -91,10 +91,10 @@ zx_status_t SdmmcBlockDevice::AddDevice() {
   properties_.write_ops_ = root_.CreateUint("block.write.count", 0);
   properties_.flush_ops_ = root_.CreateUint("block.flush.count", 0);
   properties_.trim_ops_ = root_.CreateUint("block.trim.count", 0);
-  properties_.read_bytes_ = root_.CreateUint("block.read.bytes", 0);
-  properties_.write_bytes_ = root_.CreateUint("block.write.bytes", 0);
-  properties_.flush_bytes_ = root_.CreateUint("block.flush.bytes", 0);
-  properties_.trim_bytes_ = root_.CreateUint("block.trim.bytes", 0);
+  properties_.read_kib_ = root_.CreateUint("block.read.kib", 0);
+  properties_.write_kib_ = root_.CreateUint("block.write.kib", 0);
+  properties_.flush_kib_ = root_.CreateUint("block.flush.kib", 0);
+  properties_.trim_kib_ = root_.CreateUint("block.trim.kib", 0);
 
   fbl::AutoLock worker_lock(&worker_lock_);
   fbl::AutoLock lock(&queue_lock_);
@@ -1435,10 +1435,12 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
           pending_split_bytes_ = new_split_bytes;
           if (is_read) {
             device_.properties_.read_ops_.Add(requests_.size());
-            device_.properties_.read_bytes_.Add(completed_bytes);
+            device_.properties_.total_read_bytes_ += completed_bytes;
+            device_.properties_.read_kib_.Set(device_.properties_.total_read_bytes_ / 1024);
           } else {
             device_.properties_.write_ops_.Add(requests_.size());
-            device_.properties_.write_bytes_.Add(completed_bytes);
+            device_.properties_.total_write_bytes_ += completed_bytes;
+            device_.properties_.write_kib_.Set(device_.properties_.total_write_bytes_ / 1024);
           }
         }
       } else {
@@ -1545,8 +1547,9 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
                       request.operation.trim.block_count, partition.partition());
         if (status == ZX_OK) {
           properties_.trim_ops_.Add(1);
-          properties_.trim_bytes_.Add(uint64_t{request.operation.trim.block_count} *
-                                      block_info_.block_size);
+          properties_.total_trim_bytes_ +=
+              uint64_t{request.operation.trim.block_count} * block_info_.block_size;
+          properties_.trim_kib_.Set(properties_.total_trim_bytes_ / 1024);
         }
         partition.SendReply(request.request_id, zx::make_result(status));
 

@@ -64,11 +64,18 @@ struct NestedNandOperationProperties {
 // For each type of block operation we keep the number of operations issued and the accumulated rate
 // at which an operation is issued as a result of an incoming block operation into the FTL.
 struct BlockOperationProperties {
+  void AddBytes(uint64_t new_bytes) {
+    total_bytes += new_bytes;
+    kib.Set(total_bytes / 1024);
+  }
+
   // Number of block operations of a given type that have been processed by the FTL.
   inspect::UintProperty count;
 
-  // Number of bytes processed by block operations of a given type.
-  inspect::UintProperty bytes;
+  // Number of KiB processed by block operations of a given type.
+  inspect::UintProperty kib;
+
+  uint64_t total_bytes = 0;
 
   // Operation stats per nand operation type for operation issued for this block operation type.
   NestedNandOperationProperties all;

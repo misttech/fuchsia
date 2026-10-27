@@ -672,10 +672,10 @@ TEST_F(BlockDriverTest, InspectIoCounters) {
     EXPECT_EQ(get_uint("block.write.count"), 1u);
     EXPECT_EQ(get_uint("block.flush.count"), 1u);
     EXPECT_EQ(get_uint("block.trim.count"), 1u);
-    EXPECT_EQ(get_uint("block.read.bytes"), kBlkSize);
-    EXPECT_EQ(get_uint("block.write.bytes"), 2 * kBlkSize);
-    EXPECT_EQ(get_uint("block.flush.bytes"), 0u);
-    EXPECT_EQ(get_uint("block.trim.bytes"), 3 * kBlkSize);
+    EXPECT_EQ(get_uint("block.read.kib"), kBlkSize / 1024);
+    EXPECT_EQ(get_uint("block.write.kib"), (2 * kBlkSize) / 1024);
+    EXPECT_EQ(get_uint("block.flush.kib"), 0u);
+    EXPECT_EQ(get_uint("block.trim.kib"), (3 * kBlkSize) / 1024);
   });
 }
 

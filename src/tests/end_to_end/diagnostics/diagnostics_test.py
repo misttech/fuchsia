@@ -20,13 +20,13 @@ _TEST_SUITE = "fuchsia.test.diagnostics"
 
 _BLOCK_IO_METRICS: tuple[str, ...] = (
     "block.read.count",
-    "block.read.bytes",
+    "block.read.kib",
     "block.write.count",
-    "block.write.bytes",
+    "block.write.kib",
     "block.flush.count",
-    "block.flush.bytes",
+    "block.flush.kib",
     "block.trim.count",
-    "block.trim.bytes",
+    "block.trim.kib",
 )
 
 # Maps block driver Inspect tree name (metadata.name) to
@@ -387,7 +387,7 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
         total_read_ops = 0
-        total_read_bytes = 0
+        total_read_kib = 0
         for moniker, node_name, node in matched_nodes:
             for metric in _BLOCK_IO_METRICS:
                 asserts.assert_in(
@@ -401,7 +401,7 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
                     f"Block driver {moniker} ({node_name}) '{metric}' should be >= 0",
                 )
             total_read_ops += node["block.read.count"]
-            total_read_bytes += node["block.read.bytes"]
+            total_read_kib += node["block.read.kib"]
 
         asserts.assert_greater(
             total_read_ops,
@@ -409,9 +409,9 @@ class DiagnosticsTest(fuchsia_base_test.FuchsiaBaseTest):
             "Expected total block.read.count > 0 across matched block drivers.",
         )
         asserts.assert_greater(
-            total_read_bytes,
+            total_read_kib,
             0,
-            "Expected total block.read.bytes > 0 across matched block drivers.",
+            "Expected total block.read.kib > 0 across matched block drivers.",
         )
 
     def _check_fxfs_metrics_data(

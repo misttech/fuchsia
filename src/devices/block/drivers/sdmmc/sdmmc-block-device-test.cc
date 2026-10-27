@@ -2482,25 +2482,21 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   ASSERT_NOT_NULL(trim_ops);
   EXPECT_EQ(trim_ops->value(), 0);
 
-  const auto* read_bytes =
-      root->node().get_property<inspect::UintPropertyValue>("block.read.bytes");
-  ASSERT_NOT_NULL(read_bytes);
-  EXPECT_EQ(read_bytes->value(), 0);
+  const auto* read_kib = root->node().get_property<inspect::UintPropertyValue>("block.read.kib");
+  ASSERT_NOT_NULL(read_kib);
+  EXPECT_EQ(read_kib->value(), 0);
 
-  const auto* write_bytes =
-      root->node().get_property<inspect::UintPropertyValue>("block.write.bytes");
-  ASSERT_NOT_NULL(write_bytes);
-  EXPECT_EQ(write_bytes->value(), 0);
+  const auto* write_kib = root->node().get_property<inspect::UintPropertyValue>("block.write.kib");
+  ASSERT_NOT_NULL(write_kib);
+  EXPECT_EQ(write_kib->value(), 0);
 
-  const auto* flush_bytes =
-      root->node().get_property<inspect::UintPropertyValue>("block.flush.bytes");
-  ASSERT_NOT_NULL(flush_bytes);
-  EXPECT_EQ(flush_bytes->value(), 0);
+  const auto* flush_kib = root->node().get_property<inspect::UintPropertyValue>("block.flush.kib");
+  ASSERT_NOT_NULL(flush_kib);
+  EXPECT_EQ(flush_kib->value(), 0);
 
-  const auto* trim_bytes =
-      root->node().get_property<inspect::UintPropertyValue>("block.trim.bytes");
-  ASSERT_NOT_NULL(trim_bytes);
-  EXPECT_EQ(trim_bytes->value(), 0);
+  const auto* trim_kib = root->node().get_property<inspect::UintPropertyValue>("block.trim.kib");
+  ASSERT_NOT_NULL(trim_kib);
+  EXPECT_EQ(trim_kib->value(), 0);
 
   const auto* serial_number =
       root->node().get_property<inspect::UintPropertyValue>("serial_number");
@@ -2634,21 +2630,46 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   ASSERT_NOT_NULL(trim_ops);
   EXPECT_EQ(trim_ops->value(), 1);
 
-  read_bytes = root->node().get_property<inspect::UintPropertyValue>("block.read.bytes");
-  ASSERT_NOT_NULL(read_bytes);
-  EXPECT_EQ(read_bytes->value(), 3 * FakeSdmmcDevice::kBlockSize);
+  read_kib = root->node().get_property<inspect::UintPropertyValue>("block.read.kib");
+  ASSERT_NOT_NULL(read_kib);
+  // 3 * 512 bytes = 1536 bytes; integer division rounds down to 1 KiB.
+  EXPECT_EQ(read_kib->value(), 1);
 
-  write_bytes = root->node().get_property<inspect::UintPropertyValue>("block.write.bytes");
-  ASSERT_NOT_NULL(write_bytes);
-  EXPECT_EQ(write_bytes->value(), 5 * FakeSdmmcDevice::kBlockSize);
+  write_kib = root->node().get_property<inspect::UintPropertyValue>("block.write.kib");
+  ASSERT_NOT_NULL(write_kib);
+  // 5 * 512 bytes = 2560 bytes; integer division rounds down to 2 KiB.
+  EXPECT_EQ(write_kib->value(), 2);
 
-  flush_bytes = root->node().get_property<inspect::UintPropertyValue>("block.flush.bytes");
-  ASSERT_NOT_NULL(flush_bytes);
-  EXPECT_EQ(flush_bytes->value(), 0);
+  flush_kib = root->node().get_property<inspect::UintPropertyValue>("block.flush.kib");
+  ASSERT_NOT_NULL(flush_kib);
+  EXPECT_EQ(flush_kib->value(), 0);
 
-  trim_bytes = root->node().get_property<inspect::UintPropertyValue>("block.trim.bytes");
-  ASSERT_NOT_NULL(trim_bytes);
-  EXPECT_EQ(trim_bytes->value(), 4 * FakeSdmmcDevice::kBlockSize);
+  trim_kib = root->node().get_property<inspect::UintPropertyValue>("block.trim.kib");
+  ASSERT_NOT_NULL(trim_kib);
+  // 4 * 512 bytes = 2048 bytes = 2 KiB.
+  EXPECT_EQ(trim_kib->value(), 2);
+
+  // An additional 1-block read (512 bytes) brings total read bytes to 1536 + 512 = 2048 bytes (2
+  // KiB). This verifies that sub-KiB remainders are accumulated and not lost across operations.
+  BlockFifoRequest sub_kib_req = {
+      .command = {.opcode = BLOCK_OPCODE_READ},
+      .vmoid = vmoid,
+      .length = 1,
+      .dev_offset = 0x8000,
+  };
+  EXPECT_OK(client->FifoTransaction(&sub_kib_req, 1));
+
+  inspector.ReadInspect(block_device_->inspect());
+  root = inspector.hierarchy().GetByPath({"sdmmc_core"});
+  ASSERT_NOT_NULL(root);
+
+  read_kib = root->node().get_property<inspect::UintPropertyValue>("block.read.kib");
+  ASSERT_NOT_NULL(read_kib);
+  EXPECT_EQ(read_kib->value(), 2);
+
+  read_ops = root->node().get_property<inspect::UintPropertyValue>("block.read.count");
+  ASSERT_NOT_NULL(read_ops);
+  EXPECT_EQ(read_ops->value(), 2);
 
   // IO error count should be incremented after a failed block op.
   sdmmc_.set_command_callback(SDMMC_WRITE_MULTIPLE_BLOCK,
@@ -2679,9 +2700,9 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   ASSERT_NOT_NULL(write_ops);
   EXPECT_EQ(write_ops->value(), 1);
 
-  write_bytes = root->node().get_property<inspect::UintPropertyValue>("block.write.bytes");
-  ASSERT_NOT_NULL(write_bytes);
-  EXPECT_EQ(write_bytes->value(), 5 * FakeSdmmcDevice::kBlockSize);
+  write_kib = root->node().get_property<inspect::UintPropertyValue>("block.write.kib");
+  ASSERT_NOT_NULL(write_kib);
+  EXPECT_EQ(write_kib->value(), (5 * FakeSdmmcDevice::kBlockSize) / 1024);
 }
 
 TEST_P(SdmmcBlockDeviceTest, InspectExtCsd) {

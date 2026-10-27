@@ -139,7 +139,7 @@ TEST_F(InitTest, Inspect) {
 
   for (const char* prop_name :
        {"block.read.count", "block.write.count", "block.flush.count", "block.trim.count",
-        "block.read.bytes", "block.write.bytes", "block.flush.bytes", "block.trim.bytes"}) {
+        "block.read.kib", "block.write.kib", "block.flush.kib", "block.trim.kib"}) {
     auto prop = ufs->node().get_property<inspect::UintPropertyValue>(prop_name);
     ASSERT_NE(prop, nullptr);
     EXPECT_EQ(prop->value(), 0U);

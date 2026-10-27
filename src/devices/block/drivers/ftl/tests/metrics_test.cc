@@ -63,8 +63,8 @@ TEST(MetricsTest, MetricsMappedCorrectly) {
   metrics.read().count.Set(2);
   expected_uint_values["block.read.count"] = 2;
 
-  metrics.read().bytes.Set(200);
-  expected_uint_values["block.read.bytes"] = 200;
+  metrics.read().kib.Set(200);
+  expected_uint_values["block.read.kib"] = 200;
 
   metrics.read().all.count.Set(3);
   expected_uint_values["block.read.issued_nand_operation.count"] = 3;
@@ -93,8 +93,8 @@ TEST(MetricsTest, MetricsMappedCorrectly) {
   metrics.write().count.Set(11);
   expected_uint_values["block.write.count"] = 11;
 
-  metrics.write().bytes.Set(300);
-  expected_uint_values["block.write.bytes"] = 300;
+  metrics.write().kib.Set(300);
+  expected_uint_values["block.write.kib"] = 300;
 
   metrics.write().all.count.Set(12);
   expected_uint_values["block.write.issued_nand_operation.count"] = 12;
@@ -123,8 +123,8 @@ TEST(MetricsTest, MetricsMappedCorrectly) {
   metrics.trim().count.Set(20);
   expected_uint_values["block.trim.count"] = 20;
 
-  metrics.trim().bytes.Set(400);
-  expected_uint_values["block.trim.bytes"] = 400;
+  metrics.trim().kib.Set(400);
+  expected_uint_values["block.trim.kib"] = 400;
 
   metrics.trim().all.count.Set(21);
   expected_uint_values["block.trim.issued_nand_operation.count"] = 21;
@@ -153,8 +153,8 @@ TEST(MetricsTest, MetricsMappedCorrectly) {
   metrics.flush().count.Set(27);
   expected_uint_values["block.flush.count"] = 27;
 
-  metrics.flush().bytes.Set(500);
-  expected_uint_values["block.flush.bytes"] = 500;
+  metrics.flush().kib.Set(500);
+  expected_uint_values["block.flush.kib"] = 500;
 
   metrics.flush().all.count.Set(28);
   expected_uint_values["block.flush.issued_nand_operation.count"] = 28;

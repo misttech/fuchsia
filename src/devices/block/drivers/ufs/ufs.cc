@@ -238,27 +238,42 @@ void Ufs::ProcessIoSubmissions() {
                io_bytes](zx_status_t status) mutable {
       vmo.reset();
       if (status == ZX_OK) {
+        // Note: completions are currently processed on a single thread. If this becomes
+        // multithreaded, we should only use Add() rather than Set() here (and handle KiB
+        // alignment) to prevent out-of-order updates from causing non-monotonic changes.
         switch (opcode) {
           case scsi::Opcode::READ_10:
           case scsi::Opcode::READ_12:
-          case scsi::Opcode::READ_16:
+          case scsi::Opcode::READ_16: {
             properties_.read_ops.Add(1);
-            properties_.read_bytes.Add(io_bytes);
+            uint64_t total =
+                properties_.total_read_bytes.fetch_add(io_bytes, std::memory_order_relaxed) +
+                io_bytes;
+            properties_.read_kib.Set(total / 1024);
             break;
+          }
           case scsi::Opcode::WRITE_10:
           case scsi::Opcode::WRITE_12:
-          case scsi::Opcode::WRITE_16:
+          case scsi::Opcode::WRITE_16: {
             properties_.write_ops.Add(1);
-            properties_.write_bytes.Add(io_bytes);
+            uint64_t total =
+                properties_.total_write_bytes.fetch_add(io_bytes, std::memory_order_relaxed) +
+                io_bytes;
+            properties_.write_kib.Set(total / 1024);
             break;
+          }
           case scsi::Opcode::SYNCHRONIZE_CACHE_10:
           case scsi::Opcode::SYNCHRONIZE_CACHE_16:
             properties_.flush_ops.Add(1);
             break;
-          case scsi::Opcode::UNMAP:
+          case scsi::Opcode::UNMAP: {
             properties_.trim_ops.Add(1);
-            properties_.trim_bytes.Add(io_bytes);
+            uint64_t total =
+                properties_.total_trim_bytes.fetch_add(io_bytes, std::memory_order_relaxed) +
+                io_bytes;
+            properties_.trim_kib.Set(total / 1024);
             break;
+          }
           default:
             break;
         }
@@ -709,10 +724,10 @@ zx_status_t Ufs::Init() {
     properties_.write_ops = inspect_node_.CreateUint("block.write.count", 0);
     properties_.flush_ops = inspect_node_.CreateUint("block.flush.count", 0);
     properties_.trim_ops = inspect_node_.CreateUint("block.trim.count", 0);
-    properties_.read_bytes = inspect_node_.CreateUint("block.read.bytes", 0);
-    properties_.write_bytes = inspect_node_.CreateUint("block.write.bytes", 0);
-    properties_.flush_bytes = inspect_node_.CreateUint("block.flush.bytes", 0);
-    properties_.trim_bytes = inspect_node_.CreateUint("block.trim.bytes", 0);
+    properties_.read_kib = inspect_node_.CreateUint("block.read.kib", 0);
+    properties_.write_kib = inspect_node_.CreateUint("block.write.kib", 0);
+    properties_.flush_kib = inspect_node_.CreateUint("block.flush.kib", 0);
+    properties_.trim_kib = inspect_node_.CreateUint("block.trim.kib", 0);
     PopulateVersionInspect(&inspect_node_);
     PopulateCapabilitiesInspect(&inspect_node_);
   }

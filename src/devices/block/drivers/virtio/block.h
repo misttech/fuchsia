@@ -254,10 +254,13 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   inspect::UintProperty write_ops_;
   inspect::UintProperty flush_ops_;
   inspect::UintProperty trim_ops_;
-  inspect::UintProperty read_bytes_;
-  inspect::UintProperty write_bytes_;
-  inspect::UintProperty flush_bytes_;
-  inspect::UintProperty trim_bytes_;
+  inspect::UintProperty read_kib_;
+  inspect::UintProperty write_kib_;
+  inspect::UintProperty flush_kib_;
+  inspect::UintProperty trim_kib_;
+  std::atomic<uint64_t> total_read_bytes_ = 0;
+  std::atomic<uint64_t> total_write_bytes_ = 0;
+  std::atomic<uint64_t> total_trim_bytes_ = 0;
 
   fdf::Logger& logger_;
 };

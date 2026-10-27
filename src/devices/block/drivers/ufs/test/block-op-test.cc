@@ -504,8 +504,8 @@ TEST_F(BlockOpTest, ReadPinFailureCompletesWithoutAssertion) {
 
 TEST_F(BlockOpTest, InspectIoCounters) {
   auto check_counters = [&](uint64_t read_ops, uint64_t write_ops, uint64_t flush_ops,
-                            uint64_t trim_ops, uint64_t read_bytes, uint64_t write_bytes,
-                            uint64_t trim_bytes) {
+                            uint64_t trim_ops, uint64_t read_kib, uint64_t write_kib,
+                            uint64_t trim_kib) {
     fpromise::result<inspect::Hierarchy> hierarchy =
         fpromise::run_single_threaded(inspect::ReadFromInspector(dut_->inspect()));
     ASSERT_TRUE(hierarchy.is_ok());
@@ -522,10 +522,10 @@ TEST_F(BlockOpTest, InspectIoCounters) {
     EXPECT_EQ(get_uint("block.write.count"), write_ops);
     EXPECT_EQ(get_uint("block.flush.count"), flush_ops);
     EXPECT_EQ(get_uint("block.trim.count"), trim_ops);
-    EXPECT_EQ(get_uint("block.read.bytes"), read_bytes);
-    EXPECT_EQ(get_uint("block.write.bytes"), write_bytes);
-    EXPECT_EQ(get_uint("block.flush.bytes"), 0u);
-    EXPECT_EQ(get_uint("block.trim.bytes"), trim_bytes);
+    EXPECT_EQ(get_uint("block.read.kib"), read_kib);
+    EXPECT_EQ(get_uint("block.write.kib"), write_kib);
+    EXPECT_EQ(get_uint("block.flush.kib"), 0u);
+    EXPECT_EQ(get_uint("block.trim.kib"), trim_kib);
   };
 
   ASSERT_NO_FATAL_FAILURE(check_counters(0, 0, 0, 0, 0, 0, 0));
@@ -544,7 +544,8 @@ TEST_F(BlockOpTest, InspectIoCounters) {
         .dev_offset = 0,
     };
     ASSERT_OK(client_->FifoTransaction(&write_request, 1));
-    ASSERT_NO_FATAL_FAILURE(check_counters(0, 1, 0, 0, 0, 2 * ufs_mock_device::kMockBlockSize, 0));
+    ASSERT_NO_FATAL_FAILURE(
+        check_counters(0, 1, 0, 0, 0, (2 * ufs_mock_device::kMockBlockSize) / 1024, 0));
 
     BlockFifoRequest read_request = {
         .command = {.opcode = BLOCK_OPCODE_READ},
@@ -554,8 +555,8 @@ TEST_F(BlockOpTest, InspectIoCounters) {
         .dev_offset = 0,
     };
     ASSERT_OK(client_->FifoTransaction(&read_request, 1));
-    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 0, 0, ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize, 0));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 0, 0, ufs_mock_device::kMockBlockSize / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024, 0));
 
     BlockFifoRequest flush_request = {
         .command = {.opcode = BLOCK_OPCODE_FLUSH},
@@ -565,8 +566,8 @@ TEST_F(BlockOpTest, InspectIoCounters) {
         .dev_offset = 0,
     };
     ASSERT_OK(client_->FifoTransaction(&flush_request, 1));
-    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 0, ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize, 0));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 0, ufs_mock_device::kMockBlockSize / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024, 0));
 
     BlockFifoRequest trim_request = {
         .command = {.opcode = BLOCK_OPCODE_TRIM},
@@ -576,9 +577,9 @@ TEST_F(BlockOpTest, InspectIoCounters) {
         .dev_offset = 0,
     };
     ASSERT_OK(client_->FifoTransaction(&trim_request, 1));
-    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024));
 
     // Verify failed I/O does not increment counters.
     BlockFifoRequest bad_read_request = {
@@ -589,9 +590,9 @@ TEST_F(BlockOpTest, InspectIoCounters) {
         .dev_offset = static_cast<uint32_t>(info_.block_count),
     };
     EXPECT_EQ(client_->FifoTransaction(&bad_read_request, 1), ZX_ERR_OUT_OF_RANGE);
-    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize,
-                                           2 * ufs_mock_device::kMockBlockSize));
+    ASSERT_NO_FATAL_FAILURE(check_counters(1, 1, 1, 1, ufs_mock_device::kMockBlockSize / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024,
+                                           (2 * ufs_mock_device::kMockBlockSize) / 1024));
 
     ASSERT_OK(client_->BlockDetachVmo(std::move(owned_vmoid)));
   }));

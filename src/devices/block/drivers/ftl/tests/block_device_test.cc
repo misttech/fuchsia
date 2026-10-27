@@ -536,7 +536,7 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
   // Random operation to trigger a metric update.
   auto [clear_prefix, clear_bytes] = clear_op();
   expected_counters[clear_prefix + ".count"]++;
-  expected_counters[clear_prefix + ".bytes"] += clear_bytes;
+  expected_counters[clear_prefix + ".kib"] += clear_bytes / 1024;
 
   zx::vmo vmo;
   fixture->driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
@@ -579,7 +579,7 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
 
   // Counters
   expected_counters[block_metric_prefix + ".count"] = 2;
-  expected_counters[block_metric_prefix + ".bytes"] = 2 * expected_bytes_per_op;
+  expected_counters[block_metric_prefix + ".kib"] = (2 * expected_bytes_per_op) / 1024;
   expected_counters[block_metric_prefix + ".issued_nand_operation.count"] = 17;
   expected_counters[block_metric_prefix + ".issued_page_read.count"] = 3;
   expected_counters[block_metric_prefix + ".issued_page_write.count"] = 6;
@@ -665,7 +665,7 @@ TEST_F(BlockDeviceTest, InspectFailedOpsNotCounted) {
   std::map<std::string, double> rates;
   ReadProperties(vmo, counters, rates);
   EXPECT_EQ(counters["block.trim.count"], 0);
-  EXPECT_EQ(counters["block.trim.bytes"], 0);
+  EXPECT_EQ(counters["block.trim.kib"], 0);
 }
 
 TEST_F(BlockDeviceTest, InspectBadBlockMetricsPopulation) {
