@@ -269,8 +269,15 @@ INSTANTIATE_TEST_SUITE_P(
             "Spontaneous",
             "HW REBOOT REASON (UNKNOWN)\n\n"
             "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
-            ShutdownReason::USER_REQUEST,
+            std::nullopt,
             "SPONTANEOUS",
+        },
+        {
+            "SpontaneousDuringShutdown",
+            "HW REBOOT REASON (UNKNOWN)\n\n"
+            "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098",
+            ShutdownReason::USER_REQUEST,
+            "SPONTANEOUS DURING SHUTDOWN",
         },
         {
             "RootJobTermination",
@@ -499,6 +506,45 @@ TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulFdr) {
                      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false));
 
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "FACTORY DATA RESET");
+}
+
+TEST_F(RebootLogReasonTest, Succeed_ZirconUnknownFdr) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
+
+  const RebootLog reboot_log(
+      ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                     /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                     /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false));
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(),
+            "SPONTANEOUS DURING SHUTDOWN");
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(), std::nullopt);
+  EXPECT_THAT(reboot_log.RebootLogStr(),
+              HasSubstr("FINAL REBOOT REASON (SPONTANEOUS DURING SHUTDOWN)"));
+}
+
+TEST_F(RebootLogReasonTest, Succeed_ZirconUnknownDuringShutdownKeepsAction) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(ShutdownAction::REBOOT_TO_BOOTLOADER,
+                                                       {ShutdownReason::DEVELOPER_REQUEST}));
+
+  const RebootLog reboot_log(
+      ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                     /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
+                     /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false));
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(),
+            "SPONTANEOUS DURING SHUTDOWN");
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
+            GracefulShutdownAction::kRebootToBootloader);
+  EXPECT_THAT(reboot_log.RebootLogStr(),
+              HasSubstr("GRACEFUL SHUTDOWN ACTION: (REBOOT_TO_BOOTLOADER)\n"
+                        "GRACEFUL REBOOT REASONS: (DEVELOPER REQUEST)\n\n"
+                        "FINAL REBOOT REASON (SPONTANEOUS DURING SHUTDOWN)"));
 }
 
 TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulNotParseable) {

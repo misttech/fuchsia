@@ -66,6 +66,11 @@ reboot was cold and will consider the reboot a result of a brief power loss. It
 is important to note that there is *not* a quantitative measure of what brief is
 and is hardware dependent.
 
+### Spontaneous reboot during shutdown
+
+A graceful shutdown was started and the device rebooted before Zircon could halt
+it, e.g. while drivers were being torn down.
+
 ### User hard reset
 
 The user held the power button to hard reset it.
@@ -156,6 +161,7 @@ Brownout                     | `BROWNOUT`                   | `Brownout`        
 Hardware watchdog timeout    | `HARDWARE_WATCHDOG_TIMEOUT`  | `HardwareWatchdogTimeout`  | `fuchsia-hw-watchdog-timeout`
 Software watchdog timeout    | `SOFTWARE_WATCHDOG_TIMEOUT`  | `SoftwareWatchdogTimeout`  | `fuchsia-sw-watchdog-timeout`
 Brief power loss             | `BRIEF POWER LOSS`           | `BriefPowerLoss`           | `fuchsia-brief-power-loss`
+Spontaneous reboot during shutdown | `SPONTANEOUS_REBOOT_DURING_SHUTDOWN` | `SpontaneousRebootDuringShutdown` | `fuchsia-brief-power-loss-during-shutdown`\*\*
 User hard reset              | `USER_HARD_RESET`            | `UserHardReset`            | `fuchsia-hard-reset-user-requested`
 User request                 | `USER_REQUEST`               | `UserRequest`              | N/A\*
 Developer request            | `DEVELOPER_REQUEST`          | `DeveloperRequest`         | N/A\*
@@ -172,3 +178,7 @@ Generic graceful             | *graceful* field set to true | `GenericGraceful` 
 Unknown                      | *graceful* field not set     | `Unknown`                  | `fuchsia-reboot-log-not-parseable`
 
 \* Not a crash. \
+
+\*\* The prefix follows how the product interprets spontaneous reboots, e.g.
+`fuchsia-hard-reset-during-shutdown` on products that interpret them as hard
+resets.

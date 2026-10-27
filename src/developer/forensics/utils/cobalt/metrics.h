@@ -115,6 +115,8 @@ enum class LastRebootReason {
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::CriticalDriverFailure,
   kPowerLevelTransitionStuck =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::PowerLevelTransitionStuck,
+  kSpontaneousRebootDuringShutdown = cobalt_registry::
+      LastRebootUptimeMigratedMetricDimensionReason::SpontaneousRebootDuringShutdown,
 };
 
 enum class PreviousBootEncodingVersion {

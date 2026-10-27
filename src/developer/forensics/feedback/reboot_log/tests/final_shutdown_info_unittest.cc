@@ -83,6 +83,30 @@ TEST(FinalShutdownInfoTest, HardReset) {
             fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS);
 }
 
+TEST(FinalShutdownInfoTest, SpontaneousDuringShutdown) {
+  const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousRebootDuringShutdown,
+                                              GracefulShutdownAction::kRebootToBootloader);
+
+  EXPECT_TRUE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.OptionallyGraceful(), std::make_optional(false));
+  EXPECT_EQ(final_shutdown_info.OptionallyPlanned(), std::make_optional(false));
+  EXPECT_EQ(final_shutdown_info.ToCobaltLastRebootReason(),
+            cobalt::LastRebootReason::kSpontaneousRebootDuringShutdown);
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
+            "fuchsia-spontaneous-reboot-during-shutdown");
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kBriefPowerLoss),
+            "fuchsia-brief-power-loss-during-shutdown");
+  EXPECT_EQ(final_shutdown_info.ToCrashSignature(SpontaneousRebootReason::kHardReset),
+            "fuchsia-hard-reset-during-shutdown");
+  EXPECT_EQ(final_shutdown_info.ToCrashProgramName(), "device");
+  EXPECT_EQ(final_shutdown_info.ToFidlRebootReason(),
+            fuchsia::feedback::RebootReason::SPONTANEOUS_REBOOT_DURING_SHUTDOWN);
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(),
+            GracefulShutdownAction::kRebootToBootloader);
+  EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationGracefulAction(),
+            ErrorOrString("reboot to bootloader"));
+}
+
 TEST(FinalShutdownInfoTest, KernelPanic) {
   std::unique_ptr<FinalShutdownInfo> final_shutdown_info =
       std::make_unique<FinalShutdownInfo>(FinalShutdownReason::kKernelPanic);
@@ -513,6 +537,99 @@ TEST(FinalShutdownInfoTest, NoGracefulInfoOnCold) {
   EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "COLD");
 }
 
+TEST(FinalShutdownInfoTest, ZirconUnknownWithoutContextIsSpontaneous) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kUndefined, ZirconShutdownReason::kUnknown,
+      /*graceful_shutdown_info=*/std::nullopt,
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/true,
+      /*uptime=*/zx::msec(5000), /*runtime=*/zx::msec(4000), /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "SPONTANEOUS");
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), std::nullopt);
+  EXPECT_EQ(final_shutdown_info.Uptime(), zx::msec(5000));
+  EXPECT_EQ(final_shutdown_info.Runtime(), zx::msec(4000));
+}
+
+TEST(FinalShutdownInfoTest, ZirconUnknownWithGracefulShutdownInfoIsDuringShutdown) {
+  for (const GracefulShutdownAction action : {
+           GracefulShutdownAction::kPoweroff,
+           GracefulShutdownAction::kReboot,
+           GracefulShutdownAction::kRebootToRecovery,
+           GracefulShutdownAction::kRebootToBootloader,
+           GracefulShutdownAction::kNotSupported,
+           GracefulShutdownAction::kNotParseable,
+       }) {
+    SCOPED_TRACE(ToString(action));
+    const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+        HwShutdownReason::kUndefined, ZirconShutdownReason::kUnknown,
+        GracefulShutdownInfo{action, {GracefulShutdownReason::kSystemUpdate}},
+        /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/true,
+        /*uptime=*/zx::msec(5000), /*runtime=*/zx::msec(4000), /*critical_process=*/std::nullopt);
+
+    EXPECT_TRUE(final_shutdown_info.IsCrash());
+    EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "SPONTANEOUS DURING SHUTDOWN");
+    EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), action);
+    EXPECT_EQ(final_shutdown_info.Uptime(), zx::msec(5000));
+    EXPECT_EQ(final_shutdown_info.Runtime(), zx::msec(4000));
+  }
+}
+
+TEST(FinalShutdownInfoTest, ZirconUnknownAfterFdrIsDuringShutdown) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kUndefined, ZirconShutdownReason::kUnknown,
+      /*graceful_shutdown_info=*/std::nullopt,
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/true,
+      /*uptime=*/zx::msec(5000), /*runtime=*/zx::msec(4000), /*critical_process=*/std::nullopt);
+
+  EXPECT_TRUE(final_shutdown_info.IsCrash());
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "SPONTANEOUS DURING SHUTDOWN");
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), std::nullopt);
+  EXPECT_EQ(final_shutdown_info.Uptime(), zx::msec(5000));
+  EXPECT_EQ(final_shutdown_info.Runtime(), zx::msec(4000));
+}
+
+TEST(FinalShutdownInfoTest, ZirconUnknownAfterFdrKeepsGracefulShutdownAction) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kUndefined, ZirconShutdownReason::kUnknown,
+      GracefulShutdownInfo{GracefulShutdownAction::kReboot, {GracefulShutdownReason::kFdr}},
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/true,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "SPONTANEOUS DURING SHUTDOWN");
+  EXPECT_EQ(final_shutdown_info.ToGracefulShutdownAction(), GracefulShutdownAction::kReboot);
+}
+
+TEST(FinalShutdownInfoTest, HwRebootReasonTrumpsZirconUnknownDuringShutdown) {
+  const GracefulShutdownInfo graceful_shutdown_info{GracefulShutdownAction::kReboot,
+                                                    {GracefulShutdownReason::kSystemUpdate}};
+
+  EXPECT_EQ(FinalShutdownInfo::MakeFinalShutdownInfo(
+                HwShutdownReason::kUserHardReset, ZirconShutdownReason::kUnknown,
+                graceful_shutdown_info, /*not_a_fdr=*/true,
+                /*supports_user_initiated_poweroffs=*/true, /*uptime=*/std::nullopt,
+                /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt)
+                .ToRebootReasonString(),
+            "USER HARD RESET");
+  EXPECT_EQ(FinalShutdownInfo::MakeFinalShutdownInfo(
+                HwShutdownReason::kWatchdog, ZirconShutdownReason::kUnknown, graceful_shutdown_info,
+                /*not_a_fdr=*/true,
+                /*supports_user_initiated_poweroffs=*/true, /*uptime=*/std::nullopt,
+                /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt)
+                .ToRebootReasonString(),
+            "HARDWARE WATCHDOG TIMEOUT");
+}
+
+TEST(FinalShutdownInfoTest, ZirconCrashReasonTrumpsGracefulShutdownInfoAndFdr) {
+  const FinalShutdownInfo final_shutdown_info = FinalShutdownInfo::MakeFinalShutdownInfo(
+      HwShutdownReason::kUndefined, ZirconShutdownReason::kKernelPanic,
+      GracefulShutdownInfo{GracefulShutdownAction::kReboot,
+                           {GracefulShutdownReason::kSystemUpdate}},
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/true,
+      /*uptime=*/std::nullopt, /*runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
+
+  EXPECT_EQ(final_shutdown_info.ToRebootReasonString(), "KERNEL PANIC");
+}
+
 TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationSpontaneous) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
   EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kSpontaneous),
@@ -530,6 +647,18 @@ TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationHardReset) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
   EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kHardReset),
             "hard reset");
+}
+
+TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationDuringShutdown) {
+  const FinalShutdownInfo final_shutdown_info(
+      FinalShutdownReason::kSpontaneousRebootDuringShutdown);
+  EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kSpontaneous),
+            "spontaneous during shutdown");
+  EXPECT_EQ(
+      final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kBriefPowerLoss),
+      "brief loss of power during shutdown");
+  EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kHardReset),
+            "hard reset during shutdown");
 }
 
 TEST(FinalShutdownInfoTest, JsonSerializationWithCriticalProcess) {
@@ -561,6 +690,23 @@ TEST(FinalShutdownInfoTest, JsonSerializationWithAction) {
   EXPECT_EQ(parsed_info->ToGracefulShutdownAction(), info.ToGracefulShutdownAction());
 }
 
+TEST(FinalShutdownInfoTest, JsonSerializationSpontaneousDuringShutdown) {
+  FinalShutdownInfo info(FinalShutdownReason::kSpontaneousRebootDuringShutdown,
+                         GracefulShutdownAction::kRebootToBootloader, zx::msec(1000),
+                         zx::msec(500));
+  const std::string json = info.ToJson();
+
+  const std::optional<FinalShutdownInfo> parsed_info = FinalShutdownInfo::FromJson(json);
+  ASSERT_TRUE(parsed_info.has_value());
+
+  EXPECT_EQ(parsed_info->ToRebootReasonString(), "SPONTANEOUS DURING SHUTDOWN");
+  EXPECT_EQ(parsed_info->Uptime(), info.Uptime());
+  EXPECT_EQ(parsed_info->Runtime(), info.Runtime());
+  EXPECT_EQ(parsed_info->ToGracefulShutdownAction(), GracefulShutdownAction::kRebootToBootloader);
+  EXPECT_EQ(parsed_info->ToCrashSignature(SpontaneousRebootReason::kHardReset),
+            "fuchsia-hard-reset-during-shutdown");
+}
+
 TEST(FinalShutdownInfoTest, FromJsonFailsIfMissingReason) {
   const std::string json = R"({"uptime_ms": 1000})";
   EXPECT_EQ(FinalShutdownInfo::FromJson(json).ToRebootReasonString(), "NOT PARSEABLE");
@@ -589,6 +735,7 @@ TEST(FinalShutdownInfoTest, AllReasonsParseable) {
       case FinalShutdownReason::kHwWatchdog:
       case FinalShutdownReason::kUserHardReset:
       case FinalShutdownReason::kSpontaneousReboot:
+      case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
       case FinalShutdownReason::kKernelPanic:
       case FinalShutdownReason::kOom:
       case FinalShutdownReason::kSwWatchdog:

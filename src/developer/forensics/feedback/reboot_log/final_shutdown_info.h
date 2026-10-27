@@ -32,6 +32,8 @@ enum class FinalShutdownReason : std::uint8_t {
 
   // Should map to ZirconShutdownReason without kNotSet, kNoCrash and kNotParseable.
   kSpontaneousReboot,
+  // A spontaneous reboot after a graceful shutdown started, but before Zircon halted the device.
+  kSpontaneousRebootDuringShutdown,
   kKernelPanic,
   kOom,
   kSwWatchdog,

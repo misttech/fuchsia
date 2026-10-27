@@ -127,6 +127,7 @@ pub async fn update_android_bootreason(
         Some(RebootReason::Unknown) => "reboot,unknown",
         Some(RebootReason::Cold) => "reboot,cold",
         Some(RebootReason::BriefPowerLoss) => "reboot,hard_reset",
+        Some(RebootReason::SpontaneousRebootDuringShutdown) => "reboot,hard_reset",
         Some(RebootReason::Brownout) => "reboot,undervoltage",
         Some(RebootReason::KernelPanic) => "kernel_panic",
         Some(RebootReason::SystemOutOfMemory) => "kernel_panic,oom",

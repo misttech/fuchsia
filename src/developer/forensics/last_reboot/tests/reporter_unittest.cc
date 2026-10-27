@@ -198,6 +198,64 @@ TEST_F(GenericReporterTest, Succeed_RootJobTerminationRebootLog) {
   EXPECT_TRUE(files::IsFile(kHasReportedOnPath));
 }
 
+TEST_F(GenericReporterTest, Succeed_SpontaneousDuringShutdown) {
+  const std::string zircon_reboot_log =
+      "HW REBOOT REASON (WARM BOOT)\n\n"
+      "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920";
+  WriteZirconRebootLogContents(zircon_reboot_log);
+  WriteGracefulShutdownInfoContents(ToJson(GracefulShutdownAction::kRebootToBootloader,
+                                           {GracefulShutdownReason::kDeveloperRequest}));
+
+  SetUpCrashReporterServer(
+      std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
+          .crash_signature = "fuchsia-spontaneous-reboot-during-shutdown",
+          .reboot_log = fxl::StringPrintf("%s\nGRACEFUL SHUTDOWN ACTION: (REBOOT_TO_BOOTLOADER)\n"
+                                          "GRACEFUL REBOOT REASONS: (DEVELOPER REQUEST)\n\n"
+                                          "FINAL REBOOT REASON (SPONTANEOUS DURING SHUTDOWN)",
+                                          zircon_reboot_log.c_str()),
+          .uptime = zx::msec(65487494),
+          .runtime = zx::msec(64208920),
+          .is_fatal = true,
+      }));
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
+
+  ReportOnRebootLog();
+
+  EXPECT_THAT(ReceivedCobaltEvents(),
+              UnorderedElementsAreArray({
+                  cobalt::Event(cobalt::LastRebootReason::kSpontaneousRebootDuringShutdown,
+                                zx::msec(65487494).to_usecs()),
+              }));
+}
+
+TEST_F(GenericReporterTest, Succeed_SpontaneousDuringShutdownAfterFdr) {
+  const std::string zircon_reboot_log =
+      "HW REBOOT REASON (WARM BOOT)\n\n"
+      "ZIRCON REBOOT REASON (UNKNOWN)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920";
+  WriteZirconRebootLogContents(zircon_reboot_log);
+  SetAsFdr();
+
+  SetUpCrashReporterServer(
+      std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
+          .crash_signature = "fuchsia-spontaneous-reboot-during-shutdown",
+          .reboot_log =
+              fxl::StringPrintf("%s\n%s\n%s\n\nFINAL REBOOT REASON (SPONTANEOUS DURING SHUTDOWN)",
+                                zircon_reboot_log.c_str(), kNoGracefulAction, kNoGracefulReason),
+          .uptime = zx::msec(65487494),
+          .runtime = zx::msec(64208920),
+          .is_fatal = true,
+      }));
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>(dispatcher()));
+
+  ReportOnRebootLog();
+
+  EXPECT_THAT(ReceivedCobaltEvents(),
+              UnorderedElementsAreArray({
+                  cobalt::Event(cobalt::LastRebootReason::kSpontaneousRebootDuringShutdown,
+                                zx::msec(65487494).to_usecs()),
+              }));
+}
+
 TEST_F(GenericReporterTest, Succeed_NoUptime) {
   const feedback::FinalShutdownInfo final_shutdown_info(
       feedback::FinalShutdownReason::kKernelPanic);

@@ -68,6 +68,9 @@ FinalShutdownReason FromRebootReasonString(const std::string& reason) {
   if (reason == "SPONTANEOUS") {
     return FinalShutdownReason::kSpontaneousReboot;
   }
+  if (reason == "SPONTANEOUS DURING SHUTDOWN") {
+    return FinalShutdownReason::kSpontaneousRebootDuringShutdown;
+  }
   if (reason == "ROOT JOB TERMINATION") {
     return FinalShutdownReason::kRootJobTermination;
   }
@@ -202,6 +205,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kSwWatchdog:
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
     case FinalShutdownReason::kRootJobTermination:
     case FinalShutdownReason::kUserHardReset:
     case FinalShutdownReason::kNotParseable:
@@ -242,6 +246,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kSwWatchdog:
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
     case FinalShutdownReason::kRootJobTermination:
     case FinalShutdownReason::kUserHardReset:
       return false;
@@ -282,6 +287,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kSwWatchdog:
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
     case FinalShutdownReason::kRootJobTermination:
     case FinalShutdownReason::kUserHardReset:
     case FinalShutdownReason::kGenericGraceful:
@@ -333,6 +339,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "BROWNOUT";
     case FinalShutdownReason::kSpontaneousReboot:
       return "SPONTANEOUS";
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
+      return "SPONTANEOUS DURING SHUTDOWN";
     case FinalShutdownReason::kRootJobTermination:
       return "ROOT JOB TERMINATION";
     case FinalShutdownReason::kUserHardReset:
@@ -402,6 +410,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::BROWNOUT;
     case FinalShutdownReason::kSpontaneousReboot:
       return fuchsia::feedback::RebootReason::BRIEF_POWER_LOSS;
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
+      return fuchsia::feedback::RebootReason::SPONTANEOUS_REBOOT_DURING_SHUTDOWN;
     case FinalShutdownReason::kRootJobTermination:
       return fuchsia::feedback::RebootReason::ROOT_JOB_TERMINATION;
     case FinalShutdownReason::kUserHardReset:
@@ -469,6 +479,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kBrownout;
     case FinalShutdownReason::kSpontaneousReboot:
       return cobalt::LastRebootReason::kBriefPowerLoss;
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
+      return cobalt::LastRebootReason::kSpontaneousRebootDuringShutdown;
     case FinalShutdownReason::kRootJobTermination:
       return cobalt::LastRebootReason::kRootJobTermination;
     case FinalShutdownReason::kUserHardReset:
@@ -531,6 +543,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kHwWatchdog:
     case FinalShutdownReason::kBrownout:
     case FinalShutdownReason::kSpontaneousReboot:
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
     case FinalShutdownReason::kUserHardReset:
       return "device";
     case FinalShutdownReason::kOom:
@@ -574,6 +587,8 @@ std::string FinalShutdownInfo::ToCrashSignature(
       return "fuchsia-reboot-log-not-parseable";
     case FinalShutdownReason::kSpontaneousReboot:
       return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason);
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
+      return GetSpontaneousRebootCrashSignature(spontaneous_reboot_reason) + "-during-shutdown";
     case FinalShutdownReason::kKernelPanic:
       return "fuchsia-kernel-panic";
     case FinalShutdownReason::kOom:
@@ -739,6 +754,15 @@ FinalShutdownInfo FinalShutdownInfo::MakeFinalShutdownInfo(
     case ZirconShutdownReason::kSwWatchdog:
       return FinalShutdownInfo(FinalShutdownReason::kSwWatchdog, uptime, runtime);
     case ZirconShutdownReason::kUnknown:
+      // A graceful shutdown was started and the device rebooted before Zircon could halt it.
+      if (graceful_shutdown_info.has_value()) {
+        return FinalShutdownInfo(FinalShutdownReason::kSpontaneousRebootDuringShutdown,
+                                 graceful_shutdown_info->action, uptime, runtime);
+      }
+      if (!not_a_fdr) {
+        return FinalShutdownInfo(FinalShutdownReason::kSpontaneousRebootDuringShutdown, uptime,
+                                 runtime);
+      }
       return FinalShutdownInfo(FinalShutdownReason::kSpontaneousReboot, uptime, runtime);
     case ZirconShutdownReason::kNotParseable:
       return FinalShutdownInfo(FinalShutdownReason::kNotParseable, uptime, runtime);
@@ -787,6 +811,8 @@ std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
       return "cold";
     case FinalShutdownReason::kSpontaneousReboot:
       return GetSpontaneousRebootReason(spontaneous_reboot_reason);
+    case FinalShutdownReason::kSpontaneousRebootDuringShutdown:
+      return GetSpontaneousRebootReason(spontaneous_reboot_reason) + " during shutdown";
     case FinalShutdownReason::kBrownout:
       return "brownout";
     case FinalShutdownReason::kKernelPanic:
