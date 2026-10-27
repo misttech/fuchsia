@@ -43,7 +43,7 @@ def _get_ffx_from_tracing(
     if ffx is not None:
         return ffx
     fc_transport = getattr(tracing, "_fc_transport", None)
-    dut = getattr(fc_transport, "_device_ip_change", None)
+    dut = getattr(fc_transport, "_device_address_change", None)
     return getattr(dut, "ffx", None)
 
 

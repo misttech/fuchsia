@@ -140,7 +140,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     serial_number="12345678",
-                    ip_port=_INPUT_ARGS["device_ip"],
+                    address=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -182,7 +182,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     serial_number=None,
-                    ip_port=_INPUT_ARGS["device_ip"],
+                    address=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -191,14 +191,14 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(errors.NotEnabledError):
                 _ = ad_obj.adb
 
-    def test_is_pontis_target_device_info_ip_port(self) -> None:
-        """Test case for _is_pontis_target() using device_info.ip_port."""
+    def test_is_pontis_target_device_info_address(self) -> None:
+        """Test case for _is_pontis_target() using device_info.address."""
         orig_device_info = self.ad_obj._device_info
         try:
             self.ad_obj._device_info = custom_types.DeviceInfo(
                 name=_INPUT_ARGS["device_name"],
                 serial_number="12345678",
-                ip_port=custom_types.IpPort(
+                address=custom_types.IpPort(
                     ip=ipaddress.IPv6Address(
                         "fe80::bcd3:bbce:3ee9:4d87%pontis"
                     ),
@@ -211,7 +211,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
             self.ad_obj._device_info = custom_types.DeviceInfo(
                 name=_INPUT_ARGS["device_name"],
                 serial_number="12345678",
-                ip_port=custom_types.IpPort(
+                address=custom_types.IpPort(
                     ip=ipaddress.IPv4Address("192.168.1.2"),
                     port=8022,
                 ),
@@ -227,7 +227,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number="12345678",
-            ip_port=None,
+            address=None,
             serial_socket=_INPUT_ARGS["device_serial_socket"],
         )
         try:
@@ -260,7 +260,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number="12345678",
-            ip_port=custom_types.IpPort(
+            address=custom_types.IpPort(
                 ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
                 port=8022,
             ),
@@ -533,7 +533,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
 
@@ -562,7 +562,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
 
@@ -589,7 +589,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
 
@@ -616,7 +616,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
 
@@ -709,7 +709,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number="12345678",
-            ip_port=custom_types.IpPort(
+            address=custom_types.IpPort(
                 ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
                 port=8022,
             ),
@@ -862,7 +862,7 @@ class AndroidDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.ad_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number="12345678",
-            ip_port=custom_types.IpPort(
+            address=custom_types.IpPort(
                 ip=ipaddress.IPv6Address("fe80::bcd3:bbce:3ee9:4d87%pontis"),
                 port=8022,
             ),
@@ -912,7 +912,7 @@ class AndroidDeviceBaseCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.dev_info = custom_types.DeviceInfo(
             name="fuchsia-emulator",
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
         self.ffx_cfg = mock.MagicMock()

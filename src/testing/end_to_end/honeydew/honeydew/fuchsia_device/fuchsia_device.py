@@ -8,7 +8,7 @@ import inspect
 import json
 import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
@@ -126,14 +126,6 @@ _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
     ),
 }
 
-_FFX_CMDS: dict[str, list[str]] = {
-    "RESOLVE_IP": [
-        "target",
-        "list",
-        "--no-probe",  # do not connect to targets
-    ],
-}
-
 _LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
     custom_types.LEVEL.INFO: f_diagnostics_types.Severity.INFO,
     custom_types.LEVEL.WARNING: f_diagnostics_types.Severity.WARN,
@@ -149,7 +141,7 @@ class FuchsiaDevice(
     affordances_capable.FuchsiaDeviceLogger,
     affordances_capable.FuchsiaDeviceClose,
     affordances_capable.InspectCapableDevice,
-    affordances_capable.FuchsiaDeviceIpChange,
+    affordances_capable.FuchsiaDeviceAddressChange,
 ):
     """Class that provides access to an assortment of capabilities available
     on a Fuchsia device.
@@ -201,18 +193,10 @@ class FuchsiaDevice(
         ffx_config_data: FfxConfigData,
         # intentionally made this a Dict instead of dataclass to minimize the changes in remaining Lacewing stack every time we need to add a new configuration item
         config: dict[str, Any] | None = None,
-        environ: Mapping[str, str] | None = None,
     ) -> None:
         _LOGGER.debug("Initializing FuchsiaDevice")
-        if environ is None:
-            environ = os.environ
 
         self._device_info: custom_types.DeviceInfo = device_info
-
-        # Track if the device was created with a statically provided IP (infra).
-        self._is_static_ip: bool = (
-            device_info.ip_port is not None and common.is_infra(environ)
-        )
 
         self._ffx_config_data: FfxConfigData = ffx_config_data
 
@@ -222,9 +206,9 @@ class FuchsiaDevice(
         self._on_device_close_fns: list[
             Callable[[], None] | Callable[[], Awaitable[None]]
         ] = []
-        self._on_device_ip_change_fns: list[
-            Callable[[custom_types.IpPort], None]
-            | Callable[[custom_types.IpPort], Awaitable[None]]
+        self._on_device_address_change_fns: list[
+            Callable[[custom_types.TargetAddr], None]
+            | Callable[[custom_types.TargetAddr], Awaitable[None]]
         ] = []
         self._on_device_suspend_fns: list[
             Callable[[], None] | Callable[[], Awaitable[None]]
@@ -270,9 +254,19 @@ class FuchsiaDevice(
         return self._device_info.name
 
     @property
+    def is_static_address(self) -> bool:
+        """Returns True if the device was created with a statically provided address."""
+        return (
+            isinstance(self._device_info.address, custom_types.IpPort)
+            and common.is_infra()
+        )
+
+    # TODO: Remove is_static_ip once //vendor/google code is updated to use
+    # is_static_address.
+    @property
     def is_static_ip(self) -> bool:
         """Returns True if the device was created with a statically provided IP."""
-        return self._is_static_ip
+        return self.is_static_address
 
     async def manufacturer(self) -> str:
         """Returns the manufacturer of the device, cached after the first retrieval.
@@ -372,14 +366,14 @@ class FuchsiaDevice(
             return ffx_with_monitor.FFXWithMonitor(
                 target_name=self.device_name,
                 config_data=self._ffx_config_data,
-                target_ip_port=self._device_info.ip_port,
-                device_ip_change=self,
+                target_addr=self._device_info.address,
+                device_address_change=self,
             )
         return ffx.FFX(
             target_name=self.device_name,
             config_data=self._ffx_config_data,
-            target_ip_port=self._device_info.ip_port,
-            device_ip_change=self,
+            target_addr=self._device_info.address,
+            device_address_change=self,
         )
 
     @properties.Transport
@@ -398,8 +392,8 @@ class FuchsiaDevice(
             fc_transport.FuchsiaController(
                 target_name=self.device_name,
                 ffx_config_data=self._ffx_config_data,
-                target_ip_port=self._device_info.ip_port,
-                device_ip_change=self,
+                target_addr=self._device_info.address,
+                device_address_change=self,
             )
         )
         return fuchsia_controller_obj
@@ -1142,83 +1136,67 @@ class FuchsiaDevice(
         """
         self._on_device_close_fns.append(fn)
 
-    async def resolve_device_ip(self) -> None:
-        """Resolves the IP address of Fuchsia device."""
-        # Step #1 - Get the IP address of the Fuchsia device.
-        if self._device_info.ip_port is not None:
+    async def resolve_device_address(self) -> None:
+        """Resolves the target address of Fuchsia device."""
+        # Step #1 - Get the target address of the Fuchsia device.
+        if self._device_info.address is not None:
             _LOGGER.info(
-                "'%s' is the IP address of '%s', prior to resolving device ip",
-                self._device_info.ip_port,
+                "'%s' is the target address of '%s', prior to resolving device address",
+                self._device_info.address,
                 self.device_name,
             )
         try:
-            cmd: list[str] = _FFX_CMDS["RESOLVE_IP"] + [self.device_name]
-            output: str = self.ffx.run(
-                cmd=cmd,
-                include_target=False,
+            target_addr: custom_types.TargetAddr = self.ffx.get_target_address(
+                refresh=True
             )
-            targets = json.loads(output)
-            if not targets:
-                raise ffx_errors.FfxCommandError(
-                    f"Target '{self.device_name}' not found in 'ffx target list'"
-                )
-            target = targets[0]
-            if not target.get("addresses"):
-                raise ffx_errors.FfxCommandError(
-                    f"No addresses found for target '{self.device_name}'"
-                )
-            address = target["addresses"][0]
-            target_addr = custom_types.TargetAddr.from_json(address)
 
-            if isinstance(target_addr, custom_types.IpPort):
-                ip_port: custom_types.IpPort = target_addr
-                self._device_info = dataclasses.replace(
-                    self._device_info,
-                    ip_port=ip_port,
-                )
-                if self._device_info.ip_port is not None:
-                    _LOGGER.info(
-                        "'%s' is the IP address of '%s', after resolving device ip",
-                        self._device_info.ip_port,
-                        self.device_name,
-                    )
+            self._device_info = dataclasses.replace(
+                self._device_info,
+                address=target_addr,
+            )
+            _LOGGER.info(
+                "'%s' is the target address of '%s', after resolving device address",
+                self._device_info.address,
+                self.device_name,
+            )
 
-                # Step #2 - Call all of the callback functions that were registered for IP address change.
-                for fn in self._on_device_ip_change_fns:
-                    _LOGGER.info(
-                        "Calling %s with arg %s",
-                        fn.__qualname__,
-                        ip_port,
-                    )
-                    res = fn(ip_port)
-                    if inspect.isawaitable(res):
-                        await res
-            elif isinstance(target_addr, custom_types.TargetUsb):
-                self.ffx.resolve_target_address()
-                self.fuchsia_controller.after_usb_reconnect()
-        # `ValueError` covers malformed `ffx` output, from `json.loads()` and
-        # `TargetAddr.from_json()`.
+            # Step #2 - Call all of the callback functions that were registered for device address change.
+            for fn in self._on_device_address_change_fns:
+                _LOGGER.info(
+                    "Calling %s with arg %s",
+                    fn.__qualname__,
+                    target_addr,
+                )
+                res = fn(target_addr)
+                if inspect.isawaitable(res):
+                    await res
         except (errors.HoneydewError, ValueError) as err:
             raise errors.FuchsiaDeviceError(
-                f"Failed to resolve IP for '{self.device_name}'"
+                f"Failed to resolve address for '{self.device_name}'"
             ) from err
 
         # Step #3 - Ensure device is healthy
         self.health_check()
 
-    def register_for_on_device_ip_change(
+    # TODO: Remove resolve_device_ip() once //vendor/google code is updated to
+    # use resolve_device_address().
+    async def resolve_device_ip(self) -> None:
+        """Resolves the IP address of Fuchsia device."""
+        await self.resolve_device_address()
+
+    def register_for_on_device_address_change(
         self,
         fn: (
-            Callable[[custom_types.IpPort], None]
-            | Callable[[custom_types.IpPort], Awaitable[None]]
+            Callable[[custom_types.TargetAddr], None]
+            | Callable[[custom_types.TargetAddr], Awaitable[None]]
         ),
     ) -> None:
-        """Register a function that will be called when an IP address is changed.
+        """Register a function that will be called when a device address is changed.
 
         Args:
-            fn: Function that need to be called when an IP address is changed.
+            fn: Function that need to be called when a device address is changed.
         """
-        self._on_device_ip_change_fns.append(fn)
+        self._on_device_address_change_fns.append(fn)
 
     async def snapshot(
         self,
@@ -1290,7 +1268,7 @@ class FuchsiaDevice(
         """
         _LOGGER.info("Waiting for %s to go online...", self.device_name)
         try:
-            if self._is_static_ip:
+            if self.is_static_address:
                 # If the device was specified as an address,
                 # just continue to use that address. This is the
                 # norm when run by builders in Infra, because they
@@ -1299,15 +1277,15 @@ class FuchsiaDevice(
                 self.ffx.wait_for_rcs_connection(include_target_name=False)
             else:
                 # If the device was not specified as an address, it may change
-                # IP addresses, so first wait for it by name, then update the
-                # IP address. This is the appropriate way when run locally,
+                # addresses, so first wait for it by name, then update the
+                # address. This is the appropriate way when run locally,
                 # because in most environments the device may have a new
                 # address after reboots, so the target name is the stable
                 # query to use.
                 self.ffx.wait_for_rcs_connection(include_target_name=True)
-                # Now that we know that the device is available, update find
-                # out and store its new IP address.
-                await self.resolve_device_ip()
+                # Now that we know that the device is available, find
+                # out and store its new target address.
+                await self.resolve_device_address()
             _LOGGER.info("%s is online.", self.device_name)
         except (
             errors.DeviceNotConnectedError,

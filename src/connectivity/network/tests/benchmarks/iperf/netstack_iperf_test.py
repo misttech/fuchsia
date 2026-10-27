@@ -19,6 +19,7 @@ from typing import Any, Callable
 import fuchsia_base_test
 import test_data
 from honeydew.transports.ffx.ffx import FFX
+from honeydew.typing import custom_types
 from mobly import asserts, test_runner
 from perf_publish import publish
 from reporting import metrics
@@ -375,15 +376,15 @@ class NetstackIperfTest(fuchsia_base_test.FuchsiaBaseTest):
         self, dir: pathlib.Path, message_size: int, flows: int
     ) -> list[str]:
         asserts.assert_equal(flows, 1)
-        ssh_address = self.dut.ffx.get_target_ssh_address()
-        assert ssh_address is not None
+        target_address = self.dut.ffx.get_target_address()
+        assert isinstance(target_address, custom_types.IpPort)
         return [
             await self._execute_iperf3_commands(
                 # NOTE(https://fxbug.dev/42124566): Currently, we are using the link used for
                 # ssh to also inject data traffic. This is prone to interference to ssh and to
                 # the tests. Ideally we would use a separate usb-ethernet interface for the test
                 # traffic.
-                ssh_address.ip,
+                target_address.ip,
                 message_size,
                 dir,
             )

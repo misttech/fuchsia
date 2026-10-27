@@ -51,7 +51,7 @@ _FFX_TARGET_INFO: dict[str, Any] = {
 
 _INPUT_ARGS: dict[str, Any] = {
     "target_query": _TARGET_NAME,
-    "target_ip_port": _TARGET_IP_PORT,
+    "target_addr": _TARGET_IP_PORT,
     "ffx_config_data": ffx_config.FfxConfigData(
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
@@ -76,8 +76,8 @@ class FfxWithMonitorTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-        self.device_ip_change = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceIpChange
+        self.device_address_change = mock.MagicMock(
+            spec=affordances_capable.FuchsiaDeviceAddressChange
         )
         with (
             mock.patch.object(
@@ -95,8 +95,8 @@ class FfxWithMonitorTests(unittest.TestCase):
             self.ffx_monitor_obj = ffx_with_monitor.FFXWithMonitor(
                 target_name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                target_ip_port=_INPUT_ARGS["target_ip_port"],
-                device_ip_change=self.device_ip_change,
+                target_addr=_INPUT_ARGS["target_addr"],
+                device_address_change=self.device_address_change,
             )
         mock_wait_for_rcs_connection.assert_called_once()
         mock_ffx_check_running_monitor.assert_called_once()

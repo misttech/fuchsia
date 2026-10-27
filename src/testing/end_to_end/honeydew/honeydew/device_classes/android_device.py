@@ -129,7 +129,7 @@ class AndroidDevice(fuchsia_device.FuchsiaDevice):
 
     def _is_pontis_target(self) -> bool:
         """Returns True if the target device is connected via Pontis."""
-        target_addr: custom_types.TargetAddr | None = self._device_info.ip_port
+        target_addr: custom_types.TargetAddr | None = self._device_info.address
         if target_addr is None:
             try:
                 target_addr = self.ffx.get_target_address()

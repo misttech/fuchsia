@@ -30,8 +30,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         # This just gets some things out of the way in case the daemon gets
         # turned on and off again.
         await super().setup_class()
-        self.dut_ssh_address = self.dut.ffx.get_target_ssh_address()
-        assert self.dut_ssh_address is not None
+        self.dut_ssh_address = self.dut.ffx.get_target_address()
 
     # Run the ffx command with the --direct arg, and parse the results
     def _run_ffx_direct(

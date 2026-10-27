@@ -86,23 +86,119 @@ class FuchsiaControllerTests(unittest.TestCase):
                 autospec=True,
             ) as mock_target_wait,
         ):
-            self.device_ip_change = mock.MagicMock(
-                spec=affordances_capable.FuchsiaDeviceIpChange
+            self.device_address_change = mock.MagicMock(
+                spec=affordances_capable.FuchsiaDeviceAddressChange
             )
 
             self.fuchsia_controller_obj_with_device_ip = (
                 fc_transport.FuchsiaController(
                     target_name=_INPUT_ARGS["target_name"],
-                    target_ip_port=_INPUT_ARGS["target_ip_port"],
+                    target_addr=_INPUT_ARGS["target_ip_port"],
                     ffx_config_data=_MOCK_ARGS["ffx_config_data"],
-                    device_ip_change=self.device_ip_change,
+                    device_address_change=self.device_address_change,
                 )
             )
         mock_target_wait.assert_called()
+        self.device_address_change.register_for_on_device_address_change.assert_called_once()
+
+    def test_init_with_target_addr_raises_when_no_device_address_change(
+        self,
+    ) -> None:
+        """Test case for FuchsiaController() when called with target_addr and no device_address_change."""
+        with self.assertRaises(ValueError):
+            fc_transport.FuchsiaController(
+                target_name=_INPUT_ARGS["target_name"],
+                target_addr=_INPUT_ARGS["target_ip_port"],
+                ffx_config_data=_MOCK_ARGS["ffx_config_data"],
+            )
 
     def test_create_context(self) -> None:
         """Test case for fuchsia_controller_transport.create_context()."""
         self.fuchsia_controller_obj_with_device_ip.create_context()
+
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "create_context",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "check_connection",
+        autospec=True,
+    )
+    def test_on_device_address_change(
+        self,
+        mock_check_connection: mock.Mock,
+        mock_create_context: mock.Mock,
+    ) -> None:
+        """Test case for _on_device_address_change()."""
+        new_ip_port = custom_types.IpPort(
+            ip=ipaddress.ip_address("127.0.0.1"), port=8022
+        )
+        self.fuchsia_controller_obj_with_device_ip._on_device_address_change(
+            new_ip_port
+        )
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target_addr,
+            new_ip_port,
+        )
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target_ip_port,
+            new_ip_port,
+        )
+        self.fuchsia_controller_obj_with_device_ip._target_ip_port = (
+            _TARGET_IP_PORT
+        )
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target_addr,
+            _TARGET_IP_PORT,
+        )
+        self.fuchsia_controller_obj_with_device_ip._target_addr = new_ip_port
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target,
+            str(new_ip_port),
+        )
+        mock_create_context.assert_called_once_with(
+            self.fuchsia_controller_obj_with_device_ip
+        )
+        mock_check_connection.assert_called_once_with(
+            self.fuchsia_controller_obj_with_device_ip
+        )
+
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "create_context",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "check_connection",
+        autospec=True,
+    )
+    def test_on_device_address_change_usb(
+        self,
+        mock_check_connection: mock.Mock,
+        mock_create_context: mock.Mock,
+    ) -> None:
+        """Test case for _on_device_address_change() with UsbAddress."""
+        new_usb = custom_types.UsbAddress(target_id=42)
+        self.fuchsia_controller_obj_with_device_ip._on_device_address_change(
+            new_usb
+        )
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target_addr,
+            new_usb,
+        )
+        self.assertEqual(
+            self.fuchsia_controller_obj_with_device_ip._target,
+            "usb:cid:42",
+        )
+        mock_create_context.assert_called_once_with(
+            self.fuchsia_controller_obj_with_device_ip
+        )
+        mock_check_connection.assert_called_once_with(
+            self.fuchsia_controller_obj_with_device_ip
+        )
 
     @mock.patch.object(
         fuchsia_controller,

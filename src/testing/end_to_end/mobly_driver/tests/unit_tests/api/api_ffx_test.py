@@ -252,6 +252,86 @@ class FfxClientTest(unittest.TestCase):
             )
         mock_check_output.assert_called()
 
+    @patch(
+        "subprocess.check_output",
+        autospec=True,
+    )
+    def test_get_target_usb_address(self, mock_check_output: Any) -> None:
+        """Test case for get_target_usb_address() returning expected results"""
+        mock_check_output.return_value = b"usb:cid:42\n"
+
+        expected_target_usb_address = api_ffx.TargetUsbAddress(target_id=42)
+
+        self.assertEqual(
+            self.client.get_target_usb_address(
+                target_name="fuchsia-emulator",
+            ),
+            expected_target_usb_address,
+        )
+        self.assertEqual(str(expected_target_usb_address), "usb:cid:42")
+
+        mock_check_output.assert_called_once_with(
+            [
+                "some_ffx_path",
+                "target",
+                "list",
+                "--allow-addrs",
+                "usb",
+                "--format",
+                "addresses-with-scope",
+                "fuchsia-emulator",
+            ],
+            timeout=15,
+        )
+
+    @parameterized.expand(
+        [
+            (
+                "timeout",
+                subprocess.TimeoutExpired(cmd="", timeout=-1),
+            ),
+            (
+                "failure",
+                subprocess.CalledProcessError(returncode=1, cmd=[], stderr=""),
+            ),
+        ]
+    )
+    @patch("subprocess.check_output", autospec=True)
+    def test_get_target_usb_address_failure_raises_exception(
+        self, unused_name: str, mock_exception: Any, mock_check_output: Any
+    ) -> None:
+        """Test case for get_target_usb_address() raising exceptions for
+        subprocess failure"""
+        mock_check_output.side_effect = mock_exception
+        with self.assertRaises(api_ffx.CommandException):
+            self.client.get_target_usb_address(
+                target_name="fuchsia-emulator",
+            )
+        mock_check_output.assert_called()
+
+    @parameterized.expand(
+        [
+            ("invalid_prefix", b"some invalid output"),
+            ("non_integer_cid", b"usb:cid:abc"),
+            ("negative_cid", b"usb:cid:-1"),
+        ]
+    )
+    @patch("subprocess.check_output", autospec=True)
+    def test_get_target_usb_address_invalid_output_raises_exception(
+        self,
+        unused_name: str,
+        invalid_output: bytes,
+        mock_check_output: Any,
+    ) -> None:
+        """Test case for get_target_usb_address raising exception for invalid
+        output"""
+        mock_check_output.return_value = invalid_output
+        with self.assertRaises(api_ffx.OutputFormatException):
+            self.client.get_target_usb_address(
+                target_name="fuchsia-emulator",
+            )
+        mock_check_output.assert_called()
+
     @parameterized.expand(
         [
             (

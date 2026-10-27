@@ -20,6 +20,7 @@ from honeydew.affordances.connectivity.netstack.errors import (
 )
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
+from honeydew.typing.custom_types import IpPort
 from iperf import iperf_client, iperf_server
 from legacy_access_point.access_point import AccessPoint
 from libs.ip_utils import AddrType
@@ -133,8 +134,10 @@ def _find_wlan_device(
     for wd in wlan_devices:
         if wlan_device_identifier == wd.device_name:
             return wd
-        ssh_addr = wd.ffx.get_target_ssh_address()
-        if ssh_addr and wlan_device_identifier == str(ssh_addr.ip):
+        target_addr = wd.ffx.get_target_address()
+        if isinstance(target_addr, IpPort) and wlan_device_identifier == str(
+            target_addr.ip
+        ):
             return wd
     raise WmmTransceiverError(
         f'No WLAN device with identifier "{wlan_device_identifier}"'

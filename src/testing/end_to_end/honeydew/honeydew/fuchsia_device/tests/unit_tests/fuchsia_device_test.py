@@ -58,6 +58,7 @@ from honeydew.transports.fuchsia_controller import (
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
 from honeydew.typing import custom_types
+from honeydew.utils import common
 from mobly import signals
 from parameterized import param, parameterized
 
@@ -276,7 +277,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
                     serial_number=None,
-                    ip_port=_INPUT_ARGS["device_ip"],
+                    address=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -316,7 +317,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
             fastboot_node_id="12345678",
         )
@@ -361,7 +362,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
             fastboot_node_id=None,
         )
@@ -400,7 +401,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
             fastboot_node_id=None,
         )
@@ -430,7 +431,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
             fastboot_node_id=None,
         )
@@ -518,7 +519,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
 
@@ -1741,9 +1742,79 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         mock_ffx_wait_for_rcs_disconnection.assert_called()
 
+    @parameterized.expand(
+        [
+            (
+                {
+                    "label": "ip_in_infra",
+                    "address": _TARGET_SSH_ADDRESS,
+                    "is_infra": True,
+                    "expected": True,
+                },
+            ),
+            (
+                {
+                    "label": "ip_local",
+                    "address": _TARGET_SSH_ADDRESS,
+                    "is_infra": False,
+                    "expected": False,
+                },
+            ),
+            (
+                {
+                    "label": "usb_in_infra",
+                    "address": custom_types.UsbAddress(target_id=42),
+                    "is_infra": True,
+                    "expected": False,
+                },
+            ),
+            (
+                {
+                    "label": "none_in_infra",
+                    "address": None,
+                    "is_infra": True,
+                    "expected": False,
+                },
+            ),
+        ],
+        name_func=_custom_test_name_func,
+    )
+    @mock.patch.object(common, "is_infra", autospec=True)
+    def test_is_static_address(
+        self,
+        parameterized_dict: dict[str, Any],
+        mock_is_infra: mock.Mock,
+    ) -> None:
+        """Testcase for FuchsiaDevice.is_static_address property."""
+        mock_is_infra.return_value = parameterized_dict["is_infra"]
+        orig_device_info = self.fd_fc_obj._device_info
+        try:
+            self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+                name=_INPUT_ARGS["device_name"],
+                serial_number=None,
+                address=parameterized_dict["address"],
+                serial_socket=None,
+            )
+            self.assertEqual(
+                self.fd_fc_obj.is_static_address,
+                parameterized_dict["expected"],
+            )
+            self.assertEqual(
+                self.fd_fc_obj.is_static_ip,
+                parameterized_dict["expected"],
+            )
+        finally:
+            self.fd_fc_obj._device_info = orig_device_info
+
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
-        "resolve_device_ip",
+        "is_static_address",
+        new_callable=mock.PropertyMock,
+        return_value=True,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "resolve_device_address",
         autospec=True,
     )
     @mock.patch.object(
@@ -1754,21 +1825,28 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     async def test_wait_for_online_success_with_ip(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
-        mock_resolve_device_ip: mock.Mock,
+        mock_resolve_device_address: mock.Mock,
+        mock_is_static_address: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.wait_for_online() success case when the
         IP address is specified."""
-        self.fd_fc_obj._is_static_ip = True
         await self.fd_fc_obj.wait_for_online()
 
+        mock_is_static_address.assert_called_once()
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=False
         )
-        mock_resolve_device_ip.assert_not_called()
+        mock_resolve_device_address.assert_not_called()
 
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
-        "resolve_device_ip",
+        "is_static_address",
+        new_callable=mock.PropertyMock,
+        return_value=False,
+    )
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "resolve_device_address",
         autospec=True,
     )
     @mock.patch.object(
@@ -1779,24 +1857,31 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     async def test_wait_for_online_success_no_ip(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
-        mock_resolve_device_ip: mock.Mock,
+        mock_resolve_device_address: mock.Mock,
+        mock_is_static_address: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.wait_for_online() success case when the
         IP address is not specified."""
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
             serial_number=None,
-            ip_port=None,
+            address=None,
             serial_socket=None,
         )
-        self.fd_fc_obj._is_static_ip = False
         await self.fd_fc_obj.wait_for_online()
 
+        mock_is_static_address.assert_called_once()
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=True
         )
-        mock_resolve_device_ip.assert_called()
+        mock_resolve_device_address.assert_called()
 
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "is_static_address",
+        new_callable=mock.PropertyMock,
+        return_value=True,
+    )
     @mock.patch.object(
         ffx.FFX,
         "wait_for_rcs_connection",
@@ -1806,14 +1891,15 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     async def test_wait_for_online_fail(
         self,
         mock_ffx_wait_for_rcs_connection: mock.Mock,
+        mock_is_static_address: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.wait_for_online() failure case"""
-        self.fd_fc_obj._is_static_ip = True
         with self.assertRaisesRegex(
             errors.FuchsiaDeviceError, "failed to go online"
         ):
             await self.fd_fc_obj.wait_for_online()
 
+        mock_is_static_address.assert_called_once()
         mock_ffx_wait_for_rcs_connection.assert_called_with(
             mock.ANY, include_target_name=False
         )
@@ -2444,9 +2530,9 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         mock_ffx.assert_called_once()
 
-    def test_register_for_on_device_ip_change(self) -> None:
-        """Testcase for FuchsiaDevice.register_for_on_device_ip_change()"""
-        self.fd_fc_obj.register_for_on_device_ip_change(fn=lambda x: None)
+    def test_register_for_on_device_address_change(self) -> None:
+        """Testcase for FuchsiaDevice.register_for_on_device_address_change()"""
+        self.fd_fc_obj.register_for_on_device_address_change(fn=lambda x: None)
 
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
@@ -2459,23 +2545,38 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
     )
-    async def test_resolve_device_ip(
+    async def test_resolve_device_address(
         self,
         mock_ffx_run: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.resolve_device_ip()"""
-        with mock.patch.object(self.fd_fc_obj, "_on_device_ip_change_fns"):
-            await self.fd_fc_obj.resolve_device_ip()
+        """Testcase for FuchsiaDevice.resolve_device_address()"""
+        with mock.patch.object(self.fd_fc_obj, "_on_device_address_change_fns"):
+            await self.fd_fc_obj.resolve_device_address()
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
-            cmd=ffx._FFX_CMDS["TARGET_SSH_ADDRESS"]
-            + [self.fd_fc_obj.device_name],
+            cmd=ffx._FFX_CMDS["TARGET_ADDRESS"] + [self.fd_fc_obj.device_name],
             include_target=False,
+            log_status_on_failure=False,
         )
         mock_fuchsia_device_health_check.assert_called_once()
 
-    # Verifies FuchsiaDevice.resolve_device_ip() re-resolves target address for USB-connected devices.
+    # TODO: Remove test_resolve_device_ip_deprecated once //vendor/google code
+    # is updated to use resolve_device_address().
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "resolve_device_address",
+        autospec=True,
+    )
+    async def test_resolve_device_ip_deprecated(
+        self,
+        mock_resolve_device_address: mock.Mock,
+    ) -> None:
+        """Testcase for deprecated FuchsiaDevice.resolve_device_ip()"""
+        await self.fd_fc_obj.resolve_device_ip()
+        mock_resolve_device_address.assert_called_once_with(self.fd_fc_obj)
+
+    # Verifies FuchsiaDevice.resolve_device_address() re-resolves target address for USB-connected devices.
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
         "health_check",
@@ -2483,12 +2584,17 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     )
     @mock.patch.object(
         ffx.FFX,
-        "resolve_target_address",
+        "check_connection",
         autospec=True,
     )
     @mock.patch.object(
         fc_transport.FuchsiaController,
-        "after_usb_reconnect",
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "create_context",
         autospec=True,
     )
     @mock.patch.object(
@@ -2502,7 +2608,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                     "serial": "<unknown>",
                     "target_type": "core.arm64",
                     "target_state": "Product",
-                    "addresses": [{"cid": 13}],
+                    "addresses": [{"type": "Usb", "cid": 13}],
                     "is_default": False,
                     "is_manual": False,
                 }
@@ -2510,23 +2616,40 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         ),
         autospec=True,
     )
-    async def test_resolve_device_ip_usb(
+    async def test_resolve_device_address_usb(
         self,
         mock_ffx_run: mock.Mock,
-        mock_fc_after_usb_reconnect: mock.Mock,
-        mock_ffx_resolve_target_address: mock.Mock,
+        mock_fc_create_context: mock.Mock,
+        mock_fc_check_connection: mock.Mock,
+        mock_ffx_check_connection: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
-        """Testcase for FuchsiaDevice.resolve_device_ip() with USB target."""
-        await self.fd_fc_obj.resolve_device_ip()
+        """Testcase for FuchsiaDevice.resolve_device_address() with USB target."""
+        self.fd_fc_obj._device_info = custom_types.DeviceInfo(
+            name=_INPUT_ARGS["device_name"],
+            serial_number=None,
+            address=custom_types.UsbAddress(target_id=3),
+            serial_socket=_INPUT_ARGS["device_serial_socket"],
+        )
+        self.fd_fc_obj.ffx._target_addr = custom_types.UsbAddress(target_id=3)
+        await self.fd_fc_obj.resolve_device_address()
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
-            cmd=fuchsia_device._FFX_CMDS["RESOLVE_IP"]
-            + [self.fd_fc_obj.device_name],
+            cmd=ffx._FFX_CMDS["TARGET_ADDRESS"] + [self.fd_fc_obj.device_name],
             include_target=False,
+            log_status_on_failure=False,
         )
-        mock_ffx_resolve_target_address.assert_called_once()
-        mock_fc_after_usb_reconnect.assert_called_once()
+        self.assertEqual(
+            self.fd_fc_obj.ffx._target_addr,
+            custom_types.UsbAddress(target_id=13),
+        )
+        self.assertEqual(
+            self.fd_fc_obj._device_info.address,
+            custom_types.UsbAddress(target_id=13),
+        )
+        mock_ffx_check_connection.assert_called_once()
+        mock_fc_create_context.assert_called_once()
+        mock_fc_check_connection.assert_called_once()
         mock_fuchsia_device_health_check.assert_called_once()
 
     @mock.patch.object(
@@ -2540,14 +2663,14 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value="not a json",
         autospec=True,
     )
-    async def test_resolve_device_ip_raises_on_malformed_output(
+    async def test_resolve_device_address_raises_on_malformed_output(
         self,
         mock_ffx_run: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
-        """Test resolve_device_ip() wraps errors parsing malformed ffx output"""
+        """Test resolve_device_address() wraps errors parsing malformed ffx output"""
         with self.assertRaises(errors.FuchsiaDeviceError):
-            await self.fd_fc_obj.resolve_device_ip()
+            await self.fd_fc_obj.resolve_device_address()
 
         mock_ffx_run.assert_called_once()
         mock_fuchsia_device_health_check.assert_not_called()
@@ -2563,14 +2686,14 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         side_effect=signals.TestAbortAll("abort"),
         autospec=True,
     )
-    async def test_resolve_device_ip_propagates_unexpected_exceptions(
+    async def test_resolve_device_address_propagates_unexpected_exceptions(
         self,
         mock_ffx_run: mock.Mock,
         mock_fuchsia_device_health_check: mock.Mock,
     ) -> None:
-        """Test resolve_device_ip() propagates unexpected exceptions as-is."""
+        """Test resolve_device_address() propagates unexpected exceptions as-is."""
         with self.assertRaises(signals.TestAbortAll):
-            await self.fd_fc_obj.resolve_device_ip()
+            await self.fd_fc_obj.resolve_device_address()
 
         mock_ffx_run.assert_called_once()
         mock_fuchsia_device_health_check.assert_not_called()

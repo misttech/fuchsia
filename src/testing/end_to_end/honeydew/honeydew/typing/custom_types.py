@@ -10,7 +10,7 @@ import ipaddress
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import TypeVar
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -28,57 +28,9 @@ class LEVEL(enum.StrEnum):
 class TargetAddr(abc.ABC):
     """Abstract base class representing a generic Fuchsia Target Address."""
 
-    @classmethod
-    def from_str(cls, query: str) -> TargetAddr:
-        """Attempts to parse a string query into a TargetAddr.
-
-        Args:
-            query: The string representation of a target address (e.g. 'usb:cid:123', '127.0.0.1:8022')
-
-        Returns:
-            A TargetAddr subclass instance (like TargetUsb or IpPort).
-
-        Raises:
-            ValueError: If the query cannot be cleanly parsed as a valid resolved address
-                (e.g., if it's just a hostname).
-            NotImplementedError: If called on the base class TargetAddr; subclasses must implement this.
-        """
-        if cls is TargetAddr:
-            for subclass in TargetAddr.__subclasses__():
-                try:
-                    return subclass.from_str(query)
-                except ValueError:
-                    continue
-            raise ValueError(f"Could not parse '{query}' as TargetAddr")
-        raise NotImplementedError("Subclasses must implement from_str")
-
-    @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> TargetAddr:
-        """Parses a FFX target address JSON object into a TargetAddr.
-
-        Args:
-            obj: The dictionary parsed from 'ffx --machine json target list'.
-
-        Returns:
-            A TargetAddr subclass instance (like TargetUsb or IpPort).
-
-        Raises:
-            ValueError: If the object type is not supported or missing required fields.
-            NotImplementedError: If called on the base class TargetAddr; subclasses must implement this.
-        """
-        if cls is TargetAddr:
-            for subclass in TargetAddr.__subclasses__():
-                try:
-                    return subclass.from_json(obj)
-                except ValueError:
-                    continue
-
-            raise ValueError(f"Unable to create TargetAddr for {obj}")
-        raise NotImplementedError("Subclasses must implement from_json")
-
 
 @dataclass(frozen=True)
-class TargetUsb(TargetAddr):
+class UsbAddress(TargetAddr):
     """Dataclass that holds a USB Target Address
 
     Args:
@@ -96,58 +48,35 @@ class TargetUsb(TargetAddr):
         if self.target_id < 0:
             raise ValueError(f"target_id: {self.target_id} was negative")
 
-    @classmethod
-    def from_str(cls, query: str) -> TargetUsb:
-        """Attempts to parse a string query into a TargetUsb.
-
-        Args:
-            query: The string representation of a target address (e.g. 'usb:cid:12345')
-
-        Returns:
-            A TargetUsb.
-
-        Raises:
-            ValueError: If the query cannot be cleanly parsed as a valid USB address
-        """
-        if query.startswith("usb:cid:"):
-            usb_id_str = query.removeprefix("usb:cid:")
-            try:
-                usb_id = int(usb_id_str)
-            except ValueError as e:
-                raise ValueError(f"Invalid USB id in '{query}'") from e
-            return cls(usb_id)
-        raise ValueError(f"Invalid USB address '{query}': no 'usb:' prefix")
-
-    @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> TargetUsb:
-        """Parses a FFX target address JSON object into a TargetUsb.
-
-        Args:
-            obj: The dictionary parsed from 'ffx --machine json target list'.
-
-        Returns:
-            A TargetUsb.
-
-        Raises:
-            ValueError: If cid is missing or invalid.
-        """
-        # For USB, the field is "cid" -> int
-        cid = obj.get("cid")
-        if not isinstance(cid, int) or isinstance(cid, bool):
-            raise ValueError(f"USB address has invalid or missing 'cid': {obj}")
-        return cls(cid)
-
     def __str__(self) -> str:
         return f"usb:cid:{self.target_id}"
 
-    @property
-    def ip_str(self) -> str:
-        """USB targets do not have an IP string.
+    @staticmethod
+    def create_using_usb(usb: str | int) -> UsbAddress:
+        """Factory method to create UsbAddress object using USB target ID or address string.
+
+        Args:
+            usb: USB address or target ID of the fuchsia device. This is of
+                 one of the following formats:
+                    usb:cid:{target_id}
+                    {target_id}
+
+        Returns:
+            A valid UsbAddress
 
         Raises:
             ValueError
         """
-        raise ValueError(f"USB targets do not have an IP string: {self}")
+        if isinstance(usb, bool):
+            raise ValueError(f"Value: {usb} was not a valid UsbAddress")
+        if isinstance(usb, str):
+            usb_str = usb.strip()
+            if usb_str.startswith("usb:cid:"):
+                usb_str = usb_str.removeprefix("usb:cid:")
+            return UsbAddress(int(usb_str))
+        if isinstance(usb, int):
+            return UsbAddress(usb)
+        raise ValueError(f"Value: {usb} was not a valid UsbAddress")
 
 
 @dataclass(frozen=True)
@@ -181,51 +110,6 @@ class IpPort(TargetAddr):
             return f"{host}:{self.port}"
         else:
             return f"{host}"
-
-    @classmethod
-    def from_str(cls, query: str) -> IpPort:
-        """Attempts to parse a string query into a IpPort.
-
-        Args:
-            query: The string representation of a target address (e.g. '127.0.0.1:8022')
-
-        Returns:
-            An IpPort.
-
-        Raises:
-            ValueError: If the query cannot be cleanly parsed as a valid address
-                (e.g., if it's just a hostname), or if it is an ipv6 address with
-                a symbolic scope ID.
-        """
-        # If it's wrapped in brackets, it must be an IP or [IP]:PORT
-        if query.startswith("["):
-            try:
-                ip_port = cls.create_using_ip_and_port(query)
-                if ip_port.port is not None:
-                    return ip_port
-            except ValueError:
-                pass
-            try:
-                return cls.create_using_ip(query)
-            except ValueError:
-                pass
-        else:
-            # No brackets.
-            # An unbracketed string is first tested as a standalone IP address
-            # (v4 or v6). If that fails, it's then tested as an address with a
-            # port (e.g. "1.2.3.4:8022"). This resolves the ambiguity for some
-            # valid IPv6 addresses that contain colons. Users can use
-            # brackets for IPv6 (e.g. "[::1]:8022") to force port parsing.
-            try:
-                return cls.create_using_ip(query)
-            except ValueError:
-                pass
-            try:
-                return cls.create_using_ip_and_port(query)
-            except ValueError:
-                pass
-
-        raise ValueError(f"Could not parse '{query}' as IpPort")
 
     @staticmethod
     def create_using_ip_and_port(ip_port: str) -> IpPort:
@@ -300,38 +184,14 @@ class IpPort(TargetAddr):
         except ValueError as e:
             raise e
 
-    @classmethod
-    def from_json(cls, obj: dict[str, Any]) -> IpPort:
-        """Parses a FFX target address JSON object into an IpPort.
-
-        Args:
-            obj: The dictionary parsed from 'ffx --machine json target list'.
-
-        Returns:
-            An IpPort.
-
-        Raises:
-            ValueError: If the object is missing required fields.
-        """
-        addr_type = obj.get("type")
-        if addr_type != "Ip":
-            raise ValueError(f"type not Ip in {obj}")
-        ssh_ip = obj.get("ip")
-        if ssh_ip is None:
-            raise ValueError(f"Missing ip address in {obj}")
-        ssh_port = obj.get("ssh_port")
-        if ssh_port == 0:
-            ssh_port = None
-
-        ip_obj = ipaddress.ip_address(ssh_ip)
-        return IpPort(ip=ip_obj, port=ssh_port)
-
     @property
     def ip_str(self) -> str:
         """The IP address as a string."""
         return str(self.ip)
 
 
+# TODO: Remove TargetSshAddress once //vendor/google code is updated to use
+# get_target_address() and IpPort.
 @dataclass(frozen=True)
 class TargetSshAddress(IpPort):
     """Dataclass that holds target's ssh address information.
@@ -349,18 +209,26 @@ class DeviceInfo:
     Args:
         name: Device name returned by `ffx target list`.
         serial_number: Device serial number.
-        ip_port: IP Address and port of the device.
+        address: Target address of the device (IP or USB).
         serial_socket: Device serial socket path.
         fastboot_node_id: Fastboot node ID.
+        ip_port: Deprecated. Use `address` instead.
     """
 
     name: str
-    serial_number: str | None
-    ip_port: IpPort | None
-    serial_socket: str | None
+    serial_number: str | None = None
+    address: TargetAddr | None = None
+    serial_socket: str | None = None
     fastboot_node_id: str | None = None
+    # TODO: Remove ip_port once //vendor/google code is updated to use address.
+    ip_port: IpPort | None = None
 
     def __post_init__(self) -> None:
+        if self.address is None and self.ip_port is not None:
+            object.__setattr__(self, "address", self.ip_port)
+        elif self.ip_port is None and isinstance(self.address, IpPort):
+            object.__setattr__(self, "ip_port", self.address)
+
         for attr in ("serial_number", "serial_socket", "fastboot_node_id"):
             val = getattr(self, attr)
             if isinstance(val, str):
@@ -382,7 +250,7 @@ class DeviceInfo:
     def __str__(self) -> str:
         return (
             f"name={self.name}, "
-            f"ip_port={self.ip_port}, "
+            f"address={self.address}, "
             f"serial_socket={self.serial_socket}, "
             f"fastboot_node_id={self.fastboot_node_id}"
         )

@@ -33,6 +33,20 @@ class TargetListResult:
 
 
 @dataclass(frozen=True)
+class TargetUsbAddress:
+    """Dataclass that holds a USB Target Address.
+
+    Args:
+        target_id: USB Target ID
+    """
+
+    target_id: int
+
+    def __str__(self) -> str:
+        return f"usb:cid:{self.target_id}"
+
+
+@dataclass(frozen=True)
 class TargetSshAddress:
     """Dataclass that holds IP Address and Port
 
@@ -172,6 +186,63 @@ class FfxClient:
             return output
         else:
             return None
+
+    def get_target_usb_address(self, target_name: str) -> TargetUsbAddress:
+        """Returns the target's USB address information.
+
+        Args:
+          target_name: Name of the fuchsia target
+
+        Returns:
+          A TargetUsbAddress object.
+
+        Raises:
+          CommandException if FFX command fails.
+          OutputFormatException if unable to parse command output.
+        """
+        cmd = [self._ffx_path]
+
+        if self._ssh_auth_sock is not None:
+            cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
+
+        if self._identities_only is not None:
+            cmd += [
+                "-c",
+                f"ssh.identities-only={str(self._identities_only).lower()}",
+            ]
+
+        cmd += [
+            "target",
+            "list",
+            "--allow-addrs",
+            "usb",
+            "--format",
+            "addresses-with-scope",
+            target_name,
+        ]
+        try:
+            output = subprocess.check_output(cmd, timeout=15).decode().strip()
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as e:
+            raise CommandException(
+                f"Failed to get the target usb address via {cmd}: {e}"
+            )
+
+        try:
+            # output format: 'usb:cid:42'
+            if not output.startswith("usb:cid:"):
+                raise ValueError(f"Expected 'usb:cid:<id>', got '{output}'")
+            target_id = int(output.removeprefix("usb:cid:"))
+            if target_id < 0:
+                raise ValueError(f"target_id: {target_id} was negative")
+        except ValueError as e:
+            raise OutputFormatException(
+                f"Failed to parse output from {cmd}: {e}"
+            )
+
+        return TargetUsbAddress(target_id)
 
     def get_target_ssh_address(self, target_name: str) -> TargetSshAddress:
         """Returns the target's ssh ip address and port information.

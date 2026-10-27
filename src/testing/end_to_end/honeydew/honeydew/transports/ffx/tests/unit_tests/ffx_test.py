@@ -34,9 +34,7 @@ _IPV6_OBJ: ipaddress.IPv6Address = ipaddress.IPv6Address(_IPV6)
 
 _SSH_ADDRESS: ipaddress.IPv6Address = _IPV6_OBJ
 _SSH_PORT = 8022
-_TARGET_SSH_ADDRESS = custom_types.TargetSshAddress(
-    ip=_SSH_ADDRESS, port=_SSH_PORT
-)
+_TARGET_SSH_ADDRESS = custom_types.IpPort(ip=_SSH_ADDRESS, port=_SSH_PORT)
 
 _LOGS_DIR: str = "/tmp/logs"
 _SHARED_DATA: str = "/tmp/shared_data"
@@ -174,6 +172,21 @@ _MOCK_ADDRESS = json.dumps(
     ]
 )
 
+_MOCK_USB_ADDRESS = json.dumps(
+    [
+        {
+            "nodename": "fuchsia-emulator",
+            "rcs_state": "Y",
+            "serial": "<unknown>",
+            "target_type": "core.x64",
+            "target_state": "Product",
+            "addresses": [{"type": "Usb", "cid": 42}],
+            "is_default": False,
+            "is_manual": False,
+        }
+    ]
+)
+
 _MOCK_ARGS: dict[str, Any] = {
     "ffx_target_show_output": _FFX_TARGET_SHOW_OUTPUT,
     "ffx_target_show_json": _FFX_TARGET_SHOW_JSON,
@@ -228,8 +241,8 @@ class FfxTests(unittest.TestCase):
 
         mock_ffx_check_connection.reset_mock()
 
-        self.device_ip_change = mock.MagicMock(
-            spec=affordances_capable.FuchsiaDeviceIpChange
+        self.device_address_change = mock.MagicMock(
+            spec=affordances_capable.FuchsiaDeviceAddressChange
         )
         with (
             mock.patch.object(
@@ -241,15 +254,15 @@ class FfxTests(unittest.TestCase):
             self.ffx_obj_with_ip = ffx.FFX(
                 target_name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                target_ip_port=_INPUT_ARGS["target_addr"],
-                device_ip_change=self.device_ip_change,
+                target_addr=_INPUT_ARGS["target_addr"],
+                device_address_change=self.device_address_change,
             )
         mock_ffx_check_connection.assert_called()
-        self.device_ip_change.register_for_on_device_ip_change.assert_called_once()
+        self.device_address_change.register_for_on_device_address_change.assert_called_once()
 
-    def test_ffx_init_with_target_ip_port(self) -> None:
-        """Test case for ffx.FFX() when called with target_ip_port."""
-        target_ip_port = custom_types.IpPort(
+    def test_ffx_init_with_target_addr(self) -> None:
+        """Test case for ffx.FFX() when called with target_addr."""
+        target_addr = custom_types.IpPort(
             ipaddress.ip_address("127.0.0.1"), None
         )
         with mock.patch.object(
@@ -260,23 +273,33 @@ class FfxTests(unittest.TestCase):
             ffx_obj = ffx.FFX(
                 target_name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                target_ip_port=target_ip_port,
-                device_ip_change=self.device_ip_change,
+                target_addr=target_addr,
+                device_address_change=self.device_address_change,
             )
-        self.assertEqual(ffx_obj._target_addr, target_ip_port)
+        self.assertEqual(ffx_obj._target_addr, target_addr)
 
-    def test_ffx_init_with_target_ip_port_raises_when_no_device_ip_change(
+    def test_ffx_init_with_target_addr_raises_when_no_device_address_change(
         self,
     ) -> None:
-        """Test case for ffx.FFX() when called with target_ip_port and no device_ip_change."""
+        """Test case for ffx.FFX() when called with target_addr and no device_address_change."""
         with self.assertRaises(ValueError):
             ffx.FFX(
                 target_name=_INPUT_ARGS["target_query"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
-                target_ip_port=custom_types.IpPort(
+                target_addr=custom_types.IpPort(
                     ipaddress.ip_address("127.0.0.1"), None
                 ),
             )
+
+    @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
+    def test_on_device_address_change(
+        self, mock_check_connection: mock.Mock
+    ) -> None:
+        """Test case for _on_device_address_change()."""
+        new_addr = custom_types.IpPort(ipaddress.ip_address("127.0.0.1"), 8022)
+        self.ffx_obj_with_ip._on_device_address_change(new_addr)
+        self.assertEqual(self.ffx_obj_with_ip._target_addr, new_addr)
+        mock_check_connection.assert_called_once_with(self.ffx_obj_with_ip)
 
     @mock.patch.object(
         ffx.FFX,
@@ -374,12 +397,10 @@ class FfxTests(unittest.TestCase):
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
     )
-    def test_get_target_ssh_address_cached(
-        self, mock_ffx_run: mock.Mock
-    ) -> None:
-        """Verify get_target_ssh_address returns SSH information without command."""
+    def test_get_target_address_cached(self, mock_ffx_run: mock.Mock) -> None:
+        """Verify get_target_address returns cached address without command."""
         self.assertEqual(
-            self.ffx_obj_with_ip.get_target_ssh_address(), _TARGET_SSH_ADDRESS
+            self.ffx_obj_with_ip.get_target_address(), _TARGET_SSH_ADDRESS
         )
         mock_ffx_run.assert_not_called()
 
@@ -389,14 +410,185 @@ class FfxTests(unittest.TestCase):
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
     )
-    def test_get_target_ssh_address_resolves(
-        self, mock_ffx_run: mock.Mock
-    ) -> None:
-        """Verify get_target_ssh_address resolves via command when not cached."""
+    def test_get_target_address_refresh(self, mock_ffx_run: mock.Mock) -> None:
+        """Verify get_target_address(refresh=True) resolves via command even when cached."""
         self.assertEqual(
-            self.ffx_obj_wo_ip.get_target_ssh_address(), _TARGET_SSH_ADDRESS
+            self.ffx_obj_with_ip.get_target_address(refresh=True),
+            _TARGET_SSH_ADDRESS,
         )
         mock_ffx_run.assert_called_once()
+
+    @mock.patch("honeydew.transports.ffx.ffx.time.sleep")
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        side_effect=[
+            _MOCK_USB_ADDRESS,
+            _MOCK_ARGS["ffx_target_ssh_address_output"],
+        ],
+        autospec=True,
+    )
+    def test_get_target_address_refresh_retries_until_expected_type_appears(
+        self, mock_ffx_run: mock.Mock, mock_sleep: mock.Mock
+    ) -> None:
+        """Verify get_target_address(refresh=True) retries when expected address type is not yet in addresses."""
+        self.assertEqual(
+            self.ffx_obj_with_ip.get_target_address(refresh=True),
+            _TARGET_SSH_ADDRESS,
+        )
+        self.assertEqual(mock_ffx_run.call_count, 2)
+        mock_sleep.assert_called_once_with(
+            ffx._RESOLVE_TARGET_ADDRESS_POLL_INTERVAL_SECS
+        )
+
+    @mock.patch("honeydew.transports.ffx.ffx.time.sleep")
+    @mock.patch(
+        "honeydew.transports.ffx.ffx.time.monotonic",
+        side_effect=[0.0, 10.0, 35.0],
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_USB_ADDRESS,
+        autospec=True,
+    )
+    def test_get_target_address_refresh_raises_when_expected_ip_type_missing(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_monotonic: mock.Mock,
+        mock_sleep: mock.Mock,
+    ) -> None:
+        """Verify get_target_address(refresh=True) raises FfxCommandError when expected IP address never appears."""
+        with self.assertRaises(ffx_errors.FfxCommandError):
+            self.ffx_obj_with_ip.get_target_address(refresh=True)
+        self.assertEqual(mock_ffx_run.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    @mock.patch("honeydew.transports.ffx.ffx.time.sleep")
+    @mock.patch(
+        "honeydew.transports.ffx.ffx.time.monotonic",
+        side_effect=[0.0, 35.0],
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
+        autospec=True,
+    )
+    def test_get_target_address_refresh_raises_when_expected_usb_type_missing(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_monotonic: mock.Mock,
+        mock_sleep: mock.Mock,
+    ) -> None:
+        """Verify get_target_address(refresh=True) raises FfxCommandError when expected USB address never appears."""
+        self.ffx_obj_wo_ip._target_addr = custom_types.UsbAddress(target_id=42)
+        with self.assertRaises(ffx_errors.FfxCommandError):
+            self.ffx_obj_wo_ip.get_target_address(refresh=True)
+        mock_ffx_run.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
+        autospec=True,
+    )
+    def test_get_target_address_resolves_ip(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify get_target_address resolves IpPort via command when not cached."""
+        self.assertEqual(
+            self.ffx_obj_wo_ip.get_target_address(), _TARGET_SSH_ADDRESS
+        )
+        mock_ffx_run.assert_called_once()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_USB_ADDRESS,
+        autospec=True,
+    )
+    def test_get_target_address_resolves_usb(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify get_target_address resolves UsbAddress via command when not cached."""
+        self.assertEqual(
+            self.ffx_obj_wo_ip.get_target_address(),
+            custom_types.UsbAddress(target_id=42),
+        )
+        mock_ffx_run.assert_called_once()
+
+    # TODO: Remove test_get_target_ssh_address_deprecated and
+    # test_get_target_ssh_address_returns_none_for_usb once //vendor/google
+    # code is updated to use get_target_address().
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
+        autospec=True,
+    )
+    def test_get_target_ssh_address_deprecated(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify deprecated get_target_ssh_address returns TargetSshAddress or None."""
+        self.assertEqual(
+            self.ffx_obj_wo_ip.get_target_ssh_address(),
+            custom_types.TargetSshAddress(ip=_SSH_ADDRESS, port=_SSH_PORT),
+        )
+        mock_ffx_run.assert_called_once()
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=_MOCK_USB_ADDRESS,
+        autospec=True,
+    )
+    def test_get_target_ssh_address_returns_none_for_usb(
+        self, mock_ffx_run: mock.Mock
+    ) -> None:
+        """Verify deprecated get_target_ssh_address returns None for UsbAddress."""
+        self.assertIsNone(self.ffx_obj_wo_ip.get_target_ssh_address())
+        mock_ffx_run.assert_called_once()
+
+    # TODO: Remove test_resolve_target_address_deprecated once //vendor/google
+    # code is updated to use get_target_address(refresh=True).
+    @mock.patch.object(
+        ffx.FFX,
+        "_resolve_target_address",
+        autospec=True,
+    )
+    def test_resolve_target_address_deprecated(
+        self, mock_resolve_target_address: mock.Mock
+    ) -> None:
+        """Verify deprecated resolve_target_address calls _resolve_target_address."""
+        self.ffx_obj_wo_ip.resolve_target_address()
+        mock_resolve_target_address.assert_called_once_with(self.ffx_obj_wo_ip)
+
+    @parameterized.expand(
+        [
+            ("missing_type", [{"addresses": [{}]}]),
+            ("unknown_type", [{"addresses": [{"type": "Unknown"}]}]),
+            ("ip_missing_ip", [{"addresses": [{"type": "Ip"}]}]),
+            (
+                "ip_invalid_ip",
+                [{"addresses": [{"type": "Ip", "ip": "invalid_ip"}]}],
+            ),
+            ("usb_missing_cid", [{"addresses": [{"type": "Usb"}]}]),
+            ("empty_list", []),
+        ]
+    )
+    @mock.patch.object(ffx.FFX, "run", autospec=True)
+    def test_get_target_address_invalid_json_raises(
+        self,
+        _: str,
+        invalid_payload: list[dict[str, Any]],
+        mock_ffx_run: mock.Mock,
+    ) -> None:
+        """Verify get_target_address raises FfxCommandError on invalid JSON."""
+        mock_ffx_run.return_value = json.dumps(invalid_payload)
+        with self.assertRaises(ffx_errors.FfxCommandError):
+            self.ffx_obj_wo_ip.get_target_address()
 
     @mock.patch.object(
         host_shell,
@@ -423,14 +615,12 @@ class FfxTests(unittest.TestCase):
         ),
         autospec=True,
     )
-    def test_get_target_ssh_address_no_scope(
-        self, mock_ffx_run: mock.Mock
-    ) -> None:
-        """Verify get_target_ssh_address works with IP addresses that have no scope."""
-        expected = custom_types.TargetSshAddress(
+    def test_get_target_address_no_scope(self, mock_ffx_run: mock.Mock) -> None:
+        """Verify get_target_address works with IP addresses that have no scope."""
+        expected = custom_types.IpPort(
             ip=ipaddress.ip_address("fe80::1"), port=8022
         )
-        self.assertEqual(self.ffx_obj_wo_ip.get_target_ssh_address(), expected)
+        self.assertEqual(self.ffx_obj_wo_ip.get_target_address(), expected)
         mock_ffx_run.assert_called()
 
     @mock.patch.object(
@@ -458,12 +648,12 @@ class FfxTests(unittest.TestCase):
         ),
         autospec=True,
     )
-    def test_get_target_ssh_address_ipv4(self, mock_ffx_run: mock.Mock) -> None:
-        """Verify get_target_ssh_address works with IPv4 addresses."""
-        expected = custom_types.TargetSshAddress(
+    def test_get_target_address_ipv4(self, mock_ffx_run: mock.Mock) -> None:
+        """Verify get_target_address works with IPv4 addresses."""
+        expected = custom_types.IpPort(
             ip=ipaddress.ip_address("192.168.42.12"), port=8022
         )
-        self.assertEqual(self.ffx_obj_wo_ip.get_target_ssh_address(), expected)
+        self.assertEqual(self.ffx_obj_wo_ip.get_target_address(), expected)
         mock_ffx_run.assert_called()
 
     @mock.patch.object(
@@ -628,8 +818,8 @@ class FfxTests(unittest.TestCase):
             ffx_obj = ffx.FFX(
                 target_name=_INPUT_ARGS["target_query"],
                 config_data=config_data,
-                target_ip_port=_INPUT_ARGS["target_addr"],
-                device_ip_change=self.device_ip_change,
+                target_addr=_INPUT_ARGS["target_addr"],
+                device_address_change=self.device_address_change,
             )
 
         expected_config = {

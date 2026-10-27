@@ -52,7 +52,7 @@ class WorkbenchTests(unittest.TestCase):
                 device_info=custom_types.DeviceInfo(
                     name="fuchsia-workbench",
                     serial_number=None,
-                    ip_port=None,
+                    address=None,
                     serial_socket=None,
                 ),
                 ffx_config_data=ffx_config.FfxConfigData(

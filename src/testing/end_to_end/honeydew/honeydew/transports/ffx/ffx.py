@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """FFX transport for Host-Target interactions."""
 
+import ipaddress
 import json
 import logging
 import math
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from honeydew import errors
-from honeydew.affordances_capable import FuchsiaDeviceIpChange
+from honeydew.affordances_capable import FuchsiaDeviceAddressChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx.types import (
@@ -26,7 +27,7 @@ _FFX_BINARY: str = "ffx"
 
 _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_SHOW": ["target", "show"],
-    "TARGET_SSH_ADDRESS": [
+    "TARGET_ADDRESS": [
         "target",
         "list",
         "--no-probe",  # do not connect to targets
@@ -69,6 +70,12 @@ _NOTIFY_INTENTIONAL_DISCONNECT_TIMEOUT_SECS: float = 15.0
 # its own before the process is killed.
 _TARGET_WAIT_HOST_SLACK_SEC: float = 10.0
 
+# Maximum time and polling interval when waiting for a specific target address
+# family (IP or USB) to appear in `ffx target list` (e.g. when USB enumerates
+# before mDNS/IP is ready after a reboot).
+_RESOLVE_TARGET_ADDRESS_TIMEOUT_SECS: float = 30.0
+_RESOLVE_TARGET_ADDRESS_POLL_INTERVAL_SECS: float = 2.0
+
 
 class FFX:
     """Provides methods for Host-(Fuchsia)Target interactions via FFX.
@@ -76,12 +83,12 @@ class FFX:
     Args:
         target_name: Human-readable name of the target.
         config_data: Configuration associated with FFX.
-        target_ip_port: Fuchsia device IP Address.
-        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
-            IP changes.
+        target_addr: Fuchsia device target address (IP or USB).
+        device_address_change: Object that implements FuchsiaDeviceAddressChange to handle Fuchsia
+            device address changes.
 
     Raises:
-        ValueError: If target_ip_port is provided and device_ip_change is not provided.
+        ValueError: If target_addr is provided and device_address_change is not provided.
         FfxConnectionError: In case of failed to check FFX connection.
         FfxCommandError: In case of failure.
     """
@@ -90,22 +97,24 @@ class FFX:
         self,
         target_name: str,
         config_data: ffx_config.FfxConfigData,
-        target_ip_port: custom_types.IpPort | None = None,
-        device_ip_change: FuchsiaDeviceIpChange | None = None,
+        target_addr: custom_types.TargetAddr | None = None,
+        device_address_change: FuchsiaDeviceAddressChange | None = None,
     ) -> None:
         self._config_data: ffx_config.FfxConfigData = config_data
         self._target_name: str = target_name
-        self._target_addr: custom_types.TargetAddr | None = target_ip_port
+        self._target_addr: custom_types.TargetAddr | None = target_addr
 
-        if self._target_addr is not None and device_ip_change is None:
+        if self._target_addr is not None and device_address_change is None:
             raise ValueError(
-                "Pass 'device_ip_change' argument also when 'target_ip_port' is passed"
+                "Pass 'device_address_change' argument also when 'target_addr' is passed"
             )
 
-        self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
-        if self._device_ip_change:
-            self._device_ip_change.register_for_on_device_ip_change(
-                fn=self._on_device_ip_change
+        self._device_address_change: FuchsiaDeviceAddressChange | None = (
+            device_address_change
+        )
+        if self._device_address_change:
+            self._device_address_change.register_for_on_device_address_change(
+                fn=self._on_device_address_change
             )
 
         self.check_connection()
@@ -213,41 +222,112 @@ class FFX:
         )
         return ffx_target_show_info.target.name
 
-    def resolve_target_address(self) -> None:
+    def _resolve_target_address(self) -> None:
         """Resolves the target using 'ffx target list' and caches it."""
-        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [self._target_name]
-        # Skip the `ffx target status` triage on failure: it needs the target
-        # address that is being resolved here, so running it would call back
-        # into this method and recurse indefinitely.
-        output: str = self.run(
-            cmd=cmd, include_target=False, log_status_on_failure=False
+        cmd: list[str] = _FFX_CMDS["TARGET_ADDRESS"] + [self._target_name]
+        expected_type: str | None = None
+        if isinstance(self._target_addr, custom_types.IpPort):
+            expected_type = "Ip"
+        elif isinstance(self._target_addr, custom_types.UsbAddress):
+            expected_type = "Usb"
+
+        deadline: float = (
+            time.monotonic() + _RESOLVE_TARGET_ADDRESS_TIMEOUT_SECS
         )
-        targets = json.loads(output)
-        if not targets:
-            raise ffx_errors.FfxCommandError(
-                f"Target '{self._target_name}' not found in 'ffx target list'"
+        address_obj: dict[str, Any] | None = None
+
+        while True:
+            # Skip the `ffx target status` triage on failure: it needs the target
+            # address that is being resolved here, so running it would call back
+            # into this method and recurse indefinitely.
+            output: str = self.run(
+                cmd=cmd, include_target=False, log_status_on_failure=False
             )
-        target = targets[0]
-        if not target.get("addresses"):
-            raise ffx_errors.FfxCommandError(
-                f"No addresses found for target '{self._target_name}'"
+            targets = json.loads(output)
+            if not targets:
+                raise ffx_errors.FfxCommandError(
+                    f"Target '{self._target_name}' not found in 'ffx target list'"
+                )
+            target = targets[0]
+            if not target.get("addresses"):
+                raise ffx_errors.FfxCommandError(
+                    f"No addresses found for target '{self._target_name}'"
+                )
+            addresses: list[dict[str, Any]] = target["addresses"]
+
+            if expected_type is None:
+                address_obj = addresses[0]
+                break
+
+            address_obj = next(
+                (
+                    addr
+                    for addr in addresses
+                    if addr.get("type") == expected_type
+                ),
+                None,
             )
-        address_obj = target["addresses"][0]
+            if address_obj is not None:
+                break
+
+            if time.monotonic() >= deadline:
+                raise ffx_errors.FfxCommandError(
+                    f"No '{expected_type}' address found for target "
+                    f"'{self._target_name}' in {addresses}"
+                )
+
+            _LOGGER.debug(
+                "Target '%s' does not yet have a '%s' address in %s; retrying...",
+                self._target_name,
+                expected_type,
+                addresses,
+            )
+            time.sleep(_RESOLVE_TARGET_ADDRESS_POLL_INTERVAL_SECS)
 
         try:
-            self._target_addr = custom_types.TargetAddr.from_json(address_obj)
+            if address_obj.get("type") == "Ip":
+                ssh_ip = address_obj.get("ip")
+                if ssh_ip is None:
+                    raise ValueError(f"Missing ip address in {address_obj}")
+                ssh_port = address_obj.get("ssh_port")
+                if ssh_port == 0:
+                    ssh_port = None
+                self._target_addr = custom_types.IpPort(
+                    ip=ipaddress.ip_address(ssh_ip), port=ssh_port
+                )
+            elif address_obj.get("type") == "Usb":
+                cid = address_obj.get("cid")
+                if not isinstance(cid, int) or isinstance(cid, bool):
+                    raise ValueError(
+                        f"USB address has invalid or missing 'cid': {address_obj}"
+                    )
+                self._target_addr = custom_types.UsbAddress(target_id=cid)
+            else:
+                raise ValueError(
+                    f"Unable to create TargetAddr for {address_obj}"
+                )
         except ValueError as e:
             raise ffx_errors.FfxCommandError(
                 f"Failed to parse target address from FFX: {e}"
-            )
+            ) from e
 
-    def get_target_address(self) -> custom_types.TargetAddr:
-        """Returns the TargetAddr. Resolves and caches it if not already cached."""
-        if self._target_addr is None:
-            self.resolve_target_address()
+    def get_target_address(
+        self, refresh: bool = False
+    ) -> custom_types.TargetAddr:
+        """Returns the TargetAddr. Resolves and caches it if not already cached or if refresh is True."""
+        if self._target_addr is None or refresh:
+            self._resolve_target_address()
         assert self._target_addr is not None
         return self._target_addr
 
+    # TODO: Remove resolve_target_address() once //vendor/google code is
+    # updated to use get_target_address(refresh=True).
+    def resolve_target_address(self) -> None:
+        """Resolves the target using 'ffx target list' and caches it."""
+        self._resolve_target_address()
+
+    # TODO: Remove get_target_ssh_address() once //vendor/google code is
+    # updated to use get_target_address().
     def get_target_ssh_address(self) -> custom_types.TargetSshAddress | None:
         """Returns the target's ssh ip address and port information.
 
@@ -735,7 +815,7 @@ class FFX:
 
         if include_target:
             target = self.get_target_address()
-            ffx_args.extend(["-t", f"{target}"])
+            ffx_args.extend(["-t", str(target)])
 
         # Don't add "--machine" if the machine type is already specified
         if "--machine" not in cmd:
@@ -759,12 +839,14 @@ class FFX:
 
         return [self.config.binary_path] + ffx_args + cmd
 
-    def _on_device_ip_change(self, target_ip_port: custom_types.IpPort) -> None:
-        """Callback method that gets invoked when device ip address changes.
+    def _on_device_address_change(
+        self, target_addr: custom_types.TargetAddr
+    ) -> None:
+        """Callback method that gets invoked when device address changes.
 
         Args:
-            target_ip_port: New IP address of the device.
+            target_addr: New target address of the device.
         """
-        self._target_addr = target_ip_port
+        self._target_addr = target_addr
 
         self.check_connection()

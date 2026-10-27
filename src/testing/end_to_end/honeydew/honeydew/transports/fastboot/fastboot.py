@@ -313,7 +313,7 @@ class Fastboot:
                 within specified timeout.
         """
         _LOGGER.info("Waiting for %s to go fuchsia mode...", self._device_name)
-        is_static_ip = getattr(self._reboot_affordance, "is_static_ip", False)
+        include_target_name = not self._reboot_affordance.is_static_address
         # TODO(b/519731814): Simplify by passing timeout directly to
         # wait_for_rcs_connection() once it supports the timeout argument.
         if timeout:
@@ -322,11 +322,11 @@ class Fastboot:
                 exception_message=f"Timeout occurred while waiting for '{self._device_name}' to go to fuchsia mode",
             ):
                 self.ffx.wait_for_rcs_connection(
-                    include_target_name=not is_static_ip
+                    include_target_name=include_target_name
                 )
         else:
             self.ffx.wait_for_rcs_connection(
-                include_target_name=not is_static_ip
+                include_target_name=include_target_name
             )
         _LOGGER.info("%s is in fuchsia mode...", self._device_name)
 

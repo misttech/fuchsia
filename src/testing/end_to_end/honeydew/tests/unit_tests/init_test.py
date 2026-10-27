@@ -113,7 +113,7 @@ class InitTests(unittest.TestCase):
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
                     serial_number=None,
-                    ip_port=None,
+                    address=None,
                     serial_socket=None,
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -162,7 +162,7 @@ class InitTests(unittest.TestCase):
                 custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
                     serial_number=None,
-                    ip_port=_INPUT_ARGS["target_ip_port"],
+                    address=_INPUT_ARGS["target_ip_port"],
                     serial_socket=None,
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -190,6 +190,56 @@ class InitTests(unittest.TestCase):
         return_value=FuchsiaDevice,
         autospec=True,
     )
+    @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
+    @mock.patch.object(
+        fuchsia_controller_transport.FuchsiaController,
+        "check_connection",
+        autospec=True,
+    )
+    @mock.patch("fuchsia_controller_py.Context", autospec=True)
+    def test_create_device_using_device_usb(
+        self,
+        mock_fc_context: mock.Mock,
+        mock_fc_check_connection: mock.Mock,
+        mock_ffx_check_connection: mock.Mock,
+        mock_get_device_class: mock.Mock,
+    ) -> None:
+        """Test case for honeydew.create_device() where it returns a device
+        from a UsbAddress."""
+        target_usb = custom_types.UsbAddress(42)
+        self.assertIsInstance(
+            honeydew.create_device(
+                custom_types.DeviceInfo(
+                    name=_INPUT_ARGS["target_name"],
+                    serial_number=None,
+                    address=target_usb,
+                    serial_socket=None,
+                ),
+                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
+            ),
+            FuchsiaDevice,
+        )
+
+        mock_get_device_class.assert_called_once()
+        mock_fc_context.assert_called_once_with(
+            config={
+                "log.level": "debug",
+                "log.dir": "/tmp/logs",
+                "shared_data": _SHARED_DATA,
+                "connectivity.enable_usb": "false",
+                "connectivity.usb_driver_autostart": "false",
+            },
+            target=str(target_usb),
+        )
+        mock_fc_check_connection.assert_called()
+        mock_ffx_check_connection.assert_called()
+
+    @mock.patch.object(
+        honeydew,
+        "_get_device_class",
+        return_value=FuchsiaDevice,
+        autospec=True,
+    )
     @mock.patch.object(
         FuchsiaDevice,
         "__init__",
@@ -207,7 +257,7 @@ class InitTests(unittest.TestCase):
                 custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
                     serial_number=None,
-                    ip_port=_INPUT_ARGS["target_ip_port"],
+                    address=_INPUT_ARGS["target_ip_port"],
                     serial_socket=None,
                 ),
                 ffx_config_data=_INPUT_ARGS["ffx_config_data"],
@@ -386,7 +436,7 @@ class InitTests(unittest.TestCase):
             device_info=custom_types.DeviceInfo(
                 name=_INPUT_ARGS["target_name"],
                 serial_number=None,
-                ip_port=_INPUT_ARGS["target_ip_port"],
+                address=_INPUT_ARGS["target_ip_port"],
                 serial_socket=None,
             ),
             ffx_config_data=_INPUT_ARGS["ffx_config_data"],

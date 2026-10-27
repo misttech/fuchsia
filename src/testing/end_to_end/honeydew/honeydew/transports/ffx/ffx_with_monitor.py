@@ -10,7 +10,7 @@ from dataclasses import asdict
 from typing import Any
 
 from honeydew import errors
-from honeydew.affordances_capable import FuchsiaDeviceIpChange
+from honeydew.affordances_capable import FuchsiaDeviceAddressChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
@@ -42,12 +42,12 @@ class FFXWithMonitor(ffx.FFX):
     Args:
         target_name: Human-readable name of the target.
         config_data: Configuration associated with FFX.
-        target_ip_port: Fuchsia device IP Address.
-        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
-            IP changes.
+        target_addr: Fuchsia device target address (IP or USB).
+        device_address_change: Object that implements FuchsiaDeviceAddressChange to handle Fuchsia
+            device address changes.
 
     Raises:
-        ValueError: If target_ip_port is provided and device_ip_change is not provided.
+        ValueError: If target_addr is provided and device_address_change is not provided.
         FfxMonitorNotRunningError: If no running monitor is detected.
         FfxConnectionError: In case of failed to check FFX connection.
         FfxCommandError: In case of failure.
@@ -57,15 +57,15 @@ class FFXWithMonitor(ffx.FFX):
         self,
         target_name: str,
         config_data: ffx_config.FfxConfigData,
-        target_ip_port: custom_types.IpPort | None = None,
-        device_ip_change: FuchsiaDeviceIpChange | None = None,
+        target_addr: custom_types.TargetAddr | None = None,
+        device_address_change: FuchsiaDeviceAddressChange | None = None,
     ) -> None:
         _LOGGER.info("Using FFXWithMonitor for target %s", target_name)
         super().__init__(
             target_name=target_name,
             config_data=config_data,
-            target_ip_port=target_ip_port,
-            device_ip_change=device_ip_change,
+            target_addr=target_addr,
+            device_address_change=device_address_change,
         )
 
     def check_connection(self, timeout: float | None = None) -> None:
@@ -113,8 +113,13 @@ class FFXWithMonitor(ffx.FFX):
         target = self._get_target_status()
         return target.nodename
 
-    def get_target_address(self) -> custom_types.TargetAddr:
+    def get_target_address(
+        self, refresh: bool = False
+    ) -> custom_types.TargetAddr:
         """Returns the target's address from `ffx monitor status`.
+
+        Args:
+            refresh: Unused in FFXWithMonitor (monitor status is queried directly).
 
         Returns:
             TargetAddr from `ffx monitor status`.

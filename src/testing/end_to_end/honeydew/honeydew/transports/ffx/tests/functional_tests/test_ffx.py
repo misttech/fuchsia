@@ -34,11 +34,11 @@ class FFXTransportTests(fuchsia_base_test.FuchsiaBaseTest):
             self.dut.ffx.get_target_name(), self.dut.device_name
         )
 
-    async def test_get_target_ssh_address(self) -> None:
-        """Test case for FFX.get_target_ssh_address()."""
+    async def test_get_target_address(self) -> None:
+        """Test case for FFX.get_target_address()."""
         asserts.assert_is_instance(
-            self.dut.ffx.get_target_ssh_address(),
-            custom_types.TargetSshAddress,
+            self.dut.ffx.get_target_address(),
+            custom_types.TargetAddr,
         )
 
     async def test_get_target_board(self) -> None:

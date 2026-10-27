@@ -112,7 +112,7 @@ async def create(
                 device_info=custom_types.DeviceInfo(
                     name=device_config["name"],
                     serial_number=device_config.get("device_serial"),
-                    ip_port=device_config.get("device_ip_port"),
+                    address=device_config.get("address"),
                     serial_socket=device_config.get("serial_socket"),
                     fastboot_node_id=device_config.get("fastboot_sernum")
                     or device_config.get("fastboot_node_id"),
@@ -169,7 +169,8 @@ def _parse_device_config(config: dict[str, str]) -> dict[str, Any]:
 
     Raises:
         RuntimeError: If the fuchsia device name in the config is missing.
-        ValueError: If either transport device_ip_port is invalid.
+        ValueError: If transport device_ip_port or device_usb is invalid, or if
+            both IP and USB addresses are specified.
     """
     _LOGGER.debug(
         "FuchsiaDevice controller config received in testbed yml file is '%s'",
@@ -204,6 +205,16 @@ def _parse_device_config(config: dict[str, str]) -> dict[str, Any]:
                     f"Invalid device_ip_port `{config_value}` passed for "
                     f"{config['name']}"
                 ) from err
+        elif config_key == "device_usb":
+            try:
+                device_config[
+                    "device_usb"
+                ] = custom_types.UsbAddress.create_using_usb(config_value)
+            except Exception as err:  # pylint: disable=broad-except
+                raise ValueError(
+                    f"Invalid device_usb `{config_value}` passed for "
+                    f"{config['name']}"
+                ) from err
         elif config_key in ["ipv4", "ipv6"]:
             if config.get("ipv4"):
                 device_config[
@@ -215,6 +226,16 @@ def _parse_device_config(config: dict[str, str]) -> dict[str, Any]:
                 ] = custom_types.IpPort.create_using_ip(config["ipv6"])
         else:
             device_config[config_key] = config_value
+
+    if "device_ip_port" in device_config and "device_usb" in device_config:
+        raise ValueError(
+            f"Cannot specify both IP address and USB address for {config['name']}"
+        )
+
+    if "device_ip_port" in device_config:
+        device_config["address"] = device_config.pop("device_ip_port")
+    elif "device_usb" in device_config:
+        device_config["address"] = device_config.pop("device_usb")
 
     _LOGGER.debug(
         "Updated FuchsiaDevice controller config after the validation is '%s'",

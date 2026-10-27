@@ -35,6 +35,7 @@ import fuchsia_base_test
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.transports.ffx.types import MachineFormat
+from honeydew.typing import custom_types
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -261,13 +262,15 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         self._cdc_iface_name = cdc_iface_name
 
-        ssh_addr = self.dut.ffx.get_target_ssh_address()
-        asserts.assert_is_not_none(
-            ssh_addr,
+        target_addr = self.dut.ffx.get_target_address()
+        asserts.assert_true(
+            isinstance(target_addr, custom_types.IpPort),
             "Pre-flight check failed: Unable to obtain FFX SSH target address.",
         )
-        assert ssh_addr is not None  # satisfy mypy typing
-        raw_ssh_ip = str(ssh_addr.ip).split("%")[0]
+        assert isinstance(
+            target_addr, custom_types.IpPort
+        )  # satisfy mypy typing
+        raw_ssh_ip = str(target_addr.ip).split("%")[0]
         _LOGGER.info(
             "Active FFX SSH raw IP: %s | CDC IPs: %s | WLAN IPs: %s",
             raw_ssh_ip,

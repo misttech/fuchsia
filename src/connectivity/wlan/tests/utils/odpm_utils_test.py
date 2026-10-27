@@ -39,7 +39,7 @@ class OdpmUtilsTest(unittest.IsolatedAsyncioTestCase):
             "  Series recording interval: 0.10 s\n"
         )
         self.mock_tracing._fc_transport = mock.MagicMock(
-            _device_ip_change=mock.MagicMock(ffx=mock_ffx)
+            _device_address_change=mock.MagicMock(ffx=mock_ffx)
         )
 
         with self.assertLogs(odpm_utils._LOGGER, level="DEBUG") as cm:

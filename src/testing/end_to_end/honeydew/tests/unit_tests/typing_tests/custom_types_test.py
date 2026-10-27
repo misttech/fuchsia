@@ -5,7 +5,6 @@
 
 import ipaddress
 import unittest
-from typing import Any
 
 from honeydew.typing import custom_types
 from parameterized import parameterized
@@ -162,128 +161,82 @@ class CustomTypesTests(unittest.TestCase):
         ip_port = custom_types.IpPort(ip=ipaddress.ip_address("::1"), port=None)
         self.assertEqual(ip_port.ip_str, "::1")
 
-    @parameterized.expand(
-        [
-            (
-                "usb_valid",
-                "usb:cid:12345",
-                custom_types.TargetUsb(12345),
-            ),
-            (
-                "ip_port_valid",
-                "192.168.1.1:8022",
-                custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), 8022),
-            ),
-            (
-                "ip_valid",
-                "192.168.1.1",
-                custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), None),
-            ),
-            (
-                "ipv6_no_port",
-                "fe80::1",
-                custom_types.IpPort(ipaddress.ip_address("fe80::1"), None),
-            ),
-            (
-                "ipv6_with_port",
-                "[fe80::1]:1234",
-                custom_types.IpPort(ipaddress.ip_address("fe80::1"), 1234),
-            ),
-        ]
-    )
-    def test_target_addr_from_str(
-        self, _: str, query: str, expected: custom_types.TargetAddr
-    ) -> None:
-        """Test cases for TargetAddr.from_str() success."""
-        got = custom_types.TargetAddr.from_str(query)
-        self.assertEqual(got, expected)
-
-    @parameterized.expand(
-        [
-            ("invalid_usb", "usb:cid:notanint"),
-            ("invalid_usb_format", "usb123"),
-            ("negative_usb", "usb:cid:-1"),
-            ("invalid_ip", "256.256.256.256"),
-            ("random_string", "my-fuchsia-device"),
-        ]
-    )
-    def test_target_addr_from_str_raises(self, _: str, query: str) -> None:
-        """Test cases for TargetAddr.from_str() that raise ValueError."""
-        with self.assertRaises(ValueError):
-            custom_types.TargetAddr.from_str(query)
-
-    @parameterized.expand(
-        [
-            (
-                "ip_default_port_none",
-                {"type": "Ip", "ip": "192.168.1.1"},
-                custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), None),
-            ),
-            (
-                "ip_explicit_port",
-                {"type": "Ip", "ip": "192.168.1.1", "ssh_port": 8022},
-                custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), 8022),
-            ),
-            (
-                "ip_port_zero_is_none",
-                {"type": "Ip", "ip": "192.168.1.1", "ssh_port": 0},
-                custom_types.IpPort(ipaddress.ip_address("192.168.1.1"), None),
-            ),
-            (
-                "ipv6_no_scope",
-                {"type": "Ip", "ip": "fe80::1"},
-                custom_types.IpPort(ipaddress.ip_address("fe80::1"), None),
-            ),
-            (
-                "ipv6_with_scope",
-                {"type": "Ip", "ip": "fe80::1%1"},
-                custom_types.IpPort(ipaddress.ip_address("fe80::1%1"), None),
-            ),
-            (
-                "ipv6_with_lexical_scope",
-                {"type": "Ip", "ip": "fe80::1%lo"},
-                custom_types.IpPort(ipaddress.ip_address("fe80::1%lo"), None),
-            ),
-            (
-                "usb_valid",
-                {"type": "Usb", "cid": 12345},
-                custom_types.TargetUsb(12345),
-            ),
-        ]
-    )
-    def test_target_addr_from_json(
-        self, _: str, obj: dict[str, Any], expected: custom_types.TargetAddr
-    ) -> None:
-        """Test cases for TargetAddr.from_json() success."""
-        got = custom_types.TargetAddr.from_json(obj)
-        self.assertEqual(got, expected)
-
-    @parameterized.expand(
-        [
-            ("invalid_ip", {"type": "Ip", "ip": "256.256.256.256"}),
-            ("missing_ip", {"type": "Ip"}),
-            ("usb_missing_cid", {"type": "Usb"}),
-            ("usb_negative_cid", {"type": "Usb", "cid": -1}),
-            ("usb_bool_cid", {"type": "Usb", "cid": True}),
-            ("unsupported_type", {"type": "Unknown"}),
-        ]
-    )
-    def test_target_addr_from_json_raises(
-        self, _: str, obj: dict[str, Any]
-    ) -> None:
-        """Test cases for TargetAddr.from_json() raising ValueError."""
-        with self.assertRaises(ValueError):
-            custom_types.TargetAddr.from_json(obj)
-
-    def test_target_usb_str(self) -> None:
-        """Test cases for TargetUsb.__str__."""
-        got = str(custom_types.TargetUsb(12345))
+    def test_usb_address_str(self) -> None:
+        """Test cases for UsbAddress.__str__."""
+        got = str(custom_types.UsbAddress(12345))
         self.assertEqual(got, "usb:cid:12345")
 
-    def test_target_usb_ip_str_raises(self) -> None:
-        """Test cases for TargetUsb.ip_str."""
+    def test_usb_address_negative_raises(self) -> None:
+        """Test cases for UsbAddress.__post_init__ raising ValueError."""
         with self.assertRaises(ValueError):
-            _ = custom_types.TargetUsb(12345).ip_str
+            custom_types.UsbAddress(-1)
+
+    @parameterized.expand(
+        [
+            ("prefixed_str", "usb:cid:42", custom_types.UsbAddress(42)),
+            ("numeric_str", "42", custom_types.UsbAddress(42)),
+            ("integer", 42, custom_types.UsbAddress(42)),
+        ]
+    )
+    def test_create_using_usb(
+        self, _: str, usb: str | int, expected: custom_types.UsbAddress
+    ) -> None:
+        """Test cases for UsbAddress.create_using_usb()."""
+        got = custom_types.UsbAddress.create_using_usb(usb)
+        self.assertEqual(got, expected)
+
+    @parameterized.expand(
+        [
+            ("invalid_str", "some_str"),
+            ("invalid_prefix_value", "usb:cid:abc"),
+            ("negative_str", "usb:cid:-1"),
+            ("boolean", True),
+        ]
+    )
+    def test_create_using_usb_raises(self, _: str, usb: str | int) -> None:
+        """Test cases for UsbAddress.create_using_usb() raising ValueError."""
+        with self.assertRaises(ValueError):
+            custom_types.UsbAddress.create_using_usb(usb)
+
+    def test_device_info_address(self) -> None:
+        """Test cases for DeviceInfo.address field."""
+        ip_port = custom_types.IpPort(
+            ip=ipaddress.ip_address("127.0.0.1"), port=8022
+        )
+        usb = custom_types.UsbAddress(42)
+
+        info_ip = custom_types.DeviceInfo(
+            name="dut",
+            serial_number=None,
+            address=ip_port,
+            serial_socket=None,
+        )
+        self.assertEqual(info_ip.address, ip_port)
+
+        info_usb = custom_types.DeviceInfo(
+            name="dut",
+            serial_number=None,
+            address=usb,
+            serial_socket=None,
+        )
+        self.assertEqual(info_usb.address, usb)
+
+        info_none = custom_types.DeviceInfo(
+            name="dut",
+            serial_number=None,
+            address=None,
+            serial_socket=None,
+        )
+        self.assertIsNone(info_none.address)
+
+        info_legacy_ip_port = custom_types.DeviceInfo(
+            name="dut",
+            serial_number=None,
+            ip_port=ip_port,
+            serial_socket=None,
+        )
+        self.assertEqual(info_legacy_ip_port.address, ip_port)
+        self.assertEqual(info_legacy_ip_port.ip_port, ip_port)
 
     def test_mac_with_bytes(self) -> None:
         """Test if initialization works for valid bytes."""
@@ -452,7 +405,7 @@ class CustomTypesTests(unittest.TestCase):
         info = custom_types.DeviceInfo(
             name="fuchsia-device",
             serial_number=serial_number,
-            ip_port=None,
+            address=None,
             serial_socket=serial_socket,
             fastboot_node_id=fastboot_node_id,
         )
@@ -479,7 +432,7 @@ class CustomTypesTests(unittest.TestCase):
             custom_types.DeviceInfo(
                 name="fuchsia-device",
                 serial_number=serial_number,
-                ip_port=None,
+                address=None,
                 serial_socket=serial_socket,
                 fastboot_node_id=fastboot_node_id,
             )

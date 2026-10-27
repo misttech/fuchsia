@@ -16,8 +16,7 @@ from mobly_driver.driver import base, common
 
 _VALID_TARGET_TYPES: list[str] = [
     "ip",
-    "id",
-    "name",
+    "usb",
 ]
 
 
@@ -53,8 +52,8 @@ class LocalDriver(base.BaseDriver):
           config_path: absolute path to the Mobly test config file.
           params_path: absolute path to the Mobly test params file.
           ssh_path: absolute path to the SSH binary.
-          target_address_type: Whether to use the fuchsia device's name, serial
-            number,  or ip for host-target interactions when using FFX and
+          target_address_type: Whether to use the fuchsia device's ip or usb
+            address for host-target interactions when using FFX and
             Fuchsia-Controller transports.
 
         Raises:
@@ -183,32 +182,22 @@ class LocalDriver(base.BaseDriver):
             }
             if self._ssh_key:
                 fx_device["ssh_key"] = self._ssh_key
-            if (
-                self._target_address_type == "id"
-                or not self._target_address_type
-            ):
-                failure = None
-                target_serial: str | None = None
-                try:
-                    target_serial = self._ffx_client.get_target_serial(
-                        target_name=target
-                    )
-                except Exception as e:
-                    failure = e
+
+            try:
+                target_serial = self._ffx_client.get_target_serial(
+                    target_name=target
+                )
                 if target_serial is not None:
                     fx_device["device_serial"] = target_serial
-                elif self._target_address_type == "id":
-                    if failure is None:
-                        raise common.DriverException(
-                            "Device had no serial number (which is required when target_address_type is 'id')"
-                        )
-                    else:
-                        raise failure
+            except Exception:
+                pass
 
-            if (
-                self._target_address_type == "ip"
-                or not self._target_address_type
-            ):
+            if self._target_address_type == "usb":
+                target_usb_address: api_ffx.TargetUsbAddress = (
+                    self._ffx_client.get_target_usb_address(target_name=target)
+                )
+                fx_device["device_usb"] = str(target_usb_address)
+            else:
                 try:
                     target_ssh_address: api_ffx.TargetSshAddress = (
                         self._ffx_client.get_target_ssh_address(
@@ -217,11 +206,14 @@ class LocalDriver(base.BaseDriver):
                     )
                     fx_device["device_ip_port"] = str(target_ssh_address)
                 except Exception as e:
-                    if (
-                        self._target_address_type == "ip"
-                        or "device_serial" not in fx_device
-                    ):
+                    if self._target_address_type == "ip":
                         raise e
+                    target_usb_address = (
+                        self._ffx_client.get_target_usb_address(
+                            target_name=target
+                        )
+                    )
+                    fx_device["device_usb"] = str(target_usb_address)
 
             mobly_controllers.append(fx_device)
 

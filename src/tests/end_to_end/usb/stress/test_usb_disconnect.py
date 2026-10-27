@@ -244,16 +244,16 @@ class UsbDisconnectTest(usb_lib.UsbPowerHubBaseTest):
             bool(targets), f"[{phase}] No targets returned by ffx target list"
         )
         discovered_ips = [
-            str(custom_types.IpPort.from_json(address).ip).split("%")[0]
+            str(address["ip"]).split("%")[0]
             for address in targets[0]["addresses"]
         ]
         _LOGGER.info(
             "[%s] Device discovered via mDNS at %s", phase, discovered_ips
         )
 
-        ssh_address = self.dut.ffx.get_target_ssh_address()
-        if ssh_address is not None:
-            expected_ip = str(ssh_address.ip).split("%")[0]
+        target_addr = self.dut.ffx.get_target_address()
+        if isinstance(target_addr, custom_types.IpPort):
+            expected_ip = str(target_addr.ip).split("%")[0]
             asserts.assert_in(
                 expected_ip,
                 discovered_ips,

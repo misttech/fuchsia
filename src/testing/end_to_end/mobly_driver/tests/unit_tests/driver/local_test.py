@@ -218,14 +218,8 @@ class LocalDriverTest(unittest.TestCase):
             ),
             (
                 {
-                    "label": "valid_value_as_name",
-                    "target_address_type": "name",
-                },
-            ),
-            (
-                {
-                    "label": "valid_value_as_id",
-                    "target_address_type": "id",
+                    "label": "valid_value_as_usb_address",
+                    "target_address_type": "usb",
                 },
             ),
         ],
@@ -239,6 +233,11 @@ class LocalDriverTest(unittest.TestCase):
         return_value=api_ffx.TargetSshAddress(
             ip=ipaddress.ip_address("::1"), port=8022
         ),
+    )
+    @patch(
+        "mobly_driver.api.api_ffx.FfxClient.get_target_usb_address",
+        autospec=True,
+        return_value=api_ffx.TargetUsbAddress(target_id=42),
     )
     @patch(
         "mobly_driver.api.api_ffx.FfxClient.target_list",
@@ -259,6 +258,7 @@ class LocalDriverTest(unittest.TestCase):
         mock_new_tb_config: Any,
         mock_get_target_serial: Any,
         mock_ffx_target_list: Any,
+        mock_ffx_target_usb_address: Any,
         mock_ffx_target_ssh_address: Any,
         *unused_args: Any,
     ) -> None:
@@ -277,15 +277,18 @@ class LocalDriverTest(unittest.TestCase):
         self.assertEqual(ret, "yaml_str")
 
         mock_ffx_target_list.assert_called()
-        if parameterized_dict["target_address_type"] in [None, "id"]:
-            mock_get_target_serial.assert_called_once()
-        else:
-            mock_get_target_serial.assert_not_called()
+        mock_get_target_serial.assert_called_once()
 
-        if parameterized_dict["target_address_type"] in [None, "ip"]:
-            mock_ffx_target_ssh_address.assert_called_once()
-        else:
+        if parameterized_dict["target_address_type"] == "usb":
+            mock_ffx_target_usb_address.assert_called_once()
+            self.assertEqual(controllers[0]["device_usb"], "usb:cid:42")
             mock_ffx_target_ssh_address.assert_not_called()
+            self.assertNotIn("device_ip_port", controllers[0])
+        else:
+            mock_ffx_target_ssh_address.assert_called_once()
+            self.assertEqual(controllers[0]["device_ip_port"], "[::1]:8022")
+            mock_ffx_target_usb_address.assert_not_called()
+            self.assertNotIn("device_usb", controllers[0])
 
     def test_target_address_type_arg_exception(
         self,

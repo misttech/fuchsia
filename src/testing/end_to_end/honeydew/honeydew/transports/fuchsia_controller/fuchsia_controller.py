@@ -7,7 +7,7 @@ import logging
 
 import fuchsia_controller_py as fuchsia_controller
 from honeydew import errors
-from honeydew.affordances_capable import FuchsiaDeviceIpChange
+from honeydew.affordances_capable import FuchsiaDeviceAddressChange
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.typing import custom_types
@@ -37,11 +37,12 @@ class FuchsiaController:
     Args:
         target_name: Fuchsia device name.
         ffx_config_data: Configuration associated with FuchsiaController, FFX.
-        target_ip_port: Fuchsia device IP Address.
-        device_ip_change: Object that implements FuchsiaDeviceIpChange to handle Fuchsia device
-            IP changes.
+        target_addr: Fuchsia device target address (IP or USB).
+        device_address_change: Object that implements FuchsiaDeviceAddressChange to handle Fuchsia
+            device address changes.
 
     Raises:
+        ValueError: If target_addr is provided and device_address_change is not provided.
         FuchsiaControllerConnectionError: If target is not ready.
         FuchsiaControllerError: Failed to instantiate.
     """
@@ -50,33 +51,29 @@ class FuchsiaController:
         self,
         target_name: str,
         ffx_config_data: ffx_config.FfxConfigData,
-        target_ip_port: custom_types.IpPort | None = None,
-        device_ip_change: FuchsiaDeviceIpChange | None = None,
-        target_serial: str | None = None,
+        target_addr: custom_types.TargetAddr | None = None,
+        device_address_change: FuchsiaDeviceAddressChange | None = None,
     ) -> None:
         self._target_name: str = target_name
 
         self._ffx_config_data: ffx_config.FfxConfigData = ffx_config_data
 
-        self._target_ip_port: custom_types.IpPort | None = target_ip_port
-        if target_ip_port is not None and device_ip_change is None:
+        self._target_addr: custom_types.TargetAddr | None = target_addr
+        if self._target_addr is not None and device_address_change is None:
             raise ValueError(
-                "Pass 'device_ip_change' argument also when 'target_ip_port' arg is passed"
+                "Pass 'device_address_change' argument also when 'target_addr' is passed"
             )
-        self._device_ip_change: FuchsiaDeviceIpChange | None = device_ip_change
-        if self._device_ip_change:
-            self._device_ip_change.register_for_on_device_ip_change(
-                fn=self._on_device_ip_change
+        self._device_address_change: FuchsiaDeviceAddressChange | None = (
+            device_address_change
+        )
+        if self._device_address_change:
+            self._device_address_change.register_for_on_device_address_change(
+                fn=self._on_device_address_change
             )
-
-        self._target_serial: str | None = target_serial
 
         self._target: str
-        if self._target_ip_port:
-            self._target = str(self._target_ip_port)
-        elif self._target_serial:
-            # FFX/Fuchsia-Controller uses "id:<serial-number>" addressing scheme.
-            self._target = f"id:{self._target_serial}"
+        if self._target_addr:
+            self._target = str(self._target_addr)
         else:
             self._target = self._target_name
 
@@ -84,6 +81,17 @@ class FuchsiaController:
 
         self.create_context()
         self.check_connection()
+
+    # TODO: Remove _target_ip_port once //vendor/google code is updated to use
+    # _target_addr.
+    @property
+    def _target_ip_port(self) -> custom_types.TargetAddr | None:
+        """Deprecated alias for _target_addr."""
+        return self._target_addr
+
+    @_target_ip_port.setter
+    def _target_ip_port(self, value: custom_types.TargetAddr | None) -> None:
+        self._target_addr = value
 
     def create_context(self) -> None:
         """Creates the fuchsia-controller context.
@@ -211,14 +219,16 @@ class FuchsiaController:
                 "Fuchsia Controller FIDL Error"
             ) from status
 
-    def _on_device_ip_change(self, target_ip_port: custom_types.IpPort) -> None:
-        """Callback method that gets invoked when device ip address changes.
+    def _on_device_address_change(
+        self, target_addr: custom_types.TargetAddr
+    ) -> None:
+        """Callback method that gets invoked when device address changes.
 
         Args:
-            target_ip_port: New IP address of the device.
+            target_addr: New target address of the device.
         """
-        self._target_ip_port = target_ip_port
-        self._target = str(self._target_ip_port)
+        self._target_addr = target_addr
+        self._target = str(self._target_addr)
 
         self.create_context()
         self.check_connection()

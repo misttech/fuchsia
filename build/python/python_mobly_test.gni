@@ -243,9 +243,9 @@ import("//build/testing/host_test_data.gni")
 #    Default: true
 #
 #  target_address_type (optional)
-#    This option determines whether to use the fuchsia device's name or ip for host-target
+#    This option determines whether to use the fuchsia device's ip or usb address for host-target
 #    interactions when using FFX and Fuchsia-Controller transports. It is only applicable for
-#    local runs; infrastructure runs always use "ip". Valid values are "ip", "name".
+#    local runs; infrastructure runs always use "ip". Valid values are "ip", "usb".
 #    Type: String
 #    Default: "ip"
 #
@@ -290,8 +290,8 @@ template("python_mobly_test") {
   if (defined(invoker.target_address_type)) {
     assert(
         invoker.target_address_type == "ip" ||
-            invoker.target_address_type == "name",
-        "'target_address_type' should be either 'ip' or 'name' but received: " +
+            invoker.target_address_type == "usb",
+        "'target_address_type' should be either 'ip' or 'usb' but received: " +
             "'" + invoker.target_address_type + "'")
   }
 

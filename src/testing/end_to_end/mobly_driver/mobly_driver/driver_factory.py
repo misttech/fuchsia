@@ -40,7 +40,7 @@ class DriverFactory:
           params_path: absolute path to the Mobly testbed params file.
           ffx_subtools_search_path: absolute path to where to search for FFX plugins.
           ssh_path: absolute path to the SSH binary.
-          target_address_type: Whether to use the fuchsia device's name or ip for host-target
+          target_address_type: Whether to use the fuchsia device's ip or usb address for host-target
             interactions when using FFX and Fuchsia-Controller transports. Used only for local
             driver.
         """

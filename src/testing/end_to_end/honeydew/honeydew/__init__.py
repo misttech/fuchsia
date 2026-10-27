@@ -41,13 +41,13 @@ _REGISTERED_PRODUCT_TO_DEVICE_CLASS_DICT: dict[
 ] = {}
 
 
-class _NoOpDeviceIpChange(affordances_capable.FuchsiaDeviceIpChange):
-    """No-op FuchsiaDeviceIpChange used for short-lived FFX queries prior to device creation."""
+class _NoOpDeviceAddressChange(affordances_capable.FuchsiaDeviceAddressChange):
+    """No-op FuchsiaDeviceAddressChange used for short-lived FFX queries prior to device creation."""
 
-    def register_for_on_device_ip_change(
+    def register_for_on_device_address_change(
         self,
-        fn: Callable[[custom_types.IpPort], None]
-        | Callable[[custom_types.IpPort], Awaitable[None]],
+        fn: Callable[[custom_types.TargetAddr], None]
+        | Callable[[custom_types.TargetAddr], Awaitable[None]],
     ) -> None:
         pass
 
@@ -109,13 +109,13 @@ def create_device(
     _LOGGER.debug("create_device has been called with: %s", locals())
 
     try:
-        if device_info.ip_port:
+        if device_info.address:
             _LOGGER.info(
-                "CAUTION: device_ip_port='%s' argument has been passed. Please "
+                "CAUTION: address='%s' argument has been passed. Please "
                 "make sure this value associated with the device is persistent "
                 "across the reboots. Otherwise, host-target interactions will not "
                 "work consistently.",
-                device_info.ip_port,
+                device_info.address,
             )
 
         device_class: type[fuchsia_device.FuchsiaDevice] = _get_device_class(
@@ -174,9 +174,9 @@ def _get_device_class(
     ffx_obj: ffx_transport.FFX = ffx_transport.FFX(
         target_name=device_info.name,
         config_data=ffx_config_data,
-        target_ip_port=device_info.ip_port,
-        device_ip_change=(
-            _NoOpDeviceIpChange() if device_info.ip_port else None
+        target_addr=device_info.address,
+        device_address_change=(
+            _NoOpDeviceAddressChange() if device_info.address else None
         ),
     )
     product_type: str = ffx_obj.get_target_product()
