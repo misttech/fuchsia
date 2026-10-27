@@ -3,7 +3,7 @@
 
 #include "src/developer/forensics/exceptions/handler/crash_reporter.h"
 
-#include <fidl/fuchsia.feedback/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/fidl/cpp/string.h>
 #include <lib/fpromise/bridge.h>
@@ -21,7 +21,9 @@
 #include "src/developer/forensics/exceptions/handler/minidump.h"
 #include "src/developer/forensics/exceptions/handler/report_builder.h"
 #include "src/developer/forensics/exceptions/handler/wake_lease.h"
-#include "src/developer/forensics/utils/fidl_oneshot.h"
+#include "src/developer/forensics/utils/errors.h"
+#include "src/developer/forensics/utils/promise_timeout.h"
+#include "src/lib/fidl/contrib/fpromise/client.h"
 #include "src/lib/fsl/handles/object_info.h"
 
 namespace forensics {
@@ -93,6 +95,37 @@ fpromise::promise<> Delay(async_dispatcher_t* dispatcher, const zx::duration dur
   }
 
   return bridge.consumer.promise_or(fpromise::error());
+}
+
+// Connects to fuchsia.feedback.CrashReporter and files |report|. The connection is held until the
+// returned promise completes.
+fpromise::promise<void, Error> FileCrashReport(
+    async_dispatcher_t* dispatcher, const std::shared_ptr<sys::ServiceDirectory>& services,
+    fuchsia_feedback::CrashReport report) {
+  using FileReportErrors = fidl::ErrorsIn<fuchsia_feedback::CrashReporter::FileReport>;
+
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_feedback::CrashReporter>::Create();
+  services->Connect(fidl::DiscoverableProtocolName<fuchsia_feedback::CrashReporter>,
+                    server_end.TakeChannel());
+  fidl::Client<fuchsia_feedback::CrashReporter> client(std::move(client_end), dispatcher);
+
+  fpromise::promise<void, Error> file_report_promise =
+      fidl_fpromise::as_promise(client->FileReport({std::move(report)}))
+          .or_else([](FileReportErrors& error) {
+            FX_LOGS(WARNING) << "Failed to file crash report: " << error;
+            return fpromise::error(error.is_framework_error()
+                                       ? FidlErrorToForensicsError(error.framework_error())
+                                       : Error::kBadValue);
+          })
+          .and_then([](const fuchsia_feedback::CrashReporterFileReportResponse&) {
+            return fpromise::ok();
+          });
+
+  // Keep |client| alive until the flow completes.
+  return MakePromiseTimeout<void>(std::move(file_report_promise), dispatcher, kFileReportTimeout)
+      .then([client = std::move(client)](fpromise::result<void, Error>& result) {
+        return std::move(result);
+      });
 }
 
 }  // namespace
@@ -186,15 +219,11 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
         return delay
             .then([dispatcher, services,
                    builder = std::move(builder)](const fpromise::result<>& result) mutable {
-              return OneShotCall<fuchsia::feedback::CrashReporter,
-                                 &fuchsia::feedback::CrashReporter::FileReport>(
-                  dispatcher, services, kFileReportTimeout,
-                  fidl::NaturalToHLCPP(builder.Consume()));
+              return FileCrashReport(dispatcher, services, builder.Consume());
             })
             .then([wake_lease_result = std::move(wake_lease_result),
-                   component_info = std::move(component_info), callback = std::move(callback)](
-                      const fpromise::result<fuchsia::feedback::CrashReporter_FileReport_Result,
-                                             forensics::Error>& result) {
+                   component_info = std::move(component_info),
+                   callback = std::move(callback)](const fpromise::result<void, Error>& result) {
               ::fidl::StringPtr moniker = std::nullopt;
               if (!component_info.moniker.empty()) {
                 moniker = component_info.moniker;
