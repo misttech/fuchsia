@@ -42,10 +42,18 @@ class HostNameSubscriberServiceImpl
 
     void MaybeSendAddresses();
 
+    // Prevents a call to |MaybeDelete| from deleting this by incrementing
+    // |one_based_delete_counter_|.
+    void DeferDeletion();
+
+    // Decrements |one_based_delete_counter_| and, if the resulting value is zero, deletes this.
+    void MaybeDelete();
+
     fuchsia::net::mdns::HostNameSubscriptionListenerPtr client_;
     std::vector<HostAddress> addresses_;
     bool dirty_ = false;
     size_t pipeline_depth_ = 0;
+    size_t one_based_delete_counter_ = 1;
 
     // Disallow copy, assign and move.
     Subscriber(const Subscriber&) = delete;

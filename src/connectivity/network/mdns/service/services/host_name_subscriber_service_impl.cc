@@ -49,11 +49,7 @@ void HostNameSubscriberServiceImpl::SubscribeToHostName(
 HostNameSubscriberServiceImpl::Subscriber::Subscriber(
     fidl::InterfaceHandle<fuchsia::net::mdns::HostNameSubscriptionListener> handle) {
   client_.Bind(std::move(handle));
-  client_.set_error_handler([this](zx_status_t status) mutable {
-    client_.set_error_handler(nullptr);
-    client_.Unbind();
-    delete this;
-  });
+  client_.set_error_handler([this](zx_status_t status) mutable { MaybeDelete(); });
 }
 
 HostNameSubscriberServiceImpl::Subscriber::~Subscriber() {
@@ -76,6 +72,12 @@ void HostNameSubscriberServiceImpl::Subscriber::MaybeSendAddresses() {
     return;
   }
 
+  // The error handler for |client_| may be called synchronously in the OnAddressesChanged proxy
+  // call below. To ensure |this| doesn't get deleted while this method is running, we defer
+  // deletion until the method terminates.
+  DeferDeletion();
+
+  FX_DCHECK(client_);
   client_->OnAddressesChanged(fidl::To<std::vector<fuchsia::net::mdns::HostAddress>>(addresses_),
                               [this]() {
                                 FX_DCHECK(pipeline_depth_ != 0);
@@ -85,6 +87,16 @@ void HostNameSubscriberServiceImpl::Subscriber::MaybeSendAddresses() {
 
   ++pipeline_depth_;
   dirty_ = false;
+
+  MaybeDelete();
+}
+
+void HostNameSubscriberServiceImpl::Subscriber::DeferDeletion() { ++one_based_delete_counter_; }
+
+void HostNameSubscriberServiceImpl::Subscriber::MaybeDelete() {
+  if (--one_based_delete_counter_ == 0) {
+    delete this;
+  }
 }
 
 }  // namespace mdns
