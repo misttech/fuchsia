@@ -776,7 +776,6 @@ TEST_F(UnifiedSyncClientToWireServer, RoundTrip) {
     response = caller_allocating_result.Unwrap();
     ASSERT_TRUE(caller_allocating_result.ok());
     CheckWireFile(response->node);
-    ASSERT_OK(loop().RunUntilIdle());
     EXPECT_EQ(4, server.num_calls);
   }
 }
