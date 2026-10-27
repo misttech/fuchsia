@@ -126,6 +126,11 @@ pub async fn suspend_container(
     };
     let container_job = Arc::new(container_job);
 
+    // Declared before `suspend_handles` so Rust's reverse-declaration (LIFO) drop order always
+    // thaws container processes (`suspend_handles`) *before* signaling `AWAKE_SIGNAL` on wake
+    // watchers, including on early error returns or future cancellation during `drop_wake_lease`.
+    let wake_watchers_awake_guard;
+
     // These handles keep the container processes frozen until dropped.
     log::info!("Suspending all container processes.");
     let suspend_handles = match suspend_job(&container_job) {
@@ -165,15 +170,16 @@ pub async fn suspend_container(
 
     log::info!("Notifying wake watchers of container suspend.");
     signal_wake_watchers(suspend_context, AWAKE_SIGNAL, ASLEEP_SIGNAL);
-    // Restore wake watchers to `AWAKE_SIGNAL` once `acquire_wake_lease` completes (preserving the
-    // wake-lease baton handoff), or if an early error/cancellation exits `suspend_container`.
-    let wake_watchers_awake_guard = scopeguard::guard(suspend_context, |suspend_context| {
+    // Restore wake watchers to `AWAKE_SIGNAL` once `start_acquire_wake_lease` has dispatched the
+    // wake-lease request and the container processes are thawed, or if an early error/cancellation
+    // exits `suspend_container` (after `suspend_handles` has already dropped).
+    wake_watchers_awake_guard = scopeguard::guard(suspend_context, |suspend_context| {
         log::info!("Notifying wake watchers of container wakeup.");
         signal_wake_watchers(suspend_context, ASLEEP_SIGNAL, AWAKE_SIGNAL);
     });
 
     log::info!("Pre-drop wake lease");
-    kernels.drop_wake_lease(&container_job)?;
+    kernels.drop_wake_lease(&container_job).await?;
     log::info!("Post-drop wake lease");
 
     let resume_reason = {
@@ -224,15 +230,18 @@ pub async fn suspend_container(
         }
     };
 
-    // Thaw the container processes immediately on wake (and on timeout/abort paths) before
-    // awaiting `acquire_wake_lease`, so Starnix input relay and Android wakeup run concurrently
-    // with Power Broker storage/peripheral resume while SAG's resume control lease and the wake
-    // source hold `ExecutionState` active.
-    std::mem::drop(suspend_handles);
-
+    // Synchronously write `TakeApplicationActivityLease` to SAG's channel before thawing the
+    // container processes so SAG starts resuming drivers immediately at wakeup, while its ~12.5 ms
+    // `AllDrivers` reply completes asynchronously on `Kernels`'s wake-lease scope off the
+    // `suspend_container` critical path.
     log::info!("Pre-acquire wake lease");
-    kernels.acquire_wake_lease(&container_job).await?;
-    log::info!("Post-acquire wake lease");
+    let acquire_result = kernels.start_acquire_wake_lease(&container_job);
+    log::info!("Dispatched acquire wake lease");
+
+    // Thaw the container processes on all exit paths (including if `start_acquire_wake_lease`
+    // returned an error) before signaling `AWAKE_SIGNAL` on wake watchers.
+    std::mem::drop(suspend_handles);
+    acquire_result?;
 
     std::mem::drop(wake_watchers_awake_guard);
 
@@ -1230,8 +1239,14 @@ mod tests {
             .await
         });
 
-        // Receive `TakeApplicationActivityLease` and hold `responder` unanswered to simulate
-        // Power Broker / storage resume latency inside `acquire_wake_lease`.
+        // `suspend_container` must write `TakeApplicationActivityLease` to SAG's channel, thaw the
+        // container processes, restore wake watchers to `AWAKE_SIGNAL`, and return its FIDL
+        // response immediately without waiting for SAG's `AllDrivers` reply.
+        let response = suspend_task.await.unwrap().unwrap();
+        assert_eq!(response.resume_reason.as_deref(), Some("power-button"));
+
+        // Receive `TakeApplicationActivityLease` and verify it was already queued in SAG's channel
+        // while `responder` is still unanswered.
         let Some(Ok(fpower::ActivityGovernorRequest::TakeApplicationActivityLease {
             name,
             responder,
@@ -1242,31 +1257,127 @@ mod tests {
         assert_eq!(name, "starnix-kernel-test-container");
         assert!(!kernels.has_wake_lease(&job));
 
-        // Release the test's initial thread suspend handles while `acquire_wake_lease` is still
-        // pending. Because `suspend_container` already dropped `suspend_handles` before awaiting
-        // `acquire_wake_lease`, the container threads thaw immediately instead of staying frozen.
+        // Release the test's initial thread suspend handles while `responder` is still unanswered.
+        // Because `suspend_container` already dropped `suspend_handles`, the container threads
+        // thaw immediately instead of staying frozen.
         drop(thread_suspend_handles);
         for thread in &threads {
             wait_until_blocked_on_exception(thread);
         }
-
-        // Wake watchers must remain `ASLEEP_SIGNAL` until `acquire_wake_lease` completes so wake
-        // baton holders (such as Netstack3 wake groups) keep their lease until ours is active.
-        assert!(
-            watcher_client.wait_one(ASLEEP_SIGNAL, zx::MonotonicInstant::ZERO).to_result().is_ok()
-        );
-        assert!(
-            watcher_client.wait_one(AWAKE_SIGNAL, zx::MonotonicInstant::ZERO).to_result().is_err()
-        );
-
-        let (lease_client, _lease_server) = zx::EventPair::create();
-        responder.send(lease_client).unwrap();
-
-        let response = suspend_task.await.unwrap().unwrap();
-        assert_eq!(response.resume_reason.as_deref(), Some("power-button"));
-        assert!(kernels.has_wake_lease(&job));
         assert!(
             watcher_client.wait_one(AWAKE_SIGNAL, zx::MonotonicInstant::ZERO).to_result().is_ok()
+        );
+
+        let (lease_client, lease_server) = zx::EventPair::create();
+        responder.send(lease_client).unwrap();
+        kernels.wait_for_in_flight_wake_lease(&job).await;
+        assert!(kernels.has_wake_lease(&job));
+        assert_eq!(
+            lease_server
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+                .to_result(),
+            Err(zx::Status::TIMED_OUT)
+        );
+    }
+
+    #[fuchsia::test]
+    async fn suspend_container_rapid_resuspend_waits_for_in_flight_wake_lease() {
+        let job = TestJob::new();
+        let (_process, _threads, _thread_suspend_handles) =
+            create_named_process_with_suspended_threads(&job, b"starnix_kernel.cm", 1);
+
+        let (activity_governor, mut sag_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fpower::ActivityGovernorMarker>();
+        let kernels = Arc::new(
+            Kernels::new_for_test(job.clone(), "test-container", activity_governor).unwrap(),
+        );
+
+        let suspend_context = Arc::new(SuspendContext::default());
+        let wake_counter = zx::Counter::create();
+        let wake_koid = wake_counter.koid().unwrap();
+        wake_counter.add(1).unwrap();
+        suspend_context
+            .wake_sources
+            .lock()
+            .insert(wake_koid, WakeSource::from_counter(wake_counter, "power-button".to_string()));
+
+        // First suspend/wake cycle returns immediately while SAG's `TakeApplicationActivityLease`
+        // reply is still in flight.
+        let container_job1 = job.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let response1 = suspend_container(
+            fstarnixrunner::ManagerSuspendContainerRequest {
+                container_job: Some(container_job1),
+                wake_locks: None,
+                ..Default::default()
+            },
+            &suspend_context,
+            &kernels,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(response1.resume_reason.as_deref(), Some("power-button"));
+
+        let Some(Ok(fpower::ActivityGovernorRequest::TakeApplicationActivityLease {
+            name: name1,
+            responder: responder1,
+        })) = sag_stream.next().await
+        else {
+            panic!("expected first TakeApplicationActivityLease request");
+        };
+        assert_eq!(name1, "starnix-kernel-test-container");
+        assert!(!kernels.has_wake_lease(&job));
+
+        // Immediately enter a second `suspend_container` before SAG answers `responder1`.
+        // `drop_wake_lease` must wait for the in-flight acquisition and drop its lease before
+        // proceeding into the sleep wait.
+        let container_job2 = job.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let mut suspend2_fut = std::pin::pin!(suspend_container(
+            fstarnixrunner::ManagerSuspendContainerRequest {
+                container_job: Some(container_job2),
+                wake_locks: None,
+                ..Default::default()
+            },
+            &suspend_context,
+            &kernels,
+        ));
+        assert!(matches!(futures::poll!(&mut suspend2_fut), std::task::Poll::Pending));
+        {
+            let mut next_req = std::pin::pin!(sag_stream.next());
+            assert!(matches!(futures::poll!(&mut next_req), std::task::Poll::Pending));
+        }
+
+        // Now SAG replies to the first wake's request; `drop_wake_lease` must immediately close
+        // `lease1` and allow the second suspend/wake cycle to complete and acquire `lease2`.
+        let (lease1_client, lease1_server) = zx::EventPair::create();
+        responder1.send(lease1_client).unwrap();
+
+        let response2 = suspend2_fut.await.unwrap().unwrap();
+        assert_eq!(response2.resume_reason.as_deref(), Some("power-button"));
+        assert!(
+            lease1_server
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+                .to_result()
+                .is_ok()
+        );
+
+        let Some(Ok(fpower::ActivityGovernorRequest::TakeApplicationActivityLease {
+            name: name2,
+            responder: responder2,
+        })) = sag_stream.next().await
+        else {
+            panic!("expected second TakeApplicationActivityLease request");
+        };
+        assert_eq!(name2, "starnix-kernel-test-container");
+        let (lease2_client, lease2_server) = zx::EventPair::create();
+        responder2.send(lease2_client).unwrap();
+        kernels.wait_for_in_flight_wake_lease(&job).await;
+        assert!(kernels.has_wake_lease(&job));
+        assert_eq!(
+            lease2_server
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
+                .to_result(),
+            Err(zx::Status::TIMED_OUT)
         );
     }
 

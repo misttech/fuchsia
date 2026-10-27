@@ -21,11 +21,11 @@ use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_inspect::{HistogramProperty, NumericProperty};
 use futures::TryStreamExt;
-use kernels::Kernels;
+use kernels::{KernelWakeLease, Kernels};
 use log::warn;
 use proxy::ChannelProxy;
 use rand::RngExt as _;
-use starnix_sync::{LockDepMutex, StarnixKernelWakeLeaseLock, WakeSourcesLock};
+use starnix_sync::{LockDepMutex, WakeSourcesLock};
 use std::future::Future;
 use std::sync::Arc;
 use suspend::{
@@ -59,8 +59,8 @@ pub struct StarnixKernel {
     /// The job the kernel lives under.
     job: Arc<zx::Job>,
 
-    /// The currently active wake lease for the container.
-    wake_lease: LockDepMutex<Option<zx::EventPair>, StarnixKernelWakeLeaseLock>,
+    /// Tracks the active or in-flight wake lease for the container.
+    wake_lease: Arc<KernelWakeLease>,
 }
 
 impl StarnixKernel {
@@ -120,12 +120,13 @@ impl StarnixKernel {
             anyhow::bail!("expected to find job in ControllerGetJobHandleResponse");
         };
 
+        let wake_lease = Arc::new(KernelWakeLease::new(&kernel_name));
         let kernel = Self {
             name: kernel_name,
             exposed_dir,
             component_instance,
             job: Arc::new(job),
-            wake_lease: Default::default(),
+            wake_lease,
         };
         let on_stop = async move {
             _ = controller_proxy.into_channel().unwrap().on_closed().await;
