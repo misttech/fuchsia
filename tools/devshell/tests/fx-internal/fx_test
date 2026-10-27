@@ -411,6 +411,31 @@ EOF
   BT_EXPECT_FILE_CONTAINS_SUBSTRING "${log_file}" "jiri fetch-package prebuilt/third_party/mytool/bin/mytool"
 }
 
+# Ensure that ${PREBUILT_PYTHON3} in EXECUTABLE metadata is expanded, so that a
+# non-executable script is run via the declared interpreter.
+TEST_fx-executable-metadata-prebuilt-python3() {
+  local mock_python
+  mock_python="$(source "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh" && echo "${PREBUILT_PYTHON3}")"
+  mkdir -p "$(dirname "${mock_python}")"
+  cat >"${mock_python}" <<'EOF'
+#!/bin/bash
+echo "ran python3: $@"
+EOF
+  chmod +x "${mock_python}"
+
+  # Intentionally not executable; must be run via ${PREBUILT_PYTHON3}.
+  touch "${BT_TEMP_DIR}/tools/devshell/foo.py"
+  cat >"${BT_TEMP_DIR}/tools/devshell/foo.fx" <<'EOF'
+#### CATEGORY=Other
+#### EXECUTABLE=${PREBUILT_PYTHON3} ${FUCHSIA_DIR}/tools/devshell/foo.py
+### test prebuilt python3 executable
+EOF
+
+  local out
+  out=$(_FX_PROC_STATUS="${BT_TEMP_DIR}/nonexistent" "${fx}" foo arg1 2>&1)
+  BT_EXPECT_EQ "${out}" "ran python3: ${BT_TEMP_DIR}/tools/devshell/foo.py arg1"
+}
+
 TEST_fx-on-demand-prebuilts-header-and-helper() {
   local subcommand="${BT_TEMP_DIR}/tools/devshell/myscript"
   cat >"${subcommand}" <<EOF

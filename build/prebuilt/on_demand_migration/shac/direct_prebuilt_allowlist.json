@@ -292,7 +292,7 @@
     "tools/devshell/run-netboot": 1,
     "tools/devshell/tests/fx-internal/ffx_target_list_usage_test": 1,
     "tools/devshell/tests/fx-internal/fx_helpers_test": 1,
-    "tools/devshell/tests/fx-internal/fx_test": 7,
+    "tools/devshell/tests/fx-internal/fx_test": 8,
     "tools/devshell/tests/fx-internal/metrics_test": 2,
     "tools/devshell/tests/fx-internal/regenerator_test": 1,
     "tools/devshell/tests/fx-internal/vars_test": 3,

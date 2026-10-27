@@ -63,58 +63,47 @@ function fx-ensure-prebuilt {
   return 0
 }
 
-function get_exec_from_metadata {
-  local -r metadata_file=$1
+# Prints the value of each `#### <key>=<value>` metadata header line in the
+# given file, one per line, with ${VAR} placeholders expanded.
+#
+# Placeholders are expanded from the environment. FUCHSIA_DIR, HOST_PLATFORM,
+# and all PREBUILT_* variables from platform.sh (which are declared readonly
+# without export) are exported first so they are available.
+#
+# Args:
+#   $1: The metadata key, e.g. EXECUTABLE or PREBUILTS.
+#   $2: The metadata file to read.
+#   $3: How to handle unknown variables: "keep" to leave them unexpanded, or
+#       "empty" to expand them to an empty string.
+function _get_metadata_values {
+  local -r key=$1
+  local -r metadata_file=$2
+  local -r unknown_vars=$3
 
-  export PREBUILT_3P_DIR FUCHSIA_DIR HOST_PLATFORM
-  export HOST_TOOLS_DIR="$(get_host_tools_dir)"
-
-  awk -F ' *= *' -f - "${metadata_file}" <<'EOF'
-    /^#### +EXECUTABLE */ {
-      gsub(/\${PREBUILT_3P_DIR}/, ENVIRON["PREBUILT_3P_DIR"], $2);
-      gsub(/\${PREBUILT_PYTHON3}/, ENVIRON["PREBUILT_PYTHON3"], $2);
-      gsub(/\${FUCHSIA_DIR}/, ENVIRON["FUCHSIA_DIR"], $2);
-      gsub(/\${HOST_TOOLS_DIR}/, ENVIRON["HOST_TOOLS_DIR"], $2);
-      gsub(/\${HOST_PLATFORM}/, ENVIRON["HOST_PLATFORM"], $2);
-      print $2;
-    }
-EOF
-}
-
-function get_prebuilts_from_metadata {
-  local -r metadata_file=$1
-  [[ -f "${metadata_file}" ]] || return 0
-
-  # Export FUCHSIA_DIR, HOST_PLATFORM, and all PREBUILT_* variables from
-  # platform.sh (which are declared readonly without export) so awk can look
-  # them up in ENVIRON.
   export FUCHSIA_DIR HOST_PLATFORM
-  if [[ -n "${!PREBUILT_@}" ]]; then
+  if [[ -n "${!PREBUILT_*}" ]]; then
     export "${!PREBUILT_@}"
   fi
 
-  awk -F ' *= *' -f - "${metadata_file}" <<'EOF'
-    /^#### +PREBUILTS */ {
-      # Expand any ${VAR} placeholders on the right-hand side of `=` using the
-      # exported environment variables. Note: unlike get_exec_from_metadata, we
-      # cannot use `gsub` here because `gsub` only substitutes one fixed pattern
-      # per call and cannot dynamically look up multiple different `${PREBUILT_*}`
-      # variable names in `ENVIRON` on the same line.
+  awk -F ' *= *' -v key="${key}" -v unknown_vars="${unknown_vars}" \
+      -f - "${metadata_file}" <<'EOF'
+    $0 ~ ("^#### +" key " *=") {
+      # Build the output left-to-right so expanded values are never re-scanned.
       line = $2;
+      out = "";
       while (match(line, /\$\{[A-Za-z0-9_]+\}/)) {
         var = substr(line, RSTART + 2, RLENGTH - 3);
-        val = (var in ENVIRON) ? ENVIRON[var] : "";
-        line = substr(line, 1, RSTART - 1) val substr(line, RSTART + RLENGTH);
-      }
-
-      # Split the expanded value on whitespace (or commas/semicolons) and print
-      # each prebuilt path on its own line.
-      n = split(line, paths, /[[:space:],;]+/);
-      for (i = 1; i <= n; i++) {
-        if (paths[i] != "") {
-          print paths[i];
+        if (var in ENVIRON) {
+          val = ENVIRON[var];
+        } else if (unknown_vars == "keep") {
+          val = substr(line, RSTART, RLENGTH);
+        } else {
+          val = "";
         }
+        out = out substr(line, 1, RSTART - 1) val;
+        line = substr(line, RSTART + RLENGTH);
       }
+      print out line;
     }
 
     # Stop scanning at the first non-empty, non-comment line so we only inspect
@@ -122,6 +111,27 @@ function get_prebuilts_from_metadata {
     # binaries.
     !/^#/ && NF > 0 { exit }
 EOF
+}
+
+function get_exec_from_metadata {
+  local -r metadata_file=$1
+
+  export HOST_TOOLS_DIR="$(get_host_tools_dir)"
+  # Leave unknown variables unexpanded so that a typo fails loudly as a missing
+  # executable, rather than silently expanding to an empty string and changing
+  # which command runs.
+  _get_metadata_values EXECUTABLE "${metadata_file}" keep
+}
+
+function get_prebuilts_from_metadata {
+  local -r metadata_file=$1
+  [[ -f "${metadata_file}" ]] || return 0
+
+  # Unknown variables expand to empty and are dropped, since a prebuilt variable
+  # may not be defined in every environment (e.g. trimmed-down test
+  # environments). Split each value on whitespace (or commas/semicolons) and
+  # print each prebuilt path on its own line.
+  _get_metadata_values PREBUILTS "${metadata_file}" empty | tr -s '[:space:],;' '\n'
 }
 
 function _relative {

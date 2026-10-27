@@ -444,6 +444,53 @@ TEST_fx-command-run() {
     "Expected a single argument 'myarg1' to mycmd, got '${BT_MOCK_ARGS[@]:1}'"
 }
 
+# Ensure that fx-command-run and fx-command-exec can execute a multi-word
+# EXECUTABLE command from a metadata (*.fx) file that runs a (non-executable)
+# script via an interpreter.
+TEST_fx-command-run-multi-word-executable() {
+  local interpreter="${BT_TEMP_DIR}/tools/devshell/fake-interpreter"
+  btf::make_mock "${interpreter}"
+  local myscript="${BT_TEMP_DIR}/tools/devshell/foo.py"
+  touch "${myscript}"
+  cat > "${BT_TEMP_DIR}/tools/devshell/foo.fx" <<'EOF'
+#### EXECUTABLE=${FUCHSIA_DIR}/tools/devshell/fake-interpreter ${FUCHSIA_DIR}/tools/devshell/foo.py
+EOF
+
+  BT_EXPECT fx-command-run foo myarg1
+  source "${interpreter}.mock_state"
+  BT_EXPECT_EQ "${BT_MOCK_ARGS[*]:1}" "${myscript} myarg1"
+
+  # Run fx-command-exec in a subshell, otherwise its `exec` would replace the
+  # test process itself.
+  BT_EXPECT "(" fx-command-exec foo myarg2 ")"
+  source "${interpreter}.mock_state.2"
+  BT_EXPECT_EQ "${BT_MOCK_ARGS[*]:1}" "${myscript} myarg2"
+}
+
+# Ensure that EXECUTABLE metadata can use any exported PREBUILT_* variable, not
+# just a hardcoded subset.
+TEST_fx-command-run-executable-any-prebuilt-var() {
+  cat > "${BT_TEMP_DIR}/tools/devshell/foo.fx" <<'EOF'
+#### EXECUTABLE=${PREBUILT_JQ}
+EOF
+  BT_EXPECT_EQ "$(fx-command-run foo -n '1 + 1')" "2"
+}
+
+# Ensure that an unknown variable in EXECUTABLE metadata is left unexpanded and
+# fails, rather than silently expanding to an empty string and running the
+# script directly.
+TEST_fx-command-run-executable-unknown-var() {
+  local myscript="${BT_TEMP_DIR}/tools/devshell/foo.py"
+  btf::make_mock "${myscript}"
+  cat > "${BT_TEMP_DIR}/tools/devshell/foo.fx" <<'EOF'
+#### EXECUTABLE=${NOT_A_REAL_VAR} ${FUCHSIA_DIR}/tools/devshell/foo.py
+EOF
+  local out
+  out="$( (fx-command-run foo) 2>&1 )"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${out}" "Unknown command foo"
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${myscript}.mock_state"
+}
+
 # Ensure that FX_CALLER is set as expected
 TEST_fx-caller() {
   local called_cmd="${BT_TEMP_DIR}/tools/devshell/called_cmd"

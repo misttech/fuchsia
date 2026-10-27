@@ -1076,34 +1076,39 @@ function get-device-addr-url {
   get-device-addr-resource | sed 's#%#%25#'
 }
 
-function fx-command-run {
+# Resolves the given fx command into the _fx_command_resolve_result array,
+# exiting with an error if not found. The result is an array because the
+# command may be multiple elements, if it comes from a .fx metadata file.
+#
+# Callers should declare `local -a _fx_command_resolve_result` first to keep the
+# result scoped to the calling function.
+#
+# Args:
+#   $1: The fx command name.
+function _fx-command-resolve {
   local -r command_name="$1"
-  local command_path
-  # Use an array because the command may be multiple elements, if it comes from
-  # a .fx metadata file.
-  command_path="$(find_executable "${command_name}")"
-  if [[ $? -ne 0 || ! -x "${command_path}" ]]; then
+  local resolved_command
+  resolved_command="$(find_executable "${command_name}")"
+  local -r find_status=$?
+  read -r -a _fx_command_resolve_result <<< "${resolved_command}"
+  if [[ ${find_status} -ne 0 || ! -x "${_fx_command_resolve_result[0]:-}" ]]; then
     fx-error "Unknown command ${command_name}"
     exit 1
   fi
+}
 
+function fx-command-run {
+  local -a _fx_command_resolve_result
+  _fx-command-resolve "$1"
   shift
-  env FX_CALLER="$0" "${command_path}" "$@"
+  env FX_CALLER="$0" "${_fx_command_resolve_result[@]}" "$@"
 }
 
 function fx-command-exec {
-  local -r command_name="$1"
-  local command_path
-  # Use an array because the command may be multiple elements, if it comes from
-  # a .fx metadata file.
-  command_path="$(find_executable "${command_name}")"
-  if [[ $? -ne 0 || ! -x "${command_path}" ]]; then
-    fx-error "Unknown command ${command_name}"
-    exit 1
-  fi
-
+  local -a _fx_command_resolve_result
+  _fx-command-resolve "$1"
   shift
-  exec env FX_CALLER="$0" "${command_path}" "$@"
+  exec env FX_CALLER="$0" "${_fx_command_resolve_result[@]}" "$@"
 }
 
 function fx-print-command-help {
