@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/fit/result.h>
 #include <lib/zbi-format/memory.h>
 #include <lib/zircon-internal/e820.h>
 #include <stdio.h>
@@ -91,23 +90,15 @@ ktl::string_view GetBootloaderName(const linuxboot::boot_params& bp) {
 }
 
 // This combines a 64-bit address stored in two separate 32-bit fields.
-// If the actual address doesn't fit in uintptr_t, it returns ktl::nullopt.
-// Note that a "successful" return might return nullptr.
+// Note that it might return nullptr.
 template <typename T>
-fit::result<uint64_t, T*> GetExtendedPtr(uint32_t low, uint32_t high) {
+T* GetExtendedPtr(uint32_t low, uint32_t high) {
   const uint64_t addr = (static_cast<uint64_t>(high) << 32) | low;
-  if (const uintptr_t ptr = static_cast<uintptr_t>(addr); ptr == addr) {
-    return fit::ok(reinterpret_cast<T*>(ptr));
-  }
-  return fit::error{addr};
+  return reinterpret_cast<T*>(static_cast<uintptr_t>(addr));
 }
 
-fit::result<uint64_t, size_t> GetExtendedSize(uint32_t low, uint32_t high) {
-  const uint64_t value = (static_cast<uint64_t>(high) << 32) | low;
-  if (const size_t size = static_cast<size_t>(value); size == value) {
-    return fit::ok(size);
-  }
-  return fit::error{value};
+size_t GetExtendedSize(uint32_t low, uint32_t high) {
+  return (static_cast<uint64_t>(high) << 32) | low;
 }
 
 }  // namespace
@@ -125,17 +116,15 @@ void InitMemory(const void* bootloader_data, ktl::optional<EarlyBootZbi> zbi,
   // Synthesize a boot loader name from the few bits we get.
   gLegacyBoot.bootloader = GetBootloaderName(bp);
 
-  auto cmdline_ptr = GetExtendedPtr<const char>(bp.hdr.cmd_line_ptr, bp.ext_cmd_line_ptr);
-  if (cmdline_ptr.is_ok() && *cmdline_ptr) {
+  if (const char* cmdline = GetExtendedPtr<const char>(bp.hdr.cmd_line_ptr, bp.ext_cmd_line_ptr)) {
     // The command line is NUL-terminated.
-    gLegacyBoot.cmdline = *cmdline_ptr;
+    gLegacyBoot.cmdline = cmdline;
   }
 
-  auto ramdisk_image = GetExtendedPtr<ktl::byte>(bp.hdr.ramdisk_image, bp.ext_ramdisk_image);
-  auto ramdisk_size = GetExtendedSize(bp.hdr.ramdisk_size, bp.ext_ramdisk_size);
-  if (ramdisk_image.is_ok() && ramdisk_size.is_ok()) {
-    gLegacyBoot.ramdisk = {*ramdisk_image, *ramdisk_size};
-  }
+  gLegacyBoot.ramdisk = {
+      GetExtendedPtr<ktl::byte>(bp.hdr.ramdisk_image, bp.ext_ramdisk_image),
+      GetExtendedSize(bp.hdr.ramdisk_size, bp.ext_ramdisk_size),
+  };
 
   gLegacyBoot.acpi_rsdp = bp.acpi_rsdp_addr;
 
@@ -144,21 +133,6 @@ void InitMemory(const void* bootloader_data, ktl::optional<EarlyBootZbi> zbi,
 
   // Now prime the allocator from that information and then set up paging.
   LegacyBootInitMemory(aspace);
-
-  // That may have set up the console, so these messages might be seen.
-  if (cmdline_ptr.is_error()) {
-    printf("%s: WARNING: Linux command-line address %#" PRIx64
-           " too high for 32-bit code, ignored.",
-           ProgramName(), cmdline_ptr.error_value());
-  }
-  if (ramdisk_image.is_error()) {
-    printf("%s: WARNING: Linux initrd address %#" PRIx64 " too high for 32-bit code, ignored.",
-           ProgramName(), ramdisk_image.error_value());
-  }
-  if (ramdisk_size.is_error()) {
-    printf("%s: WARNING: Linux initrd size %#" PRIx64 " too big for 32-bit code, ignored.",
-           ProgramName(), ramdisk_size.error_value());
-  }
 
   // Note this doesn't remove the memory covering the boot_params (zero page)
   // just examined.  We assume those have already been consumed as needed

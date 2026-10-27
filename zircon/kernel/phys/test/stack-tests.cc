@@ -24,7 +24,6 @@ constexpr size_t kStackAlignment = 16;
 constexpr size_t kFpAdjust = sizeof(uintptr_t);
 #else
 // The frame pointer is the SP after pushing two words.
-// This differs mod 16 when using 32-bit words (x86-32).
 constexpr size_t kFpAdjust = 2 * sizeof(uintptr_t);
 #endif
 

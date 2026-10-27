@@ -16,10 +16,9 @@
 SECTIONS {
   .boot.header.zbi_kernel_t : ALIGN(8) {
     /*
-     * Two words: the entry point address/offset, and the bss size.
-     * In the relocatable protocol, PHYS_LOAD_ADDRESS is zero and
-     * this is taken as an offset from the actual load address.
-     * In the legacy fixed-address protocol, it's an exact address.
+     * Two words: the entry point offset, and the bss size.
+     * PHYS_LOAD_ADDRESS is zero for ZBI executables, so the entry point
+     * is an offset from the actual load address.
      */
     QUAD(_start - __executable_start + PHYS_LOAD_ADDRESS);
     QUAD(PHYS_RESERVE_MEMORY_SIZE);

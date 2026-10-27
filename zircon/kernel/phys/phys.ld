@@ -14,10 +14,8 @@ SECTIONS {
    * It's all a single contiguous segment that is both writable and
    * executable, since no MMU protections are enabled.
    *
-   * This layout is also used for fixed-position x86-32 boot shims.
-   * The legacy x86-64 ZBI boot protocol is also fixed-position.
-   * PHYS_LOAD_ADDRESS is always set via -defsym, either to the
-   * fixed position or to 0 for the relocatable case.
+   * PHYS_LOAD_ADDRESS is always defined externally, either via -defsym
+   * (0 for ZBI executables) or by a format-specific linker script.
    */
   . = PHYS_LOAD_ADDRESS;
   PROVIDE_HIDDEN(__executable_start = .);
@@ -66,9 +64,7 @@ SECTIONS {
    * Code compiled for kernels should generate .debug_frame, not .eh_frame.
    * We don't want to clutter the runtime image with this data, since it's
    * not used at runtime.  However, GCC currently generates .eh_frame even
-   * given -fno-unwind-tables.  Also, the 32-bit x86 build can use outcalls
-   * to libclang_rt.builtins (libgcc) functions, which will have been
-   * compiled with .eh_frame generation.  So just discard all that data here.
+   * given -fno-unwind-tables.  So just discard all that data here.
    * Unfortunately this may let us overlook some regression where other code
    * is emitting .eh_frame rather than .debug_frame in the future.
    */

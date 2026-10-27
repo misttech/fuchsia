@@ -11,11 +11,10 @@ inherently machine-dependent.
 `lib/arch` code is intended to be compatible with a wide variety of low-level
 environments.  Not every API is usable in every context.  But everywhere
 possible, every API is written to be compatible with all these different
-contexts.  For example, due to the `kernel.phys32` and [EFI] environments,
-nothing uses `long int` types and instead everything carefully uses `uint64_t`,
-`uintptr_t`, etc. to distinguish specific bit widths from pointer and type
-sizes (pointers are 32 bits in `kernel.phys32`, `long int` is 32 bits in EFI
-though pointers are 64 bits).
+contexts.  For example, due to the [EFI] environment, nothing uses `long int`
+types and instead everything carefully uses `uint64_t`, `uintptr_t`, etc. to
+distinguish specific bit widths from pointer and type sizes (`long int` is 32
+bits in EFI though pointers are 64 bits).
 
 ### Privileged environments
 
@@ -59,15 +58,6 @@ These places have many more things they can't do:
 * MMU and/or caches may be disabled, constraining what instructions are
   available.
 * ARM64 requires strictly aligned memory access.
-
-#### Zircon `kernel.phys32` environment
-
-This is used for the 32-bit x86 boot shims that support the legacy Linux/x86
-boot protocols, as used by QEMU's support for directly booting x86 kernels
-without a boot loader.
-
-This is a `kernel.phys`-like environment, but it's actually x86-32 (i686),
-i.e. ILP32!
 
 #### EFI
 

@@ -66,18 +66,7 @@ template("qemu_kernel_test") {
     }
 
     executable_target = "_qemu_phys_test.$test_target.executable"
-    if (toolchain_variant.base == qemu.environment ||
-        (defined(qemu.target_second_environment) &&
-         toolchain_variant.base == qemu.target_second_environment)) {
-      if (defined(qemu.import)) {
-        import(qemu.import)
-      }
-      if (defined(qemu.target_type)) {
-        shim_target_type = qemu.target_type
-      } else {
-        shim_target_type = "phys_executable"
-      }
-
+    if (toolchain_variant.base == qemu.environment) {
       shim_executable(executable_target) {
         testonly = true
         visibility = [ ":*" ]
@@ -98,15 +87,8 @@ template("qemu_kernel_test") {
                                  "timeout",
                                  "visibility",
                                ])
-        forward_variables_from(qemu,
-                               [
-                                 "import",
-                                 "target_type",
-                               ])
         deps += qemu.deps + [ "//zircon/kernel/phys/test:qemu-test-main" ]
-        if (!defined(target_type)) {
-          target_type = "phys_executable"
-        }
+        target_type = "phys_executable"
       }
     } else {
       not_needed(invoker,

@@ -61,9 +61,9 @@ extern "C" __LOCAL ktl::byte PHYS_LOAD_ADDRESS[], _end[];
 
 // Apply any relocations to our binary.
 //
-// This is a no-op on binaries linked to a fixed location, but is required for
-// binaries compiled as position-independent to ensure pointers in data sections,
-// vtables, etc, are updated to their correct locations.
+// Phys binaries are position-independent, so this is required to ensure
+// pointers in data sections, vtables, etc. are updated to their correct
+// locations when loaded somewhere other than the link-time address.
 void ApplyRelocations();
 
 // Read the boot loader data to initialize memory for "allocation.h" APIs.

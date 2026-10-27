@@ -23,7 +23,7 @@ class X86StandardSegments {
 
   // Install the new GDT and TSS and switch to the new 64-bit code segment at
   // the given absolute entry point, with the argument value in %rsi.
-  // (This is only provided on actual x86 hardware, both 64-bit and 32-bit.)
+  // (This is only provided on actual x86-64 hardware.)
   [[noreturn]] void Load(uintptr_t entry, uintptr_t arg);
 
   constexpr TaskStateSegment64& tss() { return tss_; }

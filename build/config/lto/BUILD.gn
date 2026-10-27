@@ -86,11 +86,10 @@ compiler_config("lto-workarounds") {
 
   linker_llvm_flags = []
 
-  if (toolchain_environment != "kernel.phys32" &&
-      toolchain_environment != "kernel.efi") {
+  if (toolchain_environment != "kernel.efi") {
     # TODO(https://fxbug.dev/42079915): LLD lets --no-pie trump the code
     # generation switches, since we default to PIC, specify that to LTO links
-    # outside of x86_32 and EFI.
+    # outside of EFI.
     linker_llvm_flags += [ "-relocation-model=pic" ]
 
     # TODO(https://fxbug.dev/481320391): Remove the TLSDESC workaround when the

@@ -113,7 +113,7 @@ zx::result<RootSystemTableDetails> ParseRsdp(PhysMemReader& reader, zx_paddr_t r
   });
 }
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 // Search for a valid RSDP in the BIOS read-only memory space in [0xe0000..0xfffff],
 // on 16 byte boundaries.
 //
@@ -150,7 +150,7 @@ zx::result<RootSystemTableDetails> FindRootTables(PhysMemReader& physmem_reader,
   }
 
   // Otherwise, attempt to find it in a platform-specific way.
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
   {
     zx::result<zx_paddr_t> result = FindRsdpPc(physmem_reader);
     if (result.is_ok()) {

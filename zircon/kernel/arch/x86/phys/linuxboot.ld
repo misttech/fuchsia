@@ -11,12 +11,13 @@
  * the link-time base address needed by phys.ld and also defines values for
  * linuxboot-header.S to use that cannot be represented directly there.
  *
- * The actual load address of the 32-bit (aka "protected mode") code is fixed
- * at 1MiB.  The header defined in linuxboot-header.S tells the boot loader to
- * place it there, for so-called "bzImage" protocol.  The bzImage format starts
- * with the "real-mode kernel header" before that kernel image that contains
- * both header details known as a protocol by boot loaders and also 16-bit x86
- * code that boot loaders optionally use as the entry point.
+ * The default load address of the 32-bit (aka "protected mode") code is 1MiB,
+ * but the image is position-independent and can be loaded anywhere.  The
+ * header defined in linuxboot-header.S tells the boot loader so, for so-called
+ * "bzImage" protocol.  The bzImage format starts with the "real-mode kernel
+ * header" before that kernel image that contains both header details known as
+ * a protocol by boot loaders and also 16-bit x86 code that boot loaders
+ * optionally use as the entry point.
  *
  * Linux builds a separate 32-bit kernel image (which itself is a pre-kernel
  * that does decompression of an embedded kernel image in another format) and a
@@ -30,15 +31,13 @@
  */
 
 /*
- * So we define PHYS_LOAD_ADDRESS to be beneath the real fixed 1MiB load
- * address of the 32-bit code such that the image directly after .boot.header
- * (linuxboot-header.S) corresponds to that fixed address.  That header content
- * is thus placed just below 1MiB by the linker and starts however far below
- * there that its size requires (aligned in the assembly to a whole number of
- * 512-byte sectors).  The runtime boot protocol may place that header at an
- * arbitrary address, not necessarily right below 1MiB (so the 16-bit code has
- * to be purely position-independent.)  It defines the LINUXBOOT_SETUP_SIZE
- * symbol with the total of its contents in bytes to allow this calculatation.
+ * So we define PHYS_LOAD_ADDRESS to be beneath the load address of the 32-bit
+ * code such that the image directly after .boot.header (linuxboot-header.S)
+ * corresponds to that address, which linuxboot-header.S defines as the
+ * LINUXBOOT_LOAD_ADDRESS label.  The runtime boot protocol may place that
+ * header at an arbitrary address (so the 16-bit code has to be purely
+ * position-independent.)  It defines the LINUXBOOT_SETUP_SIZE symbol with the
+ * total of its contents in bytes to allow this calculatation.
  */
 HIDDEN(PHYS_LOAD_ADDRESS = LINUXBOOT_LOAD_ADDRESS - LINUXBOOT_SETUP_SIZE);
 
@@ -49,14 +48,16 @@ HIDDEN(PHYS_LOAD_ADDRESS = LINUXBOOT_LOAD_ADDRESS - LINUXBOOT_SETUP_SIZE);
  * ancient Intelspeak).  There are no x86 relocation types to encode a uint32_t
  * value scaled down by 16 from a link-time symbol address, so assembly code in
  * linuxboot-header.S can't compute this value directly itself.  Instead, it
- * relies on this symbol and stores that value using a simple ABS32 relocation.
- * Linker scripts can do the necessary arithmetic where assembly cannot.
+ * relies on this symbol.  Linker scripts can do the necessary arithmetic where
+ * assembly cannot.
  */
 HIDDEN(LINUXBOOT_SYSSIZE = (PHYS_LOAD_END - LINUXBOOT_LOAD_ADDRESS) / 16);
 
 /*
- * This is needed by linuxboot{,64}-header.S to embed the LINUXBOOT_SYSSIZE
- * value while using only PC-relative relocations.
+ * This is needed by linuxboot-header.S to embed the LINUXBOOT_SYSSIZE value
+ * while using only PC-relative relocations, as the position-independent link
+ * requires.  The header stores `LINUXBOOT_SYSSIZE_RELATIVE - zero_page`, where
+ * zero_page is the label at PHYS_LOAD_ADDRESS.
  */
 HIDDEN(LINUXBOOT_SYSSIZE_RELATIVE = PHYS_LOAD_ADDRESS + LINUXBOOT_SYSSIZE);
 
@@ -65,7 +66,6 @@ HIDDEN(LINUXBOOT_SYSSIZE_RELATIVE = PHYS_LOAD_ADDRESS + LINUXBOOT_SYSSIZE);
  * boot loader is sure to place the kernel where it has enough headroom after
  * the storage image is loaded.  This symbol is used by the header assembly
  * code to embed this value, which cannot be calculated directly by a single
- * relocation record.  A bi-arch image overrides this with the larger of its
- * two images' values (see linuxbiboot32.py).
+ * relocation record.
  */
-PROVIDE_HIDDEN(LINUXBOOT_INIT_SIZE = ABSOLUTE(_end - LINUXBOOT_LOAD_ADDRESS));
+HIDDEN(LINUXBOOT_INIT_SIZE = ABSOLUTE(_end - LINUXBOOT_LOAD_ADDRESS));

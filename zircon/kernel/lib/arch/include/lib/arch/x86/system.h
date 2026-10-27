@@ -151,7 +151,7 @@ struct X86Xcr0 : SysRegBase<X86Xcr0> {
 // own IO provider like MSRs, but making it a special case of the system
 // registers fits better especially since there is only actually one XCR.
 // ARCH_X86_SYSREG() in <lib/arch/sysreg.h> does these definitions for others.
-#if defined(__Fuchsia__) && (defined(__x86_64__) || defined(__i386__))
+#if defined(__Fuchsia__) && defined(__x86_64__)
 template <>
 inline void SysReg::WriteRegister<X86Xcr0>(uint64_t value) {
   _xsetbv(0, value);

@@ -17,7 +17,7 @@
 
 #if defined(__aarch64__)
   bl CalledFromAsmWithPrologue
-#elif defined(__riscv) || defined(__x86_64__) || defined(__i386__)
+#elif defined(__riscv) || defined(__x86_64__)
   call CalledFromAsmWithPrologue
 #else
   #error "unsupported machine"

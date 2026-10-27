@@ -11,11 +11,6 @@
 namespace arch {
 namespace {
 
-template <bool Reseed>
-std::optional<uint64_t> UseIntrinsic() {
-  return std::nullopt;
-}
-
 // The `rdrand` and `rdseed` instructions might fail if the system is under
 // heavy load. Intel recommends wrapping them in a limited retry-loop to
 // increase the chance of success.
@@ -31,7 +26,9 @@ std::optional<uint64_t> UseIntrinsic() {
 template <bool Reseed>
 constexpr int kRetries = Reseed ? 200 : 10;
 
-#ifdef __x86_64__
+template <bool Reseed>
+std::optional<uint64_t> UseIntrinsic();
+
 template <>
 [[gnu::target("rdrnd")]] std::optional<uint64_t> UseIntrinsic<false>() {
   unsigned long long int value;
@@ -44,20 +41,15 @@ template <>
   return _rdseed64_step(&value) ? std::make_optional(value) : std::nullopt;
 }
 
-#endif  // __x86_64__
-
 }  // namespace
 
 template <bool Reseed>
 bool Random<Reseed>::Supported() {
-#ifdef __x86_64__
   if constexpr (Reseed) {
     return BootCpuid<CpuidExtendedFeatureFlagsB>().rdseed();
   } else {
     return BootCpuid<CpuidFeatureFlagsC>().rdrand();
   }
-#endif
-  return false;
 }
 
 template <bool Reseed>

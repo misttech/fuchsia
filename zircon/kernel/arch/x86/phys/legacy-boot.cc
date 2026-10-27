@@ -97,8 +97,8 @@ constexpr memalloc::Range AsMemrange(  //
 }
 
 void LegacyBootInitMemory(AddressSpace* aspace) {
-  // Note that these are done before paging is enabled (at all for 32-bit) with
-  // new identity-mapping page tables, because the fixed-address regions they
+  // Note that these are done before paging is enabled with new
+  // identity-mapping page tables, because the fixed-address regions they
   // scan won't be among the known RAM ranges that get identity-mapped.
   InitAcpi(gLegacyBoot);
   InitSmbios(gLegacyBoot);

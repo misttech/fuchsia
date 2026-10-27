@@ -21,15 +21,10 @@
 #include <ktl/utility.h>
 #include <ktl/variant.h>
 #include <phys/elf-image.h>
+#include <phys/exception.h>
 #include <phys/main.h>
 #include <phys/stack.h>
 #include <pretty/hexdump.h>
-
-// The zx_*_t types used in the exception stuff aren't defined for 32-bit.
-// There is no exception handling implementation for 32-bit.
-#ifndef __i386__
-#include <phys/exception.h>
-#endif
 
 #include <ktl/enforce.h>
 
@@ -287,8 +282,6 @@ void Symbolize::PruneFromSelf(uint64_t start, uint64_t end) {
   }
 }
 
-#ifndef __i386__
-
 void Symbolize::PrintRegisters(const PhysExceptionState& exc) {
   Printf("%s: Registers stored at %p: {{{hexdict:", name_, &exc);
 
@@ -478,5 +471,3 @@ void PrintPhysException(uint64_t vector, const char* vector_name, const PhysExce
     gSymbolize->PrintException(vector, vector_name, regs);
   }
 }
-
-#endif  // !__i386__

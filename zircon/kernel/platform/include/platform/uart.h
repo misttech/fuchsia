@@ -49,7 +49,7 @@ class PlatformUartIoProvider<zbi_dcfg_simple_t, IoType>
   }
 };
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 // PIO Driver implementation.
 template <>
 class PlatformUartIoProvider<zbi_dcfg_simple_pio_t, uart::IoRegisterType::kPio>

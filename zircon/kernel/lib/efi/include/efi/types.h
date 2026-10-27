@@ -37,8 +37,6 @@ __BEGIN_CDECLS
 // calls allowed.
 #if defined(__x86_64__)
 #define EFIAPI_ARCH __attribute__((ms_abi))
-#elif defined(__i386__)
-#define EFIAPI_ARCH __attribute__((regparm(0)))
 #elif defined(__aarch64__) || defined(__riscv)
 // ARM64 doesn't need the ABI tag, likewise RISC-V.
 #define EFIAPI_ARCH

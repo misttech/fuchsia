@@ -180,7 +180,7 @@ class SysReg {
 //   ARCH_X86_SYSREG(X86Cr0, "cr0");
 //   ARCH_X86_SYSREG(X86Db0, "db0");
 //
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 #define ARCH_X86_SYSREG(RegisterTag, RegisterName)                                        \
   template <>                                                                             \
   inline void SysReg::WriteRegister<RegisterTag>(typename RegisterTag::ValueType value) { \

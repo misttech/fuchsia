@@ -62,7 +62,7 @@ TEST(UartItemTest, SetItemWithMmioDriver) {
   EXPECT_EQ(actual_mmio_dcfg->irq, mmio_dcfg.config().irq);
 }
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 TEST(UartItemTest, SetItemWithPioDriver) {
   std::array<std::byte, 2 * zbitl::AlignedItemLength(sizeof(uart::ns8250::PioDriver().config()))>
       data;

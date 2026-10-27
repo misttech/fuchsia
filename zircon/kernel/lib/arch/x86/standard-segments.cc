@@ -6,7 +6,6 @@
 
 #include <lib/arch/x86/descriptor-regs.h>
 #include <lib/arch/x86/standard-segments.h>
-#include <zircon/assert.h>
 
 namespace arch {
 
@@ -24,7 +23,6 @@ arch::GdtRegister64 X86StandardSegments::gdt_pointer() {
   return GdtRegister64::Make(std::span{&gdt_, 1});
 }
 
-#ifdef __x86_64__
 void X86StandardSegments::Load() {
   // Initialize the tables.
   Init();
@@ -42,13 +40,10 @@ void X86StandardSegments::Load() {
   // Install the new Task State Segment.
   arch::LoadTaskRegister64(kTr64);
 }
-#endif
 
 void X86StandardSegments::Load(uintptr_t entry, uintptr_t arg) {
   // Initialize the tables.
   Init();
-
-#ifdef __x86_64__
 
   // Clear to a safely invalid LDT so any segment selectors with the LDT bit
   // set will cause a GPF rather than looking at any bogus table contents.
@@ -90,46 +85,6 @@ void X86StandardSegments::Load(uintptr_t entry, uintptr_t arg) {
       : [cs] "ir"(kCs64), [pc] "ir"(entry),  // lretq
         "S"(arg)                             // %rsi
       : "cc", "memory");
-
-#else
-
-  // In 32-bit mode, load the GDT and jump into the new code segment all in one
-  // asm() since we can't mix 32-bit and 64-bit code from the compiler.
-  const auto gdt64 = gdt_pointer();
-  const struct {
-    [[gnu::packed, gnu::aligned(2)]] uint16_t limit;
-    [[gnu::packed, gnu::aligned(2)]] uint32_t base;
-  } gdt_ptr = {gdt64.limit, static_cast<uint32_t>(gdt64.base)};
-  ZX_ASSERT(gdt_ptr.base == gdt64.base);
-
-  // Clear the stack and frame pointers so no misleading breadcrumbs are left.
-  // But do those last in case the input operands use them.
-  __asm__ volatile(
-      R"""(
-      cld
-      cli
-      lgdt %[gdt]
-      ljmpl %w[cs], $0f
-0:    .code64
-      ltr %w[tr]
-      xor %%ebp, %%ebp
-      xor %%esp, %%esp
-      mov %%ebp, %%ss
-      jmp *%%rax
-      .code32
-      )"""
-      :
-      : [gdt] "m"(gdt_ptr),              // lgdt
-        [tr] "r"(kTr64.raw), "m"(tss_),  // ltr
-        [cs] "i"(kCs64.raw),             // ljmp
-        "a"(entry),                      // jmp *%rax
-        "S"(arg)                         // %rsi
-      :  // The blanket "memory" clobber ensures that any stores to data
-         // pointed to by the argument register, or the image itself, has
-         // certainly been written first and not considered a dead store.
-      "memory");
-
-#endif
 
   __builtin_unreachable();
 }

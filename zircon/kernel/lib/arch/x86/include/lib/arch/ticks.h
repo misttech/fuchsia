@@ -29,13 +29,10 @@ struct EarlyTicks {
 #else  // clang-format off
 
 // Delivers an arch::EarlyTicks value in %rax.  Clobbers %rdx.
-// In 32-bit mode, delivers the value in %eax, %edx.
 .macro sample_ticks
   rdtsc
-#ifdef __x86_64__
   shl $32, %rdx
   or %rdx, %rax
-#endif
 .endm
 
 #endif  // clang-format on

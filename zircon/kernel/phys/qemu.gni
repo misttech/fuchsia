@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/testing/environments.gni")
+import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/phys/phys_executable.gni")
 
 # zbi_test() $timeout value for short-running tests launched via QEMU.
@@ -30,27 +31,17 @@ qemu_short_timeout = 30
 #       via QEMU using this format.
 #     - Type: list(label)
 #
+#   * has_embed
+#     - Optional: Whether the format supports linuxboot_embed().
+#     - Type: bool
+#
 #   * name
 #     - Required: Name of the format.
 #     - Type: string
 #
-#   * import
-#     - Optional: A .gni file that defines the $target_type template.
-#     - Type: path
-#
 #   * supported_environments
 #     - Required: List as for the $environments parameter to boot_test().
 #     - Type: list(scope)
-#
-#   * target_second_environment
-#     - Optional: A second build environment in which the phys_executable()
-#       (or $target_type()) target should also be evaluated.
-#     - Type: label_no_toolchain
-#
-#   * target_type
-#     - Optional: The target type (template) to use in $environment.
-#     - Type: string
-#     - Default: "phys_executable"
 #
 #   * timeout
 #     - Optional: Passed along to zbi_test() for qemu_kernel_test() tests.
@@ -60,58 +51,36 @@ qemu_short_timeout = 30
 qemu_boot_formats = []
 
 # This is the default among the $name strings of $qemu_boot_formats.
-qemu_default_boot_format = ""
+qemu_default_boot_format = "linuxboot"
 
-if (current_cpu == "x64") {
-  qemu_default_boot_format = "linuxboot64"
+# Every machine has a Linux boot protocol shim.
+qemu_boot_formats += [
+  {
+    name = "linuxboot"
+    has_embed = current_cpu != "x64"
+    environment = phys_toolchain
+    deps = [ "//zircon/kernel/arch/$zircon_cpu/phys:linuxboot" ]
+    shim_deps = [ "//zircon/kernel/arch/$zircon_cpu/phys/boot-shim:linux-$zircon_cpu-boot-shim($environment)" ]
+    timeout = qemu_short_timeout
 
-  # The Linux/x86 16-bit/32-bit protocol is supported by QEMU and AEMU.
-  linuxboot32_environments = [
-    qemu_env,
-    aemu_env,
-  ]
+    supported_environments = [ qemu_env ]
+    if (current_cpu == "x64") {
+      # The Linux/x86 shim supports the 16-bit and 32-bit boot protocols used
+      # by QEMU and AEMU as well as the 64-bit boot protocol used by crosvm.
+      supported_environments += [
+        aemu_env,
+        crosvm_env,
+      ]
+    } else if (current_cpu == "arm64") {
+      # We don't add crosvm_env since it uses a different UART on ARM than our
+      # QEMU configuration does, meaning that the QEMU kernel boot tests will
+      # not work with crosvm in this case.
+      supported_environments += [ aemu_env ]
+    }
+  },
+]
 
-  # The Linux/x86 64-bit protocol is supported by CrosVM.
-  linuxboot64_environments = [ crosvm_env ]
-
-  qemu_boot_formats += [
-    {
-      name = "linuxboot"
-      has_embed = false
-      environment = "//zircon/kernel/arch/x86/phys:kernel.phys32"
-      deps = [ "//zircon/kernel/arch/x86/phys:linuxboot" ]
-      shim_deps = [ "//zircon/kernel/arch/x86/phys/boot-shim:linux-x86-32-boot-shim($environment)" ]
-      timeout = qemu_short_timeout
-
-      supported_environments = linuxboot32_environments
-    },
-    {
-      # The 64-bit build of the header supports all three boot protocols, so
-      # it can be booted everywhere.
-      name = "linuxboot64"
-      environment = phys_toolchain
-      deps = [ "//zircon/kernel/arch/x86/phys:linuxboot64" ]
-      shim_deps = [ "//zircon/kernel/arch/x86/phys/boot-shim:linux-x86-64-boot-shim($environment)" ]
-      timeout = qemu_short_timeout
-
-      supported_environments =
-          linuxboot32_environments + linuxboot64_environments
-    },
-    {
-      name = "linuxbiboot"
-      environment = "//zircon/kernel/arch/x86/phys:kernel.phys32"
-      import = "//zircon/kernel/arch/x86/phys/linuxbiboot_executable.gni"
-      target_type = "linuxbiboot_executable"
-      target_second_environment = phys_toolchain
-      deps = []
-      shim_deps = [ "//zircon/kernel/arch/x86/phys/boot-shim:linux-x86-boot-shim($environment)" ]
-      timeout = qemu_short_timeout
-
-      supported_environments =
-          linuxboot32_environments + linuxboot64_environments
-    },
-  ]
-} else {
+if (current_cpu != "x64") {
   # Environment for building raw QEMU kernels (64-bit physical memory).
   qemu_boot_formats += [
     {
@@ -121,27 +90,6 @@ if (current_cpu == "x64") {
       timeout = qemu_short_timeout
 
       supported_environments = [ qemu_env ]
-    },
-  ]
-}
-if (current_cpu == "arm64" || current_cpu == "riscv64") {
-  qemu_default_boot_format = "linuxboot"
-  qemu_boot_formats += [
-    {
-      name = "linuxboot"
-      has_embed = true
-      environment = phys_toolchain
-      deps = [ "//zircon/kernel/arch/$current_cpu/phys:linuxboot" ]
-      shim_deps = [ "//zircon/kernel/arch/${current_cpu}/phys/boot-shim:linux-${current_cpu}-boot-shim($environment)" ]
-      timeout = qemu_short_timeout
-
-      supported_environments = [ qemu_env ]
-      if (current_cpu == "arm64") {
-        # We don't add crosvm_env since it uses a different UART on ARM than our
-        # QEMU configuration does, meaning that the QEMU kernel boot tests will
-        # not work with crosvm in this case.
-        supported_environments += [ aemu_env ]
-      }
     },
   ]
 }

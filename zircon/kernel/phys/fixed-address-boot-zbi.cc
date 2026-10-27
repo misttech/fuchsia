@@ -23,7 +23,7 @@
 
 namespace {
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 
 // Relocated blob size must be aligned to |kRelocateAlign|.
 constexpr size_t kRelocateAlign = 1;

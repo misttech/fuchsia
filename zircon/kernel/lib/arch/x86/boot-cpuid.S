@@ -7,24 +7,9 @@
 #include <lib/arch/asm.h>
 #include <lib/arch/x86/cpuid-asm.h>
 
-#ifdef __x86_64__
-#define GLOBAL(x) (x)(%rip)
-#define LEA_GLOBAL(x, reg) lea (x)(%rip), reg
-#define BX %rbx
-#define REGSIZE 8
 #define LEAVES_START %rsi
 #define LEAVES_STOP %rdi
 #define DATA_START %r8
-#else
-#define GLOBAL(x) x
-#define LEA_GLOBAL(x, reg) mov $x, reg
-#define BX %ebx
-#define REGSIZE 4
-#define LEAVES_START %esi
-#define LEAVES_STOP %edi
-#define DATA_START %ebp
-#define movslq movl
-#endif // __x86_64__
 
 // Stores CPUID values represented by EAX-EDX at a particular address.
 .macro store_cpuid addr:vararg
@@ -38,15 +23,9 @@ mov %edx, CPUID_EDX + \addr
 // instantiations linked in.
 .function InitializeBootCpuid, global
 
-  push BX
-  .cfi_adjust_cfa_offset REGSIZE
-  .cfi_rel_offset BX, 0
-// We need to make use of another call-saved register in the 32-bit case.
-#ifndef __x86_64__
-  push DATA_START
-  .cfi_adjust_cfa_offset REGSIZE
-  .cfi_rel_offset DATA_START, 0
-#endif
+  push %rbx
+  .cfi_adjust_cfa_offset 8
+  .cfi_rel_offset %rbx, 0
 
   // The zeroth leaves (basic, hypervisor, and extended) are special because
   // they tell us what other leaves exist.
@@ -54,24 +33,24 @@ mov %edx, CPUID_EDX + \addr
   xor %eax,%eax
   xor %ecx,%ecx
   cpuid
-  store_cpuid GLOBAL(gBootCpuid0)
+  store_cpuid gBootCpuid0(%rip)
 
   mov $CPUID_HYP_LEAF0, %eax
   xor %ecx,%ecx
   cpuid
-  store_cpuid GLOBAL(gBootCpuidHyp0)
+  store_cpuid gBootCpuidHyp0(%rip)
 
   mov $CPUID_EXT_LEAF0, %eax
   xor %ecx,%ecx
   cpuid
-  store_cpuid GLOBAL(gBootCpuidExt0)
+  store_cpuid gBootCpuidExt0(%rip)
 
   // CpuidIo objects are uint32_t[4] data objects (C++ thinks they're a fancier
   // type, but that's the layout).  Each other BootCpuidIo::Get<Leaf, Subleaf>
   // instantiation puts an entry into the BootCpuidLeaf special section.
   // Each entry holds a leaf, subleaf, and offset from the entry to the datum.
-  LEA_GLOBAL(__start_BootCpuidLeaf, LEAVES_START)
-  LEA_GLOBAL(__stop_BootCpuidLeaf, LEAVES_STOP)
+  lea __start_BootCpuidLeaf(%rip), LEAVES_START
+  lea __stop_BootCpuidLeaf(%rip), LEAVES_STOP
   jmp .Loopcheck
 
 .Loop:
@@ -88,9 +67,9 @@ mov %edx, CPUID_EDX + \addr
   mov 0(LEAVES_START), %eax
 
   // Skip to the hypervisor range if the extended range is unsupported.
-  cmpl $0, GLOBAL(gBootCpuidExt0 + CPUID_EAX)
+  cmpl $0, gBootCpuidExt0 + CPUID_EAX(%rip)
   je .Ltry_hypervisor
-  cmp GLOBAL(gBootCpuidExt0 + CPUID_EAX), %eax
+  cmp gBootCpuidExt0 + CPUID_EAX(%rip), %eax
   ja .Lunsupported_leaf  // (max extended leaf, UINT32_MAX]
   cmp $CPUID_EXT_LEAF0, %eax
   ja .Linit  // (0th extended leaf, max extended leaf]
@@ -101,15 +80,15 @@ mov %edx, CPUID_EDX + \addr
 
 .Ltry_hypervisor:
   // Skip to the basic range if the hypervisor range is unsupported.
-  cmpl $0, GLOBAL(gBootCpuidHyp0 + CPUID_EAX)
+  cmpl $0, gBootCpuidHyp0 + CPUID_EAX(%rip)
   je .Ltry_basic
-  cmp GLOBAL(gBootCpuidHyp0 + CPUID_EAX), %eax
+  cmp gBootCpuidHyp0 + CPUID_EAX(%rip), %eax
   ja .Lunsupported_leaf // (max hypervisor leaf, 0th extended leaf]
   cmp $CPUID_HYP_LEAF0, %eax
   ja .Linit // (0th hypervisor leaf, max hypervisor leaf]
 
 .Ltry_basic:
-  cmp GLOBAL(gBootCpuid0 + CPUID_EAX), %eax
+  cmp gBootCpuid0 + CPUID_EAX(%rip), %eax
   ja .Lunsupported_leaf // (max basic leaf, 0th hypervisor leaf]
 
 .Linit:
@@ -134,7 +113,7 @@ mov %edx, CPUID_EDX + \addr
   store_cpuid 0(DATA_START)
 
   // Next iteration.
-  lea (8 + REGSIZE)(LEAVES_START), LEAVES_START
+  lea (8 + 8)(LEAVES_START), LEAVES_START
 
 #else
 #error "what format?"
@@ -144,14 +123,9 @@ mov %edx, CPUID_EDX + \addr
   cmp LEAVES_START, LEAVES_STOP
   jne .Loop
 
-  pop BX
-  .cfi_adjust_cfa_offset -REGSIZE
-  .cfi_same_value BX
-#ifndef __x86_64__
-  pop DATA_START
-  .cfi_adjust_cfa_offset -REGSIZE
-  .cfi_same_value DATA_START
-#endif
+  pop %rbx
+  .cfi_adjust_cfa_offset -8
+  .cfi_same_value %rbx
 
   ret
 

@@ -81,10 +81,7 @@ class Pool {
   // (*) encapsulating MMU-like management: input ranges of memory could
   // conceivably by inaccessible by default and require preparation by such a
   // function. For example, perhaps pages of free RAM would need to be mapped
-  // before Pool could make use of them. Or, in a more specific case, take
-  // 64-bit addressable hardware in 32-bit mode: input ranges of memory could
-  // live in the upper 2^32 of the address space, but would be inaccessible
-  // until mapped into the lower 2^32 values.
+  // before Pool could make use of them.
   //
   using BookkeepingAddressToPointer =
       fit::inline_function<std::byte*(uint64_t addr, uint64_t size)>;

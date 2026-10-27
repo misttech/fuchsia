@@ -29,7 +29,6 @@ not_needed([ "arch_phys" ])  # Not used in all toolchains.
 
 if (current_toolchain == default_toolchain) {
   # Default toolchain (current_cpu == "") just defines the phys environment.
-  # Note: see //zircon/kernel/arch/x86/phys:kernel.phys32 too.
   foreach(cpu, standard_fuchsia_cpus) {
     kernel_cpu = cpu
     if (kernel_cpu == "x64") {
@@ -102,7 +101,6 @@ if (current_toolchain == default_toolchain) {
 }
 
 if (toolchain_environment == "kernel.phys" ||
-    toolchain_environment == "kernel.phys32" ||
     toolchain_environment == "kernel.efi") {
   # All the code gets built here in the phys environment.
 

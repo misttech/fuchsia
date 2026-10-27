@@ -653,6 +653,7 @@ group("phys-test") {
     ":hello-world-test",
     ":phys-unittests",
     ":physboot-test",
+    ":qemu-phys-exception-test",
     ":trampoline-boot-zbi-test",
     ":turducken-boot-next-zbi-test",
     ":turducken-zbi-test",
@@ -683,9 +684,6 @@ group("phys-test") {
   if (current_cpu == "x64") {
     # Only x86 gets memory info directly from the legacy boot environments.
     deps += [ ":qemu-memory-test" ]
-  } else {
-    # x86 qemu is 32-bit and we don't do exceptions for 32-bit.
-    deps += [ ":qemu-phys-exception-test" ]
   }
 }
 

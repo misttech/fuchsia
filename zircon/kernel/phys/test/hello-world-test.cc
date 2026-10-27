@@ -10,7 +10,7 @@
 
 #include "test-main.h"
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/arch/x86/feature.h>
 
@@ -22,7 +22,7 @@ int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::Early
 
   printf("Hello, world!\n\n");
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__)
   arch::BootCpuidIo io;
 
   {

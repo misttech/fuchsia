@@ -14,7 +14,7 @@
 #include <phys/handoff/arm64/heap.h>
 #elif defined(__riscv)
 #include <phys/handoff/riscv64/heap.h>
-#elif defined(__x86_64__) || defined(__i386__)
+#elif defined(__x86_64__)
 #include <phys/handoff/x86/heap.h>
 #endif
 

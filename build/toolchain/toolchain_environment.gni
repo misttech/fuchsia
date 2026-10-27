@@ -15,7 +15,7 @@ if (zircon_toolchain != false) {
                      "")
 }
 
-# Some environment definitions use a dotted suffix (e.g. kernel.phys32 and
-# kernel.phys), the `toolchain_base_environment` returns the suffix-less
+# Some environment definitions use a dotted suffix (e.g. kernel.phys and
+# kernel.efi), the `toolchain_base_environment` returns the suffix-less
 # environment value (e.g. "kernel").
 toolchain_base_environment = get_path_info(toolchain_environment, "name")

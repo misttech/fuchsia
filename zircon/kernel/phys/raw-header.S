@@ -15,7 +15,7 @@
 
 #if defined(__aarch64__)
   b _start
-#elif defined(__x86_64__) || defined(__i386__)
+#elif defined(__x86_64__)
   jmp _start
 #elif defined(__riscv)
   j _start

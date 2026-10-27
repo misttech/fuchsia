@@ -14,7 +14,7 @@
 // abuse of libc++ is different from public userland libc++, so provide special
 // kernel-appropriate definitions here.  This file will be in the include path
 // ahead of any toolchain-supplied header.  Also, some special bare-metal build
-// environments such as phys32 or efi that reuse ktl and kernel libc code may
+// environments such as efi that reuse ktl and kernel libc code may
 // use settings that cause the compiler to change the $triple it injects into
 // the include path to one for which no runtimes are built and so there is no
 // __config_site file to be found at all.

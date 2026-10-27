@@ -81,10 +81,8 @@ compiler_config("integer-register-abi") {
 compiler_config("thread-pointer-abi") {
   # Clang needs -mcmodel=kernel to tell it to use the right safe-stack ABI for
   # the kernel.  It doesn't have any other effects that matter when using -fPIE
-  # as we do; it doesn't exist for x86-32.
-  if (toolchain_environment != "kernel.phys32") {
-    c_family_flags = [ "-mcmodel=kernel" ]
-  }
+  # as we do.
+  c_family_flags = [ "-mcmodel=kernel" ]
   if (rust_custom_target) {
     rust_target_edits = [
       {
