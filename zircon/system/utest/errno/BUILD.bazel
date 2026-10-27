@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_binary(
+    name = "errno",
+    testonly = True,
+    srcs = ["errno.c"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fdio",
+        "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "errno-test",
+    unit_tests = [":errno"],
+    visibility = ["//zircon/system/utest:__pkg__"],
+)

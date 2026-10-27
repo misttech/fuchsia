@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//zircon/system/utest/cleanup:cleanup-test",
+        "//zircon/system/utest/cprng:cprng-test",
+        "//zircon/system/utest/errno:errno-test",
+        "//zircon/system/utest/getentropy:getentropy-test",
+        "//zircon/system/utest/posixio:posixio-test",
+    ],
+)
