@@ -41,6 +41,7 @@ rustc_library("lz4") {
   visibility = [
     ":*",
     "//src/devices/bin/driver-index:*",
+    "//src/diagnostics/archivist:*",
     "//src/storage/erofs:*",
     "//src/storage/lib/delivery_blob:*",
   ]

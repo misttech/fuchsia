@@ -37,7 +37,6 @@ struct InnerStats {
     sockets_closed: AtomicU64,
     last_timestamp: AtomicI64,
     total: LogCounter,
-    rolled_out: LogCounter,
     fatal: LogCounter,
     error: LogCounter,
     warn: LogCounter,
@@ -76,7 +75,6 @@ impl LogStreamStats {
                 };
 
                 record_counter("total", &inner.total);
-                record_counter("rolled_out", &inner.rolled_out);
                 record_counter("fatal", &inner.fatal);
                 record_counter("error", &inner.error);
                 record_counter("warn", &inner.warn);
@@ -98,10 +96,6 @@ impl LogStreamStats {
 
     pub fn close_socket(&self) {
         self.inner.sockets_closed.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn increment_rolled_out(&self, msg_len: usize) {
-        self.inner.rolled_out.increment_bytes(msg_len);
     }
 
     pub fn increment_invalid(&self, bytes: usize) {

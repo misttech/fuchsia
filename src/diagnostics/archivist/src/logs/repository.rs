@@ -7,7 +7,7 @@ use crate::events::types::{Event, EventPayload, LogSinkRequestedPayload};
 use crate::identity::ComponentIdentity;
 use crate::logs::container::LogsArtifactsContainer;
 use crate::logs::debuglog::{DebugLog, DebugLogBridge, KERNEL_IDENTITY};
-use crate::logs::shared_buffer::{FilterCursor, FilterCursorStream, SharedBuffer};
+use crate::logs::shared_buffer::{Buffer, FilterCursor, FilterCursorStream, SharedBuffer};
 use crate::logs::stats::{GlobalAnalytics, LogStreamStats};
 use anyhow::format_err;
 use diagnostics_data::{LogsData, Severity};
@@ -110,7 +110,7 @@ pub struct LogsRepository {
 
 impl LogsRepository {
     pub fn new(
-        ring_buffer: ring_buffer::Reader,
+        ring_buffer: Buffer,
         initial_interests: impl Iterator<Item = ComponentInitialInterest>,
         parent: &fuchsia_inspect::Node,
         scope: fasync::Scope,
@@ -718,7 +718,7 @@ mod tests {
         let container_foo = repo.get_log_container(Arc::clone(&identity_foo));
         container_foo.ingest_message(make_message("a", None, zx::BootInstant::from_nanos(1)));
 
-        // Force SharedBuffer to scan messages and update msg_ids.end.
+        // Force SharedBuffer to drain messages and update last_msg_id.
         // Without this, ContainerInfo::is_active() evaluates to false immediately after
         // mark_stopped(), causing repo.is_live() to return false before rollout happens.
         let _cursor = repo.logs_cursor(

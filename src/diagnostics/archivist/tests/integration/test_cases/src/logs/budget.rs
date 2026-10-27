@@ -37,7 +37,7 @@ async fn test_budget(reader_format: LogFormat) {
             test_topology::PuppetDeclBuilder::new("victim").into(),
         ]),
         archivist_config: Some(ftest::ArchivistConfig {
-            logs_max_cached_original_bytes: Some(98304),
+            logs_max_cached_original_bytes: Some(65536),
             ..Default::default()
         }),
         ..Default::default()

@@ -66,6 +66,7 @@ rustc_library("lib") {
     "//src/lib/fuchsia-url",
     "//src/lib/trace/rust:trace",
     "//src/sys/lib/moniker",
+    "//third_party/lz4/rust:lz4",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:ciborium",

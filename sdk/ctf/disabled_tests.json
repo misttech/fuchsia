@@ -61,6 +61,16 @@
                 "name": "inspect::truncation::accessor_truncation_test",
                 "disabled": true,
                 "bug": "408055548"
+            },
+            {
+                "name": "logs::sorting::timestamp_sorting_for_batches",
+                "disabled": true,
+                "bug": "576853102"
+            },
+            {
+                "name": "logs::budget::test_budget",
+                "disabled": true,
+                "bug": "576853102"
             }
         ],
         "compact_name": "fx/archivist_integration_test_cases_ctf29#meta/test_root.cm"
@@ -72,9 +82,67 @@
                 "name": "inspect::truncation::accessor_truncation_test",
                 "disabled": true,
                 "bug": "408055548"
+            },
+            {
+                "name": "logs::sorting::timestamp_sorting_for_batches",
+                "disabled": true,
+                "bug": "576853102"
+            },
+            {
+                "name": "logs::budget::test_budget",
+                "disabled": true,
+                "bug": "576853102"
             }
         ],
         "compact_name": "fx/archivist_integration_test_cases_ctf30#meta/test_root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf31#meta/test_root.cm",
+        "cases": [
+            {
+                "name": "logs::sorting::timestamp_sorting_for_batches",
+                "disabled": true,
+                "bug": "576853102"
+            },
+            {
+                "name": "logs::budget::test_budget",
+                "disabled": true,
+                "bug": "576853102"
+            }
+        ],
+        "compact_name": "fx/archivist_integration_test_cases_ctf31#meta/test_root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf32#meta/test_root.cm",
+        "cases": [
+            {
+                "name": "logs::sorting::timestamp_sorting_for_batches",
+                "disabled": true,
+                "bug": "576853102"
+            },
+            {
+                "name": "logs::budget::test_budget::logformat_rust_fdiagnostics_format_json_expects",
+                "disabled": true,
+                "bug": "576853102"
+            }
+        ],
+        "compact_name": "fx/archivist_integration_test_cases_ctf32#meta/test_root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/archivist_integration_test_cases_ctf33#meta/test_root.cm",
+        "cases": [
+            {
+                "name": "logs::sorting::timestamp_sorting_for_batches",
+                "disabled": true,
+                "bug": "576853102"
+            },
+            {
+                "name": "logs::budget::test_budget::logformat_rust_fdiagnostics_format_json_expects",
+                "disabled": true,
+                "bug": "576853102"
+            }
+        ],
+        "compact_name": "fx/archivist_integration_test_cases_ctf33#meta/test_root.cm"
     },
     {
         "name": "fuchsia-pkg://fuchsia.com/pkgdir-tests_ctf27#meta/test-root.cm",

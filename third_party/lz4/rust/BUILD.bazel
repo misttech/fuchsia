@@ -12,6 +12,7 @@ rustc_library(
     edition = "2024",
     visibility = [
         "//src/devices/bin/driver-index:__pkg__",
+        "//src/diagnostics/archivist:__pkg__",
         "//src/storage/erofs:__pkg__",
         "//src/storage/lib/delivery_blob:__pkg__",
     ],

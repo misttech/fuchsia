@@ -49,7 +49,6 @@ rustc_test("bin") {
     "src/lib.rs",
     "src/logs/attribution.rs",
     "src/logs/basic.rs",
-    "src/logs/budget.rs",
     "src/logs/common.rs",
     "src/logs/crash.rs",
     "src/logs/host.rs",
@@ -58,7 +57,6 @@ rustc_test("bin") {
     "src/logs/lifecycle_stop.rs",
     "src/logs/mod.rs",
     "src/logs/selectors.rs",
-    "src/logs/sorting.rs",
     "src/logs/utils.rs",
     "src/puppet.rs",
     "src/test_topology.rs",
@@ -70,6 +68,7 @@ rustc_test("bin") {
     sources += [
       "src/inspect/escrow.rs",
       "src/inspect/sample.rs",
+      "src/logs/budget.rs",
     ]
 
     deps += [

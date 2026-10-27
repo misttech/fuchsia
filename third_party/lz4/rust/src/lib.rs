@@ -13,6 +13,8 @@ use std::os::raw::{c_char, c_int};
 pub enum Error {
     #[error("LZ4 only supports compressing up to 2016MiB")]
     InputTooLarge,
+    #[error("LZ4 compression failed")]
+    CompressionFailed,
     #[error("LZ4 decompression failed")]
     DecompressionFailed,
 }
@@ -31,17 +33,30 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
     let src_size = data.len() as c_int;
     let bound = unsafe { LZ4_compressBound(src_size) };
     let mut compressed = vec![0u8; bound as usize];
-    let compressed_size = unsafe {
+    let compressed_size =
+        compress_into(data, &mut compressed).expect("LZ4 compression failed");
+    compressed.truncate(compressed_size);
+    compressed
+}
+
+/// Compresses the given data into `destination` using LZ4. The number of bytes written to
+/// `destination` is returned.
+pub fn compress_into(data: &[u8], destination: &mut [u8]) -> Result<usize, Error> {
+    if data.is_empty() {
+        return Ok(0);
+    }
+    if destination.is_empty() {
+        return Err(Error::CompressionFailed);
+    }
+    let result = unsafe {
         LZ4_compress_default(
             data.as_ptr() as *const c_char,
-            compressed.as_mut_ptr() as *mut c_char,
-            src_size,
-            bound,
+            destination.as_mut_ptr() as *mut c_char,
+            data.len().try_into().map_err(|_| Error::InputTooLarge)?,
+            destination.len().try_into().unwrap_or(c_int::MAX),
         )
     };
-    assert!(compressed_size > 0, "LZ4 compression failed");
-    compressed.truncate(compressed_size as usize);
-    compressed
+    if result <= 0 { Err(Error::CompressionFailed) } else { Ok(result as usize) }
 }
 
 /// Decompresses the given data using LZ4, expecting the given uncompressed size.
@@ -210,5 +225,18 @@ mod tests {
         let decompressed_bytes =
             decompress_into(&[], &mut buf).expect("decompression should succeed");
         assert_eq!(decompressed_bytes, 0);
+    }
+
+    #[test]
+    fn test_compress_into() {
+        let data = b"Hello, world! Hello, world! Hello, world! LZ4 compression test.";
+        let mut buf = vec![0; 100];
+        let written = compress_into(data, &mut buf).expect("compression should succeed");
+        let decompressed = decompress(&buf[..written], data.len()).unwrap();
+        assert_eq!(data.as_slice(), decompressed.as_slice());
+
+        assert_eq!(compress_into(&[], &mut buf), Ok(0));
+        assert_eq!(compress_into(data, &mut []), Err(Error::CompressionFailed));
+        assert_eq!(compress_into(data, &mut buf[..5]), Err(Error::CompressionFailed));
     }
 }

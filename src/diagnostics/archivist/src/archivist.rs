@@ -14,6 +14,7 @@ use crate::logs::debuglog::KernelDebugLog;
 use crate::logs::repository::{ComponentInitialInterest, LogsRepository};
 use crate::logs::serial::{SerialSink, launch_serial};
 use crate::logs::servers::*;
+use crate::logs::shared_buffer::Buffer;
 use crate::pipeline::PipelineManager;
 use archivist_config::Config;
 use fidl_fuchsia_component_runtime as fruntime;
@@ -77,7 +78,7 @@ impl Archivist {
     /// Creates new instance, sets up inspect and adds 'archive' directory to output folder.
     /// Also installs `fuchsia.diagnostics.Archive` service.
     /// Call `install_log_services`
-    pub async fn new(ring_buffer: ring_buffer::Reader, config: Config) -> Self {
+    pub async fn new(ring_buffer: Buffer, config: Config) -> Self {
         let general_scope = fasync::Scope::new_with_name("general");
         let servers_scope = fasync::Scope::new_with_name("servers");
 

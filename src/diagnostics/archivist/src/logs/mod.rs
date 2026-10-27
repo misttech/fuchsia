@@ -94,10 +94,6 @@ mod tests {
                             number: 5u64,
                             bytes: AnyProperty,
                         },
-                        rolled_out: {
-                            number: 0u64,
-                            bytes: 0u64,
-                        },
                         trace: {
                             number: 0u64,
                             bytes: 0u64,
@@ -175,10 +171,6 @@ mod tests {
                                 number: 1u64,
                                 bytes: AnyProperty,
                             },
-                            rolled_out: {
-                                number: 0u64,
-                                bytes: 0u64,
-                            },
                             trace: {
                                 number: 0u64,
                                 bytes: 0u64,
@@ -216,10 +208,6 @@ mod tests {
                             total: {
                                 number: 1u64,
                                 bytes: AnyProperty,
-                            },
-                            rolled_out: {
-                                number: 0u64,
-                                bytes: 0u64,
                             },
                             trace: {
                                 number: 0u64,
@@ -608,10 +596,6 @@ mod tests {
                         total: {
                             number: 3u64,
                             bytes: AnyProperty,
-                        },
-                        rolled_out: {
-                            number: 0u64,
-                            bytes: 0u64,
                         },
                         trace: {
                             number: 0u64,

@@ -4,6 +4,7 @@
 
 mod attribution;
 mod basic;
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
 mod budget;
 pub(crate) mod common;
 mod crash;
@@ -12,5 +13,4 @@ mod interest;
 mod lifecycle;
 mod lifecycle_stop;
 mod selectors;
-mod sorting;
 mod utils;
