@@ -1914,6 +1914,7 @@ mod tests {
 
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             security_server.load_policy(BINARY_POLICY.to_vec()).expect("policy load failed");
+            crate::security::selinuxfs_policy_loaded(current_task);
 
             mutate_attrs_for_test(&current_task, |attrs| {
                 attrs.current_sid =

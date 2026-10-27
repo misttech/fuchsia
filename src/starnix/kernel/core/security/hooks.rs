@@ -2603,6 +2603,7 @@ mod tests {
     #[fuchsia::test]
     async fn task_create_access_allowed_for_permissive_mode() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
+            assert_eq!(check_task_create_access(current_task), error!(EACCES));
             security_server.set_enforcing(false);
             assert_eq!(check_task_create_access(current_task), Ok(()));
         })
@@ -2721,8 +2722,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn getsched_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_task_getscheduler_access(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_task_getscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2739,8 +2742,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn setsched_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_task_setscheduler_access(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_task_setscheduler_access(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2757,8 +2762,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn getpgid_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_getpgid_access(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_getpgid_access(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2775,8 +2782,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn setpgid_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_setpgid_access(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_setpgid_access(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2793,8 +2802,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_getsid_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_task_getsid(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_task_getsid(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2811,8 +2822,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn signal_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), Ok(()));
         })
         .await;
@@ -2829,8 +2842,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_traceme_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(ptrace_traceme(current_task, &another_task), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(ptrace_traceme(current_task, &another_task), Ok(()));
         })
         .await;
@@ -2850,8 +2865,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_attach_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(
+                ptrace_access_check(current_task, &another_task, PTRACE_MODE_ATTACH),
+                error!(EACCES)
+            );
+            security_server.set_enforcing(false);
             assert_eq!(
                 ptrace_access_check(current_task, &another_task, PTRACE_MODE_ATTACH),
                 Ok(())
@@ -2871,8 +2891,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_prlimit_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(async |current_task, _security_server| {
+        spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             let another_task = create_task(&current_task.kernel(), "another-task");
+            assert_eq!(task_prlimit(current_task, &another_task, true, true), error!(EACCES));
+            security_server.set_enforcing(false);
             assert_eq!(task_prlimit(current_task, &another_task, true, true), Ok(()));
         })
         .await;
