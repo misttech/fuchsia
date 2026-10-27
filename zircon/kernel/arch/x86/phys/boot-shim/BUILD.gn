@@ -26,8 +26,8 @@ linux_thin_shims = [
     format = "linuxboot"
   },
 
-  # The 64-bit Linux/x86 shim can be booted directly by crosvm and others.
-  # It supports only the 64-bit Linux/x86 boot protocol.
+  # The 64-bit Linux/x86 shim can be booted directly by QEMU, crosvm, and
+  # others.  It supports all three Linux/x86 boot protocols.
   {
     name = "linux-x86-64-boot-shim"
     format = "linuxboot64"

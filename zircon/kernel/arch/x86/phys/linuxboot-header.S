@@ -5,7 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/arch/asm.h>
+#include <lib/arch/x86/cpuid-asm.h>
 #include <lib/arch/x86/descriptor-asm.h>
+#include <lib/arch/x86/msr.h>
 #include <lib/arch/x86/system-asm.h>
 
 #include "linuxboot-asm.h"
@@ -18,15 +20,17 @@
 //    with an embedded 64-bit executable (see linuxbiboot_executable.gni).
 //
 //  * In kernel.phys, it heads a position-independent 64-bit phys executable.
-//    The 64-bit boot protocol lands in start.S.  The 16-bit and 32-bit
-//    protocols are not yet supported there and crash.
+//    All three boot protocols land in start.S: the 64-bit protocol directly,
+//    and the 16-bit and 32-bit protocols by way of the 32-bit entry point
+//    here, which enters 64-bit mode itself.
 //
 // The `__i386__` conditionals below mark the places where the two differ.
 
 // Selectors into gLinuxbootGdt, defined below.
 #define LINUXBOOT_CODE32_SEL (1 << 3)
 #define LINUXBOOT_DATA32_SEL (2 << 3)
-#define LINUXBOOT_GDT_SIZE (3 * 8)
+#define LINUXBOOT_CODE64_SEL (3 << 3)
+#define LINUXBOOT_GDT_SIZE (4 * 8)
 
 // The phys.ld linker script places this first in the image.
 // The linuxboot.ld linker script arranges that this means it
@@ -421,13 +425,91 @@
 // protocol, it's at some aligned address.  In the 64-bit boot protocol, it's
 // anywhere in the address space, not necessarily in the low 4GiB, and the boot
 // loader jumps to 0x200 past here in 64-bit mode.
-.function Linux32Entry, nosection=nosection
+//
+// On entry, the CPU is in 32-bit protected mode with paging disabled and flat
+// segments; %esi points to boot_params.  Nothing else can be relied on.
+.function Linux32Entry, nosection=nosection, cfi=none
 #ifdef __i386__
   // Jump to the start32.S entry point.
   jmp Phys32Entry
 #else
-  // Not supported yet in the 64-bit build; only the 64-bit protocol is.
-  ud2
+  // Interrupts should already be disabled, but make sure.
+  cli
+
+  // For the sake of convenience and simplicity, we rely on 1GiB pages to set
+  // up an identity map to get us into long mode. We check for that first and
+  // just enter a halt loop.
+  mov $CPUID_EXT_LEAF0, %eax
+  cpuid
+  cmp $CPUID_AMD_FEATURE_LEAF, %eax
+  jb .Lunsupported_cpu
+  mov $CPUID_AMD_FEATURE_LEAF, %eax
+  cpuid
+  and $CPUID_AMD_FEATURE_PAGE1GB, %edx
+  cmp $CPUID_AMD_FEATURE_PAGE1GB, %edx
+  jne .Lunsupported_cpu
+
+  // This code has to find its own load address, since the link is
+  // position-independent and 32-bit code has no PC-relative addressing modes.
+  // The only way is a call, but the 32-bit boot protocol provides no stack.
+  // So borrow boot_params::scratch, which exists for just this purpose, for
+  // that one call.
+  lea (BOOT_PARAMS_SCRATCH + 4)(%esi), %esp
+  call .Lpc
+.Lpc:
+  // With this, %ebp holds the runtime address of .Lpc, and we can compute the
+  // runtime address of a symbols as `(sym - .Lpc)(%ebp)`.
+  pop %ebp
+
+  #define ADDR(sym) ((sym) - .Lpc)(%ebp)
+
+  // Fill in the runtime addresses that the position-independent link can't
+  // put into static data: the PML4's pointer to the PDPT, the GDT pointer's
+  // base, and the far pointer to the 64-bit code to jump to below.
+
+  lea ADDR(gLinuxbootPdpt), %eax
+  or $X86_PAGING_PML4E_RWX, %eax
+  mov %eax, ADDR(gLinuxbootPml4)
+
+  lea ADDR(gLinuxbootGdt), %eax
+  mov %eax, ADDR(gLinuxbootGdtr + 2)
+
+  lea ADDR(Linux64EntryFrom32), %eax
+  mov %eax, ADDR(gLinuxbootFarPtr)
+
+  // Install the GDT that has the 64-bit code segment.  The data segments
+  // currently in use stay valid until start.S resets them.
+  lgdtl ADDR(gLinuxbootGdtr)
+
+  // The 64-bit (4-level) page table format requires PAE.
+  mov %cr4, %eax
+  or $X86_CR4_PAE, %eax
+  mov %eax, %cr4
+
+  // Install the identity-mapping.
+  lea ADDR(gLinuxbootPml4), %eax
+  mov %eax, %cr3
+
+  // Enable long mode, so that enabling paging activates it. While here, also
+  // enable the No-Execute bit in page table entries, which the kernel expects.
+  mov $MSR_IA32_EFER, %ecx
+  rdmsr
+  or $(X86_EFER_LME | X86_EFER_NXE), %eax
+  wrmsr
+
+  // Enable paging. This activates long mode, but the CPU is still executing
+  // 32-bit code (now in compatibility mode).
+  mov %cr0, %eax
+  or $X86_CR0_PG, %eax
+  mov %eax, %cr0
+
+  // Jumping into the 64-bit code segment finishes the switch.
+  ljmpl *ADDR(gLinuxbootFarPtr)
+#undef ADDR
+
+.Lunsupported_cpu:
+  hlt
+  jmp .Lunsupported_cpu
 #endif
 .end_function
 
@@ -462,19 +544,67 @@
   jmp _start
 .end_function
 
+// The 16-bit and 32-bit protocols get here instead, from the far jump at the
+// end of Linux32Entry, having just entered 64-bit mode. The upper halves of
+// the general registers are undefined after the switch, so %rsi must be
+// zero-extended before start.S can use it. (That's not done in Linux64Entry
+// because a 64-bit boot loader can pass a boot_params pointer above 4GiB.)
+.function Linux64EntryFrom32, nosection=nosection
+  mov %esi, %esi
+  jmp _start
+.end_function
+
 #endif
 
 // This is the GDT used by the entry code in this file: by the 16-bit entry
-// path to enter 32-bit protected mode.  It's only for that transition; the
-// code entered afterwards installs its own GDT (start32.S).  It lives here in
-// the load image rather than in the setup area so that the 32-bit entry path,
-// which is entered directly by the 32-bit boot protocol, can use it too.
+// path to enter 32-bit protected mode, and in the 64-bit build by the 32-bit
+// entry path to enter 64-bit mode.  It's only for those transitions; the code
+// entered afterwards installs its own GDT.  It lives here in the load image
+// rather than in the setup area so that the 32-bit entry path, which is
+// entered directly by the 32-bit boot protocol, can use it too.
 .object gLinuxbootGdt, nosection=nosection, align=8
   .quad 0                       // Null descriptor.
   .quad X86_DESC32_FLAT_CODE32  // LINUXBOOT_CODE32_SEL
   .quad X86_DESC32_FLAT_DATA32  // LINUXBOOT_DATA32_SEL
+  .quad X86_DESC32_CODE64       // LINUXBOOT_CODE64_SEL (unused in 32-bit build)
   .if . - gLinuxbootGdt != LINUXBOOT_GDT_SIZE
     .error "LINUXBOOT_GDT_SIZE does not match gLinuxbootGdt"
   .endif
 .end_object
+
+#ifndef __i386__
+
+// The descriptor for `lgdt` in Linux32Entry.  The base address is filled in
+// at runtime.
+.object gLinuxbootGdtr, nosection=nosection, align=4
+  .short LINUXBOOT_GDT_SIZE - 1
+  .long 0
+.end_object
+
+// The far pointer for the `ljmp` into 64-bit mode in Linux32Entry.  The
+// offset is filled in at runtime.
+.object gLinuxbootFarPtr, nosection=nosection, align=4
+  .long 0
+  .short LINUXBOOT_CODE64_SEL
+.end_object
+
+// This page table identity-maps the low 512GiB using 1GiB pages, which covers
+// everything the 16-bit and 32-bit protocols could possibly hand us, since
+// they are limited to 32-bit addresses (i.e., those below 4GiB). The 64-bit
+// entry replaces it with page tables built from the memory map soon enough.
+// Only the single PML4 entry needs an address that isn't known at link time;
+// Linux32Entry fills that in. Everything else is static.f
+.object gLinuxbootPml4, data, align=0x1000
+  .skip 0x1000, 0
+.end_object
+
+.object gLinuxbootPdpt, data, align=0x1000
+  .set .Lpdpte_address, 0
+  .rept 512
+    .quad .Lpdpte_address | X86_PAGING_PDPTE_1GIB_RWX
+    .set .Lpdpte_address, .Lpdpte_address + (1 << 30)
+  .endr
+.end_object
+
+#endif
 

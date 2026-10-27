@@ -92,7 +92,8 @@ if (current_cpu == "x64") {
       shim_deps = [ "//zircon/kernel/arch/x86/phys/boot-shim:linux-x86-64-boot-shim($environment)" ]
       timeout = qemu_short_timeout
 
-      supported_environments = linuxboot64_environments
+      supported_environments =
+          linuxboot32_environments + linuxboot64_environments
     },
     {
       name = "linuxbiboot"

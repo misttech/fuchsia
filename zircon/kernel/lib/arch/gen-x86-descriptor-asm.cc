@@ -27,11 +27,15 @@ constexpr uint64_t kFlatCode32 =
 constexpr uint64_t kFlatData32 =
     RawDesc32(arch::Desc32{}.MakeFlat().set_type(arch::Desc32::DATA_RW));
 
+// 64-bit code segment (base and limit are ignored in 64-bit mode).
+constexpr uint64_t kCode64 = RawDesc32(arch::Desc32{}.MakeCode64());
+
 }  // namespace
 
 int main(int argc, char** argv) {
   return hwreg::AsmHeader()
       .Macro("X86_DESC32_FLAT_CODE32", kFlatCode32)
       .Macro("X86_DESC32_FLAT_DATA32", kFlatData32)
+      .Macro("X86_DESC32_CODE64", kCode64)
       .Main(argc, argv);
 }

@@ -20,5 +20,9 @@ int main(int argc, char** argv) {
       .Macro("CPUID_EXT_LEAF0", arch::CpuidMaximumExtendedLeaf::kLeaf)
       .Register<arch::CpuidFeatureFlagsC>("CPUID_FEATURE_")
       .Register<arch::CpuidExtendedFeatureFlagsB>("CPUID_EXTF_")
+      // The 0x8000'0001 leaf's types don't enable generic asm generation, so
+      // the few bits of interest to assembly code are spelled out here.
+      .Macro("CPUID_AMD_FEATURE_LEAF", arch::CpuidAmdFeatureFlagsD::kLeaf)
+      .Macro("CPUID_AMD_FEATURE_PAGE1GB", arch::CpuidAmdFeatureFlagsD{}.set_page1gb(1).reg_value())
       .Main(argc, argv);
 }
