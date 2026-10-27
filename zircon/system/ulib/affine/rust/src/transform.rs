@@ -65,42 +65,47 @@ static_assert!(core::mem::align_of::<Transform>() == 8);
 
 // TODO(https://fxbug.dev/42082948)
 impl Transform {
+    /// Returns the identity Transform (`f(a) = a`).
+    pub const fn const_default() -> Self {
+        Transform { a_offset: 0, b_offset: 0, ratio: Ratio::const_default() }
+    }
+
     /// Constructs a new Transform.
-    pub fn new(a_offset: i64, b_offset: i64, ratio: Ratio) -> Self {
+    pub const fn new(a_offset: i64, b_offset: i64, ratio: Ratio) -> Self {
         Transform { a_offset, b_offset, ratio }
     }
 
     // Construct a linear transformation (zero offsets) from a ratio
-    pub fn new_linear(ratio: Ratio) -> Self {
+    pub const fn new_linear(ratio: Ratio) -> Self {
         Transform { a_offset: 0, b_offset: 0, ratio }
     }
 
-    pub fn invertible(&self) -> bool {
+    pub const fn invertible(&self) -> bool {
         self.ratio.invertible()
     }
 
-    pub fn a_offset(&self) -> i64 {
+    pub const fn a_offset(&self) -> i64 {
         self.a_offset
     }
 
-    pub fn b_offset(&self) -> i64 {
+    pub const fn b_offset(&self) -> i64 {
         self.b_offset
     }
 
-    pub fn ratio(&self) -> Ratio {
+    pub const fn ratio(&self) -> Ratio {
         self.ratio
     }
 
-    pub fn numerator(&self) -> u32 {
+    pub const fn numerator(&self) -> u32 {
         self.ratio.numerator()
     }
 
-    pub fn denominator(&self) -> u32 {
+    pub const fn denominator(&self) -> u32 {
         self.ratio.denominator()
     }
 
     // Construct and return a transform which is the inverse of this transform.
-    pub fn inverse(&self) -> Self {
+    pub const fn inverse(&self) -> Self {
         Transform { a_offset: self.b_offset, b_offset: self.a_offset, ratio: self.ratio.inverse() }
     }
 

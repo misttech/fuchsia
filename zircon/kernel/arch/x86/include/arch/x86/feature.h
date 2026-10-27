@@ -244,7 +244,7 @@ struct x86_model_info {
   uint32_t patch_level;
 };
 
-const struct x86_model_info* x86_get_model();
+extern "C" const struct x86_model_info* x86_get_model();
 
 enum x86_microarch_list {
   X86_MICROARCH_UNKNOWN,

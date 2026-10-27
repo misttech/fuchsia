@@ -294,6 +294,18 @@ pub struct CurrentTicksObservation {
 
 zr::static_assert_size_and_align!(CurrentTicksObservation, 16, 8);
 
+/// The `GetTicksSyncFlag` bits of `<platform/timer.h>`: which of the surrounding
+/// memory accesses a raw ticks observation must be ordered against (`kNone`).
+pub const GET_TICKS_SYNC_FLAG_NONE: u8 = 0;
+/// `GetTicksSyncFlag::kAfterPreviousLoads`: order tick observation after previous loads.
+pub const GET_TICKS_SYNC_FLAG_AFTER_PREVIOUS_LOADS: u8 = 1 << 0;
+/// `GetTicksSyncFlag::kAfterPreviousStores`: order tick observation after previous stores.
+pub const GET_TICKS_SYNC_FLAG_AFTER_PREVIOUS_STORES: u8 = 1 << 1;
+/// `GetTicksSyncFlag::kBeforeSubsequentLoads`: order tick observation before subsequent loads.
+pub const GET_TICKS_SYNC_FLAG_BEFORE_SUBSEQUENT_LOADS: u8 = 1 << 2;
+/// `GetTicksSyncFlag::kBeforeSubsequentStores`: order tick observation before subsequent stores.
+pub const GET_TICKS_SYNC_FLAG_BEFORE_SUBSEQUENT_STORES: u8 = 1 << 3;
+
 unsafe extern "C" {
     fn cpp_timer_current_mono_ticks() -> InstantMonoTicks;
     fn cpp_timer_current_boot_ticks() -> InstantBootTicks;

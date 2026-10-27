@@ -17,6 +17,7 @@ pub mod memory;
 pub mod pic;
 pub mod power;
 pub mod smbios;
+pub mod timer;
 
 use core::ffi::{CStr, c_char};
 

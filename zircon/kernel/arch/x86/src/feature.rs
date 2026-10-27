@@ -90,6 +90,9 @@ unsafe extern "C" {
 
     #[link_name = "g_has_meltdown"]
     static mut G_HAS_MELTDOWN: bool;
+
+    #[link_name = "x86_get_model"]
+    fn c_x86_get_model() -> *const X86ModelInfo;
 }
 
 macro_rules! x86_cpuid_bit {
@@ -441,6 +444,29 @@ pub fn x86_get_microarch_config() -> Option<&'static X86MicroarchConfig> {
         let ptr = core::ptr::addr_of!(X86_MICROARCH_CONFIG).read();
         ptr.as_ref()
     }
+}
+
+#[inline]
+pub fn x86_get_model() -> &'static X86ModelInfo {
+    // SAFETY: `x86_get_model` returns a valid pointer to static `model_info` initialized during
+    // single-threaded early boot.
+    unsafe { &*c_x86_get_model() }
+}
+
+#[inline]
+pub fn x86_lookup_core_crystal_freq() -> u64 {
+    let config = x86_get_microarch_config().expect("x86_microarch_config not initialized");
+    let get_apic_freq = config.get_apic_freq.expect("get_apic_freq is null");
+    // SAFETY: `get_apic_freq` is a valid function pointer in the static microarch config table.
+    unsafe { get_apic_freq() }
+}
+
+#[inline]
+pub fn x86_lookup_tsc_freq() -> u64 {
+    let config = x86_get_microarch_config().expect("x86_microarch_config not initialized");
+    let get_tsc_freq = config.get_tsc_freq.expect("get_tsc_freq is null");
+    // SAFETY: `get_tsc_freq` is a valid function pointer in the static microarch config table.
+    unsafe { get_tsc_freq() }
 }
 
 #[inline]

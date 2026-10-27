@@ -37,7 +37,7 @@ static_assert!(core::mem::align_of::<Ratio>() == 4);
 
 impl Default for Ratio {
     fn default() -> Self {
-        Ratio { numerator: 1, denominator: 1 }
+        Self::const_default()
     }
 }
 
@@ -45,24 +45,28 @@ impl Ratio {
     pub const OVERFLOW: i64 = i64::MAX;
     pub const UNDERFLOW: i64 = i64::MIN;
 
-    pub fn new(numerator: u32, denominator: u32) -> Self {
+    pub const fn const_default() -> Self {
+        Ratio { numerator: 1, denominator: 1 }
+    }
+
+    pub const fn new(numerator: u32, denominator: u32) -> Self {
         debug_assert!(denominator != 0);
         Ratio { numerator, denominator }
     }
 
-    pub fn numerator(&self) -> u32 {
+    pub const fn numerator(&self) -> u32 {
         self.numerator
     }
 
-    pub fn denominator(&self) -> u32 {
+    pub const fn denominator(&self) -> u32 {
         self.denominator
     }
 
-    pub fn invertible(&self) -> bool {
+    pub const fn invertible(&self) -> bool {
         self.numerator != 0
     }
 
-    pub fn inverse(&self) -> Self {
+    pub const fn inverse(&self) -> Self {
         debug_assert!(self.invertible());
         Ratio { numerator: self.denominator, denominator: self.numerator }
     }
