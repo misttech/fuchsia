@@ -634,6 +634,12 @@
                 "ProcSelfFd.NoncanonicalNames",
                 "ProcTask.InvalidTaskNames",
 
+                // TODO(https://fxbug.dev/578599318): Preserve procfs lookup errors during creation, link, and rename.
+                "ProcTest.Create",
+                "ProcTest.CreateReadOnly",
+                "ProcTest.LinkAndRenameMissing",
+                "ProcTest.LinkDestinationLookup",
+
                 // TODO(https://fxbug.dev/564605906)
                 "ProcSelfAuxv.EntryPresence",
                 "ProcSelfAuxv.Platform",
