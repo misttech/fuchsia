@@ -14,8 +14,11 @@ const CAP_SYSFS_DEVICE: &str = "cap_sysfs";
 /// Each device and the files expected under it, in sorted order.
 const DEVICES: [(&str, &[&str]); 2] = [
     (RESIDENCY_DEVICE, &["lpcm_gmc0", "platform_power_residency", "pwrblk_dpu"]),
-    (CAP_SYSFS_DEVICE, &["dvfs_stats_clk_lit", "power_state_stats"]),
+    (CAP_SYSFS_DEVICE, &["dvfs_stats_clk_dsu", "dvfs_stats_clk_lit", "power_state_stats"]),
 ];
+
+/// The DSU's devfreq device, which is added along with its DVFS stats file.
+const DSU_DEVFREQ_DEVICE: &str = "200c0780.dsufreq";
 
 /// How long to wait for a device to be added before failing.
 const DEVICE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -112,6 +115,30 @@ fn dvfs_stats_are_reported() {
          \x20   last_entry_timestamp_ticks: 115200\n\
          \x20 - oplevel: 1\n    entry_count: 0\n    total_residency_ms: 0\n\
          \x20   last_entry_timestamp_ticks: 0\n"
+    );
+}
+
+#[test]
+fn dsu_available_frequencies_are_reported() {
+    let path = device_dir(DSU_DEVFREQ_DEVICE)
+        .join("devfreq")
+        .join(DSU_DEVFREQ_DEVICE)
+        .join("available_frequencies");
+    // The devfreq device is added right after its platform device, so wait for it as well.
+    let deadline = Instant::now() + DEVICE_TIMEOUT;
+    while !path.exists() {
+        assert!(Instant::now() < deadline, "{} was not added", path.display());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("failed to read available_frequencies"),
+        "115000000 268000000 400000000 537000000 691000000 768000000 844000000 960000000 \
+         1056000000 1132000000 1228000000 1324000000 1420000000 1516000000 1612000000 \
+         1728000000 1843000000 1920000000 1996000000 2092000000 2188000000\n"
+    );
+    assert!(
+        Path::new("/sys/class/devfreq").join(DSU_DEVFREQ_DEVICE).exists(),
+        "the DSU's devfreq device is not in its class"
     );
 }
 

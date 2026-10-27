@@ -7,7 +7,8 @@
 //!
 //! These devices are not generic Linux sysfs interfaces. They emulate the SoC-specific vendor
 //! devices that the Android PowerStats HAL reads residency from: the CPM power dashboard and the
-//! CAP (CPU Auxiliary Processor) stats device.
+//! CAP (CPU Auxiliary Processor) stats device. The DSU's devfreq device is also emulated, as the
+//! HAL reads the DSU's frequencies from it to label the DSU's DVFS residency.
 
 use fidl_fuchsia_hardware_power_stats as fpowerstats;
 use starnix_core::device::power_stats::PowerStatsManager;
@@ -59,6 +60,42 @@ const DVFS_STATS_ENTITY_PREFIX: &str = "cap_dvfs_";
 /// the clock domain.
 const DVFS_STATS_FILE_PREFIX: &str = "dvfs_stats_";
 
+/// Power entity reporting the DSU's DVFS residency. When a provider reports it, the DSU's devfreq
+/// device is also served, as the frequency list for that residency.
+const DSU_DVFS_ENTITY: &str = "cap_dvfs_clk_dsu";
+
+/// Name of the DSU's platform device, and of its devfreq device.
+const DSU_DEVFREQ_DEVICE_NAME: &str = "200c0780.dsufreq";
+
+/// Frequencies of the DSU's operating points in Hz, from slowest to fastest.
+///
+/// The DSU has no frequency driver, so the frequencies are those its devfreq device lists on
+/// Linux. The fastest one is CAP operating level 3 and the slowest is level 23.
+// TODO(b/578170862): Get the frequencies from the power stats provider.
+const DSU_AVAILABLE_FREQUENCIES_HZ: [u64; 21] = [
+    115_000_000,
+    268_000_000,
+    400_000_000,
+    537_000_000,
+    691_000_000,
+    768_000_000,
+    844_000_000,
+    960_000_000,
+    1_056_000_000,
+    1_132_000_000,
+    1_228_000_000,
+    1_324_000_000,
+    1_420_000_000,
+    1_516_000_000,
+    1_612_000_000,
+    1_728_000_000,
+    1_843_000_000,
+    1_920_000_000,
+    1_996_000_000,
+    2_092_000_000,
+    2_188_000_000,
+];
+
 /// Ticks per millisecond of the counter that some residency files report timestamps in.
 ///
 /// Those files report raw values of the platform timer counter, which is expected to run at
@@ -86,6 +123,8 @@ struct ResidencyFileSpec {
 /// The entities are only known once a provider has started, so each device is added asynchronously
 /// via [`PowerStatsManager`], once a provider reports at least one entity served under it. Served
 /// entities for a device from other providers are ignored.
+///
+/// The DSU's devfreq device is added along with [`DSU_DVFS_ENTITY`]'s file.
 pub fn init_power_residency_device(kernel: &Kernel) {
     let mut added_devices: HashSet<&'static str> = HashSet::new();
     let manager = PowerStatsManager::get_or_init(kernel);
@@ -121,7 +160,45 @@ pub fn init_power_residency_device(kernel: &Kernel) {
                 },
             );
         }
+        if provider.entity_names().iter().any(|name| name == DSU_DVFS_ENTITY)
+            && added_devices.insert(DSU_DEVFREQ_DEVICE_NAME)
+        {
+            add_dsu_devfreq_device(kernel);
+        }
     });
+}
+
+/// Adds the DSU's platform device and its devfreq device, which lists the DSU's frequencies in
+/// `available_frequencies`.
+fn add_dsu_devfreq_device(kernel: &Kernel) {
+    let registry = &kernel.device_registry;
+    let platform_device = registry.add_bus_device(
+        DSU_DEVFREQ_DEVICE_NAME.into(),
+        Some(registry.objects.platform_device()),
+        registry.objects.platform_bus(),
+        |device, dir| build_device_directory(device, dir),
+    );
+    let devfreq_class = registry.objects.get_or_create_class("devfreq".into());
+    registry.add_numberless_device(
+        DSU_DEVFREQ_DEVICE_NAME.into(),
+        Some(platform_device),
+        devfreq_class,
+        |device, dir| {
+            build_device_directory(device, dir);
+            dir.entry(
+                "available_frequencies",
+                BytesFile::new_node(dsu_available_frequencies().into_bytes()),
+                mode!(IFREG, 0o444),
+            );
+        },
+    );
+}
+
+/// Returns the contents of the DSU's `available_frequencies` file: its frequencies in Hz, from
+/// slowest to fastest, separated by spaces.
+fn dsu_available_frequencies() -> String {
+    let frequencies: Vec<_> = DSU_AVAILABLE_FREQUENCIES_HZ.iter().map(u64::to_string).collect();
+    frequencies.join(" ") + "\n"
 }
 
 /// Returns where and how to serve the power entity named `entity`, or [`None`] if it is not
@@ -824,6 +901,74 @@ mod tests {
                 (CAP_SYSFS_DEVICE_NAME, "dvfs_stats_clk_lit".to_string()),
                 (CAP_SYSFS_DEVICE_NAME, "dvfs_stats_clk_mid0".to_string()),
             ]
+        );
+    }
+
+    #[::fuchsia::test]
+    async fn dsu_devfreq_device_is_added_with_dsu_entity() {
+        spawn_kernel_and_run_sync(|current_task| {
+            let kernel = current_task.kernel();
+            PowerStatsManager::add_provider_for_testing(
+                kernel,
+                provider_with_entities("default", [DSU_DVFS_ENTITY]),
+            );
+            init_power_residency_device(kernel);
+
+            let device = format!("devices/platform/{DSU_DEVFREQ_DEVICE_NAME}");
+            assert!(exists(kernel, &format!("bus/platform/devices/{DSU_DEVFREQ_DEVICE_NAME}")));
+            assert!(exists(kernel, &format!("{device}/uevent")));
+            assert!(exists(
+                kernel,
+                &format!("{device}/devfreq/{DSU_DEVFREQ_DEVICE_NAME}/available_frequencies")
+            ));
+            assert!(exists(kernel, &format!("class/devfreq/{DSU_DEVFREQ_DEVICE_NAME}")));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn no_dsu_devfreq_device_without_dsu_entity() {
+        spawn_kernel_and_run_sync(|current_task| {
+            let kernel = current_task.kernel();
+            PowerStatsManager::add_provider_for_testing(
+                kernel,
+                provider_with_entities("default", ["cap_dvfs_clk_lit"]),
+            );
+            init_power_residency_device(kernel);
+
+            assert!(exists(kernel, &format!("devices/platform/{CAP_SYSFS_DEVICE_NAME}")));
+            assert!(!exists(kernel, &format!("devices/platform/{DSU_DEVFREQ_DEVICE_NAME}")));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn dsu_devfreq_device_is_added_once() {
+        spawn_kernel_and_run_sync(|current_task| {
+            let kernel = current_task.kernel();
+            PowerStatsManager::add_provider_for_testing(
+                kernel,
+                provider_with_entities("first", [DSU_DVFS_ENTITY]),
+            );
+            init_power_residency_device(kernel);
+            PowerStatsManager::add_provider_for_testing(
+                kernel,
+                provider_with_entities("second", [DSU_DVFS_ENTITY]),
+            );
+
+            assert!(exists(kernel, &format!("devices/platform/{DSU_DEVFREQ_DEVICE_NAME}")));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    fn dsu_available_frequencies_are_listed_from_slowest() {
+        assert!(DSU_AVAILABLE_FREQUENCIES_HZ.is_sorted_by(|a, b| a < b));
+        assert_eq!(
+            dsu_available_frequencies(),
+            "115000000 268000000 400000000 537000000 691000000 768000000 844000000 960000000 \
+             1056000000 1132000000 1228000000 1324000000 1420000000 1516000000 1612000000 \
+             1728000000 1843000000 1920000000 1996000000 2092000000 2188000000\n"
         );
     }
 }
