@@ -138,6 +138,19 @@ class AmlClock : public fdf::DriverBase2,
   // Cpu Clocks.
   std::vector<MesonCpuClock> cpu_clks_;
 
+  // Non-owning view of `hiu_mmio_` (which owns the mapped HIU MMIO block) at offset 0.
+  // Stored as a member because `MesonPllClock` (via `s905d2_pll_init_etc`) retains a
+  // pointer to it in `aml_pll_dev_t::hiu` for runtime PLL rate and power control.
+  //
+  // Register sharing awareness:
+  // Both `hiudev_` and `hiu_mmio_` reference the same HIU MMIO register space.
+  // - `hiudev_` is used exclusively by `pllclk_` for PLL control registers (e.g.
+  //   HHI_*_PLL_CNTL*).
+  // - `hiu_mmio_` is used for CPU clocks (`cpu_clks_`), clock muxes, and clock gates
+  //   (such as `kHhiVdecClkCntl` in `ClkToggleHw()`, which modifies specific bitfields
+  //   under `lock_`).
+  // The registers accessed via `hiudev_` do not overlap with those accessed for CPU
+  // clocks, muxes, or gates.
   std::optional<fdf::MmioView> hiudev_;
   std::vector<MesonPllClock> pllclk_;
   size_t pll_count_ = HIU_PLL_COUNT;

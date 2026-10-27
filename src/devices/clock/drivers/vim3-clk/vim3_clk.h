@@ -76,6 +76,17 @@ class Vim3Clock final : public fdf::DriverBase2,
 
   std::optional<fdf::MmioBuffer> hiu_mmio_;
   std::optional<fdf::MmioBuffer> dos_mmio_;
+  // Non-owning view of `hiu_mmio_` (which owns the mapped HIU MMIO block) at offset 0.
+  // Stored as a member because `MesonPllClock` (via `s905d2_pll_init_etc`) retains a
+  // pointer to it in `aml_pll_dev_t::hiu` for runtime PLL rate and power control.
+  //
+  // Register sharing awareness:
+  // Both `hiudev_` and `hiu_mmio_` reference the same HIU MMIO register space.
+  // - `hiudev_` is used exclusively by `plls_` for PLL control registers (e.g.
+  //   HHI_*_PLL_CNTL*).
+  // - `hiu_mmio_` is used directly for CPU clocks (`cpu_clks_`) and clock gates (`gates_`).
+  // The registers accessed via `hiudev_` do not overlap with those accessed for CPU
+  // clocks or gates.
   std::optional<fdf::MmioView> hiudev_;
 
   std::vector<MesonGate> gates_;
