@@ -10468,18 +10468,18 @@ rustc_library("futures-util-v0_3_34") {
   applicable_licenses = [ ":futures-util-v0_3_34.license" ]
 }
 
-license("generator-v0_8_7.license") {
+license("generator-v0_8_10.license") {
   public_package_name = "generator"
   license_files = [
-    "//third_party/rust_crates/vendor/generator-0.8.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/generator-0.8.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/generator-0.8.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/generator-0.8.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("generator-v0_8_7") {
+rustc_library("generator-v0_8_10") {
   crate_name = "generator"
-  source_root = "//third_party/rust_crates/vendor/generator-0.8.7/src/lib.rs"
-  output_name = "generator-761def78771022db"
+  source_root = "//third_party/rust_crates/vendor/generator-0.8.10/src/lib.rs"
+  output_name = "generator-9187dffe2db4e66d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10492,7 +10492,8 @@ rustc_library("generator-v0_8_7") {
     deps += [ ":libc-v0_2_190" ]
   }
   if (false) {
-    deps += [ ":windows-v0_61_3" ]
+    deps += [ ":windows-link-v0_2_1" ]
+    deps += [ ":windows-result-v0_3_4" ]
   }
   deps += [ "//build/validate:non_production_tag" ]
 
@@ -10500,8 +10501,8 @@ rustc_library("generator-v0_8_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=761def78771022db",
-    "-Cextra-filename=-761def78771022db",
+    "-Cmetadata=9187dffe2db4e66d",
+    "-Cextra-filename=-9187dffe2db4e66d",
   ]
 
   visibility = []
@@ -10512,7 +10513,7 @@ rustc_library("generator-v0_8_7") {
   visibility += [ ":loom-v0_7_2.aux.deps.transdeps" ]
   visibility += [ ":loom-v0_7_2.actual.rust_compilation_deps" ]
   testonly = true
-  applicable_licenses = [ ":generator-v0_8_7.license" ]
+  applicable_licenses = [ ":generator-v0_8_10.license" ]
 }
 
 license("generic-array-v0_14_9.license") {
@@ -13417,7 +13418,7 @@ rustc_library("loom-v0_7_2") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_5" ]
-  deps += [ ":generator-v0_8_7" ]
+  deps += [ ":generator-v0_8_10" ]
   deps += [ ":pin-utils-v0_1_0" ]
   deps += [ ":scoped-tls-v1_0_1" ]
   deps += [ ":serde-v1_0_229" ]
@@ -26492,35 +26493,6 @@ rustc_library("winapi-util-v0_1_9") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-v0_61_3") {
-  crate_name = "windows"
-  source_root = "//third_party/rust_crates/empty/windows-0.61.3/src/lib.rs"
-  output_name = "windows-e5914020539c2fb3"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=e5914020539c2fb3",
-    "-Cextra-filename=-e5914020539c2fb3",
-    "--cfg=feature=\"Win32_Foundation\"",
-    "--cfg=feature=\"Win32_System_Diagnostics_Debug\"",
-    "--cfg=feature=\"Win32_System_Kernel\"",
-    "--cfg=feature=\"Win32_System_Memory\"",
-    "--cfg=feature=\"Win32_System_SystemInformation\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
 rustc_library("windows-core-v0_62_2") {
   crate_name = "windows_core"
   source_root = "//third_party/rust_crates/empty/windows-core-0.62.2/src/lib.rs"
@@ -26562,6 +26534,31 @@ rustc_library("windows-link-v0_2_1") {
     "--cap-lints=allow",
     "-Cmetadata=51a5d43ba1d45860",
     "-Cextra-filename=-51a5d43ba1d45860",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_library("windows-result-v0_3_4") {
+  crate_name = "windows_result"
+  source_root =
+      "//third_party/rust_crates/empty/windows-result-0.3.4/src/lib.rs"
+  output_name = "windows_result-2c121a77ff5b5248"
+  edition = "2015"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=2c121a77ff5b5248",
+    "-Cextra-filename=-2c121a77ff5b5248",
   ]
 
   visibility = [ ":*" ]

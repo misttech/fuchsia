@@ -2300,16 +2300,17 @@ dependencies = [
 
 [[package]]
 name = "generator"
-version = "0.8.7"
+version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "605183a538e3e2a9c1038635cc5c2d194e2ee8fd0d1b66b8349fad7dbacce5a2"
+checksum = "54ade96dc9003043bce7c035c85a9df5a858bfb2039c5a2e6fdf00f324f6c551"
 dependencies = [
  "cc",
  "cfg-if",
  "libc",
  "log",
  "rustversion",
- "windows",
+ "windows-link",
+ "windows-result",
 ]
 
 [[package]]
@@ -6457,16 +6458,16 @@ name = "winapi-util"
 version = "0.1.9"
 
 [[package]]
-name = "windows"
-version = "0.61.3"
-
-[[package]]
 name = "windows-core"
 version = "0.62.2"
 
 [[package]]
 name = "windows-link"
 version = "0.2.1"
+
+[[package]]
+name = "windows-result"
+version = "0.3.4"
 
 [[package]]
 name = "windows-sys"
