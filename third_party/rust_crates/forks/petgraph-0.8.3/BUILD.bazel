@@ -79,6 +79,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/fixedbitset-0.5.7:fixedbitset",
         "//third_party/rust_crates/vendor/hashbrown-0.15.5:hashbrown",
-        "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
+        "//third_party/rust_crates/vendor/indexmap-2.14.2:indexmap",
     ],
 )

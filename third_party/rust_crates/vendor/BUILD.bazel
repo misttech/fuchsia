@@ -1426,14 +1426,14 @@ alias(
 )
 
 alias(
-    name = "indexmap-2.14.0",
-    actual = "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
+    name = "indexmap-2.14.2",
+    actual = "//third_party/rust_crates/vendor/indexmap-2.14.2:indexmap",
     tags = ["manual"],
 )
 
 alias(
     name = "indexmap",
-    actual = "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
+    actual = "//third_party/rust_crates/vendor/indexmap-2.14.2:indexmap",
     tags = ["manual"],
 )
 

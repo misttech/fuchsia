@@ -141,7 +141,7 @@ CRATE_ANNOTATIONS = {
     ],
     "indexmap": [
         crate.annotation(
-            version = "1.9.2",
+            version = "1.9.3",
             rustc_flags = [
                 "--cfg=has_std",
             ],

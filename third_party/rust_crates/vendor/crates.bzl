@@ -412,7 +412,7 @@ _NORMAL_DEPENDENCIES = {
             "humansize": Label("//third_party/rust_crates/vendor/humansize-2.1.3:humansize"),
             "hyper": Label("//third_party/rust_crates/vendor/hyper-1.12.0:hyper"),
             "hyper-util": Label("//third_party/rust_crates/vendor/hyper-util-0.1.20:hyper_util"),
-            "indexmap": Label("//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap"),
+            "indexmap": Label("//third_party/rust_crates/vendor/indexmap-2.14.2:indexmap"),
             "iota": Label("//third_party/rust_crates/vendor/iota-0.2.3:iota"),
             "itertools": Label("//third_party/rust_crates/vendor/itertools-0.14.0:itertools"),
             "itoa": Label("//third_party/rust_crates/vendor/itoa-1.0.18:itoa"),

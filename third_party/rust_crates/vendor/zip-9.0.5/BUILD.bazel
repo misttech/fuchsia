@@ -81,7 +81,7 @@ rust_library(
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/crc32fast-1.5.2:crc32fast",
         "//third_party/rust_crates/vendor/flate2-1.1.9:flate2",
-        "//third_party/rust_crates/vendor/indexmap-2.14.0:indexmap",
+        "//third_party/rust_crates/vendor/indexmap-2.14.2:indexmap",
         "//third_party/rust_crates/vendor/typed-path-0.12.3:typed_path",
     ],
 )
