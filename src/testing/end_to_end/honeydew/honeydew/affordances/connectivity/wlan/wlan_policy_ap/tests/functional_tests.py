@@ -5,18 +5,11 @@
 
 import random
 import string
-import time
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from honeydew.affordances.connectivity.netstack.types import (
-    InterfaceProperties,
-    PortClass,
-)
+from honeydew.affordances.connectivity.netstack.types import PortClass
 from mobly import asserts, test_runner
-
-# Time to wait for a WLAN interface to become available.
-WLAN_INTERFACE_TIMEOUT = 30
 
 
 def random_str(
@@ -41,18 +34,7 @@ class WlanPolicyApTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """setup_class is called once before running tests."""
         await super().setup_class()
 
-        # Wait for a WLAN interface to become available.
-        interfaces: list[InterfaceProperties] = []
-        end_time = time.time() + WLAN_INTERFACE_TIMEOUT
-        while time.time() < end_time:
-            interfaces = await self.dut.netstack.list_interfaces()
-            for interface in interfaces:
-                if interface.port_class is PortClass.WLAN_CLIENT:
-                    return
-            time.sleep(1)  # Prevent denial-of-service
-        asserts.abort_class(
-            f"Expected presence of a WLAN interface, got {interfaces}"
-        )
+        await self.wait_for_interface(self.dut.netstack, PortClass.WLAN_CLIENT)
 
     async def teardown_test(self) -> None:
         # Don't allow access points to leak into other tests.
