@@ -495,6 +495,15 @@ _bazel_vendor_paths = _make_bazel_lint_check(
     enforcement = "unchanged_lines_warning_only",
 )
 
+# Reports an error when `config_setting()` or `exports_files()` does not
+# explicitly specify `visibility`.
+# TODO(https://fxbug.dev/570203009): Switch to "all" once rolled out.
+_bazel_visibility_for_public_by_default_types = _make_bazel_lint_check(
+    "bazel_visibility_for_public_by_default_types",
+    applies_to_globs = _BUILD_AND_BZL_FILES,
+    enforcement = "unchanged_lines_warning_only",
+)
+
 def register_bazel_checks():
     """Registers all Bazel shac checks."""
     shac.register_check(shac.check(_bazel_default_applicable_licenses, formatter = False))
@@ -510,4 +519,5 @@ def register_bazel_checks():
     shac.register_check(_bazel_package_default_visibility)
     shac.register_check(_bazel_target_visibility)
     shac.register_check(_bazel_vendor_paths)
+    shac.register_check(_bazel_visibility_for_public_by_default_types)
     # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)

@@ -19,6 +19,7 @@ filegroup(
         "root_package_labels.py",
         "target_visibility.py",
         "vendor_paths.py",
+        "visibility_for_public_by_default_types.py",
         # LINT.ThenChange(//scripts/shac/bazel_lint/checks/__init__.py:all_checks)
     ],
     visibility = [

@@ -13,6 +13,7 @@ from . import (
     root_package_labels,
     target_visibility,
     vendor_paths,
+    visibility_for_public_by_default_types,
 )
 
 # LINT.ThenChange(

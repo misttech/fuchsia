@@ -9,7 +9,17 @@ from framework import CallInfo
 # Common reference URLs for visibility documentation in the Fuchsia Bazel style guide.
 PUBLIC_VISIBILITY_REFERENCE_URL = "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-use-public-visibility"
 LOAD_VISIBILITY_REFERENCE_URL = "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/bzl_files#load-visibility"
+VISIBILITY_FOR_PUBLIC_BY_DEFAULT_REFERENCE_URL = "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/build_files#always-specify-visibility-for-types-that-are-public-by-default"
 VENDOR_VISIBILITY_REFERENCE_URL = "https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#do-not-reference-vendor-subpaths"
+
+# Built-in target rules and functions that default to public visibility if
+# `visibility` is omitted.
+PUBLIC_BY_DEFAULT_TYPES: frozenset[str] = frozenset(
+    {
+        "config_setting",
+        "exports_files",
+    }
+)
 
 # Vendor packages that may be referenced in visibility declarations in public
 # Fuchsia (`fuchsia.git`) Bazel files.
@@ -55,3 +65,17 @@ ALLOWED_VENDOR_LOAD_VISIBILITY_LABELS: frozenset[str] = frozenset(
 def is_load_visibility(call: CallInfo) -> bool:
     """Returns True if `call` is a top-level load `visibility(...)` declaration in a .bzl file."""
     return call.is_top_level and call.func_name == "visibility"
+
+
+def specifies_visibility(call: CallInfo) -> bool:
+    """Returns True if `call` specifies a `visibility` keyword argument.
+
+    Note: Built-in functions like `exports_files()` technically accept visibility
+    as a positional argument in Starlark, unlike rule targets which strictly require
+    keyword arguments. However, Fuchsia style rules and buildifier mandate keyword
+    arguments (`visibility = [...]`). If code ever used positional arguments for
+    visibility, flagging it as missing keyword visibility is safe because the
+    required fix is to add `visibility = [...]`, bringing it into compliance with
+    Fuchsia style.
+    """
+    return "visibility" in call.keywords

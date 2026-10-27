@@ -114,11 +114,12 @@ Note: This exception does not apply to legacy macros where
 `visibility = ["//visibility:private"]`
 [must be specified][specify-visibility-legacy-macros].
 
-### Visibility for non-obvious target types
+### Always specify visibility for types that are public by default {:#always-specify-visibility-for-types-that-are-public-by-default}
 
 `config_setting()` and `exports_files()` support visibility like any other
-target except that they are public by default. Always specify `visibility` for
-these even though Bazel does not require it.
+target except that they are public by default. Always specify `visibility`
+_\[<span style="color:red">SHAC error</span>\]_ for these even though Bazel does
+not require it.
 
 ## target_compatible_with {:#target-compatible-with}
 
