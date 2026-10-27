@@ -8,6 +8,7 @@ bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/connectivity/lib/net-types:net-types-test-package" ]
   host_tests = [
     "//src/connectivity/lib/net-types:net-types-nostd_host_test",
+    "//src/connectivity/lib/net-types:net-types-redaction_host_test",
     "//src/connectivity/lib/net-types:net-types_host_test",
   ]
 }
@@ -69,7 +70,10 @@ rustc_library("net-types") {
     "//src/starnix/modules/procfs:*",
     "//vendor/google/*",
   ]
-  deps = [ "//third_party/rust_crates:zerocopy" ]
+  deps = [
+    "//src/diagnostics/lib/redactor",
+    "//third_party/rust_crates:zerocopy",
+  ]
 }
 rustc_macro("net-types-macros") {
   sources = [ "src/macros.rs" ]
@@ -91,15 +95,40 @@ rustc_test("net-types_test") {
   ]
   edition = "2024"
   proc_macro_deps = [ ":net-types-macros" ]
-  deps = [ "//third_party/rust_crates:zerocopy" ] +
-         [ "//third_party/rust_crates:test-case" ]
+  deps = [
+           "//src/diagnostics/lib/redactor",
+           "//third_party/rust_crates:zerocopy",
+         ] + [ "//third_party/rust_crates:test-case" ]
   configs += [
     "//build/config/rust/lints:deny_unused_results",
     "//src/connectivity/network:performance_critical_rust_crate",
   ]
 }
-fuchsia_unittest_package("net-types-test-package") {
-  package_name = "net-types-test-gn"
-  component_name = "net-types-test"
+rustc_test("net-types-redaction_test") {
+  sources = [ "tests/redaction.rs" ]
+  configs += [ "//build/config/rust/lints:deny_unused_results" ]
+  source_root = "tests/redaction.rs"
+  edition = "2024"
+  deps = [
+    ":net-types",
+    "//src/diagnostics/lib/redactor",
+  ]
+}
+fuchsia_unittest_component("net-types-test-package.net-types_test.component") {
+  component_name = "net-types_test"
+  visibility = [ ":*" ]
   deps = [ ":net-types_test" ]
+}
+fuchsia_unittest_component(
+    "net-types-test-package.net-types-redaction_test.component") {
+  component_name = "net-types-redaction_test"
+  visibility = [ ":*" ]
+  deps = [ ":net-types-redaction_test" ]
+}
+fuchsia_test_package("net-types-test-package") {
+  package_name = "net-types-test-gn"
+  test_components = [
+    ":net-types-test-package.net-types_test.component",
+    ":net-types-test-package.net-types-redaction_test.component",
+  ]
 }

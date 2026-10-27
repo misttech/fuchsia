@@ -1033,7 +1033,7 @@ async fn test_neighbor_table_inspect() {
                 "0": {
                     IpAddress: "192.168.0.1",
                     State: "Static",
-                    LinkAddress: "AA:BB:CC:DD:EE:FF",
+                    LinkAddress: "aa:bb:cc:dd:ee:ff",
                 },
                 "1": {
                     IpAddress: "2001:db8::1",

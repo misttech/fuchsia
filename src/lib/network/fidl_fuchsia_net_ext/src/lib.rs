@@ -521,17 +521,8 @@ impl From<MacAddress> for fidl::MacAddress {
     }
 }
 
-// We deliberately redirect Debug to use Display so that the MacAddress
-// will be printed using hex formatting.
-impl std::fmt::Debug for MacAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl std::fmt::Display for MacAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { octets } = self;
+impl MacAddress {
+    fn fmt_octets(octets: [u8; 6], f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, byte) in octets.iter().enumerate() {
             if i > 0 {
                 write!(f, ":")?;
@@ -542,9 +533,32 @@ impl std::fmt::Display for MacAddress {
     }
 }
 
+impl redactor::Redactable for MacAddress {
+    fn fmt_unredacted(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Self::fmt_octets(self.octets, f)
+    }
+
+    fn fmt_redacted(
+        &self,
+        redactor: &dyn redactor::Redactor,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        Self::fmt_octets(redactor.redact_mac(self.octets), f)?;
+        f.write_str(redactor::REDACTED_MARKER)
+    }
+}
+
+// `Display` and `Debug` both go through the global redactor (if one has been
+// installed at component startup). `Debug` deliberately matches `Display` so
+// the address is printed using hex formatting.
+redactor::impl_display_via_redactable!(MacAddress);
+redactor::impl_debug_via_redactable!(MacAddress);
+
 impl serde::Serialize for MacAddress {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(&self)
+        // Serialized MAC addresses are data that must round-trip, not
+        // diagnostics, so always emit the raw form.
+        serializer.collect_str(&redactor::Unredacted(self))
     }
 }
 

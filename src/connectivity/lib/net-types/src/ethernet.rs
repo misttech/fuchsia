@@ -4,7 +4,7 @@
 
 //! Ethernet protocol types.
 
-use core::fmt::{self, Debug, Display, Formatter};
+use core::fmt::{self, Formatter};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -298,23 +298,40 @@ impl_from_witness!(UnicastAddr);
 impl_from_witness!(MulticastAddr);
 impl_from_witness!(BroadcastAddr);
 
-impl Display for Mac {
+impl Mac {
+    /// The single place that knows how to render 6 octets as a MAC address:
+    /// colon-separated lowercase hex.
     #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt_octets(octets: [u8; Mac::BYTES], f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            octets[0], octets[1], octets[2], octets[3], octets[4], octets[5]
         )
     }
 }
 
-impl Debug for Mac {
+impl redactor::Redactable for Mac {
     #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
+    fn fmt_unredacted(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Self::fmt_octets(self.0, f)
+    }
+
+    #[inline]
+    fn fmt_redacted(
+        &self,
+        redactor: &dyn redactor::Redactor,
+        f: &mut Formatter<'_>,
+    ) -> fmt::Result {
+        Self::fmt_octets(redactor.redact_mac(self.0), f)?;
+        f.write_str(redactor::REDACTED_MARKER)
     }
 }
+
+// `Display` and `Debug` both go through the global redactor (if one has been
+// installed), to prevent leaking the raw address in sensitive contexts.
+redactor::impl_display_via_redactable!(Mac);
+redactor::impl_debug_via_redactable!(Mac);
 
 #[cfg(test)]
 mod tests {

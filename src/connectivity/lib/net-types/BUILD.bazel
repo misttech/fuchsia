@@ -33,7 +33,10 @@ rustc_library(
         "//src/starnix/modules/procfs:__pkg__",
         "//vendor/google:__subpackages__",
     ],
-    deps = ["//third_party/rust_crates/vendor:zerocopy"],
+    deps = [
+        "//src/diagnostics/lib/redactor",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
 )
 
 # The net-types-nostd target is only used in tests, which run in Bazel.
@@ -48,7 +51,10 @@ rustc_library(
     build_flags = ["//build/config/rust/lints:deny_unused_results"],
     edition = "2024",
     proc_macro_deps = [":net-types-macros"],
-    deps = ["//third_party/rust_crates/vendor:zerocopy"],
+    deps = [
+        "//src/diagnostics/lib/redactor",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
 )
 
 rustc_proc_macro(
@@ -96,6 +102,24 @@ wrap_host_rust_test(
     binary_name = "net-types-nostd_test",
 )
 
+# Exercises the process-global redactor, so it must be its own binary.
+rustc_test(
+    name = "net-types-redaction_test",
+    srcs = ["tests/redaction.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = "tests/redaction.rs",
+    edition = "2024",
+    deps = [
+        ":net-types",
+        "//src/diagnostics/lib/redactor",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "net-types-redaction_host_test",
+    binary_name = "net-types-redaction_test",
+)
+
 fx_unittest_package(
     name = "net-types-test-package",
     package_name = "net-types-test",
@@ -103,5 +127,6 @@ fx_unittest_package(
         ":net-types_test",
         # @bazel2gn:skip
         ":net-types-nostd_test",
+        ":net-types-redaction_test",
     ],
 )
