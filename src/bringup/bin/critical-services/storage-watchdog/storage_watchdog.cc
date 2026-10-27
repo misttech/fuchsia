@@ -117,16 +117,32 @@ void Arm() {
   }
 }
 
-bool OnBacktraceRequest(const zx::process& process, std::string_view thread_name) {
-  if (!armed || !thread_name.starts_with(kTriggerThreadPrefix) || !IsTrustedCaller(process)) {
-    return false;
-  }
+namespace {
+
+// Starts the dump and reboot on another thread, once.
+void Trigger(std::string reason) {
   if (!triggered.exchange(true)) {
-    std::string reason = "fxfs I/O watchdog fired (" + std::string(thread_name) + ")";
     std::thread([reason = std::move(reason)] {
       DumpWedgeDiagnosticsAndReboot(reason, std::move(root_job));
     }).detach();
   }
+}
+
+}  // namespace
+
+bool OnBacktraceRequest(const zx::process& process, std::string_view thread_name) {
+  if (!armed || !thread_name.starts_with(kTriggerThreadPrefix) || !IsTrustedCaller(process)) {
+    return false;
+  }
+  Trigger("fxfs I/O watchdog fired (" + std::string(thread_name) + ")");
+  return true;
+}
+
+bool OnPagerTimeout(const zx::process& process) {
+  if (!armed || !IsTrustedCaller(process)) {
+    return false;
+  }
+  Trigger("an fxfs page fault timed out waiting for the pager");
   return true;
 }
 

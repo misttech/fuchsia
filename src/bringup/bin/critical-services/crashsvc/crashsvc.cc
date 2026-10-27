@@ -33,6 +33,14 @@ namespace {
 // This value was picked as something that seems reasonable. It may need to be adjusted.
 constexpr auto kExceptionHandlerTimeout = zx::sec(8);
 
+// How long crashsvc keeps an exception that |exception_hook| asked it to hold until reboot.
+// crashsvc can't tell whether the reboot is coming, so it releases the exception after a long time
+// anyway. The kernel then kills the process, which still reboots the system if it's critical.
+constexpr auto kHeldExceptionTimeout = zx::min(10);
+
+using ExceptionHook =
+    fit::function<ExceptionDisposition(const zx::process&, const zx_exception_report_t&)>;
+
 // Cleans up and resumes a thread in a manual backtrace request.
 //
 // This may modify |regs| via cleanup_backtrace_request().
@@ -64,7 +72,8 @@ bool ResumeIfBacktraceRequest(const zx::thread& thread, const zx::exception& exc
 void HandOffException(
     async_dispatcher_t* dispatcher, zx::exception exception, const zx_exception_info_t& info,
     ExceptionHandler& handler, bool& early_bailout,
-    fit::function<bool(const zx::process&, std::string_view)>& backtrace_request_hook) {
+    fit::function<bool(const zx::process&, std::string_view)>& backtrace_request_hook,
+    ExceptionHook& exception_hook) {
   zx::process process;
   if (const zx_status_t status = exception.get_process(&process); status != ZX_OK) {
     LogError("failed to get exception process when receiving exception", info, status);
@@ -112,9 +121,36 @@ void HandOffException(
     return;
   }
 
+  ExceptionDisposition disposition = ExceptionDisposition::kPrintAndHandoff;
+  if (exception_hook) {
+    zx_exception_report_t report = {};
+    if (const zx_status_t status = thread.get_info(ZX_INFO_THREAD_EXCEPTION_REPORT, &report,
+                                                   sizeof(report), nullptr, nullptr);
+        status != ZX_OK) {
+      LogError("failed to get the exception report", info, status);
+    } else {
+      disposition = exception_hook(process, report);
+    }
+  }
+
+  if (disposition == ExceptionDisposition::kHoldUntilReboot) {
+    fprintf(stdout, "crashsvc: holding the exception for process \"%s\" until reboot\n",
+            process_name.c_str());
+    // We won't have a way to actually monitor for the reboot, so just hold the exception for a long
+    // time and then release it.
+    async::PostDelayedTask(
+        dispatcher, [exception = std::move(exception)]() mutable { exception.reset(); },
+        kHeldExceptionTimeout);
+    return;
+  }
+
   fprintf(stdout, "crashsvc: exception received for process \"%s\", processing\n",
           process_name.c_str());
-  inspector_print_debug_info(stdout, process.get(), thread.get());
+  if (disposition == ExceptionDisposition::kHandoffNoPrint) {
+    fprintf(stdout, "crashsvc: not printing the crash, as requested by the exception hook\n");
+  } else {
+    inspector_print_debug_info(stdout, process.get(), thread.get());
+  }
 
   // If the process serving fuchsia.exception.Handler crashes, the system will send future requests
   // for the protocol to the crashes server because it isn't techically terminated. As a result, the
@@ -198,15 +234,17 @@ zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
     async_dispatcher_t* dispatcher, zx::channel exception_channel,
     fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc,
     fit::function<bool(const zx::process& process, std::string_view thread_name)>
-        backtrace_request_hook) {
+        backtrace_request_hook,
+    ExceptionHook exception_hook) {
   std::unique_ptr wait = std::make_unique<async::Wait>(
       exception_channel.get(), ZX_CHANNEL_READABLE | ZX_CHANNEL_PEER_CLOSED, /*options=*/0u,
       [exception_channel = std::move(exception_channel),
        handler = std::make_unique<ExceptionHandler>(dispatcher, std::move(exception_handler_svc),
                                                     kExceptionHandlerTimeout),
-       early_bailout = false, backtrace_request_hook = std::move(backtrace_request_hook)](
-          async_dispatcher_t* dispatcher, async::Wait* wait, zx_status_t status,
-          const zx_packet_signal_t* signal) mutable {
+       early_bailout = false, backtrace_request_hook = std::move(backtrace_request_hook),
+       exception_hook = std::move(exception_hook)](async_dispatcher_t* dispatcher,
+                                                   async::Wait* wait, zx_status_t status,
+                                                   const zx_packet_signal_t* signal) mutable {
         if (status == ZX_ERR_CANCELED) {
           return;
         }
@@ -227,7 +265,7 @@ zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
         }
 
         HandOffException(dispatcher, std::move(exception), info, *handler, early_bailout,
-                         backtrace_request_hook);
+                         backtrace_request_hook, exception_hook);
 
         if (const zx_status_t status = wait->Begin(dispatcher); status != ZX_OK) {
           LogError("Failed to restart wait, crashsvc won't continue", status);

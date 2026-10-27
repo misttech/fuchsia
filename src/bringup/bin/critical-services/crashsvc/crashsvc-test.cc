@@ -180,11 +180,11 @@ class TestBase : public zxtest::Test, public loop_fixture::RealLoop {
   }
 
   // Generates a new exception so the ExceptionHandler FIDL message sent by crashsvc can be
-  // analyzed.
-  void AnalyzeCrash() {
+  // analyzed. With |page_fault|, the exception is a fatal page fault from reading address 0.
+  void AnalyzeCrash(bool page_fault = false) {
     zx::process process;
     zx::thread thread;
-    ASSERT_NO_FATAL_FAILURE(GenerateException(&process, &thread));
+    ASSERT_NO_FATAL_FAILURE(GenerateException(&process, &thread, page_fault));
 
     // Wait for the exception to bubble up and reset it so it doesn't escape the test environment.
     auto exception = ReadPendingException(zx::duration::infinite());
@@ -251,15 +251,21 @@ class TestBase : public zxtest::Test, public loop_fixture::RealLoop {
                                      true, command_channel->reset_and_get_address()));
   }
 
-  // Synchronously creates a process under |job_| that immediately crashes.
-  void GenerateException(zx::process* process, zx::thread* thread) const {
+  // Synchronously creates a process under |job_| that immediately crashes, by trapping or, with
+  // |page_fault|, by reading address 0.
+  void GenerateException(zx::process* process, zx::thread* thread, bool page_fault = false) const {
     zx::channel command_channel;
     ASSERT_NO_FATAL_FAILURE(CreateMiniProcess(process, thread, &command_channel));
 
     // Use mini_process_cmd_send() here to send but not wait for a response
     // so we can handle the exception.
     printf("Intentionally crashing test thread '%s', the following dump is expected\n", kTaskName);
-    ASSERT_OK(mini_process_cmd_send(command_channel.get(), MINIP_CMD_BUILTIN_TRAP));
+    if (page_fault) {
+      ASSERT_OK(mini_process_cmd_send(command_channel.get(), MINIP_CMD_READ_FROM_USER_ADDR,
+                                      ZX_HANDLE_INVALID, 0));
+    } else {
+      ASSERT_OK(mini_process_cmd_send(command_channel.get(), MINIP_CMD_BUILTIN_TRAP));
+    }
   }
 
   FakeService fake_service_{dispatcher()};
@@ -278,7 +284,9 @@ class CrashsvcTest : public TestBase {
 
   void StartCrashsvc(
       bool with_svc = false,
-      fit::function<bool(const zx::process&, std::string_view)> backtrace_request_hook = nullptr) {
+      fit::function<bool(const zx::process&, std::string_view)> backtrace_request_hook = nullptr,
+      fit::function<ExceptionDisposition(const zx::process&, const zx_exception_report_t&)>
+          exception_hook = nullptr) {
     zx::channel exception_channel;
     ASSERT_OK(job().create_exception_channel(0, &exception_channel));
     fidl::ClientEnd<fuchsia_io::Directory> svc;
@@ -288,9 +296,10 @@ class CrashsvcTest : public TestBase {
     async::PostTask(loop().dispatcher(), [dispatcher = loop().dispatcher(),
                                           exception_channel = std::move(exception_channel),
                                           svc = std::move(svc),
-                                          hook = std::move(backtrace_request_hook)]() mutable {
-      zx::result result =
-          start_crashsvc(dispatcher, std::move(exception_channel), std::move(svc), std::move(hook));
+                                          hook = std::move(backtrace_request_hook),
+                                          exception_hook = std::move(exception_hook)]() mutable {
+      zx::result result = start_crashsvc(dispatcher, std::move(exception_channel), std::move(svc),
+                                         std::move(hook), std::move(exception_hook));
       ASSERT_OK(result);
       // Move the wait onto the dispatcher so that it is destroyed on its thread.
       async::PostDelayedTask(
@@ -389,6 +398,56 @@ TEST_F(CrashsvcTest, BacktraceRequestHook) {
   EXPECT_EQ(names, (std::vector<std::string>{"take-over", "print"}));
   EXPECT_EQ(stub_handler().exception_count(), 0);
   EXPECT_EQ(CheckPendingException(zx::sec(0)), ZX_ERR_TIMED_OUT);
+}
+
+TEST_F(CrashsvcTest, ExceptionHookDefaultAndSkipPrintHandOff) {
+  // Either way, the exception still goes to the exception handler.
+  // The hook sees the same report fields critical-services checks for a pager timeout: the type and
+  // the synthetic page fault status (ZX_ERR_NOT_FOUND for an unmapped address).
+  std::vector<std::pair<uint32_t, uint32_t>> reports;
+  ASSERT_NO_FATAL_FAILURE(StartCrashsvc(
+      true, nullptr, [&reports](const zx::process& process, const zx_exception_report_t& report) {
+        EXPECT_TRUE(process.is_valid());
+        reports.emplace_back(report.header.type, report.context.synth_code);
+        return reports.size() == 1 ? ExceptionDisposition::kPrintAndHandoff
+                                   : ExceptionDisposition::kHandoffNoPrint;
+      }));
+  ASSERT_NO_FATAL_FAILURE(AnalyzeCrash(/*page_fault=*/true));
+  ASSERT_NO_FATAL_FAILURE(AnalyzeCrash(/*page_fault=*/true));
+
+  RunLoopUntilIdle();
+  const std::pair<uint32_t, uint32_t> kNullDeref = {ZX_EXCP_FATAL_PAGE_FAULT,
+                                                    static_cast<uint32_t>(ZX_ERR_NOT_FOUND)};
+  EXPECT_EQ(reports, (std::vector{kNullDeref, kNullDeref}));
+  EXPECT_EQ(stub_handler().exception_count(), 2);
+}
+
+TEST_F(CrashsvcTest, ExceptionHookHolds) {
+  // A held exception goes neither to the exception handler nor up the job tree.
+  int calls = 0;
+  ASSERT_NO_FATAL_FAILURE(
+      StartCrashsvc(true, nullptr, [&calls](const zx::process&, const zx_exception_report_t&) {
+        calls++;
+        return ExceptionDisposition::kHoldUntilReboot;
+      }));
+  ASSERT_NO_FATAL_FAILURE(GenerateException());
+
+  RunLoopUntil([&calls] { return calls == 1; });
+  EXPECT_EQ(CheckPendingException(zx::sec(0)), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(stub_handler().exception_count(), 0);
+}
+
+TEST_F(CrashsvcTest, ExceptionHookNotCalledForBacktraceRequests) {
+  int calls = 0;
+  ASSERT_NO_FATAL_FAILURE(
+      StartCrashsvc(true, nullptr, [&calls](const zx::process&, const zx_exception_report_t&) {
+        calls++;
+        return ExceptionDisposition::kHoldUntilReboot;
+      }));
+  ASSERT_NO_FATAL_FAILURE(GenerateBacktraceRequest());
+
+  RunLoopUntilIdle();
+  EXPECT_EQ(calls, 0);
 }
 
 constexpr auto kExceptionHandlerTimeout = zx::sec(3);

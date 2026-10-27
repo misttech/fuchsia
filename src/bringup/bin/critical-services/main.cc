@@ -334,14 +334,27 @@ void RunCrashSvcThread(bool exception_handler_available, bool storage_stall_watc
   // requests, which crashsvc sees. It lives here because critical-services runs from bootfs, so a
   // stuck storage stack can't stop it from being paged in, and it already holds the root job.
   fit::function<bool(const zx::process&, std::string_view)> backtrace_request_hook;
+  fit::function<ExceptionDisposition(const zx::process&, const zx_exception_report_t&)>
+      exception_hook;
   if (storage_stall_watchdog_enabled) {
     storage_watchdog::Arm();
     backtrace_request_hook = storage_watchdog::OnBacktraceRequest;
+    // A page fault that timed out waiting for the pager means storage is stuck. Printing such a
+    // crash would read memory behind the same pager and block crashsvc until storage comes back.
+    exception_hook = [](const zx::process& process, const zx_exception_report_t& report) {
+      if (report.header.type != ZX_EXCP_FATAL_PAGE_FAULT ||
+          static_cast<zx_status_t>(report.context.synth_code) != ZX_ERR_TIMED_OUT) {
+        return ExceptionDisposition::kPrintAndHandoff;
+      }
+      return storage_watchdog::OnPagerTimeout(process) ? ExceptionDisposition::kHoldUntilReboot
+                                                       : ExceptionDisposition::kHandoffNoPrint;
+    };
   }
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  zx::result crashsvc = start_crashsvc(loop.dispatcher(), std::move(exception_channel),
-                                       std::move(svc), std::move(backtrace_request_hook));
+  zx::result crashsvc =
+      start_crashsvc(loop.dispatcher(), std::move(exception_channel), std::move(svc),
+                     std::move(backtrace_request_hook), std::move(exception_hook));
   if (crashsvc.is_error()) {
     // The system can still function without crashsvc, log the error but
     // keep going.

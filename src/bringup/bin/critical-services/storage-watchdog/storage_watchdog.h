@@ -19,6 +19,11 @@ namespace storage_watchdog {
 // OnBacktraceRequest(). If the watchdog is armed, DumpWedgeDiagnosticsAndReboot() then writes
 // backtraces to the debuglog and reboots in a way that keeps the debuglog in the crashlog.
 //
+// fxfs's I/O watchdog runs on fxfs's executor, which stops when fxfs's own threads block on page
+// faults that need the stuck storage. Then the first sign is the kernel giving up on one of those
+// faults (kernel.userpager.overtime_timeout_seconds, 5 minutes on Iris), which crashsvc sees as a
+// fatal page fault with ZX_ERR_TIMED_OUT and passes to OnPagerTimeout().
+//
 // critical-services only arms it if fuchsia.diagnostics.StorageStallWatchdogEnabled is set, which
 // assembly does for non-user builds on boards that provide fuchsia::storage_stall_watchdog.
 
@@ -37,6 +42,11 @@ void Arm();
 // critical-services itself during SimulateStall), starts the dump and reboot on another thread,
 // once, and returns true; the caller should just resume the requesting thread.
 bool OnBacktraceRequest(const zx::process& process, std::string_view thread_name);
+
+// Called for every fatal page fault that failed with ZX_ERR_TIMED_OUT, i.e. the kernel stopped
+// waiting for a pager. If the watchdog is armed and the process is fxfs, starts the dump and reboot
+// on another thread, once, and returns true; the caller should keep the exception until the reboot.
+bool OnPagerTimeout(const zx::process& process);
 
 }  // namespace storage_watchdog
 

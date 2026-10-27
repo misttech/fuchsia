@@ -10,8 +10,21 @@
 #include <lib/fit/function.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
+#include <zircon/syscalls/exception.h>
 
 #include <string_view>
+
+// What crashsvc does with an exception, as decided by |exception_hook| below.
+enum class ExceptionDisposition {
+  // Print the crash and hand it to the exception handler.
+  kPrintAndHandoff,
+  // Hand the crash to the exception handler without printing it. Printing reads the crashed
+  // process's memory, which blocks for as long as a stuck pager does.
+  kHandoffNoPrint,
+  // Keep the exception, and with it the crashed thread, without printing or handing it off, because
+  // the hook is rebooting the system.
+  kHoldUntilReboot,
+};
 
 // Initialize the crash service, this supersedes the standalone service with
 // the same name that lived in zircon/system/core/crashsvc/crashsvc.cpp
@@ -30,10 +43,16 @@
 // |backtrace_request_hook|, if set, is called with the requesting process and thread name of each
 // backtrace request. If it returns true, crashsvc just resumes the thread instead of printing
 // backtraces.
+//
+// |exception_hook|, if set, is called with the process and report of each other exception, and
+// decides what crashsvc does with it.
 zx::result<std::unique_ptr<async::Wait>> start_crashsvc(
     async_dispatcher_t* dispatcher, zx::channel exception_channel,
     fidl::ClientEnd<fuchsia_io::Directory> exception_handler_svc,
     fit::function<bool(const zx::process& process, std::string_view thread_name)>
-        backtrace_request_hook = nullptr);
+        backtrace_request_hook = nullptr,
+    fit::function<ExceptionDisposition(const zx::process& process,
+                                       const zx_exception_report_t& report)>
+        exception_hook = nullptr);
 
 #endif  // SRC_BRINGUP_BIN_CRITICAL_SERVICES_CRASHSVC_CRASHSVC_H_
