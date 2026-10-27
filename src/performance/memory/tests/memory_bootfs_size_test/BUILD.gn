@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/images/paths.gni")
+import("//build/python/python_host_test.gni")
+import("//build/testing/environments.gni")
+import("//build/testing/host_test_data.gni")
+import("//build/zircon/tools.gni")
+
+if (is_host) {
+  python_host_test("memory_bootfs_size_test") {
+    main_source = "memory_bootfs_size_test.py"
+    environments = [ host_env ]
+    expects_ssh = true
+    extra_args = [
+      "--zbi_tool",
+      rebase_path(zbi_tool_path, root_build_dir),
+      "--zbi_image_fallback",
+      "fuchsia.zbi",
+      "--far_tool",
+      rebase_path(get_label_info("//src/sys/pkg/bin/far:host", "root_out_dir"),
+                  root_build_dir) + "/far",
+    ]
+    if (defined(files.zbi)) {
+      extra_args += [
+        "--zbi_image",
+        rebase_path(files.zbi, root_build_dir),
+      ]
+    }
+
+    test_data_deps = [ ":memory_bootfs_size_test_data" ]
+  }
+
+  host_test_data("memory_bootfs_size_test_data") {
+    sources = [
+      "$host_out_dir/far",
+      "$host_out_dir/zbi",
+    ]
+    deps = [
+      "//src/sys/pkg/bin/far:bin",
+      zbi_tool_target,
+    ]
+    if (defined(files.zbi)) {
+      sources += [ files.zbi ]
+      deps += [ labels.images ]
+    }
+  }
+}
+
+group("tests") {
+  testonly = true
+  public_deps = [ ":memory_bootfs_size_test($host_toolchain)" ]
+}

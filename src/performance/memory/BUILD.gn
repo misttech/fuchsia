@@ -12,6 +12,7 @@ group("tests") {
     "pprof:tests",
     "sampler:tests",
     "stacktrack:tests",
+    "tests",
     "thrasher:tests",
   ]
 }
