@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    testonly = True,
+    srcs = [
+        "src/lib.rs",
+        "src/temp_test_env.rs",
+    ],
+    crate_name = "temp_test_env",
+    # TODO(https://fxbug.dev/519244675): Re-enable clippy once the redundant
+    # borrows in src/temp_test_env.rs are fixed in a separate change
+    # (clippy::useless_borrows_in_formatting).
+    disable_clippy = True,
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/lib/credentials:__pkg__",
+        "//src/lib/testing:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+host_rustc_test(
+    name = "lib_test",
+    crate = ":lib",
+    crate_name = "temp_test_env_lib_test",
+    disable_clippy = True,
+    deps = ["//third_party/rust_crates/vendor:serial_test"],
+)
