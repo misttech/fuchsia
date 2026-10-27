@@ -14,9 +14,18 @@ if (is_host) {
     tests = [ "distribution_manifest_unittests.py" ]
     deps = [ "//build/python/modules/distribution_manifest" ]
   }
+
+  python_build_time_tests("convert_fini_to_manifest_test") {
+    tests = [ "convert_fini_to_manifest_test.py" ]
+    inputs = [ "convert_fini_to_manifest.py" ]
+    deps = [ "//build/python/modules/distribution_manifest" ]
+  }
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":distribution_manifest_unittests($host_toolchain)" ]
+  deps = [
+    ":convert_fini_to_manifest_test($host_toolchain)",
+    ":distribution_manifest_unittests($host_toolchain)",
+  ]
 }

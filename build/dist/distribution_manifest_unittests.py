@@ -6,17 +6,12 @@
 
 import json
 import os
-import sys
 import tempfile
 import unittest
 
-sys.path.append(
-    os.path.join(
-        os.path.dirname(__file__),
-        "../python/modules/distribution_manifest",
-    )
+from build.python.modules.distribution_manifest import (
+    distribution_manifest as dm,
 )
-import distribution_manifest as dm
 
 Entry = dm.Entry
 

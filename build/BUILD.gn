@@ -141,7 +141,6 @@ if (is_host) {
       "dart/merge_deps_sources.py",
       "dart/verify_sources.py",
       "depfile_path_to_relative.py",
-      "dist/convert_fini_to_manifest.py",
       "dist/convert_manifest_to_fini.py",
       "dist/distribution-manifest-copy.py",
       "drivers/assert_driver_components.py",
