@@ -7,8 +7,12 @@ import("//src/graphics/lib/magma/gnbuild/magma.gni")
 # Fuchsia emulators use Goldfish.
 vulkan_goldfish_envs = [ aemu_env ]
 
-# Intel NUC devices use Lavapipe.
-vulkan_lavapipe_envs = [ nuc11_env ]
+# x64 QEMU uses Lavapipe.
+if (target_cpu == "x64") {
+  vulkan_lavapipe_envs = [ qemu_env ]
+} else {
+  vulkan_lavapipe_envs = []
+}
 
 # This is the complete set of test environments that support Vulkan.
 vulkan_envs =
