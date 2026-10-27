@@ -403,6 +403,7 @@ source_set("tests") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/topology:headers",
     "//zircon/kernel/lib/unittest",
+    "//zircon/kernel/platform/pc:headers",
   ]
 }
 

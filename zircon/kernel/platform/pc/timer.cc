@@ -263,7 +263,8 @@ zx_instant_mono_t convert_raw_tsc_timestamp_to_clock_monotonic(int64_t ts) {
     uint64_t after_tsc = current_ticks_rdtsc();
     uint64_t now_tsc = (before_tsc >> 1) + (after_tsc >> 1) + (before_tsc & after_tsc & 1);
     int64_t time_till_tsc_timestamp = zx_time_sub_time(ts, now_tsc);
-    return now_mono = rdtsc_ticks_to_clock_monotonic.Scale(time_till_tsc_timestamp);
+    return zx_time_add_duration(now_mono,
+                                rdtsc_ticks_to_clock_monotonic.Scale(time_till_tsc_timestamp));
   }
 }
 

@@ -13,7 +13,9 @@
 #include <lib/console.h>
 #include <lib/page/size.h>
 #include <lib/unittest/unittest.h>
+#include <platform.h>
 #include <zircon/syscalls/system.h>
+#include <zircon/time.h>
 
 #include <arch/arch_ops.h>
 #include <arch/mp.h>
@@ -32,6 +34,7 @@
 #include <kernel/scheduler.h>
 #include <ktl/array.h>
 #include <ktl/unique_ptr.h>
+#include <platform/pc/timer.h>
 
 #include "amd.h"
 
@@ -428,6 +431,36 @@ static bool test_x64_tss_io_bitmap() {
   END_TEST;
 }
 
+static bool test_convert_raw_tsc_timestamp_to_clock_monotonic() {
+  BEGIN_TEST;
+
+  const zx_instant_mono_t before_mono = current_mono_time();
+  const int64_t raw_tsc = static_cast<int64_t>(_rdtsc());
+  const zx_instant_mono_t converted_mono = convert_raw_tsc_timestamp_to_clock_monotonic(raw_tsc);
+  const zx_instant_mono_t after_mono = current_mono_time();
+
+  // Allow a small tolerance for non-TSC wallclocks (such as HPET or PIT) where
+  // `now_tsc` inside `convert_raw_tsc_timestamp_to_clock_monotonic` is sampled
+  // slightly after `raw_tsc`.
+  EXPECT_GE(converted_mono, zx_time_sub_duration(before_mono, ZX_MSEC(10)));
+  EXPECT_LE(converted_mono, zx_time_add_duration(after_mono, ZX_MSEC(10)));
+
+  constexpr int64_t kFutureTscDelta = 1'000'000'000;
+  const zx_duration_t future_duration = convert_raw_tsc_duration_to_nanoseconds(kFutureTscDelta);
+  if (future_duration > 0) {
+    const zx_instant_mono_t future_before = current_mono_time();
+    const int64_t future_tsc = static_cast<int64_t>(_rdtsc()) + kFutureTscDelta;
+    const zx_instant_mono_t future_converted =
+        convert_raw_tsc_timestamp_to_clock_monotonic(future_tsc);
+    const zx_instant_mono_t future_after = current_mono_time();
+
+    EXPECT_GE(future_converted, zx_time_add_duration(future_before, future_duration - ZX_MSEC(10)));
+    EXPECT_LE(future_converted, zx_time_add_duration(future_after, future_duration + ZX_MSEC(10)));
+  }
+
+  END_TEST;
+}
+
 }  // anonymous namespace
 
 UNITTEST_START_TESTCASE(x64_platform_tests)
@@ -443,4 +476,6 @@ UNITTEST("test mds mitigation building blocks", test_mds_taa_mitigation)
 UNITTEST("test gdt is mapped", test_gdt_mapping)
 UNITTEST("test nmi spam", test_nmi_spam)
 UNITTEST("test tss io bitmap", test_x64_tss_io_bitmap)
+UNITTEST("test convert_raw_tsc_timestamp_to_clock_monotonic",
+         test_convert_raw_tsc_timestamp_to_clock_monotonic)
 UNITTEST_END_TESTCASE(x64_platform_tests, "x64_platform_tests", "")
