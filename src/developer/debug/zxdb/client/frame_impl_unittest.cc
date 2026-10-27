@@ -15,10 +15,15 @@
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/symbols/code_block.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/location.h"
+#include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
+#include "src/developer/debug/zxdb/symbols/variable.h"
 
 namespace zxdb {
+
+namespace {
 
 using debug::RegisterID;
 
@@ -259,5 +264,86 @@ TEST_F(FrameImplRegisterTest, AlwaysRequest) {
     EXPECT_EQ(registers[1].data, std::vector<uint8_t>({5, 6, 7, 8}));
   }
 }
+
+TEST_F(FrameImplTest, GetLocalVariables) {
+  constexpr uint64_t kProcessKoid = 1234;
+  Process* process = InjectProcess(kProcessKoid);
+  MockThread thread(process);
+
+  // A frame without symbol information should return an error.
+  Location empty_location(Location::State::kAddress, 0x1000);
+  FrameImpl frame_no_symbols(&thread, debug_ipc::StackFrame(0x1000, 0x2000), empty_location);
+  auto err_or_no_syms = frame_no_symbols.GetLocalVariables();
+  EXPECT_TRUE(err_or_no_syms.has_error());
+  EXPECT_EQ("There is no symbol information for the frame.", err_or_no_syms.err().msg());
+
+  // Function with parameters and nested lexical blocks.
+  auto function = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  function->set_assigned_name("TestFunc");
+  function->set_code_ranges(AddressRanges(AddressRange(0x1000, 0x2000)));
+
+  auto param_a = fxl::MakeRefCounted<Variable>(DwarfTag::kFormalParameter);
+  param_a->set_assigned_name("param_a");
+
+  auto param_shadowed = fxl::MakeRefCounted<Variable>(DwarfTag::kFormalParameter);
+  param_shadowed->set_assigned_name("shadowed");
+
+  function->set_parameters({LazySymbol(param_a), LazySymbol(param_shadowed)});
+
+  // Outer lexical block covering [0x1000, 0x2000) containing outer_var.
+  auto outer_block = fxl::MakeRefCounted<CodeBlock>(DwarfTag::kLexicalBlock);
+  outer_block->set_code_ranges(AddressRanges(AddressRange(0x1000, 0x2000)));
+  SymbolTestParentSetter outer_parent(outer_block, function);
+
+  auto outer_var = fxl::MakeRefCounted<Variable>(DwarfTag::kVariable);
+  outer_var->set_assigned_name("outer_var");
+  outer_block->set_variables({LazySymbol(outer_var)});
+
+  // Inner lexical block covering [0x1020, 0x1080) shadowing "shadowed" and declaring inner_var.
+  auto inner_block = fxl::MakeRefCounted<CodeBlock>(DwarfTag::kLexicalBlock);
+  inner_block->set_code_ranges(AddressRanges(AddressRange(0x1020, 0x1080)));
+  SymbolTestParentSetter inner_parent(inner_block, outer_block);
+
+  auto inner_shadowed = fxl::MakeRefCounted<Variable>(DwarfTag::kVariable);
+  inner_shadowed->set_assigned_name("shadowed");
+
+  auto inner_var = fxl::MakeRefCounted<Variable>(DwarfTag::kVariable);
+  inner_var->set_assigned_name("inner_var");
+
+  inner_block->set_variables({LazySymbol(inner_shadowed), LazySymbol(inner_var)});
+
+  outer_block->set_inner_blocks({LazySymbol(inner_block)});
+  function->set_inner_blocks({LazySymbol(outer_block)});
+
+  SymbolContext symbol_context = SymbolContext::ForRelativeAddresses();
+  constexpr uint64_t kAddress = 0x1050;
+  Location location(kAddress, FileLine("file.cc", 10), 0, symbol_context, function);
+
+  FrameImpl frame_with_symbols(&thread, debug_ipc::StackFrame(kAddress, 0x2000), location);
+  auto vars_or = frame_with_symbols.GetLocalVariables();
+  ASSERT_FALSE(vars_or.has_error());
+
+  const auto& vars = vars_or.value();
+  EXPECT_EQ(4u, vars.size());
+
+  auto it = vars.find("param_a");
+  ASSERT_NE(vars.end(), it);
+  EXPECT_EQ(param_a.get(), it->second.get());
+
+  it = vars.find("outer_var");
+  ASSERT_NE(vars.end(), it);
+  EXPECT_EQ(outer_var.get(), it->second.get());
+
+  it = vars.find("inner_var");
+  ASSERT_NE(vars.end(), it);
+  EXPECT_EQ(inner_var.get(), it->second.get());
+
+  // Inner block variable must shadow outer parameter.
+  it = vars.find("shadowed");
+  ASSERT_NE(vars.end(), it);
+  EXPECT_EQ(inner_shadowed.get(), it->second.get());
+}
+
+}  // namespace
 
 }  // namespace zxdb

@@ -7,8 +7,10 @@
 
 #include <stdint.h>
 
+#include <map>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "lib/fit/function.h"
 #include "src/developer/debug/ipc/records.h"
@@ -16,8 +18,10 @@
 #include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/shared/register_value.h"
 #include "src/developer/debug/zxdb/client/client_object.h"
+#include "src/developer/debug/zxdb/common/err_or.h"
 #include "src/developer/debug/zxdb/symbols/source_file_provider.h"
 #include "src/developer/debug/zxdb/symbols/symbol_data_provider.h"
+#include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/lib/fxl/macros.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
@@ -133,6 +137,12 @@ class Frame : public ClientObject {
   // be considered either the imaginary call to the inlined routine, or its first code instruction.
   // See the Stack class declaration for more details about this case.
   virtual bool IsAmbiguousInlineLocation() const = 0;
+
+  // Collects all in-scope local variables and function parameters at the frame's current
+  // location, keyed by variable name. Inner lexical block variables shadow outer variables
+  // and parameters of the same name. Returns an Err if the frame has no symbol information
+  // or corrupt function symbols.
+  virtual ErrOr<std::map<std::string, fxl::RefPtr<Variable>>> GetLocalVariables() const;
 
  private:
   FXL_DISALLOW_COPY_AND_ASSIGN(Frame);

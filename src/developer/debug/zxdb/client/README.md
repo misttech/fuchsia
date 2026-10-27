@@ -137,8 +137,8 @@ Public headers expose these client classes and observers:
 - `zxdb::Frame`: Physical or inline stack frame interface (`GetThread`,
   `IsInline`, `GetPhysicalFrame`, `GetLocation`, `GetAddress`, `GetTrust`,
   `GetRegisterCategorySync`, `GetRegisterCategoryAsync`, `WriteRegister`,
-  `GetSymbolDataProvider`, `GetEvalContext`, `GetSourceFileProvider`)
-  (`frame.h`).
+  `GetSymbolDataProvider`, `GetEvalContext`, `GetSourceFileProvider`,
+  `GetLocalVariables`) (`frame.h`).
 - `zxdb::AsyncTask`, `zxdb::AsyncTaskProvider`, `zxdb::AsyncTaskTree`,
   `zxdb::FuchsiaAsyncRustTaskProvider`: Interfaces and tree container for
   inspecting async tasks (such as Rust futures) on a `Thread` (`async_task.h`,
