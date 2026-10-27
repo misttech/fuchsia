@@ -336,6 +336,11 @@ class Adb:
         self._ffx: ffx.FFX = ffx_transport
         self._run_isolated_server: bool = run_isolated_server
         self._output_dir: Path | None = Path(output_dir) if output_dir else None
+        if self._run_isolated_server and self._output_dir is None:
+            _LOGGER.warning(
+                "No output_dir provided for %s; isolated ADB server logs will be written to a temporary directory.",
+                self._device_name,
+            )
         self._attempts: int = attempts
         (
             self._vendor_keys_path,

@@ -236,13 +236,17 @@ class AdbTests(unittest.TestCase):
         mock_cache_pid: mock.Mock,
     ) -> None:
         """Test init sets adb binary and serial number."""
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(adb._LOGGER, "warning") as mock_log_warning,
+        ):
             obj = adb.Adb(
                 device_name=_DEVICE_NAME,
                 serial_number=_SERIAL_NUMBER,
                 ffx_transport=self.mock_ffx,
                 run_isolated_server=False,
             )
+            mock_log_warning.assert_not_called()
             self.assertEqual(obj._adb_binary, "/usr/bin/adb")
             self.assertEqual(obj._serial_number, _SERIAL_NUMBER)
             mock_which.assert_called_once_with("adb")
@@ -289,15 +293,19 @@ class AdbTests(unittest.TestCase):
         mock_exists: mock.Mock,
         mock_cache_pid: mock.Mock,
     ) -> None:
-        """Test init starts isolated server by default (run_isolated_server=True)."""
+        """Test init starts isolated server by default and warns when output_dir is None."""
         mock_server = mock.Mock()
         mock_adb_server_cls.return_value = mock_server
 
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-            ffx_transport=self.mock_ffx,
-            vendor_keys_path="/keys",
+        with self.assertLogs(adb._LOGGER, level="WARNING") as cm:
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+                ffx_transport=self.mock_ffx,
+                vendor_keys_path="/keys",
+            )
+        self.assertTrue(
+            any("No output_dir provided" in msg for msg in cm.output)
         )
         mock_adb_server_cls.assert_called_once_with(
             adb_binary_path="/custom/adb",
@@ -320,18 +328,20 @@ class AdbTests(unittest.TestCase):
         mock_exists: mock.Mock,
         mock_cache_pid: mock.Mock,
     ) -> None:
-        """Test init passes specified output_dir to AdbServer."""
+        """Test init passes specified output_dir to AdbServer without warning."""
         mock_server = mock.Mock()
         mock_adb_server_cls.return_value = mock_server
 
         custom_output_dir = "/tmp/custom_output_dir"
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-            ffx_transport=self.mock_ffx,
-            output_dir=custom_output_dir,
-            vendor_keys_path="/keys",
-        )
+        with mock.patch.object(adb._LOGGER, "warning") as mock_log_warning:
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+                ffx_transport=self.mock_ffx,
+                output_dir=custom_output_dir,
+                vendor_keys_path="/keys",
+            )
+            mock_log_warning.assert_not_called()
         mock_adb_server_cls.assert_called_once_with(
             adb_binary_path="/custom/adb",
             serial_id=_SERIAL_NUMBER,
@@ -353,16 +363,20 @@ class AdbTests(unittest.TestCase):
         mock_exists: mock.Mock,
         mock_cache_pid: mock.Mock,
     ) -> None:
-        """Test init treats empty output_dir as unspecified."""
+        """Test init treats empty output_dir as unspecified and logs a warning."""
         mock_server = mock.Mock()
         mock_adb_server_cls.return_value = mock_server
 
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-            ffx_transport=self.mock_ffx,
-            output_dir="",
-            vendor_keys_path="/keys",
+        with self.assertLogs(adb._LOGGER, level="WARNING") as cm:
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+                ffx_transport=self.mock_ffx,
+                output_dir="",
+                vendor_keys_path="/keys",
+            )
+        self.assertTrue(
+            any("No output_dir provided" in msg for msg in cm.output)
         )
         mock_adb_server_cls.assert_called_once_with(
             adb_binary_path="/custom/adb",
