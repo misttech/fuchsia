@@ -1,0 +1,79 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+fx_cc_binary(
+    name = "futex-ownership",
+    testonly = True,
+    srcs = [
+        "bad-handle.cc",
+        "bad-handle.h",
+        "ownership.cc",
+        "utils.cc",
+        "utils.h",
+    ],
+    defines = ["_ALL_SOURCE"],
+    tags = ["manual"],
+    deps = [
+        "//sdk/lib/fdio",
+        "//sdk/lib/stdcompat",
+        "//src/zircon/lib/zircon",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
+# LINT.ThenChange(BUILD.gn)
+
+fx_packaged_binary(
+    name = "futex-ownership_packaged_bin",
+    testonly = True,
+    binary = ":futex-ownership",
+    binary_name = "futex-ownership",
+    install_root = "test/",
+)
+
+fx_component_manifest(
+    name = "futex-ownership-test-manifest",
+    testonly = True,
+    component_name = "futex-ownership-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/gtest:zxtest.shard.cml",
+    ],
+    manifest = "meta/futex-ownership-test.cml",
+)
+
+fx_test_component(
+    name = "futex-ownership-test-component",
+    compiled_manifest = ":futex-ownership-test-manifest",
+    component_name = "futex-ownership-test",
+    deps = [":futex-ownership_packaged_bin"],
+)
+
+fx_package(
+    name = "futex-ownership-test-package",
+    package_name = "futex-ownership-test",
+    test_components = [":futex-ownership-test-component"],
+)
+
+fx_test(
+    name = "futex-ownership-test",
+    package = ":futex-ownership-test-package",
+)

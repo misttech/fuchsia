@@ -2,22 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-test("handle-alias") {
-  output_name = "handle-alias-test"
-  sources = [ "handle-alias.c" ]
-  deps = [
-    "//sdk/lib/fdio",
-    "//src/zircon/lib/zircon",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("handle-alias-test-pkg") {
-  package_name = "handle-alias-test"
-  deps = [ ":handle-alias" ]
+bazel_test_suite("handle-alias-test-pkg") {
+  target_tests = [ "//src/zircon/tests/handle-alias:handle-alias-test-pkg" ]
 }
 
 group("tests") {

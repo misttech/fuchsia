@@ -2,9 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components/fuchsia_unittest_package.gni")
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/test.gni")
 import("//build/testing/bootfs_test.gni")
+
+bazel_test_suite("futex-ownership-test") {
+  target_tests = [ "//src/zircon/tests/futex-ownership:futex-ownership-test" ]
+}
 
 group("tests") {
   testonly = true
@@ -14,12 +18,17 @@ group("tests") {
   deps = [ ":futex-ownership-test" ]
 }
 
+# Kept in GN because Bazel does not support `bootfs_test` yet, and `bazel2gn`
+# translates `fx_cc_binary` to `executable()` rather than `test()`.
+# LINT.IfChange
 test("futex-ownership") {
   configs += [ "//build/config:all_source" ]
   sources = [
     "bad-handle.cc",
+    "bad-handle.h",
     "ownership.cc",
     "utils.cc",
+    "utils.h",
   ]
   deps = [
     "//sdk/lib/fdio",
@@ -31,10 +40,7 @@ test("futex-ownership") {
   ]
 }
 
-fuchsia_unittest_package("futex-ownership-test") {
-  deps = [ ":futex-ownership" ]
-  manifest = "meta/futex-ownership-test.cml"
-}
+# LINT.ThenChange(BUILD.bazel)
 
 bootfs_test("futex-ownership-bootfs-test") {
   name = "futex-ownership"
