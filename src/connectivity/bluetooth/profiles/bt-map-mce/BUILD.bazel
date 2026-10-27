@@ -2,9 +2,100 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/bt-map-mce.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/main.rs",
+        "src/message_access_service.rs",
+        "src/message_notification_service.rs",
+        "src/messaging_client.rs",
+        "src/profile.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_map_mce",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.map:fuchsia.bluetooth.map_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/bt-map",
+        "//src/connectivity/bluetooth/lib/bt-obex",
+        "//src/connectivity/bluetooth/lib/bt-obex/objects",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:uuid",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_map_mce",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-map-mce",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-map-mce.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-map-mce",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [":bin_packaged_bin"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "bt_map_mce_bin_test"
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "bt-map-mce-unittests",
+    max_log_severity = "ERROR",
+    unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )
