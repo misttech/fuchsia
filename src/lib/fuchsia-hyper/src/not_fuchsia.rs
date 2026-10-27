@@ -438,7 +438,11 @@ YyRIHN8wfdVoOw==\n\
         let (stop, mut rx_stop) = futures::channel::oneshot::channel();
 
         let server = async move {
-            while let Some(Ok(conn)) = connections.next().await {
+            loop {
+                let conn = match futures::future::select(connections.next(), &mut rx_stop).await {
+                    futures::future::Either::Left((Some(Ok(conn)), _)) => conn,
+                    _ => break,
+                };
                 let io = hyper_util::rt::TokioIo::new(conn);
                 let service = hyper::service::service_fn(
                     move |_req: hyper::Request<hyper::body::Incoming>| async move {
@@ -533,18 +537,42 @@ YyRIHN8wfdVoOw==\n\
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_resolve_host_port_connects_to_localhost() -> Result<()> {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
-        let port = listener.local_addr()?.port();
+        // Reserve the same port on both IPv4 and IPv6 loopback so another
+        // concurrent test (e.g. `test_download_succeeds` binding `[::1]:0`)
+        // cannot be assigned the same port on the other address family and
+        // intercept the `localhost` connection attempt.
+        let mut rejected_v4 = Vec::new();
+        let (v4_listener, v6_listener, port) = loop {
+            let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+            let port = v4.local_addr()?.port();
+            match TcpListener::bind((Ipv6Addr::LOCALHOST, port)).await {
+                Ok(v6) => break (v4, v6, port),
+                Err(e) if e.kind() == io::ErrorKind::AddrInUse => {
+                    rejected_v4.push(v4);
+                    continue;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
+        drop(rejected_v4);
 
         let accept_fut = async move {
-            let (_stream, _peer) = listener.accept().await?;
-            Ok::<(), io::Error>(())
+            match futures::future::select(
+                Box::pin(v4_listener.accept()),
+                Box::pin(v6_listener.accept()),
+            )
+            .await
+            {
+                futures::future::Either::Left((res, _))
+                | futures::future::Either::Right((res, _)) => {
+                    let (_stream, _peer) = res?;
+                    Ok::<(), io::Error>(())
+                }
+            }
         };
 
         let connect_fut = resolve_host_port("localhost", port);
-        let (accept_res, connect_res) = futures::future::join(accept_fut, connect_fut).await;
-        accept_res?;
-        let _stream = connect_res?;
+        let ((), _stream) = futures::future::try_join(accept_fut, connect_fut).await?;
         Ok(())
     }
 
