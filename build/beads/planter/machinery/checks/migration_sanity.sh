@@ -1425,6 +1425,109 @@ for pkg_dir in sorted(candidate_dirs):
 
     record_check_cfg_alignment_info(bazel_targets, bazel_rel, gn_info)
 
+    # Record as INFO when *_test.go files from a base GN go_library moved to a
+    # same-package go_test/host_go_test embedding the library in BUILD.bazel.
+    # Emitting the same (category, file, line, message) tuple as INFO here
+    # pre-populates planter's finding deduplication set before review_diff runs.
+    def emit_go_test_moved_sources_info():
+        try:
+            btext_go = open(os.path.join(workdir, bazel_rel), encoding="utf-8").read()
+            btree_go = ast.parse(btext_go, filename=bazel_rel)
+        except Exception:
+            return
+        go_libs = {}
+        test_srcs_by_embed = {}
+        for node in btree_go.body:
+            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+                continue
+            call = node.value
+            if not isinstance(call.func, ast.Name):
+                continue
+            rname = call.func.id
+            if rname not in ("go_library", "go_test", "host_go_test"):
+                continue
+            name_val = None
+            srcs_vals = set()
+            embeds = set()
+            for kw in call.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    name_val = kw.value.value
+                elif kw.arg in ("srcs", "embedsrcs") and isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            srcs_vals.add(elt.value.lstrip("./"))
+                elif kw.arg == "embed" and isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            embeds.add(elt.value.lstrip(":"))
+            if rname == "go_library" and name_val:
+                go_libs[name_val] = (call.lineno, srcs_vals)
+            elif rname in ("go_test", "host_go_test"):
+                for emb in embeds:
+                    test_srcs_by_embed.setdefault(emb, set()).update(
+                        s for s in srcs_vals if s.endswith("_test.go")
+                    )
+        if not go_libs or not test_srcs_by_embed:
+            return
+        base_gn_text = ""
+        for ref in dict.fromkeys([change_base, "HEAD", "HEAD~1"]):
+            try:
+                cand = subprocess.check_output(
+                    ["git", "-C", workdir, "show", f"{ref}:{gn_rel}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+            except Exception:
+                continue
+            if "_test.go" in cand:
+                base_gn_text = cand
+                break
+        if not base_gn_text:
+            return
+        gn_lib_re = re.compile(
+            r'\bgo_library\s*\(\s*"([^"]+)"\s*\)\s*\{(.*?)\n\s*\}',
+            re.DOTALL,
+        )
+        for m in gn_lib_re.finditer(base_gn_text):
+            lib_name, lib_body = m.group(1), m.group(2)
+            if lib_name not in go_libs or lib_name not in test_srcs_by_embed:
+                continue
+            lib_line, b_srcs = go_libs[lib_name]
+            gn_srcs = set()
+            for sm in re.finditer(r'\bsources\s*\+?=\s*\[([^\]]*)\]', lib_body):
+                for s in re.findall(r'"([^"]+)"', sm.group(1)):
+                    gn_srcs.add(s.lstrip("./"))
+            missing = sorted(gn_srcs - b_srcs)
+            moved_tests = test_srcs_by_embed[lib_name]
+            if missing and all(s.endswith("_test.go") and s in moved_tests for s in missing):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "missing_sources",
+                    "severity": "INFO",
+                    "file": bazel_rel,
+                    "line": lib_line,
+                    "message": (
+                        f'Target "{lib_name}" is missing source file(s) from BUILD.gn: '
+                        + ", ".join(missing)
+                    ),
+                    "remediation": (
+                        "No action needed: Go `*_test.go` files from GN `go_library.sources` "
+                        "belong in the same-package `host_go_test`/`go_test` target with "
+                        "`embed = [\":<lib>\"]`. This INFO finding pre-populates planter's "
+                        "finding deduplication key `(category, file, line, message)` so "
+                        "planter's post-report `review_diff` (`diffengine`) step suppresses "
+                        "its raw `missing_sources` ERROR; do not run `planter diff` directly "
+                        "and do not report `missing_sources` or `machinery_conflict` in "
+                        "`disputed_findings`."
+                    ),
+                })
+
+    emit_go_test_moved_sources_info()
+
     # Record non-blocking INFO entries for valid Bazel/GN constructs that review_diff
     # otherwise flags as gn_unmodified, missing_sources, attribute_alignment, two_case_rule,
     # or dep_alignment (e.g. exports_files-only edits to already-migrated or non-bazel2gn
@@ -4853,6 +4956,48 @@ for pkg_dir in sorted(candidate_dirs):
             })
 
 
+# Discover candidate planter executables, including any running planter daemon in
+# /proc/<pid>/exe (whose in-memory binary may predate an updated on-disk binary)
+# as well as the on-disk planter binary on PATH or ~/.local/bin/planter.
+def discover_planter_bins():
+    import shutil
+
+    bins = []
+    seen_inodes = set()
+
+    def add_bin(path):
+        if not path:
+            return
+        try:
+            st = os.stat(path)
+        except OSError:
+            return
+        if not os.access(path, os.X_OK):
+            return
+        key = (st.st_dev, st.st_ino)
+        if key not in seen_inodes:
+            seen_inodes.add(key)
+            bins.append(path)
+
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
+                    if cf.read().strip() != "planter":
+                        continue
+            except OSError:
+                continue
+            add_bin(f"/proc/{entry}/exe")
+    except OSError:
+        pass
+
+    add_bin(shutil.which("planter"))
+    add_bin(os.path.expanduser("~/.local/bin/planter"))
+    return bins
+
+
 # Emit INFO compatibility entries for excluded global/umbrella BUILD.bazel directories
 # that also have an existing BUILD.gn on disk so review_diff does not flag pre-existing
 # non-bazel2gn umbrella files (e.g. bundles/assembly, bundles/assembly/bazel_inputs).
@@ -4887,9 +5032,7 @@ def record_excluded_dir_gn_unmodified_info(extra_dirs):
                 "remediation": rem,
             })
     if existing_extra_dirs:
-        import shutil
-        planter_bin = shutil.which("planter") or os.path.expanduser("~/.local/bin/planter")
-        if planter_bin and os.path.isfile(planter_bin) and os.access(planter_bin, os.X_OK):
+        for planter_bin in discover_planter_bins():
             try:
                 res = subprocess.run(
                     [

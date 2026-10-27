@@ -658,8 +658,26 @@ def commit_msg_only_since_upload():
         return False
 
 
+# Prefer any running planter daemon executable in /proc/<pid>/exe so standalone
+# review_diff runs match the in-memory daemon binary even after an on-disk rebuild.
 def find_planter_bin():
     import shutil
+
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/comm", encoding="utf-8") as cf:
+                    if cf.read().strip() != "planter":
+                        continue
+            except OSError:
+                continue
+            exe = f"/proc/{entry}/exe"
+            if os.access(exe, os.X_OK):
+                return exe
+    except OSError:
+        pass
     p = shutil.which("planter")
     if p:
         return p
@@ -667,6 +685,55 @@ def find_planter_bin():
     if os.path.isfile(cand) and os.access(cand, os.X_OK):
         return cand
     return None
+
+
+# Fallback filter for standalone `--only review_diff` runs or mixed missing
+# sources when *_test.go files from GN go_library.sources moved to a
+# same-package go_test/host_go_test. In full check runs (and planter's own
+# post-report check run), migration_sanity runs first and emits a matching INFO
+# finding with the same (category, file, line, message) key so `seen` below (and
+# planter's finding deduplicator) suppresses diffengine's raw missing_sources.
+def filter_go_test_missing_sources(f):
+    if f.get("category") != "missing_sources" or not f.get("file"):
+        return f
+    import re
+    m = re.match(
+        r'^(Target\s+"([^"]+)"\s+is missing source file\(s\) from BUILD\.gn:\s*)(.+)$',
+        f.get("message", "").strip(),
+    )
+    if not m:
+        return f
+    prefix, target_name, files_str = m.group(1), m.group(2), m.group(3)
+    missing = [s.strip() for s in files_str.split(",") if s.strip()]
+    if not missing or not any(s.endswith("_test.go") for s in missing):
+        return f
+    bazel_path = os.path.join(workdir, f["file"])
+    try:
+        with open(bazel_path, encoding="utf-8") as bf:
+            content = bf.read()
+    except OSError:
+        return f
+    lib_pat = re.compile(
+        r'\bgo_library\s*\([^)]*?\bname\s*=\s*"' + re.escape(target_name) + r'"',
+        re.DOTALL,
+    )
+    if not lib_pat.search(content):
+        return f
+    test_srcs = set()
+    for block in re.findall(r'\b(?:host_)?go_test\s*\((.*?)\n\)', content, re.DOTALL):
+        if f'":{target_name}"' not in block and f'"{target_name}"' not in block:
+            continue
+        for s in re.findall(r'"([^"]+_test\.go)"', block):
+            test_srcs.add(s)
+    if not test_srcs:
+        return f
+    rem = [s for s in missing if not (s.endswith("_test.go") and s in test_srcs)]
+    if not rem:
+        return None
+    if len(rem) != len(missing):
+        f = dict(f)
+        f["message"] = prefix + ", ".join(rem)
+    return f
 
 
 # Downgrade false-positive review_diff attribute_alignment warnings on
@@ -1050,6 +1117,12 @@ def run_review_diff(existing_findings):
     seen = {(f["category"], f["file"], f["line"], f["message"]) for f in existing_findings}
     results = []
     for f in findings:
+        key = (f["category"], f["file"], f["line"], f["message"])
+        if key in seen:
+            continue
+        f = filter_go_test_missing_sources(f)
+        if f is None:
+            continue
         f["source"] = "review_diff"
         f["severity"] = normalize_severity(f["severity"])
         key = (f["category"], f["file"], f["line"], f["message"])

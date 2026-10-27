@@ -33,4 +33,6 @@ working).
   or explicit `fx_package` chains) get a hand-written GN package above the sentinel (`<pkg>-gn`)
   wrapping the generated test binary. `group("tests")` lists every GN copy (host ones as
   `:<name>($host_toolchain)`) and a hand-written `bazel_test_suite("bazel_tests")` above the
-  sentinel that exports the Bazel tests. This applies to Rust unit tests as well as C++ tests.
+  sentinel that exports the Bazel tests. This applies to Rust unit tests as well as C++ and Go
+  tests (for Go, move `*_test.go` files from GN `go_library.sources` into `host_go_test`/`go_test`
+  `srcs` with `embed = [":<lib>"]`).

@@ -206,7 +206,8 @@ the Bazel test keeps the label).
      `fx_unittest_package`/`fx_test(max_log_severity = ...)`.
 - **Host tests** GN ran on host: Rust `rustc_test` wrapped with `wrap_host_rust_test(name = "<crate>_host_test", binary_name = "<test>")` (or `host_rustc_test`);
   C++ `host_test(binary = ":<cc_test>")`; `host_py_test`, `host_go_test`
-  (`//build/bazel/rules/host_tests:<rule>.bzl`).
+  (`//build/bazel/rules/host_tests:<rule>.bzl`; for Go targets, move `*_test.go` files from GN
+  `go_library.sources` into `host_go_test`/`go_test` `srcs` with `embed = [":<lib>"]`).
 - **Export (Prefer Ancestor test_suite and Case 1 BUILD.gn Removal)**:
   Fuchsia prefers flat, aggregated test suites at the area or subsystem level (e.g.
   `//src/connectivity/wlan:target_tests`, `//tools:host_tests`, `//src/sys:target_tests`,
@@ -273,20 +274,27 @@ in `unit_tests = [":foo_unittest_bin"]`. Wire `":foo-tests"` into `group("tests"
 `//src/area/BUILD.bazel` (or into a local `bazel_test_suite("bazel_tests")` only when no ancestor
 test suite exists).
 
-## Dependencies Without a Bazel Build (Migrate Them, Don't Stop)
-When a target you are migrating depends on something with no Bazel build yet, migrate that
-dependency in this same change instead of stopping:
+## Dependencies Without a Bazel Build or With Missing Bazel Visibility (Fix Them, Don't Stop)
+When a target you are migrating depends on something with no Bazel build yet or that fails with a
+Bazel `Visibility error`, fix that dependency in this same change instead of stopping:
 1. **Check each dep**: `//<path>:<name>` has a Bazel equivalent only if `<path>/BUILD.bazel`
    defines `<name>` itself. Third-party labels are mapped, not migrated:
    `//third_party/rust_crates:<crate>` becomes `//third_party/rust_crates/vendor:<crate>`, and
    other third-party GN labels map via `//build/tools/bazel2gn/third_party_target_map.json`.
-2. **Migrate missing ones**: migrate the dependency's directory with the same rules as the
-   target, point the depending BUILD.bazel at the new Bazel label, and repeat transitively.
+2. **Migrate missing ones or widen visibility**: migrate any missing dependency's directory with
+   the same rules as the target, point the depending BUILD.bazel at the new Bazel label, and
+   repeat transitively. If an already-migrated dependency in `<path>/BUILD.bazel` rejects your
+   target with a Bazel `Visibility error`, update its `visibility` in `<path>/BUILD.bazel` from
+   `find_rdeps <path>` (`per_target_recommended_visibility`); if `<path>/BUILD.gn` keeps
+   `visibility = [ ":*" ]` on that target behind a forwarding `group()` above the sentinel,
+   preserve GN visibility with `# @bazel2gn:raw_overwrite:[ ":*" ]` on the closing `],`,
+   otherwise run `fx bazel2gn -d <path>`.
 3. **Only stop** if a required dependency cannot have a Bazel target at all: a GN-only construct
    with no Bazel mapping, or build-system/prebuilt internals (`//build/**`, `//prebuilt/**`,
    unmapped `//third_party/**`). Report the exact dependency chain.
 4. **Report it**: start the `summary` with `Also migrated dependencies: //a, //b (needed by
-   //target)` and include their files in `modified_files`.
+   //target)` (and note any visibility-widened dependencies) and include their files in
+   `modified_files`.
 
 ## Broken Third-Party Rust Crate Bazel Targets (Fix Them, Don't Stop)
 When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (typically its

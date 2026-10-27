@@ -197,6 +197,55 @@ GN_PACKAGE_TEMPLATES = {
 
 gn_only_targets = {"tests", "benchmarks"}
 gn_nonconvertible_targets = {"tests", "benchmarks"}
+gn_forwarding_groups = {}
+
+
+# Map non-testonly GN forwarding group('<g>') targets above the sentinel to the Bazel
+# targets ':bt' they forward in deps/public_deps.
+def extract_gn_forwarding_groups(gn_text):
+    eligible = [
+        t for t in bazel_targets if t not in non_gn_synced_targets and t not in package_targets
+    ]
+    if not eligible:
+        return {}
+    no_comments = re.sub(r"#[^\n]*", "", gn_text)
+    forwarding = {}
+    target_re = re.compile(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{')
+    for m in target_re.finditer(no_comments):
+        gname = m.group(1)
+        if gname in ("tests", "benchmarks") or gname in bazel_targets:
+            continue
+        depth, in_str, i, n = 0, False, m.end() - 1, len(no_comments)
+        while i < n:
+            c = no_comments[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        gbody = no_comments[m.end() : i]
+        if re.search(r"\btestonly\s*=\s*true\b", gbody):
+            continue
+        forwarded = [
+            bt
+            for bt in eligible
+            if re.search(r'":' + re.escape(bt) + r'(?:\([^)]*\))?"', gbody)
+        ]
+        if forwarded:
+            forwarding[gname] = forwarded
+    return forwarding
+
+
 if os.path.isfile(gn_file):
     try:
         with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -208,8 +257,11 @@ if os.path.isfile(gn_file):
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
             env_target_dir = os.environ.get("PLANTER_TARGET_DIR", "").strip().strip("/")
+            gn_forwarding_groups = extract_gn_forwarding_groups(above_sentinel)
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
+                if t in gn_forwarding_groups:
+                    continue
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
                 if (
@@ -226,7 +278,12 @@ if os.path.isfile(gn_file):
                 tmpl, t = m.group(1), m.group(2)
                 if tmpl in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
                     bazel_targets.append(t)
-                elif tmpl not in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
+            gn_forwarding_groups = extract_gn_forwarding_groups(gn_src)
+            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
+                tmpl, t = m.group(1), m.group(2)
+                if t in gn_forwarding_groups:
+                    continue
+                if tmpl not in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
                     gn_only_targets.add(t)
                     gn_nonconvertible_targets.add(t)
     except Exception:
@@ -257,6 +314,9 @@ def discover_git_repos():
 # when sub-repositories are listed in the root .gitignore.
 def discover_referencing_build_files(pkg_path):
     label_prefix = f"//{pkg_path}"
+    pattern_args = ["-e", label_prefix]
+    if default_target:
+        pattern_args.extend(["-e", f"../{default_target}"])
     found = []
     repos = discover_git_repos()
     change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
@@ -264,21 +324,25 @@ def discover_referencing_build_files(pkg_path):
     for repo in repos:
         if not os.path.exists(os.path.join(repo, ".git")):
             continue
-        grep_cmd = [
-            "git",
-            "-C",
-            repo,
-            "grep",
-            "--untracked",
-            "-l",
-            "--fixed-strings",
-            label_prefix,
-            "--",
-            "*BUILD.gn",
-            "*BUILD.bazel",
-            "*.gni",
-            "*.bzl",
-        ]
+        grep_cmd = (
+            [
+                "git",
+                "-C",
+                repo,
+                "grep",
+                "--untracked",
+                "-l",
+                "--fixed-strings",
+            ]
+            + pattern_args
+            + [
+                "--",
+                "*BUILD.gn",
+                "*BUILD.bazel",
+                "*.gni",
+                "*.bzl",
+            ]
+        )
         try:
             proc = subprocess.run(
                 grep_cmd,
@@ -356,8 +420,8 @@ def discover_referencing_build_files(pkg_path):
                     "--no-ignore-parent",
                     "--no-require-git",
                     "--fixed-strings",
-                    label_prefix,
                 ]
+                + pattern_args
                 + rg_globs
                 + repos
             )
@@ -470,8 +534,17 @@ for fpath in sorted(set(files)):
     no_comments = re.sub(r"#[^\n]*", "", content)
     stripped = re.sub(r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
 
+    # Match both ancestor-to-descendant ("sub/pkg") and sibling/cousin ("../pkg") relative GN labels
     rel_sub = None
-    if target_pkg.startswith(pkg + "/"):
+    if rel.endswith((".gn", ".gni")) and pkg and target_pkg:
+        try:
+            if os.path.commonpath([target_pkg, pkg]):
+                cand_rel = os.path.relpath(target_pkg, pkg)
+                if not cand_rel.startswith("../../.."):
+                    rel_sub = cand_rel
+        except ValueError:
+            pass
+    elif target_pkg.startswith(pkg + "/"):
         rel_sub = target_pkg[len(pkg) + 1 :]
     rel_label_re = (
         re.compile(r'"' + re.escape(rel_sub) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"')
@@ -506,6 +579,16 @@ for fpath in sorted(set(files)):
 
     for m in dep_matches:
         sub = m.group(1) or default_target
+        if sub in gn_forwarding_groups:
+            caller_pkg = (
+                "bundles/assembly"
+                if (pkg == "bundles/assembly" or pkg.startswith("bundles/assembly/"))
+                else pkg
+            )
+            true_rdep_packages.add(caller_pkg)
+            for bt in gn_forwarding_groups[sub]:
+                per_target_rdeps[bt].add(caller_pkg)
+            continue
         if sub in gn_only_targets and sub not in bazel_targets:
             excluded_gn_only_references.add(f"//{pkg} (:{sub})")
             gn_only_ref_packages.add(pkg)

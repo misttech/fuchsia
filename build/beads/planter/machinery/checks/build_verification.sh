@@ -839,9 +839,11 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                         "Pass the leaf test target `Test: fx test //<dir>:<test_target>` "
                         "or the package path `Test: fx test //<dir>` (without `:tests`), "
                         "or use a Bazel command such as "
-                        "`Test: fx bazel test --config=host @//<dir>:<test>` for host "
+                        "`Test: fx bazel test --config=host @//<dir>:<test>` (or the ancestor `test_suite()`) for host "
                         "tests or `Test: fx bazel build --config=fuchsia_platform "
-                        "@//<dir>:<test>` for device tests."
+                        "@//<dir>:<test>` for device tests. "
+                        "Using `fx bazel test|build` when `<build dir>/tests.json` does not include the target is the "
+                        "required convention, not a `machinery_conflict` (do not report it in `disputed_findings`)."
                     ),
                 })
     if len(test_footer_lines) > 3:

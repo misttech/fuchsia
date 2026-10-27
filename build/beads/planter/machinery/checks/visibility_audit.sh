@@ -363,7 +363,21 @@ def get_orig_gn_visibility_scopes(pkg_path):
             if vm:
                 scopes = parse_gn_vis_list(vm.group(1))
                 if scopes:
-                    out[tname] = scopes
+                    # If a non-testonly group() in the same BUILD.gn forwards :<tname> without a
+                    # visibility restriction, external callers reach :<tname> through that group in GN
+                    # and must depend on :<tname> directly in Bazel.
+                    unrestricted_fwd = False
+                    for gm in re.finditer(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{([^{}]*)\}', above_sentinel):
+                        gbody = gm.group(2)
+                        if (
+                            not re.search(r"\btestonly\s*=\s*true\b", gbody)
+                            and not re.search(r"\bvisibility\s*=", gbody)
+                            and re.search(r'":' + re.escape(tname) + r'(?:\([^)]*\))?"', gbody)
+                        ):
+                            unrestricted_fwd = True
+                            break
+                    if not unrestricted_fwd:
+                        out[tname] = scopes
     return out
 
 # Convert explicit narrow GN visibility from the pre-migration BUILD.gn into Bazel
@@ -578,7 +592,13 @@ def discover_referencing_build_files(pkg_list):
     }
     if not pkg_list:
         return found
-    pattern_args = [arg for p in pkg_list for arg in ("-e", f"//{p}")]
+    search_terms = set()
+    for p in pkg_list:
+        search_terms.add(f"//{p}")
+        base = os.path.basename(p)
+        if base:
+            search_terms.add(f"../{base}")
+    pattern_args = [arg for term in sorted(search_terms) for arg in ("-e", term)]
     repos = discover_git_repos()
     used_git_grep = False
     for repo in repos:
@@ -833,21 +853,70 @@ def is_gn_only_target_ref(
         return True
     return False
 
+# Map non-testonly GN forwarding group('<g>') targets above the sentinel to the Bazel
+# targets ':bt' they forward in deps/public_deps.
+def extract_gn_forwarding_groups(gn_text, bazel_targets, non_gn_synced_targets, package_targets):
+    eligible = [
+        t for t in bazel_targets if t not in non_gn_synced_targets and t not in package_targets
+    ]
+    if not eligible:
+        return {}
+    no_comments = re.sub(r"#[^\n]*", "", gn_text)
+    forwarding = {}
+    target_re = re.compile(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{')
+    for m in target_re.finditer(no_comments):
+        gname = m.group(1)
+        if gname in ("tests", "benchmarks") or gname in bazel_targets:
+            continue
+        depth, in_str, i, n = 0, False, m.end() - 1, len(no_comments)
+        while i < n:
+            c = no_comments[i]
+            if in_str:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        gbody = no_comments[m.end() : i]
+        if re.search(r"\btestonly\s*=\s*true\b", gbody):
+            continue
+        forwarded = [
+            bt
+            for bt in eligible
+            if re.search(r'":' + re.escape(bt) + r'(?:\([^)]*\))?"', gbody)
+        ]
+        if forwarded:
+            forwarding[gname] = forwarded
+    return forwarding
+
+
 def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map, orig_gn_vis_map=None):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
     gn_only_targets = {"tests", "benchmarks"}
     gn_nonconvertible_targets = {"tests", "benchmarks"}
+    gn_forwarding_groups = {}
     # If a pre-sentinel GN target (such as a `group("<name>")` forwarding `expect_includes`)
     # has a same-named target in `BUILD.bazel` (such as `alias(name = "<name>", actual = "...")`),
     # GN callers of `:<name>` are real callers of the Bazel target and must not be filtered out.
-    def compute_gn_nonconvertible_targets(above_sentinel, bazel_targets, has_sentinel):
+    def compute_gn_nonconvertible_targets(above_sentinel, bazel_targets, has_sentinel, fwd_groups):
         only_targets = {"tests", "benchmarks"}
         nonconv_targets = {"tests", "benchmarks"}
         for m in re.finditer(
             r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE
         ):
             tmpl, t = m.group(1), m.group(2)
+            if t in fwd_groups:
+                continue
             if t not in bazel_targets:
                 only_targets.add(t)
             if (
@@ -870,8 +939,11 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                     package_targets.add(m.group(2))
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if has_sentinel else gn_src
+            gn_forwarding_groups = extract_gn_forwarding_groups(
+                above_sentinel, bazel_targets, non_gn_synced_targets, package_targets
+            )
             gn_only_targets, gn_nonconvertible_targets = compute_gn_nonconvertible_targets(
-                above_sentinel, bazel_targets, has_sentinel
+                above_sentinel, bazel_targets, has_sentinel, gn_forwarding_groups
             )
         except Exception:
             pass
@@ -906,8 +978,17 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
         if caller_pkg == pkg_path:
             continue
 
+        # Match both ancestor-to-descendant ("sub/pkg") and sibling/cousin ("../pkg") relative GN labels
         rel_sub = None
-        if pkg_path.startswith(caller_pkg + "/"):
+        if rel.endswith((".gn", ".gni")) and caller_pkg and pkg_path:
+            try:
+                if os.path.commonpath([pkg_path, caller_pkg]):
+                    cand_rel = os.path.relpath(pkg_path, caller_pkg)
+                    if not cand_rel.startswith("../../.."):
+                        rel_sub = cand_rel
+            except ValueError:
+                pass
+        elif pkg_path.startswith(caller_pkg + "/"):
             rel_sub = pkg_path[len(caller_pkg) + 1 :]
         rel_label_re = (
             re.compile(r'"' + re.escape(rel_sub) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"')
@@ -950,6 +1031,16 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
 
         for m in dep_matches:
             sub = m.group(1) or default_target
+            if sub in gn_forwarding_groups:
+                norm_caller = (
+                    "bundles/assembly"
+                    if (caller_pkg == "bundles/assembly" or caller_pkg.startswith("bundles/assembly/"))
+                    else caller_pkg
+                )
+                true_rdep_packages.add(norm_caller)
+                for bt in gn_forwarding_groups[sub]:
+                    per_target_rdeps[bt].add(norm_caller)
+                continue
             if sub in gn_only_targets and sub not in bazel_targets:
                 gn_only_ref_packages.add(caller_pkg)
                 continue

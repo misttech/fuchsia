@@ -215,8 +215,10 @@ if head and base_rev and head != base_rev:
         if re.search(r"\bfx bazel (build|test|run|query|cquery)\b", cmd) and "--config=" not in cmd:
             add("test_footer_bazel_no_config", ln,
                 f"`Test:` footer `{cmd}` runs `fx bazel` without `--config=...`, which is invalid.",
-                "Pass `--config=fuchsia_platform` (device) or `--config=host`, e.g. "
-                "`fx bazel test --config=fuchsia_platform @//<dir>:<test>`; record only commands that exited 0.")
+                "Pass `--config=fuchsia_platform` (device build) or `--config=host` (host test), "
+                "e.g. `fx bazel test --config=host @//<dir>:<test>` or "
+                "`fx bazel build --config=fuchsia_platform @//<dir>:<test>`; record only commands "
+                "that exited 0.")
         if re.search(r"\bfx bazel\b", cmd) and re.search(r"(?<![@\w])//", cmd):
             add("test_footer_label_without_at", ln,
                 f"`Test:` footer `{cmd}` passes Bazel labels without a leading `@`.",
