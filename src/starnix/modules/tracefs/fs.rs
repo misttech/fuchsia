@@ -312,6 +312,9 @@ impl TraceFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use starnix_core::task::{
+        begin_syscall_trace_for_testing, has_active_syscall_trace_for_testing,
+    };
     use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::buffers::{InputBuffer, VecInputBuffer, VecOutputBuffer};
     use starnix_core::vfs::{FsNodeInfo, NamespaceNode, OpenAccessCheck};
@@ -369,24 +372,39 @@ mod tests {
                 .expect("open trace_marker node");
             let mtime_before = file.node().info().time_modify;
 
-            // 1. When disabled, write should drain the input buffer and return the full byte count.
+            // 1. When disabled, write should drain the input buffer and return the full byte count,
+            // without ending the syscall's trace duration early.
             event_queue_collection.disable().expect("disable queue");
+            let syscall_trace = begin_syscall_trace_for_testing("sys_write");
             let mut disabled_buf = VecInputBuffer::new(b"B|1234|disabled_slice\n");
             let written = file.write(current_task, &mut disabled_buf).expect("write disabled");
             assert_eq!(written, b"B|1234|disabled_slice\n".len());
             assert_eq!(disabled_buf.available(), 0);
             assert_eq!(file.node().info().time_modify, mtime_before);
+            assert!(
+                has_active_syscall_trace_for_testing(),
+                "disabled trace_marker write must not end the syscall trace duration early"
+            );
+            drop(syscall_trace);
+            assert!(!has_active_syscall_trace_for_testing());
 
             // 2. When enabled, small writes (<= 128 bytes) use the inline SmallVec buffer,
             // and large writes (> 128 bytes) spill to the heap. Write enough events across
             // the per-CPU queues to overflow a full page on queue 0 so we can read it back.
+            // Each write while enabled must end the syscall's trace duration before pushing the
+            // event to the ring buffer.
             event_queue_collection.enable().expect("enable queue");
             let num_cpus = event_queue_collection.queues.len();
             for _ in 0..num_cpus {
+                let _syscall_trace = begin_syscall_trace_for_testing("sys_write");
                 let mut small_buf = VecInputBuffer::new(b"B|1234|activityStart\n");
                 let written = file.write(current_task, &mut small_buf).expect("write small");
                 assert_eq!(written, b"B|1234|activityStart\n".len());
                 assert_eq!(small_buf.available(), 0);
+                assert!(
+                    !has_active_syscall_trace_for_testing(),
+                    "enabled trace_marker write must end the syscall trace duration before push_event"
+                );
             }
             let large_payload = vec![b'x'; 768];
             for _ in 0..(6 * num_cpus) {

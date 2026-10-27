@@ -355,7 +355,7 @@ pub fn execute_syscall(current_task: &mut CurrentTask, error_context: &mut Optio
         current_task.thread_state.arch_width(),
     );
 
-    fuchsia_trace::duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
+    let _syscall_trace = starnix_core::task::begin_syscall_trace(|| syscall_decl.trace_name());
     let syscall = new_syscall(syscall_decl, current_task);
 
     log_syscall!(current_task, "{syscall:?}");

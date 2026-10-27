@@ -5,7 +5,7 @@
 use smallvec::SmallVec;
 use starnix_core::fileops_impl_nonseekable;
 use starnix_core::perf::{TraceEvent, TraceEventQueueList};
-use starnix_core::task::CurrentTask;
+use starnix_core::task::{CurrentTask, complete_syscall_trace};
 use starnix_core::vfs::buffers::InputBuffer;
 use starnix_core::vfs::pseudo::simple_file::SimpleFileNode;
 use starnix_core::vfs::{FileObject, FileOps, FsNodeOps, OutputBuffer, fileops_impl_noop_sync};
@@ -87,6 +87,12 @@ impl FileOps for TraceMarkerFile {
             current_task.get_tid(),
             bytes.len(),
         );
+        // End the syscall's `CATEGORY_STARNIX` duration (e.g. `sys_write`) before reserving the
+        // `ftrace/print` event in the ring buffer, so the syscall slice ends at or before the
+        // `atrace` event's timestamp on the thread track instead of truncating the `atrace` slice.
+        // Perfetto does the same for Linux `ftrace` traces
+        // (`SyscallTracker::MaybeTruncateOngoingWriteSlice`).
+        complete_syscall_trace();
         queue.push_event(trace_event, bytes)?;
         Ok(bytes_read) // Includes '\n', if present
     }

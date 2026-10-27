@@ -20,6 +20,7 @@ mod pid_table;
 mod run_state;
 mod scheduler;
 mod seccomp;
+mod syscall_trace;
 pub(crate) mod syslog;
 #[allow(clippy::module_inception)]
 mod task;
@@ -48,6 +49,7 @@ pub use pid_table::*;
 pub use run_state::*;
 pub use scheduler::*;
 pub use seccomp::*;
+pub use syscall_trace::*;
 pub use syslog::*;
 pub use task::*;
 pub use task_running_state::*;

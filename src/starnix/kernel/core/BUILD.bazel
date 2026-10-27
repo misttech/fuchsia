@@ -146,6 +146,7 @@ rustc_library(
         "task/scheduler/mod.rs",
         "task/scheduler/role_overrides.rs",
         "task/seccomp.rs",
+        "task/syscall_trace.rs",
         "task/syscalls.rs",
         "task/syslog.rs",
         "task/task.rs",
