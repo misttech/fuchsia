@@ -9,6 +9,9 @@ The Fuchsia project follows the official Bazel
 exceptions. The guidance on this page is in addition to the
 [common Bazel style guide and best practices][common-guide].
 
+For guidance on defining tests and `test_suite()` targets in `BUILD.bazel`
+files, see [Tests and test suites][tests-guide].
+
 This page is part of the
 [Bazel style guide and best practices][style-guide-landing-page].
 
@@ -140,3 +143,4 @@ except by the Build team in very rare cases.
 [do-not-use-public-visibility]: common.md#do-not-use-public-visibility
 [specify-visibility-legacy-macros]: rules_macros.md#specify-visibility-for-all-targets-defined-by-legacy-macros
 [style-guide-landing-page]: README.md
+[tests-guide]: tests.md

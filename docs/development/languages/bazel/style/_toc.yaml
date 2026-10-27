@@ -16,3 +16,5 @@ toc:
   path: /docs/development/languages/bazel/style/bzl_files.md
 - title: "Rules, macros, and functions"
   path: /docs/development/languages/bazel/style/rules_macros.md
+- title: "Tests and test suites"
+  path: /docs/development/languages/bazel/style/tests.md

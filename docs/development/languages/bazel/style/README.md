@@ -45,6 +45,8 @@ There is additional guidance specific to:
 
 * [Defining rules, macros, and functions][rules-macros-guide]
 
+* [Tests and test suites][tests-guide]
+
 ## Automated tooling {:#automated-tooling}
 
 Format code locally using `fx format-code` before uploading for review.
@@ -78,3 +80,4 @@ Contact the Fuchsia Build team and/or [file a bug][file-a-bug]{:.external}.
 [file-a-bug]: https://issues.fuchsia.dev/issues/new?component=1477645
 [fxbug-522972669]: https://fxbug.dev/522972669
 [rules-macros-guide]: rules_macros.md
+[tests-guide]: tests.md

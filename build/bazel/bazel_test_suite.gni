@@ -11,21 +11,25 @@
 # Bazel tests they reference appear in `tests.json` and thus are visible to `fx
 # test` and infra builders.
 #
-# See //docs/development/build/bazel_concepts/tests.md for details. In a
+# See //docs/development/build/bazel_concepts/tests.md and
+# //docs/development/languages/bazel/style/tests.md for details. In a
 # nutshell:
 #
-# - Add a GN bazel_test_suite() target referencing the Bazel tests.
+# - Add a GN bazel_test_suite() target referencing the aggregation Bazel
+#   test_suite() targets in the same directory.
 # - Ensure it is reachable from those targets, e.g. by adding it to
 #   `host_tests` or `developer_specified_tests` in `args.gn`.
 #
 # Args:
-#   host_tests: A string list, where each item is a Bazel label to
-#       a test_suite() target (preferred), or a host_xxx_test() target.
+#   host_tests: A string list, where each item is a Bazel label (starting with
+#       `//`) to an aggregation test_suite() target (see
+#       //docs/development/languages/bazel/style/tests.md).
 #       Labels do not have to start with @ here or match any target in
 #       the GN graph.
 #
-#   target_tests: A string list, where each item is a Bazel label to
-#       a test_suite() target (preferred), or an fx_test() target.
+#   target_tests: A string list, where each item is a Bazel label (starting with
+#       `//`) to an aggregation test_suite() target (see
+#       //docs/development/languages/bazel/style/tests.md).
 #       These tests run on a Fuchsia device or emulator, and are built in the
 #       `fuchsia_platform` Bazel configuration.
 #

@@ -14,6 +14,8 @@ system from GN to Bazel.
 
   - [Defining rules, macros, and functions][rules-macros-guide]
 
+  - [Tests and test suites][tests-guide]
+
 <!-- Reference links -->
 
 [bazel]: https://bazel.build/
@@ -23,3 +25,4 @@ system from GN to Bazel.
 [common-guide]: style/common.md
 [rules-macros-guide]: style/rules_macros.md
 [style-guide-landing-page]: style/README.md
+[tests-guide]: style/tests.md

@@ -150,9 +150,9 @@ GN argument is overridden to `false`.
 
 ### Best practices
 
-It's recommended to avoid deep nesting of Bazel `test_suite` targets. Instead,
-use just one `test_suite` Bazel target and one corresponding `bazel_test_suite`
-GN target per source code sub-area (e.g. host tool or Fuchsia component).
+For style and best practices on structuring Bazel tests and `test_suite()`
+targets and connecting them to the GN build graph, see
+[Tests and test suites][bazel_tests_style_guide].
 
 ## Defining Fuchsia device tests in Bazel
 
@@ -549,3 +549,4 @@ When running a `test_suite()` or using a target pattern, developers must verify 
 the test(s) of interest are reported as `PASSED` (and not `SKIPPED`).
 
 [bazel_target_compatible_with]: https://bazel.build/reference/be/common-definitions#common.target_compatible_with
+[bazel_tests_style_guide]: /docs/development/languages/bazel/style/tests.md
