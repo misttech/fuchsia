@@ -1,0 +1,49 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "parser",
+    srcs = ["src/lib.rs"],
+    crate_name = "thermal_config",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:serde_derive",
+    ],
+    visibility = [
+        "//src/power/power-manager:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ],
+)
+
+rustc_test(
+    name = "thermal_config_lib_test",
+    crate = ":parser",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "parser_host_test",
+    binary_name = "thermal_config_lib_test",
+)
+
+fx_unittest_package(
+    name = "thermal-config-parser-tests",
+    unit_tests = [":thermal_config_lib_test"],
+)
