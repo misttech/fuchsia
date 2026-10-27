@@ -26,5 +26,7 @@ fuchsia.sestarnix: concurrent_access_cache_get
 fuchsia.sestarnix: concurrent_access_cache_get_contended
 fuchsia.sestarnix: binder_transaction
 fuchsia.sestarnix: check_file_ioctl_access
+fuchsia.sestarnix: file_open_tmpfs
 fuchsia.sestarnix: file_permission
 fuchsia.sestarnix: fs_node_permission
+fuchsia.sestarnix: fs_node_permission_tmpfs

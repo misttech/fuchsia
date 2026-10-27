@@ -6,8 +6,8 @@
 
 mod contention;
 
-use criterion::Criterion;
 use criterion::measurement::WallTime;
+use criterion::{BatchSize, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
 use security::PermissionFlags;
 use selinux::policy::AccessVector;
@@ -18,7 +18,11 @@ use selinux::{
 use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::testing::{PanickingFile, spawn_kernel_with_selinux_and_run};
+use starnix_core::vfs::{NamespaceNode, OpenAccessCheck};
 use starnix_uapi::auth::Credentials;
+use starnix_uapi::device_id::DeviceId;
+use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::open_flags::OpenFlags;
 use std::hint::black_box;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -337,6 +341,59 @@ fn fs_node_permission_bench(
     });
 }
 
+/// Creates a regular file named `name` in the root `tmpfs` directory.
+///
+/// Unlike the private anonymous file used by [`create_file_bench`], the file is labeled by the
+/// policy, so hooks look up the access vector cache to check access to it.
+fn create_tmpfs_file(current_task: &CurrentTask, name: &str) -> NamespaceNode {
+    current_task
+        .fs()
+        .root()
+        .create_node(current_task, name.into(), FileMode::IFREG, DeviceId::NONE)
+        .expect("create_node(file)")
+}
+
+fn fs_node_permission_tmpfs_bench(
+    group: &mut criterion::BenchmarkGroup<'_, WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    let node = create_tmpfs_file(current_task, "fs_node_permission_tmpfs");
+    let _ = group.bench_function("fs_node_permission_tmpfs", move |bench| {
+        bench.iter(|| {
+            let _ = black_box(
+                security::fs_node_permission(
+                    current_task,
+                    &node.entry.node,
+                    PermissionFlags::READ | PermissionFlags::WRITE,
+                    security::Auditable::None,
+                )
+                .unwrap(),
+            );
+        })
+    });
+}
+
+fn file_open_tmpfs_bench(
+    group: &mut criterion::BenchmarkGroup<'_, WallTime>,
+    current_task: &'static CurrentTask,
+) {
+    let node = create_tmpfs_file(current_task, "file_open_tmpfs");
+    let _ = group.bench_function("file_open_tmpfs", move |bench| {
+        // `file_open()` may only be called once per `FileObject`, so each iteration opens a new
+        // one, outside of the measured routine.
+        bench.iter_batched_ref(
+            || {
+                // Release the `FileObject`s dropped by earlier iterations, which would otherwise
+                // accumulate until the benchmarks complete.
+                current_task.trigger_delayed_releaser();
+                node.open(current_task, OpenAccessCheck::skip(OpenFlags::RDWR)).unwrap()
+            },
+            |file| black_box(security::file_open(current_task, file).unwrap()),
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn check_file_ioctl_access_bench(
     group: &mut criterion::BenchmarkGroup<'_, WallTime>,
     current_task: &'static CurrentTask,
@@ -476,6 +533,8 @@ fn main() {
         contention::register_benchmarks(&mut group);
         file_permission_bench(&mut group, current_task);
         fs_node_permission_bench(&mut group, current_task);
+        fs_node_permission_tmpfs_bench(&mut group, current_task);
+        file_open_tmpfs_bench(&mut group, current_task);
         check_file_ioctl_access_bench(&mut group, current_task);
         binder_transaction_bench(&mut group, current_task, security_server);
         group.finish();
