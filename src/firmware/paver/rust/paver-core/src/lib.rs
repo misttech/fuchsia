@@ -21,6 +21,12 @@ use futures::StreamExt as _;
 use std::future::Future;
 use std::rc::Rc;
 
+/// Extracts the underlying [`zx::Status`] from an [`anyhow::Error`], defaulting to
+/// [`zx::Status::INTERNAL`] if no [`zx::Status`] is in the error chain.
+pub(crate) fn status_from_error(err: &Error) -> zx::Status {
+    err.downcast_ref::<zx::Status>().copied().unwrap_or(zx::Status::INTERNAL)
+}
+
 /// Extension trait on [`fidl_next::Responder`] for sending `Result` and response values and
 /// logging transport errors.
 pub trait ResponderExt<M> {

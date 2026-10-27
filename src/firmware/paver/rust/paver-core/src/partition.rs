@@ -43,6 +43,10 @@ pub trait PartitionClient {
 
     /// Reads `size` bytes starting at `dev_offset` on the partition into `vmo` starting at
     /// `vmo_offset`.
+    ///
+    /// Implementations must return `Err(zx::Status::OUT_OF_RANGE)` if `dev_offset + size` exceeds
+    /// [`Self::partition_size`] or (when `size > 0`) `vmo_offset + size` exceeds `vmo.get_size()`
+    /// (see [`validate_vmo_range`]).
     async fn read_vmo(
         &self,
         vmo: &zx::Vmo,
@@ -53,6 +57,10 @@ pub trait PartitionClient {
 
     /// Writes `size` bytes from `vmo` starting at `vmo_offset` to `dev_offset` on the partition,
     /// preserving existing bytes in any leading or trailing partial blocks via read-modify-write.
+    ///
+    /// Implementations must return `Err(zx::Status::OUT_OF_RANGE)` if `dev_offset + size` exceeds
+    /// [`Self::partition_size`] or (when `size > 0`) `vmo_offset + size` exceeds `vmo.get_size()`
+    /// (see [`validate_vmo_range`]).
     async fn write_vmo(
         &self,
         vmo: &zx::Vmo,
@@ -104,8 +112,12 @@ pub(crate) fn validate_vmo_range<P: PartitionClient + ?Sized>(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
     use std::rc::Rc;
+
+    pub(crate) const TEST_BLOCK_SIZE: usize = 512;
+    pub(crate) const TEST_PARTITION_SIZE: usize = 2560; // 5 blocks
 
     /// In-memory [`PartitionClient`] for unit tests.
     #[derive(Clone)]
@@ -158,6 +170,11 @@ pub(crate) mod tests {
         ) -> Result<(), zx::Status> {
             validate_vmo_range(self, vmo, vmo_offset, dev_offset, size)?;
             if size > 0 {
+                let info = vmo.info()?;
+                if info.flags.contains(zx::VmoInfoFlags::PAGER_BACKED) {
+                    assert_ne!(info.parent_koid, zx::Koid::from_raw(0));
+                    assert!(info.committed_bytes >= size);
+                }
                 let start = dev_offset as usize;
                 let end = start + size as usize;
                 vmo.read(&mut self.data.borrow_mut()[start..end], vmo_offset)?;
@@ -176,6 +193,62 @@ pub(crate) mod tests {
         }
     }
 
+    /// In-memory [`BoardPartitions`] for unit tests.
+    pub(crate) struct FakeBoardPartitions {
+        partitions: RefCell<HashMap<String, Option<FakePartitionClient>>>,
+        pub(crate) flushes: Rc<Cell<u32>>,
+    }
+
+    impl FakeBoardPartitions {
+        /// Creates an empty [`FakeBoardPartitions`].
+        pub(crate) fn new() -> Self {
+            Self { partitions: RefCell::new(HashMap::new()), flushes: Rc::new(Cell::new(0)) }
+        }
+
+        /// Registers an in-memory partition named `name` filled with `fill`.
+        pub(crate) fn add_partition(&self, name: &str, fill: u8) -> FakePartitionClient {
+            self.add_partition_with_size(name, TEST_PARTITION_SIZE, fill)
+        }
+
+        /// Registers an in-memory partition named `name` with `size` bytes filled with `fill`.
+        pub(crate) fn add_partition_with_size(
+            &self,
+            name: &str,
+            size: usize,
+            fill: u8,
+        ) -> FakePartitionClient {
+            let client = FakePartitionClient::new(size, TEST_BLOCK_SIZE, fill);
+            self.partitions.borrow_mut().insert(name.to_string(), Some(client.clone()));
+            client
+        }
+
+        /// Registers `name` as a supported partition name that is missing on storage.
+        pub(crate) fn add_missing_partition(&self, name: &str) {
+            self.partitions.borrow_mut().insert(name.to_string(), None);
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl BoardPartitions for FakeBoardPartitions {
+        async fn open_partition(
+            &self,
+            partition_name: &str,
+            _block_dir: &fidl_next::ClientEnd<fio::Directory>,
+        ) -> Result<Box<dyn PartitionClient>, zx::Status> {
+            match self.partitions.borrow().get(partition_name) {
+                Some(Some(client)) => Ok(Box::new(client.clone())),
+                Some(None) => Err(zx::Status::NOT_FOUND),
+                None => Err(zx::Status::NOT_SUPPORTED),
+            }
+        }
+
+        async fn flush(&self) -> Result<(), zx::Status> {
+            self.flushes.set(self.flushes.get() + 1);
+            Ok(())
+        }
+    }
+
+    /// Verifies unaligned VMO reads and writes and out-of-range bounds validation.
     #[fuchsia::test]
     async fn test_vmo_read_and_write_unaligned_and_out_of_range() {
         let client = FakePartitionClient::new(4096, 512, 0x33);

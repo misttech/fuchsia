@@ -13,16 +13,20 @@ rustc_library("paver-core") {
   configs += [ "//build/config/rust:bootfs" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust_next",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust_next",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust_next",
     "//sdk/rust/zx",
+    "//src/firmware/lib/zbi-rs",
+    "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/mapped-vmo",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",

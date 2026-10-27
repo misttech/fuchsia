@@ -50,6 +50,7 @@ rustc_library("mapped-vmo") {
     "//src/bringup/*",
     "//src/connectivity/*",
     "//src/devices/*",
+    "//src/firmware/*",
     "//src/graphics/*",
     "//src/lib/ui/carnelian:*",
     "//src/performance/*",

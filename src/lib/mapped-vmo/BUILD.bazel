@@ -20,6 +20,7 @@ rustc_library(
         "//src/bringup:__subpackages__",
         "//src/connectivity:__subpackages__",
         "//src/devices:__subpackages__",
+        "//src/firmware:__subpackages__",
         "//src/graphics:__subpackages__",
         "//src/lib/ui/carnelian:__pkg__",
         "//src/performance:__subpackages__",

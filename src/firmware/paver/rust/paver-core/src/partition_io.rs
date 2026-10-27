@@ -5,20 +5,14 @@
 //! Server implementation for the `fuchsia.paver.PartitionIo` FIDL protocol, providing scoped
 //! byte-granularity partition I/O backed by [`BoardPartitions`].
 
-use crate::ResponderExt as _;
 use crate::partition::{BoardPartitions, PartitionClient};
+use crate::{ResponderExt as _, status_from_error};
 use anyhow::{Context as _, Error};
 use fidl_next::{Request, Responder};
 use fidl_next_fuchsia_io as fio;
 use fidl_next_fuchsia_paver as fpaver;
 use fidl_next_fuchsia_paver::partition_io;
 use std::fmt;
-
-/// Extracts the underlying [`zx::Status`] from an [`anyhow::Error`], defaulting to
-/// [`zx::Status::INTERNAL`] if no [`zx::Status`] is in the error chain.
-fn status_from_error(err: &Error) -> zx::Status {
-    err.downcast_ref::<zx::Status>().copied().unwrap_or(zx::Status::INTERNAL)
-}
 
 /// `fuchsia.paver.PartitionIo` implementation backed by a board's [`BoardPartitions`] and a
 /// caller-supplied `block_dir`.
@@ -219,69 +213,8 @@ pub async fn serve_partition_io(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::partition::tests::FakePartitionClient;
-    use async_trait::async_trait;
+    use crate::partition::tests::{FakeBoardPartitions, TEST_PARTITION_SIZE};
     use fuchsia_async as fasync;
-    use std::cell::{Cell, RefCell};
-    use std::collections::HashMap;
-    use std::rc::Rc;
-
-    const TEST_BLOCK_SIZE: usize = 512;
-    const TEST_PARTITION_SIZE: usize = 2560; // 5 blocks
-
-    struct FakeBoardPartitions {
-        partitions: RefCell<HashMap<String, Option<FakePartitionClient>>>,
-        flushes: Rc<Cell<u32>>,
-    }
-
-    impl FakeBoardPartitions {
-        /// Creates an empty [`FakeBoardPartitions`].
-        fn new() -> Self {
-            Self { partitions: RefCell::new(HashMap::new()), flushes: Rc::new(Cell::new(0)) }
-        }
-
-        /// Registers an in-memory partition named `name` filled with `fill`.
-        fn add_partition(&self, name: &str, fill: u8) -> FakePartitionClient {
-            self.add_partition_with_size(name, TEST_PARTITION_SIZE, fill)
-        }
-
-        /// Registers an in-memory partition named `name` with `size` bytes filled with `fill`.
-        fn add_partition_with_size(
-            &self,
-            name: &str,
-            size: usize,
-            fill: u8,
-        ) -> FakePartitionClient {
-            let client = FakePartitionClient::new(size, TEST_BLOCK_SIZE, fill);
-            self.partitions.borrow_mut().insert(name.to_string(), Some(client.clone()));
-            client
-        }
-
-        /// Registers `name` as a supported partition name that is missing on storage.
-        fn add_missing_partition(&self, name: &str) {
-            self.partitions.borrow_mut().insert(name.to_string(), None);
-        }
-    }
-
-    #[async_trait(?Send)]
-    impl BoardPartitions for FakeBoardPartitions {
-        async fn open_partition(
-            &self,
-            partition_name: &str,
-            _block_dir: &fidl_next::ClientEnd<fio::Directory>,
-        ) -> Result<Box<dyn PartitionClient>, zx::Status> {
-            match self.partitions.borrow().get(partition_name) {
-                Some(Some(client)) => Ok(Box::new(client.clone())),
-                Some(None) => Err(zx::Status::NOT_FOUND),
-                None => Err(zx::Status::NOT_SUPPORTED),
-            }
-        }
-
-        async fn flush(&self) -> Result<(), zx::Status> {
-            self.flushes.set(self.flushes.get() + 1);
-            Ok(())
-        }
-    }
 
     /// Creates a VMO containing `data` with its `ZX_PROP_VMO_CONTENT_SIZE` set to `data.len()`.
     fn make_vmo(data: &[u8]) -> zx::Vmo {
@@ -291,6 +224,8 @@ mod tests {
         vmo
     }
 
+    /// Verifies `PartitionIo` size queries, unaligned reads/writes, `TrailingBehavior`, and bounds
+    /// checks.
     #[fuchsia::test]
     async fn test_read_and_write_partition() {
         let board_partitions = FakeBoardPartitions::new();
@@ -402,6 +337,7 @@ mod tests {
         assert_eq!(read_large_vec, large_payload);
     }
 
+    /// Verifies `fuchsia.paver.PartitionIo` FIDL dispatch over [`serve_partition_io`].
     #[fuchsia::test]
     async fn test_serve_partition_io_fidl() {
         let board_partitions = FakeBoardPartitions::new();
