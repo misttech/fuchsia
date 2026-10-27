@@ -19,6 +19,7 @@ use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_trace::Id as TraceId;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes};
 use log::{debug, error, info, trace, warn};
@@ -1345,6 +1346,25 @@ impl States {
                 }
                 _ => state.into(),
             },
+        }
+    }
+
+    pub fn get_signal_report<D: DeviceOps>(
+        &self,
+        sta: &BoundClient<'_, D>,
+    ) -> fidl_stats::SignalReport {
+        match self {
+            States::Associated(state) => fidl_stats::SignalReport {
+                connection_signal_report: Some(fidl_stats::ConnectionSignalReport {
+                    rssi_dbm: Some(state.0.signal_strength_average.avg_dbm().0),
+                    primary: sta.channel_state.get_primary(),
+                    bandwidth: sta.channel_state.get_bandwidth(),
+                    vht_secondary_80_channel: sta.channel_state.get_vht_secondary_80_channel(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            _ => fidl_stats::SignalReport::default(),
         }
     }
 
@@ -3912,5 +3932,58 @@ mod tests {
             .expect("should see a signal report");
 
         assert_eq!(signal_ind.rssi_dbm, Some(EXPECTED_DBM));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn get_signal_report_request() {
+        let mut m = MockObjects::new().await;
+        let mut ctx = m.make_ctx().await;
+        let mut sta = make_protected_client_station();
+        let mut sta = sta.bind(&mut ctx, &mut m.scanner, &mut m.channel_state);
+
+        // Non-associated states return an empty SignalReport.
+        let state = States::new_initial();
+        assert_eq!(state.get_signal_report(&sta), fidl_stats::SignalReport::default());
+
+        let state = States::from(State::from(statemachine::testing::new_state(Associated(
+            empty_association(&mut sta),
+        ))));
+        let report = state.get_signal_report(&sta);
+        assert_eq!(
+            report.connection_signal_report,
+            Some(fidl_stats::ConnectionSignalReport {
+                rssi_dbm: Some(-128),
+                primary: Some(fake_wlan_channel().into()),
+                ..Default::default()
+            })
+        );
+
+        let beacon = [
+            // Mgmt header
+            0b10000000, 0, // Frame Control
+            0, 0, // Duration
+            3, 3, 3, 3, 3, 3, // Addr1 == IFACE_MAC
+            7, 7, 7, 7, 7, 7, // Addr2
+            6, 6, 6, 6, 6, 6, // Addr3
+            0, 0, // Sequence Control
+            // Beacon header:
+            0, 0, 0, 0, 0, 0, 0, 0, // Timestamp
+            10, 0, // Beacon interval
+            33, 0, // Capabilities
+        ];
+
+        const EXPECTED_DBM: i8 = -42;
+        let rx_info = rx_info_with_dbm(&sta, EXPECTED_DBM);
+        let state = state.on_mac_frame(&mut sta, &beacon[..], rx_info, 0.into()).await;
+
+        let report = state.get_signal_report(&sta);
+        assert_eq!(
+            report.connection_signal_report,
+            Some(fidl_stats::ConnectionSignalReport {
+                rssi_dbm: Some(EXPECTED_DBM),
+                primary: Some(fake_wlan_channel().into()),
+                ..Default::default()
+            })
+        );
     }
 }

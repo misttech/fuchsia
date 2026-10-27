@@ -227,6 +227,11 @@ async fn handle_telemetry_fidl_request(
                 .await
                 .map_err(|_| zx::Status::CONNECTION_ABORTED.into_raw())
                 .and_then(|result| result);
+            if let Ok(ref report) = signal_report
+                && let Some(ref conn_report) = report.connection_signal_report
+            {
+                sme.lock().on_signal_report(conn_report);
+            }
             responder.send(signal_report.as_ref().map_err(|e| *e))
         }
         TelemetryRequest::CloneInspectVmo { responder } => {
@@ -491,6 +496,7 @@ mod tests {
     use fidl_fuchsia_wlan_internal as fidl_internal;
     use fidl_fuchsia_wlan_mlme::ScanResultCode;
     use fidl_fuchsia_wlan_sme::{self as fidl_sme};
+    use fidl_fuchsia_wlan_stats as fidl_stats;
     use fuchsia_async as fasync;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
@@ -1026,5 +1032,88 @@ mod tests {
                 cur_rssi_dbm: -75
             })))
         );
+    }
+
+    #[test]
+    fn test_handle_telemetry_fidl_request_get_signal_report_updates_status() {
+        use crate::Station;
+        use wlan_common::fake_fidl_bss_description;
+
+        let mut exec = fasync::TestExecutor::new();
+        let inspector = fuchsia_inspect::Inspector::default();
+        let (mut sme, _mlme_sink, mut mlme_stream, _time_stream) = client_sme::ClientSme::new(
+            client_sme::ClientConfig::default(),
+            test_utils::fake_device_info([0; 6].into()),
+            inspector.clone(),
+            inspector.root().create_child("sme"),
+            wlan_common::test_utils::fake_features::fake_security_support(),
+            wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty(),
+            Arc::new(()),
+        );
+
+        let ssid = ieee80211::Ssid::try_from("foo").unwrap();
+        let bssid = [1, 2, 3, 4, 5, 6];
+        let _txn = sme.on_connect_command(fidl_sme::ConnectRequest {
+            ssid: ssid.to_vec(),
+            bss_description: fake_fidl_bss_description!(
+                Open,
+                ssid: ssid,
+                bssid: bssid,
+                rssi_dbm: -60,
+                snr_db: 20,
+            ),
+            multiple_bss_candidates: false,
+            authentication: fidl_internal::Authentication {
+                protocol: fidl_internal::Protocol::Open,
+                credentials: None,
+            },
+            deprecated_scan_type: fidl_common::ScanType::Passive,
+        });
+        assert_matches!(
+            exec.run_until_stalled(&mut mlme_stream.next()),
+            Poll::Ready(Some(crate::MlmeRequest::Connect(_)))
+        );
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::ConnectConf {
+            resp: fidl_mlme::ConnectConfirm {
+                peer_sta_address: bssid,
+                result_code: fidl_ieee80211::StatusCode::Success,
+                association_id: 1,
+                association_ies: vec![],
+            },
+        });
+
+        let sme = Mutex::new(sme);
+        let (telemetry_proxy, telemetry_server) =
+            fidl::endpoints::create_endpoints::<fidl_sme::TelemetryMarker>();
+        let telemetry_proxy = telemetry_proxy.into_proxy();
+        let mut serve_fut = pin!(super::super::serve_fidl_endpoint(
+            &sme,
+            telemetry_server,
+            handle_telemetry_fidl_request,
+        ));
+
+        let mut get_signal_fut = telemetry_proxy.get_signal_report();
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        let responder = assert_matches!(
+            exec.run_until_stalled(&mut mlme_stream.next()),
+            Poll::Ready(Some(crate::MlmeRequest::GetSignalReport(responder))) => responder
+        );
+        let expected_report = fidl_stats::SignalReport {
+            connection_signal_report: Some(fidl_stats::ConnectionSignalReport {
+                rssi_dbm: Some(-45),
+                snr_db: Some(35),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        responder.respond(Ok(expected_report.clone()));
+        assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
+        assert_matches!(
+            exec.run_until_stalled(&mut get_signal_fut),
+            Poll::Ready(Ok(Ok(report))) if report == expected_report
+        );
+        assert_matches!(sme.lock().status(), client_sme::ClientSmeStatus::Connected(ap_info) => {
+            assert_eq!((ap_info.rssi_dbm, ap_info.snr_db), (-45, 35));
+        });
     }
 }

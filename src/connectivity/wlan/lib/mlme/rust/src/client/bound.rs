@@ -12,6 +12,7 @@ use fdf::{Arena, ArenaBox, ArenaStaticBox};
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_softmac as fidl_softmac;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_trace as trace;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes};
 use log::error;
@@ -431,6 +432,11 @@ impl<'a, D: DeviceOps> BoundClient<'a, D> {
         // Safe: |state| is never None and always replaced with Some(..).
         let next_state = self.sta.state.take().unwrap().handle_mlme_request(self, msg).await;
         self.sta.state.replace(next_state);
+    }
+
+    pub fn get_signal_report(&self) -> fidl_stats::SignalReport {
+        // Safe: |state| is never None and always replaced with Some(..).
+        self.sta.state.as_ref().unwrap().get_signal_report(self)
     }
 
     pub fn send_connect_conf_failure(&mut self, result_code: fidl_ieee80211::StatusCode) {

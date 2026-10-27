@@ -20,6 +20,7 @@ use fidl_fuchsia_wlan_internal as fidl_internal;
 use fidl_fuchsia_wlan_internal::Authentication;
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent};
 use fidl_fuchsia_wlan_sme as fidl_sme;
+use fidl_fuchsia_wlan_stats as fidl_stats;
 use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::log::InspectBytes;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
@@ -1828,6 +1829,22 @@ impl ClientState {
                 _ => ClientSmeStatus::Idle,
             },
         }
+    }
+
+    pub fn on_signal_report(&mut self, report: &fidl_stats::ConnectionSignalReport) -> bool {
+        if let Self::Associated(state) = self {
+            if let Some(rssi) = report.rssi_dbm {
+                state.latest_ap_state.rssi_dbm = rssi;
+            }
+            if let Some(snr) = report.snr_db {
+                state.latest_ap_state.snr_db = snr;
+            }
+            if report.rssi_dbm.is_some() || report.snr_db.is_some() {
+                state.last_signal_report_time = now();
+                return true;
+            }
+        }
+        false
     }
 }
 

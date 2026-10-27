@@ -159,8 +159,8 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
                 self.on_sme_get_minstrel_stats(responder, &req.peer_addr.into())?;
                 Ok(())
             }
-            wlan_sme::MlmeRequest::GetSignalReport(responder) if self.sta.is_none() => {
-                responder.respond(Ok(fidl_stats::SignalReport::default()));
+            wlan_sme::MlmeRequest::GetSignalReport(responder) => {
+                self.on_sme_get_signal_report(responder);
                 Ok(())
             }
             req if self.sta.is_some() => {
@@ -496,6 +496,19 @@ impl<D: DeviceOps> ClientMlme<D> {
         let support = device::try_query_spectrum_management_support(&mut self.ctx.device).await?;
         responder.respond(support);
         Ok(())
+    }
+
+    fn on_sme_get_signal_report(
+        &mut self,
+        responder: wlan_sme::responder::Responder<fidl_mlme::MlmeGetSignalReportResult>,
+    ) {
+        let report = match self.sta.as_mut() {
+            Some(sta) => sta
+                .bind(&mut self.ctx, &mut self.scanner, &mut self.channel_state)
+                .get_signal_report(),
+            None => fidl_stats::SignalReport::default(),
+        };
+        responder.respond(Ok(report));
     }
 }
 

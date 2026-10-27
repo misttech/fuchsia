@@ -878,6 +878,14 @@ impl ClientSme {
         receiver
     }
 
+    pub fn on_signal_report(&mut self, report: &fidl_stats::ConnectionSignalReport) {
+        if let Some(state) = self.state.as_mut()
+            && state.on_signal_report(report)
+        {
+            self.context.inspect.update_pulse(self.status());
+        }
+    }
+
     pub fn set_mac_address(&mut self, mac_addr: [u8; 6]) -> oneshot::Receiver<Result<(), i32>> {
         let (responder, receiver) = Responder::new();
         self.context.mlme_sink.send(MlmeRequest::SetMacAddress(mac_addr, responder));
