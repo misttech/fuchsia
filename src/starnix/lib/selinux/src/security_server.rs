@@ -39,6 +39,9 @@ struct ActivePolicy {
 
     /// Describes access checks that should be granted, with associated bug Ids.
     exceptions: ExceptionsConfig,
+
+    /// Size in bytes of the loaded binary policy.
+    binary_policy_size: usize,
 }
 
 impl ActivePolicy {
@@ -246,6 +249,7 @@ impl SecurityServer {
     pub fn load_policy(&self, binary_policy: Vec<u8>) -> Result<(), anyhow::Error> {
         // Parse the supplied policy, and reject the load operation if it is
         // malformed or invalid.
+        let binary_policy_size = binary_policy.len();
         let policy = Policy::parse(&binary_policy)?;
         policy.validate()?;
         if !self.allow_unimplemented {
@@ -277,6 +281,7 @@ impl SecurityServer {
                 parsed,
                 sid_table,
                 exceptions,
+                binary_policy_size,
             })));
         });
 
@@ -289,11 +294,18 @@ impl SecurityServer {
         self.backend.active_policy.as_ref(&scope).is_some()
     }
 
+    /// Returns the size in bytes of the active binary policy, or `None` if no policy is loaded.
+    pub fn binary_policy_size(&self) -> Option<usize> {
+        let scope = RcuReadScope::new();
+        let active_policy = self.backend.active_policy.as_ref(&scope)?;
+        Some(active_policy.binary_policy_size)
+    }
+
     /// Returns the active policy in binary form, or `None` if no policy has yet been loaded.
     pub fn get_binary_policy(&self) -> Option<PolicyData> {
         let scope = RcuReadScope::new();
         let active_policy = self.backend.active_policy.as_ref(&scope)?;
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(active_policy.binary_policy_size);
         active_policy
             .parsed
             .serialize(&mut bytes)

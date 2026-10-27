@@ -393,11 +393,7 @@ async fn create_inspect_values(
 ) -> Result<fuchsia_inspect::Inspector, anyhow::Error> {
     let inspector = fuchsia_inspect::Inspector::default();
 
-    let policy_bytes = if let Some(policy_data) = security_server.get_binary_policy() {
-        policy_data.len().try_into()?
-    } else {
-        0
-    };
+    let policy_bytes: u64 = security_server.binary_policy_size().unwrap_or(0).try_into()?;
     inspector.root().record_uint("policy_bytes", policy_bytes);
 
     Ok(inspector)
