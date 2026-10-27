@@ -851,9 +851,9 @@ impl TimerDuration {
     /// Due to the way duration is expressed, the same time duration
     /// can be represented in multiple ways.
     fn duration(&self) -> zx::BootDuration {
-        let duration_as_nanos = self.resolution_as_nanos() * self.ticks;
-        let clamp_duration = std::cmp::min(*I32_MAX_AS_U64, duration_as_nanos);
-        zx::BootDuration::from_nanos(clamp_duration.try_into().expect("result was clamped"))
+        let duration_as_nanos = self.resolution_as_nanos().saturating_mul(self.ticks);
+        let clamp_duration = std::cmp::min(*I64_MAX_AS_U64, duration_as_nanos);
+        zx::BootDuration::from_nanos(clamp_duration.try_into().expect("clamp_duration fits in i64"))
     }
 
     /// The resolution of this TimerDuration
@@ -1014,11 +1014,16 @@ impl TimerConfig {
         let p_slack = duration - best_positive_slack.duration();
         let n_slack = best_negative_slack.duration() - duration;
 
-        // If the closest approximation is 0ns, then we can not advance time, so we reject it.
-        // Otherwise pick the smallest slack.  Note that when we pick the best positive slack,
-        // we will wake *before* the actual deadline.  In multi-resolution counters, this enables
-        // us to pick a finer count in the next go.
-        let ret = if p_slack < n_slack && best_positive_slack.duration().into_nanos() > 0 {
+        // Prefer waking at or after the deadline (`best_negative_slack`). Otherwise
+        // single-resolution timers would wake early and then re-arm one more tick of the same
+        // resolution.
+        let has_finer_resolution =
+            self.resolutions.iter().any(|&res| res < best_positive_slack.resolution());
+        let ret = if best_negative_slack == TimerDuration::max()
+            || (best_positive_slack.duration() > zx::BootDuration::ZERO
+                && (has_finer_resolution || best_positive_slack.ticks() == self.max_ticks)
+                && p_slack < n_slack)
+        {
             best_positive_slack
         } else {
             best_negative_slack
@@ -2031,6 +2036,104 @@ mod tests {
         TimerDuration::new(zx::BootDuration::from_millis(1), 1) ;
         "Zero duration gets the smallest timer duration"
     )]
+    #[test_case(
+        vec![zx::BootDuration::from_nanos(3)],
+        100,
+        zx::BootDuration::from_nanos(49),
+        TimerDuration::new(zx::BootDuration::from_nanos(3), 17) ;
+        "Single resolution picks q+1 even when p_slack < n_slack"
+    )]
+    #[test_case(
+        vec![zx::BootDuration::from_seconds(1)],
+        1000,
+        zx::BootDuration::from_millis(20_350),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 21) ;
+        "Single 1s coarse resolution with multi-second duration picks 21s"
+    )]
+    #[test_case(
+        vec![zx::BootDuration::from_seconds(1)],
+        1000,
+        zx::BootDuration::from_millis(1_100),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 2) ;
+        "Single 1s coarse resolution picks 2s instead of early 1s wake"
+    )]
+    #[test_case(
+        vec![zx::BootDuration::from_seconds(1)],
+        60,
+        zx::BootDuration::from_millis(100_200),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 60) ;
+        "Single 1s coarse resolution exceeding max_ticks clamps to max_ticks"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(10),
+            zx::BootDuration::from_seconds(1),
+        ],
+        20,
+        zx::BootDuration::from_millis(5_150),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 5) ;
+        "Multi-resolution picks positive slack when finer resolution exists and p_slack < n_slack"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_seconds(1),
+            zx::BootDuration::from_millis(10),
+        ],
+        20,
+        zx::BootDuration::from_millis(5_150),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 5) ;
+        "Multi-resolution coarsest-first picks positive slack when finer resolution exists"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(10),
+            zx::BootDuration::from_seconds(1),
+        ],
+        20,
+        zx::BootDuration::from_millis(5_850),
+        TimerDuration::new(zx::BootDuration::from_seconds(1), 6) ;
+        "Multi-resolution picks negative slack when n_slack < p_slack"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(10),
+            zx::BootDuration::from_seconds(1),
+        ],
+        20,
+        zx::BootDuration::from_millis(152),
+        TimerDuration::new(zx::BootDuration::from_millis(10), 16) ;
+        "Multi-resolution already at finest resolution picks negative slack"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_micros(10),
+            zx::BootDuration::from_seconds(1),
+        ],
+        65535,
+        zx::BootDuration::from_millis(700),
+        TimerDuration::new(zx::BootDuration::from_micros(10), 65535) ;
+        "Finest resolution clamped to max_ticks is preferred over coarse overshoot"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(1),
+            zx::BootDuration::from_seconds(10),
+        ],
+        1000,
+        zx::BootDuration::from_seconds(5),
+        TimerDuration::new(zx::BootDuration::from_millis(1), 1000) ;
+        "Clamped finest resolution beats coarse single-tick overshoot"
+    )]
+    #[test_case(
+        vec![
+            zx::BootDuration::from_millis(1),
+            zx::BootDuration::from_seconds(1),
+        ],
+        100,
+        zx::BootDuration::from_millis(150),
+        TimerDuration::new(zx::BootDuration::from_millis(1), 100) ;
+        "Remainder exceeding finest max_ticks reprograms at finest resolution"
+    )]
     fn test_pick_setting(
         resolutions: Vec<zx::BootDuration>,
         max_ticks: u64,
@@ -2095,10 +2198,12 @@ mod tests {
     fn fake_hrtimer_connection(
         scope: fasync::ScopeHandle,
         rcv: mpsc::Receiver<FakeCmd>,
-    ) -> ffhh::DeviceProxy {
+    ) -> (ffhh::DeviceProxy, Rc<RefCell<Vec<(i64, u64)>>>) {
         debug!("fake_hrtimer_connection: entry.");
         let (hrtimer, mut stream) =
             fidl::endpoints::create_proxy_and_stream::<ffhh::DeviceMarker>();
+        let start_and_wait_calls = Rc::new(RefCell::new(Vec::new()));
+        let recorded_calls = start_and_wait_calls.clone();
         scope.clone().spawn_local(async move {
             let mut rcv = rcv.fuse();
             let timer_properties = Rc::new(RefCell::new(None));
@@ -2172,14 +2277,17 @@ mod tests {
                                     assert!(!*timer_running.borrow(), "invariant broken: timer may not be running here");
                                     *timer_running.borrow_mut() = true;
                                     debug!("fake_hrtimer_connection: starting timer: \"{}\", resolution: {:?}, ticks: {}", id, resolution, ticks);
-                                    let ticks: i64 = ticks.try_into().unwrap();
-                                    let sleep_duration  = zx::BootDuration::from_nanos(ticks * match resolution {
+                                    let resolution_nanos = match resolution {
                                         ffhh::Resolution::Duration(e) => e,
                                         _ => {
                                             error!("resolution has an unexpected value");
                                             1
                                         }
-                                    });
+                                    };
+                                    recorded_calls.borrow_mut().push((resolution_nanos, ticks));
+                                    let ticks: i64 = ticks.try_into().unwrap();
+                                    let sleep_duration =
+                                        zx::BootDuration::from_nanos(ticks * resolution_nanos);
                                     let delay = *schedule_delay.borrow();
                                     let timer_running_clone = timer_running.clone();
                                     struct ResponderGuard(Option<ffhh::DeviceStartAndWaitResponder>);
@@ -2247,7 +2355,7 @@ mod tests {
                 }
             }
         });
-        hrtimer
+        (hrtimer, start_and_wait_calls)
     }
 
     fn clone_utc_clock(orig: &fxr::UtcClock) -> fxr::UtcClock {
@@ -2274,7 +2382,8 @@ mod tests {
             let utc_clone = clone_utc_clock(&utc_clock);
             let (mut cmd_tx, wake_proxy) = {
                 let (tx, rx) = mpsc::channel::<FakeCmd>(0);
-                let hrtimer_proxy = fake_hrtimer_connection(scope.to_handle(), rx);
+                let (hrtimer_proxy, _scheduled_calls) =
+                    fake_hrtimer_connection(scope.to_handle(), rx);
 
                 let inspector = finspect::component::inspector();
                 let alarms = Rc::new(Loop::new(
@@ -2998,5 +3107,80 @@ mod tests {
             TestExecutor::poll_until_stalled(&mut task_200).await,
             Poll::Ready(Ok(Ok(_)))
         );
+    }
+
+    // Verify that a single-resolution coarse timer schedules `q + 1` ticks (`2s`) for an inexact
+    // `1.35s` deadline rather than waking early at `1s` and then arming a second `1s` tick.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_single_resolution_coarse_timer_no_early_double_wake() {
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(0)).await;
+
+        let scope = fasync::Scope::new();
+        let utc_backstop = fxr::UtcInstant::from_nanos(1000);
+        let utc_clock = fxr::UtcClock::create(zx::ClockOpts::empty(), Some(utc_backstop)).unwrap();
+        let (mut cmd_tx, wake_proxy, scheduled_calls) = {
+            let (tx, rx) = mpsc::channel::<FakeCmd>(0);
+            let (hrtimer_proxy, scheduled_calls) = fake_hrtimer_connection(scope.to_handle(), rx);
+
+            let inspector = finspect::component::inspector();
+            let alarms = Rc::new(Loop::new(
+                scope.to_handle(),
+                hrtimer_proxy,
+                inspector.root().create_child("coarse_single_res_test"),
+                clone_utc_clock(&utc_clock),
+            ));
+
+            let (proxy, stream) =
+                fidl::endpoints::create_proxy_and_stream::<fta::WakeAlarmsMarker>();
+            scope.spawn_local(async move {
+                serve(alarms, stream).await;
+            });
+            (tx, proxy, scheduled_calls)
+        };
+
+        let (_wake_lease, peer) = zx::EventPair::create();
+        let done = zx::Event::create();
+        cmd_tx
+            .start_send(FakeCmd::SetProperties {
+                resolutions: vec![zx::BootDuration::from_seconds(1)],
+                max_ticks: 1000,
+                keep_alive: peer,
+                done: done.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            })
+            .unwrap();
+        assert_matches!(fasync::OnSignals::new(done, zx::Signals::EVENT_SIGNALED).await, Ok(_));
+
+        let ctx =
+            TestContext { wake_proxy, _scope: scope, _cmd_tx: cmd_tx, utc_clock, utc_backstop };
+
+        let deadline = zx::BootInstant::from_nanos(1_350_000_000);
+        let setup_done = zx::Event::create();
+        let mut set_task = ctx.wake_proxy.set_and_wait(
+            deadline.into(),
+            fta::SetMode::NotifySetupDone(
+                setup_done.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            ),
+            "coarse_alarm".into(),
+        );
+        assert_matches!(TestExecutor::poll_until_stalled(&mut set_task).await, Poll::Pending);
+
+        let mut setup_done_task =
+            pin!(fasync::OnSignals::new(setup_done, zx::Signals::EVENT_SIGNALED));
+        assert_matches!(
+            TestExecutor::poll_until_stalled(&mut setup_done_task).await,
+            Poll::Ready(Ok(_))
+        );
+
+        // No early wake at 1s; the hardware timer must be programmed directly once for 2 x 1s.
+        assert_eq!(*scheduled_calls.borrow(), vec![(1_000_000_000, 2)]);
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(1_000_000_000)).await;
+        assert_matches!(TestExecutor::poll_until_stalled(&mut set_task).await, Poll::Pending);
+        assert_eq!(*scheduled_calls.borrow(), vec![(1_000_000_000, 2)]);
+        TestExecutor::advance_to(fasync::MonotonicInstant::from_nanos(2_000_000_000)).await;
+        assert_matches!(
+            TestExecutor::poll_until_stalled(&mut set_task).await,
+            Poll::Ready(Ok(Ok(_)))
+        );
+        assert_eq!(*scheduled_calls.borrow(), vec![(1_000_000_000, 2)]);
     }
 }
