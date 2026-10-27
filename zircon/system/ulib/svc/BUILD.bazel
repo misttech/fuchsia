@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+package(default_applicable_licenses = ["//:license"])
+
+cc_source_library_zx(
+    name = "svc",
+    srcs = ["outgoing.cc"],
+    hdrs = [
+        "include/lib/svc/outgoing.h",
+        "include/lib/svc/service.h",
+    ],
+    implementation_deps = ["//sdk/lib/fdio"],
+    includes = ["include"],
+    #  ________  _________  ________  ________
+    # |\   ____\|\___   ___\\   __  \|\   __  \
+    # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+    #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+    #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+    #     ____\_\  \   \ \__\ \ \_______\ \__\
+    #    |\_________\   \|__|  \|_______|\|__|
+    #    \|_________|
+    #
+    # This is an allowlist of targets that use the svc library. New code should
+    # use the component::OutgoingDirectory class in //sdk/lib/sys/component/cpp
+    # instead.
+    #
+    # To remove items from the allowlist, please send a change to one of the
+    # OWNERS of this file to remove an element from the visibility list below.
+    #
+    # Please allowlist entire directories rather than individual targets as it
+    # requires less allowlist churn over time.
+    #
+    # To trim this list, run:
+    #   build/bazel/scripts/trim_visibility.py --target="//zircon/system/ulib/svc"
+    # and replace it with the trimmed Bazel list that the script prints, then
+    # run `fx bazel2gn` to sync BUILD.gn.
+    visibility = [
+        "//examples/fidl/cpp/services/server:__subpackages__",
+        "//sdk/lib/driver_test_realm:__subpackages__",
+        "//src/bringup/bin/console:__subpackages__",
+        "//src/bringup/bin/critical-services:__subpackages__",
+        "//src/bringup/bin/device-name-provider:__subpackages__",
+        "//src/bringup/bin/kernel_debug_broker:__subpackages__",
+        "//src/bringup/bin/paver:__subpackages__",
+        "//src/bringup/bin/sysinfo:__subpackages__",
+        "//src/bringup/bin/sysmem:__subpackages__",
+        "//src/connectivity/network/tun/network-tun:__subpackages__",
+        "//src/connectivity/openthread/ot-stack:__subpackages__",
+        "//src/connectivity/openthread/third_party/openthread/platform:__subpackages__",
+        "//src/connectivity/openthread/third_party/openthread/platform/tests:__subpackages__",
+        "//src/devices/bin/driver_manager:__subpackages__",
+        "//src/devices/block/drivers/sdmmc:__subpackages__",
+        "//src/devices/board/lib/acpi:__subpackages__",
+        "//src/devices/i2c/drivers/i2c:__subpackages__",
+        "//src/devices/mcu/drivers/chromiumos-ec-core:__pkg__",
+        "//src/devices/pci/drivers/pci:__subpackages__",
+        "//src/devices/testing/mock-ddk:__subpackages__",
+        "//src/devices/tests/fidl-protocol:__subpackages__",
+        "//src/firmware/paver:__subpackages__",
+        "//src/firmware/paver/test:__subpackages__",
+        "//src/graphics/drivers/misc/goldfish:__subpackages__",
+        "//src/graphics/drivers/misc/goldfish_address_space:__subpackages__",
+        "//src/graphics/drivers/misc/goldfish_sync:__subpackages__",
+        "//src/sys/component_manager/tests/rights:__subpackages__",
+        "//src/sys/component_manager/tests/security_policy/capability_allowlist:__subpackages__",
+        "//src/virtualization/packages:__subpackages__",
+        "//zircon/system/ulib/kcounter:__subpackages__",
+        "//zircon/system/ulib/kernel-debug:__subpackages__",
+        "//zircon/system/ulib/ktrace:__subpackages__",
+        "//zircon/system/ulib/profile:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/lib/async",
+        "//src/storage/lib/vfs/cpp",
+        "//zircon/system/ulib/zx",
+    ],
+)
