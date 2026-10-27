@@ -26,7 +26,10 @@ package(default_applicable_licenses = ["//:license"])
 cml_shard(
     name = "hyper.shard",
     shard = "hyper.shard.cml",
-    visibility = ["//src/connectivity/policy/http-client:__pkg__"],
+    visibility = [
+        "//src/connectivity/policy/http-client:__pkg__",
+        "//src/sys/time/httpsdate_time_source:__pkg__",
+    ],
 )
 
 rustc_library(

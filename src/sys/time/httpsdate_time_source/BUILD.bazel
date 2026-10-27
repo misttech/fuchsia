@@ -1,0 +1,122 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/bound.rs",
+        "src/constants.rs",
+        "src/datatypes.rs",
+        "src/diagnostics/cobalt.rs",
+        "src/diagnostics/composite.rs",
+        "src/diagnostics/fake.rs",
+        "src/diagnostics/inspect.rs",
+        "src/diagnostics/mod.rs",
+        "src/httpsdate.rs",
+        "src/main.rs",
+        "src/sampler.rs",
+    ],
+    crate_name = "httpsdate_time_source",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    deps = [
+        ":httpsdate_config",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
+        "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
+        "//sdk/rust/zx",
+        "//src/lib/cobalt/rust/builders",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/fidl-contrib",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+        "//src/sys/time/lib/httpdate-hyper",
+        "//src/sys/time/lib/pull-source",
+        "//src/sys/time/lib/push-source",
+        "//src/sys/time/lib/time_metrics_registry",
+        "//third_party/cobalt/src/lib/client/rust:cobalt-client",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+rustc_test(
+    name = "httpsdate_time_source_bin_test",
+    crate = ":bin",
+    edition = "2024",
+    deps = [
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_unittest_package(
+    name = "httpsdate-time-source-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":httpsdate_time_source_bin_test"],
+    visibility = ["//src/sys:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "httpsdate_time_source",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "httpsdate_time_source",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/connectivity/network/lib/net_interfaces:client.shard",
+        "//src/lib/fuchsia-hyper:hyper.shard",
+    ],
+    manifest = "meta/service.cml",
+)
+
+fx_component(
+    name = "service",
+    compiled_manifest = ":manifest",
+    visibility = ["//src/sys/time/httpsdate_time_source/tests:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "httpsdate_config",
+    cm_label = ":manifest",
+)
