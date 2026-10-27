@@ -30,8 +30,11 @@ group("tests") {
   deps = [
     ":ffx_package_tests($host_toolchain)",
     "archive:tests",
+    "blob/compress:tests",
+    "blob/decompress:tests",
     "blob/hash:tests",
     "far/list:tests",
+    "file-hash:tests",
     "ota-manifest/show:tests",
   ]
 }
