@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <elf.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <lib/fit/defer.h>
@@ -21,7 +22,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 #include <format>
 #include <optional>
 #include <sstream>
@@ -739,6 +743,101 @@ TEST_F(ProcTaskDirTest, ParentFieldsValidWithCapSysPtrace) {
     // exit_code(52) will be zero.
   });
   ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Observed on Linux: the initial [stack] VMA always extends exactly 128 KiB below the page holding
+// the lowest byte of the strings (argv, envp and AT_EXECFN). The pointer area (argc, argv, envp,
+// auxv, AT_RANDOM, AT_PLATFORM) and a random amount of padding are carved out of those 128 KiB; the
+// remainder is pre-mapped but unused. The VMA size is therefore not the size of the resolved
+// argv/envp/auxv but round_up_to_page(strings + one NULL word) + 128 KiB.
+//
+// This relationship only holds until the process uses more stack than the initial slack and makes
+// the VMA grow, so it is measured on a freshly exec'd child that has executed almost nothing,
+// rather than on the long-lived test process.
+TEST_F(ProcTest, InitialStackVmaSizeIsStringsPlusFixedSlack) {
+  constexpr size_t kStackSlackBelowStrings = 128 * 1024;
+  const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+
+  test_helper::ForkHelper fork_helper;
+  test_helper::ScopedPipe child_stdout;
+  test_helper::ScopedPipe child_stdin;
+  pid_t child_pid = fork_helper.RunInForkedProcess(
+      [child_stdout = &child_stdout.WriteSide(), child_stdin = &child_stdin.ReadSide()]() mutable {
+        // Use the pipes for stdin & stdout. Stderr remains unchanged, to allow error output.
+        SAFE_SYSCALL(dup2(child_stdin->get(), STDIN_FILENO));
+        child_stdin->reset();
+        SAFE_SYSCALL(dup2(child_stdout->get(), STDOUT_FILENO));
+        child_stdout->reset();
+
+        std::string binary_path = GetExecChildBinaryPath();
+        char* const argv[] = {const_cast<char*>(binary_path.c_str()),
+                              const_cast<char*>("some-argument"), nullptr};
+        char* const envp[] = {const_cast<char*>("SOME_VARIABLE=some-value"), nullptr};
+        SAFE_SYSCALL(execve(binary_path.c_str(), argv, envp));
+        _exit(EXIT_FAILURE);
+      });
+
+  // Wait for the child to indicate that it has exec'd and started.
+  test_helper::Rendezvous child_ready = test_helper::MakeRendezvous(std::move(child_stdout));
+  child_ready.holder.hold();
+  // Let the child exit once we are done, whatever the outcome.
+  test_helper::Rendezvous child_exit = test_helper::MakeRendezvous(std::move(child_stdin));
+  auto release_child = fit::defer([&] {
+    child_exit.poker.poke();
+    EXPECT_TRUE(fork_helper.WaitForChildren());
+  });
+
+  std::string child_dir = fxl::StringPrintf("%s/%d", proc_path().c_str(), child_pid);
+
+  std::string maps;
+  ASSERT_TRUE(files::ReadFileToString(child_dir + "/maps", &maps));
+  auto stack = test_helper::find_memory_mapping(
+      [](const test_helper::MemoryMapping& mapping) { return mapping.pathname == "[stack]"; },
+      maps);
+  ASSERT_TRUE(stack.has_value()) << maps;
+
+  std::string stat_contents;
+  ASSERT_TRUE(files::ReadFileToString(child_dir + "/stat", &stat_contents));
+  auto fields = ProcPidStatElements(stat_contents);
+  ASSERT_GE(fields.size(), 52u) << stat_contents;
+  // The child has the same word size as this test, so its addresses fit in our uintptr_t.
+  auto parse_address = [](const std::string& field) -> uintptr_t {
+    char* end = nullptr;
+    unsigned long long value = strtoull(field.c_str(), &end, 10);
+    EXPECT_TRUE(end != field.c_str() && *end == '\0') << "not a number: " << field;
+    return static_cast<uintptr_t>(value);
+  };
+  uintptr_t arg_start = parse_address(fields[48]);
+  uintptr_t env_start = parse_address(fields[50]);
+
+  // /proc/<pid>/auxv is an array of (type, value) pairs of the child's native word size, which is
+  // the same as ours since the child is built alongside this test.
+  std::string auxv_contents;
+  ASSERT_TRUE(files::ReadFileToString(child_dir + "/auxv", &auxv_contents));
+  ASSERT_EQ(auxv_contents.size() % (2 * sizeof(unsigned long)), 0u);
+  uintptr_t execfn = 0;
+  for (size_t offset = 0; offset + 2 * sizeof(unsigned long) <= auxv_contents.size();
+       offset += 2 * sizeof(unsigned long)) {
+    unsigned long type, value;
+    memcpy(&type, auxv_contents.data() + offset, sizeof(type));
+    memcpy(&value, auxv_contents.data() + offset + sizeof(type), sizeof(value));
+    if (type == AT_EXECFN) {
+      execfn = value;
+      break;
+    }
+  }
+  ASSERT_NE(execfn, 0u);
+
+  // The strings area consists of the argv strings, the envp strings and the AT_EXECFN string. Only
+  // its extent matters here, not the order of the three blocks, so take the lowest start.
+  uintptr_t strings_start = std::min({arg_start, env_start, execfn});
+  ASSERT_GE(strings_start, stack->start);
+  ASSERT_LT(strings_start, stack->end);
+
+  // The VMA ends on a page boundary, so this is equivalent to checking that the VMA size is the
+  // strings rounded up to a page plus the slack.
+  uintptr_t strings_page = strings_start & ~(page_size - 1);
+  EXPECT_EQ(strings_page - stack->start, kStackSlackBelowStrings);
 }
 
 TEST_F(ProcTaskDirTest, SelfStatPriorityAndNice) {
