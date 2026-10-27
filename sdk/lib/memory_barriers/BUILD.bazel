@@ -18,7 +18,7 @@ idk_cc_source_library(
         "//src/devices/block/drivers/aml-sdmmc:__subpackages__",
         "//src/media:__subpackages__",
         "//src/sysmem:__subpackages__",
-        "//vendor/amlogic/drivers:__subpackages__",
+        "//vendor:__subpackages__",
 
         # For bazel2gn.
         "//build/sdk:__pkg__",

@@ -546,13 +546,6 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "sdk/lib/memory_barriers/BUILD.bazel",
-            "targets": [
-                "memory_barriers"
-            ],
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "sdk/lib/stdcompat/BUILD.bazel",
             "targets": [
                 "stdcompat"
