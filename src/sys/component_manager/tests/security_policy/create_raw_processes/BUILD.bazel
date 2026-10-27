@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:raw_attribute:output_name = "security-policy-create-raw-processes-test"
+fx_cc_binary(
+    name = "bin",
+    srcs = ["main.cc"],
+    deps = ["//src/lib/test-suite:test_suite_lib"],
+)

@@ -1,0 +1,54 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "security_policy_critical_integration_test_bin",
+    srcs = ["security_policy_critical_integration_test.rs"],
+    crate_name = "security_policy_critical_integration_test",
+    crate_root = "security_policy_critical_integration_test.rs",
+    edition = "2024",
+    deps = [
+        ":test.policy_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/component_manager/tests/security_policy/util:security_policy_test_util",
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fidl_library(
+    name = "test.policy",
+    testonly = True,
+    srcs = ["policy.test.fidl"],
+    deps = ["//zircon/vdso/zx"],
+)
+
+rustc_binary(
+    name = "exit_on_command_bin",
+    testonly = True,
+    srcs = ["exit_on_command.rs"],
+    crate_name = "exit_on_command",
+    crate_root = "exit_on_command.rs",
+    edition = "2024",
+    deps = [
+        ":test.policy_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
