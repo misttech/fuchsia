@@ -215,6 +215,15 @@ impl Procedure {
         matches!(self.state, ProcedureState::AwaitingPasskey)
     }
 
+    /// Returns true if the procedure requires the `sys.PairingDelegate` to complete Classic/LE
+    /// pairing.
+    fn awaits_pairing(&self) -> bool {
+        matches!(
+            self.state,
+            ProcedureState::AwaitingPasskey | ProcedureState::AwaitingPairingComplete
+        )
+    }
+
     fn awaits_personalized_name(&self) -> bool {
         matches!(self.state, ProcedureState::AwaitingPersonalizedName)
     }
@@ -600,11 +609,13 @@ impl PairingManager {
     }
 
     /// Releases the Pairing Delegate back to the upstream client.
-    /// No-op if the delegate is not currently owned by Fast Pair or if there are other Fast Pair
-    /// procedures in progress.
+    /// No-op if the delegate is not currently owned by Fast Pair or if there are Fast Pair
+    /// procedures still awaiting Classic/LE pairing.
     /// Returns Error if the operation couldn't be completed.
     fn release_delegate(&mut self) -> Result<(), Error> {
-        if !self.owner.is_fast_pair() || !self.procedures.inner().is_empty() {
+        if !self.owner.is_fast_pair()
+            || self.procedures.inner().values().any(|p| p.awaits_pairing())
+        {
             return Ok(());
         }
 
@@ -772,9 +783,9 @@ impl PairingManager {
         Ok(())
     }
 
-    /// Attempts to complete the pairing procedure by handing pairing capabilities back to the
-    /// upstream client.
-    /// Returns Error if there is no such finished procedure or if the pairing handoff failed.
+    /// Completes the pairing procedure with the peer, saving its inspect data and cleaning up its
+    /// state.
+    /// Returns Error if there is no such finished procedure or if cleanup failed.
     pub fn complete_pairing_procedure(&mut self, le_id: PeerId) -> Result<(), Error> {
         let procedure = self
             .procedures
@@ -786,8 +797,8 @@ impl PairingManager {
             })?;
         let _ = procedure.transition(ProcedureState::Completed);
 
-        // Procedure is in the correct (finished) state and we can clean up and try to give the
-        // delegate back to the upstream client. The inspect data is saved.
+        // Procedure is in the correct (finished) state and we can save the inspect data and clean
+        // up the procedure.
         self.inspect_node.record_finished_procedure(le_id, fasync::MonotonicInstant::now());
         self.cancel_pairing_procedure(&le_id)
     }
@@ -923,18 +934,34 @@ impl PairingManager {
         let was_pending = self.pending_requests.remove(&le_or_bredr_id).is_some();
         // Try to match the request to the peer's LE or BR/EDR PeerId.
         let Some((le_id, procedure)) = self.find_procedure(le_or_bredr_id) else {
-            if success && was_pending {
-                // Pending requests have not been accepted by Fast Pair, so the resulting bond
-                // is unauthenticated and is removed.
-                warn!(
-                    le_or_bredr_id:%;
-                    "Pairing completed for pending request without Fast Pair authentication. Removing bond"
-                );
-                self.forget_peer(le_or_bredr_id);
+            if was_pending {
+                if success {
+                    // Pending requests have not been accepted by Fast Pair, so the resulting bond
+                    // is unauthenticated and is removed.
+                    warn!(
+                        le_or_bredr_id:%;
+                        "Pairing completed for pending request without Fast Pair authentication. Removing bond"
+                    );
+                    self.forget_peer(le_or_bredr_id);
+                } else {
+                    debug!(le_or_bredr_id:%; "Pending pairing request failed before Fast Pair authentication");
+                }
             } else {
-                debug!(le_or_bredr_id:%; "Pairing complete for non-Fast Pair peer. Ignoring..");
-                // TODO(https://fxbug.dev/42052578): Consider relaying upstream if I/O capabilities are defined
-                // per peer.
+                // Fast Pair never handled this peer. This can happen when the upstream client
+                // accepted the peer's pairing request shortly before Fast Pair claimed the
+                // delegate.
+                // Relay the outcome so the upstream client can observe it.
+                debug!(
+                    le_or_bredr_id:%, success;
+                    "Pairing complete for non-Fast Pair peer. Relaying upstream"
+                );
+                if let Err(e) = self
+                    .upstream_client
+                    .delegate
+                    .on_pairing_complete(&le_or_bredr_id.into(), success)
+                {
+                    warn!(le_or_bredr_id:%; "Couldn't relay OnPairingComplete upstream: {e:?}");
+                }
             }
             return Ok(None);
         };
@@ -949,6 +976,7 @@ impl PairingManager {
             // The pairing request was accepted after the Seeker's passkey was matched.
             ProcedureState::AwaitingPairingComplete => {
                 let _ = procedure.transition(ProcedureState::AwaitingAccountKey);
+                self.release_delegate()?;
                 Ok(Some(le_id))
             }
             // Pairing requests are only accepted in Fast Pair once the Seeker's passkey is matched.
@@ -1472,7 +1500,9 @@ pub(crate) mod tests {
         // Expect a Pairing Manager stream item indicating completion of pairing with the peer.
         let result = manager.select_next_some().await;
         assert_eq!(result, id);
-        // Shared secret for the procedure is still available.
+        // Classic/LE pairing is complete, so PairingManager hands pairing capabilities back to the
+        // upstream while keeping the shared secret for subsequent GATT steps.
+        mock.expect_set_pairing_delegate().await;
         assert_matches!(manager.key_for_procedure(&id), Some(_));
 
         // The peer will make a GATT Write to the Account Key characteristic. The shared secret will
@@ -1482,9 +1512,9 @@ pub(crate) mod tests {
 
         // The peer can set the personalized name. This is the last step in the procedure.
         assert_matches!(manager.complete_pairing_procedure(id), Ok(_));
-        // All pairing related work is complete, so we expect PairingManager to hand pairing
-        // capabilities back to the upstream. The shared secret should no longer be saved.
-        mock.expect_set_pairing_delegate().await;
+        // The shared secret should no longer be saved, and the delegate is already owned by
+        // upstream.
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
         assert_matches!(manager.key_for_procedure(&id), None);
     }
 
@@ -1891,25 +1921,31 @@ pub(crate) mod tests {
             .on_pairing_complete(&bredr_id2.into(), true)
             .expect("valid fidl request");
         assert_eq!(manager.select_next_some().await, le_id2);
+        // Because `le_id1` is still awaiting pairing completion, the Pairing Delegate should not be
+        // released yet.
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
+
         let _ = mock
             .downstream_delegate_client
             .on_pairing_complete(&bredr_id1.into(), true)
             .expect("valid fidl request");
         assert_eq!(manager.select_next_some().await, le_id1);
+        // Both procedures have completed Classic/LE pairing, so the Pairing Delegate is released
+        // back to the upstream client before Account Key writes occur.
+        mock.expect_set_pairing_delegate().await;
 
         // First Seeker makes a GATT write to the Account Key characteristic and completes.
         assert_matches!(manager.account_key_write(le_id1), Ok(_));
         assert_matches!(manager.complete_pairing_procedure(le_id1), Ok(_));
-        // Because a pairing procedure for `le_id2` is still active, the Pairing Delegate
-        // should not be reset.
         assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
         assert_matches!(manager.key_for_procedure(&le_id1), None);
         assert_matches!(manager.key_for_procedure(&le_id2), Some(_));
 
-        // Completing the second Seeker's procedure releases the Pairing Delegate.
+        // Completing the second Seeker's procedure cleans up its state.
         assert_matches!(manager.account_key_write(le_id2), Ok(_));
         assert_matches!(manager.complete_pairing_procedure(le_id2), Ok(_));
-        mock.expect_set_pairing_delegate().await;
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
+        assert_matches!(manager.key_for_procedure(&le_id2), None);
     }
 
     #[fuchsia::test]
@@ -1952,17 +1988,19 @@ pub(crate) mod tests {
         let (accepted, _) = attacker_request_fut.await.expect("fidl response");
         assert!(!accepted);
 
-        // Pairing completion over BR/EDR is attributed to the Seeker's LE PeerId.
+        // Pairing completion over BR/EDR is attributed to the Seeker's LE PeerId, and the
+        // PairingDelegate is immediately handed back to the upstream client.
         let _ = mock
             .downstream_delegate_client
             .on_pairing_complete(&seeker_bredr_id.into(), true)
             .expect("valid fidl request");
         let result = manager.select_next_some().await;
         assert_eq!(result, le_id);
+        mock.expect_set_pairing_delegate().await;
 
         assert_matches!(manager.account_key_write(le_id), Ok(_));
         assert_matches!(manager.complete_pairing_procedure(le_id), Ok(_));
-        mock.expect_set_pairing_delegate().await;
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
     }
 
     #[fuchsia::test]
@@ -2325,10 +2363,11 @@ pub(crate) mod tests {
             .on_pairing_complete(&bredr_id.into(), true)
             .expect("valid fidl request");
         // Expect a Pairing Manager stream item indicating completion of pairing with the peer. The
-        // LE PeerId associated with this peer is used.
+        // LE PeerId associated with this peer is used, and the PairingDelegate is handed back to
+        // the upstream client while the shared secret remains available for GATT steps.
         let result = manager.select_next_some().await;
         assert_eq!(result, le_id);
-        // Shared secret for the procedure is still available.
+        mock.expect_set_pairing_delegate().await;
         assert_matches!(manager.key_for_procedure(&le_id), Some(_));
 
         // Expect an Account Key write.
@@ -2336,9 +2375,7 @@ pub(crate) mod tests {
 
         // PairingManager owner will complete pairing once the peer sets a personalized name.
         assert_matches!(manager.complete_pairing_procedure(le_id), Ok(_));
-        // All pairing related work is complete, so we expect PairingManager to hand pairing
-        // capabilities back to the upstream. The shared secret should no longer be saved.
-        mock.expect_set_pairing_delegate().await;
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
         assert_matches!(manager.key_for_procedure(&le_id), None);
     }
 
@@ -2395,6 +2432,13 @@ pub(crate) mod tests {
             .expect("valid fidl request");
         let finished_id = exec.run_until_stalled(&mut manager.next()).expect("stream item");
         assert_eq!(finished_id, Some(id));
+        // Because Classic/LE pairing is complete and no other procedures await pairing, the
+        // PairingDelegate should be handed back immediately.
+        {
+            let expect_fut = mock.expect_set_pairing_delegate();
+            let mut expect_fut = pin!(expect_fut);
+            let () = exec.run_until_stalled(&mut expect_fut).expect("pairing delegate request");
+        }
 
         // Peer makes an Account Key write. This is the last mandatory step of the procedure.
         let _ = manager.account_key_write(id).expect("correct state");
@@ -2408,10 +2452,7 @@ pub(crate) mod tests {
         assert!(exec.wake_expired_timers());
         let _ = exec.run_until_stalled(&mut manager.next()).expect_pending("no stream item");
         assert_matches!(manager.key_for_procedure(&id), None);
-        // Because there are no other active procedures, the PairingDelegate should be handed back.
-        let expect_fut = mock.expect_set_pairing_delegate();
-        let mut expect_fut = pin!(expect_fut);
-        let () = exec.run_until_stalled(&mut expect_fut).expect("pairing delegate request");
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
     }
 
     #[fuchsia::test]
@@ -2614,6 +2655,43 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
+    async fn pending_request_failure_is_not_relayed_upstream() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // A Seeker initiates Fast Pair over LE.
+        let le_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                le_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // A peer's pairing request is intercepted by Fast Pair and held in `pending_requests`.
+        let bredr_id = PeerId(456);
+        let request_fut = mock.make_pairing_request(bredr_id, 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The pairing attempt fails (e.g. timeout or disconnect) before the Seeker sends its
+        // passkey over GATT.
+        let _ = mock
+            .downstream_delegate_client
+            .on_pairing_complete(&bredr_id.into(), false)
+            .expect("valid fidl request");
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+
+        // The held request is rejected.
+        // This should not be relayed to the upstream.
+        assert_eq!(request_fut.await.expect("fidl response"), (false, 0));
+        assert_matches!(mock.upstream_delegate_server.next().now_or_never(), None);
+        mock.expect_no_forget();
+        assert_matches!(manager.key_for_procedure(&le_id), Some(_));
+    }
+
+    #[fuchsia::test]
     async fn personalized_name_write_pairing_success_does_not_forget_bond() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
@@ -2739,17 +2817,71 @@ pub(crate) mod tests {
     }
 
     #[fuchsia::test]
+    async fn pairing_complete_for_non_fast_pair_peer_is_relayed_upstream() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // An Initial procedure gives Fast Pair ownership of the Pairing Delegate.
+        let fp_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                fp_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // `bt-host` reports completion for a peer Fast Pair never handled (e.g. a Classic pairing
+        // that the upstream client accepted before Fast Pair claimed the delegate).
+        for (classic_id, success) in [(PeerId(456), true), (PeerId(789), false)] {
+            mock.downstream_delegate_client
+                .on_pairing_complete(&classic_id.into(), success)
+                .expect("valid fidl request");
+            assert_matches!(manager.select_next_some().now_or_never(), None);
+
+            // The outcome is relayed to the upstream client.
+            let (received_id, received_success, _) = mock
+                .upstream_delegate_server
+                .select_next_some()
+                .now_or_never()
+                .expect("relayed to upstream")
+                .expect("fidl request")
+                .into_on_pairing_complete()
+                .expect("OnPairingComplete");
+            assert_eq!(received_id, classic_id.into());
+            assert_eq!(received_success, success);
+        }
+
+        // The bond is not removed and the Fast Pair procedure is unaffected.
+        mock.expect_no_forget();
+        assert_matches!(manager.key_for_procedure(&fp_id), Some(_));
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
+    }
+
+    #[fuchsia::test]
     async fn duplicate_pairing_success_does_not_forget_bond() {
         let (mut manager, mut mock) = MockPairing::new_with_manager().await;
 
         let id = PeerId(123);
+        let other_id = PeerId(456);
         assert_matches!(
             manager.new_pairing_procedure(id, keys::tests::example_aes_key(), PairingType::Initial),
             Ok(_)
         );
         mock.expect_set_pairing_delegate().await;
+        // Another active Initial procedure keeps Fast Pair in ownership of the Pairing Delegate
+        // after `id` completes Classic/LE pairing.
+        assert_matches!(
+            manager.new_pairing_procedure(
+                other_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
 
-        // Pairing completes after the Seeker's passkey is matched.
+        // Pairing completes for `id` after the Seeker's passkey is matched.
         let request_fut = mock.make_pairing_request(id, 555666);
         assert_matches!(manager.select_next_some().now_or_never(), None);
         assert_matches!(manager.compare_passkey(id, 555666), Ok(_));
@@ -2767,9 +2899,94 @@ pub(crate) mod tests {
             .expect("valid fidl request");
         assert_matches!(manager.select_next_some().now_or_never(), None);
         mock.expect_no_forget();
-        // The unexpected event cancels the procedure.
+        // The unexpected event cancels `id`'s procedure while leaving `other_id` active.
         assert_matches!(manager.key_for_procedure(&id), None);
+        assert_matches!(manager.key_for_procedure(&other_id), Some(_));
+        assert_matches!(manager.cancel_pairing_procedure(&other_id), Ok(_));
         mock.expect_set_pairing_delegate().await;
+    }
+
+    #[fuchsia::test]
+    async fn delegate_released_after_pairing_complete_allows_upstream_pairing() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // Peer 1 starts Fast Pair and completes Classic/LE pairing.
+        let fp_id = PeerId(123);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                fp_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        let request_fut = mock.make_pairing_request(fp_id, 555666);
+        assert_matches!(manager.select_next_some().now_or_never(), None);
+        assert_matches!(manager.compare_passkey(fp_id, 555666), Ok(555666));
+        assert_eq!(request_fut.await.expect("fidl response"), (true, 555666));
+
+        mock.downstream_delegate_client
+            .on_pairing_complete(&fp_id.into(), true)
+            .expect("valid fidl request");
+        assert_eq!(manager.select_next_some().await, fp_id);
+        // The delegate is immediately released back to upstream while `fp_id` is in
+        // `AwaitingAccountKey`.
+        mock.expect_set_pairing_delegate().await;
+
+        // While `fp_id` is still in `AwaitingAccountKey`, a non-Fast Pair peer's pairing request
+        // is relayed to the upstream delegate instead of being rejected.
+        let classic_id = PeerId(456);
+        let _downstream_fut = mock.make_pairing_request(classic_id, 111222);
+        assert_matches!(manager.next().now_or_never(), None);
+        let upstream_req = mock
+            .upstream_delegate_server
+            .select_next_some()
+            .now_or_never()
+            .expect("relayed to upstream")
+            .expect("fidl request");
+        let (_peer, _method, passkey, _responder) = upstream_req.into_on_pairing_request().unwrap();
+        assert_eq!(passkey, 111222);
+
+        // `fp_id` can still write its Account Key and Personalized Name.
+        assert_matches!(manager.account_key_write(fp_id), Ok(_));
+        assert_matches!(manager.complete_pairing_procedure(fp_id), Ok(_));
+    }
+
+    #[fuchsia::test]
+    async fn delegate_released_when_only_non_pairing_procedures_remain() {
+        let (mut manager, mut mock) = MockPairing::new_with_manager().await;
+
+        // Start a `PersonalizedNameWrite` procedure (which does not use the PairingDelegate)
+        // alongside an `Initial` procedure (which claims the PairingDelegate).
+        let name_id = PeerId(1);
+        let initial_id = PeerId(2);
+        assert_matches!(
+            manager.new_pairing_procedure(
+                name_id,
+                keys::tests::example_aes_key(),
+                PairingType::PersonalizedNameWrite
+            ),
+            Ok(_)
+        );
+        assert_matches!(mock.downstream_pairing_server.next().now_or_never(), None);
+
+        assert_matches!(
+            manager.new_pairing_procedure(
+                initial_id,
+                keys::tests::example_aes_key(),
+                PairingType::Initial
+            ),
+            Ok(_)
+        );
+        mock.expect_set_pairing_delegate().await;
+
+        // Canceling the `Initial` procedure immediately releases the PairingDelegate even though
+        // the `PersonalizedNameWrite` procedure is still active.
+        assert_matches!(manager.cancel_pairing_procedure(&initial_id), Ok(_));
+        mock.expect_set_pairing_delegate().await;
+        assert_matches!(manager.key_for_procedure(&name_id), Some(_));
     }
 
     #[test]
