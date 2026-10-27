@@ -19,7 +19,7 @@ const SUSPENSION_WARN_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::f
 
 /// Handles tx path suspension for devices.
 pub(crate) struct TransmitSuspensionHandler {
-    power_element: InternalPowerElement,
+    internal_power_element: InternalPowerElement,
     suspension_guard: MaybeSuspensionGuard,
     device: WeakDeviceId<BindingsCtx>,
     _lessor_registration: LessorRegistration,
@@ -29,12 +29,12 @@ impl TransmitSuspensionHandler {
     /// Creates a new `TransmitSuspensionHandler` that communicates with the
     /// `PowerWorker` in `ctx`.
     pub(crate) async fn new(ctx: &Ctx, device: WeakDeviceId<BindingsCtx>) -> Self {
-        let power_element = InternalPowerElement::new();
+        let internal_power_element = InternalPowerElement::new();
         let registration =
-            ctx.bindings_ctx().power.register_internal_lessor(power_element.lessor());
+            ctx.bindings_ctx().power.register_internal_lessor(internal_power_element.lessor());
 
         let mut this = Self {
-            power_element,
+            internal_power_element,
             suspension_guard: MaybeSuspensionGuard::new(
                 ctx.bindings_ctx().power.suspension_block.clone(),
             ),
@@ -51,20 +51,22 @@ impl TransmitSuspensionHandler {
 
     /// Waits for a suspension request.
     pub(crate) async fn wait(&mut self) -> TransmitSuspensionRequest<'_> {
-        let Self { power_element, suspension_guard: _, device: _, _lessor_registration } = self;
-        // May only be called if the power element is on.
-        assert_eq!(power_element.current_level(), BinaryPowerLevel::On);
-        assert_eq!(power_element.wait_level_change().await, BinaryPowerLevel::Off);
+        let Self { internal_power_element, suspension_guard: _, device: _, _lessor_registration } =
+            self;
+        // May only be called if `internal_power_element` is on.
+        assert_eq!(internal_power_element.current_level(), BinaryPowerLevel::On);
+        assert_eq!(internal_power_element.wait_level_change().await, BinaryPowerLevel::Off);
         TransmitSuspensionRequest(self)
     }
 
     async fn wait_for_level_on(&mut self) {
-        let Self { power_element, suspension_guard, device: _, _lessor_registration } = self;
+        let Self { internal_power_element, suspension_guard, device: _, _lessor_registration } =
+            self;
         loop {
-            assert_eq!(power_element.wait_level_change().await, BinaryPowerLevel::On);
+            assert_eq!(internal_power_element.wait_level_change().await, BinaryPowerLevel::On);
 
             let new_level = futures::select! {
-                nl = power_element.wait_level_change().fuse() => nl,
+                nl = internal_power_element.wait_level_change().fuse() => nl,
                 acquired = suspension_guard.acquire().fuse() => {
                     assert!(acquired);
                     break;
@@ -90,12 +92,12 @@ impl TransmitSuspensionRequest<'_> {
     pub(crate) async fn handle_suspension(self) {
         let Self(handler) = self;
         let TransmitSuspensionHandler {
-            power_element,
+            internal_power_element,
             suspension_guard,
             device,
             _lessor_registration,
         } = handler;
-        assert_eq!(power_element.current_level(), BinaryPowerLevel::Off);
+        assert_eq!(internal_power_element.current_level(), BinaryPowerLevel::Off);
         let name = device.bindings_id();
 
         // Wait for the device to be ready for suspension. Meanwhile, PF is
