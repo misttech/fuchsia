@@ -16,7 +16,7 @@ use fuchsia_component_test::{
 use fuchsia_inspect::Node as INode;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 const ACTIVITY_GOVERNOR_CHILD_NAME: &str = "system-activity-governor";
 const FAKE_BOOST_CHILD_NAME: &str = "fake-boost";
@@ -424,15 +424,15 @@ async fn run_fake_boost(
     realm_id: String,
     mut stream: fcpumanager::BoostRequestStream,
 ) -> Result<()> {
-    let active = Arc::new(AtomicBool::new(false));
-    let active_clone = active.clone();
+    let active_count = Arc::new(AtomicUsize::new(0));
+    let active_count_clone = active_count.clone();
 
     let realm_node = node.create_child(realm_id);
     let _node = realm_node.create_lazy_child_with_thread_local("fake-boost", move || {
-        let active = active_clone.clone();
+        let active_count = active_count_clone.clone();
         async move {
             let inspector = fuchsia_inspect::Inspector::default();
-            inspector.root().record_bool("active", active.load(Ordering::Relaxed));
+            inspector.root().record_bool("active", active_count.load(Ordering::Relaxed) > 0);
             Ok(inspector)
         }
         .boxed_local()
@@ -443,15 +443,15 @@ async fn run_fake_boost(
             fcpumanager::BoostRequest::Boost { responder } => {
                 log::info!("FakeBoost: Received Boost request");
                 let (server_token, client_token) = zx::EventPair::create();
-                let active = active.clone();
-                active.store(true, Ordering::Relaxed);
+                let active_count = active_count.clone();
+                active_count.fetch_add(1, Ordering::Relaxed);
 
                 fasync::Task::local(async move {
                     let _ =
                         fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED)
                             .await;
                     log::info!("FakeBoost: Client closed token, ending boost");
-                    active.store(false, Ordering::Relaxed);
+                    active_count.fetch_sub(1, Ordering::Relaxed);
                 })
                 .detach();
 

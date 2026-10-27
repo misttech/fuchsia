@@ -114,6 +114,8 @@ pub(crate) fn validate_acquire_wake_lease2_request(
 // TODO(https://fxbug.dev/491840509): Allow configurable timeouts when needed.
 const RESUME_SUSPENDING_LEASE_DROP_DELAY: std::time::Duration =
     std::time::Duration::from_millis(100);
+const POST_RESUME_BOOST_HOLD_DURATION: fasync::MonotonicDuration =
+    fasync::MonotonicDuration::from_millis(100);
 const SUSPEND_BLOCKER_WARNING_TIMEOUT: fasync::MonotonicDuration =
     fasync::MonotonicDuration::from_seconds(10);
 const NO_SUSPEND_CRASH_SIGNATURE: &str = "fuchsia-no-suspend-in-5-application-activity-cycles";
@@ -1365,6 +1367,8 @@ pub struct SystemActivityGovernor {
     resume_control_lease: Rc<RefCell<Option<fbroker::LeaseControlProxy>>>,
     /// The token for the CPU frequency boost.
     boost_token: Rc<RefCell<Option<zx::EventPair>>>,
+    /// Timer task holding `boost_token` across the post-resume wake window.
+    boost_drop_task: Rc<RefCell<Option<fasync::Task<()>>>>,
     /// The proxy used to call Boost.
     boost_proxy: fcpumanager::BoostProxy,
     /// Temporarily holds the boot_control lease.
@@ -1618,6 +1622,7 @@ impl SystemActivityGovernor {
             es_activation_after_resume_signal: Rc::new(RefCell::new(async_lock::OnceCell::new())),
             resume_control_lease: Rc::new(RefCell::new(None)),
             boost_token: Rc::new(RefCell::new(None)),
+            boost_drop_task: Rc::new(RefCell::new(None)),
             boost_proxy,
             is_running_signal: async_lock::OnceCell::new(),
             is_shutting_down,
@@ -1712,6 +1717,18 @@ impl SystemActivityGovernor {
                         let this = this_clone.clone();
 
                         async move {
+                            // Whenever ExecutionState transitions downward toward suspend
+                            // (Active -> Suspending, Active -> Inactive, or Suspending -> Inactive),
+                            // immediately cancel any post-resume boost hold timer and drop the
+                            // previous wake's boost_token before notify_on_suspend acquires a fresh
+                            // boost_token.
+                            if new_power_level < previous_power_level.get() {
+                                Self::cancel_post_resume_boost_inner(
+                                    &this.boost_token,
+                                    &this.boost_drop_task,
+                                );
+                            }
+
                             // Call suspend callback before ExecutionState power level changes.
                             if new_power_level == ExecutionStateLevel::Inactive.into_primitive() {
                                 if this.is_shutting_down.get() {
@@ -2477,6 +2494,32 @@ impl SystemActivityGovernor {
             self.suspend_blockers.borrow_mut().retain(|(id, _, _)| !dead_ids.contains(id));
         }
     }
+
+    fn cancel_post_resume_boost_inner(
+        boost_token: &RefCell<Option<zx::EventPair>>,
+        boost_drop_task: &RefCell<Option<fasync::Task<()>>>,
+    ) {
+        drop(boost_drop_task.borrow_mut().take());
+        drop(boost_token.borrow_mut().take());
+    }
+
+    fn schedule_post_resume_boost_drop_inner(
+        boost_token: &Rc<RefCell<Option<zx::EventPair>>>,
+        boost_drop_task: &RefCell<Option<fasync::Task<()>>>,
+    ) {
+        drop(boost_drop_task.borrow_mut().take());
+        if boost_token.borrow().is_none() {
+            return;
+        }
+        let boost_token = boost_token.clone();
+        let task = fasync::Task::local(async move {
+            fasync::Timer::new(POST_RESUME_BOOST_HOLD_DURATION).await;
+            if boost_token.borrow_mut().take().is_some() {
+                log::info!("Post-resume boost window elapsed, dropping boost token");
+            }
+        });
+        *boost_drop_task.borrow_mut() = Some(task);
+    }
 }
 
 #[async_trait(?Send)]
@@ -2493,6 +2536,7 @@ impl SuspendResumeListener for SystemActivityGovernor {
             }
         }
         self.suspend_loop_detector.reset();
+        drop(self.boost_drop_task.borrow_mut().take());
         // Reset Execution State activation signal at each resume transition.
         let _ = self.es_activation_after_resume_signal.borrow_mut().take();
 
@@ -2512,25 +2556,31 @@ impl SuspendResumeListener for SystemActivityGovernor {
         }
 
         if self.es_activation_after_resume_signal.borrow().is_initialized() {
-            log::info!("System already Active, dropping boost token immediately");
-            drop(self.boost_token.borrow_mut().take());
+            log::info!("System already Active, holding boost token for post-resume window");
+            Self::schedule_post_resume_boost_drop_inner(&self.boost_token, &self.boost_drop_task);
         } else {
             let _ = self.resume_control_lease.borrow_mut().insert(lease);
             let resume_control_lease = self.resume_control_lease.clone();
             let es_activation_after_resume_signal = self.es_activation_after_resume_signal.clone();
             let boost_token = self.boost_token.clone();
+            let boost_drop_task = self.boost_drop_task.clone();
 
             fasync::Task::local(async move {
-                let _ = es_activation_after_resume_signal
+                let activated = es_activation_after_resume_signal
                     .borrow()
                     .wait()
+                    .map(|_| true)
                     .on_timeout(RESUME_SUSPENDING_LEASE_DROP_DELAY, || {
                         log::info!("Dropping resume control lease due to timeout");
-                        &()
+                        false
                     })
                     .await;
                 drop(resume_control_lease.borrow_mut().take());
-                drop(boost_token.borrow_mut().take());
+                if activated {
+                    Self::schedule_post_resume_boost_drop_inner(&boost_token, &boost_drop_task);
+                } else {
+                    Self::cancel_post_resume_boost_inner(&boost_token, &boost_drop_task);
+                }
             })
             .detach();
         }
@@ -2546,6 +2596,7 @@ impl SuspendResumeListener for SystemActivityGovernor {
         self.suspend_loop_detector.on_suspend_attempt();
 
         let boost_fut = async {
+            drop(self.boost_drop_task.borrow_mut().take());
             log::info!("Calling Boost protocol");
             match self.boost_proxy.boost().await {
                 Ok(Ok(token)) => {
@@ -3522,5 +3573,85 @@ mod tests {
         );
         assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
         assert!(preallocated_leases.borrow().by_server_koid.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_post_resume_boost_hold_drops_after_window() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        let (server_token, client_token) = zx::EventPair::create();
+        let boost_token = Rc::new(RefCell::new(Some(client_token)));
+        let boost_drop_task = RefCell::new(None);
+
+        SystemActivityGovernor::schedule_post_resume_boost_drop_inner(
+            &boost_token,
+            &boost_drop_task,
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Still held just before POST_RESUME_BOOST_HOLD_DURATION (99 ms).
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(99_000_000));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert!(boost_token.borrow().is_some());
+        assert_eq!(
+            server_token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                .to_result(),
+            Err(zx::Status::TIMED_OUT)
+        );
+
+        // Dropped once POST_RESUME_BOOST_HOLD_DURATION (100 ms) elapses.
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(100_000_000));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert!(boost_token.borrow().is_none());
+        assert!(
+            server_token
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                .to_result()
+                .is_ok()
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_cancel_post_resume_boost_drops_immediately_and_protects_new_token() {
+        let mut executor = fasync::TestExecutor::new_with_fake_time();
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(0));
+
+        let (server_token_1, client_token_1) = zx::EventPair::create();
+        let boost_token = Rc::new(RefCell::new(Some(client_token_1)));
+        let boost_drop_task = RefCell::new(None);
+
+        SystemActivityGovernor::schedule_post_resume_boost_drop_inner(
+            &boost_token,
+            &boost_drop_task,
+        );
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+
+        // Early re-suspend at 50 ms immediately drops token 1 and cancels the 100 ms timer.
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000));
+        SystemActivityGovernor::cancel_post_resume_boost_inner(&boost_token, &boost_drop_task);
+        assert!(boost_token.borrow().is_none());
+        assert!(boost_drop_task.borrow().is_none());
+        assert!(
+            server_token_1
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                .to_result()
+                .is_ok()
+        );
+
+        // A fresh boost token acquired for the new suspend cycle must NOT be dropped at 100 ms.
+        let (server_token_2, client_token_2) = zx::EventPair::create();
+        *boost_token.borrow_mut() = Some(client_token_2);
+
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(150_000_000));
+        let _ = executor.run_until_stalled(&mut futures::future::pending::<()>());
+        assert!(boost_token.borrow().is_some());
+        assert_eq!(
+            server_token_2
+                .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+                .to_result(),
+            Err(zx::Status::TIMED_OUT)
+        );
     }
 }

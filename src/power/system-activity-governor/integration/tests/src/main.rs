@@ -6270,3 +6270,242 @@ async fn test_acquire_wake_lease2_gapless_handoff_blocks_suspend() -> Result<()>
 
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_post_resume_boost_hold_and_early_resuspend_cancellation() -> Result<()> {
+    let (realm, activity_governor_moniker) =
+        create_realm_ext(ftest::RealmOptions { use_fake_clock: Some(true), ..Default::default() })
+            .await?;
+    let fake_clock_control =
+        realm.connect_to_protocol::<ftesting::FakeClockControlMarker>().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+    let stats = realm.connect_to_protocol::<fsuspend::StatsMarker>().await?;
+    let _ = stats.watch().await?;
+
+    let suspend_controller = create_suspend_topology(&realm).await?;
+    let initial_lease = lease(&suspend_controller, 1).await?;
+
+    {
+        let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
+        boot_control.set_boot_complete().await.expect("SetBootComplete should have succeeded");
+    }
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            booting: false,
+            power_elements: contains {
+                execution_state: {
+                    power_level: 2u64,
+                },
+            },
+        }
+    );
+
+    let realm_id = activity_governor_moniker
+        .split('/')
+        .next()
+        .expect("moniker empty")
+        .split(':')
+        .nth(1)
+        .expect("moniker realm id missing");
+
+    // Cycle 1: Drop wake lease -> suspend -> boost becomes active.
+    drop(initial_lease);
+    assert_eq!(
+        0,
+        suspend_device
+            .await_suspend()
+            .await?
+            .expect("await_suspend failed")
+            .state_index
+            .expect("state_index missing")
+    );
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
+            }
+        }
+    );
+
+    // Pause SAG's fake clock before resuming so we can deterministically inspect the 100 ms
+    // post-resume boost hold window.
+    fake_clock_control.pause().await?;
+
+    suspend_device
+        .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+            suspend_duration: Some(2i64),
+            suspend_overhead: Some(1i64),
+            ..Default::default()
+        }))
+        .await?
+        .expect("resume failed");
+
+    let keep_awake_lease = lease(&suspend_controller, 1).await?;
+    let current_stats = stats.watch().await?;
+    assert_eq!(Some(1), current_stats.success_count);
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            power_elements: contains {
+                execution_state: {
+                    power_level: 2u64,
+                },
+            },
+        }
+    );
+
+    // Step 10 ms to flush any queued executor work after ExecutionState activation, then advance
+    // 40 ms (50 ms < 100 ms hold window): boost must still be active.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(10).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(40).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
+            }
+        }
+    );
+
+    // Advance another 60 ms (110 ms >= 100 ms total): boost must drop automatically.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(60).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: false,
+                }
+            }
+        }
+    );
+
+    // Cycle 2: Suspend and resume again, then drop the wake lease early (< 100 ms) while fake
+    // clock is paused to prove the post-resume boost hold never delays or blocks re-suspend and
+    // cancels the stale drop timer.
+    drop(keep_awake_lease);
+    assert_eq!(
+        0,
+        suspend_device
+            .await_suspend()
+            .await?
+            .expect("await_suspend failed")
+            .state_index
+            .expect("state_index missing")
+    );
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
+            }
+        }
+    );
+
+    suspend_device
+        .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+            suspend_duration: Some(2i64),
+            suspend_overhead: Some(1i64),
+            ..Default::default()
+        }))
+        .await?
+        .expect("resume failed");
+
+    let keep_awake_lease_2 = lease(&suspend_controller, 1).await?;
+    let current_stats = stats.watch().await?;
+    assert_eq!(Some(2), current_stats.success_count);
+
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            power_elements: contains {
+                execution_state: {
+                    power_level: 2u64,
+                },
+            },
+        }
+    );
+
+    // Advance 50 ms (< 100 ms): post-resume boost hold is active.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(50).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
+            }
+        }
+    );
+
+    // Drop the wake lease with fake clock still paused at 50 ms: SAG must suspend immediately
+    // without waiting for the 100 ms timer, and advancing past 100 ms while suspended must NOT
+    // drop the fresh boost token acquired for Cycle 3.
+    drop(keep_awake_lease_2);
+    assert_eq!(
+        0,
+        suspend_device
+            .await_suspend()
+            .await?
+            .expect("await_suspend failed")
+            .state_index
+            .expect("state_index missing")
+    );
+
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_millis(150).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+    block_until_inspect_matches!(
+        "",
+        root: contains {
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
+            }
+        }
+    );
+
+    Ok(())
+}
