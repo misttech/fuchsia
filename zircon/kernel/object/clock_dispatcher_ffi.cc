@@ -22,9 +22,11 @@ extern "C" {
 FFI_ALWAYS_INLINE zx_status_t
 cpp_clock_dispatcher_create(uint64_t options, zx_time_t backstop_time, VmObjectPaged* vmo,
                             ffi::Uninitialized<KernelHandle<ClockDispatcher>>* handle_out) {
+  // Take ownership of the caller's reference before allocating so that it is released if the
+  // allocation fails (since a failed operator new does not evaluate the constructor's arguments).
+  fbl::RefPtr<VmObjectPaged> vmo_ref = fbl::ImportFromRawPtr(vmo);
   fbl::AllocChecker ac;
-  auto disp = fbl::AdoptRef(
-      new (&ac) ClockDispatcher(options, backstop_time, fbl::ImportFromRawPtr<VmObjectPaged>(vmo)));
+  auto disp = fbl::AdoptRef(new (&ac) ClockDispatcher(options, backstop_time, ktl::move(vmo_ref)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
