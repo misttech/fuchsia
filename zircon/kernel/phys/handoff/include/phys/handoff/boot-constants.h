@@ -76,5 +76,6 @@ static_assert(ktl::is_standard_layout_v<BootConstants>);
 extern "C" constinit const BootConstants kBootConstants;
 
 extern "C" const uint8_t* cpp_boot_constants_kernel_version_ident(size_t* size);
+extern "C" const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* size);
 
 #endif  // ZIRCON_KERNEL_PHYS_HANDOFF_INCLUDE_PHYS_HANDOFF_BOOT_CONSTANTS_H_

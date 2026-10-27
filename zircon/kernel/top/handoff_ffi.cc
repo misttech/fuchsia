@@ -20,6 +20,13 @@ FFI_ALWAYS_INLINE const uint8_t* cpp_boot_constants_kernel_version_ident(size_t*
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* size) {
+  std::string_view ident = kBootConstants.kernel_debug_ident.get();
+  *size = ident.size();
+  return reinterpret_cast<const uint8_t*>(ident.data());
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const PhysHandoff* cpp_phys_handoff_get();
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

@@ -57,7 +57,6 @@ struct InstrumentationDataVmoFfi {
 void cpp_llvm_profdata_vmo(InstrumentationDataVmoFfi* out);
 void cpp_sancov_get_pc_vmo(InstrumentationDataVmoFfi* out);
 void cpp_sancov_get_counts_vmo(InstrumentationDataVmoFfi* out);
-const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* out_size);
 
 __END_CDECLS
 

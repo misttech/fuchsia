@@ -87,14 +87,15 @@ kernel_rust_mod("top_rust") {
   output_name = "top"
   source_root = "mod.rs"
   sources = [
+    "boot_constants.rs",
     "debug.rs",
     "init.rs",
     "mod.rs",
     "version.rs",
-    "version_ffi.rs",
   ]
   deps = [
     "//src/lib/kprint",
+    "//src/lib/zr",
     "//zircon/kernel/lib/init:init_rust",
   ]
 }

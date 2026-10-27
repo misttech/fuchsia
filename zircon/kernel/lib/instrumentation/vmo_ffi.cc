@@ -9,8 +9,6 @@
 #include <zircon/compiler.h>
 
 #include <kernel/ffi.h>
-#include <ktl/string_view.h>
-#include <phys/handoff/boot-constants.h>
 
 #include "private.h"
 
@@ -48,13 +46,6 @@ FFI_ALWAYS_INLINE void cpp_sancov_get_pc_vmo(InstrumentationDataVmoFfi* out) {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_sancov_get_counts_vmo(InstrumentationDataVmoFfi* out) {
   *out = ToFfi(SancovGetCountsVmo());
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE const uint8_t* cpp_boot_constants_kernel_debug_ident(size_t* out_size) {
-  ktl::string_view ident = kBootConstants.kernel_debug_ident.get();
-  *out_size = ident.size();
-  return reinterpret_cast<const uint8_t*>(ident.data());
 }
 
 __END_CDECLS

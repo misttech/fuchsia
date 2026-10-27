@@ -25,7 +25,6 @@ static_library("instrumentation") {
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/page",
       "//zircon/kernel/object",
-      "//zircon/kernel/phys/handoff",
       "//zircon/system/ulib/fbl",
     ]
   }

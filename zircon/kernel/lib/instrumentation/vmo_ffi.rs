@@ -59,7 +59,4 @@ unsafe extern "C" {
     /// Must only be called after `InitSancov` (`LK_INIT_LEVEL_KERNEL`) has initialized
     /// `gSancovCountsVmo`.
     pub(super) fn cpp_sancov_get_counts_vmo(out: &mut MaybeUninit<InstrumentationDataVmoFfi>);
-
-    /// Returns a pointer and byte length to `kBootConstants.kernel_debug_ident`.
-    pub(super) fn cpp_boot_constants_kernel_debug_ident(out_size: &mut usize) -> *const u8;
 }

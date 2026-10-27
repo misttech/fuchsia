@@ -11,23 +11,13 @@ use core::ffi::c_int;
 use kprint::kprint;
 
 use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
-use crate::top::version_ffi::cpp_boot_constants_kernel_version_ident;
+use crate::top::boot_constants::kernel_version_ident;
 
 /// # Safety
 ///
 /// `_argv` must be a valid pointer to `_argc` elements if dereferenced.
 unsafe extern "C" fn cmd_version(_argc: c_int, _argv: *const CmdArgs, _flags: u32) -> c_int {
-    let mut size = 0;
-    // SAFETY: `cpp_boot_constants_kernel_version_ident` returns a pointer and length to the
-    // immutable `kBootConstants.kernel_version_ident` buffer in `.rodata` populated by physboot.
-    let ptr = unsafe { cpp_boot_constants_kernel_version_ident(&mut size) };
-    let ident = if size == 0 {
-        &[]
-    } else {
-        // SAFETY: `ptr` is non-null and valid for `size` bytes for the lifetime of the kernel.
-        unsafe { core::slice::from_raw_parts(ptr, size) }
-    };
-    kprint!("{:s}", ident);
+    kprint!("{:s}", kernel_version_ident());
     0
 }
 

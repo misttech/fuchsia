@@ -15,14 +15,15 @@ use zx_status::Status;
 use zx_types::{ZX_MAX_NAME_LEN, ZX_RIGHT_WRITE, zx_rights_t};
 
 use crate::object::{HandleOwner, InitialMutability, KernelHandle, VmObjectDispatcher};
+use crate::top::boot_constants::kernel_debug_ident;
 use crate::vm::pmm;
 use crate::vm::vm_object_paged::VmObjectPaged;
 
 use super::InstrumentationDataVmo;
 use super::memory_profile::memory_profile_vmo;
 use super::vmo_ffi::{
-    InstrumentationDataVmoFfi, cpp_boot_constants_kernel_debug_ident, cpp_llvm_profdata_vmo,
-    cpp_sancov_get_counts_vmo, cpp_sancov_get_pc_vmo,
+    InstrumentationDataVmoFfi, cpp_llvm_profdata_vmo, cpp_sancov_get_counts_vmo,
+    cpp_sancov_get_pc_vmo,
 };
 
 impl InstrumentationDataVmo {
@@ -89,17 +90,6 @@ unsafe fn sancov_get_counts_vmo() -> InstrumentationDataVmo {
     unsafe {
         cpp_sancov_get_counts_vmo(&mut ffi);
         InstrumentationDataVmo::from_ffi(ffi.assume_init())
-    }
-}
-
-fn kernel_debug_ident() -> &'static [u8] {
-    let mut size = 0usize;
-    // SAFETY: `cpp_boot_constants_kernel_debug_ident` returns a pointer and length to the
-    // immutable `kBootConstants.kernel_debug_ident` buffer in `.rodata` populated by physboot,
-    // which remains valid for `size` bytes for the lifetime of the kernel.
-    unsafe {
-        let ptr = cpp_boot_constants_kernel_debug_ident(&mut size);
-        slice_from_raw_parts(ptr, size)
     }
 }
 
