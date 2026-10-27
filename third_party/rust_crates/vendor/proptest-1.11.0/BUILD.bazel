@@ -88,7 +88,7 @@ rust_library(
         "//third_party/rust_crates/vendor/bit-vec-0.8.0:bit_vec",
         "//third_party/rust_crates/vendor/bitflags-2.13.2:bitflags",
         "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
-        "//third_party/rust_crates/vendor/rand-0.9.4:rand",
+        "//third_party/rust_crates/vendor/rand-0.9.5:rand",
         "//third_party/rust_crates/vendor/rand_chacha-0.9.0:rand_chacha",
         "//third_party/rust_crates/vendor/rand_xorshift-0.4.0:rand_xorshift",
         "//third_party/rust_crates/vendor/regex-syntax-0.8.11:regex_syntax",
