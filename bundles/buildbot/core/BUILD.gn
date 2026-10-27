@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/board.gni")
+import("//bundles/buildbot/target_tests.gni")
 
 assert(is_fuchsia, "These can only be defined in the default toolchain")
 
@@ -10,10 +11,7 @@ assert(is_fuchsia, "These can only be defined in the default toolchain")
 # WARNING: Known to infrastructure
 group("hermetic_tests") {
   testonly = true
-  deps = [
-    "//examples:hermetic_tests",
-    "//src/sys/pkg:hermetic_tests",
-  ]
+  deps = []
 }
 
 # For use with the 'test_package_labels' GN build argument.
@@ -34,32 +32,16 @@ group("e2e_tests") {
 group("core") {
   testonly = true
 
-  deps = [
-    ":examples",
-    ":no_e2e",
-
-    # Add in e2e tests excluded from `no_e2e`.
-    "//bundles/fidl:tests",
-    "//sdk:tests",
-  ]
+  # Ensure paths to known e2e test libs are always up-to-date.
+  deps = [ ":no_e2e" ] + core_examples_targets + core_e2e_target_tests +
+         e2e_test_libs
 
   # The following tests, as e2e tests, require a board to be defined in order to
   # be valid tests, so they are excluded from builds that don't configure a
   # board.
   if (has_board) {
-    deps += [
-      "//src:e2e_tests",
-      "//src/media/audio/drivers/tests:basic",
-
-      # TODO(https://fxbug.dev/42066250) Reinstate these tests when they correctly
-      # select the environments that they can run on.
-      #
-      # "//tools:e2e_tests",
-    ]
+    deps += core_board_e2e_target_tests
   }
-
-  # Ensure paths to known e2e test libs are always up-to-date.
-  deps += e2e_test_libs
 }
 
 # WARNING: Known to infrastructure
@@ -83,23 +65,7 @@ group("no_e2e") {
 group("no_e2e_arm64_cov") {
   testonly = true
   assert_no_deps = e2e_test_libs
-  deps = [
-    "//src/developer/debug/debug_agent:tests",
-    "//src/devices:tests",
-    "//src/media:tests",
-    "//src/zircon:tests",
-  ]
-}
-
-# This group contains examples that are built but don't execute any tests.
-group("examples") {
-  testonly = true
-  deps = [
-    "//build/bazel/examples",
-    "//examples",
-    "//src/lib/ui/carnelian:examples",
-    "//src/media/bundles:examples",
-  ]
+  deps = core_no_e2e_arm64_cov_target_tests
 }
 
 # This group contains tests that don't depend on any known e2e test libraries.
@@ -109,22 +75,5 @@ group("examples") {
 group("no_e2e_dep") {
   testonly = true
   assert_no_deps = e2e_test_libs
-
-  deps = [
-    "//build:tests",
-    "//examples:tests",
-    "//scripts:tests",
-    "//src/diagnostics:tests",
-    "//src/media/bundles:services",
-    "//third_party:tests",
-
-    # Used by tests
-    "//src/diagnostics/archivist:archivist-for-embedding",
-
-    # The following groups have known e2e tests explicitly excluded.
-    "//bundles/fidl:tests_no_e2e",
-    "//sdk:tests_no_e2e",
-    "//src:tests_no_e2e",
-    "//tools:tests_no_e2e",
-  ]
+  deps = core_no_e2e_dep_target_tests
 }
