@@ -1,0 +1,253 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "error_logging_test_bin",
+    srcs = ["error_logging_test.rs"],
+    crate_name = "error_logging_test",
+    crate_root = "error_logging_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "logging_test_bin",
+    srcs = ["logging_test.rs"],
+    crate_name = "logging_test",
+    crate_root = "logging_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "log_then_hang_test_bin",
+    srcs = ["log_then_hang.rs"],
+    crate_name = "log_then_hang_test",
+    crate_root = "log_then_hang.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "logspam_test_bin",
+    srcs = ["logspam.rs"],
+    crate_name = "logspam_test",
+    crate_root = "logspam.rs",
+    edition = "2024",
+    deps = [
+        "//examples/components/routing/fidl:echo_rust",
+        "//src/lib/diagnostics/log/rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "stdout_ansi_test_bin",
+    srcs = ["stdout_ansi_test.rs"],
+    crate_name = "stdout_ansi_test",
+    crate_root = "stdout_ansi_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:ansi_term",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "long_running_test_bin",
+    srcs = ["long_running_test.rs"],
+    crate_name = "long_running_test",
+    crate_root = "long_running_test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+fx_packaged_binary(
+    name = "long_running_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":long_running_test_bin",
+    binary_name = "long_running_test",
+)
+
+fx_component_manifest(
+    name = "long_running_test-manifest",
+    testonly = True,
+    component_name = "long_running_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/long_running_test.cml",
+)
+
+fx_component(
+    name = "long_running_test",
+    testonly = True,
+    compiled_manifest = ":long_running_test-manifest",
+    component_name = "long_running_test",
+    deps = [":long_running_test_bin_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "logging_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":logging_test_bin",
+    binary_name = "logging_test",
+)
+
+fx_component_manifest(
+    name = "logging_test-manifest",
+    testonly = True,
+    component_name = "logging_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/logging_test.cml",
+)
+
+fx_component(
+    name = "logging_test",
+    testonly = True,
+    compiled_manifest = ":logging_test-manifest",
+    component_name = "logging_test",
+    deps = [":logging_test_bin_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "log_then_hang_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":log_then_hang_test_bin",
+    binary_name = "log_then_hang_test",
+)
+
+fx_component_manifest(
+    name = "log_then_hang_test-manifest",
+    testonly = True,
+    component_name = "log_then_hang_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/log_then_hang_test.cml",
+)
+
+fx_component(
+    name = "log_then_hang_test",
+    testonly = True,
+    compiled_manifest = ":log_then_hang_test-manifest",
+    component_name = "log_then_hang_test",
+    deps = [":log_then_hang_test_bin_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "logspam_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":logspam_test_bin",
+    binary_name = "logspam_test",
+)
+
+fx_component_manifest(
+    name = "logspam_test-manifest",
+    testonly = True,
+    component_name = "logspam_test",
+    includes = [
+        "//sdk/lib/sys/component:realm_builder.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/logspam_test.cml",
+)
+
+fx_component(
+    name = "logspam_test",
+    testonly = True,
+    compiled_manifest = ":logspam_test-manifest",
+    component_name = "logspam_test",
+    deps = [":logspam_test_bin_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "stdout_ansi_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":stdout_ansi_test_bin",
+    binary_name = "stdout_ansi_test",
+)
+
+fx_component_manifest(
+    name = "stdout_ansi_test-manifest",
+    testonly = True,
+    component_name = "stdout_ansi_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/stdout_ansi_test.cml",
+)
+
+fx_component(
+    name = "stdout_ansi_test",
+    testonly = True,
+    compiled_manifest = ":stdout_ansi_test-manifest",
+    component_name = "stdout_ansi_test",
+    deps = [":stdout_ansi_test_bin_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "error_logging_test_bin_packaged_bin",
+    testonly = True,
+    binary = ":error_logging_test_bin",
+    binary_name = "error_logging_test",
+)
+
+fx_component_manifest(
+    name = "error_logging_test-manifest",
+    testonly = True,
+    component_name = "error_logging_test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/error_logging_test.cml",
+)
+
+fx_component(
+    name = "error_logging_test",
+    testonly = True,
+    compiled_manifest = ":error_logging_test-manifest",
+    component_name = "error_logging_test",
+    deps = [":error_logging_test_bin_packaged_bin"],
+)

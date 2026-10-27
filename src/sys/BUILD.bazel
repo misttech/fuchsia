@@ -2,12 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
 package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    tests = [
+        "//src/sys/run_test_suite/directory:directory_host_test",
+    ],
+)
 
 test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/sys/run_test_suite/directory:test-output-directory-unit-tests",
         "//src/sys/time/lib/push-source:push-source-tests",
         "//src/sys/time/timekeeper/persistence:time-persistence-tests",
     ],

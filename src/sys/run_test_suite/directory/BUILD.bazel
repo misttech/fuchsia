@@ -1,0 +1,97 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "directory",
+    srcs = [
+        "src/lib.rs",
+        "src/macros.rs",
+        "src/testing.rs",
+        "src/v1.rs",
+    ],
+    compile_data = [
+        "//sdk:schema/common-00000000.json",
+        "//sdk:schema/ffx_test/run_summary-8d1dd964.json",
+    ],
+    crate_name = "test_output_directory",
+    edition = "2024",
+    visibility = ["//src/sys/run_test_suite:__subpackages__"],
+    deps = [
+        "//src/lib/testing/test_list",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_test(
+    name = "test_output_directory_lib_test",
+    crate = ":directory",
+    edition = "2024",
+    proc_macro_deps = ["//src/lib/testing/fixture"],
+    deps = [
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:valico",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "directory_host_test",
+    binary_name = "test_output_directory_lib_test",
+    visibility = ["//src/sys:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "directory_test_packaged_bin",
+    testonly = True,
+    binary = ":test_output_directory_lib_test",
+    binary_name = "test_output_directory_lib_test",
+)
+
+fx_component_manifest(
+    name = "test-output-directory-lib-test-manifest",
+    testonly = True,
+    component_name = "test-output-directory-lib-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners:tmp_storage.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/test-output-directory-lib-test.cml",
+)
+
+fx_test_component(
+    name = "test-output-directory-lib-test",
+    compiled_manifest = ":test-output-directory-lib-test-manifest",
+    deps = [":directory_test_packaged_bin"],
+)
+
+fx_package(
+    name = "test-output-directory-unit-tests-package",
+    package_name = "test-output-directory-unit-tests",
+    test_components = [":test-output-directory-lib-test"],
+)
+
+fx_test(
+    name = "test-output-directory-unit-tests",
+    max_log_severity = "ERROR",
+    package = ":test-output-directory-unit-tests-package",
+    visibility = ["//src/sys:__pkg__"],
+)

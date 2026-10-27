@@ -34,6 +34,14 @@ load(
 
 package(default_applicable_licenses = ["//:license"])
 
+exports_files(
+    [
+        "schema/common-00000000.json",
+        "schema/ffx_test/run_summary-8d1dd964.json",
+    ],
+    visibility = ["//src/sys/run_test_suite/directory:__pkg__"],
+)
+
 sdk_version_history(
     name = "version_history",
     category = "partner",

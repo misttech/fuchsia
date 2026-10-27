@@ -39,5 +39,6 @@ group("tests") {
 }
 
 bazel_test_suite("bazel_tests") {
+  host_tests = [ "//src/sys:host_tests" ]
   target_tests = [ "//src/sys:target_tests" ]
 }

@@ -24,5 +24,6 @@ cml_shard(
     visibility = [
         "//src/lib/fuchsia-component-test:__pkg__",
         "//src/lib/fuchsia-rseq:__pkg__",
+        "//src/sys/run_test_suite/tests/test_data:__pkg__",
     ],
 )
