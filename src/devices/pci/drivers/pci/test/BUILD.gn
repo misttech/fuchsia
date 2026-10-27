@@ -25,12 +25,9 @@ source_set("fakes") {
   ]
   public = [
     "fakes/fake_ecam.h",
-    "fakes/fake_pciroot.h",
     "fakes/fake_root_service.h",
   ]
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.pci.root:fuchsia.hardware.pci.root_cpp",
     "//sdk/fidl/fuchsia.hardware.pci.root:fuchsia.hardware.pci.root_cpp_testing",
     "//sdk/lib/driver/mmio/testing/cpp",
     "//src/devices/pci/lib/cpp:headers",
@@ -49,14 +46,12 @@ test("pci-unit") {
     "unit/bus_tests.cc",
     "unit/config_tests.cc",
     "unit/device_tests.cc",
-    "unit/fake_pciroot_tests.cc",
     "unit/msix_tests.cc",
   ]
 
   deps = [
     ":fakes",
     "..:user_pci",
-    "//sdk/banjo/fuchsia.hardware.pciroot:fuchsia.hardware.pciroot_banjo_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/async_patterns/testing/cpp",

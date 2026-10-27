@@ -25,14 +25,12 @@ Runs isolated unit tests across driver internal components:
 * `bus_tests.cc`: Bus scanning, device topology lifecycle, and upstream node configuration.
 * `config_tests.cc`: Configuration space accessors for Type 0 and Type 1 headers.
 * `device_tests.cc`: PCI device lifecycle, capability traversal, BAR allocation, and IRQ modes.
-* `fake_pciroot_tests.cc`: Verification of the `FakePciroot` test fake implementation.
 * `msix_tests.cc`: MSI-X vector allocation, table programming, and capability configuration.
 
 Unit tests are supported by test fakes located in [`fakes/`](fakes/):
 * `fake_allocator.h`: VMO-backed `PciAllocation` fakes.
 * `fake_bus.h`: Hardware-decoupled `BusDeviceInterface` implementation.
 * `fake_config.h`, `fake_ecam.h`: MMIO-backed fake configuration space.
-* `fake_pciroot.h`: Fake `fuchsia.hardware.pciroot` implementation.
 * `fake_upstream_node.h`: Fake upstream bridges and root complexes.
 * `test_device.h`: NVIDIA Quadro K2200 reference configuration dump.
 

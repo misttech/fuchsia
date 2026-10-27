@@ -65,14 +65,19 @@ group("component") {
 
 test("pciroot-banjo-adapter-test-bin") {
   output_name = "pciroot-banjo-adapter-test"
-  sources = [ "adapter-test.cc" ]
+  sources = [
+    "adapter-test.cc",
+    "fake_pciroot.h",
+  ]
   deps = [
     ":common",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/pci/drivers/pci/test:fakes",
+    "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-msi",
+    "//src/devices/testing/fake-resource",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",

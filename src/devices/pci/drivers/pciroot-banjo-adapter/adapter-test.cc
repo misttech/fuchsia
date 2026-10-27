@@ -22,7 +22,7 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <gtest/gtest.h>
 
-#include "src/devices/pci/drivers/pci/test/fakes/fake_pciroot.h"
+#include "src/devices/pci/drivers/pciroot-banjo-adapter/fake_pciroot.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace pciroot_banjo_adapter::testing {
