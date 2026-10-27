@@ -26,6 +26,8 @@ void PowerManagementCapability::SetPowerState(const pci::Config& cfg,
 
   // If we're already in the requested power state then we're finished.
   auto pmcsr = pmcsr_.ReadFrom(&cfg);
+  // PME_Status is RW1CS, so writing back the value read would clear a pending PME.
+  pmcsr.set_pme_status(0);
   uint8_t old_state_u8 = static_cast<uint8_t>(pmcsr.power_state());
   if (new_state == old_state_u8) {
     return;

@@ -62,7 +62,8 @@ struct PmcsrReg : public hwreg::RegisterBase<PmcsrReg, uint16_t> {
   DEF_FIELD(12, 9, data_select);
   // RO. Scaling factor for the data register.
   DEF_FIELD(14, 13, data_scale);
-  // RW. Set if the function would normally generate a PME signal.
+  // RW1CS. Set when the function would normally generate a PME, regardless of pme_en. Writing 1
+  //        clears it and writing 0 has no effect.
   DEF_BIT(15, pme_status);
 };
 

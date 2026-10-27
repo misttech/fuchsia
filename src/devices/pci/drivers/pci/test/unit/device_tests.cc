@@ -497,6 +497,27 @@ TEST_F(PciDeviceTestsExtendedCam, PowerStateTransitions) {
   ASSERT_EQ(dev.GetPowerState().value(), PowerManagementCapability::PowerState::D1);
 }
 
+// Verify that power state transitions don't write PME_Status back as 1, which would clear a
+// pending PME. The fake config space stores writes as-is, so a cleared bit shows the value written.
+TEST_F(PciDeviceTestsExtendedCam, PowerStatePreservesPmeStatus) {
+  pci::Device& dev =
+      CreateTestDevice(MockDevice::FakeRootParent().get(), kFakeQuadroDeviceConfig.data(),
+                       kFakeQuadroDeviceConfig.max_size());
+  pci::Config& cfg = *dev.config();
+
+  auto power = PowerManagementCapability(cfg, kFakeQuadroPowerManagementCapabilityOffset);
+  power.pmcsr()
+      .ReadFrom(&cfg)
+      .set_power_state(PowerManagementCapability::PowerState::D0)
+      .set_pme_status(1)
+      .WriteTo(&cfg);
+  power.SetPowerState(cfg, PowerManagementCapability::PowerState::D3);
+
+  auto pmcsr = power.pmcsr().ReadFrom(&cfg);
+  EXPECT_EQ(pmcsr.power_state(), PowerManagementCapability::PowerState::D3);
+  EXPECT_EQ(pmcsr.pme_status(), 0u);
+}
+
 // Verify that a prefetchable BAR behind a bridge falls back to the non-prefetchable
 // MMIO window when PF-MMIO allocation fails.
 TEST_F(PciDeviceTestExtendedCamBridge, PrefetchableBridgeBarMmioFallback) {
