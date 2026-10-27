@@ -112,8 +112,11 @@ pub fn sys_object_wait_many(
     // much stack InlineArray is going to use, given limited kernel stack size.
     zr::static_assert!(core::mem::size_of::<WaitSignalObserver>() * MAX_INLINE_OBSERVERS < 640);
 
-    let mut observers = InlineArray::<WaitSignalObserver, MAX_INLINE_OBSERVERS>::try_new(count)
-        .map_err(|_| Status::NO_MEMORY)?;
+    pin_init::stack_try_pin_init!(
+        let observers = InlineArray::<WaitSignalObserver, MAX_INLINE_OBSERVERS>::init(count)
+    );
+    let observers = observers.map_err(|_| Status::NO_MEMORY)?;
+    let observers = observers.as_mut_slice_pinned();
 
     pin_init::stack_pin_init!(let event = Event::init_unsignaled());
 

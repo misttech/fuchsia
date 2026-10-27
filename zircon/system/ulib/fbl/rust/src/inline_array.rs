@@ -6,7 +6,9 @@
 
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 use kalloc::{AllocError, Allocator, Box, DefaultAllocator};
+use pin_init::Init;
 
 /// Runtime-determined, fixed size arrays that are "inlined" (e.g., on the stack) if the size at
 /// most `N` or heap-allocated otherwise.
@@ -45,33 +47,61 @@ zr::static_assert!(core::mem::size_of::<InlineArray<u32, 4>>() == 32);
 zr::static_assert!(core::mem::align_of::<InlineArray<u32, 4>>() == 8);
 
 impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
-    /// Tries to create a new `InlineArray` of the given length with a specific allocator,
-    /// initializing elements with the provided closure.
-    pub fn try_new_in_with<F>(count: usize, allocator: A, mut f: F) -> Result<Self, AllocError>
+    /// Returns an in-place initializer for an `InlineArray`.
+    ///
+    /// This initializes the array directly in its final location (e.g. on the caller's stack via
+    /// `stack_try_pin_init!`), avoiding a temporary copy of the inline storage.
+    pub fn init_in_with<F>(count: usize, allocator: A, mut f: F) -> impl Init<Self, AllocError>
     where
         F: FnMut() -> T,
     {
-        if count <= N {
-            let mut inline_storage = [const { MaybeUninit::uninit() }; N];
-            for item in inline_storage.iter_mut().take(count) {
-                item.write(f());
-            }
-            Ok(InlineArray { count, ptr: core::ptr::null_mut(), inline_storage, allocator })
-        } else {
-            let mut heap_data = Box::try_new_uninit_slice_in(count, allocator)?;
-            for item in heap_data.iter_mut().take(count) {
-                item.write(f());
-            }
-            // SAFETY: We just initialized all the values.
-            let (fat_ptr, allocator) =
-                Box::into_raw_with_allocator(unsafe { heap_data.assume_init() });
-            let ptr = fat_ptr as *mut T;
-            Ok(InlineArray {
-                count,
-                ptr,
-                inline_storage: [const { MaybeUninit::uninit() }; N],
-                allocator,
-            })
+        let is_inline = count <= N;
+        // Number of elements that live in `inline_storage`; zero in heap mode.
+        let inline_count = if is_inline { count } else { 0 };
+        // Note: `init!` shadows each field name with an accessor once that field is initialized,
+        // so plain captured values (`count`, `allocator`) are consumed before their fields.
+        pin_init::init!(Self {
+            ptr: if is_inline {
+                core::ptr::null_mut()
+            } else {
+                let mut heap_data = Box::try_new_uninit_slice_in(count, allocator.clone())?;
+                for item in heap_data.iter_mut() {
+                    item.write(f());
+                }
+                // SAFETY: We just initialized all the values.
+                let heap_data = unsafe { heap_data.assume_init() };
+                Box::into_raw_with_allocator(heap_data).0 as *mut T
+            },
+            inline_storage <- pin_init::init_array_from_fn(|i| {
+                if i < inline_count { MaybeUninit::new(f()) } else { MaybeUninit::uninit() }
+            }),
+            allocator,
+            count,
+        }? AllocError)
+    }
+
+    /// Returns an in-place initializer for an `InlineArray`, initializing elements using
+    /// `T::default()`.
+    pub fn init_in(count: usize, allocator: A) -> impl Init<Self, AllocError>
+    where
+        T: Default,
+    {
+        Self::init_in_with(count, allocator, T::default)
+    }
+
+    /// Tries to create a new `InlineArray` of the given length with a specific allocator,
+    /// initializing elements with the provided closure.
+    pub fn try_new_in_with<F>(count: usize, allocator: A, f: F) -> Result<Self, AllocError>
+    where
+        F: FnMut() -> T,
+    {
+        let mut slot = MaybeUninit::<Self>::uninit();
+        let init = Self::init_in_with(count, allocator, f);
+        // SAFETY: `slot` is a valid pointer to uninitialized memory for `Self`, and `init` fully
+        // initializes it when it returns `Ok`.
+        unsafe {
+            init.__init(slot.as_mut_ptr())?;
+            Ok(slot.assume_init())
         }
     }
 
@@ -120,9 +150,34 @@ impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
             unsafe { core::slice::from_raw_parts_mut(self.ptr, self.count) }
         }
     }
+
+    /// Returns a mutable reference to the array elements for a pinned `InlineArray`.
+    pub fn as_mut_slice_pinned(self: Pin<&mut Self>) -> &mut [T] {
+        // SAFETY: Borrowing elements as `&mut [T]` does not move the `InlineArray` or its elements
+        // out of memory.
+        unsafe { self.get_unchecked_mut().as_mut_slice() }
+    }
 }
 
 impl<T, const N: usize> InlineArray<T, N, DefaultAllocator> {
+    /// Returns an in-place initializer for an `InlineArray` using the default allocator.
+    /// Elements are initialized using `T::default()`.
+    pub fn init(count: usize) -> impl Init<Self, AllocError>
+    where
+        T: Default,
+    {
+        Self::init_in(count, DefaultAllocator)
+    }
+
+    /// Returns an in-place initializer for an `InlineArray` using the default allocator,
+    /// initializing elements with the provided closure.
+    pub fn init_with<F>(count: usize, f: F) -> impl Init<Self, AllocError>
+    where
+        F: FnMut() -> T,
+    {
+        Self::init_in_with(count, DefaultAllocator, f)
+    }
+
     /// Tries to create a new `InlineArray` of the given length using the default allocator.
     /// Elements are initialized using `T::default()`.
     pub fn try_new(count: usize) -> Result<Self, AllocError>
@@ -338,5 +393,26 @@ mod tests {
             TestAllocator { state: &state },
         );
         assert!(ia.is_err());
+    }
+
+    #[test]
+    fn test_pinned_init() {
+        let state = TestState::default();
+
+        for sz in 0..=3 {
+            state.ctor_count.set(0);
+            state.dtor_count.set(0);
+            {
+                pin_init::stack_try_pin_init!(
+                    let ia = InlineArray::<TestObject<'_>, 3>::init_with(sz, || {
+                        TestObject::new(&state)
+                    })
+                );
+                let ia = ia.unwrap();
+                assert_eq!(ia.len(), sz);
+            }
+            assert_eq!(state.ctor_count.get(), sz);
+            assert_eq!(state.dtor_count.get(), sz);
+        }
     }
 }
