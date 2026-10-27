@@ -62,6 +62,8 @@ test_suite(
         "//src/developer/ffx/plugins/package/far/list:ffx_package_far_list_test",
         "//src/developer/ffx/plugins/package/file-hash:ffx_package_file_hash_test",
         "//src/developer/ffx/plugins/package/ota-manifest/show:ffx_package_ota_manifest_show_test",
+        "//src/developer/ffx/plugins/platform/preflight:ffx_preflight_test",
+        "//src/developer/ffx/plugins/product/common:lib_test",
         "//src/developer/ffx/plugins/repository/default:ffx_repository_default_test",
         "//src/developer/ffx/plugins/sdk:ffx_sdk_test",
         "//src/developer/ffx/plugins/version:ffx_version_test",

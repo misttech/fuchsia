@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//src/developer/ffx/build:ffx_plugin.bzl", "ffx_plugin")
+
+package(default_applicable_licenses = ["//:license"])
+
+ffx_plugin(
+    name = "ffx_preflight",
+    srcs = [
+        "src/analytics.rs",
+        "src/check.rs",
+        "src/check/build_prereqs.rs",
+        "src/check/emu_acceleration.rs",
+        "src/check/emu_networking.rs",
+        "src/check/femu_graphics.rs",
+        "src/check/ssh_checks.rs",
+        "src/command_runner.rs",
+        "src/config.rs",
+        "src/json.rs",
+        "src/lib.rs",
+    ],
+    args_deps = [
+        "//src/developer/ffx/core:lib",
+        "//third_party/rust_crates/vendor:argh",
+    ],
+    args_srcs = ["src/args.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    sdk_category = "not-yet-specified",
+    version = "0.1.0",
+    visibility = ["//src/developer/ffx/plugins/platform:__pkg__"],
+    deps = [
+        "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/lib/fho:lib",
+        "//src/developer/ffx/lib/writer:lib",
+        "//src/lib/analytics/rust:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:regex",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:termion",
+        "//third_party/rust_crates/vendor:textwrap",
+    ],
+)
+
+host_rustc_test(
+    name = "ffx_preflight_test",
+    crate = ":ffx_preflight",
+    visibility = ["//src/developer/ffx:__pkg__"],
+    deps = ["//src/lib/fuchsia"],
+)
