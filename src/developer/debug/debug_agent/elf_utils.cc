@@ -192,17 +192,17 @@ void MergeMmapedModules(std::vector<debug_ipc::Module>& modules,
 
   for (size_t current_map_index = 0; current_map_index < mmaps.size(); current_map_index++) {
     const auto& current_region = mmaps[current_map_index];
-    std::optional<ElfSegInfo> opt_info = get_elf_info_for_base(current_region.base);
-    if (!opt_info) {
-      continue;
-    }
-
     if (current_region.base < end_of_last_module) {
       continue;
     }
 
     // With `-fuse-ld=ld -z noseparate-code`, ELF headers live together with the text section.
-    if (current_region.write) {
+    if (!current_region.read || current_region.write) {
+      continue;
+    }
+
+    std::optional<ElfSegInfo> opt_info = get_elf_info_for_base(current_region.base);
+    if (!opt_info) {
       continue;
     }
 

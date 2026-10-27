@@ -78,8 +78,10 @@ TEST(ElfUtils, MergeMmapedModules) {
       {.p_type = elflib::PT_LOAD, .p_vaddr = 0, .p_memsz = 0x1000},
       {.p_type = elflib::PT_LOAD, .p_vaddr = 0x1000, .p_memsz = 0x1000}};
 
-  // A non-readable section shouldn't count.
+  // Non-readable and writable sections shouldn't be probed for ELF headers.
   maps.push_back(debug_ipc::AddressRegion{.name = "/unreadable", .base = kBase2, .size = 0x1000});
+  maps.push_back(debug_ipc::AddressRegion{
+      .name = "/writable", .base = kBase2 + 0x1000, .size = 0x1000, .read = true, .write = true});
 
   // This region should be merged in.
   maps.push_back(
@@ -93,15 +95,10 @@ TEST(ElfUtils, MergeMmapedModules) {
 
   auto get_elf_info = [&](uint64_t base) -> std::optional<internal::ElfSegInfo> {
     switch (base) {
-      case kBase1:
-      case kBase1 + 0x1000: {
+      case kBase1: {
         return internal::ElfSegInfo{
             .segment_headers = a_segs, .so_name = kBinaryName, .build_id = "1234"};
       }
-      case kBase2: {
-        return std::nullopt;
-      }
-      case kBase3 + 0x1000:
       case kBase3: {
         return internal::ElfSegInfo{
             .segment_headers = foo_segs, .so_name = kLibFooName, .build_id = "abcd"};
@@ -153,8 +150,10 @@ TEST(ElfUtils, MergeMmapedModulesWithHole) {
       {.p_type = elflib::PT_LOAD, .p_vaddr = 0, .p_memsz = 0x1000},
       {.p_type = elflib::PT_LOAD, .p_vaddr = 0x1000, .p_memsz = 0x1000}};
 
-  // A non-readable section shouldn't count.
+  // Non-readable and writable sections shouldn't be probed for ELF headers.
   maps.push_back(debug_ipc::AddressRegion{.name = "/unreadable", .base = kBase2, .size = 0x1000});
+  maps.push_back(debug_ipc::AddressRegion{
+      .name = "/writable", .base = kBase2 + 0x1000, .size = 0x1000, .read = true, .write = true});
 
   // This region should be merged in.
   maps.push_back(
@@ -181,13 +180,9 @@ TEST(ElfUtils, MergeMmapedModulesWithHole) {
 
   auto get_elf_info = [&](uint64_t base) -> std::optional<internal::ElfSegInfo> {
     switch (base) {
-      case kBase1:
-      case kBase1 + 0x1000: {
+      case kBase1: {
         return internal::ElfSegInfo{
             .segment_headers = a_segs, .so_name = kBinaryName, .build_id = "1234"};
-      }
-      case kBase2: {
-        return std::nullopt;
       }
       case kBase3 + 0x10000:
         // In practice the headers that are mapped after the "hole" do not contain the ELF headers
