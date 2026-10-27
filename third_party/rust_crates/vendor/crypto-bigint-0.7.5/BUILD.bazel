@@ -85,7 +85,7 @@ rust_library(
         "//third_party/rust_crates/vendor/cpubits-0.1.1:cpubits",
         "//third_party/rust_crates/vendor/ctutils-0.4.5:ctutils",
         "//third_party/rust_crates/vendor/getrandom-0.4.3:getrandom",
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array",
         "//third_party/rust_crates/vendor/num-traits-0.2.19:num_traits",
         "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",
         "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",

@@ -43,7 +43,7 @@ rust_library(
     aliases = {
         "//third_party/rust_crates/vendor/crypto-bigint-0.7.5:crypto_bigint": "bigint",
         "//third_party/rust_crates/vendor/crypto-common-0.2.2:crypto_common": "common",
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array": "array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array": "array",
     },
     compile_data = glob(
         include = ["**"],
@@ -102,7 +102,7 @@ rust_library(
         "//third_party/rust_crates/vendor/ff-0.14.0:ff",
         "//third_party/rust_crates/vendor/group-0.14.0:group",
         "//third_party/rust_crates/vendor/hkdf-0.13.0:hkdf",
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array",
         "//third_party/rust_crates/vendor/pem-rfc7468-1.0.0:pem_rfc7468",
         "//third_party/rust_crates/vendor/pkcs8-0.11.0:pkcs8",
         "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",

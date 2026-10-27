@@ -90,7 +90,7 @@ rust_library(
         "//third_party/rust_crates/vendor/base16ct-1.0.0:base16ct",
         "//third_party/rust_crates/vendor/ctutils-0.4.5:ctutils",
         "//third_party/rust_crates/vendor/der-0.8.2:der",
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array",
         "//third_party/rust_crates/vendor/serdect-0.4.3:serdect",
         "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",
     ],

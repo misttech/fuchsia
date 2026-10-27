@@ -5034,7 +5034,7 @@ rustc_library("block-buffer-v0_12_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
 
   rustenv = []
 
@@ -5068,7 +5068,7 @@ rustc_library("block-padding-v0_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
 
   rustenv = []
 
@@ -7270,7 +7270,7 @@ rustc_library("crypto-bigint-v0_7_5") {
   deps += [ ":cpubits-v0_1_1" ]
   deps += [ ":ctutils-v0_4_5" ]
   deps += [ ":getrandom-v0_4_3" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":rand_core-v0_10_1" ]
   deps += [ ":subtle-v2_6_1" ]
@@ -7349,7 +7349,7 @@ rustc_library("crypto-common-v0_2_2") {
 
   deps = []
   deps += [ ":getrandom-v0_4_3" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
   deps += [ ":rand_core-v0_10_1" ]
 
   rustenv = []
@@ -7762,7 +7762,7 @@ rustc_library("dbl-v0_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
 
   rustenv = []
 
@@ -8796,7 +8796,7 @@ rustc_library("elliptic-curve-v0_14_1") {
   deps += [ ":ff-v0_14_0" ]
   deps += [ ":group-v0_14_0" ]
   deps += [ ":hkdf-v0_13_0" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
   deps += [ ":pem-rfc7468-v1_0_0" ]
   deps += [ ":pkcs8-v0_11_0" ]
   deps += [ ":rand_core-v0_10_1" ]
@@ -8828,7 +8828,7 @@ rustc_library("elliptic-curve-v0_14_1") {
   aliased_deps = {
     bigint = ":crypto-bigint-v0_7_5.actual"
     common = ":crypto-common-v0_2_2.actual"
-    array = ":hybrid-array-v0_4_13.actual"
+    array = ":hybrid-array-v0_4_15.actual"
   }
   visibility = [ ":*" ]
 
@@ -11915,19 +11915,19 @@ rustc_library("humansize-v2_1_3") {
   applicable_licenses = [ ":humansize-v2_1_3.license" ]
 }
 
-license("hybrid-array-v0_4_13.license") {
+license("hybrid-array-v0_4_15.license") {
   public_package_name = "hybrid_array"
   license_files = [
-    "//third_party/rust_crates/vendor/hybrid-array-0.4.13/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hybrid-array-0.4.13/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.15/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hybrid-array-0.4.15/LICENSE-MIT",
   ]
 }
 
-rustc_library("hybrid-array-v0_4_13") {
+rustc_library("hybrid-array-v0_4_15") {
   crate_name = "hybrid_array"
   source_root =
-      "//third_party/rust_crates/vendor/hybrid-array-0.4.13/src/lib.rs"
-  output_name = "hybrid_array-371632f869a471a5"
+      "//third_party/rust_crates/vendor/hybrid-array-0.4.15/src/lib.rs"
+  output_name = "hybrid_array-2409785b68c949c7"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -11942,8 +11942,8 @@ rustc_library("hybrid-array-v0_4_13") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=371632f869a471a5",
-    "-Cextra-filename=-371632f869a471a5",
+    "-Cmetadata=2409785b68c949c7",
+    "-Cextra-filename=-2409785b68c949c7",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"subtle\"",
     "--cfg=feature=\"zeroize\"",
@@ -11951,7 +11951,7 @@ rustc_library("hybrid-array-v0_4_13") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hybrid-array-v0_4_13.license" ]
+  applicable_licenses = [ ":hybrid-array-v0_4_15.license" ]
 }
 
 license("hyper-v1_12_0.license") {
@@ -12749,7 +12749,7 @@ rustc_library("inout-v0_2_2") {
 
   deps = []
   deps += [ ":block-padding-v0_4_2" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
 
   rustenv = []
 
@@ -21122,7 +21122,7 @@ rustc_library("sec1-v0_8_1") {
   deps += [ ":base16ct-v1_0_0" ]
   deps += [ ":ctutils-v0_4_5" ]
   deps += [ ":der-v0_8_2" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
   deps += [ ":serdect-v0_4_3" ]
   deps += [ ":subtle-v2_6_1" ]
 
@@ -26765,7 +26765,7 @@ rustc_library("wnaf-v0_14_1") {
   deps = []
   deps += [ ":ff-v0_14_0" ]
   deps += [ ":group-v0_14_0" ]
-  deps += [ ":hybrid-array-v0_4_13" ]
+  deps += [ ":hybrid-array-v0_4_15" ]
   deps += [ ":primefield-v0_14_0" ]
 
   rustenv = []
@@ -26777,7 +26777,7 @@ rustc_library("wnaf-v0_14_1") {
   ]
 
   aliased_deps = {
-    array = ":hybrid-array-v0_4_13.actual"
+    array = ":hybrid-array-v0_4_15.actual"
   }
   visibility = [ ":*" ]
 

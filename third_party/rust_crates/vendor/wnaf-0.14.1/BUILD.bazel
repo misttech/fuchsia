@@ -41,7 +41,7 @@ rust_library(
         allow_empty = False,
     ),
     aliases = {
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array": "array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array": "array",
     },
     compile_data = glob(
         include = ["**"],
@@ -79,7 +79,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/ff-0.14.0:ff",
         "//third_party/rust_crates/vendor/group-0.14.0:group",
-        "//third_party/rust_crates/vendor/hybrid-array-0.4.13:hybrid_array",
+        "//third_party/rust_crates/vendor/hybrid-array-0.4.15:hybrid_array",
         "//third_party/rust_crates/vendor/primefield-0.14.0:primefield",
     ],
 )
