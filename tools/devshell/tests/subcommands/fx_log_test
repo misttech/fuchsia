@@ -54,13 +54,18 @@ BT_SET_UP() {
 
 TEST_log_raw() {
   BT_EXPECT ${fx} -t testing log --legacy --raw
-  btf::expect-mock-args "${ffx}.mock_state" --config fuchsia.analytics.ffx_invoker=fx target default get
+  # The legacy raw log does not need ffx at all. (Metrics are disabled in this
+  # test, so fx itself does not query the default target either.) The mock
+  # renames .mock_state to .mock_state.1 when it is called again, so check that
+  # neither exists.
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${ffx}.mock_state"
+  BT_EXPECT_FILE_DOES_NOT_EXIST "${ffx}.mock_state.1"
   BT_EXPECT_FILE_CONTAINS "${ffx}_mock_errors" ""
 }
 
 TEST_log() {
   BT_EXPECT ${fx} -t testing log --flag1 --flag2
-  btf::expect-mock-args "${ffx}.mock_state.1" log --flag1 --flag2
+  btf::expect-mock-args "${ffx}.mock_state" log --flag1 --flag2
   BT_EXPECT_FILE_CONTAINS "${ffx}_mock_errors" ""
 }
 

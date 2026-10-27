@@ -669,4 +669,95 @@ TEST_track_test_event_chunking() {
   BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" "\"stats_json2\":\"${chunk2}\""
 }
 
+# End-to-end tests of fx itself. Unlike the tests above, these run fx with a
+# mocked subcommand instead of calling the functions in metrics.sh directly. fx
+# reports some events from the background after it exits, so these tests poll
+# the log for the events they expect.
+
+# Waits (for at most 10 seconds) until an event with the given name is logged.
+wait_for_logged_event() {
+  local name="$1"
+  local i
+  for i in {1..200}; do
+    if grep -q "\"name\":\"${name}\"" "${metrics_log}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+# Prints the code of a mock side effect that waits for the file "$1" to exist,
+# for at most 10 seconds, and then writes "released" or "timed out" to the file
+# "$2". Tests create the first file once fx has returned, to check that fx did
+# not wait for the mocked tool.
+wait_for_release_side_effect() {
+  local release_file="$1"
+  local outcome_file="$2"
+  cat <<EOF
+outcome="timed out"
+for _ in {1..200}; do
+  if [[ -f "${release_file}" ]]; then
+    outcome="released"
+    break
+  fi
+  sleep 0.05
+done
+echo "\${outcome}" >"${outcome_file}"
+EOF
+}
+
+# Sets up an external user who has enabled metrics, as seen by fx.
+set_up_fx_metrics_enabled() {
+  set_up_environment "1" "N" "N" "0"
+  # fx is a separate process, so it needs to inherit the host name chosen by
+  # set_up_environment.
+  export HOSTNAME
+}
+
+TEST_fx_finish_event_reported_in_background() {
+  set_up_fx_metrics_enabled
+  local ffx release ffx_outcome
+  ffx="$(btf::make_installed_hosttools_mock ffx)"
+  release="${BT_TEMP_DIR}/release"
+  ffx_outcome="${BT_TEMP_DIR}/ffx_outcome"
+  # fx runs `ffx target default get` to fill in is_remote. Make it report the
+  # remote workflow device, but only once fx has returned.
+  cat >"${ffx}.mock_side_effects" <<EOF
+if [[ "\${@: -1}" == "get" ]]; then
+$(wait_for_release_side_effect "${release}" "${ffx_outcome}")
+  echo "[::1]:8022"
+fi
+EOF
+  echo 3 >"${BT_TEMP_DIR}/tools/devshell/build.mock_status"
+
+  # Like a caller capturing fx's output with $(fx ...), cat only exits once
+  # nothing keeps fx's stdout and stderr open.
+  ${fx} build 2>&1 | cat >/dev/null
+  local status="${PIPESTATUS[0]}"
+  touch "${release}"
+
+  BT_EXPECT_EQ "${status}" "3"
+  BT_EXPECT wait_for_logged_event "finish"
+  BT_EXPECT_FILE_CONTAINS "${ffx_outcome}" "released"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_remote":"1"'
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"exit_status":"3"'
+}
+
+TEST_fx_finish_event_not_remote() {
+  set_up_fx_metrics_enabled
+  local ffx
+  ffx="$(btf::make_installed_hosttools_mock ffx)"
+  cat >"${ffx}.mock_side_effects" <<'EOF'
+if [[ "${@: -1}" == "get" ]]; then
+  echo "some-device"
+fi
+EOF
+
+  BT_EXPECT ${fx} build
+  BT_EXPECT wait_for_logged_event "finish"
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"is_remote":"0"'
+  BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"exit_status":"0"'
+}
+
 BT_RUN_TESTS "$@"
