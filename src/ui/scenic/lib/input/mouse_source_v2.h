@@ -21,7 +21,6 @@ class MouseSourceV2 : public MouseSourceBase,
  public:
   static constexpr uint64_t kMaxUnacknowledgedEvents =
       fuchsia_ui_pointer::kMouseSourceV2MaxUnacknowledgedEvents;
-  static constexpr size_t kMaxBufferedEvents = 1000;
 
   MouseSourceV2(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source,
                 fit::function<void()> error_handler,

@@ -222,18 +222,17 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
     if (event.wake_lease) {
       out_event.touch_event.wake_lease(std::move(event.wake_lease));
     }
+
+    stream.stream_has_ended = is_end_of_stream;
+
+    // Cleanup complete stream.
+    if (is_end_of_stream && stream.was_won) {
+      ongoing_streams_.erase(stream_id);
+      FX_DCHECK(!won_streams_awaiting_first_message_.contains(stream_id));
+    }
+
     PushEvent(stream_id, std::move(out_event));
   }
-
-  stream.stream_has_ended = is_end_of_stream;
-
-  // Cleanup complete stream.
-  if (is_end_of_stream && stream.was_won) {
-    ongoing_streams_.erase(stream_id);
-    FX_DCHECK(!won_streams_awaiting_first_message_.contains(stream_id));
-  }
-
-  SendPendingIfWaiting();
 }
 
 void TouchSourceBase::EndContest(StreamId stream_id, bool awarded_win) {
@@ -257,17 +256,23 @@ void TouchSourceBase::EndContest(StreamId stream_id, bool awarded_win) {
   stream.was_won = awarded_win;
   AugmentedTouchEvent event{
       .touch_event = NewEndEvent(stream_id, stream.device_id, stream.pointer_id, awarded_win)};
-  PushEvent(stream_id, std::move(event));
 
   if (!awarded_win || stream.stream_has_ended) {
     ongoing_streams_.erase(stream_id);
   }
 
-  SendPendingIfWaiting();
+  PushEvent(stream_id, std::move(event));
 }
 
 void TouchSourceBase::PushEvent(StreamId stream_id, AugmentedTouchEvent event) {
   pending_events_.push({.stream_id = stream_id, .event = std::move(event)});
+  SendPendingIfWaiting();
+  if (pending_events_.size() > kMaxBufferedEvents) {
+    FX_LOGS(ERROR) << "TouchSourceBase: Client is not reading events fast enough. Closing channel.";
+    pending_events_ = {};
+    CloseChannel(ZX_ERR_BAD_STATE);
+    return;
+  }
 }
 
 zx_status_t TouchSourceBase::ValidateResponses(

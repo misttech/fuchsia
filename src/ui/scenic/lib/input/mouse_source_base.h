@@ -21,6 +21,8 @@ namespace scenic_impl::input {
 // augmentations.
 class MouseSourceBase {
  public:
+  static constexpr size_t kMaxBufferedEvents = 1000;
+
   MouseSourceBase(zx_koid_t channel_koid, fit::function<void(zx_status_t)> close_channel)
       : channel_koid_(channel_koid), close_channel_(std::move(close_channel)) {}
 

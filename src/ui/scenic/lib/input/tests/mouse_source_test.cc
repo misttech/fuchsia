@@ -406,4 +406,21 @@ TEST_F(MouseSourceTest, FullStreamTest) {
   RunLoopUntilIdle();
 }
 
+TEST_F(MouseSourceTest, BufferOverflow_WithoutWatch_ClosesChannel) {
+  for (size_t i = 0; i < MouseSource::kMaxBufferedEvents; ++i) {
+    InternalMouseEvent event = IMEventTemplate();
+    mouse_source_->UpdateStream(kStreamId, std::move(event), kEmptyBoundingBox, kInsideView);
+  }
+  RunLoopUntilIdle();
+  EXPECT_FALSE(internal_error_handler_fired_);
+  EXPECT_FALSE(channel_closed_);
+
+  // Push 1 more event exceeding the buffer capacity. Channel should close.
+  InternalMouseEvent event = IMEventTemplate();
+  mouse_source_->UpdateStream(kStreamId, std::move(event), kEmptyBoundingBox, kInsideView);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(internal_error_handler_fired_);
+  EXPECT_TRUE(channel_closed_);
+}
+
 }  // namespace input::test

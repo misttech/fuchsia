@@ -175,6 +175,12 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
 void MouseSourceBase::PushEvent(fuchsia_ui_pointer::MouseEvent event) {
   pending_events_.push(std::move(event));
   SendPendingIfWaiting();
+  if (pending_events_.size() > kMaxBufferedEvents) {
+    FX_LOGS(ERROR) << "MouseSourceBase: Client is not reading events fast enough. Closing channel.";
+    pending_events_ = {};
+    close_channel_(ZX_ERR_BAD_STATE);
+    return;
+  }
 }
 
 void MouseSourceBase::SendPendingIfWaiting() {

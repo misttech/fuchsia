@@ -842,4 +842,24 @@ TEST_F(TouchSourceTest, TouchDeviceInfo_ShouldBeSent_OncePerDevice) {
   }
 }
 
+TEST_F(TouchSourceTest, BufferOverflow_WithoutWatch_ClosesChannel) {
+  for (size_t i = 0; i < TouchSource::kMaxBufferedEvents; ++i) {
+    Phase phase = (i == 0) ? Phase::kAdd : Phase::kChange;
+    InternalTouchEvent event = IPEventTemplate(phase);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                                kEmptyBoundingBox);
+  }
+  RunLoopUntilIdle();
+  EXPECT_FALSE(internal_error_handler_fired_);
+  EXPECT_FALSE(channel_closed_);
+
+  // Push 1 more event exceeding the buffer capacity. Channel should close.
+  InternalTouchEvent event = IPEventTemplate(Phase::kChange);
+  touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                              kEmptyBoundingBox);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(internal_error_handler_fired_);
+  EXPECT_TRUE(channel_closed_);
+}
+
 }  // namespace input::test

@@ -23,7 +23,6 @@ class TouchSourceV2 : public TouchSourceBase,
  public:
   static constexpr uint64_t kMaxUnacknowledgedEvents =
       fuchsia_ui_pointer::kTouchSourceV2MaxUnacknowledgedEvents;
-  static constexpr size_t kMaxBufferedEvents = 1000;
 
   TouchSourceV2(async_dispatcher_t* dispatcher, zx_koid_t view_ref_koid,
                 fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source,

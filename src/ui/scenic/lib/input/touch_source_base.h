@@ -25,6 +25,8 @@ namespace scenic_impl::input {
 // Base class for implementations of fuchsia_ui_pointer::TouchSource and its augmentations.
 class TouchSourceBase : public GestureContender {
  public:
+  static constexpr size_t kMaxBufferedEvents = 1000;
+
   ~TouchSourceBase() override = default;
 
   // |GestureContender|
