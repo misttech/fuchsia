@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_rust//rust:rust_static_library.bzl", "rust_static_library")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "rust_url",
+    srcs = ["rust_url.cc"],
+    hdrs = ["rust_url.h"],
+    implementation_deps = [":rust_url_c_api"],
+    visibility = ["//vendor/google:__subpackages__"],
+    alwayslink = True,
+)
+
+# LINT.IfChange(rust_url_c_api)
+# bazel2gn does not support rust_static_library; kept in BUILD.gn for :rust_url.
+# @bazel2gn:skip
+rust_static_library(
+    name = "rust_url_c_api",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    deps = [
+        "//sdk/rust/zx",
+        "//third_party/rust_crates/vendor:url",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:rust_url_c_api)
+
+fx_cc_binary(
+    name = "rust_url_unittests_bin",
+    testonly = True,
+    srcs = ["rust_url_unittests.cc"],
+    tags = ["manual"],
+    deps = [
+        ":rust_url",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "rust_url_unittests",
+    package_name = "rust_url_unittests",
+    unit_tests = [":rust_url_unittests_bin"],
+    visibility = ["//src/lib:__pkg__"],
+)
