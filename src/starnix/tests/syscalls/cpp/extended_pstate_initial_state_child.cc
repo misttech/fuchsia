@@ -40,10 +40,8 @@ intptr_t syscall4(intptr_t syscall_number, intptr_t arg1, intptr_t arg2, intptr_
   register intptr_t x3 asm("x3") = arg4;
   register intptr_t number asm("x8") = syscall_number;
 
-  __asm__ volatile("svc #0"
-                   : "=r"(ret)
-                   : "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(number)
-                   : "memory");
+  __asm__ volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x2), "r"(x3), "r"(number) : "memory");
+  ret = x0;
 #elif defined(__riscv)
   register intptr_t a0 asm("a0") = arg1;
   register intptr_t a1 asm("a1") = arg2;
@@ -211,6 +209,53 @@ extern "C" void _start() {
   }
   if (fpsr != 0) {
     fail("fpsr\n", 34);
+  }
+  // Query PR_SVE_GET_VL (51). It returns > 0 iff SVE is supported, without modifying P0-P15 or FFR.
+  constexpr intptr_t kPrSveGetVl = 51;
+  constexpr intptr_t kSveVlReportFd = 42;
+  intptr_t sve_vl = SYSCALL(__NR_prctl, kPrSveGetVl);
+  if (sve_vl > 0) {
+    uint16_t p_registers[16];
+    uint16_t ffr;
+    __asm__ volatile(
+        ".arch_extension sve\n"
+        "str  p0, [%[pregs], #0, mul vl]\n"
+        "str  p1, [%[pregs], #1, mul vl]\n"
+        "str  p2, [%[pregs], #2, mul vl]\n"
+        "str  p3, [%[pregs], #3, mul vl]\n"
+        "str  p4, [%[pregs], #4, mul vl]\n"
+        "str  p5, [%[pregs], #5, mul vl]\n"
+        "str  p6, [%[pregs], #6, mul vl]\n"
+        "str  p7, [%[pregs], #7, mul vl]\n"
+        "str  p8, [%[pregs], #8, mul vl]\n"
+        "str  p9, [%[pregs], #9, mul vl]\n"
+        "str p10, [%[pregs], #10, mul vl]\n"
+        "str p11, [%[pregs], #11, mul vl]\n"
+        "str p12, [%[pregs], #12, mul vl]\n"
+        "str p13, [%[pregs], #13, mul vl]\n"
+        "str p14, [%[pregs], #14, mul vl]\n"
+        "str p15, [%[pregs], #15, mul vl]\n"
+        "rdffr p0.b\n"
+        "str  p0, [%[ffr]]\n"
+        ".arch_extension nosve\n"
+        :
+        : [pregs] "r"(p_registers), [ffr] "r"(&ffr)
+        : "memory");
+    for (size_t i = 0; i < 16; ++i) {
+      if (p_registers[i] != 0) {
+        int register_number = static_cast<int>(i);
+        char message[] = "P00\n";
+        message[2] = static_cast<char>('0' + (register_number % 10));
+        message[1] = static_cast<char>('0' + ((register_number / 10) % 10));
+        fail(message, register_number + 35);
+      }
+    }
+    if (ffr != 0) {
+      fail("ffr\n", 51);
+    }
+    // If the caller opened kSveVlReportFd (used by ExtendedPstate.SvePrctl to verify
+    // PR_SVE_VL_INHERIT across execve), report the PR_SVE_GET_VL return value.
+    SYSCALL(__NR_write, kSveVlReportFd, &sve_vl, sizeof(sve_vl));
   }
 #elif defined(__riscv)
   uint64_t fp_registers[32];

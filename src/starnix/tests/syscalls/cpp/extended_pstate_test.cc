@@ -10,6 +10,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __aarch64__
+#include <sys/auxv.h>
+#include <sys/prctl.h>
+#endif
+
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
@@ -17,6 +22,44 @@
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
+
+#ifdef __aarch64__
+#ifndef HWCAP_SVE
+#define HWCAP_SVE (1u << 22u)
+#endif
+#ifndef PR_SVE_SET_VL
+#define PR_SVE_SET_VL 50
+#endif
+#ifndef PR_SVE_GET_VL
+#define PR_SVE_GET_VL 51
+#endif
+#ifndef PR_SVE_VL_LEN_MASK
+#define PR_SVE_VL_LEN_MASK 0xffffu
+#endif
+#ifndef PR_SVE_VL_INHERIT
+#define PR_SVE_VL_INHERIT (1u << 17u)
+#endif
+#ifndef PR_SVE_SET_VL_ONEXEC
+#define PR_SVE_SET_VL_ONEXEC (1u << 18u)
+#endif
+
+const bool kHasSve = (getauxval(AT_HWCAP) & HWCAP_SVE) != 0;
+
+// Linux arm64 SVE signal frame constants for 128-bit vector length (vq = 1, vl = 16 bytes),
+// per arch/arm64/include/uapi/asm/sigcontext.h.
+constexpr size_t kSveVlBytes = 16;
+constexpr size_t kSveSigZregsOffset = sizeof(sve_context);
+constexpr size_t kSveSigZregsSize = 32 * kSveVlBytes;
+constexpr size_t kSveSigPregsOffset = kSveSigZregsOffset + kSveSigZregsSize;
+constexpr size_t kSveSigPregsSize = 16 * (kSveVlBytes / 8);
+constexpr size_t kSveSigFfrOffset = kSveSigPregsOffset + kSveSigPregsSize;
+constexpr size_t kSveSigFfrSize = kSveVlBytes / 8;
+constexpr size_t kSveSigContextSize = (kSveSigFfrOffset + kSveSigFfrSize + 15) & ~size_t{15};
+static_assert(kSveSigZregsOffset == 16);
+static_assert(kSveSigPregsOffset == 528);
+static_assert(kSveSigFfrOffset == 560);
+static_assert(kSveSigContextSize == 576);
+#endif  // defined(__aarch64__)
 
 #if defined(__riscv)
 // Only VLEN=128 is supported currently.
@@ -59,12 +102,21 @@ struct RegistersValue {
   }
 };
 #elif defined(__aarch64__)
+// Must remain trivially default-constructible (no default member initializers) so that
+// `RegistersValue value;` in `GetTestRegisters()` does not emit a `memset` call (which would
+// clobber `q0`/`v0`) before saving live FP/SIMD registers.
 struct RegistersValue {
   __uint128_t q[32];
+  uint16_t p[16];
+  uint16_t ffr;
   bool operator==(const RegistersValue& other) const {
-    return memcmp(this, &other, sizeof(RegistersValue)) == 0;
+    return memcmp(q, other.q, sizeof(q)) == 0 && memcmp(p, other.p, sizeof(p)) == 0 &&
+           ffr == other.ffr;
   }
 };
+static_assert(offsetof(RegistersValue, q) == 0);
+static_assert(offsetof(RegistersValue, p) == 512);
+static_assert(offsetof(RegistersValue, ffr) == 544);
 #elif defined(__riscv)
 struct RegistersValue {
   uint64_t f[32];
@@ -78,7 +130,7 @@ struct RegistersValue {
 #endif
 
 // Stores a 128-bit value in SIMD registers used for the test.
-void SetTestRegisters(const RegistersValue* value) {
+__attribute__((noinline)) void SetTestRegisters(const RegistersValue* value) {
 #if defined(__x86_64__)
   asm volatile(
       "movups   0(%0), %%xmm0\n"
@@ -171,6 +223,32 @@ void SetTestRegisters(const RegistersValue* value) {
       "ldr q31, [%0, #496]\n"
       :
       : "r"(value));
+  if (kHasSve) {
+    asm volatile(
+        ".arch_extension sve\n"
+        "ldr  p0, [%1]\n"
+        "wrffr p0.b\n"
+        "ldr  p0, [%0, #0, mul vl]\n"
+        "ldr  p1, [%0, #1, mul vl]\n"
+        "ldr  p2, [%0, #2, mul vl]\n"
+        "ldr  p3, [%0, #3, mul vl]\n"
+        "ldr  p4, [%0, #4, mul vl]\n"
+        "ldr  p5, [%0, #5, mul vl]\n"
+        "ldr  p6, [%0, #6, mul vl]\n"
+        "ldr  p7, [%0, #7, mul vl]\n"
+        "ldr  p8, [%0, #8, mul vl]\n"
+        "ldr  p9, [%0, #9, mul vl]\n"
+        "ldr p10, [%0, #10, mul vl]\n"
+        "ldr p11, [%0, #11, mul vl]\n"
+        "ldr p12, [%0, #12, mul vl]\n"
+        "ldr p13, [%0, #13, mul vl]\n"
+        "ldr p14, [%0, #14, mul vl]\n"
+        "ldr p15, [%0, #15, mul vl]\n"
+        ".arch_extension nosve\n"
+        :
+        : "r"(value->p), "r"(&value->ffr)
+        : "memory");
+  }
 #elif defined(__riscv)
   asm volatile(
       "fld f0, 0(%0)\n"
@@ -227,7 +305,7 @@ void SetTestRegisters(const RegistersValue* value) {
 }
 
 // Reads a 128-bit value from the SIMD registers that were set in SetTestRegisters().
-RegistersValue GetTestRegisters() {
+__attribute__((noinline)) RegistersValue GetTestRegisters() {
   RegistersValue value;
 
 #if defined(__x86_64__)
@@ -321,7 +399,38 @@ RegistersValue GetTestRegisters() {
       "str q30, [%0, #480]\n"
       "str q31, [%0, #496]\n"
       :
-      : "r"(&value));
+      : "r"(&value)
+      : "memory");
+  if (kHasSve) {
+    asm volatile(
+        ".arch_extension sve\n"
+        "str  p0, [%0, #0, mul vl]\n"
+        "str  p1, [%0, #1, mul vl]\n"
+        "str  p2, [%0, #2, mul vl]\n"
+        "str  p3, [%0, #3, mul vl]\n"
+        "str  p4, [%0, #4, mul vl]\n"
+        "str  p5, [%0, #5, mul vl]\n"
+        "str  p6, [%0, #6, mul vl]\n"
+        "str  p7, [%0, #7, mul vl]\n"
+        "str  p8, [%0, #8, mul vl]\n"
+        "str  p9, [%0, #9, mul vl]\n"
+        "str p10, [%0, #10, mul vl]\n"
+        "str p11, [%0, #11, mul vl]\n"
+        "str p12, [%0, #12, mul vl]\n"
+        "str p13, [%0, #13, mul vl]\n"
+        "str p14, [%0, #14, mul vl]\n"
+        "str p15, [%0, #15, mul vl]\n"
+        "rdffr p0.b\n"
+        "str  p0, [%1]\n"
+        "ldr  p0, [%0, #0, mul vl]\n"
+        ".arch_extension nosve\n"
+        :
+        : "r"(value.p), "r"(&value.ffr)
+        : "memory");
+  } else {
+    memset(value.p, 0, sizeof(value.p));
+    value.ffr = 0;
+  }
 #elif defined(__riscv)
   asm volatile(
       "fsd f0, 0(%0)\n"
@@ -386,7 +495,7 @@ TEST(ExtendedPstate, InitialState) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&child_path] {
     // Set some registers. execve() should reset them to 0.
-    RegistersValue kTestData;
+    RegistersValue kTestData = {};
 #if defined(__x86_64__)
     for (int i = 0; i < 16; ++i)
       kTestData.xmm[i] =
@@ -398,6 +507,12 @@ TEST(ExtendedPstate, InitialState) {
     for (int i = 0; i < 32; ++i)
       kTestData.q[i] =
           (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x090a0b0c0d0e0f10ULL + i);
+    if (kHasSve) {
+      for (size_t i = 0; i < 16; ++i) {
+        kTestData.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      }
+      kTestData.ffr = 0x00ff;
+    }
 #elif defined(__riscv)
     for (int i = 0; i < 32; ++i) {
       kTestData.f[i] = 0x0102030405060708ULL + i;
@@ -407,6 +522,8 @@ TEST(ExtendedPstate, InitialState) {
 #endif
     SetTestRegisters(&kTestData);
 
+    // Ensure the SVE VL reporting descriptor used by SvePrctl is closed during InitialState.
+    close(42);
     char* argv[] = {nullptr};
     char* envp[] = {nullptr};
     ASSERT_EQ(execve(child_path.c_str(), argv, envp), 0)
@@ -416,7 +533,7 @@ TEST(ExtendedPstate, InitialState) {
 
 // Verify that FP/SIMD registers are preserved by syscalls.
 TEST(ExtendedPstate, Syscall) {
-  RegistersValue kTestRegisters;
+  RegistersValue kTestRegisters = {};
 #if defined(__x86_64__)
   for (int i = 0; i < 16; ++i)
     kTestRegisters.xmm[i] =
@@ -428,6 +545,12 @@ TEST(ExtendedPstate, Syscall) {
   for (int i = 0; i < 32; ++i)
     kTestRegisters.q[i] =
         (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x090a0b0c0d0e0f10ULL + i);
+  if (kHasSve) {
+    for (size_t i = 0; i < 16; ++i) {
+      kTestRegisters.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+    }
+    kTestRegisters.ffr = 0x00ff;
+  }
 #elif defined(__riscv)
   for (int i = 0; i < 32; ++i) {
     kTestRegisters.f[i] = 0x0102030405060708ULL + i;
@@ -454,7 +577,7 @@ TEST(ExtendedPstate, Syscall) {
 TEST(ExtendedPstate, ForkPreservesAllRegisters) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
-    RegistersValue test_registers;
+    RegistersValue test_registers = {};
 #ifdef __x86_64__
     for (size_t i = 0; i < 16; ++i) {
       test_registers.xmm[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
@@ -469,6 +592,12 @@ TEST(ExtendedPstate, ForkPreservesAllRegisters) {
     for (size_t i = 0; i < 32; ++i) {
       test_registers.q[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
                             (0x090a0b0c0d0e0f10ULL + i);
+    }
+    if (kHasSve) {
+      for (size_t i = 0; i < 16; ++i) {
+        test_registers.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      }
+      test_registers.ffr = 0x00ff;
     }
     constexpr uint64_t kTestFpcr = 1ull << 24u;  // FZ (Flush-to-zero) bit
 #elifdef __riscv
@@ -535,10 +664,30 @@ struct __attribute__((__packed__)) ucontext_with_pstate {
   char prefix[124];
   RegistersValue pstate;
 };
+#elif defined(__aarch64__)
+_aarch64_ctx* FindArm64Context(ucontext_t* ucontext, uint32_t target_magic) {
+  uint8_t* base = ucontext->uc_mcontext.__reserved;
+  constexpr size_t kReservedSize = sizeof(ucontext->uc_mcontext.__reserved);
+  size_t offset = 0;
+  while (offset + sizeof(_aarch64_ctx) <= kReservedSize) {
+    auto* hdr = reinterpret_cast<_aarch64_ctx*>(base + offset);
+    if (hdr->magic == 0 && hdr->size == 0) {
+      break;
+    }
+    if (hdr->magic == target_magic) {
+      return hdr;
+    }
+    if (hdr->size < sizeof(_aarch64_ctx) || offset + hdr->size > kReservedSize) {
+      break;
+    }
+    offset += hdr->size;
+  }
+  return nullptr;
+}
 #endif
 
 RegistersValue GetTestRegistersFromUcontext(ucontext_t* ucontext) {
-  RegistersValue result;
+  RegistersValue result = {};
 
 #if defined(__x86_64__)
   auto fpregs = ucontext->uc_mcontext.fpregs;
@@ -558,10 +707,32 @@ RegistersValue GetTestRegistersFromUcontext(ucontext_t* ucontext) {
   ucontext_with_pstate* fp_context = reinterpret_cast<ucontext_with_pstate*>(ucontext);
   memcpy(&result, &fp_context->pstate, sizeof(result));
 #elif defined(__aarch64__)
-  fpsimd_context* fp_context = reinterpret_cast<fpsimd_context*>(ucontext->uc_mcontext.__reserved);
-  EXPECT_EQ(fp_context->head.magic, static_cast<uint32_t>(FPSIMD_MAGIC));
-  EXPECT_EQ(fp_context->head.size, sizeof(fpsimd_context));
-  memcpy(&result, fp_context->vregs, sizeof(result));
+  _aarch64_ctx* fp_hdr = FindArm64Context(ucontext, FPSIMD_MAGIC);
+  EXPECT_NE(fp_hdr, nullptr);
+  if (fp_hdr != nullptr) {
+    EXPECT_EQ(fp_hdr->size, sizeof(fpsimd_context));
+    fpsimd_context* fp_context = reinterpret_cast<fpsimd_context*>(fp_hdr);
+    memcpy(&result.q, fp_context->vregs, sizeof(result.q));
+  }
+  _aarch64_ctx* sve_hdr = FindArm64Context(ucontext, SVE_MAGIC);
+  if (kHasSve) {
+    EXPECT_NE(sve_hdr, nullptr);
+    if (sve_hdr != nullptr) {
+      sve_context* sve_ctx = reinterpret_cast<sve_context*>(sve_hdr);
+      EXPECT_EQ(sve_ctx->head.size, kSveSigContextSize);
+      EXPECT_EQ(sve_ctx->vl, kSveVlBytes);
+      // In older sysroot headers, `flags` is `__reserved[0]`.
+      EXPECT_EQ(sve_ctx->__reserved[0], 0u);
+      EXPECT_EQ(sve_ctx->__reserved[1], 0u);
+      EXPECT_EQ(sve_ctx->__reserved[2], 0u);
+      const uint8_t* sve_bytes = reinterpret_cast<const uint8_t*>(sve_ctx);
+      EXPECT_EQ(memcmp(sve_bytes + kSveSigZregsOffset, result.q, sizeof(result.q)), 0);
+      memcpy(&result.p, sve_bytes + kSveSigPregsOffset, sizeof(result.p));
+      memcpy(&result.ffr, sve_bytes + kSveSigFfrOffset, sizeof(result.ffr));
+    }
+  } else {
+    EXPECT_EQ(sve_hdr, nullptr);
+  }
 #elif defined(__riscv)
   // Copy 32 F registers
   memcpy(&result.f, reinterpret_cast<void*>(ucontext->uc_mcontext.__fpregs.__d.__f),
@@ -632,7 +803,7 @@ TEST(ExtendedPstate, Signals) {
           GetTestRegistersFromUcontext(reinterpret_cast<ucontext_t*>(ucontext));
 
       // Set registers to a value different from what it was outside of the signal handler.
-      RegistersValue kNestedRegs;
+      RegistersValue kNestedRegs = {};
 #if defined(__x86_64__)
       for (int i = 0; i < 16; ++i)
         kNestedRegs.xmm[i] = (static_cast<__uint128_t>(0x191a1b1c1d1e1f20ULL + i) << 64) |
@@ -644,6 +815,12 @@ TEST(ExtendedPstate, Signals) {
       for (int i = 0; i < 32; ++i)
         kNestedRegs.q[i] = (static_cast<__uint128_t>(0x191a1b1c1d1e1f20ULL + i) << 64) |
                            (0x1112131415161718ULL + i);
+      if (kHasSve) {
+        for (size_t i = 0; i < 16; ++i) {
+          kNestedRegs.p[i] = static_cast<uint16_t>(0xa500u | (i + 1u));
+        }
+        kNestedRegs.ffr = 0x0fff;
+      }
 #elif defined(__riscv)
       for (int i = 0; i < 32; ++i) {
         kNestedRegs.f[i] = 0x191a1b1c1d1e1f20ULL + i;
@@ -668,7 +845,7 @@ TEST(ExtendedPstate, Signals) {
     sigsegv_action.sa_flags = SA_SIGINFO;
     SAFE_SYSCALL(sigaction(SIGSEGV, &sigsegv_action, nullptr));
 
-    RegistersValue kTestRegsValue;
+    RegistersValue kTestRegsValue = {};
 #if defined(__x86_64__)
     for (int i = 0; i < 16; ++i)
       kTestRegsValue.xmm[i] =
@@ -680,6 +857,12 @@ TEST(ExtendedPstate, Signals) {
     for (int i = 0; i < 32; ++i)
       kTestRegsValue.q[i] =
           (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    if (kHasSve) {
+      for (size_t i = 0; i < 16; ++i) {
+        kTestRegsValue.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      }
+      kTestRegsValue.ffr = 0x00ff;
+    }
 #elif defined(__riscv)
     for (int i = 0; i < 32; ++i) {
       kTestRegsValue.f[i] = 0x0102030405060708ULL + i;
@@ -726,7 +909,7 @@ TEST(ExtendedPstate, StackGrowth) {
              MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_GROWSDOWN, -1, 0);
     ASSERT_NE(grow_low, MAP_FAILED);
 
-    RegistersValue kTestRegisters;
+    RegistersValue kTestRegisters = {};
 #if defined(__x86_64__)
     for (int i = 0; i < 16; ++i) {
       kTestRegisters.xmm[i] =
@@ -740,6 +923,12 @@ TEST(ExtendedPstate, StackGrowth) {
     for (int i = 0; i < 32; ++i) {
       kTestRegisters.q[i] =
           (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    }
+    if (kHasSve) {
+      for (size_t i = 0; i < 16; ++i) {
+        kTestRegisters.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      }
+      kTestRegisters.ffr = 0x00ff;
     }
 #elif defined(__riscv)
     for (int i = 0; i < 32; ++i) {
@@ -869,7 +1058,7 @@ TEST(ExtendedPstate, StackGrowth) {
         : "memory");
     EXPECT_EQ(actual_registers, kTestRegisters);
 #elif defined(__aarch64__)
-    RegistersValue actual_registers;
+    RegistersValue actual_registers = {};
     asm volatile(
         "ldr q0, [%1, #0]\n"
         "ldr q1, [%1, #16]\n"
@@ -903,6 +1092,29 @@ TEST(ExtendedPstate, StackGrowth) {
         "ldr q29, [%1, #464]\n"
         "ldr q30, [%1, #480]\n"
         "ldr q31, [%1, #496]\n"
+        "cbz %w4, 1f\n"
+        ".arch_extension sve\n"
+        "add x9, %1, #512\n"
+        "ldr  p0, [x9, #16, mul vl]\n"
+        "wrffr p0.b\n"
+        "ldr  p0, [x9, #0, mul vl]\n"
+        "ldr  p1, [x9, #1, mul vl]\n"
+        "ldr  p2, [x9, #2, mul vl]\n"
+        "ldr  p3, [x9, #3, mul vl]\n"
+        "ldr  p4, [x9, #4, mul vl]\n"
+        "ldr  p5, [x9, #5, mul vl]\n"
+        "ldr  p6, [x9, #6, mul vl]\n"
+        "ldr  p7, [x9, #7, mul vl]\n"
+        "ldr  p8, [x9, #8, mul vl]\n"
+        "ldr  p9, [x9, #9, mul vl]\n"
+        "ldr p10, [x9, #10, mul vl]\n"
+        "ldr p11, [x9, #11, mul vl]\n"
+        "ldr p12, [x9, #12, mul vl]\n"
+        "ldr p13, [x9, #13, mul vl]\n"
+        "ldr p14, [x9, #14, mul vl]\n"
+        "ldr p15, [x9, #15, mul vl]\n"
+        ".arch_extension nosve\n"
+        "1:\n"
 
         "strb %w3, [%0]\n"
 
@@ -938,9 +1150,34 @@ TEST(ExtendedPstate, StackGrowth) {
         "str q29, [%2, #464]\n"
         "str q30, [%2, #480]\n"
         "str q31, [%2, #496]\n"
+        "cbz %w4, 2f\n"
+        ".arch_extension sve\n"
+        "add x9, %2, #512\n"
+        "str  p0, [x9, #0, mul vl]\n"
+        "str  p1, [x9, #1, mul vl]\n"
+        "str  p2, [x9, #2, mul vl]\n"
+        "str  p3, [x9, #3, mul vl]\n"
+        "str  p4, [x9, #4, mul vl]\n"
+        "str  p5, [x9, #5, mul vl]\n"
+        "str  p6, [x9, #6, mul vl]\n"
+        "str  p7, [x9, #7, mul vl]\n"
+        "str  p8, [x9, #8, mul vl]\n"
+        "str  p9, [x9, #9, mul vl]\n"
+        "str p10, [x9, #10, mul vl]\n"
+        "str p11, [x9, #11, mul vl]\n"
+        "str p12, [x9, #12, mul vl]\n"
+        "str p13, [x9, #13, mul vl]\n"
+        "str p14, [x9, #14, mul vl]\n"
+        "str p15, [x9, #15, mul vl]\n"
+        "rdffr p0.b\n"
+        "str  p0, [x9, #16, mul vl]\n"
+        "ldr  p0, [x9, #0, mul vl]\n"
+        ".arch_extension nosve\n"
+        "2:\n"
         :
-        : "r"(trigger_addr), "r"(&kTestRegisters), "r"(&actual_registers), "r"(42)
-        : "memory");
+        : "r"(trigger_addr), "r"(&kTestRegisters), "r"(&actual_registers), "r"(42),
+          "r"(kHasSve ? 1 : 0)
+        : "x9", "memory");
     EXPECT_EQ(actual_registers, kTestRegisters);
 #elif defined(__riscv)
     RegistersValue actual_registers;
@@ -1046,5 +1283,262 @@ TEST(ExtendedPstate, StackGrowth) {
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
+
+#ifdef __aarch64__
+struct SveSignalTestState {
+  RegistersValue expected_on_entry;
+  RegistersValue modified_in_ucontext;
+  bool handler_ran = false;
+};
+
+SveSignalTestState sve_signal_state;
+
+// Issues a raw kill(getpid(), SIGUSR1) syscall between SetTestRegisters and GetTestRegisters so
+// that no libc wrapper can clobber caller-saved SIMD/SVE registers before or after signal delivery.
+RegistersValue RaiseSigusr1WithRegisters(const RegistersValue& initial_regs) {
+  pid_t self_pid = getpid();
+  SetTestRegisters(&initial_regs);
+  register intptr_t x0 asm("x0") = self_pid;
+  register intptr_t x1 asm("x1") = SIGUSR1;
+  register intptr_t x8 asm("x8") = SYS_kill;
+  asm volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x8) : "memory");
+  EXPECT_EQ(x0, 0);
+  return GetTestRegisters();
+}
+
+// Verify that modifying fpsimd_context.vregs and sve_context (P0-P15 and FFR) inside a signal
+// handler's ucontext_t updates the live registers upon rt_sigreturn.
+TEST(ExtendedPstate, SveSignalContextModification) {
+  if (!kHasSve) {
+    GTEST_SKIP() << "SVE not supported";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    for (size_t i = 0; i < 32; ++i) {
+      sve_signal_state.expected_on_entry.q[i] =
+          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+          (0x090a0b0c0d0e0f10ULL + i);
+      sve_signal_state.modified_in_ucontext.q[i] =
+          (static_cast<__uint128_t>(0x2122232425262728ULL + i) << 64u) |
+          (0x292a2b2c2d2e2f30ULL + i);
+    }
+    for (size_t i = 0; i < 16; ++i) {
+      sve_signal_state.expected_on_entry.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      sve_signal_state.modified_in_ucontext.p[i] = static_cast<uint16_t>(0xa500u | (16u - i));
+    }
+    sve_signal_state.expected_on_entry.ffr = 0x00ff;
+    sve_signal_state.modified_in_ucontext.ffr = 0x0fff;
+    sve_signal_state.handler_ran = false;
+
+    struct sigaction sa = {};
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = [](int sig, siginfo_t* info, void* uctx_void) {
+      if (sig != SIGUSR1) {
+        _exit(1);
+      }
+      auto* uctx = reinterpret_cast<ucontext_t*>(uctx_void);
+      EXPECT_EQ(GetTestRegistersFromUcontext(uctx), sve_signal_state.expected_on_entry);
+
+      _aarch64_ctx* fp_hdr = FindArm64Context(uctx, FPSIMD_MAGIC);
+      ASSERT_NE(fp_hdr, nullptr);
+      auto* fp_ctx = reinterpret_cast<fpsimd_context*>(fp_hdr);
+      memcpy(fp_ctx->vregs, sve_signal_state.modified_in_ucontext.q,
+             sizeof(sve_signal_state.modified_in_ucontext.q));
+
+      _aarch64_ctx* sve_hdr = FindArm64Context(uctx, SVE_MAGIC);
+      ASSERT_NE(sve_hdr, nullptr);
+      uint8_t* sve_bytes = reinterpret_cast<uint8_t*>(sve_hdr);
+      memcpy(sve_bytes + kSveSigPregsOffset, sve_signal_state.modified_in_ucontext.p,
+             sizeof(sve_signal_state.modified_in_ucontext.p));
+      memcpy(sve_bytes + kSveSigFfrOffset, &sve_signal_state.modified_in_ucontext.ffr,
+             sizeof(sve_signal_state.modified_in_ucontext.ffr));
+
+      // Zero live registers inside the handler to prove rt_sigreturn restores from ucontext_t.
+      RegistersValue zero = {};
+      SetTestRegisters(&zero);
+      sve_signal_state.handler_ran = true;
+    };
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    RegistersValue actual = RaiseSigusr1WithRegisters(sve_signal_state.expected_on_entry);
+    ASSERT_TRUE(sve_signal_state.handler_ran);
+    EXPECT_EQ(actual, sve_signal_state.modified_in_ucontext);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verify that truncating sve_context.head.size to sizeof(sve_context) (16 bytes, header-only) in a
+// signal handler zeroes P0-P15 and FFR upon rt_sigreturn while still restoring Q0-Q31 from
+// fpsimd_context.vregs.
+TEST(ExtendedPstate, SveSignalHeaderOnlyZeroesSveRegisters) {
+  if (!kHasSve) {
+    GTEST_SKIP() << "SVE not supported";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    for (size_t i = 0; i < 32; ++i) {
+      sve_signal_state.expected_on_entry.q[i] =
+          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+          (0x090a0b0c0d0e0f10ULL + i);
+      sve_signal_state.modified_in_ucontext.q[i] =
+          (static_cast<__uint128_t>(0x3132333435363738ULL + i) << 64u) |
+          (0x393a3b3c3d3e3f40ULL + i);
+    }
+    for (size_t i = 0; i < 16; ++i) {
+      sve_signal_state.expected_on_entry.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+      sve_signal_state.modified_in_ucontext.p[i] = 0;
+    }
+    sve_signal_state.expected_on_entry.ffr = 0xffff;
+    sve_signal_state.modified_in_ucontext.ffr = 0;
+    sve_signal_state.handler_ran = false;
+
+    struct sigaction sa = {};
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = [](int sig, siginfo_t* info, void* uctx_void) {
+      if (sig != SIGUSR1) {
+        _exit(1);
+      }
+      auto* uctx = reinterpret_cast<ucontext_t*>(uctx_void);
+      EXPECT_EQ(GetTestRegistersFromUcontext(uctx), sve_signal_state.expected_on_entry);
+
+      _aarch64_ctx* fp_hdr = FindArm64Context(uctx, FPSIMD_MAGIC);
+      ASSERT_NE(fp_hdr, nullptr);
+      auto* fp_ctx = reinterpret_cast<fpsimd_context*>(fp_hdr);
+      memcpy(fp_ctx->vregs, sve_signal_state.modified_in_ucontext.q,
+             sizeof(sve_signal_state.modified_in_ucontext.q));
+
+      _aarch64_ctx* sve_hdr = FindArm64Context(uctx, SVE_MAGIC);
+      ASSERT_NE(sve_hdr, nullptr);
+      sve_hdr->size = sizeof(sve_context);
+      // Place the null terminator header immediately after the 16-byte sve_context header.
+      auto* term_hdr = reinterpret_cast<_aarch64_ctx*>(reinterpret_cast<uint8_t*>(sve_hdr) +
+                                                       sizeof(sve_context));
+      term_hdr->magic = 0;
+      term_hdr->size = 0;
+
+      // Keep non-zero live SVE registers right before rt_sigreturn to confirm kernel zeroes them.
+      SetTestRegisters(&sve_signal_state.expected_on_entry);
+      sve_signal_state.handler_ran = true;
+    };
+    SAFE_SYSCALL(sigaction(SIGUSR1, &sa, nullptr));
+
+    RegistersValue actual = RaiseSigusr1WithRegisters(sve_signal_state.expected_on_entry);
+    ASSERT_TRUE(sve_signal_state.handler_ran);
+    EXPECT_EQ(actual, sve_signal_state.modified_in_ucontext);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verify prctl(PR_SVE_GET_VL) and prctl(PR_SVE_SET_VL) behavior: returning 16, preserving live
+// Q0-Q31/P0-P15/FFR when effective VL does not change, and preserving PR_SVE_VL_INHERIT across
+// fork and execve.
+TEST(ExtendedPstate, SvePrctl) {
+  if (!kHasSve) {
+    EXPECT_EQ(prctl(PR_SVE_GET_VL), -1);
+    EXPECT_EQ(errno, EINVAL);
+    EXPECT_EQ(prctl(PR_SVE_SET_VL, kSveVlBytes), -1);
+    EXPECT_EQ(errno, EINVAL);
+    GTEST_SKIP() << "SVE not supported";
+  }
+
+  std::string child_path = test_helper::GetTestResourcePath("extended_pstate_initial_state_child");
+  ASSERT_TRUE(files::IsFile(child_path)) << child_path;
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&child_path] {
+    EXPECT_EQ(prctl(PR_SVE_GET_VL), static_cast<int>(kSveVlBytes));
+
+    // Invalid vector lengths or flags must fail with EINVAL.
+    EXPECT_EQ(prctl(PR_SVE_SET_VL, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+    EXPECT_EQ(prctl(PR_SVE_SET_VL, 8), -1);
+    EXPECT_EQ(errno, EINVAL);
+    EXPECT_EQ(prctl(PR_SVE_SET_VL, 24), -1);
+    EXPECT_EQ(errno, EINVAL);
+    EXPECT_EQ(prctl(PR_SVE_SET_VL, kSveVlBytes | (1u << 20u)), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    // Setting the same effective VL (16) or querying PR_SVE_GET_VL must preserve live Q0-Q31,
+    // P0-P15, and FFR registers. Issue raw prctl syscalls between SetTestRegisters and
+    // GetTestRegisters so libc cannot clobber caller-saved vector/predicate registers.
+    RegistersValue test_regs;
+    for (size_t i = 0; i < 32; ++i) {
+      test_regs.q[i] = (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64u) |
+                       (0x090a0b0c0d0e0f10ULL + i);
+    }
+    for (size_t i = 0; i < 16; ++i) {
+      test_regs.p[i] = static_cast<uint16_t>(0x5a00u | (i + 1u));
+    }
+    test_regs.ffr = 0x00ff;
+
+    SetTestRegisters(&test_regs);
+    intptr_t set_ret = 0;
+    intptr_t get_ret = 0;
+    {
+      register intptr_t x0 asm("x0") = PR_SVE_SET_VL;
+      register intptr_t x1 asm("x1") = kSveVlBytes | PR_SVE_VL_INHERIT;
+      register intptr_t x8 asm("x8") = SYS_prctl;
+      asm volatile("svc #0" : "+r"(x0) : "r"(x1), "r"(x8) : "memory");
+      set_ret = x0;
+    }
+    {
+      register intptr_t x0 asm("x0") = PR_SVE_GET_VL;
+      register intptr_t x8 asm("x8") = SYS_prctl;
+      asm volatile("svc #0" : "+r"(x0) : "r"(x8) : "memory");
+      get_ret = x0;
+    }
+    RegistersValue after_prctl = GetTestRegisters();
+    EXPECT_EQ(set_ret, static_cast<intptr_t>(kSveVlBytes | PR_SVE_VL_INHERIT));
+    EXPECT_EQ(get_ret, static_cast<intptr_t>(kSveVlBytes | PR_SVE_VL_INHERIT));
+    EXPECT_EQ(after_prctl, test_regs);
+
+    // PR_SVE_VL_INHERIT must be preserved across fork/clone.
+    test_helper::ForkHelper fork_helper;
+    fork_helper.RunInForkedProcess(
+        [] { EXPECT_EQ(prctl(PR_SVE_GET_VL), static_cast<int>(kSveVlBytes | PR_SVE_VL_INHERIT)); });
+    ASSERT_TRUE(fork_helper.WaitForChildren());
+
+    // Helper that sets SVE prctl flags, populates non-zero SVE registers, execs
+    // extended_pstate_initial_state_child (which verifies all registers are zeroed on execve and
+    // writes its post-exec PR_SVE_GET_VL return value to fd 42), and returns that value.
+    auto exec_and_read_sve_vl = [&](uintptr_t set_vl_arg) -> intptr_t {
+      int pipe_fds[2] = {-1, -1};
+      SAFE_SYSCALL(pipe(pipe_fds));
+      test_helper::ForkHelper exec_helper;
+      exec_helper.RunInForkedProcess([&] {
+        SAFE_SYSCALL(close(pipe_fds[0]));
+        constexpr int kSveVlReportFd = 42;
+        if (pipe_fds[1] != kSveVlReportFd) {
+          SAFE_SYSCALL(dup2(pipe_fds[1], kSveVlReportFd));
+          SAFE_SYSCALL(close(pipe_fds[1]));
+        }
+        ASSERT_GE(prctl(PR_SVE_SET_VL, set_vl_arg), 0);
+        SetTestRegisters(&test_regs);
+        char* argv[] = {nullptr};
+        char* envp[] = {nullptr};
+        ASSERT_EQ(execve(child_path.c_str(), argv, envp), 0);
+      });
+      SAFE_SYSCALL(close(pipe_fds[1]));
+      intptr_t child_vl = -1;
+      EXPECT_EQ(read(pipe_fds[0], &child_vl, sizeof(child_vl)),
+                static_cast<ssize_t>(sizeof(child_vl)));
+      SAFE_SYSCALL(close(pipe_fds[0]));
+      EXPECT_TRUE(exec_helper.WaitForChildren());
+      return child_vl;
+    };
+
+    // PR_SVE_VL_INHERIT is preserved across execve (both immediate and with PR_SVE_SET_VL_ONEXEC),
+    // while clearing PR_SVE_VL_INHERIT causes PR_SVE_GET_VL after execve to return 16 without it.
+    EXPECT_EQ(exec_and_read_sve_vl(kSveVlBytes | PR_SVE_VL_INHERIT),
+              static_cast<intptr_t>(kSveVlBytes | PR_SVE_VL_INHERIT));
+    EXPECT_EQ(exec_and_read_sve_vl(kSveVlBytes | PR_SVE_SET_VL_ONEXEC | PR_SVE_VL_INHERIT),
+              static_cast<intptr_t>(kSveVlBytes | PR_SVE_VL_INHERIT));
+    EXPECT_EQ(exec_and_read_sve_vl(kSveVlBytes), static_cast<intptr_t>(kSveVlBytes));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+#endif  // __aarch64__
 
 }  // namespace
