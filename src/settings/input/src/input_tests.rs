@@ -518,6 +518,40 @@ async fn test_camera3_sw_change() {
     assert!(env.camera3_service.lock().await.camera_sw_muted());
 }
 
+// Test to ensure a muted camera stays muted when a camera is added after startup with its
+// software mute state reset, for example because its device restarted.
+#[fuchsia::test]
+async fn test_camera3_added_camera_is_muted() {
+    let env = TestInputEnvironmentBuilder::new()
+        .set_input_device_config(default_mic_cam_config())
+        .add_agent(AgentType::CameraWatcher)
+        .build()
+        .await;
+    let input_proxy = env.input_service.clone();
+
+    set_camera_disable(&input_proxy, true).await;
+    watch_until_camera_disabled(&input_proxy, true).await;
+    assert!(env.camera3_service.lock().await.camera_sw_muted());
+
+    // A camera is added unmuted, for example because its device restarted.
+    let mut sw_mute_changes = env.camera3_service.lock().await.watch_sw_mute_changes();
+    env.camera3_service.lock().await.add_camera_device(2, false);
+    assert!(!env.camera3_service.lock().await.camera_sw_muted());
+
+    // The stored MUTED state is applied to the new camera.
+    while sw_mute_changes.next().await != Some(true) {}
+    assert!(env.camera3_service.lock().await.camera_sw_muted());
+    get_and_check_camera_disable(&input_proxy, true).await;
+
+    // A camera that restarts with the same id also receives the stored MUTED state.
+    env.camera3_service.lock().await.remove_camera_device(1);
+    env.camera3_service.lock().await.add_camera_device(1, false);
+    assert!(!env.camera3_service.lock().await.camera_sw_muted());
+    while sw_mute_changes.next().await != Some(true) {}
+    assert!(env.camera3_service.lock().await.camera_sw_muted());
+    get_and_check_camera_disable(&input_proxy, true).await;
+}
+
 // Watches until the camera state reports disabled = [expected_disabled]. Only the opposite state
 // may be observed while waiting.
 async fn watch_until_camera_disabled(input_proxy: &InputProxy, expected_disabled: bool) {

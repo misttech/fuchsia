@@ -25,6 +25,7 @@ rustc_library("settings_camera_watcher_agent") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
     "//src/lib/fuchsia-async",
     "//src/lib/trace/rust:trace",
     "//src/settings/camera:settings_camera",

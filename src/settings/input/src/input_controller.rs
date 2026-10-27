@@ -14,7 +14,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
 use serde::{Deserialize, Serialize};
-use settings_camera::connect_to_cameras;
+use settings_camera::{CameraWatcherEvent, connect_to_cameras};
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{
     ExternalEventPublisher, ResponseType, SettingValuePublisher,
@@ -186,7 +186,8 @@ pub struct InputController {
 /// - `cam_sw_sync` records how the two relate to the cameras.
 ///
 /// Storage and `input_device_state` agree, except that `input_device_state` may additionally
-/// carry `DeviceState::ERROR`, and in `Adopted` it shows the cameras' reported state instead of
+/// carry `DeviceState::ERROR`, and in `Adopted` (or `Pending` after a camera is added from
+/// `Adopted` before its mute state event arrives) it shows the cameras' reported state instead of
 /// the stored one.
 ///
 /// A camera event never causes the cameras to be unmuted: the stored state is only pushed from a
@@ -196,8 +197,9 @@ pub struct InputController {
 enum CamSwSync {
     /// The stored state has been applied to all cameras.
     Synced,
-    /// The last push of the stored state did not reach every camera. A camera event reporting
-    /// unmuted cameras while the stored state is MUTED pushes the stored state again.
+    /// The stored state may not be applied to every camera, either because the last push failed or
+    /// because a camera was added after startup. A camera event reporting unmuted cameras while
+    /// the stored state is MUTED pushes the stored state again.
     Pending,
     /// Pushing the stored MUTED state from a camera event failed. Camera events update the
     /// reported state to match the cameras without pushing again or changing storage, so the
@@ -282,7 +284,7 @@ impl InputController {
 
     pub(super) async fn handle(
         mut self,
-        mut camera_event_rx: UnboundedReceiver<(bool, super::ResultSender)>,
+        mut camera_event_rx: UnboundedReceiver<(CameraWatcherEvent, super::ResultSender)>,
         mut media_buttons_event_rx: UnboundedReceiver<(Event, super::ResultSender)>,
         mut request_rx: UnboundedReceiver<Request>,
     ) -> fasync::Task<()> {
@@ -293,11 +295,16 @@ impl InputController {
             loop {
                 futures::select! {
                     event = next_camera_event => {
-                        let Some((is_muted, response_tx)) = event else {
+                        let Some((event, response_tx)) = event else {
                             continue;
                         };
                         next_camera_event = camera_event_rx.next();
-                        let res = self.handle_camera_event(is_muted).await;
+                        let res = match event {
+                            CameraWatcherEvent::SoftwareMuted(is_muted) => {
+                                self.handle_camera_event(is_muted).await
+                            }
+                            CameraWatcherEvent::DeviceAdded => Ok(self.handle_camera_added()),
+                        };
                         let _ = response_tx.send(res);
                     }
                     event = next_media_buttons_event => {
@@ -322,6 +329,18 @@ impl InputController {
                 }
             }
         })
+    }
+
+    /// Handles a camera that was connected after startup. The camera driver resets its software
+    /// mute state, so the stored state may no longer be applied to every camera. The watcher
+    /// reports the cameras' mute state afterwards, which re-applies a stored MUTED state if the
+    /// new camera is unmuted.
+    fn handle_camera_added(&mut self) -> Option<()> {
+        if self.cam_sw_sync != CamSwSync::Pending {
+            log::info!("Camera added, re-applying stored camera state on the next camera event");
+            self.cam_sw_sync = CamSwSync::Pending;
+        }
+        None
     }
 
     async fn handle_camera_event(&mut self, is_muted: bool) -> Result<Option<()>, InputError> {
@@ -1899,6 +1918,78 @@ mod tests {
         assert!(res.is_ok(), "unexpected result {res:?}");
         assert!(camera1_muted.load(Ordering::Relaxed));
         assert!(camera2_muted.load(Ordering::Relaxed));
+    }
+
+    #[fuchsia::test]
+    async fn test_camera_added_reapplies_stored_mute() {
+        use std::sync::atomic::Ordering;
+
+        // The stored MUTED state is applied to both cameras at startup.
+        let (mut controller, camera1_muted, camera2_muted, mut value_rx) =
+            setup_multi_camera_test_with_failures(true, vec![]).await;
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Synced);
+        assert!(camera1_muted.load(Ordering::Relaxed));
+
+        // Camera 1 restarts, which resets its software mute state, and is reported as added.
+        // The watcher then reports the cameras as unmuted.
+        camera1_muted.store(false, Ordering::Relaxed);
+        assert_eq!(controller.handle_camera_added(), None);
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Pending);
+        let res = controller.handle_camera_event(false).await;
+        assert!(matches!(res, Ok(Some(()))), "unexpected result {res:?}");
+
+        // The stored MUTED state is applied to the cameras again instead of being replaced.
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(camera2_muted.load(Ordering::Relaxed));
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Synced);
+        assert_eq!(
+            InputController::get_cam_sw_state_from(
+                &controller.get_stored_info().await.input_device_state
+            )
+            .unwrap(),
+            DeviceState::MUTED
+        );
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&controller.input_device_state).unwrap(),
+            DeviceState::MUTED
+        );
+        assert!(value_rx.try_recv().is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_camera_added_while_unmuted_does_not_revert_later_external_unmute() {
+        use std::sync::atomic::Ordering;
+
+        // Both cameras start unmuted with stored AVAILABLE.
+        let (mut controller, camera1_muted, camera2_muted, _value_rx) =
+            setup_multi_camera_test_with_failures(false, vec![]).await;
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Synced);
+
+        // A camera is reported as added, and the watcher reports the cameras as unmuted.
+        assert_eq!(controller.handle_camera_added(), None);
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Pending);
+        let res = controller.handle_camera_event(false).await;
+        assert!(matches!(res, Ok(None)), "unexpected result {res:?}");
+
+        // Another client later mutes all cameras, then unmutes camera 1. The unmute is followed
+        // rather than reverted.
+        camera1_muted.store(true, Ordering::Relaxed);
+        camera2_muted.store(true, Ordering::Relaxed);
+        let res = controller.handle_camera_event(true).await;
+        assert!(matches!(res, Ok(Some(()))), "unexpected result {res:?}");
+        assert_eq!(controller.cam_sw_sync, CamSwSync::Synced);
+
+        camera1_muted.store(false, Ordering::Relaxed);
+        let res = controller.handle_camera_event(false).await;
+        assert!(matches!(res, Ok(Some(()))), "unexpected result {res:?}");
+        assert!(!camera1_muted.load(Ordering::Relaxed));
+        assert_eq!(
+            InputController::get_cam_sw_state_from(
+                &controller.get_stored_info().await.input_device_state
+            )
+            .unwrap(),
+            DeviceState::AVAILABLE
+        );
     }
 
     #[fuchsia::test]

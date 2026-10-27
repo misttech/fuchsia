@@ -18,10 +18,24 @@ use zx::MonotonicDuration;
 /// The amount of time in milliseconds to wait for a camera device to be detected.
 pub const CAMERA_WATCHER_TIMEOUT: i64 = 30_000;
 
+/// A proxy to `fuchsia.camera3.DeviceWatcher`.
+pub type CameraWatcherProxy =
+    ExternalServiceProxy<Camera3DeviceWatcherProxy, ExternalEventPublisher>;
+
+/// Events reported by the camera watcher agent to clients of the camera software mute state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CameraWatcherEvent {
+    /// The aggregate software mute state of the watched cameras. The cameras are muted only if
+    /// all connected cameras are muted.
+    SoftwareMuted(bool),
+    /// A camera was reported as added after initial enumeration. Its software mute state starts
+    /// unmuted in the camera driver, so the stored state may need to be applied to it. The
+    /// camera's mute state is reported afterwards.
+    DeviceAdded,
+}
+
 /// Retrieves the ids of all camera devices given the camera device watcher proxy.
-async fn get_camera_ids(
-    camera_watcher_proxy: &ExternalServiceProxy<Camera3DeviceWatcherProxy, ExternalEventPublisher>,
-) -> Result<Vec<u64>, Error> {
+async fn get_camera_ids(camera_watcher_proxy: &CameraWatcherProxy) -> Result<Vec<u64>, Error> {
     // Get a list of id structs containing existing, new, and removed ids.
 
     // Sets a timer and watches for changes from the camera api. If the first response is empty,
@@ -86,6 +100,17 @@ pub async fn connect_to_cameras(
     service_context: &ServiceContext,
     external_publisher: ExternalEventPublisher,
 ) -> Result<Vec<Camera3DeviceProxy>, Error> {
+    let (_camera_watcher_proxy, cameras) =
+        connect_to_cameras_with_watcher(service_context, external_publisher).await?;
+    Ok(cameras.into_iter().map(|(_, camera_proxy)| camera_proxy).collect())
+}
+
+/// Like `connect_to_cameras`, but also returns the camera device watcher connection, which can
+/// be used to watch for cameras that are added or removed later, and the id of each camera.
+pub async fn connect_to_cameras_with_watcher(
+    service_context: &ServiceContext,
+    external_publisher: ExternalEventPublisher,
+) -> Result<(CameraWatcherProxy, Vec<(u64, Camera3DeviceProxy)>), Error> {
     // Connect to the camera device watcher to get camera ids. This will
     // be used to connect to the cameras.
     let camera_watcher_proxy = service_context
@@ -94,17 +119,32 @@ pub async fn connect_to_cameras(
     let camera_ids = get_camera_ids(&camera_watcher_proxy).await?;
 
     // Connect to each camera device with the found ids.
-    let mut camera_proxies = Vec::with_capacity(camera_ids.len());
+    let mut cameras = Vec::with_capacity(camera_ids.len());
     for camera_id in camera_ids {
-        let (camera_proxy, device_server) = create_proxy::<DeviceMarker>();
-        if let Err(e) = call!(camera_watcher_proxy => connect_to_device(camera_id, device_server)) {
-            return Err(format_err!(
-                "Could not connect to fuchsia.camera3.DeviceWatcher device {camera_id}: {e:?}"
-            ));
-        }
-        camera_proxies.push(camera_proxy);
+        cameras.push((camera_id, connect_to_camera(&camera_watcher_proxy, camera_id)?));
     }
-    Ok(camera_proxies)
+    Ok((camera_watcher_proxy, cameras))
+}
+
+/// Connects to the camera device with the given id.
+pub fn connect_to_camera(
+    camera_watcher_proxy: &CameraWatcherProxy,
+    camera_id: u64,
+) -> Result<Camera3DeviceProxy, Error> {
+    let (camera_proxy, device_server) = create_proxy::<DeviceMarker>();
+    call!(camera_watcher_proxy => connect_to_device(camera_id, device_server)).map_err(|e| {
+        format_err!("Could not connect to fuchsia.camera3.DeviceWatcher device {camera_id}: {e:?}")
+    })?;
+    Ok(camera_proxy)
+}
+
+/// Waits for the next change to the set of camera devices reported by `camera_watcher_proxy`.
+pub async fn watch_camera_changes(
+    camera_watcher_proxy: &CameraWatcherProxy,
+) -> Result<Vec<WatchDevicesEvent>, Error> {
+    call_async!(camera_watcher_proxy => watch_devices())
+        .await
+        .map_err(|e| format_err!("Could not watch camera devices: {e:?}"))
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use input_controller::InputError;
+pub use settings_camera::CameraWatcherEvent;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::event::{
     ExternalEventPublisher, RequestType, ResponseType, SettingValuePublisher, UsagePublisher,
@@ -29,7 +30,7 @@ use types::InputInfo;
 
 pub struct SetupResult {
     pub input_fidl_handler: InputFidlHandler,
-    pub camera_watcher_event_tx: UnboundedSender<bool>,
+    pub camera_watcher_event_tx: UnboundedSender<CameraWatcherEvent>,
     pub media_buttons_event_tx: UnboundedSender<settings_media_buttons::Event>,
     pub task: fuchsia_async::Task<()>,
 }

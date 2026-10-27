@@ -473,7 +473,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 }
 
 struct RegistrationResult {
-    camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
+    camera_watcher_event_txs: Vec<UnboundedSender<settings_input::CameraWatcherEvent>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     usage_event_rx: UnboundedReceiver<UsageEvent>,
@@ -874,7 +874,7 @@ struct AgentResult {
 fn create_agents(
     settings: &HashSet<SettingType>,
     agent_types: HashSet<AgentType>,
-    camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
+    camera_watcher_event_txs: Vec<UnboundedSender<settings_input::CameraWatcherEvent>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
     external_event_rx: UnboundedReceiver<ExternalServiceEvent>,

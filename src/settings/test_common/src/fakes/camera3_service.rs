@@ -8,12 +8,15 @@ use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fidl_fuchsia_camera3::{
     DeviceRequest, DeviceWatchMuteStateResponder, DeviceWatcherMarker, DeviceWatcherRequest,
-    WatchDevicesEvent,
+    DeviceWatcherWatchDevicesResponder, WatchDevicesEvent,
 };
 use fuchsia_async::{self as fasync, DurationExt};
 use futures::TryStreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use futures::future::{AbortHandle, Abortable};
 use settings_camera::CAMERA_WATCHER_TIMEOUT;
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use zx::MonotonicDuration;
@@ -28,6 +31,7 @@ type LastSentMuted = Rc<Cell<Option<bool>>>;
 struct SwMuteState {
     muted: Cell<bool>,
     pending_watchers: RefCell<Vec<(LastSentMuted, DeviceWatchMuteStateResponder)>>,
+    abort_handles: RefCell<Vec<AbortHandle>>,
 }
 
 impl SwMuteState {
@@ -54,10 +58,69 @@ impl SwMuteState {
             let _ = responder.send(muted, false);
         }
     }
+
+    fn disconnect(&self) {
+        self.pending_watchers.borrow_mut().clear();
+        for handle in self.abort_handles.borrow_mut().drain(..) {
+            handle.abort();
+        }
+    }
+}
+
+/// Device changes shared by all device watcher connections. Once a connection has received a
+/// nonempty device list, later `WatchDevices` calls on it return once devices are added or
+/// removed.
+#[derive(Default)]
+struct DeviceChanges {
+    connections: RefCell<Vec<std::rc::Weak<WatcherConnection>>>,
+}
+
+#[derive(Default)]
+struct WatcherConnection {
+    initial_devices_sent: Cell<bool>,
+    queued: RefCell<Vec<WatchDevicesEvent>>,
+    pending: RefCell<Option<DeviceWatcherWatchDevicesResponder>>,
+}
+
+impl WatcherConnection {
+    fn flush(&self) {
+        if self.queued.borrow().is_empty() {
+            return;
+        }
+        if let Some(responder) = self.pending.borrow_mut().take() {
+            let events: Vec<_> = self.queued.borrow_mut().drain(..).collect();
+            let _ = responder.send(&events);
+        }
+    }
+}
+
+impl DeviceChanges {
+    fn add(&self, event: WatchDevicesEvent) {
+        self.connections.borrow_mut().retain(|connection| {
+            let Some(connection) = connection.upgrade() else {
+                return false;
+            };
+            if connection.initial_devices_sent.get() {
+                connection.queued.borrow_mut().push(event);
+                connection.flush();
+            }
+            true
+        });
+    }
+}
+
+/// Software mute state of each camera device, by id.
+type Devices = Rc<RefCell<BTreeMap<u64, Rc<SwMuteState>>>>;
+
+/// Returns the initial devices, with a single device with id 1.
+fn initial_devices() -> Devices {
+    Rc::new(RefCell::new(BTreeMap::from([(1, Rc::new(SwMuteState::default()))])))
 }
 
 pub struct Camera3Service {
-    camera_sw_muted: Rc<SwMuteState>,
+    devices: Devices,
+    device_changes: Rc<DeviceChanges>,
+    mute_listeners: Rc<RefCell<Vec<UnboundedSender<bool>>>>,
     // If true, sends the camera device response immediately. If false, sends
     // an empty device list. If None, delay_camera_device should be provided.
     has_camera_device: Rc<AtomicBool>,
@@ -69,7 +132,9 @@ pub struct Camera3Service {
 impl Camera3Service {
     pub fn new(has_camera_device: bool) -> Self {
         Self {
-            camera_sw_muted: Rc::new(SwMuteState::default()),
+            devices: initial_devices(),
+            device_changes: Rc::new(DeviceChanges::default()),
+            mute_listeners: Rc::new(RefCell::new(Vec::new())),
             has_camera_device: Rc::new(AtomicBool::new(has_camera_device)),
             delay_camera_device: Rc::new(AtomicBool::new(false)),
         }
@@ -77,20 +142,53 @@ impl Camera3Service {
 
     pub fn new_delayed_devices(delay_camera_device: bool) -> Self {
         Self {
-            camera_sw_muted: Rc::new(SwMuteState::default()),
+            devices: initial_devices(),
+            device_changes: Rc::new(DeviceChanges::default()),
+            mute_listeners: Rc::new(RefCell::new(Vec::new())),
             has_camera_device: Rc::new(AtomicBool::new(false)),
             delay_camera_device: Rc::new(AtomicBool::new(delay_camera_device)),
         }
     }
 
+    /// Returns whether all camera devices are software muted.
     pub fn camera_sw_muted(&self) -> bool {
-        self.camera_sw_muted.get()
+        self.devices.borrow().values().all(|device| device.get())
     }
 
-    /// Sets the software mute state as if it were changed by another client of the camera, and
-    /// notifies pending `WatchMuteState` calls.
+    /// Returns a receiver that is sent whether all camera devices are software muted whenever a
+    /// `SetSoftwareMuteState` request is handled.
+    pub fn watch_sw_mute_changes(&self) -> UnboundedReceiver<bool> {
+        let (tx, rx) = mpsc::unbounded();
+        self.mute_listeners.borrow_mut().push(tx);
+        rx
+    }
+
+    /// Sets the software mute state of all camera devices as if it were changed by another
+    /// client of the camera, and notifies pending `WatchMuteState` calls.
     pub fn set_camera_sw_muted(&self, muted: bool) {
-        self.camera_sw_muted.set(muted);
+        for device in self.devices.borrow().values() {
+            device.set(muted);
+        }
+    }
+
+    /// Adds a camera device with the given id and software mute state, and reports it as added
+    /// to device watcher connections that have already received the initial device list.
+    pub fn add_camera_device(&self, id: u64, sw_muted: bool) {
+        let device = Rc::new(SwMuteState::default());
+        device.set(sw_muted);
+        if let Some(old_device) = self.devices.borrow_mut().insert(id, device) {
+            old_device.disconnect();
+        }
+        self.device_changes.add(WatchDevicesEvent::Added(id));
+    }
+
+    /// Removes the camera device with the given id, closes its connections, and reports it as
+    /// removed to device watcher connections that have already received the initial device list.
+    pub fn remove_camera_device(&self, id: u64) {
+        if let Some(device) = self.devices.borrow_mut().remove(&id) {
+            device.disconnect();
+            self.device_changes.add(WatchDevicesEvent::Removed(id));
+        }
     }
 }
 
@@ -107,9 +205,12 @@ impl Service for Camera3Service {
         let mut device_watcher_stream =
             ServerEnd::<DeviceWatcherMarker>::new(channel).into_stream();
 
-        let camera_sw_muted = Rc::clone(&self.camera_sw_muted);
+        let devices = Rc::clone(&self.devices);
+        let mute_listeners = Rc::clone(&self.mute_listeners);
         let has_camera_device = Rc::clone(&self.has_camera_device);
         let delay_camera_device = Rc::clone(&self.delay_camera_device);
+        let connection = Rc::new(WatcherConnection::default());
+        self.device_changes.connections.borrow_mut().push(Rc::downgrade(&connection));
         let mut watch_count = 0;
         fasync::Task::local(async move {
             while let Some(req) = device_watcher_stream.try_next().await.unwrap() {
@@ -117,8 +218,17 @@ impl Service for Camera3Service {
                 #[allow(unreachable_patterns)]
                 match req {
                     DeviceWatcherRequest::WatchDevices { responder } => {
-                        let camera_device = WatchDevicesEvent::Added(1);
-                        let camera_devices = &[camera_device][..];
+                        if connection.initial_devices_sent.get() {
+                            let _ = connection.pending.borrow_mut().replace(responder);
+                            connection.flush();
+                            continue;
+                        }
+                        let camera_devices: Vec<_> = devices
+                            .borrow()
+                            .keys()
+                            .map(|id| WatchDevicesEvent::Added(*id))
+                            .collect();
+                        let camera_devices = &camera_devices[..];
                         let empty_devices = &[][..];
 
                         let devices = if delay_camera_device.load(Ordering::Relaxed) {
@@ -138,30 +248,53 @@ impl Service for Camera3Service {
                         } else {
                             empty_devices
                         };
+                        connection.initial_devices_sent.set(!devices.is_empty());
                         responder.send(devices).expect("Failed to send devices response");
                     }
                     DeviceWatcherRequest::ConnectToDevice {
-                        id: _,
+                        id,
                         request, // ServerEnd<DeviceMarker>
                         control_handle: _,
                     } => {
                         let mut stream = request.into_stream();
-                        let camera_sw_muted = Rc::clone(&camera_sw_muted);
+                        let Some(camera_sw_muted) = devices.borrow().get(&id).cloned() else {
+                            continue;
+                        };
+                        let devices = Rc::clone(&devices);
+                        let mute_listeners = Rc::clone(&mute_listeners);
+                        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+                        camera_sw_muted.abort_handles.borrow_mut().push(abort_handle);
                         fasync::Task::local(async move {
-                            let last_sent_muted = Rc::new(Cell::new(None));
-                            while let Some(req) = stream.try_next().await.unwrap() {
-                                // Support future expansion of FIDL.
-                                match req {
-                                    DeviceRequest::SetSoftwareMuteState { muted, responder } => {
-                                        camera_sw_muted.set(muted);
-                                        let _ = responder.send();
+                            let _ = Abortable::new(
+                                async move {
+                                    let last_sent_muted = Rc::new(Cell::new(None));
+                                    while let Some(req) = stream.try_next().await.unwrap() {
+                                        // Support future expansion of FIDL.
+                                        match req {
+                                            DeviceRequest::SetSoftwareMuteState {
+                                                muted,
+                                                responder,
+                                            } => {
+                                                camera_sw_muted.set(muted);
+                                                let _ = responder.send();
+                                                let all_muted = devices
+                                                    .borrow()
+                                                    .values()
+                                                    .all(|device| device.get());
+                                                mute_listeners.borrow_mut().retain(|tx| {
+                                                    tx.unbounded_send(all_muted).is_ok()
+                                                });
+                                            }
+                                            DeviceRequest::WatchMuteState { responder } => {
+                                                camera_sw_muted.watch(&last_sent_muted, responder);
+                                            }
+                                            _ => {}
+                                        }
                                     }
-                                    DeviceRequest::WatchMuteState { responder } => {
-                                        camera_sw_muted.watch(&last_sent_muted, responder);
-                                    }
-                                    _ => {}
-                                }
-                            }
+                                },
+                                abort_registration,
+                            )
+                            .await;
                         })
                         .detach();
                     }
