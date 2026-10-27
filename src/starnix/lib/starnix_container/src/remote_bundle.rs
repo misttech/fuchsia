@@ -6,7 +6,7 @@ use assembly_config_schema::product_settings::{StarnixFileOperation, StarnixFile
 use ext4_extract::remote_bundle;
 use ext4_extract::remote_bundle::Owner;
 use ext4_metadata::{ExtendedAttributes, ROOT_INODE_NUM};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::Result;
 
 use camino::Utf8PathBuf;
@@ -99,7 +99,9 @@ pub fn apply_overrides(
 ) -> anyhow::Result<ApplyOverridesResult> {
     struct Context {
         new_metadata: ext4_metadata::Metadata,
-        override_map: HashMap<Utf8PathBuf, StarnixFileOverride>,
+        // A BTreeMap, not a HashMap: the creates left over after the walk get
+        // inode numbers in iteration order, so it has to be the same every run.
+        override_map: BTreeMap<Utf8PathBuf, StarnixFileOverride>,
         skipped_inodes: std::collections::HashSet<u64>,
         new_files: Vec<(u64, Utf8PathBuf)>,
         max_inode: u64,
@@ -356,5 +358,44 @@ mod tests {
         let plain_node = m.get(plain_inode).expect("plain.txt node not found");
 
         assert!(plain_node.extended_attributes.get(b"security.selinux".as_slice()).is_none());
+    }
+
+    #[test]
+    fn test_apply_overrides_creates_get_inodes_in_path_order() {
+        let mut original = Metadata::new();
+        original.insert_directory(ROOT_INODE_NUM, 0o040000 | 0o755, 0, 0, Default::default());
+        let tmp = TempDir::new().unwrap();
+        let src_file = tmp.path().join("src.txt");
+        std::fs::write(&src_file, "hello\n").unwrap();
+        let src_file_utf8 = Utf8PathBuf::from_path_buf(src_file).unwrap();
+
+        // Out of order on purpose. With a HashMap these got inode numbers in a
+        // different order on each run.
+        let names = ["h", "c", "a", "g", "e", "b", "f", "d"];
+        let overrides = names
+            .iter()
+            .map(|n| StarnixFileOverride {
+                image_name: "odm".to_string(),
+                file_path: format!("etc/{n}.txt"),
+                operation: StarnixFileOperation::Create(src_file_utf8.clone()),
+                mode: None,
+                uid: None,
+                gid: None,
+                seclabel: None,
+            })
+            .collect();
+
+        let result = apply_overrides(original, overrides, "odm").unwrap();
+        let m = result.metadata;
+        let etc = m.lookup(ROOT_INODE_NUM, "etc").expect("etc not found");
+        let mut sorted = names.to_vec();
+        sorted.sort();
+        let inodes: Vec<u64> = sorted
+            .iter()
+            .map(|n| m.lookup(etc, &format!("{n}.txt")).expect("file not found"))
+            .collect();
+        let mut expected = inodes.clone();
+        expected.sort();
+        assert_eq!(inodes, expected, "creates should get inode numbers in path order");
     }
 }
