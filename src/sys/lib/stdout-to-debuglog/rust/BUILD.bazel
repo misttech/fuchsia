@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "stdout-to-debuglog",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//src/bringup/bin/ptysvc:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fdio/rust:fdio",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
+
+alias(
+    name = "rust",
+    actual = ":stdout-to-debuglog",
+    visibility = [
+        "//src/bringup/bin:__subpackages__",
+        "//src/devices/bin:__subpackages__",
+        "//src/recovery/system:__pkg__",
+    ],
+)
