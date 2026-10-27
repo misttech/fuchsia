@@ -55,6 +55,22 @@
             availability: "optional",
         },
         {
+            // These capabilities are not configured by Assembly; they use the
+            // defaults in sysmem.cml in production and are only overridden in
+            // tests.
+            config: [
+                "fuchsia.sysmem.ContiguousGuardPageCount",
+                "fuchsia.sysmem.ContiguousGuardPagesFatal",
+                "fuchsia.sysmem.ContiguousGuardPagesInternal",
+                "fuchsia.sysmem.ContiguousGuardPagesUnusedCycleSeconds",
+                "fuchsia.sysmem.ContiguousGuardPagesUnusedFractionDenominator",
+                "fuchsia.sysmem.ProtectedRangesDisableDynamic",
+            ],
+            from: "void",
+            to: "#sysmem",
+            availability: "optional",
+        },
+        {
             dictionary: "diagnostics",
             from: "self",
             to: "#sysmem",
