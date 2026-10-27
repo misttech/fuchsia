@@ -2,13 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback.testing/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
+
+#include <cstdlib>
+#include <memory>
+#include <utility>
 
 #include "src/developer/forensics/public/fakes/crash_reporter.h"
 
@@ -19,19 +23,33 @@ int main(int argc, const char** argv) {
 
   FX_LOGS(INFO) << "Starting FakeCrashReporter";
 
-  std::unique_ptr<sys::ComponentContext> context =
-      sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  component::OutgoingDirectory outgoing(loop.dispatcher());
 
-  ::forensics::fakes::CrashReporter crash_reporter;
+  if (const zx::result result = outgoing.ServeFromStartupInfo(); result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to serve outgoing directory: " << result.status_string();
+    return EXIT_FAILURE;
+  }
 
-  ::fidl::BindingSet<fuchsia::feedback::CrashReporter> crash_reporter_bindings;
-  context->outgoing()->AddPublicService(crash_reporter_bindings.GetHandler(&crash_reporter));
+  auto crash_reporter = std::make_unique<forensics::fakes::CrashReporter>(loop.dispatcher());
+  forensics::fakes::CrashReporter* crash_reporter_ptr = crash_reporter.get();
 
-  context->outgoing()->AddPublicService(
-      ::fidl::InterfaceRequestHandler<fuchsia::feedback::testing::FakeCrashReporterQuerier>(
-          [&crash_reporter](
-              ::fidl::InterfaceRequest<fuchsia::feedback::testing::FakeCrashReporterQuerier>
-                  request) { crash_reporter.SetQuerier(std::move(request)); }));
+  if (const zx::result result =
+          outgoing.AddProtocol<fuchsia_feedback::CrashReporter>(std::move(crash_reporter));
+      result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to add CrashReporter protocol: " << result.status_string();
+    return EXIT_FAILURE;
+  }
+
+  if (const zx::result result =
+          outgoing.AddUnmanagedProtocol<fuchsia_feedback_testing::FakeCrashReporterQuerier>(
+              [crash_reporter_ptr](
+                  fidl::ServerEnd<fuchsia_feedback_testing::FakeCrashReporterQuerier> server_end) {
+                crash_reporter_ptr->SetQuerier(std::move(server_end));
+              });
+      result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to add FakeCrashReporterQuerier protocol: " << result.status_string();
+    return EXIT_FAILURE;
+  }
 
   loop.Run();
 

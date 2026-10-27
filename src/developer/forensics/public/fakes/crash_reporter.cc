@@ -4,8 +4,8 @@
 
 #include "src/developer/forensics/public/fakes/crash_reporter.h"
 
-#include <fuchsia/feedback/cpp/fidl.h>
-#include <lib/fpromise/result.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -15,17 +15,19 @@
 namespace forensics {
 namespace fakes {
 
-using namespace fuchsia::feedback;
+using namespace fuchsia_feedback;
 
-void CrashReporter::FileReport(CrashReport report, FileReportCallback callback) {
-  if (!report.has_program_name()) {
-    callback(fpromise::error(FilingError::INVALID_ARGS_ERROR));
+CrashReporter::CrashReporter(async_dispatcher_t* dispatcher)
+    : dispatcher_(dispatcher), num_crash_reports_filed_(0) {}
+
+void CrashReporter::FileReport(FileReportRequest& request, FileReportCompleter::Sync& completer) {
+  if (!request.report().program_name().has_value()) {
+    completer.Reply(fit::error(FilingError::kInvalidArgsError));
   } else {
-    FileReportResults results;
-    results.set_result(FilingSuccess::REPORT_UPLOADED);
-    results.set_report_id("01234567890abcdef");
-
-    callback(fpromise::ok(std::move(results)));
+    completer.Reply(fit::ok(FileReportResults{{
+        .result = FilingSuccess::kReportUploaded,
+        .report_id = "01234567890abcdef",
+    }}));
   }
 
   ++num_crash_reports_filed_;
@@ -35,9 +37,9 @@ void CrashReporter::FileReport(CrashReport report, FileReportCallback callback) 
 }
 
 void CrashReporter::SetQuerier(
-    fidl::InterfaceRequest<fuchsia::feedback::testing::FakeCrashReporterQuerier> request) {
+    fidl::ServerEnd<fuchsia_feedback_testing::FakeCrashReporterQuerier> server_end) {
   FX_LOGS(INFO) << "Registering FakeCrashReporterQuerier";
-  querier_ = std::make_unique<FakeCrashReporterQuerier>(this, std::move(request),
+  querier_ = std::make_unique<FakeCrashReporterQuerier>(dispatcher_, this, std::move(server_end),
                                                         num_crash_reports_filed_);
 }
 
@@ -49,15 +51,13 @@ void CrashReporter::ResetQuerier() {
 }
 
 FakeCrashReporterQuerier::FakeCrashReporterQuerier(
-    CrashReporter* crash_reporter,
-    fidl::InterfaceRequest<fuchsia::feedback::testing::FakeCrashReporterQuerier> request,
+    async_dispatcher_t* dispatcher, CrashReporter* crash_reporter,
+    fidl::ServerEnd<fuchsia_feedback_testing::FakeCrashReporterQuerier> server_end,
     size_t num_crash_reports_filed)
-    : connection_(this, std::move(request)),
+    : connection_(dispatcher, std::move(server_end), this,
+                  [crash_reporter](fidl::UnbindInfo) { crash_reporter->ResetQuerier(); }),
       num_crash_reports_filed_(num_crash_reports_filed),
-      watch_file_dirty_bit_(true) {
-  connection_.set_error_handler(
-      [crash_reporter](const zx_status_t status) { crash_reporter->ResetQuerier(); });
-}
+      watch_file_dirty_bit_(true) {}
 
 void FakeCrashReporterQuerier::UpdateAndNotify(size_t num_crash_reports_filed) {
   num_crash_reports_filed_ = num_crash_reports_filed;
@@ -66,17 +66,17 @@ void FakeCrashReporterQuerier::UpdateAndNotify(size_t num_crash_reports_filed) {
 }
 
 void FakeCrashReporterQuerier::Notify() {
-  if (!callback_.has_value() || !watch_file_dirty_bit_) {
+  if (!completer_.has_value() || !watch_file_dirty_bit_) {
     return;
   }
 
-  (*callback_)(num_crash_reports_filed_);
-  callback_ = std::nullopt;
+  completer_->Reply(num_crash_reports_filed_);
+  completer_ = std::nullopt;
   watch_file_dirty_bit_ = false;
 }
 
-void FakeCrashReporterQuerier::WatchFile(WatchFileCallback callback) {
-  callback_ = std::move(callback);
+void FakeCrashReporterQuerier::WatchFile(WatchFileCompleter::Sync& completer) {
+  completer_ = completer.ToAsync();
   Notify();
 }
 
