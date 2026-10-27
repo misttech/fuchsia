@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::PAGE_SIZE;
+use crate::mm::{DumpPolicy, PAGE_SIZE};
+use crossbeam::atomic::AtomicCell;
 use starnix_sync::{IcmpPingGidsLock, LockDepMutex};
 use std::ops::Range;
 use std::sync::atomic::{AtomicI32, AtomicUsize};
@@ -55,6 +56,11 @@ pub struct SystemLimits {
     ///
     /// See https://docs.kernel.org/admin-guide/sysctl/kernel.html#io-uring-group
     pub io_uring_group: AtomicI32,
+
+    /// The default "dumpable" policy assigned to processes when their effective or filesystem
+    /// user/group IDs change, or when executing a set-user-ID, set-group-ID, or capability-endowed
+    /// binary. Exposed via `/proc/sys/fs/suid_dumpable`.
+    pub suid_dumpable: AtomicCell<DumpPolicy>,
 }
 
 impl Default for SystemLimits {
@@ -72,6 +78,7 @@ impl Default for SystemLimits {
             pipe_max_size: AtomicUsize::new((*PAGE_SIZE * 256) as usize),
             io_uring_disabled: AtomicI32::new(0),
             io_uring_group: AtomicI32::new(-1),
+            suid_dumpable: AtomicCell::new(DumpPolicy::Disable),
         }
     }
 }

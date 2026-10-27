@@ -7,6 +7,7 @@ use crate::sys_net::{
     ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile, TcpWmemFile, WmemMaxFile,
 };
 use crate::sysctl_directory::{SysctlDirectory, SysctlDirectoryMutator};
+use starnix_core::mm::DumpPolicy;
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, SeccompAction};
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
@@ -341,11 +342,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874764")),
             mode,
         );
-        dir.entry(
-            "suid_dumpable",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874210")),
-            mode,
-        );
+        dir.entry("suid_dumpable", SystemLimitFile::<SuidDumpable>::new_node(), mode);
         dir.subdir("selinux", 0o555, |_dir| {});
         dir.subdir("verity", 0o555, |dir| {
             dir.entry("require_signatures", VerityRequireSignaturesFile::new_node(), mode);
@@ -700,6 +697,21 @@ impl AtomicLimit for PipeMaxSize {
     }
     fn store(current_task: &CurrentTask, value: usize) -> Result<(), Errno> {
         current_task.kernel().system_limits.pipe_max_size.store(value, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct SuidDumpable;
+impl AtomicLimit for SuidDumpable {
+    type ValueType = i32;
+    const WRITE_CAP: Capabilities = CAP_SYS_ADMIN;
+
+    fn load(current_task: &CurrentTask) -> i32 {
+        current_task.kernel().system_limits.suid_dumpable.load().into()
+    }
+    fn store(current_task: &CurrentTask, value: i32) -> Result<(), Errno> {
+        let policy = DumpPolicy::try_from(value)?;
+        current_task.kernel().system_limits.suid_dumpable.store(policy);
         Ok(())
     }
 }

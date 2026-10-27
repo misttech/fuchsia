@@ -104,9 +104,6 @@
                 // TODO(https://fxbug.dev/297440106)
                 "ZombieTest.Setpgid",
 
-                // TODO(https://fxbug.dev/439058791)
-                "DumpableTest.DumpableDropsOnUserChange",
-
                 // TODO(https://fxbug.dev/495916611)
                 "ProcfsTest.ProcSysNetInvalidWriteReturnsEinval",
 

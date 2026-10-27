@@ -200,17 +200,40 @@ struct ProgramBreak {
 }
 
 /// The policy about whether the address space can be dumped.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub enum DumpPolicy {
     /// The address space cannot be dumped.
     ///
     /// Corresponds to SUID_DUMP_DISABLE.
-    Disable,
+    #[default]
+    Disable = 0,
 
     /// The address space can be dumped.
     ///
     /// Corresponds to SUID_DUMP_USER.
-    User,
+    User = 1,
+}
+
+impl From<DumpPolicy> for i32 {
+    fn from(policy: DumpPolicy) -> i32 {
+        policy as i32
+    }
+}
+
+impl TryFrom<i32> for DumpPolicy {
+    type Error = Errno;
+
+    fn try_from(value: i32) -> Result<Self, Errno> {
+        match value {
+            0 => Ok(Self::Disable),
+            1 => Ok(Self::User),
+            2 => {
+                track_stub!(TODO("https://fxbug.dev/322873960"), "SUID_DUMP_ROOT");
+                error!(EINVAL)
+            }
+            _ => error!(EINVAL),
+        }
+    }
 }
 
 static_assertions::const_assert!(AtomicCell::<DumpPolicy>::is_lock_free());
@@ -4476,8 +4499,6 @@ impl MemoryManager {
                 },
             }
             .into(),
-            // TODO(security): Reset to DISABLE, or the value in the fs.suid_dumpable sysctl, under
-            // certain conditions as specified in the prctl(2) man page.
             dumpable: AtomicCell::new(DumpPolicy::User),
             maximum_valid_user_address: UserAddress::from_ptr(
                 user_vmar_info.base + user_vmar_info.len,

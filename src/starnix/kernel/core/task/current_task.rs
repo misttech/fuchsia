@@ -437,20 +437,39 @@ impl CurrentTask {
     /// Change the current and real creds of the task. This is invalid to call while temporary
     /// credentials are present.
     pub fn set_creds(&self, creds: Credentials) {
-        // From <https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html>:
-        //
-        //   The parent-death signal setting is also cleared upon changes
-        //   to any of the following thread credentials: effective user ID,
-        //   effective group ID, filesystem user ID, or filesystem group ID.
         let prev = self.current_creds();
-        let clear_parent_death_signal = creds.euid != prev.euid
+        let effective_or_fs_ugid_changed = creds.euid != prev.euid
             || creds.egid != prev.egid
             || creds.fsuid != prev.fsuid
             || creds.fsgid != prev.fsgid;
         std::mem::drop(prev);
 
-        if clear_parent_death_signal {
+        if effective_or_fs_ugid_changed {
+            // From <https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html>:
+            //
+            //   The parent-death signal setting is also cleared upon changes
+            //   to any of the following thread credentials: effective user ID,
+            //   effective group ID, filesystem user ID, or filesystem group ID.
             self.thread_group().write().set_parent_death_signal(None);
+
+            // From <https://man7.org/linux/man-pages/man2/PR_SET_DUMPABLE.2const.html>:
+            //
+            //   Normally, the "dumpable" attribute is set to 1. However, it is
+            //   reset to the current value contained in the file
+            //   /proc/sys/fs/suid_dumpable (which by default has the value 0),
+            //   in the following circumstances:
+            //
+            //   - The process's effective user or group ID is changed.
+            //   - The process's filesystem user or group ID is changed (see
+            //     credentials(7)).
+            //
+            // Reset `dumpable` before publishing the new credentials so
+            // concurrent `check_ptrace_access_mode` callers cannot see
+            // downgraded credentials while the address space is still marked
+            // dumpable.
+            if let Ok(mm) = self.mm() {
+                mm.dumpable.store(self.kernel().system_limits.suid_dumpable.load());
+            }
         }
 
         let creds = Arc::new(creds);
@@ -1217,17 +1236,31 @@ impl CurrentTask {
         self.notify_robust_list();
 
         // Tear down the old address space and create a new one for the resolved ELF.
-        let mm = {
-            let new_mm = MemoryManager::exec(
-                self.thread_group().root_vmar.unowned(),
-                self.mm().ok().cloned(),
-                resolved_program.file.name().to_passive(),
-                elf_arch_width,
-            )?;
-            self.running_state().mm.update(Some(new_mm.clone()));
-            self.mm = Some(new_mm.clone());
-            new_mm
+        let new_mm = MemoryManager::exec(
+            self.thread_group().root_vmar.unowned(),
+            self.mm().ok().cloned(),
+            resolved_program.file.name().to_passive(),
+            elf_arch_width,
+        )?;
+
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   The process's "dumpable" attribute is set to the value 1,
+        //   unless a set-user-ID program, a set-group-ID program, or a
+        //   program with capabilities is being executed, in which case the
+        //   dumpable flag may instead be reset to the value in
+        //   /proc/sys/fs/suid_dumpable, in the circumstances described
+        //   under PR_SET_DUMPABLE in prctl(2).
+        let dumpable = if resolved_program.secure_exec {
+            self.kernel().system_limits.suid_dumpable.load()
+        } else {
+            DumpPolicy::User
         };
+        new_mm.dumpable.store(dumpable);
+
+        self.running_state().mm.update(Some(new_mm.clone()));
+        self.mm = Some(new_mm);
+
         // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
         //
         //   All threads other than the calling thread are destroyed during an
@@ -1258,19 +1291,6 @@ impl CurrentTask {
 
         {
             let mut state = self.write();
-
-            // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
-            //
-            //   The process's "dumpable" attribute is set to the value 1,
-            //   unless a set-user-ID program, a set-group-ID program, or a
-            //   program with capabilities is being executed, in which case the
-            //   dumpable flag may instead be reset to the value in
-            //   /proc/sys/fs/suid_dumpable, in the circumstances described
-            //   under PR_SET_DUMPABLE in prctl(2).
-            let dumpable =
-                if resolved_program.secure_exec { DumpPolicy::Disable } else { DumpPolicy::User };
-            mm.dumpable.store(dumpable);
-
             state.set_sigaltstack(None);
             state.robust_list_head = RobustListHeadPtr::null(self);
         }
@@ -2434,9 +2454,11 @@ mod tests {
             assert_eq!(res, error!(EPERM));
 
             // Non-dumpable target requires CAP_SYS_PTRACE even with matching UID/GID.
+            // Changing effective/filesystem UID/GID should have reset `dumpable` to
+            // `DumpPolicy::Disable`.
             let target_task = create_task(&current_task.kernel(), "target");
             target_task.set_creds(Credentials::with_ids(1000, 1000));
-            target_task.mm().unwrap().dumpable.store(DumpPolicy::Disable);
+            assert_eq!(target_task.mm().unwrap().dumpable.load(), DumpPolicy::Disable);
 
             let res = current_task.override_creds(unpriv_creds.clone(), || {
                 current_task.check_ptrace_access_mode(mode, &target_task)

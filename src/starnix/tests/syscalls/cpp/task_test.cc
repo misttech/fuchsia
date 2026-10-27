@@ -25,6 +25,7 @@
 #include <thread>
 
 #include <fbl/algorithm.h>
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 #include <linux/sched.h>
@@ -36,6 +37,7 @@
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/lib/fxl/strings/trim.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
@@ -1584,21 +1586,26 @@ TEST_F(CloneAndExecTest, ExecveAsRootRequiresAnyExecutableBitSet) {
 
 class DumpableTest : public ::testing::Test {
  protected:
-  void SetUp() {
+  static constexpr const char kSuidDumpablePath[] = "/proc/sys/fs/suid_dumpable";
+
+  void SetUp() override {
     if (!test_helper::HasSysAdmin()) {
       GTEST_SKIP() << "test requires root privileges";
     }
 
-    FILE* fp = fopen("/proc/sys/fs/suid_dumpable", "r");
-    EXPECT_NE(fp, nullptr);
-    // TODO(https://fxbug.dev/322874210): EXPECT that the read succeeds, do not
-    // hard-code a value.
-    if (fscanf(fp, "%d", &dumpable_default_) != 1) {
-      dumpable_default_ = 0;
-    }
-
-    fclose(fp);
+    std::string dumpable_str;
+    ASSERT_TRUE(files::ReadFileToString(kSuidDumpablePath, &dumpable_str)) << strerror(errno);
+    ASSERT_TRUE(
+        fxl::StringToNumberWithError(fxl::TrimString(dumpable_str, " \t\r\n"), &dumpable_default_))
+        << dumpable_str;
   }
+
+  void TearDown() override {
+    if (dumpable_default_ != -1) {
+      EXPECT_TRUE(files::WriteFile(kSuidDumpablePath, std::to_string(dumpable_default_)));
+    }
+  }
+
   int dumpable_default_ = -1;
 };
 
@@ -1660,6 +1667,40 @@ TEST_F(DumpableTest, DumpableDropsOnUserChange) {
 
     EXPECT_TRUE(helper.WaitForChildren());
   }
+}
+
+TEST_F(DumpableTest, SuidDumpableRejectsInvalidValues) {
+  fbl::unique_fd fd(open(kSuidDumpablePath, O_WRONLY));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  for (std::string_view invalid : {"-1", "3", "invalid"}) {
+    EXPECT_THAT(write(fd.get(), invalid.data(), invalid.size()), SyscallFailsWithErrno(EINVAL))
+        << invalid;
+  }
+}
+
+TEST_F(DumpableTest, DumpableResetsToSuidDumpableUser) {
+  ASSERT_TRUE(files::WriteFile(kSuidDumpablePath, "1")) << strerror(errno);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 0), SyscallSucceeds());
+    ASSERT_THAT(seteuid(kUser1Uid), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_GET_DUMPABLE), SyscallSucceedsWithValue(1));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(DumpableTest, DumpableResetsToSuidDumpableDisable) {
+  ASSERT_TRUE(files::WriteFile(kSuidDumpablePath, "0")) << strerror(errno);
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceeds());
+    ASSERT_THAT(seteuid(kUser1Uid), SyscallSucceeds());
+    EXPECT_THAT(prctl(PR_GET_DUMPABLE), SyscallSucceedsWithValue(0));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST(Task, SetgroupsWithoutCapSetgidFails) {
