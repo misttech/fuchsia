@@ -63,7 +63,10 @@ Entries should be kept in alphabetical order by `path` or `path_prefix`.
   needed.
 * `targets` (*optional*): Non-empty list of target names within `path`. Only
   supported for checks with `supports_targets_allowlist = True` and only valid
-  when `path` (not `path_prefix`) is specified.
+  when `path` (not `path_prefix`) is specified. Functions and rules without a
+  `name` parameter (such as `exports_files()`, `package()`, and
+  `expect_includes()`) are not targets and are not covered by target-specific
+  allowlists.
 
 ### Example
 

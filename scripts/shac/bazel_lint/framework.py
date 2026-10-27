@@ -143,10 +143,13 @@ class CallInfo:
             (e.g. `cc_library(...)` or `my_macro(...)`), `func_name` matches
             the function identifier. For calls via `native.<rule>` (e.g.
             `native.cc_library(...)`), `func_name` is normalized to strip
-            `native.` (becoming `"cc_library"`).
+            `native.` (becoming `"cc_library"`). Almost all checks should use
+            `func_name` so they handle both forms uniformly.
         raw_func_name (str): The exact un-normalized function expression as source
             text (e.g. `"native.cc_library"` or `"my_macro"`). This is identical
             to `func_name` for all calls except those using the `native.` prefix.
+            Only use this when a check explicitly needs to distinguish
+            `native.<func>` from `<func>`.
         target_name (str | None): The value of the `name = "..."` keyword argument
             if present as a string literal, otherwise `None`.
         keywords (dict[str, ast.keyword]): Mapping from keyword argument name to
