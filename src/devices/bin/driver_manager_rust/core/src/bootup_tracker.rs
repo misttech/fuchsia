@@ -102,10 +102,7 @@ impl BootupTracker {
             && (!self.inner.borrow().outstanding_start_requests.is_empty()
                 || self.bind_manager.has_ongoing_bind())
         {
-            // This log message is used by tefmocheck to detect driver start/bind hangs.
-            // LINT.IfChange
             warn!("Deadline exceeded in the bootup tracker with:");
-            // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go)
             warn!(
                 "    {} unfinished start requests:",
                 self.inner.borrow().outstanding_start_requests.len()

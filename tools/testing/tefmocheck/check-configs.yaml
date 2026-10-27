@@ -264,34 +264,6 @@ failure_mode_checks:
   string: "Failed to reload the firmware"
   log_types: ["syslogType"]
 
-# For https://fxbug.dev/500045713
-# This is for driver manager removal and bootup hangs.
-- kind: "string_in_log"
-  string: "Full node removal hanging"
-  log_types: ["serialLogType"]
-  always_flake: true
-  # Ignore driver removal hangs caused by hang-on-stop in reboot_hang_test.
-  except_strings: ["hang-on-stop"]
-- kind: "string_in_log"
-  string: "Package node removal hanging"
-  log_types: ["serialLogType"]
-  always_flake: true
-  except_strings: ["hang-on-stop"]
-- kind: "string_in_log"
-  string: "waiting for driver's Stop() function and destructor finish running"
-  log_types: ["serialLogType"]
-  always_flake: true
-  # Ignore driver removal hangs caused by hang-on-stop in reboot_hang_test.
-  except_strings: ["hang-on-stop"]
-- kind: "string_in_log"
-  string: "Deadline exceeded in the bootup tracker with:"
-  log_types: ["serialLogType"]
-  always_flake: true
-- kind: "string_in_log"
-  string: "waiting for driver to finish binding"
-  log_types: ["serialLogType"]
-  always_flake: true
-
 # For https://fxbug.dev/42085023. This tracks boot test failures where
 # the success string shows up in the serial log but we fail to read it.
 - kind: "string_in_log"
