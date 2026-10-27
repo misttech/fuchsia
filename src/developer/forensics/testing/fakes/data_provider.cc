@@ -4,9 +4,13 @@
 
 #include "src/developer/forensics/testing/fakes/data_provider.h"
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <fidl/fuchsia.mem/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <map>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "src/developer/forensics/utils/archive.h"
@@ -17,13 +21,13 @@ namespace forensics {
 namespace fakes {
 namespace {
 
-using namespace fuchsia::feedback;
+using namespace fuchsia_feedback;
 
 std::string AnnotationsToJSON(const std::vector<Annotation>& annotations) {
   std::string json = "{\n";
   for (const Annotation& annotation : annotations) {
-    json +=
-        fxl::StringPrintf("\t\"%s\": \"%s\"\n", annotation.key.c_str(), annotation.value.c_str());
+    json += fxl::StringPrintf("\t\"%s\": \"%s\"\n", annotation.key().c_str(),
+                              annotation.value().c_str());
   }
   json += "}\n";
   return json;
@@ -31,9 +35,9 @@ std::string AnnotationsToJSON(const std::vector<Annotation>& annotations) {
 
 std::vector<Annotation> CreateAnnotations() {
   return {
-      Annotation{.key = "annotation_key_1", .value = "annotation_value_1"},
-      Annotation{.key = "annotation_key_2", .value = "annotation_value_2"},
-      Annotation{.key = "annotation_key_3", .value = "annotation_value_3"},
+      Annotation{{.key = "annotation_key_1", .value = "annotation_value_1"}},
+      Annotation{{.key = "annotation_key_2", .value = "annotation_value_2"}},
+      Annotation{{.key = "annotation_key_3", .value = "annotation_value_3"}},
   };
 }
 
@@ -46,20 +50,27 @@ Attachment CreateSnapshot() {
   fsl::SizedVmo archive;
   Archive(attachments, &archive);
 
-  return {.key = "snapshot.zip", .value = std::move(archive).ToTransport()};
+  return Attachment{{
+      .key = "snapshot.zip",
+      .value = fuchsia_mem::Buffer{{
+          .vmo = std::move(archive.vmo()),
+          .size = archive.size(),
+      }},
+  }};
 }
 
 }  // namespace
 
-void DataProvider::GetAnnotations(fuchsia::feedback::GetAnnotationsParameters params,
-                                  GetAnnotationsCallback callback) {
-  callback(std::move(Annotations().set_annotations2(CreateAnnotations())));
+void DataProvider::GetAnnotations(GetAnnotationsRequest& request,
+                                  GetAnnotationsCompleter::Sync& completer) {
+  completer.Reply(Annotations{{.annotations2 = CreateAnnotations()}});
 }
 
-void DataProvider::GetSnapshot(fuchsia::feedback::GetSnapshotParameters parms,
-                               GetSnapshotCallback callback) {
-  callback(
-      std::move(Snapshot().set_annotations2(CreateAnnotations()).set_archive(CreateSnapshot())));
+void DataProvider::GetSnapshot(GetSnapshotRequest& request, GetSnapshotCompleter::Sync& completer) {
+  completer.Reply(Snapshot{{
+      .archive = CreateSnapshot(),
+      .annotations2 = CreateAnnotations(),
+  }});
 }
 
 }  // namespace fakes

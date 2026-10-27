@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
+
+#include <cstdlib>
+#include <memory>
 
 #include "src/developer/forensics/testing/fakes/data_provider.h"
 
@@ -19,13 +21,19 @@ int main(int argc, const char** argv) {
 
   FX_LOGS(INFO) << "Starting FakeDataProvider";
 
-  std::unique_ptr<sys::ComponentContext> context =
-      sys::ComponentContext::CreateAndServeOutgoingDirectory();
+  component::OutgoingDirectory outgoing(loop.dispatcher());
 
-  ::forensics::fakes::DataProvider data_provider;
+  if (const zx::result result = outgoing.ServeFromStartupInfo(); result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to serve outgoing directory: " << result.status_string();
+    return EXIT_FAILURE;
+  }
 
-  ::fidl::BindingSet<fuchsia::feedback::DataProvider> data_provider_bindings;
-  context->outgoing()->AddPublicService(data_provider_bindings.GetHandler(&data_provider));
+  if (const zx::result result = outgoing.AddProtocol<fuchsia_feedback::DataProvider>(
+          std::make_unique<forensics::fakes::DataProvider>());
+      result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to add DataProvider protocol: " << result.status_string();
+    return EXIT_FAILURE;
+  }
 
   loop.Run();
 
