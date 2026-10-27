@@ -49,7 +49,7 @@ pub use matchers::{BindingsPacketMatcher, PacketMatcher, TransportProtocolMatche
 pub use packets::{
     DynTransportSerializer, DynamicTransportSerializer, FilterIpExt, FilterIpPacket,
     ForwardedPacket, IcmpMessage, IpPacket, MaybeTransportPacket, MaybeTransportPacketMut,
-    RawIpBody, TransportPacketSerializer, TxPacket,
+    NotSegmentableTransportSerializer, RawIpBody, TransportPacketSerializer, TxPacket,
 };
 pub use state::validation::{ValidRoutines, ValidationError};
 pub use state::{

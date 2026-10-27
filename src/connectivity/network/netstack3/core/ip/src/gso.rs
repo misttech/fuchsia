@@ -445,8 +445,10 @@ macro_rules! impl_not_segmentable {
 // TODO(https://fxbug.dev/566314871): Support UDP GSO.
 impl_not_segmentable!([S, A: IpAddress] Nested<S, UdpPacketBuilder<A>>);
 
-// TODO(https://fxbug.dev/452980285): Require serializers behind
-// `DynTransportSerializer` to be GSO-aware.
+// Anything behind `DynTransportSerializer` has already acknowledged it can't be
+// segmented via `NotSegmentableTransportSerializer`.
+// TODO(https://fxbug.dev/578576724): Support GSO behind
+// `DynTransportSerializer`.
 impl_not_segmentable!(['a, I: FilterIpExt] DynTransportSerializer<'a, I>);
 impl_not_segmentable!([I: IpExt, B: ParseBuffer] RawIpBody<I, B>);
 impl_not_segmentable!([S, I: IcmpIpExt, M: IcmpMessage<I>] Nested<S, IcmpPacketBuilder<I, M>>);

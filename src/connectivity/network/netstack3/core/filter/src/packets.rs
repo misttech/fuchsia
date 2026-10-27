@@ -343,6 +343,21 @@ pub trait DynamicMaybeIcmpErrorMut<I: IpExt> {
     fn dyn_icmp_error_mut(&mut self) -> Option<&mut dyn DynamicIcmpErrorMut<I>>;
 }
 
+/// A marker for transport serializers that never carry a payload that can be
+/// segmented in software (GSO).
+///
+/// Implementing this trait is an acknowledgement that packets built from the
+/// serializer can't be segmented and so must never be sent with GSO metadata
+/// attached. It is a prerequisite for [`DynamicTransportSerializer`], whose
+/// dyn-compatible API does not expose segmentation, so GSO is unsupported
+/// behind [`DynTransportSerializer`]. Serializers that *can* be segmented
+/// (e.g. TCP) must not implement it.
+///
+/// TODO(https://fxbug.dev/578576724): Support GSO behind
+/// `DynTransportSerializer` so segmentable serializers (TCP, and UDP once it
+/// supports GSO) can be dispatched dynamically; then remove this marker.
+pub trait NotSegmentableTransportSerializer {}
+
 /// A serializer that may also be a valid transport layer packet.
 pub trait TransportPacketSerializer<I: FilterIpExt>:
     NetworkSerializer
@@ -371,6 +386,10 @@ where
 /// This is dynamic-dispatch equivalent of [`TransportPacketSerializer`]. Used
 /// in conjunction with [`DynTransportSerializer`] it allows dynamic dispatch
 /// for slow-path protocols.
+///
+/// Only serializers that acknowledge they can't be segmented in software (via
+/// [`NotSegmentableTransportSerializer`]) may be used dynamically, since this
+/// API does not expose segmentation and so GSO is unsupported here.
 pub trait DynamicTransportSerializer<I: FilterIpExt>:
     DynamicNetworkSerializer
     + DynamicNetworkPartialSerializer
@@ -378,6 +397,7 @@ pub trait DynamicTransportSerializer<I: FilterIpExt>:
     + DynamicMaybeTransportPacketMut<I>
     + DynamicMaybeIcmpErrorMut<I>
     + MaybeIcmpErrorPayload<I>
+    + NotSegmentableTransportSerializer
 {
 }
 
@@ -385,6 +405,7 @@ impl<O, I> DynamicTransportSerializer<I> for O
 where
     I: FilterIpExt,
     O: TransportPacketSerializer<I>
+        + NotSegmentableTransportSerializer
         + DynamicMaybeTransportPacketMut<I>
         + DynamicMaybeIcmpErrorMut<I>,
 {
@@ -1874,6 +1895,11 @@ impl<I: IpExt, Inner, M: IcmpMessage<I>> DynamicMaybeTransportPacketMut<I>
     }
 }
 
+impl<I: IpExt, Inner, M: IcmpMessage<I>> NotSegmentableTransportSerializer
+    for Nested<Inner, IcmpPacketBuilder<I, M>>
+{
+}
+
 impl<I: IpExt, M: IcmpMessage<I>> TransportPacketMut<I> for IcmpPacketBuilder<I, M> {
     fn set_src_port(&mut self, id: NonZeroU16) {
         if M::IS_REWRITABLE {
@@ -2292,6 +2318,11 @@ impl<M: igmp::MessageType<EmptyBuf>> DynamicMaybeTransportPacketMut<Ipv4>
     }
 }
 
+impl<M: igmp::MessageType<EmptyBuf>> NotSegmentableTransportSerializer
+    for InnerSerializer<IgmpPacketBuilder<EmptyBuf, M>, EmptyBuf>
+{
+}
+
 impl<M: igmp::MessageType<EmptyBuf>> MaybeTransportPacketMut<Ipv4>
     for InnerSerializer<IgmpPacketBuilder<EmptyBuf, M>, EmptyBuf>
 {
@@ -2338,6 +2369,11 @@ impl<I> DynamicMaybeTransportPacketMut<Ipv4>
     fn dyn_transport_packet_mut(&mut self) -> Option<&mut dyn TransportPacketMut<Ipv4>> {
         self.transport_packet_mut().map(|x| match x {})
     }
+}
+
+impl<I> NotSegmentableTransportSerializer
+    for InnerSerializer<IgmpMembershipReportV3Builder<I>, EmptyBuf>
+{
 }
 
 impl<I: IpExt, II, B> MaybeIcmpErrorPayload<I>
