@@ -133,14 +133,23 @@ zx::vmo GenerateMinidump(const zx::exception& exception,
     return {};
   }
 
+  // Set the exception reason.
+  *exception_reason = DetectExceptionReason(report);
+
+  // A page fault that timed out means the process's pager is stuck. Building the minidump reads the
+  // process's memory, so it would wait on the same pager, for up to the kernel's pager timeout per
+  // page.
+  if (*exception_reason == ExceptionReason::kPageFaultTimedOut) {
+    FX_LOGS(WARNING) << "Process " << process_name
+                     << ": skipping the minidump, a page fault timed out waiting for the pager.";
+    return {};
+  }
+
   inspector::GwpAsanInfo gwp_asan_info;
   if (inspector::inspector_get_gwp_asan_info(process, report, &gwp_asan_info).is_ok() &&
       gwp_asan_info.error_type) {
     *gwp_asan_exception_type = gwp_asan_info.error_type;
   }
-
-  // Set the exception reason.
-  *exception_reason = DetectExceptionReason(report);
 
   // Create a process snapshot from the process and the exception thread.
   crashpad::ProcessSnapshotFuchsia process_snapshot;

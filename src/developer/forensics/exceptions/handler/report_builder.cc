@@ -105,6 +105,11 @@ CrashReportBuilder& CrashReportBuilder::SetProcessTerminated() {
   return *this;
 }
 
+CrashReportBuilder& CrashReportBuilder::SetMinidumpSkipped() {
+  minidump_skipped_ = true;
+  return *this;
+}
+
 CrashReportBuilder& CrashReportBuilder::SetGwpAsanExceptionType(std::string exception_type) {
   gwp_asan_exception_type_ = std::move(exception_type);
   return *this;
@@ -161,7 +166,8 @@ fuchsia::feedback::CrashReport CrashReportBuilder::Consume() {
   }
 
   // Minidump.
-  FX_CHECK(minidump_.has_value() || exception_expired_ || process_already_terminated_);
+  FX_CHECK(minidump_.has_value() || exception_expired_ || process_already_terminated_ ||
+           minidump_skipped_);
   if (minidump_.has_value()) {
     fuchsia::mem::Buffer mem_buffer;
     minidump_.value().get_size(&mem_buffer.size);

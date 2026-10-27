@@ -29,6 +29,8 @@ class CrashReportBuilder {
   CrashReportBuilder& SetComponentInfo(const ComponentInfo& component_info);
   CrashReportBuilder& SetExceptionExpired();
   CrashReportBuilder& SetProcessTerminated();
+  // No minidump on purpose, e.g. because reading the process's memory would block on its pager.
+  CrashReportBuilder& SetMinidumpSkipped();
   CrashReportBuilder& SetGwpAsanExceptionType(std::string exception_type);
 
   const std::optional<std::string>& ProcessName() const;
@@ -48,6 +50,7 @@ class CrashReportBuilder {
   std::optional<std::string> gwp_asan_exception_type_;
   bool exception_expired_{false};
   bool process_already_terminated_{false};
+  bool minidump_skipped_{false};
 
   bool is_valid_{true};
 };

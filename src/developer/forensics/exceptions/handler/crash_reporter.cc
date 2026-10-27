@@ -122,6 +122,8 @@ void CrashReporter::Send(zx::exception exception, zx::process crashed_process,
 
     if (minidump.is_valid()) {
       builder.SetMinidump(std::move(minidump));
+    } else if (exception_reason == ExceptionReason::kPageFaultTimedOut) {
+      builder.SetMinidumpSkipped();
     } else {
       builder.SetProcessTerminated();
     }

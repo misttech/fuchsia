@@ -142,6 +142,20 @@ TEST_F(CrashReportBuilderTest, ExceptionReason_PageFaultTimedOut) {
   EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-timed_out");
 }
 
+TEST_F(CrashReportBuilderTest, ExceptionReason_PageFaultTimedOutMinidumpSkipped) {
+  builder_.SetMinidumpSkipped().SetExceptionReason(ExceptionReason::kPageFaultTimedOut);
+
+  const fuchsia::feedback::CrashReport crash_report = builder_.Consume();
+  ASSERT_TRUE(crash_report.has_crash_signature());
+  EXPECT_EQ(crash_report.crash_signature(), "fuchsia-page_fault-timed_out");
+  ASSERT_TRUE(crash_report.has_specific_report());
+  ASSERT_TRUE(crash_report.specific_report().is_native());
+  EXPECT_FALSE(crash_report.specific_report().native().has_minidump());
+  ASSERT_TRUE(crash_report.has_annotations());
+  EXPECT_THAT(crash_report.annotations(),
+              Contains(MatchesAnnotation(kCrashProcessStateKey, "in exception")));
+}
+
 TEST_F(CrashReportBuilderTest, ExceptionReason_Arm64UnknownException) {
   fsl::SizedVmo minidump_vmo;
   ASSERT_TRUE(fsl::VmoFromString("minidump", &minidump_vmo));
