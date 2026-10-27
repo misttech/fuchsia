@@ -276,7 +276,7 @@ fn clock_nanosleep_boot_with_deadline(
     user_remaining: TimeSpecPtr,
 ) -> Result<(), Errno> {
     let waiter = Waiter::new();
-    let timer = zx::BootTimer::create();
+    let timer = zx::BootTimer::create_with_slack_mode(zx::TimerSlackMode::Late);
     let signal_handler = SignalHandler {
         inner: SignalHandlerInner::None,
         event_handler: EventHandler::None,

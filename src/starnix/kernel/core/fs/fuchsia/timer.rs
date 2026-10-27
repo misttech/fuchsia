@@ -18,7 +18,12 @@ pub struct MonotonicZxTimer {
 
 impl MonotonicZxTimer {
     pub fn new() -> Self {
-        Self { timer: zx::MonotonicTimer::create() }
+        // Starnix passes the task's `timerslack_ns` to `timer.set()` below
+        // (note: Linux timerfd uses a zero range in `hrtimer_start()`, whereas
+        // `timerslack_ns` in Linux only applies to `nanosleep`/`poll`/`select`/
+        // `epoll`/`futex`). Use `TimerSlackMode::Late` so coalescing never
+        // causes the timer to fire before its deadline.
+        Self { timer: zx::MonotonicTimer::create_with_slack_mode(zx::TimerSlackMode::Late) }
     }
 }
 
@@ -60,7 +65,9 @@ pub struct BootZxTimer {
 
 impl BootZxTimer {
     pub fn new() -> Self {
-        Self { timer: zx::BootTimer::create() }
+        // See comment in `MonotonicZxTimer::new`: use `TimerSlackMode::Late`
+        // so coalescing never causes the timer to fire before its deadline.
+        Self { timer: zx::BootTimer::create_with_slack_mode(zx::TimerSlackMode::Late) }
     }
 }
 

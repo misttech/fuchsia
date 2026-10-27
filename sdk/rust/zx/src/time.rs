@@ -455,6 +455,31 @@ unsafe impl ObjectQuery for TimerInfoQuery {
     type InfoTy = sys::zx_info_timer_t;
 }
 
+/// Specifies the coalescing behavior for a [`Timer`] when a non-zero slack is passed to
+/// [`Timer::set`], or the default timer slack mode in [`crate::JobPolicy::TimerSlack`].
+///
+/// Represents the `ZX_TIMER_SLACK_*` constants.
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum TimerSlackMode {
+    /// Coalesce with other timers within `[deadline - slack, deadline + slack]`.
+    #[default]
+    Center,
+    /// Coalesce with other timers within `[deadline - slack, deadline]`.
+    Early,
+    /// Coalesce with other timers within `[deadline, deadline + slack]`.
+    Late,
+}
+
+impl From<TimerSlackMode> for u32 {
+    fn from(mode: TimerSlackMode) -> u32 {
+        match mode {
+            TimerSlackMode::Center => sys::ZX_TIMER_SLACK_CENTER,
+            TimerSlackMode::Early => sys::ZX_TIMER_SLACK_EARLY,
+            TimerSlackMode::Late => sys::ZX_TIMER_SLACK_LATE,
+        }
+    }
+}
+
 /// A timer that measures its deadlines against the monotonic clock.
 pub type MonotonicTimer = Timer<MonotonicTimeline>;
 
@@ -474,15 +499,28 @@ impl Timer<MonotonicTimeline> {
     /// Create a timer, an object that can signal when a specified point on the monotonic clock has
     /// been reached. Wraps the
     /// [zx_timer_create](https://fuchsia.dev/fuchsia-src/reference/syscalls/timer_create.md)
-    /// syscall.
+    /// syscall with [`TimerSlackMode::Center`].
     ///
     /// # Panics
     ///
     /// If the kernel reports no memory available to create a timer or the process' job policy
     /// denies timer creation.
     pub fn create() -> Self {
+        Self::create_with_slack_mode(TimerSlackMode::Center)
+    }
+
+    /// Create a timer on the monotonic clock with the specified [`TimerSlackMode`] coalescing mode.
+    /// Wraps the
+    /// [zx_timer_create](https://fuchsia.dev/fuchsia-src/reference/syscalls/timer_create.md)
+    /// syscall.
+    ///
+    /// # Panics
+    ///
+    /// If the kernel reports no memory available to create a timer or the process' job policy
+    /// denies timer creation.
+    pub fn create_with_slack_mode(mode: TimerSlackMode) -> Self {
         let mut out = 0;
-        let opts = 0;
+        let opts = mode.into();
         let status = unsafe { sys::zx_timer_create(opts, sys::ZX_CLOCK_MONOTONIC, &mut out) };
         ok(status)
             .expect("timer creation always succeeds except with OOM or when job policy denies it");
@@ -494,7 +532,7 @@ impl Timer<BootTimeline> {
     /// Create a timer, an object that can signal when a specified point on the boot clock has been
     /// reached. Wraps the
     /// [zx_timer_create](https://fuchsia.dev/fuchsia-src/reference/syscalls/timer_create.md)
-    /// syscall.
+    /// syscall with [`TimerSlackMode::Center`].
     ///
     /// If the timer elapses while the system is suspended it will not wake the system.
     ///
@@ -503,8 +541,23 @@ impl Timer<BootTimeline> {
     /// If the kernel reports no memory available to create a timer or the process' job policy
     /// denies timer creation.
     pub fn create() -> Self {
+        Self::create_with_slack_mode(TimerSlackMode::Center)
+    }
+
+    /// Create a timer on the boot clock with the specified [`TimerSlackMode`] coalescing mode.
+    /// Wraps the
+    /// [zx_timer_create](https://fuchsia.dev/fuchsia-src/reference/syscalls/timer_create.md)
+    /// syscall.
+    ///
+    /// If the timer elapses while the system is suspended it will not wake the system.
+    ///
+    /// # Panics
+    ///
+    /// If the kernel reports no memory available to create a timer or the process' job policy
+    /// denies timer creation.
+    pub fn create_with_slack_mode(mode: TimerSlackMode) -> Self {
         let mut out = 0;
-        let opts = 0;
+        let opts = mode.into();
         let status = unsafe { sys::zx_timer_create(opts, sys::ZX_CLOCK_BOOT, &mut out) };
         ok(status)
             .expect("timer creation always succeeds except with OOM or when job policy denies it");
@@ -863,5 +916,20 @@ mod tests {
     fn time_and_duration_defaults() {
         assert_eq!(MonotonicInstant::default(), MonotonicInstant::from_nanos(0));
         assert_eq!(Duration::default(), MonotonicDuration::from_nanos(0));
+    }
+
+    #[test]
+    fn timer_create_with_slack_mode() {
+        for (mode, expected_opt) in [
+            (TimerSlackMode::Center, sys::ZX_TIMER_SLACK_CENTER),
+            (TimerSlackMode::Early, sys::ZX_TIMER_SLACK_EARLY),
+            (TimerSlackMode::Late, sys::ZX_TIMER_SLACK_LATE),
+        ] {
+            let mono = MonotonicTimer::create_with_slack_mode(mode);
+            assert_eq!(mono.info().expect("info() failed").options, expected_opt);
+
+            let boot = BootTimer::create_with_slack_mode(mode);
+            assert_eq!(boot.info().expect("info() failed").options, expected_opt);
+        }
     }
 }

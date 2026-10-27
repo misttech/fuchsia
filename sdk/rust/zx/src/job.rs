@@ -305,22 +305,7 @@ impl Into<u32> for JobAction {
 }
 
 /// Represents the [ZX_TIMER_SLACK_*](//docs/reference/syscalls/job_set_policy.md) constants
-#[derive(Debug, Clone, PartialEq)]
-pub enum JobDefaultTimerMode {
-    Center,
-    Early,
-    Late,
-}
-
-impl Into<u32> for JobDefaultTimerMode {
-    fn into(self) -> u32 {
-        match self {
-            JobDefaultTimerMode::Center => sys::ZX_TIMER_SLACK_CENTER,
-            JobDefaultTimerMode::Early => sys::ZX_TIMER_SLACK_EARLY,
-            JobDefaultTimerMode::Late => sys::ZX_TIMER_SLACK_LATE,
-        }
-    }
-}
+pub type JobDefaultTimerMode = crate::TimerSlackMode;
 
 impl Task for Job {}
 

@@ -437,6 +437,21 @@ impl FileOps for TimerFile {
                 tfi.deadline
             );
             if tfi.deadline > now {
+                // Defensive re-arm: `MonotonicZxTimer` and `BootZxTimer` use
+                // `TimerSlackMode::Late` so they should not fire before `tfi.deadline`, but if
+                // `self.timer` ever asserts `ZX_TIMER_SIGNALED` prematurely (for example, if a
+                // realtime timer was emulated on the boot timeline before the UTC clock started),
+                // re-arm it for `tfi.deadline` to clear `ZX_TIMER_SIGNALED`. Otherwise,
+                // `blocking_op`'s edge-triggered wait (`ZX_WAIT_ASYNC_EDGE`) would never observe a
+                // `0 -> 1` transition and would sleep forever.
+                if self
+                    .timer
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::ZERO)
+                    .is_ok()
+                {
+                    self.timer.start(current_task, Some(file.weak_handle.clone()), tfi.deadline)?;
+                }
                 // The next deadline has not yet passed.
                 return error!(EAGAIN);
             }
@@ -532,8 +547,8 @@ impl FileOps for TimerFile {
 
     fn query_events(
         &self,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
+        file: &FileObject,
+        current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let guard = self.timer_file_info.lock();
         let counter_signals = guard
@@ -550,7 +565,7 @@ impl FileOps for TimerFile {
             .unwrap_or_else(|_| zx::Signals::empty());
         let events_from_counter = TimerFile::get_counter_events_from_signals(counter_signals);
 
-        let timer_signals = match self
+        let mut timer_signals = match self
             .timer
             .as_handle_ref()
             .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::ZERO)
@@ -559,7 +574,204 @@ impl FileOps for TimerFile {
             Err(zx::Status::TIMED_OUT) => zx::Signals::empty(),
             res => res.unwrap(),
         };
+        // Defensive re-arm: if `self.timer` asserted `ZX_TIMER_SIGNALED` before `guard.deadline`
+        // has passed, re-arm the timer for `guard.deadline` and suppress `POLLIN` so `epoll` /
+        // `poll` callers do not wake up before a subsequent `read()` would succeed. If `start()`
+        // fails, log a warning and keep reporting readiness rather than failing `query_events()`.
+        if timer_signals.contains(zx::Signals::TIMER_SIGNALED)
+            && !guard.deadline.is_zero()
+            && guard.deadline > self.timeline.now()
+        {
+            match self.timer.start(current_task, Some(file.weak_handle.clone()), guard.deadline) {
+                Ok(()) => timer_signals.remove(zx::Signals::TIMER_SIGNALED),
+                Err(e) => log_warn!("timerfd: failed to re-arm prematurely signaled timer: {e:?}"),
+            }
+        }
         let events_from_timer = TimerFile::get_events_from_signals(timer_signals);
         Ok(events_from_timer | events_from_counter)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::spawn_kernel_and_run;
+    use crate::vfs::buffers::VecOutputBuffer;
+    use crate::vfs::epoll::EpollFileObject;
+    use starnix_uapi::timespec;
+    use starnix_uapi::vfs::EpollEvent;
+
+    #[::fuchsia::test]
+    async fn test_zx_timers_use_late_slack() {
+        let mono = MonotonicZxTimer::new();
+        let mono_dup = mono
+            .as_handle_ref()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .expect("duplicate handle");
+        let mono_info = zx::MonotonicTimer::from(mono_dup).info().expect("timer info");
+        assert_eq!(mono_info.options, zx::sys::ZX_TIMER_SLACK_LATE);
+
+        let boot = BootZxTimer::new();
+        let boot_dup = boot
+            .as_handle_ref()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .expect("duplicate handle");
+        let boot_info = zx::BootTimer::from(boot_dup).info().expect("timer info");
+        assert_eq!(boot_info.options, zx::sys::ZX_TIMER_SLACK_LATE);
+    }
+
+    #[::fuchsia::test]
+    async fn test_timerfd_blocking_read_when_signaled_before_deadline() {
+        spawn_kernel_and_run(async |current_task| {
+            let timer_file_handle = TimerFile::new_file(
+                &current_task,
+                TimerWakeup::Regular,
+                Timeline::Monotonic,
+                OpenFlags::RDONLY,
+            )
+            .unwrap();
+            let timer_file = timer_file_handle.downcast_file::<TimerFile>().unwrap();
+
+            // First, deterministically verify with a far-future deadline that `query_events()`
+            // ignores a premature `ZX_TIMER_SIGNALED` and re-arms the underlying timer to clear
+            // the signal.
+            timer_file
+                .timer
+                .start(&current_task, None, TargetTime::Monotonic(zx::MonotonicInstant::ZERO))
+                .unwrap();
+            assert!(
+                timer_file
+                    .timer
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::INFINITE)
+                    .is_ok()
+            );
+            timer_file.timer_file_info.lock().set_deadline(TargetTime::Monotonic(
+                zx::MonotonicInstant::after(zx::MonotonicDuration::from_hours(1)),
+            ));
+            assert_eq!(timer_file_handle.query_events(&current_task).unwrap(), FdEvents::empty());
+            assert_eq!(
+                timer_file
+                    .timer
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::ZERO)
+                    .to_result(),
+                Err(zx::Status::TIMED_OUT)
+            );
+
+            // Next, test a blocking `read()` when `ZX_TIMER_SIGNALED` is already asserted before
+            // `tfi.deadline`.
+            //
+            // Note on timing and flake risk:
+            // - False-failure risk: None. We run `read()` directly on `current_task` without an
+            //   artificial `recv_timeout` (relying on the test runner timeout if `read()` hangs),
+            //   and `TimerFile::read` cannot return `Ok` until `Timeline::Monotonic.now() >=
+            //   future_deadline`.
+            // - False-pass risk: If the thread is preempted for >= 50ms between computing
+            //   `future_deadline` and the `tfi.deadline > now` check inside `TimerFile::read`,
+            //   `now >= future_deadline` will already hold on the first `blocking_op` iteration,
+            //   so `read()` will succeed immediately without exercising the re-arm branch.
+            timer_file
+                .timer
+                .start(&current_task, None, TargetTime::Monotonic(zx::MonotonicInstant::ZERO))
+                .unwrap();
+            assert!(
+                timer_file
+                    .timer
+                    .as_handle_ref()
+                    .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::INFINITE)
+                    .is_ok()
+            );
+            let future_deadline = TargetTime::Monotonic(zx::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(50),
+            ));
+            timer_file.timer_file_info.lock().set_deadline(future_deadline);
+
+            let mut buf = VecOutputBuffer::new(8);
+            let bytes_read = timer_file_handle.read(&current_task, &mut buf).unwrap();
+            assert_eq!(bytes_read, 8);
+            assert_eq!(i64::from_ne_bytes(buf.data().try_into().unwrap()), 1);
+            assert!(Timeline::Monotonic.now() >= future_deadline);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_timerfd_epoll_and_blocking_read_with_timerslack() {
+        spawn_kernel_and_run(async |current_task| {
+            const DEADLINE_DURATION: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(50);
+
+            let epoll_handle = EpollFileObject::new_file(&current_task);
+            let epoll_file = epoll_handle.downcast_file::<EpollFileObject>().unwrap();
+
+            let timer_file_handle = TimerFile::new_file(
+                &current_task,
+                TimerWakeup::Regular,
+                Timeline::Monotonic,
+                OpenFlags::RDONLY | OpenFlags::NONBLOCK,
+            )
+            .unwrap();
+
+            epoll_file
+                .add(
+                    &current_task,
+                    &timer_file_handle,
+                    &epoll_handle,
+                    EpollEvent::new(FdEvents::POLLIN, 3),
+                )
+                .unwrap();
+
+            // Set 50ms timerslack so `ZX_TIMER_SLACK_CENTER` would coalesce `[t - 50ms, t + 50ms]`.
+            current_task.write().set_timerslack_ns(DEADLINE_DURATION.into_nanos() as u64);
+
+            // Create an earlier timer at +20ms so Zircon's per-CPU timer queue has a timer inside
+            // `[deadline - slack, deadline)`.
+            //
+            // Note on timing and flake risk:
+            // - False-failure risk: None. `now` is sampled before `set_timer_spec` sets
+            //   `tfi.deadline = Timeline::Monotonic.now() + 50ms >= now + 50ms`, and the kernel
+            //   with `ZX_TIMER_SLACK_LATE` never fires the timer before `tfi.deadline`.
+            // - False-pass risk: Zircon timer queues are per-CPU, so if the thread migrates CPUs
+            //   or is descheduled for >= 20ms between `early_timer.set` and `set_timer_spec`,
+            //   `early_timer` would not coalesce with `timer_file` even if `ZX_TIMER_SLACK_CENTER`
+            //   were used. (`test_zx_timers_use_late_slack` above deterministically verifies
+            //   `ZX_TIMER_SLACK_LATE` via `ZX_INFO_TIMER` without relying on timer coalescing.)
+            let early_timer = zx::MonotonicTimer::create();
+            let now = zx::MonotonicInstant::get();
+            early_timer
+                .set(now + zx::MonotonicDuration::from_millis(20), zx::MonotonicDuration::ZERO)
+                .unwrap();
+
+            let timer_file = timer_file_handle.downcast_file::<TimerFile>().unwrap();
+            let spec = itimerspec {
+                it_interval: timespec { tv_sec: 0, tv_nsec: 0 },
+                it_value: timespec_from_duration(DEADLINE_DURATION),
+            };
+            timer_file.set_timer_spec(&current_task, &timer_file_handle, spec, 0).unwrap();
+
+            // Verify that the raw `ZX_TIMER_SIGNALED` signal does not assert before the 50ms
+            // deadline (independent of `query_events()` filtering).
+            timer_file
+                .timer
+                .as_handle_ref()
+                .wait_one(zx::Signals::TIMER_SIGNALED, zx::MonotonicInstant::INFINITE)
+                .to_result()
+                .unwrap();
+            let signaled_after = zx::MonotonicInstant::get() - now;
+            assert!(
+                signaled_after >= DEADLINE_DURATION,
+                "ZX_TIMER_SIGNALED asserted early after {signaled_after:?}"
+            );
+
+            let events = epoll_file.wait(&current_task, 1, zx::MonotonicInstant::INFINITE).unwrap();
+            assert_eq!(events.len(), 1);
+
+            let mut buf = VecOutputBuffer::new(8);
+            let bytes_read = timer_file_handle.read(&current_task, &mut buf).unwrap();
+            let elapsed = zx::MonotonicInstant::get() - now;
+            assert_eq!(bytes_read, 8);
+            assert!(elapsed >= DEADLINE_DURATION, "timerfd expired early after {elapsed:?}");
+        })
+        .await;
     }
 }

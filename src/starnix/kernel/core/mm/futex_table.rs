@@ -158,7 +158,7 @@ impl FutexTable {
         let prio = task_futex_priority(current_task);
 
         let node = WaiterNode::new_stack_boot(key, mask, prio, b as u16);
-        let timer = zx::BootTimer::create();
+        let timer = zx::BootTimer::create_with_slack_mode(zx::TimerSlackMode::Late);
         let signal_handler = SignalHandler {
             inner: SignalHandlerInner::None,
             event_handler: EventHandler::None,
