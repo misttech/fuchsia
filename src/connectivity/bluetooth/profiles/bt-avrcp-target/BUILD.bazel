@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/avrcp_handler.rs",
+        "src/battery_client.rs",
+        "src/main.rs",
+        "src/media/media_sessions.rs",
+        "src/media/media_state.rs",
+        "src/media/media_types.rs",
+        "src/media/mod.rs",
+        "src/tests/mod.rs",
+        "src/types/bounded_queue.rs",
+        "src/types/mod.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_avrcp_target",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.avrcp:fuchsia.bluetooth.avrcp_rust",
+        "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
+        "//sdk/fidl/fuchsia.media.sessions2:fuchsia.media.sessions2_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/battery-client",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl_table_validation",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_avrcp_target",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-avrcp-target",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/bt-avrcp-target.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-avrcp-target",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/connectivity/bluetooth/tests/bt-manifest-integration-tests:__pkg__"],
+    deps = [":bin_packaged_bin"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "bt_avrcp_target_bin_test"
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = ["//third_party/rust_crates/vendor:assert_matches"],
+)
+
+fx_unittest_package(
+    name = "bt-avrcp-target-tests",
+    unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
