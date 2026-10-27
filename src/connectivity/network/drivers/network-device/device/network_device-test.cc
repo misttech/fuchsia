@@ -3704,6 +3704,46 @@ TEST_F(NetworkDeviceTest, GetPortIdEvent) {
   EXPECT_EQ(first_info.koid, second_info.koid);
 }
 
+TEST_F(NetworkDeviceTest, GetPowerDependencyToken) {
+  zx::event token;
+  ASSERT_OK(zx::event::create(0, &token));
+
+  zx_info_handle_basic_t expected_info{};
+  ASSERT_OK(token.get_info(ZX_INFO_HANDLE_BASIC, &expected_info, sizeof(expected_info), nullptr,
+                           nullptr));
+  port13_.SetPowerDependencyToken(std::move(token));
+
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  zx::result port = OpenPort(kPort13);
+  ASSERT_OK(port.status_value());
+  fidl::WireSyncClient port_connection = std::move(port.value());
+
+  for (size_t i = 0; i < 2; ++i) {
+    fidl::WireResult token = port_connection->GetPowerDependencyToken();
+    ASSERT_OK(token.status());
+    EXPECT_TRUE(token->token.is_valid());
+
+    zx_info_handle_basic_t info{};
+    ASSERT_OK(token->token.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+    EXPECT_EQ(info.koid, expected_info.koid);
+    EXPECT_EQ(info.rights, expected_info.rights);
+  }
+}
+
+TEST_F(NetworkDeviceTest, GetPowerDependencyTokenAbsent) {
+  ASSERT_OK(CreateDeviceWithPort13());
+
+  zx::result port = OpenPort(kPort13);
+  ASSERT_OK(port.status_value());
+  fidl::WireSyncClient port_connection = std::move(port.value());
+
+  fidl::WireResult result = port_connection->GetPowerDependencyToken();
+  ASSERT_OK(result.status());
+  EXPECT_FALSE(result->token.is_valid());
+}
+
 TEST_F(NetworkDeviceTest, LogDebugInfoToSyslog) {
   ASSERT_OK(CreateDeviceWithPort13());
   bool bt_requested = false;

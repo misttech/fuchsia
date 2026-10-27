@@ -121,6 +121,7 @@ class DevicePort : public fidl::WireServer<netdev::Port>,
                           fit::callback<void(zx_status_t)>&& on_complete);
   void GetInitialPortInfo(fit::callback<void(zx_status_t)>&& on_complete);
   void GetInitialStatus(fit::callback<void(zx_status_t)>&& on_complete);
+  void GetInitialPowerDependencyToken(fit::callback<void(zx_status_t)>&& on_complete);
 
   // Concludes an ongoing teardown if it is ongoing and all internal resources are released.
   //
@@ -138,6 +139,7 @@ class DevicePort : public fidl::WireServer<netdev::Port>,
   std::shared_ptr<MacAddrDeviceInterface> mac_ __TA_GUARDED(lock_);
   BindingList bindings_ __TA_GUARDED(lock_);
   zx::event id_event_;
+  zx::event power_dependency_token_;
 
   netdev::wire::PortClass port_class_;
   netdev::PortStatus status_;

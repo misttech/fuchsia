@@ -96,8 +96,12 @@ void DevicePort::Init(fdf_dispatcher_t* mac_dispatcher,
           on_complete(status);
           return;
         }
-        GetInitialStatus([on_complete = std::move(on_complete)](zx_status_t status) mutable {
-          on_complete(status);
+        GetInitialStatus([this, on_complete = std::move(on_complete)](zx_status_t status) mutable {
+          if (status != ZX_OK) {
+            on_complete(status);
+            return;
+          }
+          GetInitialPowerDependencyToken(std::move(on_complete));
         });
       });
     };
@@ -200,6 +204,23 @@ void DevicePort::GetInitialStatus(fit::callback<void(zx_status_t)>&& on_complete
           return;
         }
         status_ = fidl::ToNatural(result->status);
+        on_complete(ZX_OK);
+      });
+}
+
+void DevicePort::GetInitialPowerDependencyToken(fit::callback<void(zx_status_t)>&& on_complete) {
+  fdf::Arena arena('PORT');
+  port_.buffer(arena)->GetPowerDependencyToken().Then(
+      [this, on_complete = std::move(on_complete)](
+          ::fdf::WireUnownedResult<netdriver::NetworkPort::GetPowerDependencyToken>&
+              result) mutable {
+        if (!result.ok()) {
+          LOGF_ERROR("Failed to get power dependency token: %s",
+                     result.FormatDescription().c_str());
+          on_complete(result.status());
+          return;
+        }
+        power_dependency_token_ = std::move(result->token);
         on_complete(ZX_OK);
       });
 }
@@ -446,9 +467,16 @@ void DevicePort::GetIdentity(GetIdentityCompleter::Sync& completer) {
 }
 
 void DevicePort::GetPowerDependencyToken(GetPowerDependencyTokenCompleter::Sync& completer) {
-  // TODO(https://fxbug.dev/380897711): Forward the dependency token from the
-  // vendor driver.
-  completer.Reply(zx::event{});
+  zx::event token;
+  if (power_dependency_token_.is_valid()) {
+    if (zx_status_t status = power_dependency_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token);
+        status != ZX_OK) {
+      LOGF_ERROR("Failed to duplicate power dependency token: %s", zx_status_get_string(status));
+      completer.Close(status);
+      return;
+    }
+  }
+  completer.Reply(std::move(token));
 }
 
 }  // namespace network::internal

@@ -206,6 +206,7 @@ closed protocol Port {
     ///
     /// - response `token` absent if this port does not participate in power
     ///   management.
+    /// - response `token` must have `zx.Rights.DUPLICATE`.
     strict GetPowerDependencyToken() -> (resource struct {
         token fuchsia.power.broker.DependencyToken:optional;
     });
