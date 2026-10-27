@@ -1,8 +1,8 @@
 // Copyright 2019 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_PCI_EXPRESS_H_
-#define SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_PCI_EXPRESS_H_
+#ifndef SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_PCI_EXPRESS_H_
+#define SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_PCI_EXPRESS_H_
 
 #include "src/devices/pci/lib/cpp/capabilities.h"
 
@@ -11,7 +11,7 @@ namespace pci {
 class PciExpressCapability : public Capability {
  public:
   PciExpressCapability(const Config& cfg, uint8_t base)
-      : Capability(static_cast<uint8_t>(Capability::Id::kPciExpress), base),
+      : Capability(std::to_underlying(Capability::Id::kPciExpress), base),
         pcie_capabilities_(PciReg16(static_cast<uint16_t>(base + 0x2))),
         device_capabilities_(PciReg32(static_cast<uint16_t>(base + 0x4))),
         device_control_(PciReg16(static_cast<uint16_t>(base + 0x8))),
@@ -26,4 +26,4 @@ class PciExpressCapability : public Capability {
 
 }  // namespace pci
 
-#endif  // SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_PCI_EXPRESS_H_
+#endif  // SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_PCI_EXPRESS_H_

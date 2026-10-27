@@ -26,6 +26,7 @@
 #include "src/devices/pci/drivers/pci/test/fakes/fake_upstream_node.h"
 #include "src/devices/pci/drivers/pci/test/fakes/test_device.h"
 #include "src/devices/pci/lib/cpp/capabilities.h"
+#include "src/devices/pci/lib/cpp/capabilities/pci_express.h"
 #include "src/devices/pci/lib/cpp/capabilities/power_management.h"
 #include "src/devices/pci/lib/cpp/config.h"
 #include "src/devices/testing/mock-ddk/mock-device.h"
