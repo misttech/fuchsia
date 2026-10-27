@@ -332,10 +332,10 @@ impl InputController {
         input_info
     }
 
-    /// Restores the input state.
+    /// Restores the input state and returns the resulting in-memory state, which reports
+    /// `DeviceState::ERROR` for the camera if its software state could not be restored.
     pub(super) async fn restore(&mut self) -> Result<InputInfo, InputError> {
-        let input_info = self.get_stored_info().await;
-        self.input_device_state = input_info.input_device_state.clone();
+        self.input_device_state = self.get_stored_info().await.input_device_state;
 
         if self.input_device_config.devices.iter().any(|d| d.device_type == InputDeviceType::CAMERA)
         {
@@ -354,7 +354,7 @@ impl InputController {
                 }
             }
         }
-        Ok(input_info)
+        Ok(InputInfo { input_device_state: self.input_device_state.clone() })
     }
 
     async fn set_sw_camera_mute(&mut self, disabled: bool, name: String) -> UpdateInputResult {
@@ -434,10 +434,14 @@ impl InputController {
             );
         }
 
+        // The in-memory state is reported so that a camera ERROR state remains visible.
         self.store
             .write(&input_info)
             .await
-            .map(|state| (UpdateState::Updated == state).then_some(input_info))
+            .map(|state| {
+                (UpdateState::Updated == state)
+                    .then(|| InputInfo { input_device_state: self.input_device_state.clone() })
+            })
             .context("writing hw media buttons")
             .map_err(InputError::WriteFailure)
     }
@@ -493,11 +497,23 @@ impl InputController {
         // If the device has a camera, it should successfully get the sw state, and
         // push the state if it has changed. If the device does not have a camera,
         // it should be None both here and above, and thus not detect a change.
+        // A camera ERROR state is cleared once the push succeeds, and the result is
+        // reported even if storage is unchanged so that watchers see the error cleared.
         let modified_cam_state = Self::get_cam_sw_state_from(&input_info.input_device_state).ok();
+        let mut cleared_cam_error = false;
         if (cam_state != modified_cam_state || self.cam_sw_state_dirty)
             && let Some(state) = modified_cam_state
         {
             self.push_cam_sw_state(state).await?;
+            if cam_state.is_some_and(|s| s.has_state(DeviceState::ERROR)) {
+                self.input_device_state.set_source_state(
+                    InputDeviceType::CAMERA,
+                    DEFAULT_CAMERA_NAME.to_string(),
+                    DeviceStateSource::SOFTWARE,
+                    state,
+                );
+                cleared_cam_error = true;
+            }
         }
 
         // All prerequisites are done, and camera changes are committed to the hardware. We can now
@@ -509,7 +525,10 @@ impl InputController {
         self.store
             .write(&input_info)
             .await
-            .map(|state| (UpdateState::Updated == state).then_some(input_info))
+            .map(|state| {
+                (UpdateState::Updated == state || cleared_cam_error)
+                    .then(|| InputInfo { input_device_state: self.input_device_state.clone() })
+            })
             .context("writing input states")
             .map_err(InputError::WriteFailure)
     }
@@ -978,6 +997,27 @@ mod tests {
         std::sync::Arc<std::sync::atomic::AtomicBool>,
         std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) {
+        let (controller, camera1_muted, camera2_muted, _value_rx) =
+            setup_multi_camera_test_with_failures(
+                initial_muted,
+                fail_camera_1_on_attempt.into_iter().collect(),
+            )
+            .await;
+        (controller, camera1_muted, camera2_muted)
+    }
+
+    /// Creates a controller with two cameras and runs `restore()`. Connecting to camera 1 fails on
+    /// each 0-based attempt listed in `fail_camera_1_on_attempts`, where attempt 0 is the push made
+    /// by `restore()`. Also returns the receiver for values published by the controller.
+    async fn setup_multi_camera_test_with_failures(
+        initial_muted: bool,
+        fail_camera_1_on_attempts: Vec<usize>,
+    ) -> (
+        InputController,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        mpsc::UnboundedReceiver<(&'static str, String)>,
+    ) {
         use fidl::endpoints::DiscoverableProtocolMarker;
         use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -993,6 +1033,7 @@ mod tests {
                 let camera1 = camera1_clone.clone();
                 let camera2 = camera2_clone.clone();
                 let camera1_attempts = camera1_attempts.clone();
+                let fail_camera_1_on_attempts = fail_camera_1_on_attempts.clone();
                 let service_name = service_name.to_string();
                 Box::pin(async move {
                     if service_name != fidl_fuchsia_camera3::DeviceWatcherMarker::PROTOCOL_NAME {
@@ -1023,7 +1064,7 @@ mod tests {
                                         1 => {
                                             let attempt =
                                                 camera1_attempts.fetch_add(1, Ordering::Relaxed);
-                                            if fail_camera_1_on_attempt == Some(attempt) {
+                                            if fail_camera_1_on_attempts.contains(&attempt) {
                                                 drop(request);
                                                 continue;
                                             }
@@ -1053,7 +1094,7 @@ mod tests {
             .initialize::<InputController>()
             .await
             .expect("controller should have impls");
-        let (value_tx, _value_rx) = mpsc::unbounded();
+        let (value_tx, value_rx) = mpsc::unbounded();
         let setting_value_publisher = SettingValuePublisher::new(value_tx);
         let (event_tx, _event_rx) = mpsc::unbounded();
         let external_publisher = ExternalEventPublisher::new(event_tx);
@@ -1067,15 +1108,26 @@ mod tests {
         let mut controller = InputController::create_with_config::<InMemoryStorageFactory>(
             service_context,
             InputConfiguration {
-                devices: vec![InputDeviceConfiguration {
-                    device_name: DEFAULT_CAMERA_NAME.to_string(),
-                    device_type: InputDeviceType::CAMERA,
-                    source_states: vec![SourceState {
-                        source: DeviceStateSource::SOFTWARE,
-                        state: initial_state,
-                    }],
-                    mutable_toggle_state: 0,
-                }],
+                devices: vec![
+                    InputDeviceConfiguration {
+                        device_name: DEFAULT_CAMERA_NAME.to_string(),
+                        device_type: InputDeviceType::CAMERA,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: initial_state,
+                        }],
+                        mutable_toggle_state: 0,
+                    },
+                    InputDeviceConfiguration {
+                        device_name: DEFAULT_MIC_NAME.to_string(),
+                        device_type: InputDeviceType::MICROPHONE,
+                        source_states: vec![SourceState {
+                            source: DeviceStateSource::SOFTWARE,
+                            state: 0, // AVAILABLE
+                        }],
+                        mutable_toggle_state: 0,
+                    },
+                ],
             },
             &storage_factory,
             setting_value_publisher,
@@ -1084,7 +1136,7 @@ mod tests {
         .await;
 
         let _ = controller.restore().await;
-        (controller, camera1_muted, camera2_muted)
+        (controller, camera1_muted, camera2_muted, value_rx)
     }
 
     #[fuchsia::test]
@@ -1168,5 +1220,177 @@ mod tests {
         assert!(retry_res.is_ok());
         assert!(!camera1_muted.load(Ordering::Relaxed));
         assert!(!camera2_muted.load(Ordering::Relaxed));
+    }
+    async fn create_camera_controller_without_camera_service(
+        source_states: Vec<SourceState>,
+    ) -> InputController {
+        let (event_tx, _event_rx) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(event_tx);
+        let storage_factory = InMemoryStorageFactory::new();
+        storage_factory
+            .initialize::<InputController>()
+            .await
+            .expect("controller should have impls");
+        let (value_tx, _value_rx) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(value_tx);
+        InputController::create_with_config::<InMemoryStorageFactory>(
+            Rc::new(ServiceContext::new(None)),
+            InputConfiguration {
+                devices: vec![InputDeviceConfiguration {
+                    device_name: DEFAULT_CAMERA_NAME.to_string(),
+                    device_type: InputDeviceType::CAMERA,
+                    source_states,
+                    mutable_toggle_state: 0,
+                }],
+            },
+            &storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await
+    }
+
+    #[fuchsia::test]
+    async fn test_restore_returns_camera_error_on_push_failure() {
+        let mut controller = create_camera_controller_without_camera_service(vec![SourceState {
+            source: DeviceStateSource::SOFTWARE,
+            state: DeviceState::MUTED.bits(),
+        }])
+        .await;
+
+        let info = controller.restore().await.expect("restore should succeed");
+
+        let camera_state = info
+            .input_device_state
+            .get_state(InputDeviceType::CAMERA, DEFAULT_CAMERA_NAME.to_string())
+            .unwrap();
+        assert!(camera_state.has_state(DeviceState::ERROR));
+        let sw_state = InputController::get_cam_sw_state_from(&info.input_device_state).unwrap();
+        assert_eq!(sw_state, DeviceState::MUTED | DeviceState::ERROR);
+        assert_eq!(info.input_device_state, controller.input_device_state);
+    }
+
+    #[fuchsia::test]
+    async fn test_restore_returns_camera_error_on_missing_sw_state() {
+        let mut controller = create_camera_controller_without_camera_service(vec![SourceState {
+            source: DeviceStateSource::HARDWARE,
+            state: DeviceState::AVAILABLE.bits(),
+        }])
+        .await;
+
+        let info = controller.restore().await.expect("restore should succeed");
+
+        let sw_state = InputController::get_cam_sw_state_from(&info.input_device_state).unwrap();
+        assert_eq!(sw_state, DeviceState::ERROR);
+        assert_eq!(info.input_device_state, controller.input_device_state);
+    }
+
+    #[fuchsia::test]
+    async fn test_media_buttons_keep_camera_error() {
+        let mut controller = create_camera_controller_without_camera_service(vec![
+            SourceState {
+                source: DeviceStateSource::HARDWARE,
+                state: DeviceState::AVAILABLE.bits(),
+            },
+            SourceState { source: DeviceStateSource::SOFTWARE, state: DeviceState::MUTED.bits() },
+        ])
+        .await;
+        let _ = controller.restore().await.expect("restore should succeed");
+
+        // A hardware camera button press while the camera software state could not be restored
+        // reports the new hardware state together with the camera ERROR state.
+        let info = controller
+            .set_hw_media_buttons_state(MediaButtons { mic_mute: None, camera_disable: Some(true) })
+            .await
+            .expect("media buttons should succeed")
+            .expect("hardware state should be published");
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&info.input_device_state).unwrap(),
+            DeviceState::MUTED | DeviceState::ERROR
+        );
+        assert_eq!(
+            info.input_device_state
+                .get_source_state(
+                    InputDeviceType::CAMERA,
+                    DEFAULT_CAMERA_NAME.to_string(),
+                    DeviceStateSource::HARDWARE
+                )
+                .unwrap(),
+            DeviceState::MUTED
+        );
+        assert_eq!(info.input_device_state, controller.input_device_state);
+    }
+
+    #[fuchsia::test]
+    async fn test_set_input_states_clears_camera_error_with_unchanged_storage() {
+        use std::sync::atomic::Ordering;
+
+        // The push made by restore() fails on camera 1.
+        let (mut controller, camera1_muted, camera2_muted, _value_rx) =
+            setup_multi_camera_test_with_failures(true, vec![0]).await;
+        let stored_info = controller.get_stored_info().await;
+        let _ = controller.store.write(&stored_info).await.expect("write should succeed");
+        assert!(
+            InputController::get_cam_sw_state_from(&controller.input_device_state)
+                .unwrap()
+                .has_state(DeviceState::ERROR)
+        );
+
+        // Setting the stored state again applies it to the cameras. Storage is unchanged, but the
+        // result must still be reported so that the ERROR state is cleared for watchers.
+        let mute_device = InputDevice {
+            name: DEFAULT_CAMERA_NAME.to_string(),
+            device_type: InputDeviceType::CAMERA,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
+            state: DeviceState::MUTED,
+        };
+        let res = controller.set_input_states(vec![mute_device], DeviceStateSource::SOFTWARE).await;
+        let info = res.expect("set should succeed").expect("cleared error should be published");
+        assert_eq!(controller.get_stored_info().await, stored_info);
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(camera2_muted.load(Ordering::Relaxed));
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&info.input_device_state).unwrap(),
+            DeviceState::MUTED
+        );
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&controller.input_device_state).unwrap(),
+            DeviceState::MUTED
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_set_mic_clears_camera_error() {
+        use std::sync::atomic::Ordering;
+
+        // The push made by restore() fails on camera 1.
+        let (mut controller, camera1_muted, camera2_muted, _value_rx) =
+            setup_multi_camera_test_with_failures(true, vec![0]).await;
+        assert!(
+            InputController::get_cam_sw_state_from(&controller.input_device_state)
+                .unwrap()
+                .has_state(DeviceState::ERROR)
+        );
+
+        // Updating only the microphone retries pushing the dirty camera software state and clears
+        // the camera ERROR state even though the request does not include a camera device.
+        let mute_mic = InputDevice {
+            name: DEFAULT_MIC_NAME.to_string(),
+            device_type: InputDeviceType::MICROPHONE,
+            source_states: [(DeviceStateSource::SOFTWARE, DeviceState::MUTED)].into(),
+            state: DeviceState::MUTED,
+        };
+        let res = controller.set_input_states(vec![mute_mic], DeviceStateSource::SOFTWARE).await;
+        let info = res.expect("set should succeed").expect("updated mic should be published");
+        assert!(camera1_muted.load(Ordering::Relaxed));
+        assert!(camera2_muted.load(Ordering::Relaxed));
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&info.input_device_state).unwrap(),
+            DeviceState::MUTED
+        );
+        assert_eq!(
+            InputController::get_cam_sw_state_from(&controller.input_device_state).unwrap(),
+            DeviceState::MUTED
+        );
     }
 }
