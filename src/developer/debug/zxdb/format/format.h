@@ -5,7 +5,12 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_FORMAT_FORMAT_H_
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include "lib/fit/defer.h"
+#include "src/developer/debug/shared/register_value.h"
 #include "src/developer/debug/zxdb/expr/eval_context.h"
 #include "src/developer/debug/zxdb/expr/format_options.h"
 #include "src/developer/debug/zxdb/format/async_output_buffer.h"
@@ -89,6 +94,10 @@ fxl::RefPtr<AsyncOutputBuffer> FormatVariable(const Variable* var,
 fxl::RefPtr<AsyncOutputBuffer> FormatExpressions(const std::vector<std::string>& expressions,
                                                  const FormatBufferOptions& options,
                                                  fxl::RefPtr<EvalContext> eval_context);
+
+// Formats the given registers as a map from register name to hex string.
+std::map<std::string, std::string> FormatRegisterValues(
+    const std::vector<debug::RegisterValue>& regs);
 
 }  // namespace zxdb
 

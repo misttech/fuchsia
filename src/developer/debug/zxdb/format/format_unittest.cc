@@ -818,4 +818,32 @@ TEST_F(FormatValueConsoleTest, FormatExpressions) {
       out.AsString());
 }
 
+namespace {
+
+TEST(FormatRegisterValues, Basic) {
+  std::vector<debug::RegisterValue> regs;
+
+  debug::RegisterValue r64;
+  r64.id = debug::RegisterID::kX64_rax;
+  r64.data = {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
+  regs.push_back(r64);
+
+  debug::RegisterValue r32;
+  r32.id = debug::RegisterID::kX64_edx;
+  r32.data = {0x78, 0x56, 0x34, 0x12};
+  regs.push_back(r32);
+
+  debug::RegisterValue r16;
+  r16.id = debug::RegisterID::kX64_ax;
+  r16.data = {0x33, 0x00};
+  regs.push_back(r16);
+
+  auto res = FormatRegisterValues(regs);
+  EXPECT_EQ(res["rax"], "0xefcdab8967452301");
+  EXPECT_EQ(res["edx"], "0x12345678");
+  EXPECT_EQ(res["ax"], "0x0033");
+}
+
+}  // namespace
+
 }  // namespace zxdb

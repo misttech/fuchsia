@@ -19,6 +19,7 @@ static_library("format") {
   public_deps = [
     "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
+    "//src/developer/debug/shared",
     "//src/developer/debug/zxdb/common",
     "//src/developer/debug/zxdb/expr",
     "//src/developer/debug/zxdb/symbols",

@@ -4,6 +4,11 @@
 
 #include "src/developer/debug/zxdb/format/format.h"
 
+#include <inttypes.h>
+
+#include <ranges>
+
+#include "src/developer/debug/shared/register_info.h"
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/common/ref_ptr_to.h"
 #include "src/developer/debug/zxdb/expr/format.h"
@@ -12,6 +17,7 @@
 #include "src/developer/debug/zxdb/format/string_util.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/lib/fxl/memory/ref_counted.h"
+#include "src/lib/fxl/strings/string_printf.h"
 
 namespace zxdb {
 
@@ -679,6 +685,33 @@ fxl::RefPtr<AsyncOutputBuffer> FormatExpressions(const std::vector<std::string>&
                            out->Complete(FormatTreeNode(*list_node, options));
                          }));
   return out;
+}
+
+std::map<std::string, std::string> FormatRegisterValues(
+    const std::vector<debug::RegisterValue>& regs) {
+  std::map<std::string, std::string> reg_map;
+  for (const auto& reg : regs) {
+    std::string name = debug::RegisterIDToString(reg.id);
+    if (name.empty()) {
+      continue;
+    }
+    if (reg.data.size() == sizeof(uint64_t)) {
+      uint64_t val = 0;
+      memcpy(&val, reg.data.data(), sizeof(uint64_t));
+      reg_map[name] = fxl::StringPrintf("0x%" PRIx64, val);
+    } else if (reg.data.size() == sizeof(uint32_t)) {
+      uint32_t val = 0;
+      memcpy(&val, reg.data.data(), sizeof(uint32_t));
+      reg_map[name] = fxl::StringPrintf("0x%" PRIx32, val);
+    } else {
+      std::string hex = "0x";
+      for (uint8_t byte : std::views::reverse(reg.data)) {
+        hex += fxl::StringPrintf("%02x", byte);
+      }
+      reg_map[name] = hex;
+    }
+  }
+  return reg_map;
 }
 
 }  // namespace zxdb

@@ -24,9 +24,9 @@ Public headers expose these buffer and formatting primitives:
   `DestructiveFlatten`) (`async_output_buffer.h`).
 - `zxdb::FormatBufferOptions`, `zxdb::DescribeFormatTreeNode`,
   `zxdb::FormatTreeNode`, `zxdb::FormatValue`, `zxdb::FormatVariable`,
-  `zxdb::FormatExpressions`: Value and expression formatters that render
-  `FormatNode` trees into `OutputBuffer` or `AsyncOutputBuffer` instances
-  (`format.h`).
+  `zxdb::FormatExpressions`, `zxdb::FormatRegisterValues`: Value, expression,
+  and CPU register formatters that render `FormatNode` trees and register
+  values into `OutputBuffer`, `AsyncOutputBuffer`, or string maps (`format.h`).
 - `zxdb::FormatIdentifierOptions`, `zxdb::FormatIdentifier`,
   `zxdb::FormatFunctionNameOptions`, `zxdb::FormatFunctionName`: Formatters for
   `Identifier`, `ParsedIdentifier`, and `Function` symbols (`format_name.h`).
