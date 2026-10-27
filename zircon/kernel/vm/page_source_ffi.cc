@@ -6,6 +6,8 @@
 
 #include "vm/page_source_ffi.h"
 
+#include <new>
+
 #include <kernel/ffi.h>
 #include <ktl/memory.h>
 #include <ktl/type_traits.h>
@@ -39,7 +41,8 @@ extern "C" {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 
 FFI_ALWAYS_INLINE void cpp_multi_page_request_construct(MultiPageRequest* req) {
-  ktl::construct_at(req);
+  // Intentional default initialization
+  new (req) MultiPageRequest;
 }
 
 FFI_ALWAYS_INLINE void cpp_multi_page_request_destroy(MultiPageRequest* req) {
