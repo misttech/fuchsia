@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_fastpair_client",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.fastpair:fuchsia.bluetooth.fastpair_rust",
+        "//sdk/fidl/fuchsia.bluetooth.sys:fuchsia.bluetooth.sys_rust",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bt_fastpair_client_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_fastpair_client",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    component_name = "bt-fastpair-client",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/bt-fastpair-client.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":component-manifest",
+    component_name = "bt-fastpair-client",
+    deps = [":bt_fastpair_client_packaged_bin"],
+)
+
+fx_package(
+    name = "bt-fastpair-client",
+    package_name = "bt-fastpair-client",
+    components = [":component"],
+)
+
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia-async",
+    ],
+)
+
+fx_unittest_package(
+    name = "bt-fastpair-client-tests",
+    unit_tests = [":bin_test"],
+)

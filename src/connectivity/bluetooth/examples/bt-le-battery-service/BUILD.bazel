@@ -1,0 +1,108 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "@rules_fuchsia//fuchsia:defs.bzl",
+    "fuchsia_structured_config_values",
+)
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/components:structured_config.bzl",
+    "fuchsia_structured_config_rust_lib",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_le_battery_service",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        ":bt_le_battery_service_config",
+        "//sdk/fidl/fuchsia.bluetooth.gatt2:fuchsia.bluetooth.gatt2_rust",
+        "//src/connectivity/bluetooth/lib/battery-client",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bt_le_battery_service_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_le_battery_service",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-le-battery-service",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/bt-le-battery-service.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-le-battery-service",
+    deps = [":bt_le_battery_service_packaged_bin"],
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "bt_le_battery_service_config",
+    cm_label = ":manifest",
+)
+
+fuchsia_structured_config_values(
+    name = "default_config_values",
+    cm_label = ":manifest",
+    values_source = "config/default.json5",
+)
+
+fx_package(
+    name = "bt-le-battery-service",
+    package_name = "bt-le-battery-service",
+    components = [":component"],
+    resources = [":default_config_values"],
+)
+
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    edition = "2024",
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_unittest_package(
+    name = "bt-le-battery-service-tests",
+    unit_tests = [":bin_test"],
+)
