@@ -1,10 +1,10 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#ifndef SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_POWER_MANAGEMENT_H_
-#define SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_POWER_MANAGEMENT_H_
+#ifndef SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_POWER_MANAGEMENT_H_
+#define SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_POWER_MANAGEMENT_H_
 
-#include <lib/zx/result.h>
+#include <lib/zx/time.h>
 
 #include <utility>
 
@@ -98,9 +98,46 @@ class PowerManagementCapability : public Capability {
         pmcsr_(static_cast<uint16_t>(base + 0x4)),
         data_(PciReg8(static_cast<uint16_t>(base + 0x7))) {}
 
-  void WaitForTransitionRecovery(PowerState old_state, PowerState new_state);
-  PowerState GetPowerState(const pci::Config& cfg);
-  void SetPowerState(const pci::Config& cfg, PowerState new_state);
+  static void WaitForTransitionRecovery(PowerState old_state, PowerState new_state) {
+    zx::duration wait_time = kStateRecoveryTime[old_state][new_state];
+    zx::nanosleep(zx::deadline_after(wait_time));
+  }
+
+  PowerState GetPowerState(const pci::Config& cfg) const {
+    return static_cast<PowerState>(pmcsr_.ReadFrom(&cfg).power_state());
+  }
+
+  // Transitions the function to |new_state|, blocking the calling thread with zx::nanosleep for
+  // the PCIe state-transition recovery delay when required by the specification.
+  void SetPowerState(const pci::Config& cfg, PowerState new_state) const {
+    auto pmc = pmc_.ReadFrom(&cfg);
+
+    // If we're already in the requested power state then we're finished.
+    auto pmcsr = pmcsr_.ReadFrom(&cfg);
+    // PME_Status is RW1CS, so writing back the value read would clear a pending PME.
+    pmcsr.set_pme_status(0);
+    uint8_t old_state_u8 = static_cast<uint8_t>(pmcsr.power_state());
+    if (new_state == old_state_u8) {
+      return;
+    }
+
+    // Power down transitions are always allowed, but power up transitions must
+    // always go through D0. In other words, to go from D3 to D2 we must change
+    // state from D3 > D0 > D2, whereas D1 to D3 is permitted directly.
+    // ACPI 6.1 spec, section 2.3 Device Power State Definitions
+    if (new_state != PowerState::D0 && old_state_u8 > new_state) {
+      pmcsr.set_power_state(PowerState::D0).WriteTo(&cfg);
+      if (!pmc.immediate_readiness_on_return_to_d0()) {
+        WaitForTransitionRecovery(static_cast<PowerState>(old_state_u8), PowerState::D0);
+      }
+      old_state_u8 = PowerState::D0;
+    }
+
+    pmcsr.set_power_state(new_state).WriteTo(&cfg);
+    if (new_state != PowerState::D0 || !pmc.immediate_readiness_on_return_to_d0()) {
+      WaitForTransitionRecovery(static_cast<PowerState>(old_state_u8), new_state);
+    }
+  }
 
   hwreg::RegisterAddr<PmcReg> pmc() const { return pmc_; }
   hwreg::RegisterAddr<PmcsrReg> pmcsr() const { return pmcsr_; }
@@ -113,4 +150,4 @@ class PowerManagementCapability : public Capability {
 
 }  // namespace pci
 
-#endif  // SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_POWER_MANAGEMENT_H_
+#endif  // SRC_DEVICES_PCI_LIB_CPP_CAPABILITIES_POWER_MANAGEMENT_H_

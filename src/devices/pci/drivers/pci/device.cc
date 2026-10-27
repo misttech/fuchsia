@@ -36,11 +36,11 @@
 #include <fbl/string_buffer.h>
 
 #include "src/devices/pci/drivers/pci/bus_device_interface.h"
-#include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/composite.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
 #include "src/devices/pci/drivers/pci/upstream_node.h"
 #include "src/devices/pci/lib/cpp/capabilities.h"
+#include "src/devices/pci/lib/cpp/capabilities/power_management.h"
 
 #define RETURN_STATUS(level, status, format, ...)                                   \
   do {                                                                              \

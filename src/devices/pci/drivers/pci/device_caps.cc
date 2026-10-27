@@ -12,9 +12,9 @@
 #include "src/devices/pci/drivers/pci/capabilities/msi.h"
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
 #include "src/devices/pci/drivers/pci/capabilities/pci_express.h"
-#include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/device.h"
 #include "src/devices/pci/lib/cpp/capabilities.h"
+#include "src/devices/pci/lib/cpp/capabilities/power_management.h"
 
 namespace pci {
 
