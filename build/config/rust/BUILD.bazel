@@ -157,13 +157,6 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 
-# TODO(https://fxbug.dev/556328773): Use next generation trait solver after compile time regression is addressed.
-build_flags(
-    name = "next_solver",
-    rustflags = ["-Znext-solver=coherence"],
-    visibility = ["//visibility:public"],
-)
-
 build_flags(
     name = "no_features",
     rustflags = ["-Zallow-features="],
