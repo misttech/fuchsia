@@ -59,7 +59,7 @@ impl<T: ReadBytes + WriteBytes> Heap<T> {
         let heap_current_size = self.current_size_bytes;
         self.container
             .block_at_unchecked_mut::<Reserved>(header_index)
-            .become_header(heap_current_size)?;
+            .become_inspect_header(heap_current_size)?;
         self.has_header = true;
         Ok(())
     }

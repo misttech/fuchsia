@@ -108,7 +108,7 @@ block_bitfield! {
     /// Only for a `HEADER` block. The version number. Currently 1.
     u32, header_version: 31, 16;
 
-    /// Only for a `HEADER` block. The magic number "INSP".
+    /// Only for a `HEADER` block. The magic number "INSP" or "BLOB".
     u32, header_magic: 63, 32;
 
     /// Only for `*_VALUE` blocks. The index of the `NAME` block of associated with this value.
@@ -174,9 +174,10 @@ block_bitfield! {
     /// Only for `LINK_VALUE` blocks. Index of the content of this link (as a `NAME` node)
     u32, content_index: 19, 0;
 
-    /// Only for `LINK_VALUE`. Instructs readers whether to use child or inline disposition.
+    /// Only for `LINK_VALUE`. Instructs readers whether to use child, inline, or blob disposition.
     /// 0: child
     /// 1: inline
+    /// 2: blob
     u8, disposition_flags: 63, 60;
 }
 
