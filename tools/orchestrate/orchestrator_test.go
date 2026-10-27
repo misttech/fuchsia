@@ -364,6 +364,9 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 	// Test execution environment setup (ApplyEnv)
 	mockFfx.expectCall("ApplyEnv")
 
+	// Test output symbolization
+	mockFfx.expectCall("Symbolize")
+
 	// Snapshot call
 	mockFfx.expectCall("TargetSnapshot", tmpDir)
 

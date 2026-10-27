@@ -58,11 +58,12 @@ type TestOrchestrator struct {
 }
 
 var (
-	ffxConfigDump = filepath.Join(utils.GetOutputsDir(), "ffx_config.txt")
-	subrunnerLog  = filepath.Join(utils.GetOutputsDir(), "subrunner.log")
-	targetLog     = filepath.Join(utils.GetOutputsDir(), "target.log")
-	targetSymLog  = filepath.Join(utils.GetOutputsDir(), "target.symbolized.log")
-	summaryPath   = filepath.Join(utils.GetOutputsDir(), "summary.json")
+	ffxConfigDump   = filepath.Join(utils.GetOutputsDir(), "ffx_config.txt")
+	subrunnerLog    = filepath.Join(utils.GetOutputsDir(), "subrunner.log")
+	subrunnerSymLog = filepath.Join(utils.GetOutputsDir(), "subrunner.symbolized.log")
+	targetLog       = filepath.Join(utils.GetOutputsDir(), "target.log")
+	targetSymLog    = filepath.Join(utils.GetOutputsDir(), "target.symbolized.log")
+	summaryPath     = filepath.Join(utils.GetOutputsDir(), "summary.json")
 )
 
 // NewTestOrchestrator creates a TestOrchestrator with default dependencies.
@@ -409,6 +410,9 @@ func (r *TestOrchestrator) test(ctx context.Context, testCmd []string, in *RunIn
 	fmt.Printf("Pausing 10 seconds for log flush...\n")
 	time.Sleep(10 * time.Second)
 	if in.IsTarget() {
+		if err := r.Symbolize(subrunnerLog, subrunnerSymLog); err != nil {
+			fmt.Printf("Symbolize: %v\n", err)
+		}
 		snapshotCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := r.ffx.TargetSnapshot(snapshotCtx, utils.GetOutputsDir()); err != nil {
