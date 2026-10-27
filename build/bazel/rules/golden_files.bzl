@@ -8,17 +8,22 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_build_info//:args.bzl", "update_goldens")
 
 def _verify_golden_files_impl(ctx):
-    if int(bool(ctx.attr.golden_file)) + int(bool(ctx.attr.golden_files)) + int(bool(ctx.attr.comparison_manifest)) != 1:
+    if int(bool(ctx.file.golden_file)) + int(bool(ctx.files.golden_files)) + int(bool(ctx.file.comparison_manifest)) != 1:
         fail("Exactly one of `golden_file`, `golden_files`, or `comparison_manifest` must be specified.")
-    if ctx.attr.golden_file and len(ctx.attr.candidate_files) != 1:
-        fail("`candidate_files` must have one entry when `golden_file` is specified.")
-    if ctx.attr.golden_files and len(ctx.attr.candidate_files) != len(ctx.attr.golden_files):
-        fail("`candidate_files` and `golden_files` must be the same length.")
-    if bool(ctx.attr.candidate_files) == bool(ctx.attr.comparison_manifest):
+
+    # Count files rather than labels: a single label (e.g. a genrule) may
+    # provide several candidate files, and candidates are paired with goldens
+    # file by file below.
+    if ctx.file.golden_file and len(ctx.files.candidate_files) != 1:
+        fail("`candidate_files` must provide exactly one file when `golden_file` is specified.")
+    if ctx.files.golden_files and len(ctx.files.candidate_files) != len(ctx.files.golden_files):
+        fail("`candidate_files` and `golden_files` must provide the same number of files.")
+
+    if bool(ctx.files.candidate_files) == bool(ctx.file.comparison_manifest):
         fail("Exactly one of `candidate_files` or `comparison_manifest` must be specified.")
-    if ctx.attr.comparison_manifest and ctx.attr.formatter_executable:
+    if ctx.file.comparison_manifest and ctx.file.formatter_executable:
         fail("Formatter scripts are not supported with `comparison_manifest`.")
-    if not ctx.attr.formatter_executable and (ctx.attr.formatter_args or ctx.attr.formatter_extensions or ctx.attr.formatter_inputs):
+    if not ctx.file.formatter_executable and (ctx.attr.formatter_args or ctx.attr.formatter_extensions or ctx.files.formatter_inputs):
         fail("Formatter arguments may only be specified with `formatter_executable`.")
 
     verify_args = ctx.actions.args()
@@ -170,9 +175,10 @@ verify_golden_files = rule(
     implementation = _verify_golden_files_impl,
     attrs = {
         "candidate_files": attr.label_list(
-            doc = "List of candidate file labels to be checked against `golden_files`. " +
-                  " Must be the same length as `golden_files`. " +
-                  "Each file in the list corresponds to the golden file at the same index in `golden_files`." +
+            doc = "Candidate files to be checked against `golden_files`. " +
+                  "Must provide the same number of files as `golden_files`, in the same order. " +
+                  "A single label may provide several files (e.g. a genrule with multiple outputs), " +
+                  "as long as their order is deterministic. " +
                   "Mutually exclusive with `comparison_manifest`.",
             allow_files = True,
             mandatory = False,
@@ -192,8 +198,8 @@ verify_golden_files = rule(
         ),
         "golden_files": attr.label_list(
             doc = "List of golden file labels against which to check `candidate_files`. " +
-                  "Must be the same length as `candidate_files`. " +
-                  "Each file in the list corresponds to the golden file at the same index in `candidate_files`." +
+                  "Must provide the same number of files as `candidate_files`. " +
+                  "Each file in the list corresponds to the candidate file at the same index in `candidate_files`. " +
                   "Mutually exclusive with `golden_file` and `comparison_manifest`.",
             allow_files = True,
             mandatory = False,
