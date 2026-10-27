@@ -39,6 +39,8 @@ impl<'a> StringFile<'a> {
 
     /// Returns `bytes.len()` and writes as much of `bytes` as it would fit in the buffer
     /// `[offset, size - 1)` while reserving the last byte for null character.
+    // Kept out of line so that callers don't each get a copy of the bounds checks.
+    #[inline(never)]
     pub fn write(&mut self, bytes: &[u8]) -> usize {
         if self.buffer.is_empty() {
             return bytes.len();
