@@ -16,6 +16,7 @@ test_suite(
         ":bazel_test",
         ":bug_urls_test",
         ":cml_test",
+        ":commit_msg_test",
         ":confusing_characters_test",
         ":docs_test",
         ":fidl_test",
@@ -61,6 +62,12 @@ host_shac_test(
 host_shac_test(
     name = "cml_test",
     src = "cml_test.star",
+    data = ["//scripts/shac:starlark_files"],
+)
+
+host_shac_test(
+    name = "commit_msg_test",
+    src = "commit_msg_test.star",
     data = ["//scripts/shac:starlark_files"],
 )
 
