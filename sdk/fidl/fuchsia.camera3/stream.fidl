@@ -63,13 +63,13 @@ closed protocol Stream {
     /// identifies this client as a participant in buffer negotiation. If null, identifies this
     /// client as a non-participant in buffer negotiation. Upon initial connection, the client is a
     /// non-participant. After registering as a participant, clients must always have an outstanding
-    /// call to WatchBufferCollection to receive tokens from the server so that they are able to
+    /// call to WatchBufferCollection2 to receive tokens from the server so that they are able to
     /// respond to current and future renegotiation requests.
     @available(added=25)
     strict SetBufferCollection2(resource struct {
         token client_end:<fuchsia.sysmem2.BufferCollectionToken, optional>;
     });
-    @available(deprecated=25, note="use SetBufferCollection2")
+    @available(deprecated=25, removed=NEXT, note="use SetBufferCollection2")
     strict SetBufferCollection(resource struct {
         token client_end:<fuchsia.sysmem.BufferCollectionToken, optional>;
     });
@@ -85,7 +85,7 @@ closed protocol Stream {
     strict WatchBufferCollection2() -> (resource struct {
         token client_end:fuchsia.sysmem2.BufferCollectionToken;
     });
-    @available(deprecated=25, note="use WatchBufferCollection2")
+    @available(deprecated=25, removed=NEXT, note="use WatchBufferCollection2")
     strict WatchBufferCollection() -> (resource struct {
         token client_end:fuchsia.sysmem.BufferCollectionToken;
     });

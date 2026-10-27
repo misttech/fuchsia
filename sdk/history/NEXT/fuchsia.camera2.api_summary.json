@@ -174,139 +174,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.camera2/Manager.AcknowledgeDeviceEvent",
-        "strictness": "strict",
-        "ordinal": "2522065117110699782",
-        "direction": "one_way"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera2/Manager.ConnectToStream",
-        "strictness": "strict",
-        "ordinal": "3133702637485145118",
-        "direction": "two_way",
-        "request": "fuchsia.camera2/ManagerConnectToStreamRequest",
-        "response": "fuchsia.camera2/ManagerConnectToStreamResponse"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera2/Manager.OnDeviceAvailable",
-        "strictness": "strict",
-        "ordinal": "2652296596353611913",
-        "direction": "event",
-        "request": "fuchsia.camera2/ManagerOnDeviceAvailableRequest"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera2/Manager.OnDeviceMuteChanged",
-        "strictness": "strict",
-        "ordinal": "6667615629573172368",
-        "direction": "event",
-        "request": "fuchsia.camera2/ManagerOnDeviceMuteChangedRequest"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera2/Manager.OnDeviceUnavailable",
-        "strictness": "strict",
-        "ordinal": "8147747708563364626",
-        "direction": "event",
-        "request": "fuchsia.camera2/ManagerOnDeviceUnavailableRequest"
-    },
-    {
-        "kind": "protocol",
-        "name": "fuchsia.camera2/Manager",
-        "openness": "closed",
-        "transport": "channel"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerConnectToStreamRequest.constraints",
-        "ordinal": "2",
-        "type": "fuchsia.camera2/StreamConstraints"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerConnectToStreamRequest.device_id",
-        "ordinal": "1",
-        "type": "int32"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerConnectToStreamRequest.stream",
-        "ordinal": "4",
-        "type": "server_end:fuchsia.camera2/Stream"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerConnectToStreamRequest.token",
-        "ordinal": "3",
-        "type": "fuchsia.sysmem/BufferCollectionToken"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/ManagerConnectToStreamRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerConnectToStreamResponse.format",
-        "ordinal": "1",
-        "type": "fuchsia.sysmem/ImageFormat_2"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/ManagerConnectToStreamResponse"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceAvailableRequest.description",
-        "ordinal": "2",
-        "type": "fuchsia.camera2/DeviceInfo"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceAvailableRequest.device_id",
-        "ordinal": "1",
-        "type": "int32"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceAvailableRequest.last_known_camera",
-        "ordinal": "3",
-        "type": "bool"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/ManagerOnDeviceAvailableRequest"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceMuteChangedRequest.currently_muted",
-        "ordinal": "2",
-        "type": "bool"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceMuteChangedRequest.device_id",
-        "ordinal": "1",
-        "type": "int32"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/ManagerOnDeviceMuteChangedRequest"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/ManagerOnDeviceUnavailableRequest.device_id",
-        "ordinal": "1",
-        "type": "int32"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/ManagerOnDeviceUnavailableRequest"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.camera2/MuteControl.Mute",
         "strictness": "strict",
         "ordinal": "7904320653294185578",
@@ -375,14 +242,6 @@
         "strictness": "strict",
         "ordinal": "6317250396568229625",
         "direction": "one_way"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera2/Stream.GetBuffers",
-        "strictness": "strict",
-        "ordinal": "7623292027409854662",
-        "direction": "two_way",
-        "response": "fuchsia.camera2/StreamGetBuffersResponse"
     },
     {
         "kind": "protocol/member",
@@ -479,17 +338,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.camera2/StreamGetBuffers2Response",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera2/StreamGetBuffersResponse.token",
-        "ordinal": "1",
-        "type": "fuchsia.sysmem/BufferCollectionToken"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera2/StreamGetBuffersResponse",
         "resourceness": "resource"
     },
     {

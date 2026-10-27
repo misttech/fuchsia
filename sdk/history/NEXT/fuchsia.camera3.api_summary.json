@@ -453,14 +453,6 @@
     },
     {
         "kind": "protocol/member",
-        "name": "fuchsia.camera3/Stream.SetBufferCollection",
-        "strictness": "strict",
-        "ordinal": "8289637921540160621",
-        "direction": "one_way",
-        "request": "fuchsia.camera3/StreamSetBufferCollectionRequest"
-    },
-    {
-        "kind": "protocol/member",
         "name": "fuchsia.camera3/Stream.SetBufferCollection2",
         "strictness": "strict",
         "ordinal": "7390920386660649190",
@@ -482,14 +474,6 @@
         "ordinal": "7994665628137649379",
         "direction": "one_way",
         "request": "fuchsia.camera3/StreamSetResolutionRequest"
-    },
-    {
-        "kind": "protocol/member",
-        "name": "fuchsia.camera3/Stream.WatchBufferCollection",
-        "strictness": "strict",
-        "ordinal": "3879945243421435350",
-        "direction": "two_way",
-        "response": "fuchsia.camera3/StreamWatchBufferCollectionResponse"
     },
     {
         "kind": "protocol/member",
@@ -645,17 +629,6 @@
     },
     {
         "kind": "struct/member",
-        "name": "fuchsia.camera3/StreamSetBufferCollectionRequest.token",
-        "ordinal": "1",
-        "type": "fuchsia.sysmem/BufferCollectionToken:optional"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera3/StreamSetBufferCollectionRequest",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
         "name": "fuchsia.camera3/StreamSetCropRegionRequest.region",
         "ordinal": "1",
         "type": "fuchsia.math/RectF:optional"
@@ -683,17 +656,6 @@
     {
         "kind": "struct",
         "name": "fuchsia.camera3/StreamWatchBufferCollection2Response",
-        "resourceness": "resource"
-    },
-    {
-        "kind": "struct/member",
-        "name": "fuchsia.camera3/StreamWatchBufferCollectionResponse.token",
-        "ordinal": "1",
-        "type": "fuchsia.sysmem/BufferCollectionToken"
-    },
-    {
-        "kind": "struct",
-        "name": "fuchsia.camera3/StreamWatchBufferCollectionResponse",
         "resourceness": "resource"
     },
     {
