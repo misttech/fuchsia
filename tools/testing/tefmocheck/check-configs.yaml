@@ -799,24 +799,6 @@ failure_mode_checks:
   log_types: ["swarmingOutputType"]
   skip_passed_task: true
 
-# For https://fxbug.dev/42079078.
-- kind: "string_in_log"
-  string: "No daemon was running."
-  log_types: ["swarmingOutputType"]
-  skip_passed_task: true
-
-# For https://fxbug.dev/42077970.
-- kind: "string_in_log"
-  string: "FFX Daemon was told not to autostart"
-  log_types: ["swarmingOutputType"]
-
-# For https://fxbug.dev/42083744.
-- kind: "string_in_log"
-  string: "Timed out waiting for the ffx daemon on the Overnet mesh over socket"
-  log_types: ["swarmingOutputType"]
-  always_flake: true
-  attribute_to_test: true
-  add_tag: true
 
 - kind: "string_in_log"
   string: "remote command exited without exit status or exit signal"

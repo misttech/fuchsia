@@ -919,30 +919,6 @@ func (f *FFXInstance) RunWithTargetOutputAndTimeout(ctx context.Context, output 
 	return f.invoker(args).setTarget(f.target).setStdout(output).setTimeout(timeout).run(ctx)
 }
 
-func (f *FFXInstance) StartDaemon(ctx context.Context, daemonLog *os.File) *exec.Cmd {
-	args := []string{"daemon", "start"}
-	// Special-case the daemon handling, since it's the one command where we want to redirect the stdout,
-	// _instead_ of specifying "-o ffx.log"
-	invoker := f.invoker(args)
-	ffx_cmd := invoker.ffx.cmdBuilder.command(f.ffxPath, args)
-	// Strip out the "--machine json" and "-o file" flags
-	for i, arg := range ffx_cmd {
-		if arg == "--machine" || arg == "-o" {
-			// Note: i+2 because we want to remove both "--machine"
-			// and the following arg
-			ffx_cmd = append(ffx_cmd[:i], ffx_cmd[i+2:]...)
-		}
-	}
-
-	cmd := f.runner.Command(ffx_cmd, subprocess.RunOptions{
-		Stdout:  daemonLog,
-		Stderr:  f.stderr,
-		Setpgid: true,
-	})
-	logger.Debugf(ctx, "%s", cmd.Args)
-	return cmd
-}
-
 // Deprecated: No-op as the daemon has been removed.
 func (f *FFXInstance) WaitForDaemon(ctx context.Context) error {
 	return nil

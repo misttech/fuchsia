@@ -27,9 +27,6 @@ pub enum FfxError {
     TestingError, // this is here to be used in tests for verifying errors are translated properly.
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", .err)]
-    DaemonError { err: Box<dyn std::error::Error + Send + Sync>, target: Option<String> },
-    #[cfg(not(target_os = "fuchsia"))]
-    #[error("{}", .err)]
     #[trace(opaque)]
     OpenTargetError {
         #[source]
@@ -157,8 +154,6 @@ impl IntoExitCode for FfxError {
         match self {
             FfxError::Error(_, code) => *code,
             FfxError::TestingError => 254,
-            #[cfg(not(target_os = "fuchsia"))]
-            FfxError::DaemonError { .. } => 1,
             #[cfg(not(target_os = "fuchsia"))]
             FfxError::OpenTargetError { exit_code, .. } => *exit_code,
             #[cfg(not(target_os = "fuchsia"))]
