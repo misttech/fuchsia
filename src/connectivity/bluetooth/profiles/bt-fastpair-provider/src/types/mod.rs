@@ -282,7 +282,7 @@ impl AccountKeyList {
                 "couldn't build file name from path",
             )
         })?;
-        let file_path = path.with_file_name(file_name.to_os_string());
+        let file_path = path.with_file_name(file_name);
 
         let file = fs::File::create(&file_path)
             .map_err(|e| Error::key_storage(e, "couldn't create file"))?;

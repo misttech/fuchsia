@@ -43,12 +43,11 @@ where
 
         // The hashed Account Key is divided into chunks of 4 byte integer values. Because the
         // hashed key is a 32-byte value, we expect exactly 8 4-byte chunks.
-        let x: Vec<u32> = calculated_hash
+        let x = calculated_hash
             .chunks_exact(4)
-            .map(|c| u32::from_be_bytes(c.try_into().expect("4 bytes")))
-            .collect();
+            .map(|c| u32::from_be_bytes(c.try_into().expect("4 bytes")));
 
-        for x_i in x.into_iter() {
+        for x_i in x {
             let m = x_i % (s as u32 * 8);
             let filter_index = m / 8;
             // `filter_index` is guaranteed to be less than `s`.
