@@ -6,8 +6,6 @@
 # This script computes the number of concurrent links we want to run in the
 # build as a function of the machine.
 
-from __future__ import print_function
-
 import argparse
 import json
 import multiprocessing

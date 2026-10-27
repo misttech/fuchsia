@@ -11,8 +11,6 @@ The output is a shell script fragment that can be sourced to define various
 git url variables used by the rebuild script.
 """
 
-from __future__ import print_function
-
 import argparse
 import base64
 import json
