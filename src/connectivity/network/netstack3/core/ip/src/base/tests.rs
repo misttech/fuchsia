@@ -609,3 +609,55 @@ fn test_device_ip_layer_metadata_split_for_multiple_frames() {
         assert_eq!(packet_type, PacketType::Multicast);
     }
 }
+
+#[test]
+fn test_device_ip_layer_metadata_split_for_multiple_frames_tx_metadata() {
+    #[derive(Default, Debug, PartialEq, Eq)]
+    struct CustomTxMetadata {
+        id: u32,
+        is_primary: bool,
+    }
+
+    impl netstack3_base::TxMetadata for CustomTxMetadata {
+        fn socket_info(&self) -> Option<netstack3_base::socket::SocketInfo> {
+            None
+        }
+
+        fn checksum_offload_result(&self) -> Option<netstack3_base::ChecksumOffloadResult> {
+            None
+        }
+
+        fn set_checksum_offload_result(
+            &mut self,
+            _result: Option<netstack3_base::ChecksumOffloadResult>,
+        ) {
+        }
+
+        fn split_for_multiple_frames(self) -> (Self, Self) {
+            let secondary = Self { id: self.id, is_primary: false };
+            let primary = self;
+            (primary, secondary)
+        }
+    }
+
+    struct CustomBindingsTypes;
+    impl netstack3_base::TxMetadataBindingsTypes for CustomBindingsTypes {
+        type TxMetadata = CustomTxMetadata;
+    }
+
+    let meta = DeviceIpLayerMetadata::<CustomBindingsTypes> {
+        conntrack_entry: None,
+        tx_metadata: CustomTxMetadata { id: 42, is_primary: true },
+        marks: Marks::default(),
+        packet_type: PacketType::OtherHost,
+    };
+
+    let SplitDeviceIpLayerMetadata { primary: meta, secondary: split1 } =
+        meta.split_for_multiple_frames();
+    let SplitDeviceIpLayerMetadata { primary: meta, secondary: split2 } =
+        meta.split_for_multiple_frames();
+
+    assert_eq!(split1.tx_metadata, CustomTxMetadata { id: 42, is_primary: false });
+    assert_eq!(split2.tx_metadata, CustomTxMetadata { id: 42, is_primary: false });
+    assert_eq!(meta.tx_metadata, CustomTxMetadata { id: 42, is_primary: true });
+}

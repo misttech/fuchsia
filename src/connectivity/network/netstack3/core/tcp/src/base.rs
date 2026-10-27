@@ -186,7 +186,7 @@ impl IcmpErrorResult {
 /// Metadata associated with an outgoing TCP packet.
 #[derive(Derivative, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
-#[derivative(Debug(bound = ""))]
+#[derivative(Clone(bound = ""), Debug(bound = ""))]
 #[cfg_attr(any(test, feature = "testutils"), derivative(PartialEq(bound = "")))]
 pub struct TcpSocketTxMetadata<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
     /// The socket from which the packet originates.
@@ -215,6 +215,13 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
     /// Sets the checksum offload result.
     pub fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
         self.checksum_offload_result = result;
+    }
+
+    /// Splits metadata for multiple frames.
+    ///
+    /// Returns `(primary, secondary)`.
+    pub fn split_for_multiple_frames(self) -> (Self, Self) {
+        (self.clone(), self)
     }
 }
 

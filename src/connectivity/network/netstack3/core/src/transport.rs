@@ -294,4 +294,36 @@ impl<BT: BindingsTypes> TxMetadata for CoreTxMetadata<BT> {
             TxMetadataInner::Icmpv6(tx_metadata) => tx_metadata.set_checksum_offload_result(result),
         }
     }
+
+    fn split_for_multiple_frames(self) -> (Self, Self) {
+        let CoreTxMetadata(inner) = self;
+        let (primary, secondary) = match inner {
+            TxMetadataInner::None => (TxMetadataInner::None, TxMetadataInner::None),
+            TxMetadataInner::Tcpv4(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Tcpv4(p), TxMetadataInner::Tcpv4(s))
+            }
+            TxMetadataInner::Tcpv6(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Tcpv6(p), TxMetadataInner::Tcpv6(s))
+            }
+            TxMetadataInner::Udpv4(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Udpv4(p), TxMetadataInner::Udpv4(s))
+            }
+            TxMetadataInner::Udpv6(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Udpv6(p), TxMetadataInner::Udpv6(s))
+            }
+            TxMetadataInner::Icmpv4(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Icmpv4(p), TxMetadataInner::Icmpv4(s))
+            }
+            TxMetadataInner::Icmpv6(tx_metadata) => {
+                let (p, s) = tx_metadata.split_for_multiple_frames();
+                (TxMetadataInner::Icmpv6(p), TxMetadataInner::Icmpv6(s))
+            }
+        };
+        (CoreTxMetadata(primary), CoreTxMetadata(secondary))
+    }
 }

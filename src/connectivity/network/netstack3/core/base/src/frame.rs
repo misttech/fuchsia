@@ -353,6 +353,15 @@ pub trait TxMetadata: Default + Debug + Send + Sync + 'static {
     /// Sets the TX checksum offload result. Replaces the previous result if
     /// called multiple times.
     fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>);
+
+    /// Splits metadata for a packet sent as multiple frames (e.g. due to IP
+    /// fragmentation or GSO segmentation).
+    ///
+    /// Returns `(primary, secondary)`. The `primary` instance retains unique
+    /// resources (such as buffer ownership tokens), while both instances retain
+    /// shareable metadata such as socket attribution and checksum offload
+    /// configuration.
+    fn split_for_multiple_frames(self) -> (Self, Self);
 }
 
 /// A trait abstracting TX frame metadata when traversing the stack.
@@ -525,6 +534,10 @@ pub(crate) mod testutil {
         }
 
         fn set_checksum_offload_result(&mut self, _result: Option<ChecksumOffloadResult>) {}
+
+        fn split_for_multiple_frames(self) -> (Self, Self) {
+            (FakeTxMetadata, FakeTxMetadata)
+        }
     }
 }
 

@@ -139,3 +139,59 @@ fn send_token_held_in_tx_queue<I: IpExt + TestIpExt>() {
     );
     assert_eq!(tracker.live_tokens(), 0);
 }
+
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
+fn send_token_held_across_fragmentation<I: IpExt + TestIpExt>() {
+    set_logger_for_test();
+    let (mut ctx, local_device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS).build();
+    let eth_device = &local_device_ids[0];
+
+    ctx.core_api()
+        .transmit_queue::<EthernetLinkDevice>()
+        .set_configuration(&eth_device, netstack3_core::device::TransmitQueueConfiguration::Fifo);
+
+    let mut api = ctx.core_api().udp::<I>();
+    let socket = api.create();
+    let tracker = FakeSendTokenTracker::default();
+
+    // Send a payload larger than the 1280 MTU, requiring fragmentation into multiple frames.
+    const FRAGMENTED_MESSAGE_LEN: usize = 3000;
+    let message = Buf::new(vec![0u8; FRAGMENTED_MESSAGE_LEN], ..);
+    api.send_to(
+        &socket,
+        Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+        TEST_PORT.into(),
+        message,
+        tracker.token(),
+    )
+    .unwrap();
+
+    // Token is held while frames are queued in the transmit queue.
+    assert_eq!(tracker.live_tokens(), 1);
+
+    // Clear the tx available signal.
+    let tx_avail = core::mem::take(&mut ctx.bindings_ctx.state_mut().tx_available);
+    assert_eq!(tx_avail, vec![DeviceId::from(eth_device.clone())]);
+
+    // Transmit one frame at a time. The token must remain held until the final frame is sent.
+    let mut transmit_queue = ctx.core_api().transmit_queue::<EthernetLinkDevice>();
+    let report = transmit_queue
+        .transmit_queued_frames(&eth_device, BatchSize::new_saturating(1), &mut ())
+        .unwrap();
+    assert_eq!(report, WorkQueueReport::Pending);
+    assert_eq!(tracker.live_tokens(), 1);
+
+    let report = transmit_queue
+        .transmit_queued_frames(&eth_device, BatchSize::new_saturating(1), &mut ())
+        .unwrap();
+    assert_eq!(report, WorkQueueReport::Pending);
+    assert_eq!(tracker.live_tokens(), 1);
+
+    let report = transmit_queue
+        .transmit_queued_frames(&eth_device, BatchSize::new_saturating(1), &mut ())
+        .unwrap();
+    assert_eq!(report, WorkQueueReport::AllDone);
+    // After all fragmented frames are transmitted, the token is released.
+    assert_eq!(tracker.live_tokens(), 0);
+}

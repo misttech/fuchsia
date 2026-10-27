@@ -266,21 +266,30 @@ impl<BT: TxMetadataBindingsTypes> DeviceIpLayerMetadata<BT> {
     /// to IP fragmentation or GSO segmentation) into
     /// [`SplitDeviceIpLayerMetadata`].
     ///
-    /// The `primary` instance retains unique resources (`tx_metadata`), while
-    /// the `secondary` instance receives a copy of shareable metadata
-    /// (`conntrack_entry` and `marks`) with default unique resources.
+    /// The `primary` instance retains unique resources within `tx_metadata`
+    /// (such as buffer ownership tokens), while both instances receive shareable
+    /// metadata (`conntrack_entry`, `marks`, `packet_type`, and shareable
+    /// `tx_metadata` such as socket attribution and checksum offload configuration).
     pub(crate) fn split_for_multiple_frames(self) -> SplitDeviceIpLayerMetadata<BT> {
+        let (primary_tx_metadata, secondary_tx_metadata) =
+            self.tx_metadata.split_for_multiple_frames();
         let secondary = Self {
             conntrack_entry: self.conntrack_entry.clone(),
             // TODO(https://fxbug.dev/391953082): We should penalize sockets via
             // the tx metadata when a packet is sent as multiple frames instead
             // of just attaching the ownership to one of them. For now, only the
-            // `primary` instance retains the tx metadata.
-            tx_metadata: Default::default(),
+            // `primary` instance retains the unique buffer ownership tokens.
+            tx_metadata: secondary_tx_metadata,
             marks: self.marks,
             packet_type: self.packet_type,
         };
-        SplitDeviceIpLayerMetadata { primary: self, secondary }
+        let primary = Self {
+            conntrack_entry: self.conntrack_entry,
+            tx_metadata: primary_tx_metadata,
+            marks: self.marks,
+            packet_type: self.packet_type,
+        };
+        SplitDeviceIpLayerMetadata { primary, secondary }
     }
 
     /// Sets the packet type on this metadata.

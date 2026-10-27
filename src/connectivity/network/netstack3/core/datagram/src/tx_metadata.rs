@@ -16,7 +16,7 @@ use crate::internal::datagram::{DatagramSocketSpec, IpExt};
 #[derivative(Debug(bound = ""))]
 pub struct TxMetadata<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> {
     socket: S::WeakSocketId<I, D>,
-    _send_token: S::SendToken,
+    send_token: Option<S::SendToken>,
     checksum_offload_result: Option<ChecksumOffloadResult>,
 }
 
@@ -25,7 +25,7 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> TxMetadata<I, D, 
     pub(crate) fn new(socket: &S::SocketId<I, D>, send_token: S::SendToken) -> Self {
         Self {
             socket: S::downgrade_socket_id(socket),
-            _send_token: send_token,
+            send_token: Some(send_token),
             checksum_offload_result: None,
         }
     }
@@ -43,6 +43,21 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> TxMetadata<I, D, 
     /// Sets the checksum offload result.
     pub fn set_checksum_offload_result(&mut self, result: Option<ChecksumOffloadResult>) {
         self.checksum_offload_result = result;
+    }
+
+    /// Splits metadata for multiple frames.
+    ///
+    /// Returns `(primary, secondary)`. The `primary` instance retains the buffer
+    /// ownership token (`send_token`), while both instances retain socket
+    /// attribution and checksum offload configuration.
+    pub fn split_for_multiple_frames(self) -> (Self, Self) {
+        let secondary = Self {
+            socket: self.socket.clone(),
+            send_token: None,
+            checksum_offload_result: self.checksum_offload_result.clone(),
+        };
+        let primary = self;
+        (primary, secondary)
     }
 }
 
