@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "packet-formats-dhcp",
+    srcs = [
+        "src/lib.rs",
+        "src/v6.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:num-derive"],
+    visibility = [
+        "//src/connectivity/lib:__subpackages__",
+        "//src/connectivity/network:__subpackages__",
+        "//src/connectivity/policy/tests/integration/management:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/lib/mdns/rust:mdns",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:uuid",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "packet-formats-dhcp_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":packet-formats-dhcp",
+    edition = "2024",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "packet-formats-dhcp_host_test",
+    binary_name = "packet-formats-dhcp_test",
+)
+
+fx_unittest_package(
+    name = "packet-formats-dhcp-test-package",
+    package_name = "packet-formats-dhcp-test",
+    unit_tests = [":packet-formats-dhcp_test"],
+)
