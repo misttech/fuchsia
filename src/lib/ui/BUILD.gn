@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 
 group("ui") {
@@ -21,6 +22,7 @@ group("ui") {
 group("tests") {
   testonly = true
   public_deps = [
+    ":bazel_tests",
     "carnelian:carnelian-tests",
     "fidl_fuchsia_ui_focus_ext:tests",
     "fidl_fuchsia_ui_views_ext:tests",
@@ -32,4 +34,8 @@ group("tests") {
     "keymaps:tests",
     "terminal:tests",
   ]
+}
+
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//src/lib/ui:tests" ]
 }
