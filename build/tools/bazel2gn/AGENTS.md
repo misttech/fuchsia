@@ -68,6 +68,10 @@ motivation, and comment annotations.
     (`bazelVisibilityToGN`, `bazelCOptToGNConfig`, `bazelDepToGN`,
     `bazelFilePathsToGN`, `bazelLdflagsToGN`, `bazelExprToGNList`) and inline
     comment overwrite readers.
+-   [`sentinel.go`](./sentinel.go): Exported `SentinelComment`,
+    `DiscoverSentinelDirectories`, and `SkipDiscovery`, shared with
+    [`gn2gone`](../gn2gone/README.md), which finds sentinel directories that
+    no longer need syncing.
 -   [`bazel_migration.gni`](./bazel_migration.gni): Umbrella `.gni` file
     imported below the sentinel in all generated `BUILD.gn` files.
 -   [`third_party_target_map.json`](./third_party_target_map.json): Embedded
@@ -133,9 +137,10 @@ When adding support for a Bazel rule or attribute, check all five touchpoints:
     `BUILD.gn` when `--check_only` is set.
 -   **`shac` output coupling (`LINT.IfChange`)**:
     [`//scripts/shac/bazel_migration.star`](../../../scripts/shac/bazel_migration.star)
-    runs `bazel2gn --check_only --json` and depends on two things in
-    `cmd/main.go`: `sentinelComment` (`LINT.IfChange(bazel2gn_output)`) and the
-    fields of the JSON `diagnostic` struct (`LINT.IfChange(bazel2gn_json)`).
+    runs `bazel2gn --check_only --json` and depends on two things:
+    `SentinelComment` in [`sentinel.go`](./sentinel.go)
+    (`LINT.IfChange(bazel2gn_output)`) and the fields of the JSON `diagnostic`
+    struct in `cmd/main.go` (`LINT.IfChange(bazel2gn_json)`).
     Keep both sides of each block synchronized, and keep stdout valid JSON in
     `--json` mode (log to stderr).
 -   **Avoid unnecessary `BUILD.gn` writes**: When `--check_only` is false and

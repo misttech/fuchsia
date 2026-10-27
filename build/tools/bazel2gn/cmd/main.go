@@ -67,10 +67,6 @@ const (
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
 `
-
-	// LINT.IfChange(bazel2gn_output)
-	sentinelComment = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
-	// LINT.ThenChange(//scripts/shac/bazel_migration.star:bazel2gn_output)
 )
 
 func main() {
@@ -102,7 +98,7 @@ func main() {
 	if *directoryList != "" {
 		dirs, err = readDirectoryList(*directoryList)
 	} else {
-		dirs, err = discoverSentinelDirectories(*fuchsiaDir)
+		dirs, err = bazel2gn.DiscoverSentinelDirectories(*fuchsiaDir)
 	}
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -291,7 +287,7 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 	finalContent, err := gnFormatted(
 		ctx,
 		p.gnBin,
-		toPreserve+"\n"+sentinelComment+"\n"+bazel2gnComment+"\n"+strings.Join(finalLines, "\n"),
+		toPreserve+"\n"+bazel2gn.SentinelComment+"\n"+bazel2gnComment+"\n"+strings.Join(finalLines, "\n"),
 	)
 	if err != nil {
 		return &bazel2gn.FileError{Path: gnOutputPath, Err: fmt.Errorf("formatting GN targets: %v", err)}
@@ -355,65 +351,6 @@ func readDirectoryList(directoryList string) ([]string, error) {
 	return dirs, nil
 }
 
-// discoverSentinelDirectories walks `fuchsiaDir` to find all directories
-// whose BUILD.gn files contain the bazel2gn sentinel comment, including those
-// in nested repositories such as vendor/google. Returned paths are relative to
-// `fuchsiaDir`.
-//
-// Symlinks are not followed, and directories matched by skipDiscovery are
-// skipped.
-func discoverSentinelDirectories(fuchsiaDir string) ([]string, error) {
-	var dirs []string
-	err := filepath.WalkDir(fuchsiaDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			rel, err := filepath.Rel(fuchsiaDir, path)
-			if err != nil {
-				return err
-			}
-			if skipDiscovery(rel) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.Name() != "BUILD.gn" || !d.Type().IsRegular() {
-			return nil
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if bytes.Contains(content, []byte(sentinelComment)) {
-			rel, err := filepath.Rel(fuchsiaDir, filepath.Dir(path))
-			if err != nil {
-				return err
-			}
-			dirs = append(dirs, rel)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("discovering bazel2gn sentinel directories in %s: %v", fuchsiaDir, err)
-	}
-	if len(dirs) == 0 {
-		return nil, fmt.Errorf("no BUILD.gn files containing the bazel2gn sentinel found in %s", fuchsiaDir)
-	}
-	return dirs, nil
-}
-
-// skipDiscovery returns whether to skip the directory `rel`, relative to the
-// Fuchsia root directory, when discovering bazel2gn-managed directories. These
-// are large directories known to not contain any.
-func skipDiscovery(rel string) bool {
-	switch rel {
-	case "out", "prebuilt", "third_party/golibs/vendor", "third_party/rust_crates/vendor":
-		return true
-	}
-	return filepath.Base(rel) == ".git"
-}
-
 // runBatch runs syncDirectory in parallel over a list of directories `dirs`,
 // with paths relative to `fuchsiaDir`. Absolute paths must be inside
 // `fuchsiaDir`. It returns the errors sorted by directory.
@@ -467,7 +404,7 @@ func gnTargetsToPreserve(r io.Reader) (string, error) {
 	ret := strings.Builder{}
 	for s.Scan() {
 		line := s.Text()
-		if strings.TrimSpace(line) == sentinelComment {
+		if strings.TrimSpace(line) == bazel2gn.SentinelComment {
 			break
 		}
 		if _, err := ret.WriteString(line + "\n"); err != nil {

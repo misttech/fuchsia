@@ -103,7 +103,7 @@
     "build/toolchain/verify_depfile.py": 2,
     "build/toolchain/zircon/clang.gni": 1,
     "build/toolchain/zircon/gcc.gni": 1,
-    "build/tools/bazel2gn/cmd/main_test.go": 1,
+    "build/tools/bazel2gn/sentinel_test.go": 1,
     "build/tools/bazel2gn/verify_bazel2gn.gni": 2,
     "build/tracer/BUILD.gn": 1,
     "build/tracer/fsatrace_test.sh": 1,

@@ -17,7 +17,7 @@ load(
 
 # LINT.IfChange(bazel2gn_output)
 _BAZEL2GN_SENTINEL = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
-# LINT.ThenChange(//build/tools/bazel2gn/cmd/main.go:bazel2gn_output)
+# LINT.ThenChange(//build/tools/bazel2gn/sentinel.go:bazel2gn_output)
 
 # Changes to these files can change bazel2gn's output for any directory, so
 # trigger a check of all bazel2gn-managed directories.
