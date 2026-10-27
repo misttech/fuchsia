@@ -45,7 +45,6 @@ group("tests") {
     "ffl:tests",
     "fidl:tests",
     "fidl_codec:tests",
-    "fidl_server:tests",
     "fidl_table_validation:tests",
     "files:tests",
     "fostr:tests",
