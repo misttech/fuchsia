@@ -24,6 +24,16 @@ if (is_host) {
     ]
   }
 
+  python_host_test("treemap_test") {
+    main_source = "treemap_test.py"
+    sources = [ "treemap.py" ]
+    data_package_name = "webtreemap_assets"
+    data_sources = [
+      "//scripts/third_party/webtreemap/webtreemap.css",
+      "//scripts/third_party/webtreemap/webtreemap.js",
+    ]
+  }
+
   python_mobly_test("components_sql_test") {
     main_source = "components_sql_test.py"
     sources = [ "components_sql.py" ]
@@ -46,6 +56,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":mem_digest_test($host_toolchain)",
+    ":treemap_test($host_toolchain)",
     "dataclasses_json_lite:tests",
     "debug_json:tests",
     "images_json:tests",

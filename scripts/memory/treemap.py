@@ -16,6 +16,9 @@ import json
 import os.path
 import sys
 import textwrap
+from collections.abc import Collection, Mapping, Sequence
+from importlib import resources
+from typing import Any
 
 FUCHSIA_DIR = os.path.abspath(
     os.path.join(__file__, os.pardir, os.pardir, os.pardir)
@@ -23,19 +26,87 @@ FUCHSIA_DIR = os.path.abspath(
 
 # Magic value for nodes with empty names.
 UNNAMED_NAME = "<unnamed>"
+_RESTRICTED_STATE_VMO_PREFIX = "restricted_state_vmo:"
+
+
+def _vmo_group_name(name: str) -> str:
+    """Returns the aggregation key for a VMO name."""
+    if name.startswith(_RESTRICTED_STATE_VMO_PREFIX):
+        return "restricted_state_vmo"
+    else:
+        return name
+
+
+def _extract_process_ref_types(
+    process_record: Mapping[str, Any],
+) -> Mapping[int, Collection[int]]:
+    """Returns a map of VMO koid to reference types for a process record."""
+    koid_to_ref_types: dict[int, set[int]] = collections.defaultdict(set)
+    for vmo_ref in process_record.get("vmo_refs", ()):
+        ref_types = koid_to_ref_types[vmo_ref["vmo_koid"]]
+        via = vmo_ref["via"]
+        if "HANDLE" in via:
+            ref_types.add(VIA_HANDLE)
+        if "IOB_HANDLE" in via:
+            ref_types.add(VIA_IOB_HANDLE)
+        if "MAPPING" in via:
+            ref_types.add(VIA_MAPPING)
+    return koid_to_ref_types
+
+
+def _count_vmo_process_refs(
+    dataset: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[int, int], Mapping[int, int]]:
+    """Counts distinct mapping and handle-only processes per VMO koid."""
+    mapping_proc_counts: collections.Counter[int] = collections.Counter()
+    handle_only_proc_counts: collections.Counter[int] = collections.Counter()
+    for record in dataset:
+        if record.get("type") != "p" or not record.get("vmo_refs"):
+            continue
+        for vmo_koid, ref_types in _extract_process_ref_types(record).items():
+            if VIA_MAPPING in ref_types:
+                mapping_proc_counts[vmo_koid] += 1
+            elif ref_types:
+                handle_only_proc_counts[vmo_koid] += 1
+    return mapping_proc_counts, handle_only_proc_counts
+
+
+def _clamp_parent_areas(node: Node) -> int:
+    """Ensures every container node's area is at least the sum of its children."""
+    if node.children:
+        children_area = sum(map(_clamp_parent_areas, node.children))
+        if node.area < children_area:
+            node.area = children_area
+    return node.area
+
+
+def _read_webtreemap_asset(filename: str) -> str:
+    """Reads a webtreemap asset from the checkout or embedded .pyz resources."""
+    checkout_path = os.path.join(
+        FUCHSIA_DIR, "scripts", "third_party", "webtreemap", filename
+    )
+    if os.path.isfile(checkout_path):
+        with open(checkout_path, encoding="utf-8") as asset_file:
+            return asset_file.read()
+    else:
+        return (
+            resources.files("webtreemap_assets")
+            .joinpath(filename)
+            .read_text(encoding="utf-8")
+        )
 
 
 class Node(object):
     """A generic node in the kernel/job/process/memory tree."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.type = ""
         self.koid = 0
         self.name = ""
         self.area = 0
-        self.children = []
+        self.children: list[Node] = []
 
-    def html_label(self):
+    def html_label(self) -> str:
         """Returns a safe HTML string that identifies this Node."""
         tag = ""
         if self.type:
@@ -47,16 +118,19 @@ class Node(object):
             )
         if self.name in ("", UNNAMED_NAME):
             name = "<i>UNNAMED</i> [koid {}]".format(self.koid)
+        elif self.name.startswith(UNNAMED_NAME + "["):
+            suffix = html.escape(self.name[len(UNNAMED_NAME) :])
+            name = "<i>UNNAMED</i>{}".format(suffix)
         else:
             name = html.escape(self.name)
         return tag + name
 
 
 # Mapping of unique ID strings to Node objects.
-ids_to_nodes = {}
+ids_to_nodes: dict[str, Node] = {}
 
 
-def lookup(node_id):
+def lookup(node_id: str) -> Node:
     """Returns or creates the Node associated with an ID string.
 
     Args:
@@ -71,7 +145,7 @@ def lookup(node_id):
     return node
 
 
-def sum_area(node):
+def sum_area(node: Node) -> int:
     """Recursively calculates the Node.area values of a subtree.
 
     Args:
@@ -90,7 +164,7 @@ def sum_area(node):
     return node.area
 
 
-def format_size(nbytes):
+def format_size(nbytes: int) -> str:
     """Formats a size as a human-readable string like "123.4k".
 
     Units are in powers of 1024, so "k" is technically "kiB", etc.
@@ -122,7 +196,7 @@ def format_size(nbytes):
     if whole:
         return "{}{}".format(nbytes, units[ui])
 
-    round_up = (r % 100) >= 50
+    round_up = int((r % 100) >= 50)
     r = (r // 100) + round_up
     if r == 10:
         nbytes += 1
@@ -134,9 +208,16 @@ def format_size(nbytes):
 # Enum for tracking VMO reference types.
 VIA_HANDLE = 1
 VIA_MAPPING = 2
+VIA_IOB_HANDLE = 3
 
 
-def populate_process(process_node, process_record, hide_aggregated=True):
+def populate_process(
+    process_node: Node,
+    process_record: Mapping[str, Any],
+    hide_aggregated: bool = True,
+    mapping_proc_counts: Mapping[int, int] | None = None,
+    handle_only_proc_counts: Mapping[int, int] | None = None,
+) -> None:
     """Adds the process's child nodes.
 
     Args:
@@ -144,6 +225,10 @@ def populate_process(process_node, process_record, hide_aggregated=True):
         process_record: The same process's input record
         hide_aggregated: If true, do not create Nodes for individual VMOs
                 that have been aggregated by name into a single Node
+        mapping_proc_counts: Optional map of VMO koid to number of processes
+                mapping that VMO across the dataset
+        handle_only_proc_counts: Optional map of VMO koid to number of
+                processes holding only handle/IOB references across the dataset
     """
     # If there aren't any VMOs, use the sizes in the record.
     if not process_record.get("vmo_refs", []):
@@ -168,67 +253,95 @@ def populate_process(process_node, process_record, hide_aggregated=True):
     # Otherwise, this entry has VMOs.
 
     # Build the set of reference types from this process to its VMOs.
-    koid_to_ref_types = collections.defaultdict(set)
-    for vmo_ref in process_record.get("vmo_refs", []):
-        ref_types = koid_to_ref_types[vmo_ref["vmo_koid"]]
-        if "HANDLE" in vmo_ref["via"]:
-            ref_types.update([VIA_HANDLE])
-        if "MAPPING" in vmo_ref["via"]:
-            ref_types.update([VIA_MAPPING])
+    koid_to_ref_types = _extract_process_ref_types(process_record)
 
     # De-dup the set of VMOs known to the process, and group them by name. Each
     # of these entries are equivalent, though some values may be different (like
     # committed_bytes) because they were snapshotted at different times.
     name_to_vmo = collections.defaultdict(list)
-    koid_to_vmo = dict()
+    seen_koids = set()
     id_prefix = "{}/vmo".format(process_record["id"])
     for vmo in process_record.get("vmos", []):
-        # Although multiple processes may point to the same VMO, we're building
-        # a tree and thus need to create unique IDs for VMOs under this process.
         vmo_koid = vmo["koid"]
-        vmo_id = "{}/{}".format(id_prefix, vmo_koid)
-        vmo_node = lookup(vmo_id)
-        if vmo_node.name:
+        if vmo_koid in seen_koids:
             # This is a duplicate of a VMO we've already seen.
             continue
+        seen_koids.add(vmo_koid)
 
-        vmo_node.type = "vmo"
-        vmo_node.koid = vmo_koid
-        vmo_node.name = vmo["name"] if vmo["name"] else UNNAMED_NAME
-        name_to_vmo[vmo_node.name].append(vmo_node)
-        koid_to_vmo[vmo_koid] = vmo_node
+        # Use committed_scaled_bytes so copy-on-write clones do not multi-count
+        # shared parent pages.
+        vmo_bytes = vmo["committed_scaled_bytes"]
 
         # Figure out a size for the VMO.
         ref_types = koid_to_ref_types[vmo_koid]
         if VIA_MAPPING in ref_types:
             # The VMO is already accounted for in the process's pss_bytes value.
-            # TODO(dbort): To make the VMO areas exactly line up with pss_bytes,
-            # we'd need sub-VMO mapping information like what 'vmaps' provides:
-            # this process may only map a subset of the VMO's committed pages,
-            # but we're counting all of them. This isn't necessarily wrong,
-            # just different.
-            vmo_node.area = int(
-                float(vmo["committed_bytes"]) / vmo["share_count"]
+            # Notice that multiple Starnix processes can share a single
+            # VmAspace (where the kernel reports share_count == 1), so take the
+            # maximum of share_count and the number of mapping processes.
+            # TODO(https://fxbug.dev/575725855): To make the VMO areas exactly
+            # line up with pss_bytes, we'd need sub-VMO mapping information like
+            # what 'vmaps' provides: this process may only map a subset of the
+            # VMO's committed pages, but we're counting all of them. This isn't
+            # necessarily wrong, just different.
+            mapping_procs = (
+                mapping_proc_counts.get(vmo_koid, 1)
+                if mapping_proc_counts is not None
+                else 1
             )
+            share_count = max(vmo["share_count"], mapping_procs, 1)
+            area = int(float(vmo_bytes) / share_count)
             # NB: This counts as private memory if share_count is 1.
         else:
-            # The process only has a handle to this VMO but does not map it: the
-            # process's pss_bytes value does not account for this VMO.
-            assert ref_types == set([VIA_HANDLE])
-            # Treat our handle reference as an increment to the VMO's
-            # share_count. This may over-estimate this process's share, because
-            # other processes could also have handle-only references that we
-            # don't know about.
-            vmo_node.area = int(
-                float(vmo["committed_bytes"]) / (float(vmo["share_count"]) + 1)
+            # The process only has a handle (or IOBuffer handle) to this VMO
+            # and does not map it: the process's pss_bytes value does not
+            # account for this VMO.
+            assert ref_types and all(
+                ref_type in (VIA_HANDLE, VIA_IOB_HANDLE)
+                for ref_type in ref_types
             )
+            if (
+                mapping_proc_counts is not None
+                and mapping_proc_counts.get(vmo_koid, 0) > 0
+            ):
+                # Another process in the snapshot already maps this VMO and
+                # accounts for its mapped shares.
+                area = 0
+            else:
+                mapped_shares = (
+                    vmo["share_count"] if vmo["num_mappings"] > 0 else 0
+                )
+                handle_procs = (
+                    handle_only_proc_counts.get(vmo_koid, 1)
+                    if handle_only_proc_counts is not None
+                    else 1
+                )
+                area = int(
+                    float(vmo_bytes)
+                    / max(mapped_shares + max(handle_procs, 1), 1)
+                )
+
+        if area == 0:
+            # Skip zero-byte VMO nodes so large shared address spaces with
+            # thousands of uncommitted mappings do not bloat the output or
+            # trigger zero-area division in webtreemap.js.
+            continue
+
+        # Although multiple processes may point to the same VMO, we're building
+        # a tree and thus need to create unique IDs for VMOs under this process.
+        vmo_id = "{}/{}".format(id_prefix, vmo_koid)
+        vmo_node = lookup(vmo_id)
+        vmo_node.type = "vmo"
+        vmo_node.koid = vmo_koid
+        vmo_node.name = vmo["name"] if vmo["name"] else UNNAMED_NAME
+        vmo_node.area = area
+        name_to_vmo[_vmo_group_name(vmo_node.name)].append(vmo_node)
 
     # Create the aggregated VMO nodes.
     children = []
     for name, vmos in name_to_vmo.items():
-        if len(vmos) == 1 or name == UNNAMED_NAME:
-            # Only one VMO with this name, or multiple VMOs with an empty name.
-            # Add them as direct children.
+        if len(vmos) == 1:
+            # Only one VMO with this name; add it as a direct child.
             children.extend(vmos)
         else:
             # Create a parent VMO for all of these VMOs with the same name.
@@ -244,12 +357,13 @@ def populate_process(process_node, process_record, hide_aggregated=True):
                 # The area will be calculated from the children.
                 pnode.children.extend(vmos)
             children.append(pnode)
-    # TODO(dbort): Call out VMOs/aggregates that are only reachable via handle?
+    # TODO(https://fxbug.dev/575725855): Call out VMOs/aggregates that are only
+    # reachable via handle?
 
     process_node.children.extend(children)
 
 
-def build_webtreemap(node):
+def build_webtreemap(node: Node) -> Mapping[str, Any]:
     """Returns a JSON-able dict tree representing a Node tree.
 
     See
@@ -265,18 +379,23 @@ def build_webtreemap(node):
         "name": "{} ({})".format(node.html_label(), format_size(node.area)),
         "data": {
             "$area": node.area,
-            # TODO(dbort): Turn this on and style different node types
-            # if https://github.com/evmar/webtreemap/pull/15 is
-            # accepted. Would define a class like
-            # 'webtreemap-symbol-<type>' but there's a bug in
-            # webtreemap.js.
+            # TODO(https://fxbug.dev/575725855): Turn this on and style
+            # different node types if
+            # https://github.com/evmar/webtreemap/pull/15 is accepted. Would
+            # define a class like 'webtreemap-symbol-<type>' but there's a bug
+            # in webtreemap.js.
             # '$symbol': node.type,
         },
-        "children": list(map(build_webtreemap, node.children)),
+        "children": [build_webtreemap(c) for c in node.children if c.area > 0],
     }
 
 
-def dump_html_table(node, depth=0, parent_area=None, total_area=None):
+def dump_html_table(
+    node: Node,
+    depth: int = 0,
+    parent_area: int | None = None,
+    total_area: int | None = None,
+) -> Sequence[str]:
     """Returns an HTML representation of the tree.
 
     Args:
@@ -347,8 +466,8 @@ def dump_html_table(node, depth=0, parent_area=None, total_area=None):
 
     if depth:
         # We're not the root node.
-        pfrac = node.area / float(parent_area) if parent_area else 0
-        tfrac = node.area / float(total_area) if total_area else 0
+        pfrac = node.area / float(parent_area) if parent_area else 0.0
+        tfrac = node.area / float(total_area) if total_area else 0.0
         for frac in (pfrac, tfrac):
             lines.extend(
                 [
@@ -366,7 +485,7 @@ def dump_html_table(node, depth=0, parent_area=None, total_area=None):
         total_area = node.area
 
     # Append children by size, largest to smallest.
-    def dump_child(child):
+    def dump_child(child: Node) -> Sequence[str]:
         return dump_html_table(
             child, depth=depth + 1, parent_area=node.area, total_area=total_area
         )
@@ -381,7 +500,7 @@ def dump_html_table(node, depth=0, parent_area=None, total_area=None):
     return lines
 
 
-def build_tree(dataset):
+def build_tree(dataset: Sequence[Mapping[str, Any]]) -> Node:
     """Builds a Node tree from a set of memgraph records.
 
     See
@@ -394,8 +513,12 @@ def build_tree(dataset):
         The root of the new Node tree
     """
     ids_to_nodes.clear()  # Clear out the global registry.
-    root_node = None
-    root_job = None
+    root_node: Node | None = None
+    root_job: Node | None = None
+
+    mapping_proc_counts, handle_only_proc_counts = _count_vmo_process_refs(
+        dataset
+    )
 
     for record in dataset:
         record_type = record["type"]
@@ -414,7 +537,12 @@ def build_tree(dataset):
                 root_job = node
         elif record_type == "p":
             # Add the process's children, which will determine its area.
-            populate_process(node, record)
+            populate_process(
+                node,
+                record,
+                mapping_proc_counts=mapping_proc_counts,
+                handle_only_proc_counts=handle_only_proc_counts,
+            )
         if not record["parent"]:
             # The root node has an empty parent.
             assert not root_node, "Found multiple root objects"
@@ -423,8 +551,8 @@ def build_tree(dataset):
             parent_node = lookup(record["parent"])
             parent_node.children.append(node)
 
-    assert root_node, "Did not find root object"
-    assert root_job, "Did not find root job"
+    assert root_node is not None, "Did not find root object"
+    assert root_job is not None, "Did not find root job"
 
     # A better name for physmem.
     lookup("kernel/physmem").name = "All physical memory"
@@ -442,95 +570,99 @@ def build_tree(dataset):
     kvmo_node.name = "VMOs/processes"
 
     # Create a fake entry to cover the portion of kernel/vmo that isn't
-    # covered by the job tree.
+    # covered by the job tree. Clamp to 0 in case snapshot skew causes
+    # root_job.area to exceed kernel/vmo.
     node = lookup("kernel/vmo/unknown")
     node.name = "unknown (kernel & unmapped)"
-    node.area = kvmo_node.area - root_job.area
+    node.area = max(0, kvmo_node.area - root_job.area)
     kvmo_node.children.append(node)
+
+    _clamp_parent_areas(root_node)
 
     return root_node
 
 
-def print_html_document(root_node):
+def print_html_document(root_node: Node) -> None:
     """Prints to stdout an HTML document that visualizes a Node tree.
 
     Args:
         root_node: The Node at the root of the tree to walk
     """
-    html = """\
-    <!DOCTYPE html>
-    <title>Memory usage</title>
-    <script>
-    var kTree = %(json)s
-    </script>
-    <link rel='stylesheet' href='%(css)s'>
-    <style>
-    body {
-      font-family: sans-serif;
-      font-size: 0.8em;
-      margin: 2ex 4ex;
-    }
-    h1 {
-      font-weight: normal;
-    }
-    #map {
-      width: 800px;
-      height: 600px;
-      position: relative;
-      cursor: pointer;
-      -webkit-user-select: none;
-    }
-    .treemap-node-type { font-weight: bold; }
-    /* Colorblind-safe colors from http://mkweb.bcgsc.ca/colorblind/ */
-    .treemap-node-type-k { color: black; }
-    .treemap-node-type-j { color: RGB(213, 94, 0); } /* Vermillion */
-    .treemap-node-type-p { color: RGB(0, 114, 178); } /* Blue */
-    .treemap-node-type-v { color: RGB(0, 158, 115); } /* Bluish green */
-    </style>
+    doc = (
+        textwrap.dedent(
+            """\
+        <!DOCTYPE html>
+        <title>Memory usage</title>
+        <script>
+        var kTree = %(json)s
+        </script>
+        <style>
+        %(css)s
+        </style>
+        <style>
+        body {
+          font-family: sans-serif;
+          font-size: 0.8em;
+          margin: 2ex 4ex;
+        }
+        h1 {
+          font-weight: normal;
+        }
+        #map {
+          width: 800px;
+          height: 600px;
+          position: relative;
+          cursor: pointer;
+          -webkit-user-select: none;
+        }
+        .treemap-node-type { font-weight: bold; }
+        /* Colorblind-safe colors from http://mkweb.bcgsc.ca/colorblind/ */
+        .treemap-node-type-k { color: black; }
+        .treemap-node-type-j { color: RGB(213, 94, 0); } /* Vermillion */
+        .treemap-node-type-p { color: RGB(0, 114, 178); } /* Blue */
+        .treemap-node-type-v { color: RGB(0, 158, 115); } /* Bluish green */
+        </style>
 
-    <h1>Memory usage</h1>
+        <h1>Memory usage</h1>
 
-    <p>Click on a box to zoom in.  Click on the outermost box to zoom out.</p>
+        <p>Click on a box to zoom in.  Click on the outermost box to zoom out.</p>
 
-    <div id='map'></div>
+        <div id='map'></div>
 
-    <script src='%(js)s'></script>
-    <script>
-    var map = document.getElementById('map');
-    appendTreemap(map, kTree);
-    </script>
+        <script>
+        %(js)s
+        </script>
+        <script>
+        var map = document.getElementById('map');
+        appendTreemap(map, kTree);
+        </script>
 
-    <ul style="list-style: none">
-    <li><span class="treemap-node-type treemap-node-type-k">K</span>: Kernel memory
-    <li><span class="treemap-node-type treemap-node-type-j">J</span>: Job
-    <li><span class="treemap-node-type treemap-node-type-p">P</span>: Process
-    <li><span class="treemap-node-type treemap-node-type-v">V</span>: VMO
-    <ul style="list-style: none">
-        <li> VMO names with <b>[<i>n</i>]</b> suffixes are aggregates of <i>n</i>
-             VMOs that have the same name.
-    </ul>
-    </ul>
+        <ul style="list-style: none">
+        <li><span class="treemap-node-type treemap-node-type-k">K</span>: Kernel memory
+        <li><span class="treemap-node-type treemap-node-type-j">J</span>: Job
+        <li><span class="treemap-node-type treemap-node-type-p">P</span>: Process
+        <li><span class="treemap-node-type treemap-node-type-v">V</span>: VMO
+        <ul style="list-style: none">
+            <li> VMO names with <b>[<i>n</i>]</b> suffixes are aggregates of <i>n</i>
+                 VMOs that have the same name.
+        </ul>
+        </ul>
 
-    <hr>
-    %(table)s
-    """ % {
-        "json": json.dumps(build_webtreemap(root_node)),
-        "table": " ".join(dump_html_table(root_node)),
-        "css": os.path.join(
-            FUCHSIA_DIR,
-            "scripts",
-            "third_party",
-            "webtreemap",
-            "webtreemap.css",
-        ),
-        "js": os.path.join(
-            FUCHSIA_DIR, "scripts", "third_party", "webtreemap", "webtreemap.js"
-        ),
-    }
-    print(textwrap.dedent(html))
+        <hr>
+        %(table)s
+        """
+        )
+        % {
+            "json": json.dumps(build_webtreemap(root_node)),
+            "table": " ".join(dump_html_table(root_node)),
+            "css": _read_webtreemap_asset("webtreemap.css"),
+            "js": _read_webtreemap_asset("webtreemap.js"),
+        }
+    )
+    print(doc)
 
 
-def main():
+def main() -> None:
     root_node = build_tree(json.load(sys.stdin))
     print_html_document(root_node)
 
