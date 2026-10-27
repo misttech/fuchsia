@@ -562,6 +562,9 @@ struct brcmf_sdio_rx_tx_data {
   wlan::drivers::components::FrameStorage rx_space;
   wlan::drivers::components::FrameStorage rx_space_internal;
   bool rx_space_valid = false;
+  // Set when the bus has asked netdev for more RX space after running out, cleared when netdev
+  // queues more RX space. Guarded by the rx_space lock.
+  bool rx_space_requested = false;
 
   wlan::drivers::components::FrameStorage tx_space;
 

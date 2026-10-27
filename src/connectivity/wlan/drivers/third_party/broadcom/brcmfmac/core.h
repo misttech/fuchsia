@@ -384,6 +384,9 @@ void brcmf_queue_rx_space(
     brcmf_pub* drvr,
     cpp20::span<const fuchsia_hardware_network_driver::wire::RxSpaceBuffer> buffers,
     uint8_t* vmo_addrs[]);
+// Notify the network device that the bus ran out of Rx space. |count| is a hint for how many
+// buffers the bus would like to have queued.
+void brcmf_request_rx_space(brcmf_pub* drvr, uint64_t count);
 zx_status_t brcmf_prepare_vmo(brcmf_pub* drvr, uint8_t vmo_id, zx_handle_t vmo,
                               uint8_t* mapped_addr, size_t mapped_size);
 void brcmf_release_vmo(brcmf_pub* drvr, uint8_t vmo_id);

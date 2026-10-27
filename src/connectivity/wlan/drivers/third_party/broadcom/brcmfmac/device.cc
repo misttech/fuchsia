@@ -18,6 +18,8 @@
 #include <lib/sync/cpp/completion.h>
 #include <zircon/status.h>
 
+#include <algorithm>
+
 #include <wlan/common/ieee80211.h>
 #include <wlan/drivers/macaddr.h>
 
@@ -43,6 +45,22 @@ constexpr uint8_t kMaxBufferParts = 1;
 constexpr uint32_t kMaxBufferLength = 4096;
 constexpr uint32_t kBufferAlignment = 4096;
 constexpr char kNetDevDriverName[] = "brcmfmac-netdev";
+
+// Dynamic Rx buffer management parameters. The chips driven by brcmfmac are 1x1 802.11ac parts
+// behind SDIO (433 Mbps PHY, well below the SDIO bus rate), so the arrival rate peaks at roughly
+// 40k frames per second.
+//
+// Buffers the bus can consume in a single pass without returning any to netdev: one DPC pass reads
+// up to BRCMF_RXBOUND (50) frames, and a single glom chain carries up to 32 frames.
+constexpr uint16_t kRxBurstBuffers = 128;
+// Floor kept committed while idle. Covers two back to back bursts (or a full 64 subframe A-MPDU)
+// before the estimator reacts.
+constexpr uint16_t kMinRxBuffers = 256;
+// Time from netdev getting a completed Rx buffer back to queuing it to the driver again. Kept
+// generous for the slow CPUs on these products; at peak rate this adds about 160 buffers.
+constexpr zx_duration_t kRxDelayBudget = ZX_MSEC(4);
+// Wi-Fi traffic is bursty, react to rate increases faster than the default of 2.0.
+constexpr double kRxVarianceThreshold = 1.0;
 
 struct InterfaceInfo {
   const char* const display_name = nullptr;
@@ -707,6 +725,15 @@ void Device::NetDevGetInfo(fuchsia_hardware_network_driver::DeviceImplInfo* out_
   out_info->min_rx_buffer_length() = IEEE80211_MSDU_SIZE_MAX;
   out_info->tx_head_length() = drvr()->hdrlen;
   out_info->tx_tail_length() = tx_tail_length;
+  // Only ask netstack to keep a fraction of the Rx depth committed while the link is idle. The bus
+  // requests more Rx space when it runs out.
+  out_info->min_rx_buffers() = std::min(kMinRxBuffers, rx_depth);
+  out_info->rx_buffer_management() = fuchsia_hardware_network_driver::RxBufferManagement::WithSimple(
+      fuchsia_hardware_network_driver::Simple{{
+          .delay_budget = kRxDelayBudget,
+          .intercept = kRxBurstBuffers,
+          .variance_threshold = kRxVarianceThreshold,
+      }});
 }
 
 void Device::NetDevQueueTx(cpp20::span<wlan::drivers::components::Frame> frames) {

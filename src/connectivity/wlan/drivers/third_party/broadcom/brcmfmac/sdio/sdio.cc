@@ -2445,6 +2445,7 @@ static zx_status_t brcmf_sdio_queue_rx_space(
   std::lock_guard lock(bus->rx_tx_data.rx_space);
   bus->rx_tx_data.rx_space.Store(buffers, vmo_addrs);
   bus->rx_tx_data.rx_space_valid = true;
+  bus->rx_tx_data.rx_space_requested = false;
   return ZX_OK;
 }
 
@@ -4417,18 +4418,52 @@ static wlan::drivers::components::FrameStorage& get_rx_space_storage(struct brcm
                                         : bus->rx_tx_data.rx_space_internal;
 }
 
+// Must be called with the storage returned by get_rx_space_storage locked. Returns true if the
+// caller should request more RX space from netdev, i.e. the RX space provided by netdev either ran
+// out or couldn't satisfy an acquisition, and no request is already outstanding.
+static bool should_request_rx_space(const struct brcmf_sdio* bus,
+                                    const wlan::drivers::components::FrameStorage& storage,
+                                    bool acquired) __TA_REQUIRES(storage) {
+  return &storage == &bus->rx_tx_data.rx_space && (!acquired || storage.empty()) &&
+         !bus->rx_tx_data.rx_space_requested;
+}
+
 wlan::drivers::components::FrameContainer brcmf_sdio_acquire_rx_space(struct brcmf_sdio* bus,
                                                                       size_t num) {
   auto& storage = get_rx_space_storage(bus);
-  std::lock_guard lock(storage);
-  return storage.Acquire(num);
+  wlan::drivers::components::FrameContainer frames;
+  bool request_rx_space = false;
+  {
+    std::lock_guard lock(storage);
+    frames = storage.Acquire(num);
+    request_rx_space = should_request_rx_space(bus, storage, frames.size() == num);
+    if (request_rx_space) [[unlikely]] {
+      bus->rx_tx_data.rx_space_requested = true;
+    }
+  }
+  if (request_rx_space) [[unlikely]] {
+    brcmf_request_rx_space(bus->sdiodev->drvr, RXDEPTH);
+  }
+  return frames;
 }
 
 std::optional<wlan::drivers::components::Frame> brcmf_sdio_acquire_single_rx_space(
     struct brcmf_sdio* bus) {
   auto& storage = get_rx_space_storage(bus);
-  std::lock_guard lock(storage);
-  return storage.Acquire();
+  std::optional<wlan::drivers::components::Frame> frame;
+  bool request_rx_space = false;
+  {
+    std::lock_guard lock(storage);
+    frame = storage.Acquire();
+    request_rx_space = should_request_rx_space(bus, storage, frame.has_value());
+    if (request_rx_space) [[unlikely]] {
+      bus->rx_tx_data.rx_space_requested = true;
+    }
+  }
+  if (request_rx_space) [[unlikely]] {
+    brcmf_request_rx_space(bus->sdiodev->drvr, RXDEPTH);
+  }
+  return frame;
 }
 
 wlan::drivers::components::FrameContainer brcmf_sdio_acquire_internal_rx_space(

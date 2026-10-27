@@ -1027,6 +1027,15 @@ void brcmf_queue_rx_space(
   brcmf_bus_queue_rx_space(drvr->bus_if, buffers, vmo_addrs);
 }
 
+void brcmf_request_rx_space(brcmf_pub* drvr, uint64_t count) {
+  fdf::Arena arena('BRCM');
+  fidl::OneWayStatus status =
+      drvr->device->NetDev().NetDevIfcClient().buffer(arena)->RequestRxSpace(count);
+  if (!status.ok()) {
+    BRCMF_WARN_THROTTLE("Failed to request Rx space: %s", status.FormatDescription().c_str());
+  }
+}
+
 zx_status_t brcmf_prepare_vmo(brcmf_pub* drvr, uint8_t vmo_id, zx_handle_t vmo,
                               uint8_t* mapped_addr, size_t mapped_size) {
   zx_status_t err = brcmf_bus_prepare_vmo(drvr->bus_if, vmo_id, vmo, mapped_addr, mapped_size);
