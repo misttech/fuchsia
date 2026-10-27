@@ -1,0 +1,85 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "triage",
+    srcs = [
+        "src/act.rs",
+        "src/act_structured.rs",
+        "src/config.rs",
+        "src/inspect_logger.rs",
+        "src/lib.rs",
+        "src/metrics.rs",
+        "src/metrics/arithmetic.rs",
+        "src/metrics/context.rs",
+        "src/metrics/fetch.rs",
+        "src/metrics/metric_value.rs",
+        "src/metrics/parse.rs",
+        "src/metrics/variable.rs",
+        "src/plugins.rs",
+        "src/plugins/crashes.rs",
+        "src/plugins/helpers.rs",
+        "src/plugins/memory.rs",
+        "src/plugins/routing.rs",
+        "src/plugins/sandbox_errors.rs",
+        "src/result_format.rs",
+        "src/validate.rs",
+    ],
+    crate_name = "fuchsia_triage",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+        "//third_party/rust_crates/vendor:serde_derive",
+    ],
+    visibility = [
+        "//src/developer/ffx/tools/triage:__pkg__",
+        "//src/diagnostics/detect:__pkg__",
+        "//src/diagnostics/triage:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust_common",
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust_common",
+        "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",
+        "//src/lib/diagnostics/selectors",
+        "//src/lib/injectable-time",
+        "//src/sys/lib/moniker",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:nom",
+        "//third_party/rust_crates/vendor:nom-language",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:regex-lite",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//src/lib/diagnostics/inspect/contrib/rust",
+            "//src/lib/fuchsia-sync",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+host_rustc_test(
+    name = "triage-lib-unittests",
+    crate = ":triage",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    # Tests assert on exact `anyhow::Error` strings, which include a stack
+    # backtrace when `RUST_BACKTRACE=1` is set for host tests.
+    test_args = ["env RUST_LIB_BACKTRACE=0"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:maplit",
+    ],
+)

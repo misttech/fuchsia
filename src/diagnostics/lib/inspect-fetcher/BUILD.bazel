@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "inspect-fetcher",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = [
+        "//src/diagnostics/detect:__subpackages__",
+        "//src/diagnostics/lib/inspect-fetcher:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_test(
+    name = "inspect-fetcher_test",
+    crate = ":inspect-fetcher",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "inspect-fetcher-test",
+    unit_tests = [":inspect-fetcher_test"],
+)
