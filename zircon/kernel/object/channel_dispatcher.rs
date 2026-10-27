@@ -15,9 +15,14 @@ use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
 use super::user_handles::msg_handle_refs;
 use crate::counters::define_kcounter;
+use crate::kconcurrent::{
+    ChainLockTransaction, ChainLockTransactionToken, EAGER_RESCHED_DISABLE_AND_IRQ_SAVE_OPTION,
+    OwnerGuard, TransactionResult, assert_no_transaction_active, clt_tag,
+};
 use crate::kernel::deadline::Deadline;
-use crate::kernel::owned_wait_queue::OwnedWaitQueue;
-use crate::kernel::thread::signal_policy_exception;
+use crate::kernel::owned_wait_queue::{OwnedWaitQueue, ThreadUnblockList, WakeOption};
+use crate::kernel::thread::{PreemptDisabledToken, Thread, ThreadPtr, signal_policy_exception};
+use crate::kernel::wait_queue::{ForceInheritance, Interruptible, ResourceOwnership};
 use crate::ktrace_rs::{
     KTrace, category_enabled, duration_begin_timestamp, duration_end_timestamp,
     flow_begin_timestamp, flow_end_timestamp, flow_step_timestamp,
@@ -577,7 +582,9 @@ impl ChannelDispatcher {
         // (2) Wait for notification via waiter's event or for the deadline to hit.
         {
             let _auto_blocked = AutoBlocked::new(Blocked::CHANNEL);
-            if waiter.wait(deadline) == Err(Status::INTERRUPTED_RETRY) {
+            // SAFETY: `waiter` is embedded in the calling thread's `ThreadDispatcher`, and the
+            // calling thread holds no spinlocks or chain locks and is in a valid state to block.
+            if unsafe { waiter.wait(deadline) } == Err(Status::INTERRUPTED_RETRY) {
                 // If we got interrupted, return out to usermode, but do not clear the waiter.
                 return (None, Err(Status::INTERRUPTED_RETRY));
             }
@@ -1097,30 +1104,127 @@ impl MessageWaiter {
     /// Returns the outcome of waiting on the queue (such as `Ok(())`, or `Err(Status::TIMED_OUT)`).
     /// Note that `wait()` only returns the wait queue outcome, while `end_wait_and_take_channel()`
     /// retrieves the delivered status under the channel lock.
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be embedded in the calling thread's `ThreadDispatcher`, so `self.wait_queue`
+    ///   remains alive for the entire duration of the wait.
+    /// - The calling thread must be in a valid state to block.
     #[inline]
-    fn wait(&self, deadline: Deadline) -> Result<(), Status> {
+    unsafe fn wait(&self, deadline: Deadline) -> Result<(), Status> {
         debug_assert!(self.channel_ptr().is_some());
+        assert_no_transaction_active();
         // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
-        // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is implemented,
-        // change `BlockAndAssignOwnerLocked` in `cpp_message_waiter_wait` to
-        // `ForceInheritance::Yes`.
-        // SAFETY: `self.wait_queue.as_ptr()` and `self.signaled.get()` are valid pointers.
-        // `signaled` is synchronized by `wait_queue`'s internal ChainLock.
-        let raw_status = unsafe {
-            cpp_message_waiter_wait(self.wait_queue.as_ptr(), self.signaled.get(), &deadline)
-        };
-        Status::ok(raw_status)
+        // SAFETY: Multi-threading is initialized when blocking a thread on a channel call.
+        let current_thread: &Thread = unsafe { ThreadPtr::current().as_ref() };
+        let do_transaction =
+            |token: &ChainLockTransactionToken| -> TransactionResult<Result<(), Status>> {
+                // SAFETY: `EAGER_RESCHED_DISABLE_AND_IRQ_SAVE_OPTION` disables eager rescheduling,
+                // which disables preemption for the duration of this transaction.
+                let preempt_disabled_token = unsafe { PreemptDisabledToken::new() };
+                let mut guard = OwnerGuard::new(&self.wait_queue, token);
+                // SAFETY: `self.signaled` is synchronized by `self.wait_queue`'s ChainLock, which
+                // is held by `guard`.
+                if unsafe { *self.signaled.get() } {
+                    core::hint::cold_path();
+                    guard.release();
+                    return TransactionResult::Value(Ok(()));
+                }
+                let new_owner = guard.proof().owner_thread();
+                // SAFETY: `new_owner` (if `Some`) is the live owner of `self.wait_queue`, which
+                // cannot change or exit while `guard` holds `self.wait_queue.lock()`.
+                let new_owner_ref = unsafe { new_owner.map(|t| t.as_ref()) };
+                // SAFETY: `guard` holds `self.wait_queue.lock()`, the transaction is not finalized,
+                // `current_thread` is the running thread, and no other chain locks are held.
+                if let Some((details, mut current_thread_guard)) = unsafe {
+                    guard.proof().try_lock_for_baao_operation_locked(
+                        current_thread,
+                        new_owner_ref,
+                        token,
+                    )
+                } {
+                    ChainLockTransaction::finalize(token);
+                    // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is
+                    // implemented, change this to `ForceInheritance::Yes`.
+                    // SAFETY: The transaction is finalized with the BAAO locks held, and the caller
+                    // guarantees that `current_thread` is in a valid state to block and
+                    // `self.wait_queue` remains alive for the entire call.
+                    let result = unsafe {
+                        OwnedWaitQueue::block_and_assign_owner_locked(
+                            guard,
+                            &mut current_thread_guard.proof(),
+                            &deadline,
+                            &details,
+                            ResourceOwnership::Normal,
+                            Interruptible::Yes,
+                            ForceInheritance::No,
+                            token,
+                            &preempt_disabled_token,
+                        )
+                    };
+                    current_thread_guard.release();
+                    return TransactionResult::Value(result);
+                }
+                guard.release();
+                core::hint::cold_path();
+                TransactionResult::BACKOFF
+            };
+        ChainLockTransaction::until_done(
+            EAGER_RESCHED_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("OwnedWaitQueue::Wait"),
+            do_transaction,
+        )
     }
 
-    #[inline]
     fn signal(&self) {
+        assert_no_transaction_active();
         // TODO(https://fxbug.dev/477068635): Consider merging this logic back into OwnedWaitQueue.
-        // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is implemented,
-        // change `WakeThreadsLocked` in `cpp_message_waiter_signal` to `ForceInheritance::Yes`.
-        // SAFETY: `self.wait_queue.as_ptr()` and `self.signaled.get()` are valid pointers.
-        unsafe {
-            cpp_message_waiter_signal(self.wait_queue.as_ptr(), self.signaled.get());
-        }
+        let mut wake_hooks = OwnedWaitQueue::default_wake_hooks();
+        let do_transaction = |token: &ChainLockTransactionToken| -> TransactionResult {
+            // SAFETY: `EAGER_RESCHED_DISABLE_AND_IRQ_SAVE_OPTION` disables eager rescheduling,
+            // which disables preemption for the duration of this transaction.
+            let preempt_disabled_token = unsafe { PreemptDisabledToken::new() };
+            pin_init::stack_pin_init!(let threads = ThreadUnblockList::init());
+            // SAFETY: The transaction holds no locks and `threads` is empty. On success, the
+            // acquired locks are released by `wake_threads_locked` and `guard.release()`.
+            if let Some(mut guard) = unsafe {
+                self.wait_queue.lock_for_wake_operation_or_backoff(
+                    1,
+                    &mut wake_hooks,
+                    threads.as_mut(),
+                    token,
+                )
+            } {
+                ChainLockTransaction::finalize(token);
+                // SAFETY: `self.signaled` is synchronized by `self.wait_queue`'s ChainLock, which
+                // is held by `guard`.
+                unsafe { *self.signaled.get() = true };
+                // TODO(https://fxbug.dev/42182908): Once fair-to-fair priority inheritance is
+                // implemented, change this to `ForceInheritance::Yes`.
+                // SAFETY: `threads` was populated by `lock_for_wake_operation_or_backoff` with
+                // `max_wake == 1`, and the transaction is finalized.
+                unsafe {
+                    guard.proof().wake_threads_locked(
+                        threads.as_mut(),
+                        &mut wake_hooks,
+                        WakeOption::AssignOwner,
+                        ForceInheritance::No,
+                        token,
+                        &preempt_disabled_token,
+                    );
+                }
+                debug_assert!(guard.proof().is_empty());
+                guard.release();
+                return TransactionResult::DONE;
+            }
+            core::hint::cold_path();
+            TransactionResult::BACKOFF
+        };
+        ChainLockTransaction::until_done(
+            EAGER_RESCHED_DISABLE_AND_IRQ_SAVE_OPTION,
+            clt_tag!("OwnedWaitQueue::Signal"),
+            do_transaction,
+        );
     }
 
     /// Delivers a reply message to this waiter and signals the waiting thread.

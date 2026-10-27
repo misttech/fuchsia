@@ -6,8 +6,6 @@
 
 use super::channel_dispatcher::{ChannelDispatcher, ChannelDispatcherState};
 use super::handle::KernelHandle;
-use crate::kernel::deadline::Deadline;
-use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use zx_types::{zx_rights_t, zx_status_t};
 
@@ -22,26 +20,6 @@ unsafe extern "C" {
     pub fn cpp_channel_dispatcher_create(
         holder: *mut (),
         handle_out: *mut MaybeUninit<KernelHandle<ChannelDispatcher>>,
-    ) -> zx_status_t;
-
-    /// Signals the owned wait queue waking up a waiter.
-    ///
-    /// # Safety
-    ///
-    /// `wait_queue` must point to a valid `OwnedWaitQueue`. `signaled_out` must point to a valid
-    /// writable `bool`.
-    pub fn cpp_message_waiter_signal(wait_queue: *mut c_void, signaled_out: *mut bool);
-
-    /// Blocks the calling thread on the owned wait queue until signaled or deadline expires.
-    ///
-    /// # Safety
-    ///
-    /// `wait_queue` must point to a valid `OwnedWaitQueue`. `signaled` must point to a valid
-    /// `bool`.
-    pub fn cpp_message_waiter_wait(
-        wait_queue: *mut c_void,
-        signaled: *const bool,
-        deadline: *const Deadline,
     ) -> zx_status_t;
 }
 

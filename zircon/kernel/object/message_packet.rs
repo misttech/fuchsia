@@ -271,7 +271,7 @@ impl MessagePacket {
     /// - If `packet.owns_handles` is true, every non-null entry in `packet.handles` must be a
     ///   valid, owned `Handle*`.
     #[inline]
-    pub unsafe fn recycle(packet: *mut MessagePacket) {
+    unsafe fn recycle(packet: *mut MessagePacket) {
         // SAFETY:
         // - `packet` is a valid, uniquely owned, aligned pointer to an allocated `MessagePacket`
         //   that is not linked in any container.
@@ -454,7 +454,7 @@ impl MessagePacketPtr {
     ///
     /// `raw` must be a valid, uniquely owned `MessagePacket*`.
     #[inline]
-    pub unsafe fn from_raw(raw: *mut MessagePacket) -> Self {
+    unsafe fn from_raw(raw: *mut MessagePacket) -> Self {
         debug_assert!(!raw.is_null());
         // SAFETY: `raw` is non-null.
         Self { ptr: unsafe { NonNull::new_unchecked(raw) } }
@@ -462,7 +462,7 @@ impl MessagePacketPtr {
 
     /// Consumes the pointer and returns the raw pointer without running destructor.
     #[inline]
-    pub fn into_raw(self) -> *mut MessagePacket {
+    fn into_raw(self) -> *mut MessagePacket {
         let ptr = self.ptr.as_ptr();
         mem::forget(self);
         ptr

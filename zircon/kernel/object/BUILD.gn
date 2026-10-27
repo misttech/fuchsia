@@ -15,7 +15,6 @@ source_set("object") {
     "bus_transaction_initiator_dispatcher.cc",
     "bus_transaction_initiator_dispatcher_ffi.cc",
     "channel_dispatcher.cc",
-    "channel_dispatcher_ffi.cc",
     "clock_dispatcher.cc",
     "clock_dispatcher_ffi.cc",
     "counter_dispatcher.cc",

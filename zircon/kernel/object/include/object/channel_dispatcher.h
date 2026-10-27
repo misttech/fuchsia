@@ -20,6 +20,8 @@ class ChannelDispatcher;
 DECLARE_PEERED_DISPATCHER_RUST_PROTOS(ChannelDispatcher, rust_channel_dispatcher)
 
 extern "C" {
+zx_status_t cpp_channel_dispatcher_create(
+    void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out);
 zx_status_t rust_channel_dispatcher_create(KernelHandle<ChannelDispatcher>* handle0,
                                            KernelHandle<ChannelDispatcher>* handle1,
                                            zx_rights_t* rights);
@@ -44,7 +46,6 @@ class ChannelDispatcher final : public Dispatcher {
     return rust_channel_dispatcher_get_channel_full_count();
   }
 
-  explicit ChannelDispatcher(void* holder);
   ~ChannelDispatcher() final;
 
   DECLARE_PEERED_DISPATCHER_RUST_METHODS(rust_channel_dispatcher, ZX_OBJ_TYPE_CHANNEL, true)
@@ -59,6 +60,10 @@ class ChannelDispatcher final : public Dispatcher {
   Lock<CriticalMutex>* get_lock() const final;
 
  private:
+  friend zx_status_t cpp_channel_dispatcher_create(
+      void* holder, ffi::Uninitialized<KernelHandle<ChannelDispatcher>>* handle_out);
+  explicit ChannelDispatcher(void* holder);
+
   OpaqueStorage<kChannelDispatcherStateSize, kChannelDispatcherStateAlign> opaque_storage_;
 };
 
