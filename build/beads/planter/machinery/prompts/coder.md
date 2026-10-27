@@ -446,34 +446,26 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    BUILD.gn files) over to the BUILD.bazel that now defines it.
 
 ## Accelerating CQ with Build-Only: true (fxr/1913427)
-Fuchsia CQ supports build-only presubmit runs for qualifying migration CLs via the
-`Build-Only: true` commit footer. A build-only CQ run skips emulator and hardware device
-tests while running all compilation, static checks (shac), and build parity checks,
-reducing CQ cycle time by 3x to 5x (10-15 minutes vs 45-90 minutes).
-
-**Eligibility Criteria (Enforced by Gerrit Submit Requirements & Policy):**
-1. **Subject**: Must begin with `[bazel_migration]`.
-2. **Pure BUILD Files**: The change must ONLY modify `BUILD.gn` and `BUILD.bazel` files. If
-   ANY `.cml`, `.gni`, `.bzl`, `.rs`, `.cc`, or other file is touched, Gerrit's
-   `No-Build-Only-Footer` submit requirement will reject the change at `Commit-Queue+2`.
-3. **No Product / Assembly Impact**: Must NOT touch Assembly Input Bundles (`bundles/assembly/`,
-   `build/images/`, `vendor/google/assembly/`) or alter product contents, even transitively.
-4. **Leaf Node Migrations**: Intended for leaf libraries and dual-build targets.
-
-When these criteria are met, add `Build-Only: true` to the contiguous footer block at the
-bottom of the commit message (after `Test:` and `Bazel-Migration-Target:`, before `TAG:` and
-`Change-Id:`).
+Add `Build-Only: true` to the footer block (after `Test:` and `Bazel-Migration-Target:`,
+before `TAG:` and `Change-Id:`) when ALL of these hold:
+1. **Subject**: Begins with `[bazel_migration]`.
+2. **Pure BUILD Files**: Modifies ONLY `BUILD.gn` and `BUILD.bazel` files (no `.cml`, `.gni`,
+   `.bzl`, `.rs`, `.cc`, or other files, which fail Gerrit's `No-Build-Only-Footer` check).
+3. **No Product / Assembly Impact**: Does NOT touch Assembly Input Bundles (`bundles/assembly/`,
+   `build/images/`) or alter product contents, even transitively.
+4. **Leaf Node Migrations**: Leaf libraries and dual-build targets.
 
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check, `review_diff`, and `build_verification` (`fx build`,
 GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host). Never run full
-product builds or raw `planter diff --local --check-findings` by hand (`run_checks.sh` and planter's
-gate automatically suppress raw `diffengine` `copyright_header`/`package_hygiene` findings on
-auto-generated `third_party/rust_crates` `BUILD.bazel` files via `bazel_minimality` INFO coverage).
+product builds or raw `planter diff --local --check-findings` by hand.
 From `$PLANTER_WORKDIR`:
 1. While iterating, run `run_checks.sh --skip-build` and fix every ERROR and WARNING. On
-   `upstream_rebase_conflict` / CQ `Failed to rebase`, run `git fetch origin main && git rebase origin/main`,
-   keep both `origin/main` and your entries sorted, and `git -c core.editor=true rebase --continue`.
+   `upstream_rebase_conflict`, CQ `Failed to rebase`, or a CQ failure in an unrelated upstream
+   target outside the migrated packages (e.g. `.mypy_checked` in `//build/**`), run
+   `git fetch origin main && git rebase origin/main` (keeping both `origin/main` and your
+   entries sorted, then `git -c core.editor=true rebase --continue`); never edit unrelated
+   `//build/**` or out-of-scope files to work around an upstream `origin/main` breakage.
    If CQ failed with `no such package '<dep>': BUILD file not found` or `unmerged_parent_bazel_package_dep`
    because `<dep>/BUILD.bazel` is only in an unmerged local ancestor commit (`HEAD~1`), fold it into `HEAD`
    (`git reset --soft "$(git merge-base origin/main HEAD)" && git commit --amend`, removing the

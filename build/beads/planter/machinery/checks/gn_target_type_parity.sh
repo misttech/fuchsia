@@ -535,9 +535,13 @@ for pkg in sorted(candidate_dirs):
                     }
                 )
                 continue
+            has_bazel_test_suite = any("bazel_test_suite" in t for t, _ in new.values())
             is_test_suite_conversion = (
                 FX_TEST_AVAILABLE
-                and new_types == {"bazel_test_suite"}
+                and (
+                    new_types == {"bazel_test_suite"}
+                    or (new_types == {"group"} and has_bazel_test_suite)
+                )
                 and old_types <= GN_TEST_TEMPLATES
             )
             is_host_tool_conversion = (

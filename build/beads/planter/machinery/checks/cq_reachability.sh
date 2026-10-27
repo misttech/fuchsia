@@ -75,7 +75,11 @@ TEST_RULES = {
     "fuchsia_test_package",
 }
 
-FETCH_TTL_SECS = 60
+FETCH_TTL_SECS = (
+    60
+    if os.environ.get("PLANTER_SKIP_BUILD", "").strip() in ("1", "true")
+    else 15
+)
 
 findings = []
 
@@ -431,16 +435,25 @@ def is_ancestor(anc, desc):
     ).returncode == 0
 
 
+def git_success(args):
+    try:
+        return subprocess.run(
+            ["git", "-C", workdir] + args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode == 0
+    except Exception:
+        return False
+
+
 # Refresh local `refs/remotes/origin/main` when stale so `git merge-tree` checks
 # against current upstream `origin/main` and only caches a stamp on success.
 def maybe_refresh_origin_main(parent_sha):
     if os.environ.get("PLANTER_SKIP_FETCH", "").strip() not in ("", "0"):
         return
+    force_fetch = os.environ.get("PLANTER_FORCE_FETCH", "").strip() in ("1", "true")
     origin_sha = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
-    # If a local origin/main ref exists, use it offline without network latency,
-    # unless PLANTER_FORCE_FETCH=1 is explicitly requested.
-    if origin_sha and os.environ.get("PLANTER_FORCE_FETCH", "").strip() not in ("1", "true"):
-        return
     stamp_name = (
         "planter-origin-main-fetch-"
         + hashlib.sha256(workdir.encode("utf-8")).hexdigest()[:16]
@@ -479,7 +492,7 @@ def maybe_refresh_origin_main(parent_sha):
         and origin_sha != parent_sha
         and is_ancestor(origin_sha, parent_sha)
     )
-    if origin_sha and (fresh_stamp or fresh_ref) and not behind_parent:
+    if origin_sha and not force_fetch and (fresh_stamp or fresh_ref) and not behind_parent:
         return
     # Fast-path: check remote refs/heads/main SHA first to avoid a full fetch when unchanged.
     remote_sha = ""
@@ -561,9 +574,14 @@ if active_rebase_or_merge or unmerged:
             + "."
         ),
         "remediation": (
-            "Resolve all conflicted files (remove `<<<<<<<`/`=======`/`>>>>>>>` markers and keep entries sorted), "
-            "stage them with `git add <file>`, and finish the rebase with `git -c core.editor=true rebase --continue` "
-            "(or abort a broken rebase with `git rebase --abort` and re-run `git fetch origin main && git rebase origin/main`)."
+            "Resolve all conflicted files (remove `<<<<<<<`/`=======`/`>>>>>>>` markers and keep "
+            "entries sorted; if a conflicted dependency `BUILD.bazel`/`BUILD.gn` outside the "
+            "target directory was only edited for `visibility` and `origin/main` already grants "
+            "sufficient visibility such as `[\"//:__subpackages__\"]`, take `origin/main`'s "
+            "version cleanly with `git checkout origin/main -- <file>`), stage resolved files "
+            "with `git add <file>`, and finish with `git -c core.editor=true rebase --continue` "
+            "(or abort with `git rebase --abort` and re-run "
+            "`git fetch origin main && git rebase origin/main`)."
         ),
     })
 
@@ -571,17 +589,45 @@ head_sha = git_out(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
 parent_sha = git_out(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"])
 maybe_refresh_origin_main(parent_sha)
 origin_main = git_out(["rev-parse", "--verify", "--quiet", "origin/main^{commit}"])
+head_is_on_origin_main = bool(
+    origin_main and head_sha and is_ancestor(head_sha, origin_main)
+)
 base_sha = git_out(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"])
 effective_diff_base = change_base
-wt_dirty = bool(git_lines(["diff", "--name-only", "HEAD"]) or git_lines(["ls-files", "--others", "--exclude-standard"]))
-head_commit_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"]) if parent_sha else []
-head_touches_target = not target_dirs or any(any(p.startswith(td + "/") for td in target_dirs) for p in head_commit_files)
+wt_changed_files = (
+    git_lines(["diff", "--name-only", "HEAD"])
+    + git_lines(["ls-files", "--others", "--exclude-standard"])
+)
+wt_dirty = bool(wt_changed_files)
+wt_touches_target = bool(target_dirs) and any(
+    any(p.startswith(td + "/") for td in target_dirs) for p in wt_changed_files
+)
+head_commit_files = (
+    git_lines(["diff", "--name-only", "HEAD~1", "HEAD"]) if parent_sha else []
+)
+head_touches_target = bool(target_dirs) and any(
+    any(p.startswith(td + "/") for td in target_dirs) for p in head_commit_files
+)
 if parent_sha and (
     not base_sha
-    or (base_sha == head_sha and head_sha != origin_main and not wt_dirty and head_touches_target)
+    or (
+        change_base == "HEAD"
+        and base_sha == head_sha
+        and not head_is_on_origin_main
+        and not wt_dirty
+        and head_touches_target
+    )
     or not is_ancestor(base_sha, head_sha)
 ):
     effective_diff_base = "HEAD~1"
+# Check whether HEAD is the task's own commit rather than an upstream origin/main commit,
+# PLANTER_CHANGE_BASE, or a shared base commit during a parallel uncommitted working-tree migration.
+head_is_task_commit = bool(
+    head_sha
+    and not head_is_on_origin_main
+    and (not base_sha or base_sha != head_sha or effective_diff_base == "HEAD~1")
+    and not (wt_touches_target and not head_touches_target)
+)
 
 # 2. Check changed and target files for leftover conflict markers.
 changed_files = set(git_lines(["diff", "--name-only", effective_diff_base]))
@@ -610,8 +656,11 @@ for rel_p in sorted(changed_files):
                         "line": idx,
                         "message": f"Leftover git merge conflict marker `{line.strip()}` in '{rel_p}' at line {idx}.",
                         "remediation": (
-                            f"Edit '{rel_p}' to remove all `<<<<<<<`, `=======`, and `>>>>>>>` conflict markers, "
-                            "keep both upstream `origin/main` entries and this change's additions in sorted order, "
+                            f"Edit '{rel_p}' to remove all `<<<<<<<`, `=======`, and `>>>>>>>` "
+                            "conflict markers, keep both upstream `origin/main` entries and this "
+                            "change's additions in sorted order (or run "
+                            f"`git checkout origin/main -- {rel_p}` if '{rel_p}' is an external "
+                            "dependency package where `origin/main` already widened visibility), "
                             "and stage the resolved file with `git add`."
                         ),
                     })
@@ -790,16 +839,57 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
                 landed_ancestors.append((anc[:11], anc_subj))
 
     head_msg = git_out(["log", "-1", "--format=%B", head_sha]) if head_sha else ""
+    if re.search(r"(?m)^Reviewed-on:\s+\S+", head_msg) and not head_touches_target:
+        return
+    head_cids = set(re.findall(r"^Change-Id:\s*(I[0-9a-f]{40})\b", head_msg, re.M))
     stale_depends_on = []
-    dep_cl_re = r"(?:fxrev\.dev|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
-    for cl_num in re.findall(dep_cl_re, head_msg):
+    unlanded_depends_on = []
+    # Extract only explicit 'Depends on:' / 'Depends-on:' lines and bulleted/indented blocks
+    # so Gerrit 'Reviewed-on:' footers or prose URLs in the commit body are not misread.
+    dep_cont_re = (
+        r"(?:[ \t]*[-*].*|[ \t]+\S.*"
+        r"|(?:https?://|fxrev\.dev/|fxr/|I[0-9a-f]{40}\b).*)"
+    )
+    dep_section_re = re.compile(
+        r"(?im)^Depends[- ]on:[ \t]*([^\n]*)"
+        r"(?:\n((?:" + dep_cont_re + r"(?:\n|$))+))?"
+    )
+    dep_text = "\n".join(
+        f"{m.group(1) or ''}\n{m.group(2) or ''}"
+        for m in dep_section_re.finditer(head_msg)
+    )
+    dep_cl_re = (
+        r"(?:fxrev\.dev|fxr|fuchsia-review\.googlesource\.com/c/fuchsia/\+)/(\d+)"
+    )
+    for cl_num in re.findall(dep_cl_re, dep_text):
         rev_pat = r"Reviewed-on:[^\n]*/\+/" + re.escape(cl_num) + r"\b"
+        ref = f"fxrev.dev/{cl_num}"
         if re.search(rev_pat, upstream_log) or git_out(
-            ["log", "-1", "--format=%H", f"--grep=Reviewed-on: .*/+/{cl_num}\\b", origin_main]
+            [
+                "log",
+                "-1",
+                "--format=%H",
+                f"--grep=Reviewed-on: .*/+/{cl_num}\\b",
+                origin_main,
+            ]
         ):
-            ref = f"fxrev.dev/{cl_num}"
             if ref not in stale_depends_on:
                 stale_depends_on.append(ref)
+        elif ref not in unlanded_depends_on:
+            unlanded_depends_on.append(ref)
+
+    # Check Change-Id references in 'Depends on:' sections against origin/main.
+    for cid in re.findall(r"\b(I[0-9a-f]{40})\b", dep_text):
+        if cid in head_cids:
+            continue
+        landed_sha = git_out(
+            ["log", "-1", "--format=%H", f"--grep=^Change-Id: {cid}$", origin_main]
+        )
+        if landed_sha:
+            if cid not in stale_depends_on:
+                stale_depends_on.append(cid)
+        elif cid not in unlanded_depends_on:
+            unlanded_depends_on.append(cid)
 
     if landed_ancestors or stale_depends_on:
         anc_desc = ", ".join(f"{sha} ({subj!r})" for sha, subj in landed_ancestors)
@@ -816,17 +906,28 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
                 f"Commit message still lists `Depends on:` {dep_desc}, which has "
                 "already landed on `origin/main`."
             )
-        rem_parts = [
-            "Run `git fetch origin main && git rebase origin/main` so git drops the "
-            "already-landed prerequisite commit(s) and rebases `HEAD` directly onto "
-            "`origin/main`."
-        ]
-        if stale_depends_on:
+        rem_parts = []
+        if landed_ancestors:
             rem_parts.append(
-                f"Remove the obsolete `Depends on:` block ({dep_desc}) from the "
-                "commit message with `git commit --amend` (preserving the existing "
-                "`Change-Id`)."
+                "Run `git fetch origin main && git rebase origin/main` so git drops the "
+                "already-landed prerequisite commit(s) and rebases onto `origin/main`."
             )
+        if stale_depends_on:
+            if unlanded_depends_on:
+                keep_desc = ", ".join(unlanded_depends_on)
+                rem_parts.append(
+                    f"Remove the landed `Depends on:` entry/entries ({dep_desc}) from "
+                    f"the commit message with `git commit --amend` while keeping still-"
+                    f"unmerged `Depends on:` entry/entries ({keep_desc}), any local "
+                    "unmerged prerequisite ancestor commit(s), and the existing "
+                    "`Change-Id`."
+                )
+            else:
+                rem_parts.append(
+                    f"Remove the obsolete `Depends on:` block ({dep_desc}) from the "
+                    "commit message with `git commit --amend` (preserving the existing "
+                    "`Change-Id`)."
+                )
         findings.append({
             "source": "cq_reachability",
             "category": "stale_landed_parent_commit",
@@ -838,13 +939,183 @@ def check_landed_ancestor_commits(merge_base, origin_main, parent_sha, head_sha)
         })
 
 
-if origin_main and head_sha and head_sha != origin_main:
+# Check that in-tree Bazel dependency packages exist on disk and on origin/main when standalone.
+def is_non_dependency_bazel_label(val):
+    if (
+        not val.startswith("//")
+        or val.startswith(
+            (
+                "//build",
+                "//tools",
+                "//conditions:",
+                "//visibility:",
+                "//command_line_option:",
+            )
+        )
+        or val.endswith((":__pkg__", ":__subpackages__"))
+        or bool(re.search(r"\s", val))
+    ):
+        return True
+    return False
+
+
+def collect_non_dep_ast_node_ids(tree):
+    non_dep_attrs = (
+        "visibility",
+        "default_visibility",
+        "copts",
+        "cxxopts",
+        "conlyopts",
+        "linkopts",
+        "rustc_flags",
+        "args",
+        "cmd",
+        "cmd_bash",
+    )
+    node_ids = set()
+    for call_node in ast.walk(tree):
+        if isinstance(call_node, ast.Call):
+            for kw in call_node.keywords:
+                if kw.arg in non_dep_attrs:
+                    for sub in ast.walk(kw.value):
+                        node_ids.add(id(sub))
+    return node_ids
+
+
+def check_unlanded_bazel_dependencies(origin_main, parent_sha):
+    if not origin_main or not head_is_task_commit:
+        return
+    is_standalone_on_origin = parent_sha == origin_main or is_ancestor(
+        parent_sha, origin_main
+    )
+    checked_packages = set()
+    for td in target_dirs:
+        bazel_rel = os.path.join(td, "BUILD.bazel")
+        bazel_full = os.path.join(workdir, bazel_rel)
+        if not os.path.isfile(bazel_full):
+            continue
+        try:
+            with open(bazel_full, "r", encoding="utf-8") as f:
+                bazel_src = f.read()
+            tree = ast.parse(bazel_src, filename=bazel_rel)
+        except Exception:
+            continue
+
+        non_dep_nodes = collect_non_dep_ast_node_ids(tree)
+
+        for node in ast.walk(tree):
+            if id(node) in non_dep_nodes:
+                continue
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            val = node.value.strip()
+            if is_non_dependency_bazel_label(val):
+                continue
+            parts = split_label(val, td)
+            if not parts:
+                continue
+            dep_pkg, _ = parts
+            if (
+                not dep_pkg
+                or dep_pkg in ("conditions", "visibility", "command_line_option")
+                or dep_pkg == td
+                or dep_pkg in target_dirs
+                or dep_pkg in checked_packages
+            ):
+                continue
+            checked_packages.add(dep_pkg)
+
+            # Check if this in-tree package exists on disk
+            dep_bazel_rel = os.path.join(dep_pkg, "BUILD.bazel")
+            dep_build_rel = os.path.join(dep_pkg, "BUILD")
+            on_disk = os.path.isfile(
+                os.path.join(workdir, dep_bazel_rel)
+            ) or os.path.isfile(os.path.join(workdir, dep_build_rel))
+            if not on_disk:
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "missing_bazel_dependency_package",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": getattr(node, "lineno", 1),
+                    "message": (
+                        f"Target in '{bazel_rel}' depends on '{val}', but package "
+                        f"directory '{dep_pkg}' does not contain a BUILD.bazel or "
+                        "BUILD file."
+                    ),
+                    "remediation": (
+                        f"Fix the dependency label or create the missing "
+                        f"'{dep_bazel_rel}' file."
+                    ),
+                })
+                continue
+
+            # Skip dependency packages added/modified in HEAD (co-migrated in this CL)
+            # or residing in a nested jiri git repository / submodule outside the root repo.
+            dep_in_head = (
+                dep_bazel_rel in changed_files
+                or dep_build_rel in changed_files
+                or git_success(["cat-file", "-e", f"{head_sha}:{dep_bazel_rel}"])
+                or git_success(["cat-file", "-e", f"{head_sha}:{dep_build_rel}"])
+            )
+            if dep_in_head:
+                continue
+
+            dep_abs_dir = os.path.join(workdir, dep_pkg)
+            try:
+                dep_top = subprocess.check_output(
+                    ["git", "-C", dep_abs_dir, "rev-parse", "--show-toplevel"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).strip()
+            except Exception:
+                dep_top = ""
+            if dep_top and os.path.realpath(dep_top) != os.path.realpath(workdir):
+                continue
+
+            # Check if this in-tree package exists on origin/main
+            dep_on_origin = git_success(
+                ["cat-file", "-e", f"{origin_main}:{dep_bazel_rel}"]
+            ) or git_success(["cat-file", "-e", f"{origin_main}:{dep_build_rel}"])
+            if dep_on_origin:
+                continue
+
+            # If it does not exist on origin/main and HEAD is parented on origin/main:
+            # Pushing standalone to refs/for/main will fail Tricium.
+            if is_standalone_on_origin:
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "unlanded_bazel_dependency_package",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": getattr(node, "lineno", 1),
+                    "message": (
+                        f"Target in '{bazel_rel}' depends on in-tree package "
+                        f"'//{dep_pkg}', but '{dep_bazel_rel}' does not exist on "
+                        "'origin/main', and HEAD is parented directly on origin/main. "
+                        "Uploading or dry-running this CL standalone will fail Tricium "
+                        f"with 'ERROR: no such package \"{dep_pkg}\"'. Wait for the "
+                        f"prerequisite CL migrating '//{dep_pkg}' to land on "
+                        "origin/main, or stack this change on top of it."
+                    ),
+                    "remediation": (
+                        f"Ensure the prerequisite migration CL for '//{dep_pkg}' lands "
+                        "on 'origin/main' before pushing or running CQ dry runs "
+                        "standalone. If developing stacked changes, ensure this commit "
+                        "is stacked on top of the prerequisite commit and includes "
+                        "'Depends on:' in the commit message."
+                    ),
+                })
+
+
+if origin_main and head_is_task_commit:
     check_landed_ancestor_commits(
         git_out(["merge-base", origin_main, head_sha]),
         origin_main,
         parent_sha,
         head_sha,
     )
+    check_unlanded_bazel_dependencies(origin_main, parent_sha)
 
 
 # Check that referenced workspace Bazel packages and targets exist in origin/main or the top commit
@@ -1308,6 +1579,71 @@ for td in target_dirs:
                     out[idx] = " "
         return "".join(out)
 
+    # Return sorted ancestor GN package directories whose BUILD.gn references pkg_dir:target_name
+    # directly outside bazel_test_suite(...).
+    def direct_gn_test_callers(pkg_dir, target_name):
+        callers = []
+        anc = os.path.dirname(pkg_dir)
+        while True:
+            anc_rel = os.path.join(anc, "BUILD.gn") if anc else "BUILD.gn"
+            anc_code = strip_bazel_test_suites(read_gn(anc_rel))
+            if anc_code:
+                rel_from_anc = os.path.relpath(pkg_dir, anc) if anc else pkg_dir
+                label_re = (
+                    r'"(?://'
+                    + re.escape(pkg_dir)
+                    + r"|"
+                    + re.escape(rel_from_anc)
+                    + r"):"
+                    + re.escape(target_name)
+                    + r'(?:\(|")'
+                )
+                if target_name == os.path.basename(pkg_dir):
+                    label_re += (
+                        r'|"(?://'
+                        + re.escape(pkg_dir)
+                        + r"|"
+                        + re.escape(rel_from_anc)
+                        + r')(?:\(|")'
+                    )
+                if re.search(label_re, anc_code):
+                    callers.append(anc)
+            if not anc:
+                break
+            anc = os.path.dirname(anc)
+        return sorted(set(callers))
+
+    # Check whether group("tests") in pkg_dir/BUILD.gn is referenced by any ancestor BUILD.gn
+    # or any other .gn/.gni file in the checkout.
+    def gn_tests_group_is_referenced(pkg_dir):
+        if direct_gn_test_callers(pkg_dir, "tests"):
+            return True
+        abs_tests_re = re.compile(
+            r'"//'
+            + re.escape(pkg_dir)
+            + (
+                r'(?::tests)?(?:\([^"]*\))?"'
+                if os.path.basename(pkg_dir) == "tests"
+                else r':tests(?:\([^"]*\))?"'
+            )
+        )
+        for cand_rel in git_lines(
+            [
+                "grep",
+                "-l",
+                "--fixed-strings",
+                f"//{pkg_dir}",
+                "--",
+                "*.gn",
+                "*.gni",
+            ]
+        ):
+            if os.path.dirname(cand_rel).strip("/") == pkg_dir:
+                continue
+            if abs_tests_re.search(read_gn(cand_rel)):
+                return True
+        return False
+
     def has_skip_above(lines, line_1based):
         idx = line_1based - 2
         while idx >= 0:
@@ -1728,6 +2064,9 @@ for td in target_dirs:
                 )
             ):
                 continue
+        anc_suite_info = find_ancestor_bazel_test_suite(td, kind)
+        gn_test_callers = direct_gn_test_callers(td, t_name)
+        local_gn_tests_referenced = gn_tests_group_is_referenced(td)
         if not entries:
             if anc_suite_info is not None:
                 anc_pkg, anc_suite = anc_suite_info
@@ -1870,6 +2209,62 @@ for td in target_dirs:
                 "remediation": rem_text,
             })
         for s_rel, s_name, s_param, s_line in entries:
+            if (
+                s_rel == gn_rel
+                and anc_suite_info
+                and not (
+                    base_gn_src
+                    and re.search(
+                        r'\bbazel_test_suite\(\s*"' + re.escape(s_name) + r'"\s*\)',
+                        base_gn_src,
+                    )
+                )
+            ):
+                anc_dir, anc_suite, anc_gn_suite = anc_suite_info
+                req_vis = sorted(
+                    {f"//{anc_dir}:__pkg__"}
+                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
+                )
+                if gn_test_callers and not local_gn_tests_referenced:
+                    caller_desc = ", ".join(f"'{c}/BUILD.gn'" for c in gn_test_callers)
+                    rm_group_desc = (
+                        f"Remove `bazel_test_suite(\"{s_name}\")`, `group(\"tests\")`, and "
+                        "`import(\"//build/bazel/bazel_test_suite.gni\")` above "
+                        f"`## BAZEL2GN SENTINEL` from '{gn_rel}'"
+                    )
+                    unreach_note = (
+                        f" (and nothing in the GN build graph depends on `//{td}:tests` or "
+                        f"`//{td}:{s_name}` because {caller_desc} depends directly on "
+                        f"`:{t_name}`, making `{s_name}` unreachable)"
+                    )
+                else:
+                    rm_group_desc = (
+                        f"Remove `bazel_test_suite(\"{s_name}\")` (along with "
+                        "`import(\"//build/bazel/bazel_test_suite.gni\")` and "
+                        f"`\":{s_name}\"` in `group(\"tests\")`) from '{gn_rel}'"
+                    )
+                    unreach_note = ""
+                findings.append({
+                    "source": "cq_reachability",
+                    "category": "redundant_local_bazel_test_suite",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": s_line,
+                    "message": (
+                        f"Local `bazel_test_suite(\"{s_name}\")` in '{gn_rel}' exports "
+                        f"`//{td}:{t_name}`, which is unnecessary because ancestor "
+                        f"'{anc_dir}/BUILD.bazel' already defines `test_suite(name = \"{anc_suite}\")` "
+                        f"(exported to GN via `bazel_test_suite(\"{anc_gn_suite}\")` in "
+                        f"'{anc_dir}/BUILD.gn'){unreach_note}."
+                    ),
+                    "remediation": (
+                        f"{rm_group_desc}, add "
+                        f"`\"//{td}:{t_name}\"` to `test_suite(name = \"{anc_suite}\")` in "
+                        f"'{anc_dir}/BUILD.bazel', set "
+                        f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in '{bazel_rel}', "
+                        "and re-run `fx bazel2gn`."
+                    ),
+                })
             if s_param != param:
                 findings.append({
                     "source": "cq_reachability",
@@ -1884,7 +2279,17 @@ for td in target_dirs:
                     ),
                     "remediation": f"Move `//{td}:{t_name}` (or its `test_suite`) from `{s_param}` to `{param}`.",
                 })
-        if not any(suite_is_wired(s_rel, s_name) for s_rel, s_name, _, _ in entries):
+        local_suite_unwired_via_tests = bool(
+            gn_test_callers
+            and not local_gn_tests_referenced
+            and all(
+                s_rel == gn_rel and not refs_from_parent(parent_gn_src, td, s_name)
+                for s_rel, s_name, _, _ in entries
+            )
+        )
+        if local_suite_unwired_via_tests or not any(
+            suite_is_wired(s_rel, s_name) for s_rel, s_name, _, _ in entries
+        ):
             s_rel, s_name, _, s_line = entries[0]
             if (s_rel, s_name) in unwired_reported:
                 continue
@@ -1897,14 +2302,52 @@ for td in target_dirs:
                 "line": s_line,
                 "message": (
                     f"Bazel test ':{t_name}' ({rule_name}) is listed in `bazel_test_suite(\"{s_name}\")` in "
-                    f"'{s_rel}', but no `group(\"tests\")` references that suite, so it is not reachable from "
-                    "the test roots and stays out of tests.json."
+                    f"'{s_rel}', but no reachable `group(\"tests\")` in the GN build graph references that "
+                    "suite, so it is not reachable from the test roots and stays out of tests.json."
                 ),
                 "remediation": (
-                    f"Add `\":{s_name}\"` to `group(\"tests\")` in '{s_rel}' (or reference "
-                    f"`//{os.path.dirname(s_rel)}:{s_name}` from the parent directory's `tests` group)."
+                    f"Wire `//{td}:{t_name}` into an existing ancestor `test_suite` exported to GN "
+                    f"(or reference `//{os.path.dirname(s_rel)}:tests` / `//{os.path.dirname(s_rel)}:{s_name}` "
+                    "from the parent directory's `tests` group)."
+                    if local_suite_unwired_via_tests
+                    else (
+                        f"Add `\":{s_name}\"` to `group(\"tests\")` in '{s_rel}' (or reference "
+                        f"`//{os.path.dirname(s_rel)}:{s_name}` from the parent directory's `tests` group)."
+                    )
                 ),
             })
+
+    # Flag an unreachable hand-written group("tests") above BAZEL2GN SENTINEL when an ancestor
+    # BUILD.gn depends directly on the package's generated test target(s) instead of //<td >:tests.
+    m_tests_grp = re.search(r'\bgroup\(\s*"tests"\s*\)\s*\{', gn_code(gn_pre))
+    if (
+        m_tests_grp
+        and SENTINEL_RE.search(gn_src)
+        and not SUITE_RE.search(gn_code(gn_pre))
+        and not gn_tests_group_is_referenced(td)
+        and any(direct_gn_test_callers(td, tn) for tn, _, _, _ in test_targets)
+    ):
+        grp_line = gn_pre.count("\n", 0, m_tests_grp.start()) + 1
+        direct_callers = sorted(
+            {c for tn, _, _, _ in test_targets for c in direct_gn_test_callers(td, tn)}
+        )
+        caller_desc = ", ".join(f"'{c}/BUILD.gn'" for c in direct_callers)
+        findings.append({
+            "source": "cq_reachability",
+            "category": "unreachable_local_gn_tests_group",
+            "severity": "error",
+            "file": gn_rel,
+            "line": grp_line,
+            "message": (
+                f"`group(\"tests\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' is unreachable in "
+                f"the GN build graph because nothing depends on `//{td}:tests` ({caller_desc} "
+                "depends directly on the generated test target below the sentinel)."
+            ),
+            "remediation": (
+                f"Remove the unreachable `group(\"tests\")` target above `## BAZEL2GN SENTINEL` "
+                f"in '{gn_rel}'."
+            ),
+        })
 
 print(json.dumps(findings, indent=2))
 PYEOF

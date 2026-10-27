@@ -29,12 +29,15 @@ TARGET_DIRS="${PLANTER_TARGET_DIRS:-$TARGET_DIR}"
 
 python3 - "$WORKDIR" "$TARGET_DIR" "$TARGET_DIRS" <<'PYEOF'
 import ast
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 workdir = os.path.abspath(sys.argv[1])
 def normalize_target_dir(raw_dir, base_workdir):
@@ -409,6 +412,12 @@ def get_preserved_gn_visibility(
                     return None
             if not os.path.isdir(os.path.join(workdir, sp)):
                 continue
+            if not (
+                pkg_path == sp
+                or pkg_path.startswith(sp + "/")
+                or any(r == sp or r.startswith(sp + "/") for r in pkgs)
+            ):
+                continue
             valid_scopes.append((sp, "subpackages"))
         else:
             if (
@@ -416,6 +425,7 @@ def get_preserved_gn_visibility(
                 or not os.path.isdir(os.path.join(workdir, sp))
                 or sp in vis_only_pkgs
                 or sp in gn_only_pkgs
+                or sp not in pkgs
             ):
                 continue
             valid_scopes.append((sp, "pkg"))
@@ -580,6 +590,104 @@ def discover_git_repos():
     return repos
 
 
+# Refresh origin/main in each repository (root and sub-repositories) so callers added
+# upstream after the local checkout or sub-repository snapshot was created are visible.
+FETCH_TTL_SECS = 60
+
+
+# Build git config arguments that rewrite sso:// remotes to https:// so git fetch works
+# when /var/run/ccache is mounted read-only in the sandbox.
+def sso_https_git_config_args(repo):
+    try:
+        url = subprocess.check_output(
+            ["git", "-C", repo, "config", "--get", "remote.origin.url"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return []
+    if not url.startswith("sso://"):
+        return []
+    host = url[len("sso://") :].split("/", 1)[0].strip()
+    if not host:
+        return []
+    https_base = f"https://{host}.googlesource.com/"
+    return ["-c", f"url.{https_base}.insteadOf=sso://{host}/"]
+
+
+def maybe_refresh_repo_origin_main(repo):
+    if os.environ.get("PLANTER_SKIP_FETCH", "").strip() not in ("", "0"):
+        return
+    if os.environ.get("PLANTER_AGENT_ROLE", "").strip() == "evolver":
+        return
+    stamp_key = hashlib.sha256(repo.encode("utf-8")).hexdigest()[:16]
+    stamp_path = os.path.join(
+        tempfile.gettempdir(), f"planter-origin-main-fetch-{stamp_key}.stamp"
+    )
+    now = time.time()
+    try:
+        if now - os.path.getmtime(stamp_path) < FETCH_TTL_SECS:
+            return
+    except OSError:
+        pass
+    fetch_ok = False
+    try:
+        cfg_args = sso_https_git_config_args(repo)
+        proc = subprocess.run(
+            ["git", "-C", repo]
+            + cfg_args
+            + [
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "origin",
+                "+refs/heads/main:refs/remotes/origin/main",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+        fetch_ok = proc.returncode == 0
+    except Exception:
+        pass
+    if fetch_ok:
+        try:
+            with open(stamp_path, "w", encoding="utf-8") as sf:
+                sf.write(str(int(now)))
+        except OSError:
+            pass
+
+
+# Check whether a sub-repository's local origin/main ref is stale relative to the root
+# repository (e.g. when git fetch was skipped or could not update a lagging snapshot).
+def is_subrepo_origin_main_stale(sub_rel):
+    sub_repo = os.path.join(workdir, sub_rel)
+    if not os.path.exists(os.path.join(sub_repo, ".git")):
+        return False
+    try:
+        root_ts = int(
+            subprocess.check_output(
+                ["git", "-C", workdir, "log", "-1", "--format=%ct", "HEAD"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        )
+        sub_ts = int(
+            subprocess.check_output(
+                ["git", "-C", sub_repo, "log", "-1", "--format=%ct", "origin/main"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        )
+        return (root_ts - sub_ts) > 86400
+    except Exception:
+        return False
+
+
+origin_main_sources = {}
+
 # Batch-discover all build files mentioning any candidate package across all repos.
 # Using git grep per repository avoids false-empty results when workdir is a git worktree under
 # .jiri_root/worktrees/<slot> (where the parent checkout's .gitignore ignores /.jiri_root/) or
@@ -595,15 +703,16 @@ def discover_referencing_build_files(pkg_list):
     search_terms = set()
     for p in pkg_list:
         search_terms.add(f"//{p}")
-        base = os.path.basename(p)
-        if base:
-            search_terms.add(f"../{base}")
+        p_parts = [seg for seg in p.split("/") if seg]
+        for i in range(1, len(p_parts)):
+            search_terms.add("../" + "/".join(p_parts[i:]))
     pattern_args = [arg for term in sorted(search_terms) for arg in ("-e", term)]
     repos = discover_git_repos()
     used_git_grep = False
     for repo in repos:
         if not os.path.exists(os.path.join(repo, ".git")):
             continue
+        maybe_refresh_repo_origin_main(repo)
         grep_cmd = (
             ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings"]
             + pattern_args
@@ -621,6 +730,30 @@ def discover_referencing_build_files(pkg_list):
             for line in proc.stdout.splitlines():
                 if line.strip():
                     found.add(os.path.join(repo, line.strip()))
+        except OSError:
+            pass
+        # Also search origin/main in each repo so callers added upstream in a
+        # sub-repository whose working tree is at an older Jiri snapshot are found.
+        om_grep_cmd = (
+            ["git", "-C", repo, "grep", "-l", "--fixed-strings"]
+            + pattern_args
+            + ["origin/main", "--", "*BUILD.gn", "*BUILD.bazel", "*.gni", "*.bzl"]
+        )
+        try:
+            om_proc = subprocess.run(
+                om_grep_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            if om_proc.returncode == 0:
+                for line in om_proc.stdout.splitlines():
+                    s = line.strip()
+                    if s.startswith("origin/main:"):
+                        rel_line = s[len("origin/main:") :]
+                        abs_cand = os.path.join(repo, rel_line)
+                        origin_main_sources[abs_cand] = (repo, rel_line)
+                        found.add(abs_cand)
         except OSError:
             pass
         # Include untracked and modified build files not indexed by git grep
@@ -716,10 +849,33 @@ matched_files = discover_referencing_build_files(pkg_paths)
 file_cache = {}
 for fpath in sorted(matched_files):
     try:
-        with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
-            raw = f.read()
+        parts = []
+        if os.path.isfile(fpath):
+            with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                parts.append(f.read())
+        om_info = origin_main_sources.get(fpath)
+        if om_info:
+            repo, rel_line = om_info
+            try:
+                om_raw = subprocess.check_output(
+                    ["git", "-C", repo, "show", f"origin/main:{rel_line}"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                if om_raw and (not parts or om_raw != parts[0]):
+                    parts.append(om_raw)
+            except Exception:
+                pass
+        raw = "\n".join(parts)
+        if not raw:
+            continue
         no_comments = re.sub(r"#[^\n]*", "", raw)
-        stripped = re.sub(r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]", "", no_comments, flags=re.DOTALL)
+        non_dep_list_re = (
+            r"\b(?:visibility|packages|target_tests|host_tests)\s*\+?=\s*\[[^\]]*\]"
+            if fpath.endswith((".gn", ".gni"))
+            else r"\b(?:visibility|packages)\s*\+?=\s*\[[^\]]*\]"
+        )
+        stripped = re.sub(non_dep_list_re, "", no_comments, flags=re.DOTALL)
         file_cache[fpath] = (no_comments, stripped)
     except Exception:
         pass
@@ -768,6 +924,14 @@ GN_PACKAGE_TEMPLATES = {
     "fuchsia_package_with_single_component",
 }
 
+# Test rules that bazel2gn translates into BUILD.gn below BAZEL2GN SENTINEL (including visibility).
+BAZEL_GN_SYNCED_TEST_RULES = {
+    "rustc_test",
+    "host_rustc_test",
+    "go_test",
+    "host_go_test",
+}
+
 BAZEL_NON_GN_SYNCED_RULES = {
     "cc_test",
     "fx_cc_test",
@@ -794,7 +958,6 @@ BAZEL_NON_GN_SYNCED_RULES = {
     "idk_go_binary_host_tool",
     "idk_rustc_binary_host_tool",
     "wrap_host_rust_test",
-    "go_test",
 }
 
 
@@ -926,9 +1089,9 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                     or t in ("tests", "benchmarks")
                     or tmpl == "bazel_test_suite"
                 )
-            ) or (not has_sentinel and target_dir and pkg_path != target_dir):
+            ) or (not has_sentinel and target_dir and pkg_path != target_dir and t not in bazel_targets):
                 nonconv_targets.add(t)
-        return only_targets, nonconv_targets
+        return only_targets, nonconv_targets, below_synced
 
     if os.path.isfile(gn_file):
         try:
@@ -945,6 +1108,12 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             gn_only_targets, gn_nonconvertible_targets = compute_gn_nonconvertible_targets(
                 above_sentinel, bazel_targets, has_sentinel, gn_forwarding_groups
             )
+            gn_only_targets, gn_nonconvertible_targets, below_synced_targets = (
+                compute_gn_nonconvertible_targets(
+                    above_sentinel, below_sentinel, bazel_targets, has_sentinel
+                )
+            )
+            non_gn_synced_targets.difference_update(below_synced_targets)
         except Exception:
             pass
 
@@ -990,8 +1159,14 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                 pass
         elif pkg_path.startswith(caller_pkg + "/"):
             rel_sub = pkg_path[len(caller_pkg) + 1 :]
+        elif rel.endswith((".gn", ".gni")) and caller_pkg:
+            cand_rel = os.path.relpath(pkg_path, caller_pkg)
+            if cand_rel and cand_rel != ".":
+                rel_sub = cand_rel
         rel_label_re = (
-            re.compile(r'"' + re.escape(rel_sub) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"')
+            re.compile(
+                r'"(?:\./)?' + re.escape(rel_sub) + r'(?::([A-Za-z0-9_.-]+))?(?:\([^)]*\))?"'
+            )
             if rel_sub
             else None
         )
@@ -1250,6 +1425,7 @@ for rel_path in sorted(candidate_files):
     bazel_targets = []
     package_targets = set()
     non_gn_synced_targets = set()
+    test_rule_targets = set()
     bazel2gn_skipped_targets = set()
     alias_map = {}
     for node in tree.body:
@@ -1276,8 +1452,11 @@ for rel_path in sorted(candidate_files):
                 bazel_targets.append(tname)
                 if func in ("fx_package", "fuchsia_package", "fx_unittest_package"):
                     package_targets.add(tname)
+                if func in BAZEL_GN_SYNCED_TEST_RULES:
+                    test_rule_targets.add(tname)
                 if func in BAZEL_NON_GN_SYNCED_RULES:
                     non_gn_synced_targets.add(tname)
+                    test_rule_targets.add(tname)
                 if has_bazel2gn_skip_comment(src_lines, node.lineno):
                     bazel2gn_skipped_targets.add(tname)
                     if func not in ("fx_package", "fuchsia_package"):
@@ -1286,7 +1465,13 @@ for rel_path in sorted(candidate_files):
                     alias_map[tname] = actual[1:]
 
     true_rdeps, per_target_rdeps, per_target_direct_rdeps, vis_only_pkgs, gn_only_pkgs, has_macro_injected_rdeps = compute_package_rdeps(
-        pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map, orig_gn_vis_map
+        pkg_path,
+        bazel_targets,
+        package_targets,
+        non_gn_synced_targets,
+        alias_map,
+        orig_gn_vis_map,
+        test_rule_targets,
     )
 
     # Check package-level default_visibility and report per-target visibility guidance
@@ -1749,14 +1934,22 @@ for rel_path in sorted(candidate_files):
                         has_vg_rdep = any(
                             r == VG_ROOT or r.startswith(VG_ROOT + "/") for r in target_rdeps
                         )
-                        if not has_vg_rdep and not has_macro_injected_rdeps:
+                        if (
+                            not has_vg_rdep
+                            and not has_macro_injected_rdeps
+                            and not is_subrepo_origin_main_stale(VG_ROOT)
+                        ):
                             findings.append({
                                 "source": "visibility_audit",
                                 "category": "false_positive_rdep_visibility",
                                 "severity": "error",
                                 "file": rel_path,
                                 "line": lineno,
-                                "message": f"Target '{target_name}' grants visibility to '{val}', but no package in that vendor tree actually depends on '{target_name}'.",
+                                "message": (
+                                    f"Target '{target_name}' grants visibility to '{val}', "
+                                    "but no package in that vendor tree actually depends on "
+                                    f"'{target_name}'."
+                                ),
                                 "remediation": f"Remove '{val}' from visibility.",
                             })
                         continue
@@ -1857,7 +2050,8 @@ for rel_path in sorted(candidate_files):
                             })
                             continue
 
-                    if depth >= 3 and not prefix.startswith(("build/bazel/", "build/images/", "bundles/")):
+                    same_subtree = pkg_path == prefix or pkg_path.startswith(prefix + "/")
+                    if depth >= 3 and not same_subtree and not prefix.startswith(("build/bazel/", "build/images/", "bundles/")):
                         split_cov = [r.split("/") for r in covered_rdeps]
                         min_len = min(len(s) for s in split_cov)
                         lca_len = 0

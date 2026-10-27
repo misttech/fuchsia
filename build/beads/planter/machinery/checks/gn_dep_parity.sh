@@ -412,6 +412,7 @@ for pkg in sorted(candidate_dirs):
         for n, t in gn_targets(after).items()
     }
     package_now = set().union(*[set().union(*t["deps"].values()) for t in new_targets.values() if t["deps"]])
+    has_bazel_test_suite = any(t["tmpl"] == "bazel_test_suite" for t in new_targets.values())
 
     # Identify pure single-target forwarding `group("<outer>")` targets in `old_targets`
     # whose same-package target `:<inner>` was folded directly into `<outer>` in `new_targets`.
@@ -449,9 +450,14 @@ for pkg in sorted(candidate_dirs):
         if name in folded_from_group:
             old_t = old_targets[folded_from_group[name]]
         # Skip targets replaced by a Bazel host binary or test suite bridge in GN.
-        if name not in new_targets or new_targets[name]["tmpl"] in (
-            "bazel_host_tool",
-            "bazel_test_suite",
+        if (
+            name not in new_targets
+            or new_targets[name]["tmpl"] in ("bazel_host_tool", "bazel_test_suite")
+            or (
+                has_bazel_test_suite
+                and new_targets[name]["tmpl"] == "group"
+                and old_t["tmpl"] in ("fuchsia_unittest_package", "fuchsia_test_package")
+            )
         ):
             continue
         tmpl = old_t["tmpl"]
@@ -485,7 +491,10 @@ for pkg in sorted(candidate_dirs):
             public = "public_deps" in kinds
             file, line = locate(pkg, with_hops(subs) or [label], new_file, new_targets[name]["line"])
             forwarded = (info["public_deps"] | info["deps"]) if info else set()
-            if subs and exists_now and not (info and info["forwarding_group"] and forwarded <= new_all):
+            # Pure forwarding groups expanded to their forwarded target(s) are preserved.
+            if info and info["forwarding_group"] and forwarded and forwarded <= new_all:
+                continue
+            if subs and exists_now:
                 findings.append({
                     "source": "gn_dep_parity",
                     "category": "dep_label_substituted",

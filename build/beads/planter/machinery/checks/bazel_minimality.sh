@@ -119,7 +119,7 @@ changed.update(git_lines(["diff", "--name-only", change_base]))
 untracked = git_lines(["ls-files", "--others", "--exclude-standard"])
 changed.update(untracked)
 head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
-if change_base == "HEAD" and not changed and head_subj and head_subj[0].startswith("[bazel_migration]"):
+if change_base == "HEAD" and head_subj and head_subj[0].startswith("[bazel_migration]"):
     head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"])
     if not target_dirs or any(
         any(p == td or p.startswith(td + "/") for td in target_dirs) for p in head_files
@@ -443,8 +443,44 @@ for rel_path, full_path in bazel_files:
         tree = ast.parse(source, filename=rel_path)
     except Exception:
         continue
-    # Whitespace-free copy of the file at the change base: code found in it verbatim predates the change.
-    base_bazel_flat = re.sub(r"\s+", "", "".join(git_lines(["show", f"{change_base}:{rel_path}"])))
+    # Whitespace-free copy of the file and per-target call slices at the change base:
+    # pre-existing targets, attributes, and @bazel2gn annotations predate the change.
+    base_bazel_text = "\n".join(git_lines(["show", f"{change_base}:{rel_path}"]))
+    base_bazel_flat = re.sub(r"\s+", "", base_bazel_text)
+    base_target_flats = {}
+    if base_bazel_text:
+        try:
+            base_tree = ast.parse(base_bazel_text, filename=rel_path)
+            for b_node in ast.walk(base_tree):
+                if not isinstance(b_node, ast.Call):
+                    continue
+                b_rule = (
+                    b_node.func.id
+                    if isinstance(b_node.func, ast.Name)
+                    else (b_node.func.attr if isinstance(b_node.func, ast.Attribute) else "")
+                )
+                for b_kw in b_node.keywords:
+                    if (
+                        b_kw.arg == "name"
+                        and isinstance(b_kw.value, ast.Constant)
+                        and isinstance(b_kw.value.value, str)
+                    ):
+                        b_seg = ast.get_source_segment(base_bazel_text, b_node) or ""
+                        base_target_flats[(b_rule, b_kw.value.value)] = re.sub(
+                            r"\s+", "", b_seg
+                        )
+        except Exception:
+            pass
+
+    def is_preexisting_target_attr(r_name: str, t_name: str, attr_snippet: str = "") -> bool:
+        """True when target (r_name, t_name) and optional attr_snippet existed at change_base."""
+        b_flat = base_target_flats.get((r_name, t_name))
+        if b_flat is None:
+            return False
+        if not attr_snippet:
+            return True
+        return re.sub(r"\s+", "", attr_snippet) in b_flat
+
     pkg_dir = os.path.dirname(rel_path)
     base_gn_lines = git_lines(["show", f"{change_base}:{pkg_dir}/BUILD.gn"])
     base_gn_text = "\n".join(base_gn_lines)
@@ -493,7 +529,12 @@ for rel_path, full_path in bazel_files:
         kw_names = {kw.arg for kw in call_node.keywords if kw.arg}
         lib_stem = t_name[:-len("_test")] if t_name.endswith("_test") else ""
         has_matching_lib = bool(lib_stem and lib_stem in pkg_rustc_libs)
-        if "srcs" in kw_names and has_matching_lib and "crate" not in kw_names:
+        if (
+            "srcs" in kw_names
+            and has_matching_lib
+            and "crate" not in kw_names
+            and not is_preexisting_target_attr(r_name, t_name, "srcs=")
+        ):
             srcs_line = next(
                 (kw.lineno for kw in call_node.keywords if kw.arg == "srcs"),
                 getattr(call_node, "lineno", 1),
@@ -613,7 +654,7 @@ for rel_path, full_path in bazel_files:
                     )
                 )
             )
-            if not valid_gn_test_output_name:
+            if not valid_gn_test_output_name and not is_preexisting_target_attr(r_name, t_name, f'crate_name="{c_name}"'):
                 findings.append({
                     "source": "bazel_minimality",
                     "category": "redundant_default_attribute",
@@ -622,7 +663,7 @@ for rel_path, full_path in bazel_files:
                     "line": c_line,
                     "message": (
                         f"Target '{t_name}' (rustc_test) specifies `crate_name = \"{c_name}\"`, "
-                        "which is unnecessary on a crate unit test (unless setting a distinct "
+"which is unnecessary on a crate unit test (unless setting a distinct "
                         "`<crate>_test` binary `output_name` for `bazel2gn`)."
                     ),
                     "remediation": (
@@ -631,6 +672,70 @@ for rel_path, full_path in bazel_files:
                         "disambiguated GN `output_name`)."
                     ),
                 })
+
+    # Check that newly added rustc_test / rust_test / host_rustc_test targets do not use
+    # `# @bazel2gn:raw_attribute:output_name = "<out_name>"`: naming the test target
+    # itself `name = "<out_name>"` gives GN `bin/<out_name>` by default without an
+    # annotation while `wrap_host_rust_test` preserves its `tests.json` target name.
+    # Pre-existing test targets at change_base are exempt so modifying a dependency's
+    # BUILD.bazel (e.g. widening visibility) does not demand renaming existing targets
+    # (which would violate migration_sanity/dropped_preexisting_bazel_target).
+    def check_rustc_test_raw_output_name(call_node, r_name, t_name):
+        """Flag `# @bazel2gn:raw_attribute:output_name` on newly added Rust test targets."""
+        if r_name not in ("rustc_test", "rust_test", "host_rustc_test") or not t_name:
+            return
+        idx = getattr(call_node, "lineno", 1) - 2
+        raw_out_re = re.compile(
+            r'#\s*@bazel2gn:raw_attribute:\s*output_name\s*=\s*"([^"]+)"'
+        )
+        while idx >= 0:
+            s_line = src_lines[idx].strip()
+            if not s_line:
+                idx -= 1
+                continue
+            if s_line.startswith("#"):
+                m = raw_out_re.search(s_line)
+                if m:
+                    if is_preexisting_target_attr(r_name, t_name) and (
+                        re.sub(r"\s+", "", s_line) in base_bazel_flat
+                    ):
+                        idx -= 1
+                        continue
+                    out_name = m.group(1)
+                    annot_line = idx + 1
+                    msg_text = (
+                        f"Target '{t_name}' ({r_name}) uses "
+                        f"`# @bazel2gn:raw_attribute:output_name = \"{out_name}\"`, "
+                        f"which is unnecessary when the test target is named "
+                        f"`\"{out_name}\"` (giving GN `bin/{out_name}` by default to "
+                        "match any `.cml` manifest while `wrap_host_rust_test` keeps "
+                        "its `tests.json` name)."
+                    )
+                    rem_text = (
+                        f"Remove `# @bazel2gn:raw_attribute:output_name = \"{out_name}\"` "
+                        f"above `{t_name}` in '{rel_path}', rename the `{r_name}` target "
+                        f"to `name = \"{out_name}\"`, update any in-package test wrappers "
+                        f"(`binary_name = \"{out_name}\"` on `wrap_host_rust_test` while "
+                        f"keeping its `name`, `binary = \":{out_name}\"` on "
+                        f"`fx_packaged_binary`, or `unit_tests = [\":{out_name}\"]` on "
+                        f"`fx_unittest_package` / `fx_unittest_component`), re-run "
+                        f"`fx bazel2gn -d {pkg_dir}`, and update any hand-written "
+                        f"`{pkg_dir}/BUILD.gn` references (`\":{t_name}\"` and "
+                        f"`\":{t_name}($host_toolchain)\"`) to `\":{out_name}\"` and "
+                        f"`\":{out_name}($host_toolchain)\"`."
+                    )
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "rustc_test_raw_output_name_annotation",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": annot_line,
+                        "message": msg_text,
+                        "remediation": rem_text,
+                    })
+                idx -= 1
+                continue
+            break
 
     # Check that newly added top-level _-prefixed variables are shared across >= 2 references.
     def check_single_use_private_vars(tree_node):
@@ -1286,11 +1391,7 @@ for rel_path, full_path in bazel_files:
         if (
             rule_name in UNWRAPPED_FUCHSIA_RULES
             and not rel_path.startswith("build/bazel/")
-            and not (
-                os.path.dirname(rel_path).strip("/") not in target_dirs
-                and base_bazel_flat
-                and f'{rule_name}(name="{target_name}"' in base_bazel_flat
-            )
+            and not is_preexisting_target_attr(rule_name, target_name)
         ):
             wrapper_rule, wrapper_bzl, wrapper_path = UNWRAPPED_FUCHSIA_RULES[rule_name]
             if os.path.isfile(os.path.join(workdir, wrapper_path)):
@@ -1317,9 +1418,14 @@ for rel_path, full_path in bazel_files:
         # 1. Redundant crate_name matching name (or name with '-' -> '_').
         # On rustc_binary, bazel2gn maps crate_name to GN output_name, so crate_name is intentional when output_name is needed.
         check_rustc_test_crate_reuse(node, rule_name, target_name, kw_map)
+        check_rustc_test_raw_output_name(node, rule_name, target_name)
         if "crate_name" in kw_map and target_name and rule_name not in ("rustc_binary", "rustc_test"):
             c_name, lineno = kw_map["crate_name"]
-            if c_name == target_name or c_name == target_name.replace("-", "_"):
+            if (
+                c_name == target_name or c_name == target_name.replace("-", "_")
+            ) and not is_preexisting_target_attr(
+                rule_name, target_name, f'crate_name="{c_name}"'
+            ):
                 findings.append({
                     "source": "bazel_minimality",
                     "category": "redundant_default_attribute",
@@ -1338,7 +1444,11 @@ for rel_path, full_path in bazel_files:
         # 2. Redundant version = "0.1.0" (or placeholder negative version like "-1.1.0") on rustc_* targets
         if rule_name.startswith("rustc_") and "version" in kw_map:
             ver, lineno = kw_map["version"]
-            if ver in ("0.1.0", "0.0.1") or ver.startswith("-"):
+            if (
+                ver in ("0.1.0", "0.0.1") or ver.startswith("-")
+            ) and not is_preexisting_target_attr(
+                rule_name, target_name, f'version="{ver}"'
+            ):
                 findings.append({
                     "source": "bazel_minimality",
                     "category": "redundant_default_attribute",
@@ -1357,8 +1467,11 @@ for rel_path, full_path in bazel_files:
         # 3. Redundant default crate_root on rustc_library / rustc_binary
         if "crate_root" in kw_map:
             c_root, lineno = kw_map["crate_root"]
-            if (rule_name == "rustc_library" and c_root == "src/lib.rs") or (
-                rule_name == "rustc_binary" and c_root == "src/main.rs"
+            if (
+                (rule_name == "rustc_library" and c_root == "src/lib.rs")
+                or (rule_name == "rustc_binary" and c_root == "src/main.rs")
+            ) and not is_preexisting_target_attr(
+                rule_name, target_name, f'crate_root="{c_root}"'
             ):
                 findings.append({
                     "source": "bazel_minimality",
@@ -1380,6 +1493,10 @@ for rel_path, full_path in bazel_files:
             if out_attr not in kw_map:
                 continue
             out_val, lineno = kw_map[out_attr]
+            if is_preexisting_target_attr(
+                rule_name, target_name, f'{out_attr}="{out_val}"'
+            ):
+                continue
             if target_name and out_val == target_name:
                 findings.append({
                     "source": "bazel_minimality",
@@ -1449,6 +1566,9 @@ for rel_path, full_path in bazel_files:
                 and val.args
                 and isinstance(val.args[0], ast.Dict)
             ):
+                kw_seg = ast.get_source_segment(source, kw) or ""
+                if is_preexisting_target_attr(rule_name, target_name, kw_seg):
+                    continue
                 d = val.args[0]
                 non_default_keys = []
                 has_empty_default = False
@@ -1537,7 +1657,7 @@ for rel_path, full_path in bazel_files:
     pkg_dir = os.path.dirname(rel_path)
     base_gn_lines = git_lines(["show", f"{change_base}:{pkg_dir}/BUILD.gn"])
     base_gn_text = "\n".join(base_gn_lines)
-    if base_gn_text:
+    if base_gn_text and not (pkg_dir not in target_dirs and base_bazel_flat):
         for m in re.finditer(r'\bread_file\(\s*"([^"]+)"\s*,\s*"json"\s*\)', base_gn_text):
             manifest_rel_pkg = m.group(1)
             if manifest_rel_pkg.startswith("//"):
@@ -1621,6 +1741,8 @@ for rel_path, full_path in bazel_files:
             local_fgs[fg_name] = (stmt.lineno, fg_skipped)
 
     for fg_name, (fg_line, fg_skipped) in local_fgs.items():
+        if is_preexisting_target_attr("filegroup", fg_name):
+            continue
         if not fg_skipped:
             findings.append({
                 "source": "bazel_minimality",
@@ -1664,9 +1786,94 @@ for rel_path, full_path in bazel_files:
             return t
         return s.replace("/", "_")
 
+    # Check whether `# @bazel2gn:path_overwrite:<gl>` on `//<bz_pkg>:<bz_target>` is
+    # redundant because `<gl>` in `<bz_pkg>/BUILD.gn` is a pure forwarding group that
+    # expands directly to `:<bz_target>` (and `:<bz_target>` is visible to `caller_pkg`).
+    def is_redundant_gn_forwarding_group_overwrite(
+        caller_pkg: str, bz_pkg: str, bz_target: str, gn_label: str
+    ) -> str:
+        if gn_label == f"//{bz_pkg}":
+            gn_target = os.path.basename(bz_pkg)
+        elif gn_label.startswith(f"//{bz_pkg}:"):
+            gn_target = gn_label.split(":", 1)[1]
+        else:
+            return ""
+        if not gn_target or gn_target == bz_target:
+            return ""
+        dep_gn_path = os.path.join(workdir, bz_pkg, "BUILD.gn")
+        try:
+            with open(dep_gn_path, encoding="utf-8") as df:
+                dep_gn_raw = df.read()
+        except OSError:
+            return ""
+        dep_gn_clean = re.sub(r"#[^\n]*", "", dep_gn_raw)
+        grp_body = None
+        tgt_body = None
+        for tm in re.finditer(r'\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{', dep_gn_clean):
+            ttype, tname = tm.group(1), tm.group(2)
+            depth, idx = 1, tm.end()
+            while idx < len(dep_gn_clean) and depth > 0:
+                if dep_gn_clean[idx] == "{":
+                    depth += 1
+                elif dep_gn_clean[idx] == "}":
+                    depth -= 1
+                idx += 1
+            body_slice = dep_gn_clean[tm.end() : idx - 1]
+            if tname == gn_target and ttype == "group" and grp_body is None:
+                grp_body = body_slice
+            elif tname == bz_target and ttype not in ("template", "declare_args", "foreach"):
+                tgt_body = body_slice
+        if grp_body is None or tgt_body is None:
+            return ""
+        grp_attrs = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*[+-]?=", grp_body))
+        if not grp_attrs or not (grp_attrs <= {"public_deps", "deps", "visibility", "testonly"}):
+            return ""
+        forwarded = set()
+        for dm in re.finditer(r"(?<![\w.])(?:public_deps|deps)\s*\+?=\s*\[([^\]]*)\]", grp_body):
+            for raw_d in re.findall(r'"([^"]+)"', dm.group(1)):
+                d = re.sub(r"\(.*\)$", "", raw_d.strip())
+                if d.startswith(":"):
+                    forwarded.add(f"//{bz_pkg}:{d[1:]}")
+                elif d.startswith("//"):
+                    p, _, t = d[2:].partition(":")
+                    p = p.strip("/")
+                    forwarded.add(f"//{p}:{t or os.path.basename(p)}")
+        if forwarded != {f"//{bz_pkg}:{bz_target}"}:
+            return ""
+        vis_matches = list(re.finditer(r"(?<![\w.])visibility\s*\+?=\s*\[([^\]]*)\]", tgt_body))
+        if vis_matches:
+            vis_entries = [
+                v.strip()
+                for vm in vis_matches
+                for v in re.findall(r'"([^"]+)"', vm.group(1))
+            ]
+            vis_ok = False
+            for ve in vis_entries:
+                if ve in ("*", "//*"):
+                    vis_ok = True
+                    break
+                if ve in (":*", f"//{bz_pkg}:*") and caller_pkg == bz_pkg:
+                    vis_ok = True
+                    break
+                if ve.startswith("//") and ve.endswith(":*"):
+                    vp = ve[2:-2].strip("/")
+                    if caller_pkg == vp:
+                        vis_ok = True
+                        break
+                if ve.startswith("//") and ve.endswith("/*"):
+                    vp = ve[2:-2].strip("/")
+                    if not vp or caller_pkg == vp or caller_pkg.startswith(vp + "/"):
+                        vis_ok = True
+                        break
+            if not vis_ok:
+                return ""
+        return gn_target
+
     for lineno, line_txt in enumerate(src_lines, 1):
         po_m = re.match(r'^\s*"([^"]+)"\s*,\s*#\s*@bazel2gn:path_overwrite:(.+)$', line_txt)
         if not po_m:
+            continue
+        if base_bazel_flat and re.sub(r"\s+", "", line_txt) in base_bazel_flat:
             continue
         bz_label = po_m.group(1).strip()
         gn_spec = po_m.group(2).strip()
@@ -1708,7 +1915,7 @@ for rel_path, full_path in bazel_files:
             bz_target = bz_target or os.path.basename(bz_pkg)
             # Legitimate real-target overwrites:
             # 1) Explicit target in the same package when GN uses the package-default label //<pkg>
-            #    (e.g. "//src/lib/diagnostics/inspect/rust:fuchsia-inspect" for "//src/lib/diagnostics/inspect/rust")
+            #    and //<pkg> is not a pure forwarding group to :<bz_target>
             # 2) Same-package C/C++ library for a GN-only *_static wrapper (not a missing FIDL *_rust_next binding)
             # 3) Package-local forwarding group("...") in BUILD.gn that forwards to //<bz_pkg>
             is_missing_fidl_binding = bool(re.search(r":.+_(?:rust_next|rust|cpp|hlcpp|banjo)\b", gl))
@@ -1725,6 +1932,34 @@ for rel_path, full_path in bazel_files:
                     re.S,
                 ):
                     related = True
+            if related and (gl == f"//{bz_pkg}" or gl.startswith(f"//{bz_pkg}:")):
+                if not (
+                    pkg_dir not in target_dirs
+                    and base_bazel_flat
+                    and re.sub(r"\s+", "", line_txt) in base_bazel_flat
+                ):
+                    fwd_grp = is_redundant_gn_forwarding_group_overwrite(
+                        pkg_dir, bz_pkg, bz_target, gl
+                    )
+                    if fwd_grp:
+                        findings.append({
+                            "source": "bazel_minimality",
+                            "category": "redundant_forwarding_group_path_overwrite",
+                            "severity": "error",
+                            "file": rel_path,
+                            "line": lineno,
+                            "message": (
+                                f"Line {lineno} of '{rel_path}' annotates `\"{bz_label}\"` with "
+                                f"`# @bazel2gn:path_overwrite:{gl}`, but in '{bz_pkg}/BUILD.gn' "
+                                f"`group(\"{fwd_grp}\")` is a pure forwarding group that expands to "
+                                f"`//{bz_pkg}:{bz_target}`, so GN can depend on `\"{bz_label}\"` "
+                                "directly without this annotation."
+                            ),
+                            "remediation": (
+                                f"Remove `# @bazel2gn:path_overwrite:{gl}` from line {lineno} of "
+                                f"'{rel_path}' and re-run `fx bazel2gn -d {pkg_dir}`."
+                            ),
+                        })
             if not related:
                 sug_name = derive_fg_name(gl)
                 findings.append({

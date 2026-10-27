@@ -819,7 +819,7 @@ def downgrade_check_cfg_diff_findings(findings):
             ):
                 f["severity"] = "INFO"
         elif (
-            f["category"] == "dep_alignment"
+            f["category"] in ("dep_alignment", "unit_test_parity")
             and f["file"].endswith("BUILD.bazel")
             and os.path.isfile(os.path.join(workdir, f["file"]))
         ):
@@ -869,7 +869,8 @@ def downgrade_check_cfg_diff_findings(findings):
             and "unmatched in Bazel: [" in f["message"]
         ):
             # Downgrade dep_alignment warnings when unmatched GN and Bazel labels
-            # differ only by redundant slashes (e.g. `////pkg/path` vs `//pkg/path`).
+            # differ only by redundant slashes (e.g. `////pkg/path` vs `//pkg/path`)
+            # or expand a GN forwarding group in the same dependency package.
             import re as _re
             gn_m = _re.search(r"unmatched in GN: \[([^\]]+)\]", f["message"])
             bz_m = _re.search(r"unmatched in Bazel: \[([^\]]+)\]", f["message"])
@@ -885,9 +886,41 @@ def downgrade_check_cfg_diff_findings(findings):
                         if t == p.rsplit("/", 1)[-1]:
                             s = p
                     return s.replace("-", "_")
-                gn_set = {_slash_norm_lbl(x) for x in gn_m.group(1).split(",") if x.strip()}
-                bz_set = {_slash_norm_lbl(x) for x in bz_m.group(1).split(",") if x.strip()}
-                if gn_set and gn_set == bz_set:
+
+                def _is_fwd_grp_pair(g_lbl, b_lbl):
+                    if g_lbl == b_lbl:
+                        return True
+                    if not (g_lbl.startswith("//") and b_lbl.startswith("//")):
+                        return False
+                    gp, _, gt = g_lbl[2:].partition(":")
+                    bp, _, bt = b_lbl[2:].partition(":")
+                    if not gp or gp != bp:
+                        return False
+                    gt_raw = gt or os.path.basename(gp)
+                    bt_norm = (bt or os.path.basename(bp)).replace("-", "_")
+                    dep_gn = os.path.join(workdir, gp, "BUILD.gn")
+                    if not os.path.isfile(dep_gn):
+                        return False
+                    try:
+                        d_txt = open(dep_gn, encoding="utf-8", errors="ignore").read()
+                    except OSError:
+                        return False
+                    for gm in _re.finditer(r'\bgroup\(\s*"([^"$]+)"\s*\)\s*\{([^}]*)\}', d_txt):
+                        if gm.group(1).replace("-", "_") == gt_raw.replace("-", "_"):
+                            for dm in _re.findall(r'"([^"]+)"', gm.group(2)):
+                                dm_clean = dm.lstrip(":").split(":")[-1].replace("-", "_")
+                                if dm_clean == bt_norm:
+                                    return True
+                    return False
+
+                gn_list = [_slash_norm_lbl(x) for x in gn_m.group(1).split(",") if x.strip()]
+                bz_list = [_slash_norm_lbl(x) for x in bz_m.group(1).split(",") if x.strip()]
+                if (
+                    gn_list
+                    and bz_list
+                    and all(any(_is_fwd_grp_pair(g, b) for b in bz_list) for g in gn_list)
+                    and all(any(_is_fwd_grp_pair(g, b) for g in gn_list) for b in bz_list)
+                ):
                     f["severity"] = "INFO"
         elif (
             f["category"] == "dep_alignment"
@@ -920,10 +953,20 @@ def downgrade_check_cfg_diff_findings(findings):
                 gn_txt = open(gn_path, encoding="utf-8").read()
             except OSError:
                 gn_txt = ""
-            if "## BAZEL2GN SENTINEL" in gn_txt and (
-                "\n    deps =\n" in gn_txt or "\n  deps =\n" in gn_txt
-            ):
-                f["severity"] = "INFO"
+            if "## BAZEL2GN SENTINEL" in gn_txt:
+                post_gn = gn_txt.split("## BAZEL2GN SENTINEL", 1)[1]
+                bz_m = f["message"].split("unmatched in Bazel: [", 1)
+                unmatched_bz = (
+                    [x.strip() for x in bz_m[1].split("]", 1)[0].split(",") if x.strip()]
+                    if len(bz_m) > 1
+                    else []
+                )
+                if (
+                    "\n    deps =\n" in gn_txt
+                    or "\n  deps =\n" in gn_txt
+                    or (unmatched_bz and all(f'"{u}"' in post_gn for u in unmatched_bz))
+                ):
+                    f["severity"] = "INFO"
         # Downgrade copyright_header and package_hygiene/default_visibility on
         # auto-generated crate_universe third_party/rust_crates BUILD.bazel files
         # and shared bundles/assembly files even when `--only review_diff` runs.
@@ -1046,12 +1089,20 @@ def downgrade_check_cfg_diff_findings(findings):
             )
             if (
                 "## BAZEL2GN SENTINEL" in gn_txt
-                and f'name = "{tname}"' in bz_txt
-                and f'("{tname}")' in gn_txt.split("## BAZEL2GN SENTINEL", 1)[1]
+                and (
+                    (
+                        f'name = "{tname}"' in bz_txt
+                        and f'("{tname}")' in gn_txt.split("## BAZEL2GN SENTINEL", 1)[1]
+                    )
+                    or (
+                        "target_name" in tname
+                        and "template(" not in gn_txt.split("## BAZEL2GN SENTINEL", 1)[0]
+                    )
+                )
             ):
                 f["severity"] = "INFO"
         elif (
-            f["category"] in ("dep_alignment", "dropped_comment", "attribute_alignment")
+            f["category"] in ("dep_alignment", "dropped_comment", "attribute_alignment", "template_parity")
             and f["file"].endswith("BUILD.bazel")
             and f["message"].startswith('Target "')
             and os.path.isfile(os.path.join(workdir, f["file"]))

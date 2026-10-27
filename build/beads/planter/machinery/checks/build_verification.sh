@@ -1154,12 +1154,56 @@ if skip_build:
     sys.exit(0)
 
 FROM_TARGET = re.compile(r"\(from target (?:@@?[\w.~+-]*)?(//[^\s)]+)\)")
-NINJA_STEP_TARGET = re.compile(r"^\[[0-9]+/[0-9]+\]\s+\S+\s+(//([A-Za-z0-9_./+-]+):([^\s(]+))")
+NINJA_STEP_TARGET = re.compile(
+    r"^\[[0-9]+/[0-9]+\](?:\([0-9]+\))?\s+\S+\s+(//([A-Za-z0-9_./+-]+):([^\s(]+))"
+)
 # Extract the transitive dependency manifest path from clippy or rustc Ninja command lines.
 TRANSDEPS_ARG = re.compile(r"(?:--transdeps\s+|--rust-compilation-deps-path=|@shell:)(\S+)")
+# Extract the library_infos manifest path from Python mypy or build-time-test Ninja command lines.
+PYTHON_LIB_INFOS_ARG = re.compile(r"--library[_-]infos\s+(\S+)")
+# Extract the GN package and target name from a failed Ninja `.mypy_checked` or `.check` output.
+NINJA_FAILED_PYTHON_STAMP = re.compile(
+    r"^FAILED:\s*(?:\[code=\d+\]\s+)?(?:host_[A-Za-z0-9_]+/)?obj/"
+    r"([A-Za-z0-9_./+-]+)/([^/\s]+)\.(?:mypy_checked|check)\b"
+)
 NINJA_MISSING_RULE = re.compile(
     r"^ninja: error: '([^']+)', needed by '([^']+)', missing and no known rule to make it$"
 )
+
+
+# Check whether a single failed Ninja step is in an unrelated GN target with no dependency path
+# to any changed package (via Rust transdeps or Python mypy/build-time-test library_infos).
+def unrelated_ninja_step_target(lines, idx, build_dir, rdep_pkgs):
+    pm = NINJA_FAILED_PYTHON_STAMP.match(lines[idx].strip())
+    sm = NINJA_STEP_TARGET.match(lines[idx - 1].strip()) if idx > 0 else None
+    if pm:
+        pkg = pm.group(1).strip("/")
+        full_lbl = f"//{pkg}:{pm.group(2)}"
+    elif sm:
+        full_lbl, pkg = sm.group(1), sm.group(2).strip("/")
+    else:
+        return None
+    if any(pkg == d or pkg.startswith(d + "/") or d.startswith(pkg + "/") for d in dirs):
+        return None
+    if pkg in rdep_pkgs or git_lines(["diff", "--name-only", change_base, "--", pkg]):
+        return None
+    cmd_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+    tm = TRANSDEPS_ARG.search(cmd_line)
+    if tm and build_dir:
+        t_content = read(os.path.join(build_dir, tm.group(1)))
+        if t_content is None or any(f"/{d}/" in t_content for d in dirs):
+            return None
+        return full_lbl
+    lm = PYTHON_LIB_INFOS_ARG.search(cmd_line)
+    if lm or pm:
+        if any(f"/{d}/" in cmd_line for d in dirs):
+            return None
+        if lm and build_dir:
+            l_content = read(os.path.join(build_dir, lm.group(1)))
+            if l_content is not None and any(f"/{d}/" in l_content for d in dirs):
+                return None
+        return full_lbl
+    return None
 
 
 # Check whether Ninja aborted on missing source files in an out-of-sync submodule or
@@ -1220,23 +1264,8 @@ def unrelated_gn_ninja_failure(output):
     for i, l in enumerate(lines):
         if not l.startswith("FAILED:"):
             continue
-        if i == 0:
-            return None
-        sm = NINJA_STEP_TARGET.match(lines[i - 1].strip())
-        if not sm:
-            return None
-        full_lbl, pkg = sm.group(1), sm.group(2).strip("/")
-        if any(pkg == d or pkg.startswith(d + "/") or d.startswith(pkg + "/") for d in dirs):
-            return None
-        if pkg in rdep_pkgs or git_lines(["diff", "--name-only", change_base, "--", pkg]):
-            return None
-        cmd_line = lines[i + 1] if i + 1 < len(lines) else ""
-        tm = TRANSDEPS_ARG.search(cmd_line)
-        if tm and build_dir:
-            t_content = read(os.path.join(build_dir, tm.group(1)))
-            if t_content is None or any(f"/{d}/" in t_content for d in dirs):
-                return None
-        else:
+        full_lbl = unrelated_ninja_step_target(lines, i, build_dir, rdep_pkgs)
+        if not full_lbl:
             return None
         if full_lbl not in failed_targets:
             failed_targets.append(full_lbl)

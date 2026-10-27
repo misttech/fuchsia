@@ -31,8 +31,11 @@ working).
   bazel2gn, or the dual-testing cost exception marked
   `# Needs reviewer attention (bazel2gn skip): ...` for a human to confirm). Tests whose packaging bazel2gn can't translate (`fx_unittest_package` with `resources`,
   or explicit `fx_package` chains) get a hand-written GN package above the sentinel (`<pkg>-gn`)
-  wrapping the generated test binary. `group("tests")` lists every GN copy (host ones as
-  `:<name>($host_toolchain)`) and a hand-written `bazel_test_suite("bazel_tests")` above the
-  sentinel that exports the Bazel tests. This applies to Rust unit tests as well as C++ and Go
-  tests (for Go, move `*_test.go` files from GN `go_library.sources` into `host_go_test`/`go_test`
-  `srcs` with `embed = [":<lib>"]`).
+  wrapping the generated test binary. Export Bazel tests via an existing ancestor `test_suite` in
+  BUILD.bazel when one exists (and grant `visibility` on the test target to both the ancestor
+  `test_suite` package and any parent BUILD.gn package that depends directly on the generated test
+  target, omitting local `bazel_test_suite` and unreachable `group("tests")` targets above the sentinel);
+  otherwise wire `bazel_test_suite("bazel_tests")` and the generated GN test copies into a reachable
+  `group("tests")` above the sentinel (host ones as `:<name>($host_toolchain)`). This applies to Rust
+  unit tests as well as C++ and Go tests (for Go, move `*_test.go` files from GN `go_library.sources`
+  into `host_go_test`/`go_test` `srcs` with `embed = [":<lib>"]`).
