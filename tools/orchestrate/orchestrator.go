@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	ffx "go.fuchsia.dev/fuchsia/tools/orchestrate/ffx"
@@ -398,6 +399,12 @@ func (r *TestOrchestrator) test(ctx context.Context, testCmd []string, in *RunIn
 
 	// Create cmd AFTER setting the PATH so that it will correctly resolve testCmd[0]
 	cmd := exec.CommandContext(ctx, testCmd[0], testCmd[1:]...)
+	cmd.Cancel = func() error {
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			return err
+		}
+		return os.ErrProcessDone
+	}
 	cmd.Env = env
 
 	// Setup pipes to forward subcmd stdout and stderr to logFile and os.Stdout.

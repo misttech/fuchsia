@@ -8,6 +8,8 @@ import (
 	"context"
 	"flag"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/google/subcommands"
 )
@@ -18,5 +20,8 @@ func main() {
 
 	flag.Parse()
 
-	os.Exit(int(subcommands.Execute(context.Background())))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	exitStatus := subcommands.Execute(ctx)
+	stop()
+	os.Exit(int(exitStatus))
 }
