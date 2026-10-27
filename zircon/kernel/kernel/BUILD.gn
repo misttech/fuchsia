@@ -504,6 +504,7 @@ kernel_rust_mod("kernel-rs") {
     "//src/lib/lazy_init",
     "//src/lib/lockdep/rust:lockdep",
     "//src/lib/zr",
+    "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/arch:arch-rs",

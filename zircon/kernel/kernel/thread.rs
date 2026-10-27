@@ -96,16 +96,6 @@ unsafe extern "C" {
     fn cpp_thread_lock_guard_destroy(guard: *mut lock_guard_bindings::ThreadLockGuard);
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_current_active_aspace() -> *mut VmAspace;
-    fn cpp_thread_preempt_set_timeslice_extension(duration: DurationMono) -> bool;
-    fn cpp_thread_preempt_clear_timeslice_extension();
-    fn cpp_thread_preempt_disable();
-    fn cpp_thread_preempt_reenable();
-    fn cpp_thread_eager_resched_disable();
-    fn cpp_thread_eager_resched_reenable();
-    fn cpp_thread_preempt_disable_count() -> u32;
-    fn cpp_thread_eager_resched_disable_count() -> u32;
-    fn cpp_thread_preempt_set_pending();
-    fn cpp_thread_preempt_is_enabled() -> bool;
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,
@@ -347,7 +337,7 @@ static_assert!(align_of::<OwnedWaitQueueList>() == align_of::<*mut c_void>());
 /// Per-thread preemption state.
 #[repr(C)]
 pub struct PreemptionState {
-    /// state_ contains three fields:
+    /// `state` contains three fields:
     ///
     ///  * a 15-bit preempt disable counter (bits 0-14)
     ///  * a 15-bit eager resched disable counter (bits 15-29)
@@ -356,50 +346,63 @@ pub struct PreemptionState {
     /// This is a single field so that both counters and the flags can be compared
     /// against zero with a single memory access and comparison.
     ///
-    /// state_'s counts are modified by interrupt handlers, but the counts are
+    /// `state`'s counts are modified by interrupt handlers, but the counts are
     /// always restored to their original value before the interrupt handler
     /// returns, so modifications are not visible to the interrupted thread.
     state: RelaxedAtomicU32,
 
-    /// preempts_pending_ tracks pending reschedules to both local and remote CPUs
+    /// `preempts_pending` tracks pending reschedules to both local and remote CPUs
     /// due to activity in the context of the current thread.
     ///
     /// This value can be changed asynchronously by an interrupt handler.
     ///
-    /// preempts_pending_ should only be non-zero:
-    ///  * if PreemptDisableCount() or EagerReschedDisable() are non-zero, or
-    ///  * after PreemptDisableCount() or EagerReschedDisable() have been
-    ///    decremented, while preempts_pending_ is being checked.
+    /// `preempts_pending` should only be non-zero:
+    ///  * if `preempt_disable_count()` or `eager_resched_disable_count()` are non-zero, or
+    ///  * after `preempt_disable_count()` or `eager_resched_disable_count()` have been
+    ///    decremented, while `preempts_pending` is being checked.
     preempts_pending: RelaxedAtomicU32,
 
     /// The maximum duration of the thread's timeslice extension.
     ///
-    /// This field is only valid when |state_|'s
-    /// |kTimeSliceExtensionFlags::Present| flag is set.
+    /// This field is only valid when `state`'s
+    /// `TIMESLICE_EXTENSION_PRESENT` flag is set.
     ///
     /// This field may only be accessed by its owning thread or in an interrupt
-    /// context of the owning thread.  When reading this field, be sure to issue an
-    /// atomic_signal_fence (compiler barrier) with acquire semantics after
-    /// observing the Present flag.  Likewise, when writing this field, use an
-    /// atomic_signal_fence with release semantics prior to setting the Present
+    /// context of the owning thread.  When reading this field, be sure to issue a
+    /// `compiler_fence` (Rust's `atomic_signal_fence`; a compiler barrier) with acquire semantics
+    /// after observing the Present flag.  Likewise, when writing this field, use a
+    /// `compiler_fence` with release semantics prior to setting the Present
     /// flag.  By using these fences, we ensure the flag and field value remain in
     /// sync.
     timeslice_extension: RelaxedAtomicI64,
 
     /// The deadline at which the thread timeslice extension expires.
     ///
-    /// This field is only valid when |kTimeSliceExtensionFlags::Active| flag is
+    /// This field is only valid when `TIMESLICE_EXTENSION_ACTIVE` flag is
     /// set.
     ///
     /// This field may only be accessed by its owning thread or in an interrupt
-    /// context of the owning thread.  When reading this field, be sure to issue an
-    /// atomic_signal_fence (compiler barrier) with acquire semantics after
-    /// observing the Active flag.  Likewise, when writing this field, use an
-    /// atomic_signal_fence with release semantics prior to setting the Active
+    /// context of the owning thread.  When reading this field, be sure to issue a
+    /// `compiler_fence` (Rust's `atomic_signal_fence`; a compiler barrier) with acquire semantics
+    /// after observing the Active flag.  Likewise, when writing this field, use a
+    /// `compiler_fence` with release semantics prior to setting the Active
     /// flag.  By using these fences, we ensure the flag and field value remain in
     /// sync.
     timeslice_extension_deadline: RelaxedAtomicI64,
 }
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct Flush: u32 {
+        const LOCAL = 0x1;
+        const REMOTE = 0x2;
+        const ALL = Self::LOCAL.bits() | Self::REMOTE.bits();
+    }
+}
+
+// counts the number of times a thread's timeslice extension was activated (see
+// `PreemptionState::set_timeslice_extension`).
+crate::counters::define_kcounter!(THREAD_TIMESLICE_EXTENDED, "thread.timeslice_extended", Sum);
 
 impl PreemptionState {
     /// Counters contained in state_ are limited to 15 bits.
@@ -420,6 +423,638 @@ impl PreemptionState {
     pub const TIMESLICE_EXTENSION_PRESENT: u32 = 0b01 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
     /// Thread has an Active (in use) timeslice extension.
     pub const TIMESLICE_EXTENSION_ACTIVE: u32 = 0b10 << Self::TIMESLICE_EXTENSION_FLAGS_SHIFT;
+
+    /// Returns true if preemption is enabled for this thread: both counts are zero and there is
+    /// no runtime extension.
+    #[inline]
+    pub fn preempt_is_enabled(&self) -> bool {
+        let state = self.state.load();
+        state == 0
+    }
+
+    /// Returns the thread's preempt disable count.
+    #[inline]
+    pub fn preempt_disable_count(&self) -> u32 {
+        Self::preempt_disable_count_of(self.state.load())
+    }
+
+    /// Returns the thread's eager resched disable count.
+    #[inline]
+    pub fn eager_resched_disable_count(&self) -> u32 {
+        Self::eager_resched_disable_count_of(self.state.load())
+    }
+
+    /// Returns the thread's pending preemptions mask.
+    #[inline]
+    pub fn preempts_pending(&self) -> cpu_mask_t {
+        self.preempts_pending.load()
+    }
+
+    /// Clears the thread's pending preemptions mask.
+    #[inline]
+    pub fn preempts_pending_clear(&self) {
+        self.preempts_pending.store(0);
+    }
+
+    /// Adds `mask` to the thread's pending preemptions mask.
+    #[inline]
+    pub fn preempts_pending_add(&self, mask: cpu_mask_t) {
+        self.preempts_pending.fetch_or(mask);
+    }
+
+    /// PreemptDisable() increments the preempt disable counter for the current
+    /// thread. While preempt disable is non-zero, preemption of the thread is
+    /// disabled, including preemption from interrupt handlers. During this time,
+    /// any call to Reschedule() will only record that a reschedule is pending, and
+    /// won't do a context switch.
+    ///
+    /// Note that this does not disallow blocking operations (e.g.
+    /// mutex.Acquire()). Disabling preemption does not prevent switching away from
+    /// the current thread if it blocks.
+    ///
+    /// A call to `preempt_disable()` must be matched by a later call to
+    /// `preempt_reenable()` to decrement the preempt disable counter.
+    #[inline]
+    pub fn preempt_disable(&self) {
+        let old_state = self.state.fetch_add(1);
+        if Self::preempt_disable_count_of(old_state) >= Self::MAX_COUNT_VALUE {
+            Self::count_overflow("preempt disable", old_state);
+        }
+    }
+
+    /// Panics for a saturated disable counter. Kept out of line and cold so that the message
+    /// formatting does not bloat the hot `*_disable` entry points (which are inlined, including
+    /// across the C++ FFI boundary).
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn count_overflow(what: &str, old_state: u32) -> ! {
+        panic!("{what} count overflow: old_state: {old_state:#x}");
+    }
+
+    /// Panics for a disable counter that was decremented from zero. Kept out of line and cold
+    /// so that the message formatting does not bloat the `*_reenable_slow` paths (formatting
+    /// `old_state` in place would force a SafeStack frame and defeat the tail call into
+    /// [`Self::flush_pending_continued`]).
+    #[cold]
+    #[inline(never)]
+    #[track_caller]
+    fn count_underflow(what: &str, old_state: u32) -> ! {
+        panic!("{what} count underflow: unmasked preemption state: {old_state:#x}");
+    }
+
+    /// PreemptReenable() decrements the preempt disable counter and flushes any
+    /// pending local preemption operation.  Callers must ensure that they are
+    /// calling from a context where blocking is allowed, as the call may result in
+    /// the immediate preemption of the calling thread.
+    ///
+    /// Blocking must be allowed (`debug_assert!`ed on the flush path, as in C++).
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be the *current* thread's preemption state: the flush may reschedule the
+    ///   current thread, and `&self` survives that only because the current thread outlives its
+    ///   own run.
+    /// - The call must pair with a prior, still unmatched [`Self::preempt_disable`] on the
+    ///   current thread, and it must not drop preemption back to enabled while any
+    ///   [`PreemptDisabledToken`] is live.
+    #[inline]
+    pub unsafe fn preempt_reenable(&self) {
+        let old_state = self.state.fetch_sub(1);
+        // Fast path: count drops to zero, no eager resched count, no extension, nothing pending.
+        if old_state == 1 && self.preempts_pending.load() == 0 {
+            return;
+        }
+        // Are either of the counters non-zero?  Only take the early return when the preempt
+        // disable count was at least one: the underflow case (count already zero) must fall
+        // through to the slow path, which asserts on it like the C++ `ASSERT_MSG` did.
+        if Self::preempt_disable_count_of(old_state) != 0
+            && (old_state & (Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK)) > 1
+        {
+            // We've got a non-zero count in one of the counters.
+            return;
+        }
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.preempt_reenable_slow(old_state) }
+    }
+
+    /// The uncommon remainder of [`Self::preempt_reenable`], after the inline fast-path checks;
+    /// `old_state` is the `state` value before the decrement. Kept out of line so that the hot
+    /// entry point stays small enough to inline (including across the C++ FFI boundary).
+    ///
+    /// # Safety
+    ///
+    /// As [`Self::preempt_reenable`], and the caller has already decremented the preempt disable
+    /// count once, observing `old_state`, and returned early unless the eager resched disable
+    /// count of `old_state` is zero and its preempt disable count is at most one.
+    #[cold]
+    #[inline(never)]
+    unsafe fn preempt_reenable_slow(&self, old_state: u32) {
+        if Self::preempt_disable_count_of(old_state) == 0 {
+            Self::count_underflow("preempt disable", old_state);
+        }
+
+        // First, check for the expected situation of dropping the preempt count to zero
+        // with a zero eager resched disable count and no timeslice extension.  The inline
+        // wrapper only gets here in that case when a preemption is pending, so flush directly.
+        if old_state == 1 {
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.flush_pending_continued(Flush::LOCAL) };
+            return;
+        }
+
+        // Things must be more complicated.  The inline wrapper already returned when either
+        // counter was still non-zero, so the counters are both zero.  At this point, we must
+        // have a timeslice extension installed.  This extension may be inactive, active and
+        // not-yet-expired, or active and expired.
+
+        // Is there an active extension?
+        if Self::has_active_timeslice_extension(old_state) {
+            // Has it expired?
+            if self.clear_active_timeslice_extension_if_expired() {
+                // It has.  We can flush.
+                debug_assert!(self.preempt_is_enabled());
+                // SAFETY: Forwarded from the caller.
+                unsafe { self.flush_pending(Flush::LOCAL) };
+            }
+        }
+
+        // We have an extension that's either inactive or active+unexpired.
+    }
+
+    /// PreemptReenableDelayFlush() decrements the preempt disable counter, but
+    /// deliberately does _not_ flush any pending local preemption operation.
+    /// Instead, if local preemption has become enabled again after the count
+    /// drops, and the local pending bit is set, the method will clear the bit and
+    /// return true.  Otherwise, it will return false.
+    ///
+    /// This method may only be called when interrupts are disabled and blocking is
+    /// not allowed.
+    ///
+    /// Callers of this method are "taking" ownership of the responsibility to
+    /// ensure that preemption on the local CPU takes place in the near future
+    /// after the call if the method returns true.
+    ///
+    /// Use of this method is strongly discouraged outside of top-level interrupt
+    /// glue and early threading setup.
+    ///
+    /// TODO(johngro): Consider replacing the bool return type with a move-only
+    /// RAII type which wraps the bool, and ensures that preemption event _must_
+    /// happen, either by having the user call a method on the object to manually
+    /// force the preemption event, or when the object destructs.
+    ///
+    /// # Safety
+    ///
+    /// The call must pair with a prior, still unmatched [`Self::preempt_disable`] on the current
+    /// thread, and it must not drop preemption back to enabled while any [`PreemptDisabledToken`]
+    /// is live.
+    #[must_use]
+    #[inline]
+    pub unsafe fn preempt_reenable_delay_flush(&self) -> bool {
+        debug_assert!(crate::arch_rs::ints_disabled());
+        debug_assert!(crate::arch_rs::blocking_disallowed());
+
+        let old_state = self.state.fetch_sub(1);
+
+        // First, check for the expected situation of dropping the preempt count to zero
+        // with a zero eager resched disable count and no timeslice extension.
+        if old_state == 1 {
+            let local_mask = crate::kernel::types::cpu_num_to_mask(crate::arch_rs::curr_cpu_num());
+            let prev_mask = self.preempts_pending.fetch_and(!local_mask);
+            return (local_mask & prev_mask) != 0;
+        }
+        // Are either of the counters non-zero?  Only take the early return when the preempt
+        // disable count was at least one: the underflow case (count already zero) must fall
+        // through to the slow path, which asserts on it like the C++ `ASSERT` did.
+        if Self::preempt_disable_count_of(old_state) != 0
+            && (old_state & (Self::PREEMPT_DISABLE_MASK | Self::EAGER_RESCHED_DISABLE_MASK)) > 1
+        {
+            // We've got a non-zero count in one of the counters.
+            return false;
+        }
+        self.preempt_reenable_delay_flush_slow(old_state)
+    }
+
+    /// The uncommon remainder of [`Self::preempt_reenable_delay_flush`], after the inline
+    /// fast-path checks; `old_state` is the `state` value before the decrement. Kept out of line
+    /// so that the hot entry point stays small enough to inline (including across the C++ FFI
+    /// boundary). Only reached when the eager resched disable count of `old_state` is zero and
+    /// its preempt disable count is at most one.
+    #[must_use]
+    #[cold]
+    #[inline(never)]
+    fn preempt_reenable_delay_flush_slow(&self, old_state: u32) -> bool {
+        if Self::preempt_disable_count_of(old_state) == 0 {
+            Self::count_underflow("preempt disable", old_state);
+        }
+
+        // The inline wrapper already returned when either counter was still non-zero, so the
+        // counters are both zero.  At this point, we must have a timeslice
+        // extension installed.  This extension may be inactive, active and
+        // not-yet-expired, or active and expired.
+
+        // Is there an active extension?
+        if Self::has_active_timeslice_extension(old_state) {
+            // Has it expired?
+            if self.clear_active_timeslice_extension_if_expired() {
+                // It has.
+                debug_assert!(self.preempt_is_enabled());
+                let local_mask =
+                    crate::kernel::types::cpu_num_to_mask(crate::arch_rs::curr_cpu_num());
+                let prev_mask = self.preempts_pending.fetch_and(!local_mask);
+                return (local_mask & prev_mask) != 0;
+            }
+        }
+
+        // We have an extension that's either inactive or active+unexpired.
+        false
+    }
+
+    /// EagerReschedDisable() increments the eager resched disable counter for the
+    /// current thread. When early resched disable is non-zero, issuing local and
+    /// remote preemptions is disabled, including from interrupt handlers. During
+    /// this time, any call to Reschedule() or other scheduler entry points that
+    /// imply a reschedule will only record the pending reschedule for the affected
+    /// CPU, but will not perform reschedule IPIs or a local context switch.
+    ///
+    /// As with PreemptDisable, blocking operations are still allowed while
+    /// eager resched disable is non-zero.
+    ///
+    /// A call to `eager_resched_disable()` must be matched by a later call to
+    /// `eager_resched_reenable()` to decrement the eager resched disable counter.
+    #[inline]
+    pub fn eager_resched_disable(&self) {
+        let old_state = self.state.fetch_add(1 << Self::EAGER_RESCHED_DISABLE_SHIFT);
+        if Self::eager_resched_disable_count_of(old_state) >= Self::MAX_COUNT_VALUE {
+            Self::count_overflow("eager resched disable", old_state);
+        }
+    }
+
+    /// EagerReschedReenable() decrements the eager resched disable counter and
+    /// flushes pending local and/or remote preemptions if enabled, respectively.
+    ///
+    /// Blocking must be allowed (`debug_assert!`ed on the local flush path, as in C++).
+    ///
+    /// # Safety
+    ///
+    /// - `self` must be the *current* thread's preemption state (see [`Self::preempt_reenable`]).
+    /// - The call must pair with a prior, still unmatched [`Self::eager_resched_disable`] on the
+    ///   current thread, and it must not drop preemption back to enabled while any
+    ///   [`PreemptDisabledToken`] is live.
+    #[inline]
+    pub unsafe fn eager_resched_reenable(&self) {
+        let old_state = self.state.fetch_sub(1 << Self::EAGER_RESCHED_DISABLE_SHIFT);
+        // Fast path: count drops to zero, no preempt disable count, no extension, nothing pending.
+        if old_state == 1 << Self::EAGER_RESCHED_DISABLE_SHIFT && self.preempts_pending.load() == 0
+        {
+            return;
+        }
+        if Self::eager_resched_disable_count_of(old_state) > 1 {
+            // Nothing to do since eager resched disable implies preempt disable.
+            return;
+        }
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.eager_resched_reenable_slow(old_state) }
+    }
+
+    /// The uncommon remainder of [`Self::eager_resched_reenable`], after the inline fast-path
+    /// checks; `old_state` is the `state` value before the decrement. Kept out of line so that
+    /// the hot entry point stays small enough to inline (including across the C++ FFI boundary).
+    ///
+    /// # Safety
+    ///
+    /// As [`Self::eager_resched_reenable`], and the caller has already decremented the eager
+    /// resched disable count once, observing `old_state`, and returned early unless the eager
+    /// resched disable count of `old_state` is at most one.
+    #[cold]
+    #[inline(never)]
+    unsafe fn eager_resched_reenable_slow(&self, old_state: u32) {
+        if Self::eager_resched_disable_count_of(old_state) == 0 {
+            Self::count_underflow("eager resched disable", old_state);
+        }
+
+        // First check the expected case.
+        if old_state == 1 << Self::EAGER_RESCHED_DISABLE_SHIFT {
+            // Counts are both zero and there's no timeslice extension.  The inline wrapper only
+            // gets here in that case when a preemption is pending, so flush directly.
+            //
+            // Flushing all might reschedule this CPU, make sure it's OK to block.
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.flush_pending_continued(Flush::ALL) };
+            return;
+        }
+
+        // The inline wrapper already returned when the eager resched disable count was still
+        // non-zero (nothing to do since eager resched disable implies preempt disable).
+
+        // We know we can at least flush remote.  Can we also flush local?
+        if Self::preempt_disable_count_of(old_state) > 0 {
+            // Nope, we've got a non-zero preempt disable count.
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.flush_pending(Flush::REMOTE) };
+            return;
+        }
+
+        // Is there an active extension?
+        if Self::has_active_timeslice_extension(old_state) {
+            // Has it expired?
+            if self.clear_active_timeslice_extension_if_expired() {
+                // Yes, preempt disable count is zero and the active extension has
+                // expired.  We can flush all.
+                debug_assert!(self.preempt_is_enabled());
+                // SAFETY: Forwarded from the caller.
+                unsafe { self.flush_pending(Flush::ALL) };
+                return;
+            }
+            // Extension is active, can't flush local.
+        }
+
+        // We have an inactive extension or an unexpired active extension.  Either
+        // way, we can flush remote, but not local.
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.flush_pending(Flush::REMOTE) };
+    }
+
+    /// Sets a timeslice extension if one is not already set.
+    ///
+    /// This method should only be called in normal thread context.
+    ///
+    /// Returns false if a timeslice extension was already present or if the
+    /// supplied duration is <= 0.
+    ///
+    /// Note: It OK to call this from a context where preemption is (hard)
+    /// disabled.  If preemption is requested while the preempt disable count is
+    /// non-zero and a timeslice extension is in place, the extension will be
+    /// activated, but preemption will not occur until the count has dropped to
+    /// zero and the extension has expired or has been clear.
+    pub fn set_timeslice_extension(
+        &self,
+        extension_duration: zx_types::zx_duration_mono_t,
+    ) -> bool {
+        if extension_duration <= 0 {
+            return false;
+        }
+
+        let state = self.state.load();
+        if Self::has_timeslice_extension(state) {
+            return false;
+        }
+        self.timeslice_extension.store(extension_duration);
+        // Make sure that the timeslice extension value becomes visible to an
+        // interrupt handler in this thread prior to the state flag becoming
+        // visible.  See comment at |timeslice_extension|.
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        self.state.fetch_or(Self::TIMESLICE_EXTENSION_PRESENT);
+        true
+    }
+
+    /// Unconditionally clears any timeslice extension.
+    ///
+    /// This method must be called in normal thread context because it may trigger
+    /// local preemption.
+    ///
+    /// Blocking must be allowed (`debug_assert!`ed on the flush path, as in C++).
+    ///
+    /// # Safety
+    ///
+    /// `self` must be the *current* thread's preemption state (see [`Self::preempt_reenable`]).
+    pub unsafe fn clear_timeslice_extension(&self) {
+        // Clear any present timeslice extension.
+        let old_state = self.state.fetch_and(!Self::TIMESLICE_EXTENSION_FLAGS_MASK);
+        // Are the counters both zero?
+        if (old_state & !Self::TIMESLICE_EXTENSION_FLAGS_MASK) == 0 {
+            // SAFETY: Forwarded from the caller.
+            unsafe { self.flush_pending(Flush::LOCAL) };
+        }
+    }
+
+    /// PreemptSetPending() marks a pending preemption for the given CPUs.
+    ///
+    /// This is similar to Reschedule(), except that it may only be used inside an
+    /// interrupt handler while interrupts and preemption are disabled, between
+    /// PreemptDisable() and PreemptReenable(). It is similar to Reschedule(),
+    /// except that it does not need to be called with thread's lock held.
+    pub fn preempt_set_pending(&self, reschedule_mask: cpu_mask_t) {
+        debug_assert!(crate::arch_rs::ints_disabled());
+        debug_assert!(crate::arch_rs::blocking_disallowed());
+        debug_assert!(!self.preempt_is_enabled());
+
+        // Latch the local CPU's mask before the atomic RMW below (interrupts are disabled, so the
+        // CPU cannot change) so that the compiler can share it with the caller's copy.
+        let local_cpu_mask = crate::kernel::types::cpu_num_to_mask(crate::arch_rs::curr_cpu_num());
+
+        self.preempts_pending.fetch_or(reschedule_mask);
+
+        // Are we pending for the local CPU?
+        let local_cpu_in_resched_mask = (reschedule_mask & local_cpu_mask) != 0;
+        if !local_cpu_in_resched_mask {
+            // Nope.
+            return;
+        }
+
+        self.evaluate_timeslice_extension();
+    }
+
+    /// Evaluate the thread's timeslice extension (if present), activating or
+    /// expiring it as necessary.
+    ///
+    /// Returns whether preemption is enabled.
+    #[inline]
+    pub fn evaluate_timeslice_extension(&self) -> bool {
+        let old_state = self.state.load();
+        if old_state == 0 {
+            // No counts, no extension.  The common case.
+            return true;
+        }
+        self.evaluate_timeslice_extension_slow(old_state)
+    }
+
+    /// The uncommon remainder of [`Self::evaluate_timeslice_extension`], after the inline
+    /// fast-path check; `old_state` is the `state` value just loaded. Kept out of line so that the
+    /// hot entry point stays small enough to inline (including across the C++ FFI boundary).
+    #[cold]
+    #[inline(never)]
+    fn evaluate_timeslice_extension_slow(&self, old_state: u32) -> bool {
+        if !Self::has_timeslice_extension(old_state) {
+            // No extension, but we have a non-zero count.
+            return false;
+        }
+
+        if Self::has_active_timeslice_extension(old_state) {
+            if !self.clear_active_timeslice_extension_if_expired() {
+                return false;
+            }
+            // The active extension has expired.  If the counts are both zero, then
+            // we're ready for preemption.
+            return (old_state & !Self::TIMESLICE_EXTENSION_FLAGS_MASK) == 0;
+        }
+
+        // We have a not-yet-active extension.  Time to activate it.
+        //
+        // See comment at |timeslice_extension| for why the signal fence is needed.
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Acquire);
+        let extension_duration = self.timeslice_extension.load();
+        if extension_duration <= 0 {
+            // Already expired.
+            self.state.fetch_and(!Self::TIMESLICE_EXTENSION_FLAGS_MASK);
+            return (old_state & !Self::TIMESLICE_EXTENSION_FLAGS_MASK) == 0;
+        }
+        let deadline = (crate::platform_rs::timer::current_mono_time()
+            + crate::platform_rs::timer::DurationMono(extension_duration))
+        .0;
+        self.timeslice_extension_deadline.store(deadline);
+        // See comment at |timeslice_extension_deadline| for why the signal fence
+        // is needed.
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        self.state.fetch_or(Self::TIMESLICE_EXTENSION_ACTIVE);
+        Self::set_preemption_timer_for_extension(deadline);
+        false
+    }
+
+    /// Resets the preemption state. This should only be called when reviving an
+    /// idle/power thread that halted while taking a CPU offline.
+    ///
+    /// # Safety
+    ///
+    /// The owning thread must be halted (not running on any CPU) and no [`PreemptDisabledToken`]
+    /// for it may be live; `Reset` exists only for `ReviveIdlePowerThread`.
+    pub unsafe fn reset(&self) {
+        self.state.store(0);
+        self.preempts_pending.store(0);
+        self.timeslice_extension.store(0);
+        self.timeslice_extension_deadline.store(0);
+    }
+
+    const fn eager_resched_disable_count_of(state: u32) -> u32 {
+        (state & Self::EAGER_RESCHED_DISABLE_MASK) >> Self::EAGER_RESCHED_DISABLE_SHIFT
+    }
+
+    const fn preempt_disable_count_of(state: u32) -> u32 {
+        state & Self::PREEMPT_DISABLE_MASK
+    }
+
+    const fn has_timeslice_extension(state: u32) -> bool {
+        (state & Self::TIMESLICE_EXTENSION_PRESENT) != 0
+    }
+
+    const fn has_active_timeslice_extension(state: u32) -> bool {
+        (state & Self::TIMESLICE_EXTENSION_ACTIVE) != 0
+    }
+
+    /// Sets the preemption timer when a timeslice has been extended.
+    fn set_preemption_timer_for_extension(deadline: zx_instant_mono_t) {
+        // Interrupts must be disabled when calling PreemptReset.
+        let _interrupt_disable = crate::arch_rs::InterruptDisableGuard::new();
+        // SAFETY: Interrupts are disabled for the call, as `TimerQueue::PreemptReset` requires,
+        // and with interrupts disabled `curr_cpu_num()` names the current CPU, so this is the
+        // current CPU's timer queue.
+        unsafe {
+            crate::kernel::percpu::PerCpu::get(crate::arch_rs::curr_cpu_num())
+                .timer_queue
+                .preempt_reset(deadline)
+        };
+        THREAD_TIMESLICE_EXTENDED.add(1);
+    }
+
+    /// Checks whether the active timeslice extension has expired and if so, clears
+    /// it and returns true.
+    ///
+    /// Should only be called when there is an active timeslice extension.
+    fn clear_active_timeslice_extension_if_expired(&self) -> bool {
+        // Has the extension expired?
+        //
+        // See comment at |timeslice_extension_deadline| for why the signal fence is needed.
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Acquire);
+        if crate::platform_rs::timer::current_mono_time()
+            >= crate::platform_rs::timer::InstantMono(self.timeslice_extension_deadline.load())
+        {
+            self.state.fetch_and(!Self::TIMESLICE_EXTENSION_FLAGS_MASK);
+            return true;
+        }
+        false
+    }
+
+    /// Flushes local, remote, or all pending preemptions.
+    ///
+    /// This method is kept split from [`Self::flush_pending_continued`] so that the early-out
+    /// case of no pending preemptions stays small and inlinable.
+    ///
+    /// # Safety
+    ///
+    /// `self` must be the *current* thread's preemption state: flushing a local preemption
+    /// reschedules the current thread, and `&self` stays valid across that only because the
+    /// current thread outlives its own run.
+    #[inline]
+    unsafe fn flush_pending(&self, flush: Flush) {
+        // Early out to avoid unnecessarily taking the thread lock. This check races
+        // any potential flush due to context switch, however, the context switch can
+        // only clear bits that would have been flushed below, no new pending
+        // preemptions are possible in the mask bits indicated by |flush|.
+        if self.preempts_pending.load() == 0 {
+            return;
+        }
+        core::hint::cold_path();
+        // SAFETY: Forwarded from the caller.
+        unsafe { self.flush_pending_continued(flush) }
+    }
+
+    /// The out-of-line part of [`Self::flush_pending`], entered only when a preemption is
+    /// pending.
+    ///
+    /// # Safety
+    ///
+    /// As [`Self::flush_pending`].
+    #[cold]
+    #[inline(never)]
+    unsafe fn flush_pending_continued(&self, flush: Flush) {
+        // If we're flushing the local CPU, make sure OK to block since flushing
+        // local may trigger a reschedule.
+        debug_assert!(!flush.contains(Flush::LOCAL) || !crate::arch_rs::blocking_disallowed());
+
+        let _interrupt_disable = crate::arch_rs::InterruptDisableGuard::new();
+        // Recheck, pending preemptions could have been flushed by a context switch
+        // before interrupts were disabled.
+        let pending_mask = self.preempts_pending.load();
+
+        // If there is a pending local preemption the scheduler will take care of
+        // flushing all pending reschedules.
+        let current_cpu_mask =
+            crate::kernel::types::cpu_num_to_mask(crate::arch_rs::curr_cpu_num());
+        if (pending_mask & current_cpu_mask) != 0 && flush.contains(Flush::LOCAL) {
+            // Clear the local preempt pending flag before calling preempt.  Failure
+            // to do this can cause recursion during Scheduler::Preempt if any code
+            // (such as debug tracing code) attempts to disable and re-enable
+            // preemption during the scheduling operation.
+            self.preempts_pending.fetch_and(!current_cpu_mask);
+
+            // TODO(johngro): We cannot be holding the current thread's lock while we do
+            // this.  Is there a good way to enforce this requirement via either static
+            // annotation or dynamic checks?
+            //
+            // `scheduler::preempt` requires that no `ChainLockTransaction` is active on this CPU
+            // (`TA_EXCL(chainlock_transaction_token)` in C++).  Like the C++ `DEBUG_ASSERT` via
+            // `ChainLockTransaction::AssertNoTransactionActive()`, this is a debug-only check:
+            // `scheduler::preempt` enters `single_chain_lock_guard!`, whose
+            // `ChainLockTransaction::register` asserts the same condition in release builds.
+            crate::kconcurrent::debug_assert_no_transaction_active();
+            // SAFETY: No `ChainLockTransaction` is active on the current CPU (debug-asserted
+            // above, and asserted unconditionally by `ChainLockTransaction::register` inside
+            // `scheduler::preempt`'s `single_chain_lock_guard!`), which is `scheduler::preempt`'s
+            // only precondition. `self` is the *current* thread's preemption state (the caller's
+            // contract), and the current thread outlives its own run, so `&self` stays valid
+            // across the resulting context switch; `PreemptionState` is all relaxed atomics, so
+            // the scheduler's and interrupt handlers' writes through it meanwhile are sound.
+            unsafe {
+                crate::kernel::scheduler::preempt(
+                    crate::kernel::scheduler::PreemptType::FlushPending,
+                );
+            }
+        } else if flush.contains(Flush::REMOTE) {
+            // The current cpu is ignored by mp_reschedule if present in the mask.
+            crate::kernel::mp::reschedule(pending_mask, 0);
+            self.preempts_pending.fetch_and(current_cpu_mask);
+        }
+    }
 }
 
 // Compile-time layout assertions against <kernel/thread_layout.h>.
@@ -981,6 +1616,12 @@ impl Thread {
         &self.task_state
     }
 
+    /// Returns a reference to the thread's `PreemptionState`.
+    #[inline]
+    pub(crate) fn preemption_state(&self) -> &PreemptionState {
+        &self.preemption_state
+    }
+
     /// Domain-specific conversion: returns raw pointer for [`Thread`].
     #[inline]
     pub fn as_raw(&self) -> *mut Self {
@@ -1031,6 +1672,18 @@ impl Thread {
         let flags = unsafe { &raw const (*this).flags };
         // SAFETY: `flags` is the live `Thread`'s flags field (see above).
         unsafe { (*flags).load() & THREAD_FLAG_IDLE != 0 }
+    }
+
+    /// Like [`Self::preemption_state`], for a raw pointer, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`].
+    #[inline]
+    pub(super) unsafe fn preemption_state_ptr(this: *const Self) -> *const PreemptionState {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `preemption_state` field place without forming a reference to the whole `Thread`.
+        unsafe { &raw const (*this).preemption_state }
     }
 
     /// Returns the koid of the associated `ThreadDispatcher` for user threads or an independent
@@ -2255,33 +2908,49 @@ pub fn current_kill() {
     unsafe { cpp_thread_current_kill() }
 }
 
+/// The current thread's [`PreemptionState`] (`Thread::Current::preemption_state()`), as a pointer
+/// to the field alone so that no `&Thread` is formed.
+fn current_preemption_state() -> *const PreemptionState {
+    let current = current_get();
+    // SAFETY: `current` is the valid, live current thread; projecting the field through the raw
+    // pointer forms no reference.
+    unsafe { &raw const (*current).preemption_state }
+}
+
 /// Increments the preempt disable counter for the current thread.
 ///
 /// While preempt disable is non-zero, preemption of the thread is disabled, including preemption
 /// from interrupt handlers. During this time, any call to `Reschedule()` will only record that a
 /// reschedule is pending, and won't do a context switch.
 ///
-/// Note that this does not disallow blocking operations (e.g. `mutex.Acquire()`). Disabling
-/// preemption does not prevent switching away from the current thread if it blocks.
+/// Note: [`preempt_disable`] does not preclude a thread from blocking (e.g., waiting on a lock).
+/// Disabling preemption does not prevent switching away from the current thread if it blocks.
 ///
 /// A call to [`preempt_disable`] must be matched by a later call to [`preempt_reenable`] to
 /// decrement the preempt disable counter.
 #[inline]
 pub fn preempt_disable() {
-    // SAFETY: Calling this FFI function safely increments the preemption disable count for the
-    // current thread.
-    unsafe { cpp_thread_preempt_disable() }
+    // SAFETY: The current thread is alive for as long as code runs on it, and `PreemptionState`
+    // is all relaxed atomics, so a shared reference to the field is sound while C++ and interrupt
+    // handlers mutate it.
+    unsafe { (*current_preemption_state()).preempt_disable() }
 }
 
 /// Decrements the preempt disable counter and flushes any pending local preemption operation.
 ///
 /// Callers must ensure that they are calling from a context where blocking is allowed, as the call
 /// may result in the immediate preemption of the calling thread.
+///
+/// # Safety
+///
+/// The call must pair with a prior, still unmatched [`preempt_disable`] on the current thread,
+/// and it must not drop preemption back to enabled while any [`PreemptDisabledToken`] is live.
 #[inline]
-pub fn preempt_reenable() {
-    // SAFETY: Calling this FFI function safely decrements the preemption disable count for the
-    // current thread.
-    unsafe { cpp_thread_preempt_reenable() }
+pub unsafe fn preempt_reenable() {
+    // SAFETY: As in `preempt_disable`, `current_preemption_state()` is by construction the
+    // current thread's preemption state, and the pairing and token obligations are forwarded
+    // from the caller.
+    unsafe { (*current_preemption_state()).preempt_reenable() }
 }
 
 /// Increments the eager resched disable counter for the current thread.
@@ -2298,33 +2967,38 @@ pub fn preempt_reenable() {
 /// [`eager_resched_reenable`] to decrement the eager resched disable counter.
 #[inline]
 pub fn eager_resched_disable() {
-    // SAFETY: Calling this FFI function safely increments the eager resched disable count for the
-    // current thread.
-    unsafe { cpp_thread_eager_resched_disable() }
+    // SAFETY: As in `preempt_disable`.
+    unsafe { (*current_preemption_state()).eager_resched_disable() }
 }
 
 /// Decrements the eager resched disable counter and flushes pending local and/or remote
 /// preemptions if enabled, respectively.
+///
+/// # Safety
+///
+/// The call must pair with a prior, still unmatched [`eager_resched_disable`] on the current
+/// thread, and it must not drop preemption back to enabled while any [`PreemptDisabledToken`] is
+/// live.
 #[inline]
-pub fn eager_resched_reenable() {
-    // SAFETY: Calling this FFI function safely decrements the eager resched disable count for the
-    // current thread.
-    unsafe { cpp_thread_eager_resched_reenable() }
+pub unsafe fn eager_resched_reenable() {
+    // SAFETY: As in `preempt_disable`, `current_preemption_state()` is by construction the
+    // current thread's preemption state, and the pairing and token obligations are forwarded
+    // from the caller.
+    unsafe { (*current_preemption_state()).eager_resched_reenable() }
 }
 
 /// Returns the current thread's preemption disable count.
 #[inline]
 pub fn preempt_disable_count() -> u32 {
-    // SAFETY: Calling this FFI function safely reads the current thread's preemption disable count.
-    unsafe { cpp_thread_preempt_disable_count() }
+    // SAFETY: As in `preempt_disable`.
+    unsafe { (*current_preemption_state()).preempt_disable_count() }
 }
 
 /// Returns the current thread's eager resched disable count.
 #[inline]
 pub fn eager_resched_disable_count() -> u32 {
-    // SAFETY: Calling this FFI function safely reads the current thread's eager resched disable
-    // count.
-    unsafe { cpp_thread_eager_resched_disable_count() }
+    // SAFETY: As in `preempt_disable`.
+    unsafe { (*current_preemption_state()).eager_resched_disable_count() }
 }
 
 /// Marks a pending preemption for the current CPU on the current thread's preemption state.
@@ -2333,18 +3007,23 @@ pub fn eager_resched_disable_count() -> u32 {
 /// while interrupts and preemption are disabled, between [`preempt_disable`] and
 /// [`preempt_reenable`]. Unlike `Reschedule()`, it does not need to be called with the thread's
 /// lock held.
+///
+/// Supplies the C++ default argument `cpu_num_to_mask(arch_curr_cpu_num())`.
 #[inline]
 pub fn preempt_set_pending() {
-    // SAFETY: Calling this FFI function safely marks a pending preemption on the current thread's
-    // preemption state.
-    unsafe { cpp_thread_preempt_set_pending() }
+    // SAFETY: As in `preempt_disable`.
+    unsafe {
+        (*current_preemption_state()).preempt_set_pending(crate::kernel::types::cpu_num_to_mask(
+            crate::arch_rs::curr_cpu_num(),
+        ))
+    }
 }
 
-/// Returns `true` if preemption is currently enabled on the current thread.
+/// Returns `true` if preemption is enabled for the current thread.
 #[inline]
 pub fn preempt_is_enabled() -> bool {
-    // SAFETY: Calling this FFI function safely queries the current thread's preemption state.
-    unsafe { cpp_thread_preempt_is_enabled() }
+    // SAFETY: As in `preempt_disable`.
+    unsafe { (*current_preemption_state()).preempt_is_enabled() }
 }
 
 /// Zero-sized capability token proving that preemption is disabled on the current thread.
@@ -2392,18 +3071,17 @@ impl PreemptDisabledToken {
 /// the extension will be activated, but preemption will not occur until the count has dropped to
 /// zero and the extension has expired or has been cleared.
 pub fn preempt_set_timeslice_extension(duration: DurationMono) -> bool {
-    // SAFETY: Calling this FFI function safely sets the timeslice extension on the current thread's
-    // preemption state.
-    unsafe { cpp_thread_preempt_set_timeslice_extension(duration) }
+    // SAFETY: As in `preempt_disable`.
+    unsafe { (*current_preemption_state()).set_timeslice_extension(duration.0) }
 }
 
 /// Unconditionally clears any timeslice extension.
 ///
 /// This function must be called in normal thread context because it may trigger local preemption.
 pub fn preempt_clear_timeslice_extension() {
-    // SAFETY: Calling this FFI function safely clears the timeslice extension on the current
-    // thread's preemption state.
-    unsafe { cpp_thread_preempt_clear_timeslice_extension() }
+    // SAFETY: As in `preempt_disable`, and `current_preemption_state()` is by construction the
+    // current thread's preemption state.
+    unsafe { (*current_preemption_state()).clear_timeslice_extension() }
 }
 
 pub use super::auto_preempt_disabler::{
@@ -3058,6 +3736,122 @@ pub unsafe extern "C" fn rust_thread_trampoline() -> ! {
     // revisit this indirect call if kernel Rust ever enables KCFI.
     let ret = entry(arg);
     current_exit(ret)
+}
+
+/// Forwards C++ `PreemptionState::PreemptDisable`.
+///
+/// Every call must be matched by a later `PreemptReenable`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_preemption_state_preempt_disable(preemption_state: &PreemptionState) {
+    preemption_state.preempt_disable();
+}
+
+/// Forwards C++ `PreemptionState::PreemptReenable`.
+///
+/// # Safety
+/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
+/// unmatched `PreemptDisable` on the current thread, and it does not drop preemption back to
+/// enabled while any `PreemptDisabledToken` is live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_preemption_state_preempt_reenable(
+    preemption_state: &PreemptionState,
+) {
+    // SAFETY: The caller guarantees this is the current thread's state and the pairing and token
+    // obligations.
+    unsafe { preemption_state.preempt_reenable() };
+}
+
+/// Forwards C++ `PreemptionState::PreemptReenableDelayFlush`.
+///
+/// Interrupts must be disabled and blocking disallowed, as `debug_assert!`ed by
+/// [`PreemptionState::preempt_reenable_delay_flush`].
+///
+/// # Safety
+/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
+/// unmatched `PreemptDisable` on the current thread, and it does not drop preemption back to
+/// enabled while any `PreemptDisabledToken` is live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_preemption_state_preempt_reenable_delay_flush(
+    preemption_state: &PreemptionState,
+) -> bool {
+    // SAFETY: The caller guarantees the pairing and token obligations.
+    unsafe { preemption_state.preempt_reenable_delay_flush() }
+}
+
+/// Forwards C++ `PreemptionState::EagerReschedDisable`.
+///
+/// Every call must be matched by a later `EagerReschedReenable`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_preemption_state_eager_resched_disable(preemption_state: &PreemptionState) {
+    preemption_state.eager_resched_disable();
+}
+
+/// Forwards C++ `PreemptionState::EagerReschedReenable`.
+///
+/// # Safety
+/// `preemption_state` is the current thread's `PreemptionState`, the call pairs with a prior
+/// unmatched `EagerReschedDisable` on the current thread, and it does not drop preemption back to
+/// enabled while any `PreemptDisabledToken` is live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_preemption_state_eager_resched_reenable(
+    preemption_state: &PreemptionState,
+) {
+    // SAFETY: The caller guarantees this is the current thread's state and the pairing and token
+    // obligations.
+    unsafe { preemption_state.eager_resched_reenable() };
+}
+
+/// Forwards C++ `PreemptionState::SetTimesliceExtension`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_preemption_state_set_timeslice_extension(
+    preemption_state: &PreemptionState,
+    extension_duration: zx_types::zx_duration_mono_t,
+) -> bool {
+    preemption_state.set_timeslice_extension(extension_duration)
+}
+
+/// Forwards C++ `PreemptionState::ClearTimesliceExtension`.
+///
+/// # Safety
+/// `preemption_state` is the current thread's `PreemptionState`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_preemption_state_clear_timeslice_extension(
+    preemption_state: &PreemptionState,
+) {
+    // SAFETY: The caller guarantees this is the current thread's state.
+    unsafe { preemption_state.clear_timeslice_extension() };
+}
+
+/// Forwards C++ `PreemptionState::PreemptSetPending`.
+///
+/// Interrupts and preemption must be disabled and blocking disallowed (interrupt-handler
+/// context), as `debug_assert!`ed by [`PreemptionState::preempt_set_pending`].
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_preemption_state_preempt_set_pending(
+    preemption_state: &PreemptionState,
+    reschedule_mask: crate::kernel::types::cpu_mask_t,
+) {
+    preemption_state.preempt_set_pending(reschedule_mask);
+}
+
+/// Forwards C++ `PreemptionState::EvaluateTimesliceExtension`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_preemption_state_evaluate_timeslice_extension(
+    preemption_state: &PreemptionState,
+) -> bool {
+    preemption_state.evaluate_timeslice_extension()
+}
+
+/// Forwards C++ `PreemptionState::Reset`.
+///
+/// # Safety
+/// `preemption_state`'s owning thread is halted (not running on any CPU) and no
+/// `PreemptDisabledToken` for it is live. This exists only for reviving an idle/power thread that
+/// halted while taking a CPU offline.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_preemption_state_reset(preemption_state: &PreemptionState) {
+    // SAFETY: The caller guarantees the owning thread is halted with no live token.
+    unsafe { preemption_state.reset() };
 }
 
 /// Unit tests for Thread Rust bindings.
@@ -4437,129 +5231,742 @@ mod intensive_thread_tests {
     }
 }
 
-/// Preemption disable and timeslice extension RAII guard unit tests.
+/// Preemption disable and timeslice extension unit tests (`preempt_disable_tests.cc`).
 #[cfg(ktest)]
 #[unittest::suite(name = "preempt_disable_tests_rust")]
 mod preempt_disable_tests {
     use super::{
-        AutoExpiringPreemptDisabler, AutoPreemptDisabler, preempt_disable_count, preempt_is_enabled,
+        AnnotatedAutoEagerReschedDisabler, AutoEagerReschedDisabler, AutoExpiringPreemptDisabler,
+        AutoPreemptDisabler, DEFAULT_PRIORITY, PreemptionState, ThreadLockGuard, ThreadPtr,
+        create_with_priority, current_get, current_preemption_state, preempt, reschedule,
+        sleep_relative, r#yield,
     };
-    use crate::platform_rs::timer::DurationMono;
-    use unittest::{assert_eq, assert_false, assert_true};
+    use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num};
+    use crate::kconcurrent::clt_tag;
+    use crate::kernel::deadline::{Deadline, TimerSlack};
+    use crate::kernel::event::Event;
+    use crate::kernel::interrupt::{IntHandlerSavedState, int_handler_finish, int_handler_start};
+    use crate::kernel::mp::CPU_MASK_ALL;
+    use crate::kernel::scheduler;
+    use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
+    use crate::kernel::types::{BOOT_CPU_ID, cpu_mask_t, cpu_num_to_mask};
+    use crate::platform_rs::timer::{DurationMono, InstantMono, zx_usec};
+    use core::ffi::c_void;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use pin_init::{pin_init, stack_pin_init};
+    use unittest::{
+        assert_eq, assert_ne, assert_true, expect_eq, expect_false, expect_ne, expect_true,
+        subtest, unwrap_ok,
+    };
+    use zx_types::zx_instant_mono_t;
 
-    /// Tests `AutoPreemptDisabler` deferred and immediate modes, nesting, and toggling.
-    #[test]
-    fn test_auto_preempt_disabler() {
-        // Make sure that nothing funny is going on with our preempt disable count as
-        // it stands now.
-        assert_eq!(0u32, preempt_disable_count());
-
-        {
-            // Create a disabler inside of a scope, but do not have it immediately
-            // request that preemption be disabled.  Our count should still be zero.
-            let mut ap_disabler = AutoPreemptDisabler::new_deferred();
-            assert_eq!(0u32, preempt_disable_count());
-
-            // Now explicitly disable.  Our count should go to 1.
-            ap_disabler.disable();
-            assert_eq!(1u32, preempt_disable_count());
-
-            // Do it again, our count should remain at 1.
-            ap_disabler.disable();
-            assert_eq!(1u32, preempt_disable_count());
-
-            {
-                // Make another inside of a new scope.  Our count should remain at 1 until
-                // we explicitly use the new instance to disable preemption.
-                let mut ap_disabler2 = AutoPreemptDisabler::new_deferred();
-                assert_eq!(1u32, preempt_disable_count());
-
-                ap_disabler2.disable();
-                assert_eq!(2u32, preempt_disable_count());
-            } // Let it go out of scope, we should drop down to a count of 1.
-
-            assert_eq!(1u32, preempt_disable_count());
-        } // Allow the original to go out of scope.  This should get us back down to a count of 0.
-
-        assert_eq!(0u32, preempt_disable_count());
-
-        // Next, do a similar test, but this time with the version which automatically
-        // begins life with preemption disabled.
-        {
-            let mut ap_disabler = AutoPreemptDisabler::new();
-            assert_eq!(1u32, preempt_disable_count());
-
-            // Attempting to call disable should do nothing.
-            ap_disabler.disable();
-            assert_eq!(1u32, preempt_disable_count());
-
-            {
-                // Add a second.  Watch the count go up as it comes into scope, and back
-                // down again when it goes out.
-                let _ap_disabler2 = AutoPreemptDisabler::new();
-                assert_eq!(2u32, preempt_disable_count());
-            }
-
-            assert_eq!(1u32, preempt_disable_count());
-        } // Allow the original to go out of scope.  This should get us back down to a count of 0.
-
-        // Test an explicit Enable
-        {
-            let mut ap_disabler = AutoPreemptDisabler::new();
-            assert_eq!(1u32, preempt_disable_count());
-
-            {
-                // Create a defered disabler, and test that Enabling it before its disabled does
-                // nothing.
-                let mut ap_disabler2 = AutoPreemptDisabler::new_deferred();
-                assert_eq!(1u32, preempt_disable_count());
-
-                ap_disabler2.enable();
-                assert_eq!(1u32, preempt_disable_count());
-            }
-            assert_eq!(1u32, preempt_disable_count());
-
-            // Should be able to toggle enable and disable
-            ap_disabler.enable();
-            assert_eq!(0u32, preempt_disable_count());
-            ap_disabler.disable();
-            assert_eq!(1u32, preempt_disable_count());
-            // Ending on Enable should result in no change after the disabler goes out of scope.
-            ap_disabler.enable();
-            assert_eq!(0u32, preempt_disable_count());
-        }
-
-        assert_eq!(0u32, preempt_disable_count());
+    /// Mirror of C++ `PreemptDisableTestAccess::State`.
+    struct State {
+        preempts_pending: cpu_mask_t,
     }
 
-    /// Tests basic and nested `AutoExpiringPreemptDisabler` timeslice extensions.
-    #[test]
-    fn test_auto_timeslice_extension() {
-        // Basic.
+    /// Mirror of C++ `PreemptDisableTestAccess::SaveState`.
+    fn save_state(preemption_state: &PreemptionState) -> State {
+        State { preempts_pending: preemption_state.preempts_pending() }
+    }
+
+    /// Mirror of C++ `PreemptDisableTestAccess::RestoreState`.
+    fn restore_state(preemption_state: &PreemptionState, state: State) {
+        preemption_state.preempts_pending.store(state.preempts_pending);
+    }
+
+    /// Mirror of C++ `PreemptDisableTestAccess::ClearPending`.
+    fn clear_pending(preemption_state: &PreemptionState) {
+        preemption_state.preempts_pending.store(0);
+    }
+
+    /// Test that PreemptDisable is set for timer callbacks and that, in this
+    /// context, preempts_pending will get set by some functions.
+    ///
+    /// # Safety
+    ///
+    /// `arg` must point to the `Event` that `test_in_timer_callback` keeps alive until the timer
+    /// has been cancelled, and this must run as a `Timer` callback (interrupt context).
+    unsafe extern "C" fn timer_callback_func(
+        _timer: *mut Timer,
+        _now: zx_instant_mono_t,
+        arg: *mut c_void,
+    ) {
+        // SAFETY: `arg` is the pinned `Event` that `test_in_timer_callback` keeps alive until the
+        // timer has been cancelled.
+        let event = unsafe { &*arg.cast::<Event>() };
+
+        // The timer should run in interrupt context.  (`assert!` panics like the C++ `ASSERT`;
+        // the unittest `expect_*` macros are only usable from the test body itself.)
+        assert!(crate::arch_rs::ints_disabled());
+        assert!(crate::arch_rs::blocking_disallowed());
+
+        // Entry into interrupt context should disable preemption and eager
+        // reschedules.
+        // SAFETY: The interrupted thread is the current thread and stays alive for the callback;
+        // `PreemptionState` is all relaxed atomics.
+        let preemption_state = unsafe { &*current_preemption_state() };
+        assert!(preemption_state.preempt_disable_count() > 0);
+        assert!(preemption_state.eager_resched_disable_count() > 0);
+        let state = save_state(preemption_state);
+
+        // Test that Scheduler::Reschedule() sets the preempt_pending flag when
+        // PreemptDisable is set.
+        clear_pending(preemption_state);
+        assert!(preemption_state.preempts_pending() == 0);
         {
-            assert_true!(preempt_is_enabled());
-            {
-                let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
-                assert_false!(preempt_is_enabled());
+            let current_thread = current_get();
+            // SAFETY: `current_thread` is the live current thread, no chain lock transaction is
+            // active in this timer callback, and the guard is stack-pinned and dropped in this
+            // scope without blocking.
+            ksync::lock!(
+                let _guard = unsafe {
+                    ThreadLockGuard::lock(
+                        current_thread,
+                        clt_tag!("PreemptDisableTests timer_callback"),
+                    )
+                }
+            );
+            // SAFETY: `current_thread` is the current CPU's active thread, `_guard` holds its lock
+            // as the sole lock of a finalized transaction with interrupts disabled, and no
+            // `queue_lock_` is held in a timer callback.
+            unsafe { scheduler::reschedule(current_thread) };
+        }
+        assert!(preemption_state.preempts_pending() != 0);
+
+        // Test that preemption_state.PreemptSetPending() sets preempts_pending.
+        clear_pending(preemption_state);
+        assert!(preemption_state.preempts_pending() == 0);
+
+        preemption_state.preempt_set_pending(cpu_num_to_mask(curr_cpu_num()));
+        assert!(preemption_state.preempts_pending() != 0);
+
+        restore_state(preemption_state, state);
+        event.signal();
+    }
+
+    /// Schedule a timer callback and wait for it to complete.
+    //
+    // Most of the testing is done in the timer callback.
+    #[test]
+    fn test_in_timer_callback() {
+        stack_pin_init!(let event = Event::init_unsignaled());
+        stack_pin_init!(let timer = Timer::init(ZX_CLOCK_MONOTONIC));
+
+        // SAFETY: `timer` and `event` are stack-pinned and outlive the timer, which `_cancel`
+        // cancels before either goes out of scope (also on an early return from a failed
+        // assertion); `timer_callback_func` is a valid timer callback.
+        unsafe {
+            timer.as_ref().set_oneshot(
+                0,
+                timer_callback_func,
+                core::ptr::from_ref(&*event).cast_mut().cast(),
+            );
+        }
+        // Make sure the timer has fully completed prior to letting it go out of scope.
+        let _cancel = zr::defer(|| {
+            timer.cancel();
+        });
+        assert_true!(event.wait_infinite().is_ok());
+    }
+
+    /// Test incrementing and decrementing the PreemptDisable and EagerReschedDisable counts.
+    #[test]
+    fn test_inc_dec_disable_counts() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+
+        // Test initial conditions.
+        expect_eq!(preemption_state.preempt_disable_count(), 0);
+        expect_eq!(preemption_state.eager_resched_disable_count(), 0);
+        expect_true!(preemption_state.preempt_is_enabled());
+        // While preemption is allowed, a preemption should not be pending.
+        expect_eq!(preemption_state.preempts_pending(), 0);
+
+        // Test incrementing and decrementing of PreemptDisable.
+        preemption_state.preempt_disable();
+        expect_eq!(preemption_state.preempt_disable_count(), 1);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: `preemption_state` is the current thread's, tests may block, this pairs with
+        // the `preempt_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.preempt_reenable() };
+        expect_eq!(preemption_state.preempt_disable_count(), 0);
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Test incrementing and decrementing of EagerReschedDisable.
+        preemption_state.eager_resched_disable();
+        expect_eq!(preemption_state.eager_resched_disable_count(), 1);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: `preemption_state` is the current thread's, tests may block, this pairs with
+        // the `eager_resched_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.eager_resched_reenable() };
+        expect_eq!(preemption_state.eager_resched_disable_count(), 0);
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Test nesting: multiple increments and decrements.
+        preemption_state.preempt_disable();
+        preemption_state.preempt_disable();
+        expect_eq!(preemption_state.preempt_disable_count(), 2);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: As above; each call pairs with one of the two `preempt_disable()`s above.
+        unsafe { preemption_state.preempt_reenable() };
+        expect_eq!(preemption_state.preempt_disable_count(), 1);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: As above.
+        unsafe { preemption_state.preempt_reenable() };
+        expect_eq!(preemption_state.preempt_disable_count(), 0);
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Test nesting: multiple increments and decrements.
+        preemption_state.eager_resched_disable();
+        preemption_state.eager_resched_disable();
+        expect_eq!(preemption_state.eager_resched_disable_count(), 2);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: As above; each call pairs with one of the two `eager_resched_disable()`s above.
+        unsafe { preemption_state.eager_resched_reenable() };
+        expect_eq!(preemption_state.eager_resched_disable_count(), 1);
+        expect_false!(preemption_state.preempt_is_enabled());
+        // SAFETY: As above.
+        unsafe { preemption_state.eager_resched_reenable() };
+        expect_eq!(preemption_state.eager_resched_disable_count(), 0);
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Every disable above is paired with its reenable and `expect_*` never returns early, so
+        // the counts are back to zero however the checks went.
+        expect_eq!(preemption_state.preempt_disable_count(), 0);
+        expect_eq!(preemption_state.eager_resched_disable_count(), 0);
+        expect_eq!(preemption_state.preempts_pending(), 0);
+    }
+
+    /// Mirror of C++ `test_decrement_clears_preempt_pending`: reenabling flushes pending bits.
+    #[test]
+    fn test_decrement_clears_preempt_pending() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+        assert_true!(preemption_state.preempt_is_enabled());
+        assert_eq!(preemption_state.preempts_pending(), 0);
+
+        // Test that preemption_state.preempt_reenable() clears preempt_pending.
+        preemption_state.preempt_disable();
+        reschedule();
+        expect_ne!(preemption_state.preempts_pending(), 0);
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `preempt_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.preempt_reenable() };
+        expect_eq!(preemption_state.preempts_pending(), 0);
+
+        // Test that preemption_state.eager_resched_reenable() clears preempt_pending.
+        preemption_state.eager_resched_disable();
+        reschedule();
+        expect_ne!(preemption_state.preempts_pending(), 0);
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `eager_resched_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.eager_resched_reenable() };
+        expect_eq!(preemption_state.preempts_pending(), 0);
+    }
+
+    /// Mirror of C++ `test_blocking_clears_preempt_pending`: blocking clears pending bits.
+    #[test]
+    fn test_blocking_clears_preempt_pending() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+
+        // It is OK to block while preemption is disabled. In this case, blocking
+        // should clear a pending local preemption.
+        preemption_state.preempt_disable();
+        reschedule();
+        expect_ne!(preemption_state.preempts_pending(), 0);
+        {
+            let _int_state = InterruptDisableGuard::new();
+            let _ = sleep_relative(DurationMono::from_millis(10));
+            // Read preempts_pending with interrupts disabled because otherwise an
+            // interrupt handler could set it.
+            expect_eq!(preemption_state.preempts_pending(), 0);
+        }
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `preempt_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.preempt_reenable() };
+
+        // It is OK to block while eager rescheduling is disabled. In this case,
+        // blocking should clear all pending preemptions.
+        preemption_state.eager_resched_disable();
+        reschedule();
+        {
+            let _int_state = InterruptDisableGuard::new();
+            let _ = sleep_relative(DurationMono::from_millis(10));
+            // Read preempts_pending with interrupts disabled because otherwise an
+            // interrupt handler could set it.
+            expect_eq!(preemption_state.preempts_pending(), 0);
+        }
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `eager_resched_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.eager_resched_reenable() };
+    }
+
+    /// Mirror of C++ `test_interrupt_preserves_preempt_pending`.
+    //
+    // Test that preempts_pending is preserved across an interrupt handler when
+    // EagerReschedDisable is set and when the interrupt handler does not cause a
+    // preemption. This tests the int_handler_start()/finish() routines rather than
+    // the full interrupt handler.
+    #[test]
+    fn test_interrupt_preserves_preempt_pending() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+
+        preemption_state.eager_resched_disable();
+        {
+            // Do this with interrupts disabled so that a real interrupt does not
+            // clear preempts_pending.
+            let _int_state = InterruptDisableGuard::new();
+            reschedule();
+
+            // Simulate an interrupt handler invocation.
+            let mut state = IntHandlerSavedState::default();
+            int_handler_start(&mut state);
+            expect_eq!(preemption_state.preempt_disable_count(), 1);
+            let do_preempt = int_handler_finish(&mut state);
+
+            expect_false!(do_preempt);
+            expect_ne!(preemption_state.preempts_pending(), 0);
+        }
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `eager_resched_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.eager_resched_reenable() };
+        expect_eq!(preemption_state.preempts_pending(), 0);
+    }
+
+    /// Timer callback used for testing.
+    ///
+    /// # Safety
+    ///
+    /// `arg` must point to the `AtomicBool` that `test_interrupt_with_preempt_disable` keeps alive
+    /// until the timer has been cancelled, and this must run as a `Timer` callback.
+    unsafe extern "C" fn timer_set_preempt_pending(
+        _timer: *mut Timer,
+        _now: zx_instant_mono_t,
+        arg: *mut c_void,
+    ) {
+        // SAFETY: `arg` is the `AtomicBool` that `test_interrupt_with_preempt_disable` keeps
+        // alive until the timer has been cancelled.
+        let timer_ran = unsafe { &*arg.cast::<AtomicBool>() };
+
+        // SAFETY: The interrupted thread is the current thread and stays alive for the callback;
+        // `PreemptionState` is all relaxed atomics.
+        unsafe {
+            (*current_preemption_state()).preempt_set_pending(cpu_num_to_mask(curr_cpu_num()))
+        };
+        timer_ran.store(true, Ordering::SeqCst);
+    }
+
+    /// Mirror of C++ `test_interrupt_with_preempt_disable`.
+    #[test]
+    fn test_interrupt_with_preempt_disable() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+
+        // Test that interrupt handlers honor PreemptDisable.
+        //
+        // We test that by setting a timer callback that will set
+        // preempt_pending from inside an interrupt handler.  preempt_pending
+        // should remain set after the interrupt handler returns.
+        //
+        // This assumes that timer_set() will run the callback on the same CPU
+        // that we invoked it from.  This also assumes that we don't
+        // accidentally call any blocking operations that cause our thread to
+        // be rescheduled to another CPU.
+        preemption_state.preempt_disable();
+        let timer_ran = AtomicBool::new(false);
+        stack_pin_init!(let timer = Timer::init(ZX_CLOCK_MONOTONIC));
+        let deadline = Deadline::after_mono(DurationMono(zx_usec(100)), TimerSlack::none());
+        // SAFETY: `timer` is stack-pinned and `timer_ran` outlives it: `_cancel` cancels the timer
+        // before either goes out of scope (also on an early return from a failed assertion);
+        // `timer_set_preempt_pending` is a valid timer callback.
+        unsafe {
+            timer.as_ref().set_deadline(
+                &deadline,
+                timer_set_preempt_pending,
+                core::ptr::from_ref(&timer_ran).cast_mut().cast(),
+            );
+        }
+        // Make sure the timer has fully completed prior to letting it go out of scope.
+        let _cancel = zr::defer(|| {
+            timer.cancel();
+        });
+        // Spin until timer_ran is set by the interrupt handler.
+        while !timer_ran.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
+        expect_eq!(preemption_state.preempts_pending(), cpu_num_to_mask(curr_cpu_num()));
+        // SAFETY: `preemption_state` is the current thread's, this pairs with the
+        // `preempt_disable()` above, and no `PreemptDisabledToken` exists in this test.
+        unsafe { preemption_state.preempt_reenable() };
+    }
+
+    /// Shared with the `waiter` thread of `test_local_preempt_pending`.
+    struct Args {
+        event: *const Event,
+        started: AtomicBool,
+    }
+
+    extern "C" fn waiter(void_args: *mut c_void) -> i32 {
+        // SAFETY: `void_args` is the `Args` that `setup_and_run_with` keeps alive (along with the
+        // `Event` it points at) until it has joined this thread.
+        let (args, event) = unsafe {
+            let args = &*void_args.cast::<Args>();
+            (args, &*args.event)
+        };
+        // Let the other thread know that we're up and running and then wait to be signaled.
+        args.started.store(true, Ordering::SeqCst);
+        let _ = event.wait_infinite();
+        0
+    }
+
+    /// The common code used in all cases of `test_local_preempt_pending`.
+    ///
+    /// `setup_and_run_with` is used to setup test conditions and run the `func` test case.
+    ///
+    /// `func` receives an Event that it should signal to unblock the `waiter` thread (see above).
+    fn setup_and_run_with(func: &dyn Fn(&Event) -> bool) -> bool {
+        (subtest!(|func: &dyn Fn(&Event) -> bool| {
+            // Make sure we restore this thread's affinity.
+            // SAFETY: Threading is initialized by the time unit tests run.
+            let current = unsafe { ThreadPtr::current() };
+            // SAFETY: The current thread is alive for the duration of this test.
+            let affinity = unsafe { current.get_cpu_affinity() };
+            let _cleanup = zr::defer(move || {
+                // SAFETY: The current thread is alive for the duration of this test.
+                unsafe { current.set_cpu_affinity(affinity) };
+            });
+
+            stack_pin_init!(let event = Event::init_unsignaled());
+            let args =
+                Args { event: core::ptr::from_ref(&*event), started: AtomicBool::new(false) };
+
+            let target_cpu = BOOT_CPU_ID;
+
+            // Migrate the current thread to the target CPU and bind a |waiter| thread to the same
+            // CPU.
+            let mask = cpu_num_to_mask(target_cpu);
+            // SAFETY: The current thread is alive for the duration of this test.
+            unsafe { current.set_cpu_affinity(mask) };
+            // SAFETY: `waiter` is a valid thread entry point, and `args` and `event` outlive the
+            // thread, which `_cleanup_waiter` joins below.
+            let t = unwrap_ok!(unsafe {
+                create_with_priority(
+                    c"test_local_preempt_pending".as_ptr(),
+                    waiter,
+                    core::ptr::from_ref(&args).cast_mut().cast(),
+                    DEFAULT_PRIORITY,
+                )
+            });
+            let _cleanup_waiter = zr::defer(|| {
+                event.signal();
+                // SAFETY: `t` is joined exactly once, here.
+                let _ = unsafe { t.join(InstantMono::INFINITE) };
+            });
+            // SAFETY: `t` has not been joined yet.
+            unsafe { t.set_cpu_affinity(mask) };
+
+            // Start the |waiter| and spin until we know that it has started running and then
+            // blocked.
+            // SAFETY: `t` was just created and has not been resumed or joined yet.
+            unsafe { t.resume() };
+            loop {
+                r#yield();
+                // SAFETY: `t` has not been joined yet.  (`is_blocked` checks the scheduler state
+                // under `t`'s lock, as the C++ `SingleChainLockGuard` scope does.)
+                if args.started.load(Ordering::SeqCst) && unsafe { t.is_blocked() } {
+                    break;
+                }
             }
-            assert_true!(preempt_is_enabled());
+
+            // At this point we know the |waiter| is blocked on the event.
+            expect_true!(func(&event));
+        }))(func)
+    }
+
+    /// Unblocking a thread pinned to the current CPU marks the CPU for preemption.
+    //
+    // Verify that in certain contexts where preemption cannot immediately occur, unblocking a
+    // thread pinned to the current CPU will mark the CPU for preemption.
+    //
+    // This test covers four cases:
+    //
+    // 1. preemption is disabled
+    // 2. eager resched is disabled
+    // 3. timeslice extension
+    // 4. a spinlock is held
+    //
+    // See https://fxbug.dev/42051271 for motivation.
+    #[test]
+    fn test_local_preempt_pending() {
+        // Now test each case using the common code above.
+
+        // 1. Preemption disabled should cause a preemption event to become pending.
+        expect_true!(setup_and_run_with(&subtest!(|event: &Event| {
+            let _apd = AutoPreemptDisabler::new();
+            // Unblock the |waiter|.  Because we've got preemption disabled, a preemption event
+            // for the local CPU should become pending.
+            event.signal();
+            // SAFETY: The current thread stays alive for the duration of this test, and
+            // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+            let pending = unsafe { (*current_preemption_state()).preempts_pending() };
+            expect_ne!(0, pending);
+            expect_true!((pending | cpu_num_to_mask(curr_cpu_num())) != 0);
+        })));
+
+        // 2. Eager resched disabled should cause a preemption event to become pending.
+        expect_true!(setup_and_run_with(&subtest!(|event: &Event| {
+            let _aerd = AutoEagerReschedDisabler::new();
+            // Unblock the |waiter|.  Because we've got eager resched disabled (which implies
+            // preempt disable), a preemption event for the local CPU should become pending.
+            event.signal();
+            // SAFETY: As in case 1.
+            let pending = unsafe { (*current_preemption_state()).preempts_pending() };
+            expect_ne!(0, pending);
+            expect_true!((pending | cpu_num_to_mask(curr_cpu_num())) != 0);
+        })));
+
+        // 3. A timeslice extension should cause a preemption event to become pending.
+        expect_true!(setup_and_run_with(&subtest!(|event: &Event| {
+            let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+            // Unblock the |waiter|.  Because we've got eager resched disabled (which implies
+            // preempt disable), a preemption event for the local CPU should become pending.
+            event.signal();
+            // SAFETY: As in case 1.
+            let pending = unsafe { (*current_preemption_state()).preempts_pending() };
+            expect_ne!(0, pending);
+            expect_true!((pending | cpu_num_to_mask(curr_cpu_num())) != 0);
+        })));
+
+        // 4. Holding a spinlock should cause a preemption event to become pending.
+        expect_true!(setup_and_run_with(&subtest!(|event: &Event| {
+            ksync::declare_singleton_monitored_spinlock!(LocalLock);
+            ksync::lock!(let _guard = LocalLock::get().lock_with(ksync::source_tag!()));
+            // Unblock the |waiter|.  Because we're holding a spinlock, a preemption event for the
+            // local CPU should become pending.
+            event.signal();
+            // SAFETY: As in case 1.
+            let pending = unsafe { (*current_preemption_state()).preempts_pending() };
+            expect_ne!(0, pending);
+            expect_true!((pending | cpu_num_to_mask(curr_cpu_num())) != 0);
+        })));
+    }
+
+    /// Mirror of C++ `test_evaluate_timeslice_extension`: extension activation and expiry.
+    #[test]
+    fn test_evaluate_timeslice_extension() {
+        // Nothing preventing preemption.
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+        expect_true!(preemption_state.preempt_is_enabled());
+        expect_true!(preemption_state.evaluate_timeslice_extension());
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Disabled (by count).
+        {
+            let _apd = AutoPreemptDisabler::new();
+            expect_false!(preemption_state.preempt_is_enabled());
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            expect_false!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Disabled (by eager resched count).
+        {
+            let _aerd = AnnotatedAutoEagerReschedDisabler::new();
+            expect_false!(preemption_state.preempt_is_enabled());
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            expect_false!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // Disabled (by infinite timeslice extension).
+        {
+            let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+            expect_false!(preemption_state.preempt_is_enabled());
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            expect_false!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // In the tests below, the current thread will defer preemption for
+        // EPSILON_DURATION and sleep for EPSILON_DURATION.  The only requirement for
+        // correctness is that this value is greater than zero.  We use the value 1 to
+        // minimize test runtime.
+        const EPSILON_DURATION: DurationMono = DurationMono(1);
+
+        // See that the timeslice extension expires.
+        {
+            let _guard = AutoExpiringPreemptDisabler::new(EPSILON_DURATION);
+            // Note, we cannot reliably assert that preemption is disabled at this point
+            // because a preemption request may have already occurred and
+            // EPSILON_DURATION may have already elapsed.
+            reschedule();
+            let _ = sleep_relative(EPSILON_DURATION);
+            expect_true!(preemption_state.evaluate_timeslice_extension());
+            expect_true!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // AutoPreemptDisabler inside an expired AutoExpiringPreemptDisabler.
+        {
+            let _guard1 = AutoExpiringPreemptDisabler::new(EPSILON_DURATION);
+            let _guard2 = AutoPreemptDisabler::new();
+            expect_false!(preemption_state.preempt_is_enabled());
+            reschedule();
+            let _ = sleep_relative(EPSILON_DURATION);
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            // Still false because of the APD.
+            expect_false!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // AutoEagerReschedDisabler inside an expired AutoExpiringPreemptDisabler.
+        {
+            let _guard1 = AutoExpiringPreemptDisabler::new(EPSILON_DURATION);
+            let _guard2 = AnnotatedAutoEagerReschedDisabler::new();
+            expect_false!(preemption_state.preempt_is_enabled());
+            reschedule();
+            let _ = sleep_relative(EPSILON_DURATION);
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            // Still false because of the AERD.
+            expect_false!(preemption_state.preempt_is_enabled());
+        }
+        expect_true!(preemption_state.preempt_is_enabled());
+        expect_eq!(preemption_state.preempts_pending(), 0);
+    }
+
+    /// Holder for the `CriticalMutex` of `test_apd_in_critical_mutex`.
+    #[ksync::guarded]
+    struct CriticalMutexHolder {
+        #[mutex]
+        mutex: ksync::KMutex<ksync::RawCriticalMutex>,
+    }
+
+    /// An AutoPreemptDisabler inside a CriticalMutex does not clear the mutex's extension.
+    //
+    // Verify that an AutoPreemptDisabler inside a CriticalMutex with a non-expired
+    // timeslice extension does not clear the CriticalMutex's extension.
+    #[test]
+    fn test_apd_in_critical_mutex() {
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+
+        stack_pin_init!(let holder = pin_init!(CriticalMutexHolder {
+            mutex <- ksync::KMutex::init(),
+        }));
+
+        {
+            // `KMutex<RawCriticalMutex>`'s guard is the `Acquire`/`Release(should_clear)` pair.
+            ksync::lock!(let _guard = holder.lock_mutex());
+
+            expect_false!(preemption_state.preempt_is_enabled());
+            expect_false!(preemption_state.evaluate_timeslice_extension());
+            expect_false!(preemption_state.preempt_is_enabled());
+
+            {
+                let _apd = AutoPreemptDisabler::new();
+                expect_false!(preemption_state.preempt_is_enabled());
+                expect_false!(preemption_state.evaluate_timeslice_extension());
+                expect_false!(preemption_state.preempt_is_enabled());
+            }
+        }
+    }
+
+    /// Mirror of C++ `test_flush_race`: reenabling with an inactive timeslice extension in place.
+    #[test]
+    fn test_flush_race() {
+        // This test simulates a race condition where a preemption is requested (via IPI
+        // or timer) concurrent with reenabling preemption / eager rescheduling while an
+        // inactive timeslice extension is in place.
+        // SAFETY: The current thread stays alive for the duration of this test, and
+        // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+        let preemption_state = unsafe { &*current_preemption_state() };
+        expect_true!(preemption_state.preempt_is_enabled());
+
+        // In each block below, dropping `_guard` clears the extension with the counts at zero and
+        // so flushes the pending local bit the block left behind, as in C++.
+
+        // Test PreemptReenable.
+        {
+            let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+            let curr_mask = cpu_num_to_mask(curr_cpu_num());
+            {
+                let _apd = AutoPreemptDisabler::new();
+                expect_false!(preemption_state.preempt_is_enabled());
+
+                // We'll simulate a race by marking the current CPU as pending for
+                // preemption without going through the normal PreemptSetPending path
+                // because we want to test the behavior when the extension is
+                // inactive, and PreemptSetPending will activate it.
+                preemption_state.preempts_pending_add(curr_mask);
+                // When we leave this scope and reenable preemption, we'd better not flush.
+            }
+            expect_false!(preemption_state.preempt_is_enabled());
+            // See that we did not flush.
+            expect_eq!(curr_mask, preemption_state.preempts_pending());
         }
 
-        // Nested.  Only the outermost guard matters.
+        // Test PreemptReenableDelayFlush.
         {
-            assert_true!(preempt_is_enabled());
+            let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+            let curr_mask = cpu_num_to_mask(curr_cpu_num());
+            let should_preempt = {
+                let _irqd = InterruptDisableGuard::new();
+                crate::arch_rs::set_blocking_disallowed(true);
+                let _cleanup = zr::defer(|| crate::arch_rs::set_blocking_disallowed(false));
+                preemption_state.preempt_disable();
+                preemption_state.preempts_pending_add(curr_mask);
+                // SAFETY: This pairs with the `preempt_disable()` just above, and no
+                // `PreemptDisabledToken` exists in this test.
+                unsafe { preemption_state.preempt_reenable_delay_flush() }
+            };
+            expect_false!(preemption_state.preempt_is_enabled());
+            expect_false!(should_preempt);
+        }
+
+        // Test EagerReschedReenable.
+        {
+            let _guard = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
+            let curr_mask = cpu_num_to_mask(curr_cpu_num());
             {
-                let _guard1 = AutoExpiringPreemptDisabler::new(DurationMono::INFINITE);
-                assert_false!(preempt_is_enabled());
-                {
-                    let _guard2 = AutoExpiringPreemptDisabler::new(DurationMono::ZERO);
-                    // Even though _guard2's duration is 0, preemption should still be disabled
-                    // because of _guard1's extension.
-                    assert_false!(preempt_is_enabled());
-                }
-                assert_false!(preempt_is_enabled());
+                let _aerd = AnnotatedAutoEagerReschedDisabler::new();
+                expect_false!(preemption_state.preempt_is_enabled());
+                preemption_state.preempts_pending_add(CPU_MASK_ALL);
             }
-            assert_true!(preempt_is_enabled());
+            expect_false!(preemption_state.preempt_is_enabled());
+            // See that we flushed the remote CPUs, but not the local.
+            expect_eq!(curr_mask, preemption_state.preempts_pending());
+        }
+
+        expect_true!(preemption_state.preempt_is_enabled());
+        expect_eq!(preemption_state.preempts_pending(), 0);
+        expect_false!(crate::arch_rs::blocking_disallowed());
+    }
+
+    /// Verify that it's legal to call preempt while holding a spinlock.
+    //
+    // This is a regression test for https://fxbug.dev/473600952.
+    #[test]
+    fn test_preempt_with_spinlock() {
+        ksync::declare_singleton_monitored_spinlock!(SpinlockForTest);
+
+        {
+            ksync::lock!(let _guard = SpinlockForTest::get().lock_with(ksync::source_tag!()));
+            preempt();
+            // SAFETY: The current thread stays alive for the duration of this test, and
+            // `PreemptionState` is all relaxed atomics; no `&Thread` is formed.
+            let pending = unsafe { (*current_preemption_state()).preempts_pending() };
+            assert_ne!(0, pending & cpu_num_to_mask(curr_cpu_num()));
         }
     }
 }

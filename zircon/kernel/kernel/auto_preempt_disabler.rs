@@ -77,7 +77,9 @@ impl AutoPreemptDisabler {
     #[inline]
     pub fn enable(&mut self) {
         if self.disabled {
-            preempt_reenable();
+            // SAFETY: `self.disabled` records that this guard's own `preempt_disable()` is still
+            // unmatched, and this guard type never mints a `PreemptDisabledToken`.
+            unsafe { preempt_reenable() };
             self.disabled = false;
         }
     }
@@ -141,7 +143,10 @@ impl AnnotatedAutoPreemptDisabler {
     #[inline]
     pub fn enable(&mut self) {
         if self.disabled {
-            preempt_reenable();
+            // SAFETY: `self.disabled` records that this guard's own `preempt_disable()` is still
+            // unmatched, and the `&mut self` borrow guarantees that no `&PreemptDisabledToken`
+            // handed out by `Self::token(&self)` is still live.
+            unsafe { preempt_reenable() };
             self.disabled = false;
         }
     }
@@ -199,7 +204,9 @@ impl AutoEagerReschedDisabler {
     #[inline]
     pub fn enable(&mut self) {
         if self.disabled {
-            eager_resched_reenable();
+            // SAFETY: `self.disabled` records that this guard's own `eager_resched_disable()` is
+            // still unmatched, and this guard type never mints a `PreemptDisabledToken`.
+            unsafe { eager_resched_reenable() };
             self.disabled = false;
         }
     }
@@ -257,7 +264,10 @@ impl AnnotatedAutoEagerReschedDisabler {
     #[inline]
     pub fn enable(&mut self) {
         if self.disabled {
-            eager_resched_reenable();
+            // SAFETY: `self.disabled` records that this guard's own `eager_resched_disable()` is
+            // still unmatched, and the `&mut self` borrow guarantees that no
+            // `&PreemptDisabledToken` handed out by `Self::token(&self)` is still live.
+            unsafe { eager_resched_reenable() };
             self.disabled = false;
         }
     }

@@ -126,6 +126,27 @@ typedef void (*thread_trampoline_routine)() __NO_RETURN;
 #define DEFAULT_PRIORITY (NUM_PRIORITIES / 2)
 #define HIGH_PRIORITY ((NUM_PRIORITIES / 4) * 3)
 
+class PreemptionState;
+
+// Rust implementations of PreemptionState's methods (see kernel/thread.rs); the C++ methods of the
+// same name below are thin forwarders to these. The Rust mirror holds only relaxed atomics, so
+// every entry point takes a shared reference.
+extern "C" {
+void rust_preemption_state_preempt_disable(const PreemptionState& preemption_state);
+void rust_preemption_state_preempt_reenable(const PreemptionState& preemption_state);
+[[nodiscard]] bool rust_preemption_state_preempt_reenable_delay_flush(
+    const PreemptionState& preemption_state);
+void rust_preemption_state_eager_resched_disable(const PreemptionState& preemption_state);
+void rust_preemption_state_eager_resched_reenable(const PreemptionState& preemption_state);
+bool rust_preemption_state_set_timeslice_extension(const PreemptionState& preemption_state,
+                                                   zx_duration_mono_t extension_duration);
+void rust_preemption_state_clear_timeslice_extension(const PreemptionState& preemption_state);
+void rust_preemption_state_preempt_set_pending(const PreemptionState& preemption_state,
+                                               cpu_mask_t reschedule_mask);
+bool rust_preemption_state_evaluate_timeslice_extension(const PreemptionState& preemption_state);
+void rust_preemption_state_reset(const PreemptionState& preemption_state);
+}  // extern "C"
+
 class PreemptionState {
  public:
   // Counters contained in state_ are limited to 15 bits.
@@ -135,16 +156,8 @@ class PreemptionState {
   // The eager resched disable count is in the next highest 15 bits.
   static constexpr uint32_t kEagerReschedDisableShift = 15;
   static constexpr uint32_t kEagerReschedDisableMask = kMaxCountValue << kEagerReschedDisableShift;
-  // Finally, the timeslice extension flags are the highest 2 bits.
-  static constexpr uint32_t kTimesliceExtensionFlagsShift = 30;
-  static constexpr uint32_t kTimesliceExtensionFlagsMask =
-      ~(kPreemptDisableMask | kEagerReschedDisableMask);
-  enum TimesliceExtensionFlags {
-    // Thread has a timeslice extension that may or may not be Active.
-    Present = 0b01 << kTimesliceExtensionFlagsShift,
-    // Thread has an Active (in use) timeslice extension.
-    Active = 0b10 << kTimesliceExtensionFlagsShift,
-  };
+  // Finally, the timeslice extension flags (Present and Active) are the highest 2 bits; they are
+  // only interpreted by the Rust implementation (kernel/thread.rs).
 
   cpu_mask_t preempts_pending() const { return preempts_pending_.load(); }
   void preempts_pending_clear() { preempts_pending_.store(0); }
@@ -171,53 +184,13 @@ class PreemptionState {
   //
   // A call to PreemptDisable() must be matched by a later call to
   // PreemptReenable() to decrement the preempt disable counter.
-  void PreemptDisable() {
-    const uint32_t old_state = state_.fetch_add(1);
-    ASSERT(PreemptDisableCount(old_state) < kMaxCountValue);
-  }
+  void PreemptDisable() { rust_preemption_state_preempt_disable(*this); }
 
   // PreemptReenable() decrements the preempt disable counter and flushes any
   // pending local preemption operation.  Callers must ensure that they are
   // calling from a context where blocking is allowed, as the call may result in
   // the immediate preemption of the calling thread.
-  void PreemptReenable() {
-    const uint32_t old_state = state_.fetch_sub(1);
-    ASSERT_MSG(PreemptDisableCount(old_state) > 0, "unmasked preemption state: %" PRIu32,
-               old_state);
-
-    // First, check for the expected situation of dropping the preempt count to zero
-    // with a zero eager resched disable count and no timeslice extension.
-    if (old_state == 1) {
-      FlushPending(Flush::FlushLocal);
-      return;
-    }
-
-    // Things must be more complicated.  Check for the various situations in
-    // decreasing order of likeliness.
-
-    // Are either of the counters non-zero?
-    if (EagerReschedDisableCount(old_state) > 0 || PreemptDisableCount(old_state) > 1) {
-      // We've got a non-zero count in one of the counters.
-      return;
-    }
-
-    // The counters are both zero.  At this point, we must have a timeslice
-    // extension installed.  This extension may be inactive, active and
-    // not-yet-expired, or active and expired.
-
-    // Is there an active extension?
-    if (HasActiveTimesliceExtension(old_state)) {
-      // Has it expired?
-      if (ClearActiveTimesliceExtensionIfExpired()) {
-        // It has.  We can flush.
-        DEBUG_ASSERT(PreemptIsEnabled());
-        FlushPending(Flush::FlushLocal);
-        return;
-      }
-    }
-
-    // We have an extension that's either inactive or active+unexpired.
-  }
+  void PreemptReenable() { rust_preemption_state_preempt_reenable(*this); }
 
   void PreemptDisableAnnotated() TA_ACQ(preempt_disabled_token) {
     preempt_disabled_token.Acquire();
@@ -254,43 +227,7 @@ class PreemptionState {
   // happen, either by having the user call a method on the object to manually
   // force the preemption event, or when the object destructs.
   [[nodiscard]] bool PreemptReenableDelayFlush() {
-    DEBUG_ASSERT(arch_ints_disabled());
-    DEBUG_ASSERT(arch_blocking_disallowed());
-
-    const uint32_t old_state = state_.fetch_sub(1);
-    ASSERT(PreemptDisableCount(old_state) > 0);
-
-    // First, check for the expected situation of dropping the preempt count to zero
-    // with a zero eager resched disable count and no timeslice extension.
-    if (old_state == 1) {
-      const cpu_mask_t local_mask = cpu_num_to_mask(arch_curr_cpu_num());
-      const cpu_mask_t prev_mask = preempts_pending_.fetch_and(~local_mask);
-      return (local_mask & prev_mask) != 0;
-    }
-
-    if (EagerReschedDisableCount(old_state) > 0 || PreemptDisableCount(old_state) > 1) {
-      // We've got a non-zero count in one of the counters.
-      return false;
-    }
-
-    // The counters are both zero.  At this point, we must have a timeslice
-    // extension installed.  This extension may be inactive, active and
-    // not-yet-expired, or active and expired.
-
-    // Is there an active extension?
-    if (HasActiveTimesliceExtension(old_state)) {
-      // Has it expired?
-      if (ClearActiveTimesliceExtensionIfExpired()) {
-        // It has.
-        DEBUG_ASSERT(PreemptIsEnabled());
-        const cpu_mask_t local_mask = cpu_num_to_mask(arch_curr_cpu_num());
-        const cpu_mask_t prev_mask = preempts_pending_.fetch_and(~local_mask);
-        return (local_mask & prev_mask) != 0;
-      }
-    }
-
-    // We have an extension that's either inactive or active+unexpired.
-    return false;
+    return rust_preemption_state_preempt_reenable_delay_flush(*this);
   }
 
   // EagerReschedDisable() increments the eager resched disable counter for the
@@ -305,56 +242,11 @@ class PreemptionState {
   //
   // A call to EagerReschedDisable() must be matched by a later call to
   // EagerReschedReenable() to decrement the eager resched disable counter.
-  void EagerReschedDisable() {
-    const uint32_t old_state = state_.fetch_add(1 << kEagerReschedDisableShift);
-    ASSERT_MSG(EagerReschedDisableCount(old_state) < kMaxCountValue, "old_state: %#" PRIx32,
-               old_state);
-  }
+  void EagerReschedDisable() { rust_preemption_state_eager_resched_disable(*this); }
 
   // EagerReschedReenable() decrements the eager resched disable counter and
   // flushes pending local and/or remote preemptions if enabled, respectively.
-  void EagerReschedReenable() {
-    const uint32_t old_state = state_.fetch_sub(1 << kEagerReschedDisableShift);
-    ASSERT_MSG(EagerReschedDisableCount(old_state) > 0, "old_state: %#" PRIx32, old_state);
-
-    // First check the expected case.
-    if (old_state == 1 << kEagerReschedDisableShift) {
-      // Counts are both zero and there's no timeslice extension.
-      //
-      // Flushing all might reschedule this CPU, make sure it's OK to block.
-      FlushPending(Flush::FlushAll);
-      return;
-    }
-
-    if (EagerReschedDisableCount(old_state) > 1) {
-      // Nothing to do since eager resched disable implies preempt disable.
-      return;
-    }
-
-    // We know we can at least flush remote.  Can we also flush local?
-    if (PreemptDisableCount(old_state) > 0) {
-      // Nope, we've got a non-zero preempt disable count.
-      FlushPending(Flush::FlushRemote);
-      return;
-    }
-
-    // Is there an active extension?
-    if (HasActiveTimesliceExtension(old_state)) {
-      // Has it expired?
-      if (ClearActiveTimesliceExtensionIfExpired()) {
-        // Yes, preempt disable count is zero and the active extension has
-        // expired.  We can flush all.
-        DEBUG_ASSERT(PreemptIsEnabled());
-        FlushPending(Flush::FlushAll);
-        return;
-      }
-      // Extension is active, can't flush local.
-    }
-
-    // We have an inactive extension or an unexpired active extension.  Either
-    // way, we can flush remote, but not local.
-    FlushPending(Flush::FlushRemote);
-  }
+  void EagerReschedReenable() { rust_preemption_state_eager_resched_reenable(*this); }
 
   void EagerReschedDisableAnnotated() TA_ACQ(preempt_disabled_token) {
     preempt_disabled_token.Acquire();
@@ -379,35 +271,14 @@ class PreemptionState {
   // activated, but preemption will not occur until the count has dropped to
   // zero and the extension has expired or has been clear.
   bool SetTimesliceExtension(zx_duration_mono_t extension_duration) {
-    if (extension_duration <= 0) {
-      return false;
-    }
-
-    uint32_t state = state_.load();
-    if (HasTimesliceExtension(state)) {
-      return false;
-    }
-    timeslice_extension_.store(extension_duration);
-    // Make sure that the timeslice extension value becomes visible to an
-    // interrupt handler in this thread prior to the state_ flag becoming
-    // visible.  See comment at |timeslice_extension_|.
-    ktl::atomic_signal_fence(ktl::memory_order_release);
-    state_.fetch_or(TimesliceExtensionFlags::Present);
-    return true;
+    return rust_preemption_state_set_timeslice_extension(*this, extension_duration);
   }
 
   // Unconditionally clears any timeslice extension.
   //
   // This method must be called in normal thread context because it may trigger
   // local preemption.
-  void ClearTimesliceExtension() {
-    // Clear any present timeslice extension.
-    const uint32_t old_state = state_.fetch_and(~kTimesliceExtensionFlagsMask);
-    // Are the counters both zero?
-    if ((old_state & ~kTimesliceExtensionFlagsMask) == 0) {
-      FlushPending(Flush::FlushLocal);
-    }
-  }
+  void ClearTimesliceExtension() { rust_preemption_state_clear_timeslice_extension(*this); }
 
   // PreemptSetPending() marks a pending preemption for the given CPUs.
   //
@@ -416,21 +287,7 @@ class PreemptionState {
   // PreemptDisable() and PreemptReenable(). It is similar to Reschedule(),
   // except that it does not need to be called with thread's lock held.
   void PreemptSetPending(cpu_mask_t reschedule_mask = cpu_num_to_mask(arch_curr_cpu_num())) {
-    DEBUG_ASSERT(arch_ints_disabled());
-    DEBUG_ASSERT(arch_blocking_disallowed());
-    DEBUG_ASSERT(!PreemptIsEnabled());
-
-    preempts_pending_.fetch_or(reschedule_mask);
-
-    // Are we pending for the local CPU?
-    const cpu_mask_t local_cpu_mask = cpu_num_to_mask(arch_curr_cpu_num());
-    const bool local_cpu_in_resched_mask = (reschedule_mask & local_cpu_mask) != 0;
-    if (!local_cpu_in_resched_mask) {
-      // Nope.
-      return;
-    }
-
-    EvaluateTimesliceExtension();
+    rust_preemption_state_preempt_set_pending(*this, reschedule_mask);
   }
 
   // Evaluate the thread's timeslice extension (if present), activating or
@@ -438,55 +295,12 @@ class PreemptionState {
   //
   // Returns whether preemption is enabled.
   bool EvaluateTimesliceExtension() {
-    const uint32_t old_state = state_.load();
-    if (old_state == 0) {
-      // No counts, no extension.  The common case.
-      return true;
-    }
-
-    if (!HasTimesliceExtension(old_state)) {
-      // No extension, but we have a non-zero count.
-      return false;
-    }
-
-    if (HasActiveTimesliceExtension(old_state)) {
-      if (!ClearActiveTimesliceExtensionIfExpired()) {
-        return false;
-      }
-      // The active extension has expired.  If the counts are both zero, then
-      // we're ready for preemption.
-      return (old_state & ~kTimesliceExtensionFlagsMask) == 0;
-    }
-
-    // We have a not-yet-active extension.  Time to activate it.
-    //
-    // See comment at |timeslice_extension_| for why the signal fence is needed.
-    ktl::atomic_signal_fence(ktl::memory_order_acquire);
-    const zx_duration_mono_t extension_duration = timeslice_extension_.load();
-    if (extension_duration <= 0) {
-      // Already expired.
-      state_.fetch_and(~kTimesliceExtensionFlagsMask);
-      return (old_state & ~kTimesliceExtensionFlagsMask) == 0;
-    }
-    const zx_instant_mono_t deadline =
-        zx_time_add_duration(current_mono_time(), extension_duration);
-    timeslice_extension_deadline_.store(deadline);
-    // See comment at |timeslice_extension_deadline_| for why the signal fence
-    // is needed.
-    ktl::atomic_signal_fence(ktl::memory_order_release);
-    state_.fetch_or(TimesliceExtensionFlags::Active);
-    SetPreemptionTimerForExtension(deadline);
-    return false;
+    return rust_preemption_state_evaluate_timeslice_extension(*this);
   }
 
   // Resets the preemption state. This should only be called when reviving an
   // idle/power thread that halted while taking a CPU offline.
-  void Reset() {
-    state_ = 0;
-    preempts_pending_ = 0;
-    timeslice_extension_ = 0;
-    timeslice_extension_deadline_ = 0;
-  }
+  void Reset() { rust_preemption_state_reset(*this); }
 
  private:
   friend class PreemptDisableTestAccess;
@@ -503,53 +317,6 @@ class PreemptionState {
   }
 
   static inline uint32_t PreemptDisableCount(uint32_t state) { return state & kPreemptDisableMask; }
-
-  static inline bool HasTimesliceExtension(uint32_t state) {
-    return (state & TimesliceExtensionFlags::Present) != 0;
-  }
-
-  static inline bool HasActiveTimesliceExtension(uint32_t state) {
-    return (state & TimesliceExtensionFlags::Active) != 0;
-  }
-
-  // A non-inlined helper method to set the preemption timer when a timeslice
-  // has been extended.  This must be non-inline to avoid an #include cycle with
-  // percpu.h and thread.h.
-  static void SetPreemptionTimerForExtension(zx_instant_mono_t deadline);
-
-  // Checks whether the active timeslice extension has expired and if so, clears
-  // it and returns true.
-  //
-  // Should only be called when there is an active timeslice extension.
-  bool ClearActiveTimesliceExtensionIfExpired() {
-    // Has the extension expired?
-    //
-    // See comment at |timeslice_extension_deadline_| for why the signal fence is needed.
-    ktl::atomic_signal_fence(ktl::memory_order_acquire);
-    if (current_mono_time() >= timeslice_extension_deadline_.load()) {
-      state_.fetch_and(~kTimesliceExtensionFlagsMask);
-      return true;
-    }
-    return false;
-  }
-
-  enum Flush { FlushLocal = 0x1, FlushRemote = 0x2, FlushAll = FlushLocal | FlushRemote };
-
-  // Flushes local, remote, or all pending preemptions.
-  //
-  // This method is split in two so that the early out case of no pending
-  // preemptions may be inlined without creating a header include cycle.
-  void FlushPending(Flush flush) {
-    // Early out to avoid unnecessarily taking the thread lock. This check races
-    // any potential flush due to context switch, however, the context switch can
-    // only clear bits that would have been flushed below, no new pending
-    // preemptions are possible in the mask bits indicated by |flush|.
-    if (likely(preempts_pending_.load() == 0)) {
-      return;
-    }
-    FlushPendingContinued(flush);
-  }
-  void FlushPendingContinued(Flush flush);
 
   // state_ contains three fields:
   //
@@ -578,8 +345,8 @@ class PreemptionState {
 
   // The maximum duration of the thread's timeslice extension.
   //
-  // This field is only valid when |state_|'s
-  // |kTimeSliceExtensionFlags::Present| flag it set.
+  // This field is only valid when |state_|'s Present timeslice extension flag
+  // is set.
   //
   // This field may only be accessed by its owning thread or in an interrupt
   // context of the owning thread.  When reading this field, be sure to issue an
@@ -592,8 +359,8 @@ class PreemptionState {
 
   // The deadline at which the thread timeslice extension expires.
   //
-  // This field is only valid when |kTimeSliceExtensionFlags::Active| flag it
-  // set.
+  // This field is only valid when |state_|'s Active timeslice extension flag
+  // is set.
   //
   // This field may only be accessed by its owning thread or in an interrupt
   // context of the owning thread.  When reading this field, be sure to issue an

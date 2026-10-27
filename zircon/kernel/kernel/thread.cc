@@ -87,9 +87,6 @@ KCOUNTER(thread_join_count, "thread.join")
 KCOUNTER(thread_suspend_count, "thread.suspend")
 // counts the number of calls to resume() that succeeded.
 KCOUNTER(thread_resume_count, "thread.resume")
-// counts the number of times a thread's timeslice extension was activated (see
-// |PreemptionState::SetTimesliceExtension|).
-KCOUNTER(thread_timeslice_extended, "thread.timeslice_extended")
 // counts the number of calls to restricted_kick() that succeeded.
 KCOUNTER(thread_restricted_kick_count, "thread.restricted_kick")
 // counts the number of failed samples
@@ -1655,44 +1652,6 @@ void Thread::Current::Reschedule() {
 
   DEBUG_ASSERT(current_thread->state() == THREAD_RUNNING);
   Scheduler::Reschedule(current_thread);
-}
-
-void PreemptionState::SetPreemptionTimerForExtension(zx_instant_mono_t deadline) {
-  // Interrupts must be disabled when calling PreemptReset.
-  InterruptDisableGuard interrupt_disable;
-  percpu::Get(arch_curr_cpu_num()).timer_queue.PreemptReset(deadline);
-  kcounter_add(thread_timeslice_extended, 1);
-}
-
-void PreemptionState::FlushPendingContinued(Flush flush) {
-  // If we're flushing the local CPU, make sure OK to block since flushing
-  // local may trigger a reschedule.
-  DEBUG_ASSERT(((flush & FlushLocal) == 0) || !arch_blocking_disallowed());
-
-  InterruptDisableGuard interrupt_disable;
-  // Recheck, pending preemptions could have been flushed by a context switch
-  // before interrupts were disabled.
-  const cpu_mask_t pending_mask = preempts_pending_;
-
-  // If there is a pending local preemption the scheduler will take care of
-  // flushing all pending reschedules.
-  const cpu_mask_t current_cpu_mask = cpu_num_to_mask(arch_curr_cpu_num());
-  if ((pending_mask & current_cpu_mask) != 0 && (flush & FlushLocal) != 0) {
-    // Clear the local preempt pending flag before calling preempt.  Failure
-    // to do this can cause recursion during Scheduler::Preempt if any code
-    // (such as debug tracing code) attempts to disable and re-enable
-    // preemption during the scheduling operation.
-    preempts_pending_ &= ~current_cpu_mask;
-
-    // TODO(johngro): We cannot be holding the current thread's lock while we do
-    // this.  Is there a good way to enforce this requirement via either static
-    // annotation or dynamic checks?
-    Scheduler::Preempt(Scheduler::PreemptType::FlushPending);
-  } else if ((flush & FlushRemote) != 0) {
-    // The current cpu is ignored by mp_reschedule if present in the mask.
-    mp_reschedule(pending_mask, 0);
-    preempts_pending_ &= current_cpu_mask;
-  }
 }
 
 // timer callback to wake up a sleeping thread

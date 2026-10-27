@@ -309,11 +309,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_scheduler_power_state_update_active_power_leve
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_timer_queue_preempt_reset(cpu_num_t cpu, zx_instant_mono_t deadline) {
-  percpu::Get(cpu).timer_queue.PreemptReset(deadline);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_timer_queue_preempt_armed(cpu_num_t cpu) {
   return percpu::Get(cpu).timer_queue.PreemptArmed();
 }

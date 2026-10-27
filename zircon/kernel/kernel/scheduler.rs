@@ -2066,12 +2066,6 @@ unsafe extern "C" {
     );
     fn cpp_current_mono_time_and_boot_ticks(out: *mut SchedMonoTimeAndBootTicks);
 
-    fn cpp_thread_preempts_pending_add(thread: *mut Thread, mask: CpuMask);
-    fn cpp_thread_preempts_pending(thread: *const Thread) -> CpuMask;
-    fn cpp_thread_preempts_pending_clear(thread: *mut Thread);
-    fn cpp_thread_preempt_evaluate_timeslice_extension(thread: *mut Thread) -> bool;
-    fn cpp_thread_preempt_eager_resched_disable_count(thread: *const Thread) -> u32;
-    fn cpp_thread_preempt_set_pending();
     fn cpp_thread_set_ready(thread: *mut Thread);
     fn cpp_arch_num_spinlocks_held() -> u32;
     fn cpp_unblock_list_pop_back(list: *mut UnblockList) -> *mut Thread;
@@ -2149,7 +2143,6 @@ unsafe extern "C" {
         power_level: u8,
         out_active_rate: *mut SchedProcessingRate,
     ) -> zx_types::zx_status_t;
-    fn cpp_timer_queue_preempt_reset(cpu: CpuNum, deadline: zx_types::zx_instant_mono_t);
     fn cpp_timer_queue_preempt_armed(cpu: CpuNum) -> bool;
     fn cpp_thread_call_context_switch_fn_locked(thread: *mut Thread);
     fn cpp_thread_get_aspace(thread: *mut Thread) -> *mut VmAspace;
@@ -6641,11 +6634,10 @@ impl Scheduler {
 
         // Flush pending preemptions.
         // SAFETY: `current_thread` is valid and running on the current CPU with IRQs disabled.
-        unsafe {
-            let preempts_pending = cpp_thread_preempts_pending(current_thread);
-            super::mp::reschedule(preempts_pending, 0);
-            cpp_thread_preempts_pending_clear(current_thread);
-        }
+        let ps = unsafe { &*Thread::preemption_state_ptr(current_thread) };
+        let preempts_pending = ps.preempts_pending();
+        super::mp::reschedule(preempts_pending, 0);
+        ps.preempts_pending_clear();
 
         // If the `next_thread` is not the same as the current thread, we will need to
         // (briefly) drop the scheduler's queue lock in order to acquire the next
@@ -8654,8 +8646,9 @@ unsafe fn preempt_reset(
     if deadline < now {
         COUNTER_PREEMPT_PAST.add(1);
     }
-    // SAFETY: `current_cpu` is the current CPU with interrupts disabled.
-    unsafe { cpp_timer_queue_preempt_reset(current_cpu, deadline) };
+    // SAFETY: `current_cpu` is the current CPU with interrupts disabled, so this is the current
+    // CPU's timer queue.
+    unsafe { PerCpu::get(current_cpu).timer_queue.preempt_reset(deadline) };
 }
 
 impl Scheduler {
@@ -9291,10 +9284,8 @@ pub unsafe extern "C" fn rust_kernel_scheduler_block(current_thread: *mut Thread
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_kernel_scheduler_timer_tick(_now: SchedTime) {
     let _trace = local_ktrace_begin_scope!(COMMON, "sched_timer_tick");
-    // SAFETY: Called from the local CPU's preemption timer interrupt handler.
-    unsafe {
-        cpp_thread_preempt_set_pending();
-    }
+    // Called from the local CPU's preemption timer interrupt handler.
+    super::thread::preempt_set_pending();
 }
 
 /// Releases the lock held by the previous and current threads after a context
@@ -10088,20 +10079,19 @@ impl Scheduler {
         let local_cpu = cpus_to_reschedule_mask & local_mask;
 
         let current_thread = super::thread::current_get();
+        // SAFETY: `current_thread` is the current CPU's active thread.
+        let ps = unsafe { &*Thread::preemption_state_ptr(current_thread) };
 
         // First deal with the remote CPUs.
         //
         // Can we reschedule them?
-        // SAFETY: `current_thread` is the current CPU's active thread.
-        if unsafe { cpp_thread_preempt_eager_resched_disable_count(current_thread) } > 0 {
+        if ps.eager_resched_disable_count() > 0 {
             // EagerReschedDisabled implies that local preemption is also disabled.
             debug_assert!(!super::thread::preempt_is_enabled());
             // Nope, save them for later.
-            // SAFETY: `current_thread` is the current CPU's active thread.
-            unsafe { cpp_thread_preempts_pending_add(current_thread, cpus_to_reschedule_mask) };
+            ps.preempts_pending_add(cpus_to_reschedule_mask);
             if local_cpu != 0 {
-                // SAFETY: `current_thread` is the current CPU's active thread.
-                unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+                ps.evaluate_timeslice_extension();
             }
             return;
         }
@@ -10114,15 +10104,12 @@ impl Scheduler {
             // Nothing to do.
             return;
         }
-        // SAFETY: `current_thread` is the current CPU's active thread.
-        let preempt_enabled =
-            unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+        let preempt_enabled = ps.evaluate_timeslice_extension();
 
         // Can we do it here and now?
         if !preempt_enabled {
             // Nope, can't do it now. Make a note for later.
-            // SAFETY: `current_thread` is the current CPU's active thread.
-            unsafe { cpp_thread_preempts_pending_add(current_thread, local_cpu) };
+            ps.preempts_pending_add(local_cpu);
             return;
         }
 
@@ -11569,7 +11556,7 @@ unsafe fn yield_thread(current_thread: *mut Thread) {
 /// # Safety
 /// Must be called with no active `ChainLockTransaction` on the current CPU
 /// (`TA_EXCL(chainlock_transaction_token)`).
-unsafe fn preempt(preempt_type: PreemptType) {
+pub(crate) unsafe fn preempt(preempt_type: PreemptType) {
     let current_thread = super::thread::current_get();
     // SAFETY: `current_thread` is the current CPU's active thread.
     let lock = unsafe { &*thread_get_lock(current_thread) };
@@ -11601,7 +11588,10 @@ unsafe fn preempt_locked(current_thread: *mut Thread, preempt_type: PreemptType)
     // SAFETY: Querying per-CPU spinlock count with interrupts disabled.
     if unsafe { cpp_arch_num_spinlocks_held() } > 0 {
         // SAFETY: `current_thread` is valid.
-        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        unsafe {
+            (*Thread::preemption_state_ptr(current_thread))
+                .preempts_pending_add(cpu_num_to_mask(current_cpu));
+        }
         super::mp::reschedule_self();
         return;
     }
@@ -11633,17 +11623,16 @@ unsafe fn preempt_locked(current_thread: *mut Thread, preempt_type: PreemptType)
 ///   and its lock must be the sole lock held by an active, finalized
 ///   `ChainLockTransaction` (`TA_REQ(chainlock_transaction_token, current_thread->get_lock())`).
 /// - Interrupts must be disabled and the current CPU's `queue_lock_` must not be held.
-unsafe fn reschedule(current_thread: *mut Thread) {
+pub(crate) unsafe fn reschedule(current_thread: *mut Thread) {
     let mut trace = local_ktrace_begin_scope!(COMMON, "sched_reschedule");
     debug_assert!(current_thread == super::thread::current_get());
     let current_cpu = crate::arch_rs::curr_cpu_num();
     // SAFETY: `current_thread` is valid.
-    let preempt_enabled =
-        unsafe { cpp_thread_preempt_evaluate_timeslice_extension(current_thread) };
+    let ps = unsafe { &*Thread::preemption_state_ptr(current_thread) };
+    let preempt_enabled = ps.evaluate_timeslice_extension();
     // Pend the preemption rather than rescheduling if preemption is disabled.
     if !preempt_enabled {
-        // SAFETY: `current_thread` is valid.
-        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        ps.preempts_pending_add(cpu_num_to_mask(current_cpu));
         return;
     }
 
@@ -11652,8 +11641,7 @@ unsafe fn reschedule(current_thread: *mut Thread) {
     // released and interrupts have been re-enabled.
     // SAFETY: Querying per-CPU spinlock count with interrupts disabled.
     if unsafe { cpp_arch_num_spinlocks_held() } > 0 {
-        // SAFETY: `current_thread` is valid.
-        unsafe { cpp_thread_preempts_pending_add(current_thread, cpu_num_to_mask(current_cpu)) };
+        ps.preempts_pending_add(cpu_num_to_mask(current_cpu));
         super::mp::reschedule_self();
         return;
     }

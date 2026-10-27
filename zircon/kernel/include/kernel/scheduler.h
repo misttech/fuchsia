@@ -153,7 +153,6 @@ uint64_t cpp_scheduler_lookup_power_cost(const Scheduler* sched, cpu_num_t cpu,
                                          SchedProcessingRate rate);
 SchedUtilization cpp_scheduler_lookup_total_normalized_utilization(const Scheduler* sched,
                                                                    cpu_num_t cpu);
-void cpp_timer_queue_preempt_reset(cpu_num_t cpu, zx_instant_mono_t deadline);
 bool cpp_timer_queue_preempt_armed(cpu_num_t cpu);
 void cpp_thread_call_context_switch_fn_locked(Thread* thread);
 VmAspace* cpp_thread_get_aspace(Thread* thread);
@@ -170,11 +169,6 @@ SchedulerState::WaitQueueInheritedSchedulerState* cpp_owq_get_inherited_state(Ow
 const SchedulerState::WaitQueueInheritedSchedulerState* cpp_owq_get_inherited_state_const(
     const OwnedWaitQueue* owq);
 SchedUtilization cpp_scheduler_get_normalized_utilization(const Scheduler* sched);
-void cpp_thread_preempts_pending_add(Thread* thread, cpu_mask_t mask);
-cpu_mask_t cpp_thread_preempts_pending(const Thread* thread);
-void cpp_thread_preempts_pending_clear(Thread* thread);
-bool cpp_thread_preempt_evaluate_timeslice_extension(Thread* thread);
-uint32_t cpp_thread_preempt_eager_resched_disable_count(const Thread* thread);
 void cpp_thread_set_ready(Thread* thread);
 Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list);
 

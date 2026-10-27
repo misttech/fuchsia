@@ -49,6 +49,13 @@ FFI_ALWAYS_INLINE zx_status_t cpp_timer_trylock_or_cancel(Timer* timer, ChainLoc
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_timer_queue_preempt_reset(TimerQueue* queue,
+                                                     zx_instant_mono_t deadline) {
+  DEBUG_ASSERT(queue != nullptr);
+  queue->PreemptReset(deadline);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_timer_queue_print_timer_queues(char* buf, size_t len) {
   DEBUG_ASSERT(buf != nullptr);
   TimerQueue::PrintTimerQueues(buf, len);

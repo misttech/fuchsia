@@ -111,16 +111,6 @@ void cpp_thread_kill(Thread* thread);
 zx_status_t cpp_thread_suspend(Thread* thread);
 bool cpp_thread_is_blocked(Thread* thread);
 Thread* cpp_thread_current_get();
-bool cpp_thread_preempt_set_timeslice_extension(zx_duration_mono_t duration);
-void cpp_thread_preempt_clear_timeslice_extension();
-void cpp_thread_preempt_disable();
-void cpp_thread_preempt_reenable();
-void cpp_thread_eager_resched_disable();
-void cpp_thread_eager_resched_reenable();
-uint32_t cpp_thread_preempt_disable_count();
-uint32_t cpp_thread_eager_resched_disable_count();
-void cpp_thread_preempt_set_pending();
-bool cpp_thread_preempt_is_enabled();
 void cpp_thread_preempt();
 zx_status_t cpp_thread_current_sleep_etc(const Deadline* deadline, Interruptible interruptible,
                                          zx_instant_mono_t now);
@@ -144,11 +134,6 @@ void cpp_thread_current_memory_allocation_state_disable();
 bool cpp_thread_current_memory_allocation_state_is_enabled();
 void cpp_thread_current_signal_policy_exception(uint32_t policy_exception_code,
                                                 uint32_t policy_exception_data);
-void cpp_thread_preempts_pending_add(Thread* thread, cpu_mask_t mask);
-cpu_mask_t cpp_thread_preempts_pending(const Thread* thread);
-void cpp_thread_preempts_pending_clear(Thread* thread);
-bool cpp_thread_preempt_evaluate_timeslice_extension(Thread* thread);
-uint32_t cpp_thread_preempt_eager_resched_disable_count(const Thread* thread);
 void cpp_thread_set_ready(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS;
 Thread* cpp_unblock_list_pop_back(Thread::UnblockList* list);
 
@@ -263,56 +248,6 @@ FFI_ALWAYS_INLINE void cpp_thread_lock_guard_destroy(ThreadLockGuard* guard) {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE Thread* cpp_thread_current_get() { return Thread::Current::Get(); }
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_preempt_set_timeslice_extension(zx_duration_mono_t duration) {
-  return Thread::Current::preemption_state().SetTimesliceExtension(duration);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempt_clear_timeslice_extension() {
-  Thread::Current::preemption_state().ClearTimesliceExtension();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempt_disable() {
-  Thread::Current::preemption_state().PreemptDisable();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempt_reenable() {
-  Thread::Current::preemption_state().PreemptReenable();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_eager_resched_disable() {
-  Thread::Current::preemption_state().EagerReschedDisable();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_eager_resched_reenable() {
-  Thread::Current::preemption_state().EagerReschedReenable();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_thread_preempt_disable_count() {
-  return Thread::Current::preemption_state().PreemptDisableCount();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_thread_eager_resched_disable_count() {
-  return Thread::Current::preemption_state().EagerReschedDisableCount();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempt_set_pending() {
-  Thread::Current::preemption_state().PreemptSetPending();
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_preempt_is_enabled() {
-  return Thread::Current::preemption_state().PreemptIsEnabled();
-}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_preempt() { Thread::Current::Preempt(); }
@@ -486,26 +421,6 @@ FFI_ALWAYS_INLINE uint64_t cpp_thread_take_next_lock_flow_id(Thread* thread) {
   return thread->TakeNextLockFlowId();
 }
 
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempts_pending_add(Thread* thread, cpu_mask_t mask) {
-  thread->preemption_state().preempts_pending_add(mask);
-}
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE cpu_mask_t cpp_thread_preempts_pending(const Thread* thread) {
-  return thread->preemption_state().preempts_pending();
-}
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_thread_preempts_pending_clear(Thread* thread) {
-  thread->preemption_state().preempts_pending_clear();
-}
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_thread_preempt_evaluate_timeslice_extension(Thread* thread) {
-  return thread->preemption_state().EvaluateTimesliceExtension();
-}
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE uint32_t cpp_thread_preempt_eager_resched_disable_count(const Thread* thread) {
-  return thread->preemption_state().EagerReschedDisableCount();
-}
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_set_ready(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
   thread->set_ready();

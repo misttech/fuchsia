@@ -377,7 +377,10 @@ impl Drop for PreemptDisableStateSaver {
     #[inline]
     fn drop(&mut self) {
         arch_interrupt_restore(self.interrupt_state);
-        preempt_reenable();
+        // SAFETY: This matches the `preempt_disable()` in `Self::new` (or the one re-taken at the
+        // end of `relax`), which is still unmatched, and this saver never mints a
+        // `PreemptDisabledToken`.
+        unsafe { preempt_reenable() };
     }
 }
 
@@ -396,7 +399,10 @@ impl StateSaver<ChainLockTransaction> for PreemptDisableStateSaver {
             transaction.unregister();
         }
         arch_interrupt_restore(self.interrupt_state);
-        preempt_reenable();
+        // SAFETY: This matches the saver's own still-unmatched `preempt_disable()`, and the
+        // transaction was unregistered above, so no `PreemptDisabledToken` derived from it can be
+        // live while preemption is enabled; `preempt_disable()` below re-establishes the state.
+        unsafe { preempt_reenable() };
 
         wait_for_conflict_resolution(transaction, percpu);
 
@@ -447,7 +453,10 @@ impl Drop for EagerReschedDisableStateSaver {
     #[inline]
     fn drop(&mut self) {
         arch_interrupt_restore(self.interrupt_state);
-        eager_resched_reenable();
+        // SAFETY: This matches the `eager_resched_disable()` in `Self::new` (or the one re-taken
+        // at the end of `relax`), which is still unmatched, and this saver never mints a
+        // `PreemptDisabledToken`.
+        unsafe { eager_resched_reenable() };
     }
 }
 
@@ -466,7 +475,11 @@ impl StateSaver<ChainLockTransaction> for EagerReschedDisableStateSaver {
             transaction.unregister();
         }
         arch_interrupt_restore(self.interrupt_state);
-        eager_resched_reenable();
+        // SAFETY: This matches the saver's own still-unmatched `eager_resched_disable()`, and the
+        // transaction was unregistered above, so no `PreemptDisabledToken` derived from it can be
+        // live while preemption is enabled; `eager_resched_disable()` below re-establishes the
+        // state.
+        unsafe { eager_resched_reenable() };
 
         wait_for_conflict_resolution(transaction, percpu);
 

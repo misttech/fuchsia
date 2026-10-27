@@ -16,8 +16,11 @@ use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use percpu_bindings as bindings;
 
 /// An opaque type representing the C++ `TimerQueue` class.
+///
+/// Wrapped in [`UnsafeCell`] because [`PerCpu::get`] returns a shared `&PerCpu` reference while
+/// the C++ `TimerQueue` methods (reached through [`TimerQueue::preempt_reset`]) mutate it.
 #[repr(transparent)]
-pub struct TimerQueue(pub bindings::TimerQueue);
+pub struct TimerQueue(pub UnsafeCell<bindings::TimerQueue>);
 
 /// An opaque type representing the C++ `CpuSearchSet` class.
 #[repr(transparent)]

@@ -27,6 +27,7 @@ unsafe extern "C" {
         timer: *mut Timer,
         lock: *const crate::kconcurrent::ChainLock,
     ) -> zx_types::zx_status_t;
+    fn cpp_timer_queue_preempt_reset(queue: *mut TimerQueue, deadline: zx_instant_mono_t);
     fn cpp_timer_queue_print_timer_queues(buf: *mut c_char, len: usize);
 }
 
@@ -35,6 +36,7 @@ pub const ZX_CLOCK_BOOT: u32 = 1;
 
 use super::deadline::Deadline;
 use crate::platform_rs::timer::InstantUnknown;
+use zx_types::zx_instant_mono_t;
 
 pub type Callback = unsafe extern "C" fn(timer: *mut Timer, now: i64, arg: *mut core::ffi::c_void);
 
@@ -152,6 +154,20 @@ impl TimerQueue {
     pub fn print_timer_queues(buf: &mut [u8]) {
         // SAFETY: `buf.as_mut_ptr()` is valid for `buf.len()` bytes.
         unsafe { cpp_timer_queue_print_timer_queues(buf.as_mut_ptr().cast(), buf.len()) };
+    }
+
+    /// Resets this queue's preemption timer to `deadline` (`TimerQueue::PreemptReset`).
+    ///
+    /// # Safety
+    ///
+    /// Interrupts must be disabled, and `self` must be the current CPU's timer queue
+    /// (`PerCpu::get(curr_cpu_num()).timer_queue`).
+    #[inline]
+    pub unsafe fn preempt_reset(&self, deadline: zx_instant_mono_t) {
+        // SAFETY: `self.0.get()` is a valid pointer to the live C++ `TimerQueue` embedded in a
+        // `'static` `PerCpu`, and the caller upholds `PreemptReset`'s interrupt and current-CPU
+        // requirements.
+        unsafe { cpp_timer_queue_preempt_reset(self.0.get().cast(), deadline) }
     }
 }
 
