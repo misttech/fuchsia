@@ -14,6 +14,7 @@
 //! collection of ranges behaves nicely.
 
 use core::cmp::Ordering;
+use core::iter::Peekable;
 use core::mem::offset_of;
 use core::slice;
 
@@ -351,6 +352,7 @@ pub unsafe trait NormalizedRangeIterator: Iterator<Item = Range> {
 /// An iterator over a normalized collection of range which uses `f` to filter map the ranges.
 ///
 /// The normalized invariant of the underylying collection is preserved.
+#[derive(Clone)]
 pub struct FilterMapRanges<Ranges, F> {
     ranges: Ranges,
     f: F,
@@ -415,6 +417,11 @@ where
     F: Fn(Type) -> Option<Type>,
 {
 }
+
+/// Safety:
+///
+/// `Peekable` yields the exact same items in the exact same order as the underlying iterator.
+unsafe impl<I> NormalizedRangeIterator for Peekable<I> where I: NormalizedRangeIterator {}
 
 #[cfg(test)]
 mod tests {

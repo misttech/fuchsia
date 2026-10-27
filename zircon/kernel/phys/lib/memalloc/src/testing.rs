@@ -8,6 +8,7 @@
 //! validated iterator over collections of ranges used for testing.
 
 /// An iterator which verifies that the underlying `iter` is a [`NormalizedRangeIterator`].
+#[derive(Clone)]
 pub struct NormalizedRangeCheckingIterator<I> {
     iter: I,
     prev: Option<crate::Range>,
