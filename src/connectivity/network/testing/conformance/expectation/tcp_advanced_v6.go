@@ -18,14 +18,14 @@ var tcpAdvancedV6Expectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseN
 	{2, 24}:  Fail,
 	{2, 25}:  Fail,
 	{3, 17}:  Flaky, // TODO(https://fxbug.dev/450348456): Fix the flake.
-	{4, 17}:  Pass,
-	{5, 17}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 18}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 19}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 20}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 21}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 22}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
-	{5, 23}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{4, 17}:  Fail,  // TODO(https://fxbug.dev/578635157): Fix fast recovery after IW10.
+	{5, 17}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 18}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 19}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 20}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 21}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 22}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
+	{5, 23}:  Skip,  // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
 	{6, 17}:  Pass,
 	{7, 17}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
 	{7, 18}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
