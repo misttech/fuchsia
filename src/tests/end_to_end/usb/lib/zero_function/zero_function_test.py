@@ -543,6 +543,41 @@ class UsbConfigTest(unittest.TestCase):
         dut.reboot.assert_not_called()
         dut.ffx.run_ssh_cmd.assert_not_called()
 
+    def test_notify_intentional_disconnect_notifies_all_transports(
+        self,
+    ) -> None:
+        """Verifies the wrapper notifies fuchsia_controller then ffx."""
+        dut = mock.MagicMock()
+
+        # pylint: disable-next=protected-access
+        usb_config._notify_intentional_disconnect(dut)
+
+        self.assertEqual(
+            [c[0] for c in dut.mock_calls],
+            [
+                "fuchsia_controller.before_usb_disconnect",
+                "ffx.notify_intentional_disconnect",
+            ],
+        )
+
+    def test_set_usb_config_notifies_intentional_disconnect(self) -> None:
+        """Verifies the FFX monitor is notified before the switch is sent."""
+        dut = mock.MagicMock()
+        dut.serial.send_and_recv.return_value = "[usb-cli:DONE]"
+
+        usb_config.set_usb_config(dut, "sourcesink")
+
+        # Both hooks run, in order, before the config command goes out over
+        # serial.
+        self.assertEqual(
+            [c[0] for c in dut.mock_calls],
+            [
+                "fuchsia_controller.before_usb_disconnect",
+                "ffx.notify_intentional_disconnect",
+                "serial.send_and_recv",
+            ],
+        )
+
     def test_get_usb_config_uses_serial_only(self) -> None:
         dut = mock.MagicMock()
         dut.serial.send_and_recv.return_value = (

@@ -338,6 +338,12 @@ def _send_serial_command(
     return output
 
 
+def _notify_intentional_disconnect(dut: fuchsia_device.FuchsiaDevice) -> None:
+    """Combines multiple transport disconnect notifications."""
+    dut.fuchsia_controller.before_usb_disconnect()
+    dut.ffx.notify_intentional_disconnect()
+
+
 def set_usb_config(
     dut: fuchsia_device.FuchsiaDevice,
     config: str,
@@ -347,6 +353,11 @@ def set_usb_config(
     The command is dispatched deterministically over the serial console because
     serial is the only transport that survives the CDC Ethernet teardown caused
     by switching USB peripheral configurations.
+
+    Every switch tears down all USB functions and re-enumerates, so if CDC is
+    currently up this drops the FFX and SSH connections. The FFX monitor is
+    therefore always notified first that the upcoming disconnect is
+    intentional.
 
     Success is deliberately *not* gated on observing usb-cli's completion
     token, because Honeydew's serial `read()` offers no synchronization with
@@ -363,6 +374,9 @@ def set_usb_config(
         RuntimeError: If no serial console is available or the USB
             configuration command could not be dispatched over serial.
     """
+    # The switch drops CDC, and with it FFX and SSH.
+    _notify_intentional_disconnect(dut)
+
     _LOGGER.info(
         "Applying USB peripheral configuration '%s' on target...", config
     )

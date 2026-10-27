@@ -312,10 +312,6 @@ class UsbConfigSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         start = time.monotonic()
         before = find_host_device(self._serial)
-        if "cdc" in self._current:
-            # The switch drops CDC, and with it FFX and SSH.
-            self.dut.fuchsia_controller.before_usb_disconnect()
-            self.dut.ffx.notify_intentional_disconnect()
         self._current = config
         self._switched = True
         set_usb_config(self.dut, label)
