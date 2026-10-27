@@ -47,20 +47,6 @@ source_set("fidl_event_handler") {
   ]
 }
 
-source_set("fidl_oneshot") {
-  sources = [ "fidl_oneshot.h" ]
-
-  public_deps = [
-    ":errors",
-    "//sdk/lib/async",
-    "//sdk/lib/async:async-cpp",
-    "//sdk/lib/fit",
-    "//sdk/lib/fit-promise",
-    "//sdk/lib/sys/cpp",
-    "//sdk/lib/syslog/cpp",
-  ]
-}
-
 source_set("inspect_node_manager") {
   sources = [
     "inspect_node_manager.cc",

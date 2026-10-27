@@ -78,25 +78,6 @@ cc_test_executable("errors_unittest_exe") {
   ]
 }
 
-cc_test_executable("fidl_oneshot_unittest_exe") {
-  testonly = true
-
-  sources = [ "fidl_oneshot_unittest.cc" ]
-
-  deps = [
-    "//sdk/lib/async:async-cpp",
-    "//src/developer/forensics/testing:gtest_with_syslog_main",
-    "//src/developer/forensics/testing:unit_test_fixture",
-    "//src/developer/forensics/testing/stubs:channel_control",
-    "//src/developer/forensics/utils:errors",
-    "//src/developer/forensics/utils:fidl_oneshot",
-    "//src/lib/fxl",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-    "//zircon/system/ulib/zx",
-  ]
-}
-
 cc_test_executable("inspect_node_manager_unittest_exe") {
   testonly = true
 
@@ -276,10 +257,6 @@ fuchsia_unittest_component("errors_unittest") {
   deps = [ ":errors_unittest_exe" ]
 }
 
-fuchsia_unittest_component("fidl_oneshot_unittest") {
-  deps = [ ":fidl_oneshot_unittest_exe" ]
-}
-
 fuchsia_unittest_component("inspect_node_manager_unittest") {
   deps = [
     ":inspect_node_manager_unittest_exe",
@@ -343,7 +320,6 @@ fuchsia_test_package("feedback-utils-tests") {
     ":cobalt_unittest",
     ":component_unittest",
     ":errors_unittest",
-    ":fidl_oneshot_unittest",
     ":inspect_node_manager_unittest",
     ":instrumented_binding_set_unittest",
     ":log_format_unittest",
