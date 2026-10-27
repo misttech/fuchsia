@@ -280,7 +280,14 @@ class AdbServer:
                 text=True,
                 check=False,
             )
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
+            # `subprocess.run()` raises:
+            # - `OSError` if `pgrep` cannot be started, e.g. `FileNotFoundError`
+            #   if it is not installed.
+            # - `UnicodeDecodeError` if the output of `pgrep` cannot be decoded
+            #   as text.
+            # A non-zero exit status of `pgrep` is handled via
+            # `result.returncode` below.
             _LOGGER.warning(
                 f"Failed to run pgrep to check for ADB servers: {e}"
             )

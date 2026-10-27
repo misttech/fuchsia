@@ -1710,6 +1710,56 @@ class AdbServerTests(unittest.TestCase):
             )
             mock_sleep.assert_called_once_with(0.05)
 
+    def test_check_for_conflicting_adb_servers_ignores_pgrep_failure(
+        self,
+    ) -> None:
+        """Test _check_for_conflicting_adb_servers skips the check when pgrep
+        cannot be run or its output cannot be decoded."""
+        server = adb_server.AdbServer(
+            adb_binary_path="/custom/adb",
+            serial_id="target_serial",
+        )
+        for err in [
+            FileNotFoundError("pgrep"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+        ]:
+            with (
+                self.subTest(err=err),
+                mock.patch.object(
+                    subprocess,
+                    "run",
+                    side_effect=err,
+                ) as mock_run,
+                mock.patch.object(os, "kill") as mock_kill,
+            ):
+                server._check_for_conflicting_adb_servers()
+
+                mock_run.assert_called_once()
+                mock_kill.assert_not_called()
+
+    def test_check_for_conflicting_adb_servers_propagates_unexpected_exceptions(
+        self,
+    ) -> None:
+        """Test _check_for_conflicting_adb_servers propagates unexpected
+        exceptions (e.g. Mobly signals) raised while running pgrep."""
+        server = adb_server.AdbServer(
+            adb_binary_path="/custom/adb",
+            serial_id="target_serial",
+        )
+        with (
+            mock.patch.object(
+                subprocess,
+                "run",
+                side_effect=signals.TestAbortAll("abort"),
+            ) as mock_run,
+            mock.patch.object(os, "kill") as mock_kill,
+        ):
+            with self.assertRaises(signals.TestAbortAll):
+                server._check_for_conflicting_adb_servers()
+
+            mock_run.assert_called_once()
+            mock_kill.assert_not_called()
+
     def test_set_pdeathsig_on_linux(self) -> None:
         """Test _set_pdeathsig sets PR_SET_PDEATHSIG to SIGKILL on Linux."""
         mock_libc = mock.Mock()
