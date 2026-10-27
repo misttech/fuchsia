@@ -9,8 +9,8 @@ use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_inspect::{self as inspect, UintExponentialHistogramProperty, UintProperty};
 use log::warn;
 use starnix_sync::{
-    CondVar, LockDepMutex, SuspendWorkerPoolStateLock, SuspendWorkerResultsLock,
-    SuspendWorkerRunLock, WakeSourcesLock, WakeWatchersLock,
+    CondVar, LockDepMutex, SuspendHandlesLock, SuspendWorkerPoolStateLock,
+    SuspendWorkerResultsLock, SuspendWorkerRunLock, WakeSourcesLock, WakeWatchersLock,
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, OnceLock};
@@ -77,7 +77,7 @@ impl Default for SuspendContext {
         let suspend_attempts_count = node.create_uint("suspend_attempts_count", 0);
         let suspend_successes_count = node.create_uint("suspend_successes_count", 0);
         let suspend_failures_count = node.create_uint("suspend_failures_count", 0);
-        // Create the threads used to suspend containers ahead of the first suspend.
+        // Create the threads used to suspend and resume containers ahead of the first suspend.
         LazyLock::force(&SUSPEND_WORKER_POOL);
         Self {
             wake_sources: Default::default(),
@@ -236,18 +236,28 @@ pub async fn suspend_container(
     }))
 }
 
-/// The maximum number of threads (including the calling thread) used to suspend the processes of
-/// a container in parallel.
+/// The maximum number of threads (including the calling thread) used to suspend and resume the
+/// processes of a container in parallel.
 ///
 /// Suspending a container with thousands of threads is dominated by the cost of the
 /// `zx_task_suspend` calls (which have to interrupt every thread of the process) and by the
-/// per-thread syscalls needed to confirm that every thread is suspended. These are independent
-/// across processes, so spreading them over a few CPUs reduces the latency of container suspend.
+/// per-thread syscalls needed to confirm that every thread is suspended, and resuming it by the
+/// cost of closing the suspend tokens (which wakes every thread of the process). These are
+/// independent across processes, so spreading them over a few CPUs reduces the latency of
+/// container suspend and resume.
 const MAX_SUSPEND_WORKERS: usize = 4;
 
-/// The number of items (processes) up to which the suspend work is done on the calling thread
-/// only, as waking up the helper threads would cost more than it saves.
+/// The number of items (processes) up to which the suspend and resume work is done on the calling
+/// thread only, as waking up the helper threads would cost more than it saves.
 const PARALLEL_SUSPEND_THRESHOLD: usize = 8;
+
+/// The number of suspend tokens that a worker closes at a time when resuming processes in
+/// parallel.
+///
+/// The number of threads per process varies widely (e.g. system_server has hundreds), and the
+/// workers can be preempted by the threads they resume, so the tokens are handed out in small
+/// chunks to balance the work dynamically across the workers.
+const RESUME_CHUNK_SIZE: usize = 4;
 
 /// The signals that indicate that a thread will not run again until it is resumed.
 const THREAD_STOPPED_SIGNALS: zx::Signals =
@@ -255,7 +265,8 @@ const THREAD_STOPPED_SIGNALS: zx::Signals =
 
 /// The suspend tokens of the processes of a suspended container.
 ///
-/// The processes are resumed when this is dropped, which closes the suspend tokens.
+/// The processes are resumed when this is dropped, on all the paths out of `suspend_container`
+/// (including early returns and cancellation), and on the error paths of `suspend_job`.
 struct SuspendedProcesses(Vec<zx::NullableHandle>);
 
 impl SuspendedProcesses {
@@ -263,6 +274,68 @@ impl SuspendedProcesses {
     fn len(&self) -> usize {
         self.0.len()
     }
+}
+
+impl Drop for SuspendedProcesses {
+    fn drop(&mut self) {
+        resume_processes(std::mem::take(&mut self.0));
+    }
+}
+
+/// Resumes the processes by closing their `suspend_handles`, spreading the work over up to
+/// `MAX_SUSPEND_WORKERS` threads, in chunks of `RESUME_CHUNK_SIZE` handles, if there are more than
+/// `PARALLEL_SUSPEND_THRESHOLD` processes.
+///
+/// Closing the last handle to a suspend token resumes every thread of its process from within the
+/// `zx_handle_close` call, which takes ~100 us for a typical container process, so resuming a
+/// large container one process at a time takes milliseconds.
+///
+/// The handles are closed one at a time with `zx_handle_close` rather than in batches with
+/// `zx_handle_close_many`: `HandleTable::remove_handles` (used by `zx_handle_close_many`) releases
+/// the handles, and thus resumes the processes, while holding the write lock of the handle table
+/// of the runner. Resuming processes with `zx_handle_close_many` would thus serialize the workers,
+/// and block the other threads of the runner (e.g. the pager threads that serve the page faults of
+/// the resumed threads) from using handles for milliseconds. `zx_handle_close` resumes the process
+/// after releasing the lock.
+fn resume_processes(suspend_handles: Vec<zx::NullableHandle>) {
+    if suspend_handles.is_empty() {
+        return;
+    }
+    fuchsia_trace::duration!(
+        "power",
+        "starnix-runner:resume_kernel",
+        "num_processes" => suspend_handles.len() as u64
+    );
+    if suspend_handles.len() <= PARALLEL_SUSPEND_THRESHOLD || SUSPEND_WORKER_POOL.num_helpers == 0 {
+        drop(suspend_handles);
+        return;
+    }
+    let suspend_handles = LockDepMutex::<_, SuspendHandlesLock>::new(suspend_handles);
+    SUSPEND_WORKER_POOL.run(Arc::new(move || {
+        loop {
+            // Take a chunk of handles while holding the lock, but close them after releasing
+            // it, without allocating.
+            let mut chunk = [const { zx::NullableHandle::invalid() }; RESUME_CHUNK_SIZE];
+            let is_empty = {
+                let mut suspend_handles = suspend_handles.lock();
+                if suspend_handles.is_empty() {
+                    break;
+                }
+                for slot in &mut chunk {
+                    let Some(suspend_handle) = suspend_handles.pop() else {
+                        break;
+                    };
+                    *slot = suspend_handle;
+                }
+                suspend_handles.is_empty()
+            };
+            // Dropping the handles closes them one at a time.
+            drop(chunk);
+            if is_empty {
+                break;
+            }
+        }
+    }));
 }
 
 /// Suspends the provided `zx::Job` by suspending each process in the job individually.
@@ -532,11 +605,11 @@ fn run_on_workers(num_items: usize, job: impl Fn() + Send + Sync + 'static) {
 /// A job run by the threads of a `SuspendWorkerPool`.
 type SuspendWorkerJob = Arc<dyn Fn() + Send + Sync>;
 
-/// The pool of helper threads used to suspend the processes of a container in parallel.
+/// The pool of helper threads used to suspend and resume the processes of a container in parallel.
 ///
 /// The helper threads are created once and kept for the lifetime of the runner, so that no thread
-/// is created or destroyed while suspending a container. It is forced when the `SuspendContext` is
-/// created, so that its threads are not created during the first suspend.
+/// is created or destroyed while suspending or resuming a container. It is forced when the
+/// `SuspendContext` is created, so that its threads are not created during the first suspend.
 static SUSPEND_WORKER_POOL: LazyLock<SuspendWorkerPool> = LazyLock::new(SuspendWorkerPool::new);
 
 /// A pool of persistent helper threads which run jobs along with the calling thread.
@@ -807,6 +880,77 @@ mod tests {
 
         drop(job);
         drop(suspend_handles);
+    }
+
+    /// Checks that dropping the result of `suspend_job` for a job with `num_processes` processes
+    /// closes all the suspend handles and resumes all the threads.
+    fn check_dropping_suspended_processes_resumes_threads(num_processes: usize) {
+        const NUM_THREADS: usize = 2;
+
+        // The test job leaves exceptions unhandled, so the resumed threads, which fault since
+        // nothing is mapped in their processes, block on the exception.
+        let job = TestJob::new();
+        let mut processes = vec![];
+        let mut threads = vec![];
+        let mut thread_suspend_handles = vec![];
+        for _ in 0..num_processes {
+            let (process, mut process_threads, mut process_thread_suspend_handles) =
+                create_process_with_suspended_threads(&job, NUM_THREADS);
+            processes.push(process);
+            threads.append(&mut process_threads);
+            thread_suspend_handles.append(&mut process_thread_suspend_handles);
+        }
+
+        let suspended_processes = suspend_job(&job).unwrap();
+        assert_eq!(suspended_processes.len(), num_processes);
+        let raw_suspend_handles: Vec<_> =
+            suspended_processes.0.iter().map(|handle| handle.raw_handle()).collect();
+        drop(thread_suspend_handles);
+        for thread in &threads {
+            assert!(is_suspended(thread));
+        }
+
+        drop(suspended_processes);
+
+        for raw_suspend_handle in raw_suspend_handles {
+            assert!(zx::Handle::check_raw_valid(raw_suspend_handle).is_err());
+        }
+        for thread in &threads {
+            while !matches!(
+                thread.info().unwrap().state,
+                zx::ThreadState::Blocked(zx::ThreadBlockType::Exception(_))
+            ) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    fn dropping_few_suspended_processes_resumes_threads() {
+        check_dropping_suspended_processes_resumes_threads(PARALLEL_SUSPEND_THRESHOLD);
+    }
+
+    #[fuchsia::test]
+    fn dropping_many_suspended_processes_resumes_threads() {
+        // More than `PARALLEL_SUSPEND_THRESHOLD`, so that the processes are resumed in parallel.
+        check_dropping_suspended_processes_resumes_threads(4 * PARALLEL_SUSPEND_THRESHOLD + 1);
+    }
+
+    #[fuchsia::test]
+    fn resume_processes_closes_all_handles() {
+        for num_handles in [0, 1, PARALLEL_SUSPEND_THRESHOLD, 4 * PARALLEL_SUSPEND_THRESHOLD + 1] {
+            let events: Vec<_> = (0..num_handles).map(|_| zx::Event::create()).collect();
+            let mut handles = vec![];
+            for event in &events {
+                handles
+                    .push(event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into_handle());
+            }
+            resume_processes(handles);
+            // All the duplicates were closed, so only the original handles remain.
+            for event in &events {
+                assert_eq!(event.count_info().unwrap().handle_count, 1);
+            }
+        }
     }
 
     #[fuchsia::test]
