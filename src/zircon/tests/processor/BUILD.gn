@@ -2,21 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-test("processor") {
-  output_name = "processor-test"
-  sources = [ "processor.c" ]
-  deps = [
-    "//sdk/lib/fdio",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("processor-test-pkg") {
-  package_name = "processor-test"
-  deps = [ ":processor" ]
+bazel_test_suite("processor-test-pkg") {
+  target_tests = [ "//src/zircon/tests/processor:processor-test-pkg" ]
 }
 
 group("tests") {

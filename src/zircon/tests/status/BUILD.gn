@@ -2,21 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/bazel/bazel_test_suite.gni")
 
-test("status") {
-  output_name = "status-test"
-  sources = [ "status.cc" ]
-  deps = [
-    "//sdk/lib/fdio",
-    "//zircon/system/ulib/zxtest",
-  ]
-}
-
-fuchsia_unittest_package("status-test-pkg") {
-  package_name = "status-test"
-  deps = [ ":status" ]
+bazel_test_suite("status-test-pkg") {
+  target_tests = [ "//src/zircon/tests/status:status-test-pkg" ]
 }
 
 group("tests") {
