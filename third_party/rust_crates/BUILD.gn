@@ -6722,7 +6722,7 @@ rustc_library("crc-v3_4_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":crc-catalog-v2_4_0" ]
+  deps += [ ":crc-catalog-v2_5_0" ]
 
   rustenv = []
 
@@ -6773,15 +6773,15 @@ rustc_library("crc32fast-v1_5_2") {
   applicable_licenses = [ ":crc32fast-v1_5_2.license" ]
 }
 
-license("crc-catalog-v2_4_0.license") {
+license("crc-catalog-v2_5_0.license") {
   public_package_name = "crc_catalog"
-  license_files = [ "//third_party/rust_crates/vendor/crc-catalog-2.4.0/LICENSES/Apache-2.0.txt" ]
+  license_files = [ "//third_party/rust_crates/vendor/crc-catalog-2.5.0/LICENSES/Apache-2.0.txt" ]
 }
 
-rustc_library("crc-catalog-v2_4_0") {
+rustc_library("crc-catalog-v2_5_0") {
   crate_name = "crc_catalog"
-  source_root = "//third_party/rust_crates/vendor/crc-catalog-2.4.0/src/lib.rs"
-  output_name = "crc_catalog-67c01b0f581f8b64"
+  source_root = "//third_party/rust_crates/vendor/crc-catalog-2.5.0/src/lib.rs"
+  output_name = "crc_catalog-5b00656b5640980d"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -6793,13 +6793,13 @@ rustc_library("crc-catalog-v2_4_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=67c01b0f581f8b64",
-    "-Cextra-filename=-67c01b0f581f8b64",
+    "-Cmetadata=5b00656b5640980d",
+    "-Cextra-filename=-5b00656b5640980d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":crc-catalog-v2_4_0.license" ]
+  applicable_licenses = [ ":crc-catalog-v2_5_0.license" ]
 }
 
 license("criterion-v0_8_2.license") {

@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "3.4.0",
     deps = [
-        "//third_party/rust_crates/vendor/crc-catalog-2.4.0:crc_catalog",
+        "//third_party/rust_crates/vendor/crc-catalog-2.5.0:crc_catalog",
     ],
 )

@@ -642,7 +642,7 @@ rustflags = [
   "--cfg=try_reserve_2",
 ]
 
-[gn.package.crc-catalog."2.4.0"]
+[gn.package.crc-catalog."2.5.0"]
 license_files = ["LICENSES/Apache-2.0.txt"]
 
 [gn.package.crc32fast."1.5.2"]

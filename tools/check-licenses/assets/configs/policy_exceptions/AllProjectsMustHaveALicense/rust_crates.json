@@ -40,7 +40,7 @@
                     "third_party/rust_crates/forks/libm",
                     "third_party/rust_crates/forks/zstd-sys",
                     "third_party/rust_crates/vendor/ansi_term-0.12.1",
-                    "third_party/rust_crates/vendor/crc-catalog-2.4.0"
+                    "third_party/rust_crates/vendor/crc-catalog-2.5.0"
                 ]
             }
         ]
