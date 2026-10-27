@@ -7,9 +7,13 @@ import json
 import sys
 from pathlib import Path
 
-# Add current directory to sys.path to import git_utils
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from git_utils import get_git_path, get_git_ref
+# When invoked by GN exec_script(), PYTHONPATH is not set by GN.
+# Ensure the Fuchsia root is in sys.path to enable in-tree absolute imports.
+_FUCHSIA_DIR = Path(__file__).resolve().parents[2]
+if str(_FUCHSIA_DIR) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_DIR))
+
+from build.git.git_utils import get_git_path, get_git_ref
 
 
 def main() -> int:

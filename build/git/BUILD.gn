@@ -3,6 +3,35 @@
 # found in the LICENSE file.
 
 import("//build/python/python_library.gni")
+import("//build/testing/python_build_time_tests.gni")
+
+if (is_host) {
+  python_build_time_tests("git_utils_test") {
+    tests = [ "git_utils_test.py" ]
+    deps = [ ":git_utils" ]
+  }
+
+  python_build_time_tests("resolve_git_paths_test") {
+    tests = [ "resolve_git_paths_test.py" ]
+    inputs = [ "resolve_git_paths.py" ]
+    deps = [ ":git_utils" ]
+  }
+
+  python_build_time_tests("resolve_git_revisions_test") {
+    tests = [ "resolve_git_revisions_test.py" ]
+    inputs = [ "resolve_git_revisions.py" ]
+    deps = [ ":git_utils" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":git_utils_test($host_toolchain)",
+    ":resolve_git_paths_test($host_toolchain)",
+    ":resolve_git_revisions_test($host_toolchain)",
+  ]
+}
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #

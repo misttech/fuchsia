@@ -36,6 +36,7 @@ group("tests") {
     "devicetree:tests",
     "dist:tests",
     "fidl:tests",
+    "git:tests",
     "go:tests",
     "licenses:tests",
     "packages:tests",
