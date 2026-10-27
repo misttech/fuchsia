@@ -138,7 +138,10 @@ template("go_build") {
                            ])
 
     script = "//build/go/gen_hermetic_inputs.py"
-    sources = [ "//build/go/gen_library_metadata.py" ]
+    sources = [
+      "${prebuilt_go_dir}/bin/go",
+      "//build/go/gen_library_metadata.py",
+    ]
     outputs = [ hermetic_inputs_target_output ]
     args = [
       "--output",

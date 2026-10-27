@@ -75,16 +75,6 @@
         "instance_id": "9Ciaz9lEUJelUYsIxZLYMscPuEvCHEqJUTyZzzxMudoC"
     },
     {
-        "package": "fuchsia/go/linux-amd64",
-        "version": "git_revision:0e8f75048563897aeb1e06b9c791cd55e41a0469",
-        "instance_id": "kA4FSBvmJrbDCzhagIeBUpW0pjr613ho_Z2S7PhYIjgC"
-    },
-    {
-        "package": "fuchsia/go/linux-arm64",
-        "version": "git_revision:0e8f75048563897aeb1e06b9c791cd55e41a0469",
-        "instance_id": "baJgVOotkbDoxmmaVz2GZvniiPeMiwhGbqsfRCV5n1QC"
-    },
-    {
         "package": "fuchsia/gui_tools/fuchsia_devtools/linux-amd64",
         "version": "g3-revision:fuchsia_devtools_20210615_01_RC00",
         "instance_id": "owJ6kLSSz1V2TGayqwEpEocT8SwsonwN8fibB93Cn0kC"
@@ -853,6 +843,16 @@
         "package": "infra/3pp/tools/cpython3/linux-arm64",
         "version": "version:3@3.14.8.chromium.1",
         "instance_id": "7L78kaQUWuELmUMDdlu22HLYt_JPBFCjoRCbfx1XvkkC"
+    },
+    {
+        "package": "infra/3pp/tools/go/linux-amd64",
+        "version": "version:3@1.27.3",
+        "instance_id": "Y-iU4MCmemVdAXuZk74gOTozyBs8wtBdacgDplNFXkkC"
+    },
+    {
+        "package": "infra/3pp/tools/go/linux-arm64",
+        "version": "version:3@1.27.3",
+        "instance_id": "Nqq6mHsk4xaZVAUsIdijIQPuTLdm5pZ5_UiYeSsJypYC"
     },
     {
         "package": "infra/python/wheels/pathspec-py3",

@@ -558,12 +558,12 @@ func (c *compiler) compileParameters(name string, ordinal uint64, payload *fidlg
 		result = c.compileStruct(*payload)
 	}
 	return Struct{
-			Name:    name,
-			Members: append(append(header(ordinal), result.Inline...), result.OutOfLine...),
-		}, Struct{
-			Name:    name + HandlesSuffix,
-			Members: result.Handles.voidIfEmpty(),
-		}
+		Name:    name,
+		Members: append(append(header(ordinal), result.Inline...), result.OutOfLine...),
+	}, Struct{
+		Name:    name + HandlesSuffix,
+		Members: result.Handles.voidIfEmpty(),
+	}
 }
 
 func (c *compiler) compileMethod(protocolName fidlgen.EncodedCompoundIdentifier, val fidlgen.Method) Method {

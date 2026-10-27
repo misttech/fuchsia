@@ -50,8 +50,8 @@
     <!-- Go
          TODO(phosek): repo/bot link about provenance
     -->
-    <package name="fuchsia/go/${platform}"
-             version="git_revision:0e8f75048563897aeb1e06b9c791cd55e41a0469"
+    <package name="infra/3pp/tools/go/${platform}"
+             version="version:3@1.27.3"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/go/{{.OS}}-{{.Arch}}"/>
 

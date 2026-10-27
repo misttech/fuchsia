@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_build.gni")
+import("//build/go/go_binary.gni")
 import("//build/python/python_host_test.gni")
 import("//build/testing/host_test_data.gni")
 
@@ -12,9 +12,13 @@ if (is_host) {
     sources = [ "verify_golden_go_proto_file.py" ]
   }
 
+  go_binary("pprof") {
+    gopackage = "cmd/pprof"
+  }
+
   host_test_data("pprof_test_data") {
-    sources = [ "${prebuilt_go_dir}/pkg/tool/linux_amd64/pprof" ]
-    outputs = [ "$root_out_dir/pprof" ]
+    sources = get_target_outputs(":pprof")
+    deps = [ ":pprof" ]
   }
 }
 
@@ -24,6 +28,7 @@ if (is_host) {
 group("allow_gopackages") {
   # WARNING: Only third-party libraries should be added here.
   visibility = [
+    ":pprof",
     "//src/testing/fuzzing/syzkaller:syz-sysgen",
     "//third_party/golibs/*",
   ]
