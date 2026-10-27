@@ -51,8 +51,8 @@ build/bazel/scripts/trim_visibility.py --target=//path/to:target
 
 The script finds direct consumers with `fx bazel query 'rdeps(...)'` and
 `fx gn refs`, then prints the entries still needed, the unused entries, and a
-trimmed list ready to paste. Don't use `scripts/gn/trim_visibility.py` for
-migrated targets: it misses Bazel-only consumers and prints GN syntax.
+trimmed list ready to paste. (`scripts/gn/trim_visibility.py` is deprecated
+and forwards to this script.)
 
 If the Bazel and GN lists differ on purpose, keep the GN list in a
 `# @bazel2gn:raw_overwrite:` annotation on `visibility`. The script then trims

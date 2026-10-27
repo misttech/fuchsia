@@ -1083,7 +1083,7 @@ config("Wno-conversion") {
   configs = [ "//src/lib/ubsan-custom:allow-implicit-integer-truncation" ]
 
   # To trim this list:
-  # $ scripts/gn/trim_visibility.py --target="//build/config:Wno-conversion"
+  # $ build/bazel/scripts/trim_visibility.py --target="//build/config:Wno-conversion"
   visibility = [
     "//src/connectivity/bluetooth/hci/transport/uart/cpp:*",
     "//src/connectivity/bluetooth/hci/vendor/broadcom:*",

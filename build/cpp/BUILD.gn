@@ -13,9 +13,9 @@ config("fidl-wire-deprecated-mutable-tables") {
   #
   # To regenerate this list, run
   #
-  #   scripts/gn/trim_visibility.py --target="//build/cpp:fidl-wire-deprecated-mutable-tables"
+  #   build/bazel/scripts/trim_visibility.py --target="//build/cpp:fidl-wire-deprecated-mutable-tables"
   #
-  # and replace the contents of `visibility` with the script output.
+  # and replace the contents of `visibility` with the trimmed list it prints.
   visibility = [
     #------------------
     #------------------

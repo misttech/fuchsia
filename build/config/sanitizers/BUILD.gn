@@ -205,7 +205,7 @@ sanitizer_default_options("lsan_default_options") {
 # marked that way, the asan_default_options default above will be removed.
 #
 # To trim this allowlist:
-# scripts/gn/trim_visibility.py --target="//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS"
+# build/bazel/scripts/trim_visibility.py --target="//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS"
 sanitizer_extra_options("suppress-lsan.DO-NOT-USE-THIS") {
   visibility = [
     "//src/cobalt/bin/system-metrics/*",
