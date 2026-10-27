@@ -9,6 +9,7 @@ if (is_host) {
     main_source = "system_power_state_controller_using_starnix_test.py"
     libraries = [
       "//src/testing/end_to_end/honeydew",
+      "//third_party/mobly",
       "//third_party/parameterized",
     ]
     main_callable = "unittest.main"
@@ -16,7 +17,10 @@ if (is_host) {
   }
   python_host_test("system_power_state_controller_using_usb_cli_test") {
     main_source = "system_power_state_controller_using_usb_cli_test.py"
-    libraries = [ "//src/testing/end_to_end/honeydew" ]
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//third_party/mobly",
+    ]
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }

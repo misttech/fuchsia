@@ -10,7 +10,10 @@ assert(is_host, "Python only supported in host toolchains.")
 
 python_host_test("unit_tests") {
   main_source = "unit_tests.py"
-  libraries = [ "//src/testing/end_to_end/honeydew" ]
+  libraries = [
+    "//src/testing/end_to_end/honeydew",
+    "//third_party/mobly",
+  ]
   main_callable = "unittest.main"
   extra_args = [ "-v" ]
 }

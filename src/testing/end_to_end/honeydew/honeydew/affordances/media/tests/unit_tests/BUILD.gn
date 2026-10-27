@@ -8,7 +8,10 @@ assert(is_host, "Python targets only supported on a host toolchain")
 
 python_host_test("media_using_fc_test") {
   main_source = "media_using_fc_test.py"
-  libraries = [ "//src/testing/end_to_end/honeydew" ]
+  libraries = [
+    "//src/testing/end_to_end/honeydew",
+    "//third_party/mobly",
+  ]
 }
 
 group("unit_tests") {

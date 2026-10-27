@@ -7,7 +7,6 @@ import json
 import logging
 
 import fidl_fuchsia_media_sessions2 as media_session
-import fuchsia_controller_py as fc
 from honeydew import errors
 from honeydew.affordances.media import media
 from honeydew.affordances.media.errors import MediaError
@@ -112,11 +111,7 @@ class MediaUsingFc(media.Media):
 
             return None
 
-        except fc.ZxStatus as status:
+        except errors.FIDL_ERRORS as status:
             raise MediaError(
                 f"FIDL Error while watching active session status: {status}"
             ) from status
-        except Exception as e:
-            raise MediaError(
-                f"Unexpected error while watching active session status: {e}"
-            ) from e

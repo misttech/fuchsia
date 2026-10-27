@@ -17,10 +17,15 @@ from honeydew.affordances.drivers.hardware.power import (
     Spec,
     Status,
 )
+from honeydew.affordances.drivers.hardware.power.utils.errors import (
+    PowerSourceDeviceNotFoundError,
+)
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from mobly import signals
 
 
 class PowerSourceTests(unittest.IsolatedAsyncioTestCase):
@@ -89,6 +94,26 @@ class PowerSourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(spec.manufacturer, "FuchsiaCorp")
         self.assertEqual(spec.model_name, "AC-100")
         self.assertEqual(spec.type, SourceType.AC)
+
+    async def test_make_ready_raises_on_connection_error(self) -> None:
+        """Test make_ready raises PowerSourceDeviceNotFoundError when
+        connecting to the PowerSource proxy fails."""
+        self.fc_transport_obj.connect_device_proxy.side_effect = (
+            fc_errors.FuchsiaControllerError("error")
+        )
+
+        with self.assertRaises(PowerSourceDeviceNotFoundError):
+            await self.power_source.make_ready()
+
+    async def test_make_ready_propagates_unexpected_exceptions(self) -> None:
+        """Test make_ready propagates unexpected exceptions (e.g. Mobly
+        signals) raised while connecting to the PowerSource proxy."""
+        self.fc_transport_obj.connect_device_proxy.side_effect = (
+            signals.TestAbortAll("abort")
+        )
+
+        with self.assertRaises(signals.TestAbortAll):
+            await self.power_source.make_ready()
 
     async def test_get_spec_error(self) -> None:
         """Test get_spec raises PowerSourceRequestError when driver returns error."""

@@ -265,7 +265,8 @@ class Netstack:
                 raise HoneydewNetstackError(
                     f"Failed to execute ping command '{cmd_str}': {e}"
                 ) from e
-        except Exception as e:
+        except honeydew_errors.HoneydewError as e:
+            # Other errors from `run_ssh_cmd()`, e.g. `DeviceNotConnectedError`.
             raise HoneydewNetstackError(
                 f"Unexpected error executing ping '{cmd_str}': {e}"
             ) from e

@@ -34,6 +34,7 @@ from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
 from honeydew.typing.custom_types import MacAddress
+from mobly import signals
 
 _TEST_MAC: MacAddress = MacAddress("12:34:56:78:90:ab")
 _TEST_INTERFACE_ID: int = 1
@@ -603,6 +604,26 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res.any_pings_received)
         self.assertEqual(res.received, 2)
         self.assertEqual(res.transmitted, 4)
+
+    async def test_ping_raises_on_unexpected_honeydew_error(self) -> None:
+        """Test ping wraps other Honeydew errors from the ssh command in
+        HoneydewNetstackError."""
+        self.ffx_transport_obj.run_ssh_cmd.side_effect = (
+            honeydew_errors.DeviceNotConnectedError("not connected")
+        )
+
+        with self.assertRaises(HoneydewNetstackError):
+            await self.netstack_obj.ping("8.8.8.8", count=3)
+
+    async def test_ping_propagates_unexpected_exceptions(self) -> None:
+        """Test ping propagates unexpected exceptions (e.g. Mobly signals)
+        raised by the ssh command."""
+        self.ffx_transport_obj.run_ssh_cmd.side_effect = signals.TestAbortAll(
+            "abort"
+        )
+
+        with self.assertRaises(signals.TestAbortAll):
+            await self.netstack_obj.ping("8.8.8.8", count=3)
 
     async def test_ping_failure_cause_traversal(self) -> None:
         """Test ping failure extraction from CalledProcessError chain."""

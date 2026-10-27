@@ -179,7 +179,7 @@ class SystemPowerStateControllerUsingUsbCli(
             self._ffx.run_ssh_cmd(
                 _FuchsiaCmds.display_power_ssh_command(power_on=power_on)
             )
-        except Exception as err:  # pylint: disable=broad-except
+        except errors.HoneydewError as err:
             _LOGGER.warning("Failed to power %s display panel: %s", state, err)
 
     def _set_battery_manager_running(self, running: bool) -> None:
@@ -201,7 +201,7 @@ class SystemPowerStateControllerUsingUsbCli(
                 _FuchsiaCmds.battery_manager_command(running=running),
                 machine=ffx_types.MachineFormat.RAW,
             )
-        except Exception as err:  # pylint: disable=broad-except
+        except errors.HoneydewError as err:
             _LOGGER.warning(
                 "Failed to %s /core/battery_manager: %s", action, err
             )
@@ -217,7 +217,7 @@ class SystemPowerStateControllerUsingUsbCli(
                 _FuchsiaCmds.DROP_POWER_LEASE,
                 machine=ffx_types.MachineFormat.RAW,
             )
-        except Exception as err:  # pylint: disable=broad-except
+        except errors.HoneydewError as err:
             _LOGGER.warning("Failed to drop session power lease: %s", err)
 
     async def _perform_suspend_resume(
@@ -304,7 +304,9 @@ class SystemPowerStateControllerUsingUsbCli(
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-        except Exception as err:  # pylint: disable=broad-except
+        except (OSError, errors.HoneydewError) as err:
+            # `OSError` if the `ffx` process cannot be started, or
+            # `HoneydewError` from generating the `ffx` command.
             raise system_power_state_controller_interface.SystemPowerStateControllerError(
                 f"Failed to start usb-cli cable-breaker on {self._device_name}"
             ) from err

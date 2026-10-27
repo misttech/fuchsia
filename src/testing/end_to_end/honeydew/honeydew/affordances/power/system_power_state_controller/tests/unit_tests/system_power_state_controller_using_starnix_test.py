@@ -22,6 +22,7 @@ from honeydew.affordances.power.system_power_state_controller import (
 from honeydew.affordances.starnix import errors as starnix_errors
 from honeydew.affordances.starnix import starnix
 from honeydew.transports.ffx import ffx as ffx_transport
+from mobly import signals
 from parameterized import param, parameterized
 
 # TODO: b/354239403: This can not be done today, but probably should be done at
@@ -435,11 +436,21 @@ class SystemPowerStateControllerStarnixTests(unittest.IsolatedAsyncioTestCase):
     async def test_set_timer_failure(self) -> None:
         """Test case for SystemPowerStateControllerUsingStarnix._set_timer() raising
         an exception."""
-        self.mock_ffx.popen.side_effect = RuntimeError("Error")
+        self.mock_ffx.popen.side_effect = FileNotFoundError("ffx")
 
         with self.assertRaises(
             system_power_state_controller_interface.SystemPowerStateControllerError
         ):
+            self.system_power_state_controller_using_starnix_obj._set_timer(
+                duration=3
+            )
+
+    async def test_set_timer_propagates_unexpected_exceptions(self) -> None:
+        """Test case for SystemPowerStateControllerUsingStarnix._set_timer()
+        propagating unexpected exceptions (e.g. Mobly signals)."""
+        self.mock_ffx.popen.side_effect = signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
             self.system_power_state_controller_using_starnix_obj._set_timer(
                 duration=3
             )

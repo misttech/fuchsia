@@ -134,7 +134,9 @@ class Battery(AsyncLazyReady):
             endpoint = FidlEndpoint(moniker, _BATTERY_CAPABILITY)
             channel = self._fc_transport.connect_device_proxy(endpoint)
             self._proxy = f_battery.BatteryClient(channel)
-        except Exception as err:
+        except errors.HoneydewError as err:
+            # Errors from `ffx` while looking up the moniker, or
+            # `FuchsiaControllerError` from `connect_device_proxy()`.
             raise BatteryDeviceNotFoundError(
                 f"Failed to connect to Battery proxy at {_BATTERY_CAPABILITY}"
             ) from err

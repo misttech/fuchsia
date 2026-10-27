@@ -11,12 +11,15 @@ from fidl import GlobalHandleWaker
 from honeydew import affordances_capable, errors
 from honeydew.affordances.drivers.battery_manager import Battery, BatteryStatus
 from honeydew.affordances.drivers.battery_manager.utils.errors import (
+    BatteryDeviceNotFoundError,
     BatteryRequestError,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from mobly import signals
 
 
 class BatteryTests(unittest.IsolatedAsyncioTestCase):
@@ -61,6 +64,26 @@ class BatteryTests(unittest.IsolatedAsyncioTestCase):
                 reboot_affordance=self.reboot_affordance_obj,
                 fuchsia_device_close=self.fuchsia_device_close_obj,
             )
+
+    async def test_make_ready_raises_on_connection_error(self) -> None:
+        """Test make_ready raises BatteryDeviceNotFoundError when connecting
+        to the Battery proxy fails."""
+        self.fc_transport_obj.connect_device_proxy.side_effect = (
+            fc_errors.FuchsiaControllerError("error")
+        )
+
+        with self.assertRaises(BatteryDeviceNotFoundError):
+            await self.battery.make_ready()
+
+    async def test_make_ready_propagates_unexpected_exceptions(self) -> None:
+        """Test make_ready propagates unexpected exceptions (e.g. Mobly
+        signals) raised while connecting to the Battery proxy."""
+        self.fc_transport_obj.connect_device_proxy.side_effect = (
+            signals.TestAbortAll("abort")
+        )
+
+        with self.assertRaises(signals.TestAbortAll):
+            await self.battery.make_ready()
 
     async def test_get_spec_success(self) -> None:
         """Test get_spec successfully returns BatterySpec."""

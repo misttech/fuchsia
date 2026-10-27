@@ -17,6 +17,7 @@ from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from mobly import signals
 
 
 class FakeSessionControlServer(media_session.SessionControlServer):
@@ -179,6 +180,24 @@ class MediaFcTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(status)
 
         as_task.cancel()
+
+    async def test_get_active_session_status_propagates_unexpected_exceptions(
+        self,
+    ) -> None:
+        """Test get_active_session_status propagates unexpected exceptions
+        (e.g. Mobly signals) raised by the FIDL call."""
+        active_session_proxy = mock.MagicMock()
+        active_session_proxy.watch_active_session = mock.AsyncMock(
+            side_effect=signals.TestAbortAll("abort")
+        )
+
+        with mock.patch.object(
+            self.media_obj,
+            "_connect_active_session_proxy",
+            return_value=active_session_proxy,
+        ):
+            with self.assertRaises(signals.TestAbortAll):
+                await self.media_obj.get_active_session_status()
 
     async def test_get_active_session_status_error(self) -> None:
         """Test get_active_session_status raises MediaError on FIDL failure."""

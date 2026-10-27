@@ -241,7 +241,9 @@ class SystemPowerStateControllerUsingStarnix(
                 stderr=subprocess.PIPE,
             )
             return proc
-        except Exception as err:  # pylint: disable=broad-except
+        except (OSError, errors.HoneydewError) as err:
+            # `OSError` if the `ffx` process cannot be started, or
+            # `HoneydewError` from generating the `ffx` command.
             raise system_power_state_controller_interface.SystemPowerStateControllerError(
                 f"Failed to set timer on {self._device_name}"
             ) from err
@@ -279,7 +281,10 @@ class SystemPowerStateControllerUsingStarnix(
                     raise system_power_state_controller_interface.SystemPowerStateControllerError(
                         "hrtimer-ctl completed without starting a timer"
                     )
-            except Exception as err:  # pylint: disable=broad-except
+            except (OSError, ValueError, errors.HoneydewError) as err:
+                # `OSError` or `ValueError` (e.g. `UnicodeDecodeError`) from
+                # reading the command output, or the
+                # `SystemPowerStateControllerError` raised above.
                 raise system_power_state_controller_interface.SystemPowerStateControllerError(
                     f"Timer has not been started on {self._device_name}"
                 ) from err

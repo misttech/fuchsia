@@ -160,7 +160,9 @@ class PowerSource(AsyncLazyReady):
             endpoint = self._discover_endpoint()
             channel = self._fc_transport.connect_device_proxy(endpoint)
             self._proxy = f_power_source.SourceClient(channel)
-        except Exception as err:
+        except errors.HoneydewError as err:
+            # Errors from `ffx` while discovering the endpoint, or
+            # `FuchsiaControllerError` from `connect_device_proxy()`.
             raise PowerSourceDeviceNotFoundError(
                 f"Failed to connect to PowerSource proxy at {endpoint}"
             ) from err

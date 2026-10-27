@@ -23,6 +23,7 @@ from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
+from mobly import signals
 
 _DEVICE_NAME: str = "fuchsia-usb-device"
 _CAPABILITY_OUTPUT: str = (
@@ -227,6 +228,31 @@ class SystemPowerStateControllerUsingUsbCliTests(
         self.controller._set_display_power(power_on=False)
         self.controller._set_battery_manager_running(running=False)
         self.controller._drop_session_power_lease()
+
+    def test_pre_post_suspend_helpers_propagate_unexpected_exceptions(
+        self,
+    ) -> None:
+        """Test display, battery_manager, and session lease helpers propagate
+        unexpected exceptions (e.g. Mobly signals)."""
+        self.mock_ffx.run_ssh_cmd.side_effect = signals.TestAbortAll("abort")
+        self.mock_ffx.run.side_effect = signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
+            self.controller._set_display_power(power_on=False)
+        with self.assertRaises(signals.TestAbortAll):
+            self.controller._set_battery_manager_running(running=False)
+        with self.assertRaises(signals.TestAbortAll):
+            self.controller._drop_session_power_lease()
+
+    def test_start_usb_cli_cable_breaker_propagates_unexpected_exceptions(
+        self,
+    ) -> None:
+        """Test _start_usb_cli_cable_breaker propagates unexpected
+        exceptions (e.g. Mobly signals) raised by popen."""
+        self.mock_ffx.popen.side_effect = signals.TestAbortAll("abort")
+
+        with self.assertRaises(signals.TestAbortAll):
+            self.controller._start_usb_cli_cable_breaker(duration=15)
 
     @mock.patch.object(
         system_power_state_controller_using_usb_cli.SystemPowerStateControllerUsingUsbCli,
@@ -465,7 +491,7 @@ class SystemPowerStateControllerUsingUsbCliTests(
 
     def test_start_usb_cli_cable_breaker_popen_failure(self) -> None:
         """Test _start_usb_cli_cable_breaker raises error when popen fails."""
-        self.mock_ffx.popen.side_effect = RuntimeError("popen failed")
+        self.mock_ffx.popen.side_effect = FileNotFoundError("ffx")
 
         with self.assertRaisesRegex(
             system_power_state_controller_interface.SystemPowerStateControllerError,
