@@ -680,7 +680,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 				TestId:           testID,
 				TestIdStructured: testIDStructured,
 				ExplanationHtml:  fmt.Sprintf("Test case %s was exonerated in the test summary.", testCase.CaseName),
-				Reason:           resultpb.ExonerationReason_NOT_CRITICAL,
+				Reason:           resultpb.ExonerationReason_OCCURS_ON_OTHER_CLS,
 			})
 		}
 	}
@@ -799,7 +799,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 			TestId:           testDetail.Name,
 			TestIdStructured: testIDStructured,
 			ExplanationHtml:  fmt.Sprintf("Test target %s was exonerated in the test summary.", testDetail.Name),
-			Reason:           resultpb.ExonerationReason_NOT_CRITICAL,
+			Reason:           resultpb.ExonerationReason_OCCURS_ON_OTHER_CLS,
 		}, "", nil
 	}
 

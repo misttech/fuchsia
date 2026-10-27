@@ -1041,8 +1041,8 @@ func TestExoneratedTestCase(t *testing.T) {
 	if exoneration.TestId != "foo/foo:bar_exonerated" {
 		t.Errorf("Exoneration maps to incorrect TestId: got %s, want foo/foo:bar_exonerated", exoneration.TestId)
 	}
-	if exoneration.Reason != resultpb.ExonerationReason_NOT_CRITICAL {
-		t.Errorf("Unexpected Exoneration reason: got %v, want NOT_CRITICAL", exoneration.Reason)
+	if exoneration.Reason != resultpb.ExonerationReason_OCCURS_ON_OTHER_CLS {
+		t.Errorf("Unexpected Exoneration reason: got %v, want OCCURS_ON_OTHER_CLS", exoneration.Reason)
 	}
 	if !strings.Contains(exoneration.ExplanationHtml, "bar_exonerated") {
 		t.Errorf("ExplanationHtml does not name the testcase: got %q", exoneration.ExplanationHtml)
@@ -1084,7 +1084,7 @@ func TestExoneratedTestDetail(t *testing.T) {
 	if exoneration.TestId != "foo_exonerated_target" {
 		t.Errorf("Exoneration maps to incorrect TestId: got %s", exoneration.TestId)
 	}
-	if exoneration.Reason != resultpb.ExonerationReason_NOT_CRITICAL {
+	if exoneration.Reason != resultpb.ExonerationReason_OCCURS_ON_OTHER_CLS {
 		t.Errorf("Unexpected Exoneration reason: got %v", exoneration.Reason)
 	}
 	if !strings.Contains(exoneration.ExplanationHtml, "foo_exonerated_target") {
