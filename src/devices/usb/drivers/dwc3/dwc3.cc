@@ -817,66 +817,14 @@ zx_status_t Dwc3::Init() {
   num_in_eps_ = num_in_eps;
   num_out_eps_ = total_eps - num_in_eps;
 
-  // Cache hardware info while the core is powered on and mapped.
-  {
-    auto* mmio = get_mmio();
-    std::vector<fuchsia_hardware_usb_dci::EndpointInfo> endpoints;
-    endpoints.reserve(num_in_eps_ + num_out_eps_ - 2);
-
-    uint32_t mdwidth = GHWPARAMS0::Get().ReadFrom(mmio).DWC_USB31_MDWIDTH();
-    uint32_t ram_width_bytes = 4 << mdwidth;
-
-    for (uint32_t i = 1; i < num_in_eps_; i++) {
-      fuchsia_hardware_usb_dci::EndpointInfo ep_info;
-      ep_info.ep_address(static_cast<uint8_t>(0x80 | i));
-
-      uint32_t depth = GTXFIFOSIZ::Get(i).ReadFrom(mmio).TXFDEP();
-      uint16_t max_ps = static_cast<uint16_t>(depth * ram_width_bytes);
-
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
-      bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
-      bulk_info.max_packet_size_limit(max_ps);
-
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
-      intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
-      intr_info.max_packet_size_limit(max_ps);
-
-      ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
-          std::move(bulk_info),
-          std::move(intr_info),
-      });
-      endpoints.push_back(std::move(ep_info));
-    }
-
-    for (uint32_t i = 1; i < num_out_eps_; i++) {
-      fuchsia_hardware_usb_dci::EndpointInfo ep_info;
-      ep_info.ep_address(static_cast<uint8_t>(i));
-
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
-      bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
-      bulk_info.max_packet_size_limit(1024);
-
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
-      intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
-      intr_info.max_packet_size_limit(1024);
-
-      ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
-          std::move(bulk_info),
-          std::move(intr_info),
-      });
-      endpoints.push_back(std::move(ep_info));
-    }
-
-    dci_hardware_info_.endpoints(std::move(endpoints));
-    dci_hardware_info_.supports_dynamic_ep_sizing(false);
-  }
-
   uint32_t ep_count = total_eps;
   if (ep_count < (kUserEndpointStartNum + 1)) {
     fdf::error("HW supports only {} physical endpoints, but at least {} are needed to operate.",
                ep_count, (kUserEndpointStartNum + 1));
     return ZX_ERR_NOT_SUPPORTED;
   }
+
+  InitHardwareInfo();
 
   // Now go ahead and allocate the user endpoint storage and uep servers.
   user_endpoints_.Init(ep_count - kUserEndpointStartNum, bti_, this);
@@ -2181,60 +2129,71 @@ void Dwc3::SetDeviceState(fpolicy::DeviceState state, uint8_t address) {
   }
 }
 
-void Dwc3::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
-  if (power_on_) {
-    auto* mmio = get_mmio();
-    std::vector<fuchsia_hardware_usb_dci::EndpointInfo> endpoints;
-    endpoints.reserve(num_in_eps_ + num_out_eps_ - 2);
+void Dwc3::InitHardwareInfo() {
+  auto* mmio = get_mmio();
 
-    uint32_t mdwidth = GHWPARAMS0::Get().ReadFrom(mmio).DWC_USB31_MDWIDTH();
-    uint32_t ram_width_bytes = 4 << mdwidth;
+  std::vector<fuchsia_hardware_usb_dci::EndpointInfo> endpoints;
+  endpoints.reserve(num_in_eps_ + num_out_eps_ - 2);
 
-    for (uint32_t i = 1; i < num_in_eps_; i++) {
-      fuchsia_hardware_usb_dci::EndpointInfo ep_info;
-      ep_info.ep_address(static_cast<uint8_t>(0x80 | i));
+  uint32_t mdwidth = GHWPARAMS0::Get().ReadFrom(mmio).DWC_USB31_MDWIDTH();
+  uint32_t ram_width_bytes = 4 << mdwidth;
 
-      uint32_t depth = GTXFIFOSIZ::Get(i).ReadFrom(mmio).TXFDEP();
-      uint16_t max_ps = static_cast<uint16_t>(depth * ram_width_bytes);
+  // IN endpoints.
+  // EP0 IN is not a user endpoint, so we start from 1.
+  // TX FIFO i is used for EP i IN.
+  for (uint32_t i = 1; i < num_in_eps_; i++) {
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(static_cast<uint8_t>(0x80 | i));
 
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
-      bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
-      bulk_info.max_packet_size_limit(max_ps);
-
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
-      intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
-      intr_info.max_packet_size_limit(max_ps);
-
-      ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
-          std::move(bulk_info),
-          std::move(intr_info),
-      });
-      endpoints.push_back(std::move(ep_info));
+    // Read FIFO size from register.
+    uint32_t depth = GTXFIFOSIZ::Get(i).ReadFrom(mmio).TXFDEP();
+    uint32_t max_ps = depth * ram_width_bytes;
+    if (max_ps > UINT16_MAX) {
+      max_ps = UINT16_MAX;
     }
 
-    for (uint32_t i = 1; i < num_out_eps_; i++) {
-      fuchsia_hardware_usb_dci::EndpointInfo ep_info;
-      ep_info.ep_address(static_cast<uint8_t>(i));
+    fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
+    bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+    bulk_info.max_packet_size_limit(static_cast<uint16_t>(max_ps));
 
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
-      bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
-      bulk_info.max_packet_size_limit(1024);
+    fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
+    intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+    intr_info.max_packet_size_limit(static_cast<uint16_t>(max_ps));
 
-      fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
-      intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
-      intr_info.max_packet_size_limit(1024);
-
-      ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
-          std::move(bulk_info),
-          std::move(intr_info),
-      });
-      endpoints.push_back(std::move(ep_info));
-    }
-
-    dci_hardware_info_.endpoints(std::move(endpoints));
-    dci_hardware_info_.supports_dynamic_ep_sizing(false);
+    ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
+        std::move(bulk_info),
+        std::move(intr_info),
+    });
+    endpoints.push_back(std::move(ep_info));
   }
 
+  // OUT endpoints.
+  // EP0 OUT is not a user endpoint, so we start from 1.
+  // They share the RX FIFO, so we report a default limit of 1024.
+  for (uint32_t i = 1; i < num_out_eps_; i++) {
+    fuchsia_hardware_usb_dci::EndpointInfo ep_info;
+    ep_info.ep_address(static_cast<uint8_t>(i));
+
+    fuchsia_hardware_usb_dci::SupportedEndpointInfo bulk_info;
+    bulk_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kBulk);
+    bulk_info.max_packet_size_limit(1024);
+
+    fuchsia_hardware_usb_dci::SupportedEndpointInfo intr_info;
+    intr_info.endpoint_type(fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+    intr_info.max_packet_size_limit(1024);
+
+    ep_info.supported_types(std::vector<fuchsia_hardware_usb_dci::SupportedEndpointInfo>{
+        std::move(bulk_info),
+        std::move(intr_info),
+    });
+    endpoints.push_back(std::move(ep_info));
+  }
+
+  dci_hardware_info_.endpoints(std::move(endpoints));
+  dci_hardware_info_.supports_dynamic_ep_sizing(false);
+}
+
+void Dwc3::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
   fuchsia_hardware_usb_dci::UsbDciGetHardwareInfoResponse response;
   response.info(dci_hardware_info_);
   completer.Reply(zx::ok(std::move(response)));

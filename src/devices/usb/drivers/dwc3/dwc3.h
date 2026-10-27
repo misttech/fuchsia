@@ -538,6 +538,8 @@ class Dwc3 : public fdf::DriverBase2,
   // teardown the function drivers have already disabled their endpoints and this finds them idle.
   void StopActiveTransfers();
 
+  void InitHardwareInfo();
+
   // Commands
   bool CmdStartNewConfig(const Endpoint& ep, uint32_t rsrc_id_base);
   void CmdEpSetConfig(const Endpoint& ep, bool modify);

@@ -922,10 +922,11 @@ TEST_F(ManagedTestFixture, ConfigureEndpoint_RxFifoSufficient) {
       << "ConfigureEndpoint failed: " << zx_status_get_string(result.value().error_value());
 }
 
-TEST_F(ManagedTestFixture, GetHardwareInfo) {
+TEST_F(UnmanagedTestFixture, GetHardwareInfo) {
   namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
-  // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  // Mock GHWPARAMS0 and GTXFIFOSIZ before starting the driver so InitHardwareInfo()
+  // caches the mocked endpoint limits during Init().
   dut_.RunInEnvironmentTypeContext([&](Environment& env) {
     // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes)
     auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
@@ -941,13 +942,15 @@ TEST_F(ManagedTestFixture, GetHardwareInfo) {
     gtxfifosiz2.SetReadCallback(
         []() -> uint32_t { return GTXFIFOSIZ::Get(2).FromValue(0).set_TXFDEP(128).reg_value(); });
   });
-  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  ASSERT_OK(StartDriverWithoutPlatformExtension());
 
   auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
   ASSERT_TRUE(dci_service.is_ok())
       << "Failed to connect to UsbDciService: " << dci_service.status_string();
   fidl::SyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
 
+  // Hardware info is cached at Init() time and must succeed even when unpowered / disconnected.
   auto result = dci->GetHardwareInfo();
   ASSERT_TRUE(result.is_ok()) << "GetHardwareInfo failed: "
                               << result.error_value().FormatDescription();
@@ -1000,6 +1003,17 @@ TEST_F(ManagedTestFixture, GetHardwareInfo) {
   EXPECT_TRUE(found_ep1_in);
   EXPECT_TRUE(found_ep2_in);
   EXPECT_EQ(info.supports_dynamic_ep_sizing().value_or(true), false);
+
+  // Dynamic cable connection triggers automatic core wake-up and soft reset.
+  TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
+
+  // Query again when connected: cached hardware info remains valid and consistent.
+  auto result_connected = dci->GetHardwareInfo();
+  ASSERT_TRUE(result_connected.is_ok())
+      << "GetHardwareInfo connected failed: " << result_connected.error_value().FormatDescription();
+  EXPECT_EQ(result_connected.value().info().endpoints()->size(), expected_eps.size());
+
+  EXPECT_OK(dut_.StopDriver().status_value());
 }
 
 typedef struct {
