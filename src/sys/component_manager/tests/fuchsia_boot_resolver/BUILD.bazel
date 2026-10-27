@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "resolve_bootfs_package",
+    srcs = ["src/resolve_bootfs_package.rs"],
+    crate_root = "src/resolve_bootfs_package.rs",
+    edition = "2024",
+    deps = [
+        ":test.checker_rust",
+        "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/lib/fuchsia-runtime",
+    ],
+)
+
+fidl_library(
+    name = "test.checker",
+    testonly = True,
+    srcs = ["checker.test.fidl"],
+)
+
+rustc_binary(
+    name = "root_component_bin",
+    testonly = True,
+    srcs = ["src/root_component.rs"],
+    crate_name = "root_component",
+    crate_root = "src/root_component.rs",
+    edition = "2024",
+    deps = [
+        ":test.checker_rust",
+        "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-fs",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)

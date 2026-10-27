@@ -1,0 +1,110 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "without_log_bin",
+    testonly = True,
+    srcs = ["src/without_log.rs"],
+    crate_name = "without_log",
+    crate_root = "src/without_log.rs",
+    edition = "2024",
+)
+
+fx_packaged_binary(
+    name = "without_log_bin_packaged_bin",
+    testonly = True,
+    binary = ":without_log_bin",
+    binary_name = "without_log",
+)
+
+fx_component_manifest(
+    name = "without_log_manifest",
+    testonly = True,
+    component_name = "without_log",
+    manifest = "meta/without_log.cml",
+)
+
+fx_component(
+    name = "without_log",
+    testonly = True,
+    check_includes = False,
+    compiled_manifest = ":without_log_manifest",
+    visibility = ["//src/sys/component_manager/tests/lifecycle_benchmark:__pkg__"],
+    deps = [":without_log_bin_packaged_bin"],
+)
+
+rustc_binary(
+    name = "with_log_bin",
+    testonly = True,
+    srcs = ["src/with_log.rs"],
+    crate_name = "with_log",
+    crate_root = "src/with_log.rs",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_packaged_binary(
+    name = "with_log_bin_packaged_bin",
+    testonly = True,
+    binary = ":with_log_bin",
+    binary_name = "with_log",
+)
+
+fx_component_manifest(
+    name = "with_log_manifest",
+    testonly = True,
+    component_name = "with_log",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/with_log.cml",
+)
+
+fx_component(
+    name = "with_log",
+    testonly = True,
+    compiled_manifest = ":with_log_manifest",
+    visibility = ["//src/sys/component_manager/tests/lifecycle_benchmark:__pkg__"],
+    deps = [":with_log_bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "with_log_and_stdout_manifest",
+    testonly = True,
+    component_name = "with_log_and_stdout",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/with_log_and_stdout.cml",
+)
+
+fx_component(
+    name = "with_log_and_stdout",
+    testonly = True,
+    compiled_manifest = ":with_log_and_stdout_manifest",
+    visibility = ["//src/sys/component_manager/tests/lifecycle_benchmark:__pkg__"],
+    deps = [":with_log_bin_packaged_bin"],
+)
+
+fx_component_manifest(
+    name = "with_log_shard_manifest",
+    testonly = True,
+    component_name = "with_log_shard",
+    manifest = "meta/with_log_shard.cml",
+    tags = ["manual"],
+)
+
+fx_component(
+    name = "with_log_shard",
+    testonly = True,
+    compiled_manifest = ":with_log_shard_manifest",
+    tags = ["manual"],
+    deps = [":without_log_bin_packaged_bin"],
+)
