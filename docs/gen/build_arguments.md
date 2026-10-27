@@ -738,7 +738,7 @@ Controls whether to use the ML inliner in Clang to reduce size.
 
 **Current value (from the default):** `true`
 
-From //build/config/clang/clang.gni:23
+From //build/config/clang/clang.gni:25
 
 ### clang_prefix
 
@@ -902,12 +902,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1716,7 +1716,7 @@ from infra builds, and later inspection.
 
 **Current value (from the default):** `"//out/not-default/comparison-reports"`
 
-From //build/toolchain/rbe.gni:229
+From //build/toolchain/rbe.gni:230
 
 ### compilation_mode
 
@@ -1726,7 +1726,7 @@ The overall compilation mode to use.  The valid values are:
                 runtime performance.
  * `release`: all the optimizations, used for product releases.
  * `sanitizer`: for sanitizer-instrumented builds.
-LINT.IfChange
+LINT.IfChange(compilation_mode)
 
 **Current value for `target_cpu = "arm64"`:** `"release"`
 
@@ -1919,7 +1919,7 @@ One of:
 
 **Current value (from the default):** `"none"`
 
-From //build/toolchain/rbe.gni:214
+From //build/toolchain/rbe.gni:215
 
 ### cxx_rbe_download_obj_files
 
@@ -1931,7 +1931,7 @@ and not restricted environments that lack direct network access.
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/rbe.gni:236
+From //build/toolchain/rbe.gni:237
 
 ### cxx_rbe_enable
 
@@ -1940,7 +1940,7 @@ Remote execution offers increased build parallelism and caching.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:164
+From //build/toolchain/rbe.gni:165
 
 ### cxx_rbe_exec_strategy
 
@@ -1966,7 +1966,7 @@ One of:
 
 **Current value (from the default):** `"remote_local_fallback"`
 
-From //build/toolchain/rbe.gni:190
+From //build/toolchain/rbe.gni:191
 
 ### cxx_rbe_full_toolchain
 
@@ -1981,7 +1981,7 @@ Use this primarily for debugging and as an emergency workaround.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:224
+From //build/toolchain/rbe.gni:225
 
 ### cxx_rbe_minimalist_wrapper
 
@@ -1991,7 +1991,7 @@ This flag is only meaningful when `cxx_rbe_enable` is true.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:169
+From //build/toolchain/rbe.gni:170
 
 ### data_filesystem_format
 
@@ -4699,7 +4699,7 @@ To override the set of CPU architectures, see `idk_buildable_cpus`.
 Do not use the `platform_version` member directly.
 LINT.IfChange
 
-**Current value (from the default):** `[27, 28, 29, 30, 31, 32, 33, "NEXT"]`
+**Current value (from the default):** `[28, 29, 30, 31, 32, 33, "NEXT"]`
 
 From //build/config/fuchsia/platform_version.gni:44
 
@@ -5196,13 +5196,13 @@ One of:
 
 **Current value (from the default):** `"none"`
 
-From //build/toolchain/rbe.gni:286
+From //build/toolchain/rbe.gni:287
 
 ### link_rbe_download_unstripped_outputs
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/rbe.gni:302
+From //build/toolchain/rbe.gni:303
 
 ### link_rbe_enable
 
@@ -5212,7 +5212,7 @@ linkers like `lld`.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:245
+From //build/toolchain/rbe.gni:246
 
 ### link_rbe_exec_strategy
 
@@ -5238,7 +5238,7 @@ One of:
 
 **Current value (from the default):** `"remote_local_fallback"`
 
-From //build/toolchain/rbe.gni:266
+From //build/toolchain/rbe.gni:267
 
 ### link_rbe_full_toolchain
 
@@ -5253,7 +5253,7 @@ Use this primarily for debugging and as an emergency workaround.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:296
+From //build/toolchain/rbe.gni:297
 
 ### llvm_prefix
 
@@ -8451,7 +8451,7 @@ One of:
 
 **Current value (from the default):** `"none"`
 
-From //build/toolchain/rbe.gni:144
+From //build/toolchain/rbe.gni:145
 
 ### rust_rbe_download_rlibs
 
@@ -8460,13 +8460,13 @@ rlibs from remote Rust build actions.
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/rbe.gni:156
+From //build/toolchain/rbe.gni:157
 
 ### rust_rbe_download_unstripped_binaries
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/rbe.gni:152
+From //build/toolchain/rbe.gni:153
 
 ### rust_rbe_enable
 
@@ -8474,7 +8474,7 @@ Set to true to enable distributed compilation of Rust using RBE.
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/rbe.gni:97
+From //build/toolchain/rbe.gni:98
 
 ### rust_rbe_exec_strategy
 
@@ -8500,7 +8500,7 @@ One of:
 
 **Current value (from the default):** `"remote"`
 
-From //build/toolchain/rbe.gni:118
+From //build/toolchain/rbe.gni:119
 
 ### rust_v0_symbol_mangling
 
@@ -9668,7 +9668,7 @@ Selects the wlan configuration type to use. Choices:
 
 **Current value (from the default):** `"client"`
 
-From //src/connectivity/wlan/wlancfg/BUILD.gn:17
+From //src/connectivity/wlan/wlancfg/BUILD.gn:14
 
 ### zedboot_product_assembly_config_label
 
