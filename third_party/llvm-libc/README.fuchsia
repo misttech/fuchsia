@@ -2,7 +2,7 @@ Name: llvm-libc
 URL: https://github.com/llvm/llvm-project
 Original URL: https://llvm.org/docs/Proposals/LLVMLibC.html
 Upstream Git: https://github.com/llvm/llvm-project
-Revision: b87685fc2ae3d189a8737fd96a27cd26bbda93b0
+Revision: 28700d67f38721e5a2388f6c4501ce1029232cc3
 Security Critical: yes
 
 License File: src/LICENSE.TXT
