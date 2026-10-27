@@ -1,0 +1,51 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "formatting",
+    actual = ":lib",
+    visibility = ["//src/camera/drivers/controller:__subpackages__"],
+)
+
+fx_cc_library(
+    name = "lib",
+    srcs = [
+        "formatting.cc",
+        "macros.h",
+    ],
+    hdrs = ["formatting.h"],
+    implementation_deps = [
+        "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_hlcpp",
+        "//sdk/fidl/fuchsia.camera2.hal:fuchsia.camera2.hal_hlcpp",
+        "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_hlcpp",
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_hlcpp",
+        "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+        "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_hlcpp",
+    ],
+    visibility = ["//src/camera/drivers/controller:__subpackages__"],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "formatting-unittest-bin",
+    testonly = True,
+    srcs = ["formatting-unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":formatting",
+        "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_hlcpp",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "formatting-unittest",
+    unit_tests = [":formatting-unittest-bin"],
+)

@@ -1,0 +1,96 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "fake_legacy_stream",
+    testonly = True,
+    actual = ":lib",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/camera/lib:__subpackages__"],
+)
+
+fx_cc_library(
+    name = "lib",
+    testonly = True,
+    srcs = ["fake_legacy_stream.cc"],
+    hdrs = ["fake_legacy_stream.h"],
+    implementation_deps = [
+        "//sdk/lib/async",
+        "//sdk/lib/syslog/cpp",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//src/camera/lib:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.camera2:fuchsia.camera2_hlcpp",
+        "//sdk/lib/fit-promise",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "fake_legacy_stream_unittest_bin",
+    testonly = True,
+    srcs = ["fake_legacy_stream_unittest.cc"],
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":lib",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//src/lib/fxl/test:gtest_main",
+        "//src/lib/testing/loop_fixture",
+    ],
+)
+
+fx_packaged_binary(
+    name = "fake_legacy_stream_unittest_packaged_bin",
+    testonly = True,
+    binary = ":fake_legacy_stream_unittest_bin",
+    binary_name = "fake_legacy_stream_unittest_bin",
+)
+
+fx_component_manifest(
+    name = "fake_legacy_stream_unittest_manifest",
+    testonly = True,
+    component_name = "fake_legacy_stream_unittest",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/gtest:default.shard.cml",
+    ],
+    manifest = "meta/fake_legacy_stream_unittest.cml",
+)
+
+fx_test_component(
+    name = "fake_legacy_stream_unittest_component",
+    compiled_manifest = ":fake_legacy_stream_unittest_manifest",
+    component_name = "fake_legacy_stream_unittest",
+    deps = [":fake_legacy_stream_unittest_packaged_bin"],
+)
+
+fx_package(
+    name = "fake_legacy_stream_unittest_package",
+    package_name = "fake_legacy_stream_unittest",
+    test_components = [":fake_legacy_stream_unittest_component"],
+)
+
+fx_test(
+    name = "fake_legacy_stream_unittest",
+    package = ":fake_legacy_stream_unittest_package",
+)

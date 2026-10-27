@@ -1,0 +1,66 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "fake_stream",
+    actual = ":lib",
+    visibility = [
+        "//src/camera/lib:__subpackages__",
+    ],
+)
+
+fx_cc_library(
+    name = "impl_header",
+    srcs = ["fake_stream.h"],
+    hdrs = ["fake_stream_impl.h"],
+    visibility = [
+        "//src/camera/lib/fake_camera:__pkg__",
+        "//src/camera/lib/fake_controller:__pkg__",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_library(
+    name = "lib",
+    srcs = ["fake_stream_impl.cc"],
+    hdrs = ["fake_stream.h"],
+    implementation_deps = [
+        ":impl_header",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/async-loop:async-loop-cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/syslog/cpp",
+    ],
+    visibility = [
+        "//src/camera/lib:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_hlcpp",
+        "//sdk/lib/fit-promise",
+    ],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "fake_stream_unittest_bin",
+    testonly = True,
+    srcs = ["fake_stream_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//src/lib/fxl/test:gtest_main",
+        "//src/lib/testing/loop_fixture",
+    ],
+)
+
+fx_unittest_package(
+    name = "fake_stream_unittest",
+    unit_tests = [":fake_stream_unittest_bin"],
+)

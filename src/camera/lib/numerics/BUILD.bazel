@@ -1,0 +1,39 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "numerics",
+    actual = ":rational",
+    visibility = ["//src/camera/drivers/controller:__pkg__"],
+)
+
+fx_cc_library(
+    name = "rational",
+    srcs = ["rational.cc"],
+    hdrs = ["rational.h"],
+    visibility = ["//src/camera/drivers/controller:__pkg__"],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "numerics-unittest-bin",
+    testonly = True,
+    srcs = ["numerics-unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":numerics",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "numerics-unittest",
+    unit_tests = [":numerics-unittest-bin"],
+)

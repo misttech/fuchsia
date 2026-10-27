@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "hanging_get_helper",
+    actual = ":lib",
+    visibility = [
+        "//src/camera/bin/device:__pkg__",
+        "//src/camera/bin/usb_device:__pkg__",
+    ],
+)
+
+fx_cc_library(
+    name = "lib",
+    hdrs = ["hanging_get_helper.h"],
+    visibility = [
+        "//src/camera/bin/device:__pkg__",
+        "//src/camera/bin/usb_device:__pkg__",
+    ],
+    deps = ["//sdk/lib/fit"],
+    alwayslink = True,
+)
+
+fx_cc_binary(
+    name = "hanging_get_helper_unittest_bin",
+    testonly = True,
+    srcs = ["hanging_get_helper_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":lib",
+        "//src/lib/fxl/test:gtest_main",
+    ],
+)
+
+fx_unittest_package(
+    name = "hanging_get_helper_unittest",
+    unit_tests = [":hanging_get_helper_unittest_bin"],
+)
