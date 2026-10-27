@@ -90,7 +90,16 @@
   // to load at the fixed load address for the 32-bit kernel image.  The
   // linuxboot.ld linker script calculates the value of LINUXBOOT_SYSSIZE.
   .org BOOT_PARAMS_HDR + SETUP_HEADER_SYSSIZE
-  .int LINUXBOOT_SYSSIZE
+
+  // In a fixed-position link, `.int LINUXBOOT_SYSSIZE` would do here.  LLD in
+  // fact allows that for the 64-bit position-independent case too, but GNU
+  // (BFD) ld does not.  It will only allow a PC-relative relocation.  So
+  // linuxboot.ld also computes LINUXBOOT_SYSSIZE_RELATIVE as the difference
+  // between the LINUXBOOT_SYSSIZE value and the link-time load address
+  // (PHYS_LOAD_ADDRESS, aka the zero_page label above); it's not a meaningful
+  // address since it's scaled by 16, but it's the right addend for a
+  // PC-relative relocation to resolve to exactly LINUXBOOT_SYSSIZE.
+  .int LINUXBOOT_SYSSIZE_RELATIVE - zero_page
 
   // This is a required magic number the boot loader checks for.
   .org BOOT_PARAMS_HDR + SETUP_HEADER_BOOT_FLAG
@@ -120,6 +129,13 @@
   // This indicates "bzImage" format: load the 32-bit code at 1MiB.
   .org BOOT_PARAMS_HDR + SETUP_HEADER_LOADFLAGS
   .byte LOADFLAGS_LOADED_HIGH
+
+  // This is the address of the 32-bit entry point, which is the start of the
+  // load image when loaded at the default "bzImage" address.  A boot loader
+  // that relocates the kernel is expected to update this field before using
+  // the 16-bit entry path, which jumps to the address found here.
+  .org BOOT_PARAMS_HDR + SETUP_HEADER_CODE32_START
+  .int LINUXBOOT_LOADED_HIGH_ADDRESS
 
   // This gives the boot loader license to place the initrd RAMDISK image
   // anywhere in the 4G address space.  (This will probably be ignored by a
@@ -260,25 +276,24 @@
   pushl %eax
   .cfi_adjust_cfa_offset 4
 
+  // Fetch the 32-bit entry point.  This is where the boot loader actually
+  // placed the kernel's load image, which it records here if it relocated
+  // the kernel from the default address set in the header above.
+  movl (boot_params + BOOT_PARAMS_HDR + SETUP_HEADER_CODE32_START - zero_page), %ebx
+
   // Now point %esi at the boot_params being filled out here.
   // This is the argument register for the 32-bit entry path.
   mov %ds, %esi
   shl $4, %esi
   add $(boot_params - zero_page), %esi
 
-  // Linux booting protocol requires these all be cleared.  It doesn't really
-  // matter to our code, but it makes it consistent with what a boot loader
-  // doing direct 32-bit entry will do.
-  xor %ebx, %ebx
-  xor %ecx, %ecx
-  xor %edx, %edx
-  xor %ebp, %ebp
-  xor %edi, %edi
-
   // Build a temporary descriptor pointing at the GDT to load it.
   // We reuse the gdt32.cc setup that start32.S will load again later.
   // But we need it loaded first so we can enable 32-bit protected mode.
-  movl $gPhys32Gdt, -4(%esp)
+  // Its runtime address is found relative to the 32-bit entry point, since
+  // the setup area here and the load image are placed independently.
+  lea (gPhys32Gdt - LinuxBase)(%ebx), %eax
+  movl %eax, -4(%esp)
   movw $(PHYS32_GDT_SIZE - 1), -6(%esp)
   lgdtl -6(%esp)
 
@@ -302,11 +317,23 @@
   mov %ax, %ds
   mov %ax, %es
   mov %ax, %ss
-  mov %bx, %fs // Null segment selector for %fs and %gs.
-  mov %bx, %gs
+  xor %eax, %eax
+  mov %ax, %fs // Null segment selector for %fs and %gs.
+  mov %ax, %gs
 
-  // Now jump to the linux entry point.
-  mov $Linux32Entry, %eax
+  // Move the 32-bit entry point into %eax for the jump below.
+  mov %ebx, %eax
+
+  // Linux booting protocol requires these all be cleared.  It doesn't really
+  // matter to our code, but it makes it consistent with what a boot loader
+  // doing direct 32-bit entry will do.
+  xor %ebx, %ebx
+  xor %ecx, %ecx
+  xor %edx, %edx
+  xor %ebp, %ebp
+  xor %edi, %edi
+
+  // Now jump to the 32-bit entry point.
   jmp *%eax
 .end_function
 
@@ -332,7 +359,17 @@
 // initializer is calculated from this value above.  The linuxboot.ld linker
 // script also uses this symbol to compute the LINUXBOOT_SYSSIZE symbol that's
 // needed for the setup_header::syssize field initializer above.
-.balign 512, 0
+//
+// This also becomes the base address at which the kernel image is loaded.  At
+// runtime it will be page-aligned, but can be at any address.  The link-time
+// base address (aka PHYS_LOAD_ADDRESS) is zero, but that has to leave space
+// for the zero_page (including setup_header) that is never actually part of
+// the memory image, only part of the bzImage binary file format.  To make the
+// usual assumptions about link-time vs runtime alignment hold true for
+// simplicity's sake, we align this to 4KiB in the file too.  It might waste a
+// few KiB in the image size and probably things would work fine without it,
+// but it makes the address arithmetic easier to understand when debugging.
+.p2align 12, 0
 .label LINUXBOOT_SETUP_SIZE, global, notype, . - zero_page
 
 // This matches the fixed LINUXBOOT_LOAD_ADDRESS, but the assembler doesn't
@@ -361,7 +398,7 @@
 
 // The 64-bit boot protocol always jumps here.  Just trampoline to where the
 // entry point for 64-bit mode is defined elsewhere.
-.org Linux32Entry + 0x200
+.org Linux32Entry + ENTRY64_OFFSET
 .code64
 .function Linux64Trampoline, nosection=nosection
   jmp Linux64Entry

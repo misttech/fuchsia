@@ -41,15 +41,15 @@
   // to load at the fixed load address for the 32-bit kernel image.  The
   // linuxboot.ld linker script calculates the value of LINUXBOOT_SYSSIZE.
   .org BOOT_PARAMS_HDR + SETUP_HEADER_SYSSIZE
-  // In the 32-bit case, it's a fixed-position link and so linuxboot-header.S
-  // just does `.int LINUXBOOT_SYSSIZE` here and that's fine.  LLD in fact
-  // allows that for the 64-bit position-independent case too, but GNU (BFD) ld
-  // does not.  It will only allow a PC-relative relocation.  So linuxboot.ld
-  // also computes LINUXBOOT_SYSSIZE_RELATIVE as the difference between the
-  // LINUXBOOT_SYSSIZE value and the link-time load address (PHYS_LOAD_ADDRESS,
-  // aka the zero_page label above); it's not a meaningful address since it's
-  // scaled by 16, but it's the right addend for a PC-relative relocation to
-  // resolve to exactly LINUXBOOT_SYSSIZE.
+
+  // In a fixed-position link, `.int LINUXBOOT_SYSSIZE` would do here.  LLD in
+  // fact allows that for the 64-bit position-independent case too, but GNU
+  // (BFD) ld does not.  It will only allow a PC-relative relocation.  So
+  // linuxboot.ld also computes LINUXBOOT_SYSSIZE_RELATIVE as the difference
+  // between the LINUXBOOT_SYSSIZE value and the link-time load address
+  // (PHYS_LOAD_ADDRESS, aka the zero_page label above); it's not a meaningful
+  // address since it's scaled by 16, but it's the right addend for a
+  // PC-relative relocation to resolve to exactly LINUXBOOT_SYSSIZE.
   .int LINUXBOOT_SYSSIZE_RELATIVE - zero_page
 
   // This is a required magic number the boot loader checks for.

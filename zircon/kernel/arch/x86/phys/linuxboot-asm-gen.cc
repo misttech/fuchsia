@@ -21,6 +21,8 @@ int main(int argc, char** argv) {
       .Macro("SETUP_HEADER_VERSION", offsetof(linuxboot::setup_header, version))
       .Macro("SETUP_HEADER_LOADFLAGS", offsetof(linuxboot::setup_header, loadflags))
       .Macro("LOADFLAGS_LOADED_HIGH", linuxboot::setup_header::LoadFlags::kLoadedHigh)
+      .Macro("SETUP_HEADER_CODE32_START", offsetof(linuxboot::setup_header, code32_start))
+      .Macro("LINUXBOOT_LOADED_HIGH_ADDRESS", linuxboot::kLoadedHighAddress)
       .Macro("SETUP_HEADER_INITRD_ADDR_MAX", offsetof(linuxboot::setup_header, initrd_addr_max))
       .Macro("SETUP_HEADER_KERNEL_ALIGNMENT", offsetof(linuxboot::setup_header, kernel_alignment))
       .Macro("SETUP_HEADER_RELOCATABLE_KERNEL",

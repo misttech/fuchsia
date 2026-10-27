@@ -5,9 +5,10 @@
 
 """
 This generates an input linker script to override LINUXBOOT_INIT_SIZE.
-It was set to LINUXBOOT32_INIT_SIZE in linuxboot32.ld via PROVIDE_HIDDEN.
-For a linuxbiboot image, this must be the maximum of LINUXBOOT32_INIT_SIZE
-and the LINUXBOOT_INIT_SIZE value that linuxboot64.ld would have used, i.e.
+It was set to the 32-bit image's own size in linuxboot.ld via PROVIDE_HIDDEN
+(also available as LINUXBOOT32_INIT_SIZE from linuxboot32.ld).  For a
+linuxbiboot image, this must be the maximum of LINUXBOOT32_INIT_SIZE and the
+LINUXBOOT_INIT_SIZE value that the 64-bit image would have used, i.e.
 the whole memory image size (including .bss) of the inner 64-bit executable.
 That size is computed from the llvm-readelf --sections JSON output as the
 maximum end address of any SHF_ALLOC section.

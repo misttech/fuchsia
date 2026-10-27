@@ -16,19 +16,12 @@
 HIDDEN(LINUXBOOT_LOAD_ADDRESS = 0x100000);
 
 /*
- * Size of the kernel in memory, including the bss after the image so that the
- * boot loader is sure to place the kernel where it has enough headroom after
- * the storage image is loaded.  This symbol is used by the linuxboot-header.S
- * assembly code to embed this value, which cannot be calculated directly by a
- * single relocation record.
+ * This is the 32-bit image's own value of LINUXBOOT_INIT_SIZE (see
+ * linuxboot.ld).  In a pure phys32 image, the two are the same.  In a bi-arch
+ * image, LINUXBOOT_INIT_SIZE is instead defined (by the generated embed64.ld)
+ * as the MAX of this and the 64-bit image's value.
  */
 HIDDEN(LINUXBOOT32_INIT_SIZE = _end - LINUXBOOT_LOAD_ADDRESS);
-
-/*
- * In a pure phys32 image, this will be used.  In a bi-arch image, it will be
- * defined to the MAX of LINUXBOOT32_INIT_SIZE and the 64-bit image's value.
- */
-PROVIDE_HIDDEN(LINUXBOOT_INIT_SIZE = LINUXBOOT32_INIT_SIZE);
 
 /*
  * This _start symbol just sets e_entry in ELF headers (as per phys.ld), which

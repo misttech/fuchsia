@@ -55,7 +55,17 @@ HIDDEN(PHYS_LOAD_ADDRESS = LINUXBOOT_LOAD_ADDRESS - LINUXBOOT_SETUP_SIZE);
 HIDDEN(LINUXBOOT_SYSSIZE = (PHYS_LOAD_END - LINUXBOOT_LOAD_ADDRESS) / 16);
 
 /*
- * This is needed by linuxboot64-header.S to embed the LINUXBOOT_SYSSIZE
+ * This is needed by linuxboot{,64}-header.S to embed the LINUXBOOT_SYSSIZE
  * value while using only PC-relative relocations.
  */
 HIDDEN(LINUXBOOT_SYSSIZE_RELATIVE = PHYS_LOAD_ADDRESS + LINUXBOOT_SYSSIZE);
+
+/*
+ * Size of the kernel in memory, including the bss after the image so that the
+ * boot loader is sure to place the kernel where it has enough headroom after
+ * the storage image is loaded.  This symbol is used by the header assembly
+ * code to embed this value, which cannot be calculated directly by a single
+ * relocation record.  A bi-arch image overrides this with the larger of its
+ * two images' values (see linuxbiboot32.py).
+ */
+PROVIDE_HIDDEN(LINUXBOOT_INIT_SIZE = ABSOLUTE(_end - LINUXBOOT_LOAD_ADDRESS));
