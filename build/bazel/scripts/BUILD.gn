@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 import("//build/testing/python_build_time_tests.gni")
 
@@ -319,6 +320,14 @@ if (is_host) {
     tests = [ "fetch_cipd_prebuilt_test.py" ]
     deps = [ ":fetch_cipd_prebuilt" ]
   }
+
+  # trim_visibility.py is a developer tool, not a build-time script, so its
+  # tests are regular host tests. To run them:
+  #   fx test //build/bazel/scripts:trim_visibility_test
+  python_host_test("trim_visibility_test") {
+    main_source = "trim_visibility_test.py"
+    sources = [ "trim_visibility.py" ]
+  }
 }
 
 group("tests") {
@@ -347,6 +356,7 @@ group("tests") {
     ":remote_services_utils_test($host_toolchain)",
     ":runfiles_utils_test($host_toolchain)",
     ":stdio_redirection_test($host_toolchain)",
+    ":trim_visibility_test($host_toolchain)",
     ":workspace_utils_test($host_toolchain)",
   ]
 }

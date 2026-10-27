@@ -164,6 +164,12 @@ group("foo_allowlist") {
 }
 ```
 
+If the allowlisted target is defined in `BUILD.bazel`, including targets that
+bazel2gn syncs to `BUILD.gn`, write the allowlist in Bazel syntax and trim it
+with `build/bazel/scripts/trim_visibility.py --target="//path/to:foo"`
+instead. That script checks consumers in both the Bazel and GN graphs. For
+details, see the [bazel2gn documentation][bazel2gn-visibility].
+
 Then elsewhere, automatically add a dependency on the allowlisted target.
 
 ```gn
@@ -200,6 +206,7 @@ Depending on the nature of your change and the third party code in question,
 it may be possible to make changes upstream. Use your best judgement.
 
 [bash-style]: https://google.github.io/styleguide/shellguide.html
+[bazel2gn-visibility]: /build/tools/bazel2gn/README.md#to-maintain-visibility-allowlists
 [python-style]: https://google.github.io/styleguide/pyguide.html
 [shellcheck]: https://www.shellcheck.net/
 [wconversion-project]: /docs/contribute/open_projects/cpp/wconversion.md

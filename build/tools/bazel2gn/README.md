@@ -38,6 +38,26 @@ to be in sync with their `BUILD.bazel` files by `shac` (`fx lint` and CQ).
 *   Or, run `fx bazel2gn -d path/to/dir`, if you only want to sync targets in a
     specific directory.
 
+### To maintain visibility allowlists
+
+When a target with a `visibility` allowlist is migrated, the allowlist moves to
+`BUILD.bazel` and uses Bazel syntax (`//foo:__pkg__`, `//foo:__subpackages__`).
+bazel2gn derives the GN list from it, so the Bazel list must cover the
+consumers in both graphs. To find stale entries, run:
+
+```posix-terminal
+build/bazel/scripts/trim_visibility.py --target=//path/to:target
+```
+
+The script finds direct consumers with `fx bazel query 'rdeps(...)'` and
+`fx gn refs`, then prints the entries still needed, the unused entries, and a
+trimmed list ready to paste. Don't use `scripts/gn/trim_visibility.py` for
+migrated targets: it misses Bazel-only consumers and prints GN syntax.
+
+If the Bazel and GN lists differ on purpose, keep the GN list in a
+`# @bazel2gn:raw_overwrite:` annotation on `visibility`. The script then trims
+the Bazel list against Bazel consumers and the GN list against GN consumers.
+
 ## Design ideas
 
 There are two main sources of differences between `BUILD.gn` and `BUILD.bazel`:
