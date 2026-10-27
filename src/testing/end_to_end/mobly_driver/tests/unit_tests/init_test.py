@@ -3,7 +3,10 @@
 # found in the LICENSE file.
 """Unit tests for Mobly driver's __init__.py."""
 
+import os
+import signal
 import subprocess
+import sys
 import unittest
 from datetime import timedelta
 from typing import Any
@@ -21,6 +24,14 @@ class MoblyDriverLibTest(unittest.TestCase):
         self.mock_process = mock.Mock()
         self.mock_driver = mock.Mock()
         self.mock_driver.generate_test_config.return_value = ""
+        # Tests that mock out Popen must never walk the real /proc of the test
+        # runner (and kill whatever children it may have). Functional tests
+        # that need the real tree walk stop this patcher explicitly.
+        self._list_processes_patcher = mock.patch(
+            "mobly_driver._list_processes", return_value={}
+        )
+        self._list_processes_patcher.start()
+        self.addCleanup(self._list_processes_patcher.stop)
 
     @mock.patch("builtins.print")
     @mock.patch("subprocess.Popen")
@@ -286,6 +297,7 @@ class MoblyDriverLibTest(unittest.TestCase):
             [py_path, test_path, "-c", tmp_path] + (["-v"] if verbose else []),
             universal_newlines=mock.ANY,
             env=mock.ANY,
+            preexec_fn=mock.ANY,
         )
 
     @parameterized.expand(
@@ -318,4 +330,166 @@ class MoblyDriverLibTest(unittest.TestCase):
             expected_args,
             universal_newlines=mock.ANY,
             env=mock.ANY,
+            preexec_fn=mock.ANY,
         )
+
+    @mock.patch.object(
+        mobly_driver, "_LEFTOVER_PROCESS_GRACE_PERIOD", timedelta(seconds=0)
+    )
+    @mock.patch("builtins.print")
+    @mock.patch("os.kill")
+    @mock.patch("mobly_driver._list_processes")
+    @mock.patch("subprocess.Popen")
+    def test_run_kills_orphaned_descendants_when_test_killed_by_sigkill(
+        self,
+        mock_popen: Any,
+        mock_list_processes: Any,
+        mock_kill: Any,
+        *unused_args: Any,
+    ) -> None:
+        """Test case to ensure leftover test descendants are killed even when proc.wait returns -9."""
+        self.mock_process.pid = 4242
+        self.mock_process.wait.return_value = -9
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        me = os.getpid()
+        # In container environments (e.g. Swarming nsjail), `me` may be PID 1.
+        # Ensure unrelated processes use a parent PID distinct from `me`.
+        unrelated_ppid = me + 50000
+        # Simulated /proc after the test (4242) died: its adb server (4300)
+        # was reparented to us (the subreaper), the adb server has a live
+        # child (4301) and a zombie child (4302). 9999 is unrelated.
+        mock_list_processes.return_value = {
+            me: (unrelated_ppid, "S", "python3"),
+            4300: (me, "S", "adb"),
+            4301: (4300, "S", "adb"),
+            4302: (4300, "Z", "adb"),
+            9999: (unrelated_ppid, "S", "bash"),
+        }
+
+        with self.assertRaises(mobly_driver.MoblyTestFailureException) as cm:
+            mobly_driver.run(self.mock_driver, "/py/path", "/test/path")
+
+        self.assertEqual(cm.exception.return_code, -9)
+        # Deepest live descendant first; SIGTERM sent first, then escalated to SIGKILL.
+        self.assertEqual(
+            mock_kill.call_args_list,
+            [
+                mock.call(4301, signal.SIGTERM),
+                mock.call(4300, signal.SIGTERM),
+                mock.call(4301, signal.SIGKILL),
+                mock.call(4300, signal.SIGKILL),
+            ],
+        )
+
+    @mock.patch.object(
+        mobly_driver, "_LEFTOVER_PROCESS_GRACE_PERIOD", timedelta(seconds=1)
+    )
+    @mock.patch("builtins.print")
+    @mock.patch("os.kill")
+    @mock.patch("mobly_driver._list_processes")
+    @mock.patch("subprocess.Popen")
+    def test_run_kills_orphaned_descendants_cleanly_on_sigterm(
+        self,
+        mock_popen: Any,
+        mock_list_processes: Any,
+        mock_kill: Any,
+        *unused_args: Any,
+    ) -> None:
+        """Test case to ensure leftover test descendants exit cleanly on SIGTERM without SIGKILL."""
+        self.mock_process.pid = 4242
+        self.mock_process.wait.return_value = -9
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+        me = os.getpid()
+        # In container environments (e.g. Swarming nsjail), `me` may be PID 1.
+        # Ensure unrelated processes use a parent PID distinct from `me`.
+        unrelated_ppid = me + 50000
+        mock_list_processes.return_value = {
+            me: (unrelated_ppid, "S", "python3"),
+            4300: (me, "S", "adb"),
+            4301: (4300, "S", "adb"),
+            9999: (unrelated_ppid, "S", "bash"),
+        }
+
+        # os.kill(pid, 0) raises ProcessLookupError, simulating processes exiting immediately on SIGTERM.
+        def fake_kill(pid: int, sig: int) -> None:
+            if sig == 0:
+                raise ProcessLookupError
+
+        mock_kill.side_effect = fake_kill
+
+        with self.assertRaises(mobly_driver.MoblyTestFailureException):
+            mobly_driver.run(self.mock_driver, "/py/path", "/test/path")
+
+        # Deepest first; SIGTERM sent, checked via kill(pid, 0) which finds them gone, no SIGKILL needed.
+        self.assertEqual(
+            mock_kill.call_args_list,
+            [
+                mock.call(4301, signal.SIGTERM),
+                mock.call(4300, signal.SIGTERM),
+                mock.call(4301, 0),
+                mock.call(4300, 0),
+            ],
+        )
+
+    @mock.patch("builtins.print")
+    @mock.patch("os.kill")
+    @mock.patch("mobly_driver._list_processes", return_value={})
+    @mock.patch("subprocess.Popen")
+    def test_run_does_not_kill_anything_when_no_descendants_remain(
+        self,
+        mock_popen: Any,
+        mock_list_processes: Any,
+        mock_kill: Any,
+        *unused_args: Any,
+    ) -> None:
+        """Test case to ensure a clean exit does not send any signals."""
+        self.mock_process.pid = 4242
+        self.mock_process.wait.return_value = 0
+        mock_popen.return_value.__enter__.return_value = self.mock_process
+
+        mobly_driver.run(self.mock_driver, "/py/path", "/test/path")
+
+        mock_kill.assert_not_called()
+
+    @mock.patch("mobly_driver._list_processes")
+    def test_find_descendants_handles_cycles_safely(
+        self, mock_list_processes: Any
+    ) -> None:
+        """Test case to ensure cyclic parent-child references do not cause infinite loops."""
+        mock_list_processes.return_value = {
+            200: (100, "S", "child1"),
+            300: (200, "S", "child2"),
+            100: (300, "S", "root"),
+        }
+        descendants = mobly_driver._find_descendants(100)
+        self.assertIsInstance(descendants, list)
+
+    @mock.patch("mobly_driver._list_processes")
+    def test_find_descendants_skips_zombies(
+        self, mock_list_processes: Any
+    ) -> None:
+        """Test case to ensure zombie descendants are skipped."""
+        mock_list_processes.return_value = {
+            100: (1, "S", "root"),
+            200: (100, "Z", "zombie"),
+            300: (100, "S", "alive"),
+        }
+        descendants = mobly_driver._find_descendants(100)
+        self.assertEqual(descendants, [(300, "alive")])
+
+    @mock.patch("mobly_driver._LIBC")
+    def test_set_child_subreaper_calls_prctl(self, mock_libc: Any) -> None:
+        """Test case to ensure prctl is called with PR_SET_CHILD_SUBREAPER on Linux."""
+        if sys.platform != "linux":
+            self.skipTest("Linux only")
+        mock_libc.prctl.return_value = 0
+        mobly_driver._set_child_subreaper()
+        mock_libc.prctl.assert_called_once_with(36, 1)
+
+    @mock.patch("mobly_driver._LIBC")
+    def test_set_pdeathsig_calls_prctl(self, mock_libc: Any) -> None:
+        """Test case to ensure prctl is called with PR_SET_PDEATHSIG on Linux."""
+        if sys.platform != "linux":
+            self.skipTest("Linux only")
+        mobly_driver._set_pdeathsig()
+        mock_libc.prctl.assert_called_once_with(1, signal.SIGKILL)
