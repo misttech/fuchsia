@@ -90,7 +90,8 @@ class VendorPathsCheck(BazelCheck):
         # Vendor repositories themselves may reference paths within //vendor/.
         "vendor/**",
     )
-    supports_allowlist = True
+    # Vendor subpaths must never be referenced in public Fuchsia code.
+    supports_allowlist = False
 
     def check_string(self, fc: FileContext, s: StringInfo) -> None:
         if (
