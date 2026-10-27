@@ -22,16 +22,28 @@
 
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
+#include "src/graphics/display/lib/api-types/cpp/color.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
+#include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/layer-id.h"
+#include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 
 namespace display_coordinator {
 
 namespace {
+
+// The layer-wide alpha coefficient used when a layer's alpha is reset.
+//
+// `AlphaMode::kDisable` ignores the coefficient. `Layer::SetColorConfig()`
+// pairs it with `AlphaMode::kPremultiplied` for translucent colors, where the
+// coefficient multiplies the per-pixel alpha and the color channels, so 1.0
+// makes a translucent color layer's opacity exactly its color's alpha.
+constexpr float kDefaultAlphaCoefficient = 1.0f;
 
 display::DriverLayer CreatePlaceholderDriverLayer() {
   return display::DriverLayer({
@@ -43,11 +55,28 @@ display::DriverLayer CreatePlaceholderDriverLayer() {
           .height = 0,
           .tiling_type = display::ImageTilingType::kLinear,
       }),
+      // Opaque black, because the engine API requires a color layer with the
+      // default `AlphaMode::kDisable` to have an opaque color.
       .fallback_color = display::Color({
           .format = display::PixelFormat::kR8G8B8A8,
-          .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
+          .bytes = {{0, 0, 0, 0xff, 0, 0, 0, 0}},
       }),
+      .alpha_coefficient = kDefaultAlphaCoefficient,
   });
+}
+
+// Returns true iff `color` is fully opaque.
+//
+// Colors whose pixel format has no alpha channel are opaque.
+bool IsOpaqueColor(const display::Color& color) {
+  switch (color.format().GetAlphaLayout()) {
+    case display::PixelFormat::AlphaLayout::kNone:
+      return true;
+    case display::PixelFormat::AlphaLayout::k8BitsInByte3:
+      return color.bytes()[3] == 0xff;
+    case display::PixelFormat::AlphaLayout::k2BitsAtTopOfByte3:
+      return (color.bytes()[3] >> 6) == 0b11;
+  }
 }
 
 }  // namespace
@@ -239,9 +268,12 @@ void Layer::SetPrimaryConfig(display::ImageMetadata image_metadata) {
           .format = display::PixelFormat::kR8G8B8A8,
           .bytes = {{0, 0, 0, 0, 0, 0, 0, 0}},
       }),
-      .alpha_mode = draft_layer_config_.alpha_mode(),
-      .alpha_coefficient = draft_layer_config_.alpha_coefficient(),
-      .image_source_transformation = draft_layer_config_.image_source_transformation(),
+      // Every primary layer property is reset to its default value, so that
+      // the layer's state does not depend on its history. See the
+      // `fuchsia.hardware.display/Coordinator.SetLayerPrimaryConfig()` docs.
+      .alpha_mode = display::AlphaMode::kDisable,
+      .alpha_coefficient = kDefaultAlphaCoefficient,
+      .image_source_transformation = display::CoordinateTransformation::kIdentity,
   });
   draft_layer_config_differs_from_committed_ = true;
 
@@ -292,9 +324,14 @@ void Layer::SetColorConfig(display::Color color, display::Rectangle display_dest
           .tiling_type = display::ImageTilingType::kLinear,
       }),
       .fallback_color = color,
-      .alpha_mode = draft_layer_config_.alpha_mode(),
-      .alpha_coefficient = draft_layer_config_.alpha_coefficient(),
-      .image_source_transformation = draft_layer_config_.image_source_transformation(),
+      // Primary layer properties do not carry over, so the color's alpha is
+      // the only source of transparency. The color channels are already
+      // premultiplied by that alpha, hence `kPremultiplied`. See the
+      // `fuchsia.hardware.display/Coordinator.SetLayerColorConfig()` docs.
+      .alpha_mode =
+          IsOpaqueColor(color) ? display::AlphaMode::kDisable : display::AlphaMode::kPremultiplied,
+      .alpha_coefficient = kDefaultAlphaCoefficient,
+      .image_source_transformation = display::CoordinateTransformation::kIdentity,
   });
 
   draft_layer_config_differs_from_committed_ = true;

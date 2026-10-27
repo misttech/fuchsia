@@ -129,6 +129,35 @@ TEST(PixelFormatTest, PlaneCountMultiPlanarWithVulkanEquivalents) {
   EXPECT_EQ(2, PixelFormat::kP010.PlaneCount());
 }
 
+TEST(PixelFormatTest, GetAlphaLayoutRgba) {
+  EXPECT_EQ(PixelFormat::AlphaLayout::k8BitsInByte3, PixelFormat::kR8G8B8A8.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::k8BitsInByte3, PixelFormat::kB8G8R8A8.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::k2BitsAtTopOfByte3,
+            PixelFormat::kA2R10G10B10.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::k2BitsAtTopOfByte3,
+            PixelFormat::kA2B10G10R10.GetAlphaLayout());
+}
+
+TEST(PixelFormatTest, GetAlphaLayoutRgb) {
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kB8G8R8.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kR5G6B5.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kR3G3B2.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kR8G8B8.GetAlphaLayout());
+}
+
+TEST(PixelFormatTest, GetAlphaLayoutImplicitColorChannels) {
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kL8.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kR8.GetAlphaLayout());
+}
+
+TEST(PixelFormatTest, GetAlphaLayoutMultiPlanarWithVulkanEquivalents) {
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kI420.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kNv12.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kYuy2.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kYv12.GetAlphaLayout());
+  EXPECT_EQ(PixelFormat::AlphaLayout::kNone, PixelFormat::kP010.GetAlphaLayout());
+}
+
 TEST(PixelFormatTest, EncodingSizeMatchesImageFormat) {
   static constexpr std::array kSupportedSinglePlaneFormats = {
       PixelFormat::kR8G8B8A8, PixelFormat::kB8G8R8A8,    PixelFormat::kB8G8R8,

@@ -21,9 +21,12 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <thread>
+#include <vector>
 
 #include <gmock/gmock.h>
 
@@ -2040,7 +2043,19 @@ TEST_F(DisplayCompositorTest, TryDirectToDisplayExceedsHardwareLayerLimitFallbac
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
 
-TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
+struct SolidColorAlphaByteParam {
+  BlendMode blend_mode;
+  uint8_t expected_alpha;
+};
+
+class DisplayCompositorSolidColorAlphaTest
+    : public DisplayCompositorTest,
+      public testing::WithParamInterface<SolidColorAlphaByteParam> {};
+
+// A `kReplace` fill is sent opaque, even if its color is translucent: the GPU path draws a
+// `kReplace` layer opaque, and the fill must not change when Scenic switches between the paths. A
+// premultiplied-alpha fill keeps its alpha, so the Coordinator blends it.
+TEST_P(DisplayCompositorSolidColorAlphaTest, SolidColorAlphaByteFollowsBlendMode) {
   const display::DisplayId kDisplayId(1);
   glm::uvec2 resolution(1024, 768);
   DisplayInfo display_info = {resolution, {kPixelFormat}, kMaxDisplayLayersCount};
@@ -2061,23 +2076,33 @@ TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
   display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
                                   /*out_buffer_collection*/ nullptr);
 
+  // Premultiplied half-opaque green, at layer opacity 1, in the blend mode under test. Red and
+  // blue are equal, so the expected bytes do not depend on the channel order.
   ResolvedLayer layer = {
       .geometry = SrcToDest(types::RectangleF({.x = 0,
                                                .y = 0,
                                                .width = static_cast<float>(resolution.x),
                                                .height = static_cast<float>(resolution.y)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
-      .blend_mode = BlendMode::kReplace(),
-      .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
+      .blend_mode = GetParam().blend_mode,
+      .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.5f, 0.f, 0.5f}},
   };
   RenderData render_data = {
       .display_id = kDisplayId,
       .layers = std::span<const ResolvedLayer>(&layer, 1),
   };
 
+  // `AddDisplay()` also sends a color config, black, for the empty-scene layer.
+  std::vector<std::array<uint8_t, 4>> sent_color_bytes;
   EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _))
       .Times(2)
-      .WillRepeatedly(Return());
+      .WillRepeatedly(testing::Invoke(
+          [&](fidl::WireServer<
+                  fuchsia_hardware_display::Coordinator>::SetLayerColorConfigRequestView request,
+              MockDisplayCoordinator::SetLayerColorConfigCompleter::Sync& completer) {
+            const fidl::Array<uint8_t, 8>& bytes = request->color.bytes;
+            sent_color_bytes.push_back({bytes[0], bytes[1], bytes[2], bytes[3]});
+          }));
   EXPECT_CALL(*mock_display_coordinator_, SetLayerPrimaryConfig(_, _)).Times(0);
   EXPECT_CALL(*mock_display_coordinator_, SetLayerImage2(_, _)).Times(0);
 
@@ -2093,6 +2118,10 @@ TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
   bool result = TryDirectToDisplay(std::span<const RenderData>(&render_data, 1));
   EXPECT_TRUE(result);
 
+  EXPECT_THAT(sent_color_bytes,
+              testing::Contains(testing::ElementsAre(uint8_t{0}, uint8_t{127}, uint8_t{0},
+                                                     GetParam().expected_alpha)));
+
   // Cleanup: All layers should be destroyed.
   for (uint64_t i = 1; i <= kMaxDisplayLayersCount + 1; ++i) {
     EXPECT_CALL(
@@ -2104,6 +2133,13 @@ TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
   }
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    BlendModes, DisplayCompositorSolidColorAlphaTest,
+    testing::Values(SolidColorAlphaByteParam{.blend_mode = BlendMode::kReplace(),
+                                             .expected_alpha = 255},
+                    SolidColorAlphaByteParam{.blend_mode = BlendMode::kPremultipliedAlpha(),
+                                             .expected_alpha = 127}));
 
 TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();

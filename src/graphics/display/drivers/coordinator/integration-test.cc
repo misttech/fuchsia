@@ -37,10 +37,12 @@
 #include "src/graphics/display/drivers/coordinator/post-display-task.h"
 #include "src/graphics/display/drivers/coordinator/testing/base.h"
 #include "src/graphics/display/drivers/coordinator/testing/mock-coordinator-listener.h"
+#include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/buffer-collection-id.h"
 #include "src/graphics/display/lib/api-types/cpp/client-priority.h"
 #include "src/graphics/display/lib/api-types/cpp/config-check-result.h"
 #include "src/graphics/display/lib/api-types/cpp/config-stamp.h"
+#include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/display-id.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-config-stamp.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
@@ -50,6 +52,7 @@
 #include "src/graphics/display/lib/api-types/cpp/layer-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/graphics/display/lib/api-types/cpp/power-mode.h"
+#include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/graphics/display/lib/api-types/cpp/vsync-ack-cookie.h"
 #include "src/graphics/display/lib/driver-utils/post-task.h"
 #include "src/graphics/display/lib/fake-display-stack/fake-display.h"
@@ -293,6 +296,11 @@ class TestFidlClient {
 
   zx::result<> SetLayerPrimaryConfig(display::LayerId layer_id,
                                      const display::ImageMetadata& image_metadata);
+  zx::result<> SetLayerPrimaryPosition(
+      display::LayerId layer_id, display::CoordinateTransformation image_source_transformation,
+      const display::Rectangle& image_source, const display::Rectangle& display_destination);
+  zx::result<> SetLayerPrimaryAlpha(display::LayerId layer_id, display::AlphaMode alpha_mode,
+                                    float alpha_coefficient);
   zx::result<> SetLayerImage(display::LayerId layer_id, display::ImageId image_id,
                              display::EventId event_id);
   zx::result<> SetLayerColor(display::LayerId layer_id, const display::Color& fallback_color);
@@ -534,6 +542,39 @@ zx::result<> TestFidlClient::SetLayerPrimaryConfig(display::LayerId layer_id,
       coordinator_fidl_client_->SetLayerPrimaryConfig(fidl_layer_id, fidl_image_metadata);
   if (!fidl_transport_status.ok()) {
     fdf::error("FIDL error calling SetLayerPrimaryConfig: {}", fidl_transport_status.error());
+    return zx::error(fidl_transport_status.status());
+  }
+  return zx::ok();
+}
+
+zx::result<> TestFidlClient::SetLayerPrimaryPosition(
+    display::LayerId layer_id, display::CoordinateTransformation image_source_transformation,
+    const display::Rectangle& image_source, const display::Rectangle& display_destination) {
+  ZX_ASSERT(coordinator_fidl_client_.is_valid());
+
+  const fuchsia_hardware_display::wire::LayerId fidl_layer_id = layer_id.ToFidl();
+
+  fidl::OneWayStatus fidl_transport_status = coordinator_fidl_client_->SetLayerPrimaryPosition(
+      fidl_layer_id, image_source_transformation.ToFidl(), image_source.ToFidl(),
+      display_destination.ToFidl());
+  if (!fidl_transport_status.ok()) {
+    fdf::error("FIDL error calling SetLayerPrimaryPosition: {}", fidl_transport_status.error());
+    return zx::error(fidl_transport_status.status());
+  }
+  return zx::ok();
+}
+
+zx::result<> TestFidlClient::SetLayerPrimaryAlpha(display::LayerId layer_id,
+                                                  display::AlphaMode alpha_mode,
+                                                  float alpha_coefficient) {
+  ZX_ASSERT(coordinator_fidl_client_.is_valid());
+
+  const fuchsia_hardware_display::wire::LayerId fidl_layer_id = layer_id.ToFidl();
+
+  fidl::OneWayStatus fidl_transport_status = coordinator_fidl_client_->SetLayerPrimaryAlpha(
+      fidl_layer_id, alpha_mode.ToFidl(), alpha_coefficient);
+  if (!fidl_transport_status.ok()) {
+    fdf::error("FIDL error calling SetLayerPrimaryAlpha: {}", fidl_transport_status.error());
     return zx::error(fidl_transport_status.status());
   }
   return zx::ok();
@@ -2336,6 +2377,131 @@ TEST_F(IntegrationTest, SetDisplayLayersTooManyLayersDisconnects) {
       primary_client->state().display_id(),
       {{.layer_id = create_layer1_result.value()}, {.layer_id = create_layer2_result.value()}});
   ASSERT_OK(result);
+
+  // Issue a synchronous call to verify that the Coordinator closed the channel.
+  zx::result<display::ConfigStamp> get_stamp_result = primary_client->GetLastCommittedConfigStamp();
+  EXPECT_STATUS(zx::error(ZX_ERR_PEER_CLOSED), get_stamp_result);
+}
+
+TEST_F(IntegrationTest, CheckConfigRejectsTranslucentColorLayer) {
+  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
+
+  // Translucent black. fake-display cannot blend a translucent color layer.
+  zx::result<display::LayerId> create_layer_result =
+      primary_client->CreateFullscreenColorLayer(BgraColor(0x80000000));
+  ASSERT_OK(create_layer_result);
+  display::LayerId layer_id = create_layer_result.value();
+  ASSERT_OK(primary_client->SetDisplayLayers(primary_client->state().display_id(),
+                                             {{.layer_id = layer_id}}));
+
+  zx::result<display::ConfigCheckResult> translucent_check_result = primary_client->CheckConfig();
+  ASSERT_OK(translucent_check_result);
+  EXPECT_EQ(display::ConfigCheckResult::kUnsupportedConfig, translucent_check_result.value());
+
+  ASSERT_OK(primary_client->SetLayerColor(layer_id, kFuchsiaBgra));
+  zx::result<display::ConfigCheckResult> opaque_check_result = primary_client->CheckConfig();
+  ASSERT_OK(opaque_check_result);
+  EXPECT_EQ(display::ConfigCheckResult::kOk, opaque_check_result.value());
+}
+
+// fake-display rejects any alpha mode other than `kDisable` and any transform
+// other than the identity, so a config that keeps the earlier position or alpha
+// fails `CheckConfig()`. A `kOk` result shows that the Coordinator accepted the
+// position on a primary layer, and that the second, identical
+// `SetLayerPrimaryConfig()` reset both the transform and the alpha.
+TEST_F(IntegrationTest, SetLayerPrimaryConfigResetsPositionAndAlpha) {
+  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
+
+  zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
+  ASSERT_OK(create_layer_result);
+  display::LayerId layer_id = create_layer_result.value();
+  ASSERT_OK(primary_client->SetDisplayLayers(primary_client->state().display_id(),
+                                             {{.layer_id = layer_id}}));
+
+  const display::ImageMetadata image_metadata = primary_client->state().FullscreenImageMetadata();
+  const display::Rectangle fullscreen_area({
+      .x = 0,
+      .y = 0,
+      .width = image_metadata.width(),
+      .height = image_metadata.height(),
+  });
+  ASSERT_OK(primary_client->SetLayerPrimaryConfig(layer_id, image_metadata));
+  ASSERT_OK(primary_client->SetLayerPrimaryPosition(
+      layer_id, display::CoordinateTransformation::kReflectY, fullscreen_area, fullscreen_area));
+  ASSERT_OK(primary_client->SetLayerPrimaryAlpha(layer_id, display::AlphaMode::kPremultiplied,
+                                                 /*alpha_coefficient=*/0.5f));
+  ASSERT_OK(primary_client->SetLayerPrimaryConfig(layer_id, image_metadata));
+
+  zx::result<display::ConfigCheckResult> check_config_result = primary_client->CheckConfig();
+  ASSERT_OK(check_config_result);
+  EXPECT_EQ(display::ConfigCheckResult::kOk, check_config_result.value());
+}
+
+TEST_F(IntegrationTest, SetLayerPrimaryAlphaOnColorLayerDisconnects) {
+  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
+
+  zx::result<display::LayerId> create_layer_result =
+      primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
+  ASSERT_OK(create_layer_result);
+
+  // The Coordinator closes the channel after this call, because primary layer
+  // properties are illegal on a color layer.
+  ASSERT_OK(primary_client->SetLayerPrimaryAlpha(create_layer_result.value(),
+                                                 display::AlphaMode::kPremultiplied,
+                                                 /*alpha_coefficient=*/0.5f));
+
+  // Issue a synchronous call to verify that the Coordinator closed the channel.
+  zx::result<display::ConfigStamp> get_stamp_result = primary_client->GetLastCommittedConfigStamp();
+  EXPECT_STATUS(zx::error(ZX_ERR_PEER_CLOSED), get_stamp_result);
+}
+
+TEST_F(IntegrationTest, SetLayerPrimaryPositionOnColorLayerDisconnects) {
+  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
+
+  zx::result<display::LayerId> create_layer_result =
+      primary_client->CreateFullscreenColorLayer(kFuchsiaBgra);
+  ASSERT_OK(create_layer_result);
+
+  const display::ImageMetadata image_metadata = primary_client->state().FullscreenImageMetadata();
+  const display::Rectangle fullscreen_area({
+      .x = 0,
+      .y = 0,
+      .width = image_metadata.width(),
+      .height = image_metadata.height(),
+  });
+
+  // The Coordinator closes the channel after this call, because primary layer
+  // properties are illegal on a color layer.
+  ASSERT_OK(primary_client->SetLayerPrimaryPosition(create_layer_result.value(),
+                                                    display::CoordinateTransformation::kIdentity,
+                                                    fullscreen_area, fullscreen_area));
+
+  // Issue a synchronous call to verify that the Coordinator closed the channel.
+  zx::result<display::ConfigStamp> get_stamp_result = primary_client->GetLastCommittedConfigStamp();
+  EXPECT_STATUS(zx::error(ZX_ERR_PEER_CLOSED), get_stamp_result);
+}
+
+TEST_F(IntegrationTest, SetLayerPrimaryAlphaOnUnconfiguredLayerDisconnects) {
+  std::unique_ptr<TestFidlClient> primary_client = OpenCoordinatorTestFidlClient(
+      &sysmem_client_, DisplayProviderClient(), display::ClientPriority::kCompositor);
+  WaitUntil([&]() { return primary_client->state().has_display_ownership(); });
+
+  zx::result<display::LayerId> create_layer_result = primary_client->CreateLayer();
+  ASSERT_OK(create_layer_result);
+
+  // The Coordinator closes the channel after this call, because a layer is not
+  // primary until `SetLayerPrimaryConfig()` is called on it.
+  ASSERT_OK(primary_client->SetLayerPrimaryAlpha(create_layer_result.value(),
+                                                 display::AlphaMode::kPremultiplied,
+                                                 /*alpha_coefficient=*/0.5f));
 
   // Issue a synchronous call to verify that the Coordinator closed the channel.
   zx::result<display::ConfigStamp> get_stamp_result = primary_client->GetLastCommittedConfigStamp();

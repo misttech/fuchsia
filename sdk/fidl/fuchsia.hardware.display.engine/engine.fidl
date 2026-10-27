@@ -91,6 +91,14 @@ type Layer = struct {
     /// to fill the layer's pixels using this color. Conceptually, the source
     /// image's pixel data will never be available for the image.
     ///
+    /// For such a color layer, if the color's pixel format has an alpha
+    /// channel, that alpha is the layer's per-pixel alpha, and the color
+    /// channels are premultiplied by it. A color layer's `alpha_mode` is
+    /// `AlphaMode.DISABLE` if the color is opaque, and
+    /// `AlphaMode.PREMULTIPLIED` if it is translucent, and its
+    /// `alpha_layer_val` is always 1. A driver that cannot blend a translucent
+    /// color layer must reject the configuration.
+    ///
     /// The hardware may also use this color as a last resort for situations
     /// such as buffer underruns, when the pixel data for the layer's image
     /// cannot be retrieved fast enough to meet the display connection's timing

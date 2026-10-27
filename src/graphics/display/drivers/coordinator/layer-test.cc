@@ -12,6 +12,9 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/zx/result.h>
 
+#include <cstdint>
+#include <format>
+
 #include <fbl/intrusive_double_list.h>
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
@@ -19,10 +22,17 @@
 #include "src/graphics/display/drivers/coordinator/fence.h"
 #include "src/graphics/display/drivers/coordinator/image-lifecycle-listener.h"
 #include "src/graphics/display/drivers/coordinator/image.h"
+#include "src/graphics/display/lib/api-types/cpp/alpha-mode.h"
+#include "src/graphics/display/lib/api-types/cpp/color.h"
+#include "src/graphics/display/lib/api-types/cpp/coordinate-transformation.h"
 #include "src/graphics/display/lib/api-types/cpp/driver-image-id.h"
+#include "src/graphics/display/lib/api-types/cpp/driver-layer.h"
 #include "src/graphics/display/lib/api-types/cpp/event-id.h"
 #include "src/graphics/display/lib/api-types/cpp/image-id.h"
+#include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/layer-id.h"
+#include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace display_coordinator {
@@ -85,6 +95,10 @@ class LayerTest : public ::testing::Test {
     committed_display_config_layer_list.push_front(&layer.committed_display_config_list_node_);
   }
 
+  static const display::DriverLayer& GetDraftLayerConfig(const Layer& layer) {
+    return layer.draft_layer_config_;
+  }
+
  protected:
   fdf_testing::ScopedGlobalLogger logger_;
   fdf_testing::DriverRuntime driver_runtime_;
@@ -115,6 +129,145 @@ TEST_F(LayerTest, PrimaryBasic) {
   fbl::RefPtr<Image> image = CreateReadyImage();
   layer.SetImage(image, display::kInvalidEventId);
   layer.CommitChanges();
+}
+
+TEST_F(LayerTest, SetPrimaryConfigResetsPrimaryProperties) {
+  Layer layer(display::LayerId(1));
+
+  const display::ImageMetadata image_metadata({.width = kDisplayWidth,
+                                               .height = kDisplayHeight,
+                                               .tiling_type = display::ImageTilingType::kLinear});
+  const display::Rectangle image_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+  const display::Rectangle cropped_area(
+      {.x = 10, .y = 20, .width = kDisplayWidth / 2, .height = kDisplayHeight / 2});
+  layer.SetPrimaryConfig(image_metadata);
+  layer.SetPrimaryPosition(display::CoordinateTransformation::kReflectY, cropped_area,
+                           cropped_area);
+  layer.SetPrimaryAlpha(display::AlphaMode::kPremultiplied, 0.25f);
+
+  // Calling `SetPrimaryConfig()` on a primary layer resets all primary layer
+  // properties, even if the image metadata does not change.
+  layer.SetPrimaryConfig(image_metadata);
+  const display::DriverLayer& draft = GetDraftLayerConfig(layer);
+  EXPECT_EQ(draft.image_metadata(), image_metadata);
+  EXPECT_EQ(draft.image_source(), image_area);
+  EXPECT_EQ(draft.display_destination(), image_area);
+  EXPECT_EQ(draft.image_source_transformation(), display::CoordinateTransformation::kIdentity);
+  EXPECT_EQ(draft.alpha_mode(), display::AlphaMode::kDisable);
+  EXPECT_EQ(draft.alpha_coefficient(), 1.0f);
+}
+
+TEST_F(LayerTest, SetColorConfigDoesNotInheritPrimaryProperties) {
+  Layer layer(display::LayerId(1));
+
+  const display::ImageMetadata image_metadata({.width = kDisplayWidth,
+                                               .height = kDisplayHeight,
+                                               .tiling_type = display::ImageTilingType::kLinear});
+  const display::Rectangle display_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+  layer.SetPrimaryConfig(image_metadata);
+  layer.SetPrimaryPosition(display::CoordinateTransformation::kReflectY, display_area,
+                           display_area);
+  layer.SetPrimaryAlpha(display::AlphaMode::kHwMultiply, 0.02f);
+
+  // Translucent (32% opaque) black, as used by Android's dim layers.
+  const display::Color translucent_color({
+      .format = display::PixelFormat::kB8G8R8A8,
+      .bytes = {{0, 0, 0, 0x52, 0, 0, 0, 0}},
+  });
+  layer.SetColorConfig(translucent_color, display_area);
+  const display::DriverLayer& draft = GetDraftLayerConfig(layer);
+  EXPECT_EQ(draft.fallback_color(), translucent_color);
+  EXPECT_EQ(draft.display_destination(), display_area);
+  EXPECT_EQ(draft.image_source_transformation(), display::CoordinateTransformation::kIdentity);
+  EXPECT_EQ(draft.alpha_mode(), display::AlphaMode::kPremultiplied);
+  EXPECT_EQ(draft.alpha_coefficient(), 1.0f);
+}
+
+TEST_F(LayerTest, SetColorConfigWithOpaqueColorDisablesAlpha) {
+  Layer layer(display::LayerId(1));
+
+  const display::ImageMetadata image_metadata({.width = kDisplayWidth,
+                                               .height = kDisplayHeight,
+                                               .tiling_type = display::ImageTilingType::kLinear});
+  const display::Rectangle display_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+  layer.SetPrimaryConfig(image_metadata);
+  layer.SetPrimaryAlpha(display::AlphaMode::kPremultiplied, 0.5f);
+
+  const display::Color opaque_rgba_color({
+      .format = display::PixelFormat::kR8G8B8A8,
+      .bytes = {{0x12, 0x34, 0x56, 0xff, 0, 0, 0, 0}},
+  });
+  layer.SetColorConfig(opaque_rgba_color, display_area);
+  const display::DriverLayer& draft = GetDraftLayerConfig(layer);
+  EXPECT_EQ(draft.alpha_mode(), display::AlphaMode::kDisable);
+  EXPECT_EQ(draft.alpha_coefficient(), 1.0f);
+}
+
+TEST_F(LayerTest, SetColorConfigDerivesAlphaModeFromColorAlpha) {
+  const display::Rectangle display_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+
+  // Byte 3 holds the alpha: the whole 8-bit alpha channel, or the 2-bit alpha
+  // in its two most significant bits. Each alpha-carrying format has a
+  // translucent row, which fails if `IsOpaqueColor()` stops checking that
+  // format. 0xfe pins the 8-bit threshold at fully opaque, and 0xbf and 0xc0
+  // bracket the 2-bit one. A format without an alpha channel is opaque
+  // whatever byte 3 holds. `kR8G8B8`'s byte 3 is padding, so it is 0, which
+  // would read as transparent if the format were treated as having alpha.
+  struct Case {
+    display::PixelFormat format;
+    uint8_t alpha_byte;
+    display::AlphaMode expected_alpha_mode;
+  };
+  static constexpr Case kCases[] = {
+      {display::PixelFormat::kR8G8B8A8, 0x52, display::AlphaMode::kPremultiplied},
+      {display::PixelFormat::kR8G8B8A8, 0xff, display::AlphaMode::kDisable},
+      {display::PixelFormat::kB8G8R8A8, 0xff, display::AlphaMode::kDisable},
+      {display::PixelFormat::kB8G8R8A8, 0xfe, display::AlphaMode::kPremultiplied},
+      {display::PixelFormat::kR8G8B8, 0x00, display::AlphaMode::kDisable},
+      {display::PixelFormat::kA2R10G10B10, 0xbf, display::AlphaMode::kPremultiplied},
+      {display::PixelFormat::kA2R10G10B10, 0xc0, display::AlphaMode::kDisable},
+      {display::PixelFormat::kA2B10G10R10, 0xbf, display::AlphaMode::kPremultiplied},
+      {display::PixelFormat::kA2B10G10R10, 0xc0, display::AlphaMode::kDisable},
+  };
+
+  for (const Case& test_case : kCases) {
+    SCOPED_TRACE(
+        std::format("format {}, alpha byte {:#04x}", test_case.format, test_case.alpha_byte));
+    Layer layer(display::LayerId(1));
+    const display::Color color({
+        .format = test_case.format,
+        .bytes = {{0xff, 0xff, 0xff, test_case.alpha_byte, 0, 0, 0, 0}},
+    });
+    layer.SetColorConfig(color, display_area);
+    EXPECT_EQ(GetDraftLayerConfig(layer).alpha_mode(), test_case.expected_alpha_mode);
+  }
+}
+
+TEST_F(LayerTest, SetPrimaryConfigAfterColorConfigUsesDefaults) {
+  Layer layer(display::LayerId(1));
+
+  const display::Rectangle display_area(
+      {.x = 0, .y = 0, .width = kDisplayWidth, .height = kDisplayHeight});
+  const display::Color translucent_color({
+      .format = display::PixelFormat::kB8G8R8A8,
+      .bytes = {{0, 0, 0, 0x52, 0, 0, 0, 0}},
+  });
+  layer.SetColorConfig(translucent_color, display_area);
+
+  const display::ImageMetadata image_metadata({.width = kDisplayWidth,
+                                               .height = kDisplayHeight,
+                                               .tiling_type = display::ImageTilingType::kLinear});
+  layer.SetPrimaryConfig(image_metadata);
+  const display::DriverLayer& draft = GetDraftLayerConfig(layer);
+  EXPECT_EQ(draft.image_source(), display_area);
+  EXPECT_EQ(draft.display_destination(), display_area);
+  EXPECT_EQ(draft.image_source_transformation(), display::CoordinateTransformation::kIdentity);
+  EXPECT_EQ(draft.alpha_mode(), display::AlphaMode::kDisable);
+  EXPECT_EQ(draft.alpha_coefficient(), 1.0f);
 }
 
 TEST_F(LayerTest, CleanUpImage) {

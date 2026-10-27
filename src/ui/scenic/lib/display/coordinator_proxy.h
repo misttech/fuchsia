@@ -131,6 +131,9 @@ class CoordinatorProxy {
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/SetLayerPrimaryConfig()`.
   // No FIDL call is sent immediately; it is deferred until it is (maybe) sent in `ApplyConfig()`.
+  // As `coordinator.fidl` specifies, this resets the layer's position and alpha to their defaults,
+  // so callers that need a non-default position or alpha must call `SetLayerPrimaryPosition()` or
+  // `SetLayerPrimaryAlpha()` after each call.
   void SetLayerPrimaryConfig(const LayerId& layer_id, const Extent2& image_dimensions,
                              uint32_t image_tiling_type);
 

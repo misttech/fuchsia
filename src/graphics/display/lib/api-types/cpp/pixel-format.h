@@ -62,6 +62,24 @@ class PixelFormat {
   // multiple planes.
   constexpr int EncodingSize() const;
 
+  // Where a pixel encoded using a format stores its alpha channel.
+  //
+  // Byte offsets count from the start of the pixel's encoding.
+  enum class AlphaLayout {
+    // The format has no alpha channel. Its pixels are opaque.
+    kNone,
+
+    // The alpha channel is byte 3. 0xff is opaque.
+    k8BitsInByte3,
+
+    // The alpha channel is the two most significant bits of byte 3. 0b11 is
+    // opaque.
+    k2BitsAtTopOfByte3,
+  };
+
+  // Where a pixel encoded using this format stores its alpha channel.
+  constexpr AlphaLayout GetAlphaLayout() const;
+
   static const PixelFormat kR8G8B8A8;
   static const PixelFormat kB8G8R8A8;
   static const PixelFormat kI420;
@@ -184,6 +202,35 @@ constexpr int PixelFormat::EncodingSize() const {
     default:
       ZX_DEBUG_ASSERT_MSG(false, "Unsupported pixel format: %" PRIu32, ValueForLogging());
       return 0;
+  }
+}
+
+constexpr PixelFormat::AlphaLayout PixelFormat::GetAlphaLayout() const {
+  switch (format_) {
+    case fuchsia_images2::wire::PixelFormat::kR8G8B8A8:
+    case fuchsia_images2::wire::PixelFormat::kB8G8R8A8:
+      return AlphaLayout::k8BitsInByte3;
+    case fuchsia_images2::wire::PixelFormat::kI420:
+    case fuchsia_images2::wire::PixelFormat::kNv12:
+    case fuchsia_images2::wire::PixelFormat::kYuy2:
+    case fuchsia_images2::wire::PixelFormat::kYv12:
+    case fuchsia_images2::wire::PixelFormat::kB8G8R8:
+    case fuchsia_images2::wire::PixelFormat::kR5G6B5:
+    case fuchsia_images2::wire::PixelFormat::kR3G3B2:
+    case fuchsia_images2::wire::PixelFormat::kL8:
+    case fuchsia_images2::wire::PixelFormat::kR8:
+      return AlphaLayout::kNone;
+    case fuchsia_images2::wire::PixelFormat::kA2R10G10B10:
+    case fuchsia_images2::wire::PixelFormat::kA2B10G10R10:
+      // The pixel is a little-endian 32-bit word whose top two bits are alpha.
+      return AlphaLayout::k2BitsAtTopOfByte3;
+    case fuchsia_images2::wire::PixelFormat::kP010:
+    case fuchsia_images2::wire::PixelFormat::kR8G8B8:
+      return AlphaLayout::kNone;
+
+    default:
+      ZX_DEBUG_ASSERT_MSG(false, "Unsupported pixel format: %" PRIu32, ValueForLogging());
+      return AlphaLayout::kNone;
   }
 }
 

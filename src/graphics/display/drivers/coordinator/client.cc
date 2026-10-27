@@ -580,6 +580,17 @@ void Client::SetLayerPrimaryPosition(SetLayerPrimaryPositionRequestView request,
   }
   Layer& layer = *layers_it;
 
+  // A non-primary layer has empty image metadata: it is a color layer, or a
+  // layer that `SetLayerPrimaryConfig()` was never called on. The FIDL API
+  // makes this call illegal on such a layer, and a non-empty image source on a
+  // layer with empty image metadata would make an invalid
+  // `display::DriverLayer`.
+  if (!layer.is_primary()) {
+    fdf::error("SetLayerPrimaryPosition called on a non-primary layer: {}", layer_id.value());
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
+
   if (!display::CoordinateTransformation::IsValid(request->image_source_transformation)) {
     fdf::error("SetLayerPrimaryPosition called with invalid image_source_transformation");
     completer.Close(ZX_ERR_INVALID_ARGS);
@@ -624,6 +635,16 @@ void Client::SetLayerPrimaryAlpha(SetLayerPrimaryAlphaRequestView request,
     return;
   }
   Layer& layer = *layers_it;
+
+  // A non-primary layer has empty image metadata: it is a color layer, or a
+  // layer that `SetLayerPrimaryConfig()` was never called on. The FIDL API
+  // makes this call illegal on such a layer. A color layer's alpha mode is
+  // derived from its color, and a primary alpha would contradict it.
+  if (!layer.is_primary()) {
+    fdf::error("SetLayerPrimaryAlpha called on a non-primary layer: {}", layer_id.value());
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
 
   if (!display::AlphaMode::IsValid(request->mode)) {
     fdf::error("Invalid alpha mode {}", static_cast<uint8_t>(request->mode));

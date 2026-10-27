@@ -196,6 +196,10 @@ closed protocol Coordinator {
     /// configuration is committed which does not include the layer or until its
     /// display is removed.
     ///
+    /// A new layer is neither a primary layer nor a solid color fill layer
+    /// until [`Coordinator.SetLayerPrimaryConfig`] or
+    /// [`Coordinator.SetLayerColorConfig`] is called on it.
+    ///
     /// * `layer_id` must be a valid ID (not equal to `INVALID_DISP_ID`).
     /// * `layer_id` must not be in use (not equal to the ID of any currently
     ///   existing layer in the same `Coordinator` session).
@@ -294,11 +298,26 @@ closed protocol Coordinator {
     });
 
     /// Configures the layer as a primary layer with no image and the default
-    /// config (no src_frame cropping, the identity transform, positioned in the
-    /// top-left corner of the composed output, and no scaling).
+    /// config.
     ///
-    /// See the documentation on SetLayerImage for details on how this method
-    /// affects the layer's contents.
+    /// This method makes the layer a primary layer. Each call resets all
+    /// primary layer properties to their defaults, even if the layer was
+    /// already a primary layer, and even if `image_metadata` matches the
+    /// layer's current metadata. The defaults are:
+    /// * position (see [`Coordinator.SetLayerPrimaryPosition`]): no
+    ///   `image_source` cropping, the identity transform, positioned in the
+    ///   top-left corner of the composited output, and no scaling. In other
+    ///   words, `image_source` and `display_destination` both cover the image
+    ///   specified by `image_metadata`.
+    /// * alpha (see [`Coordinator.SetLayerPrimaryAlpha`]): the `DISABLE` alpha
+    ///   mode. The layer is opaque.
+    ///
+    /// Clients that need non-default values must call
+    /// [`Coordinator.SetLayerPrimaryPosition`] and/or
+    /// [`Coordinator.SetLayerPrimaryAlpha`] after each call to this method.
+    ///
+    /// See the documentation on [`Coordinator.SetLayerImage2`] for details on
+    /// how this method affects the layer's contents.
     ///
     /// It is illegal to pass an invalid layer id.
     strict SetLayerPrimaryConfig(struct {
@@ -307,6 +326,10 @@ closed protocol Coordinator {
     });
 
     /// Sets the layer transform, scaling, and positioning.
+    ///
+    /// The values set here are reset by subsequent calls to
+    /// [`Coordinator.SetLayerPrimaryConfig`] and
+    /// [`Coordinator.SetLayerColorConfig`].
     ///
     /// CheckConfig() will return INVALID_CONFIG if any of the configuration
     /// validity conditions specified here is violated.
@@ -366,6 +389,10 @@ closed protocol Coordinator {
     /// alpha. Additionally, if `mode` == PREMULTIPLIED, then the hardware
     /// premultiplies the color channel with `val` before blending.
     ///
+    /// The values set here are reset by subsequent calls to
+    /// [`Coordinator.SetLayerPrimaryConfig`] and
+    /// [`Coordinator.SetLayerColorConfig`].
+    ///
     /// It is illegal to call this on a non-primary layer, to pass an
     /// invalid mode, or to pass a value of `val` which is not NaN or
     /// in the range [0, 1].
@@ -377,9 +404,31 @@ closed protocol Coordinator {
 
     /// Configures the layer as a solid color fill layer.
     ///
+    /// This method makes the layer a solid color fill layer. The arguments
+    /// fully define the layer's contents. No primary layer properties (set by
+    /// [`Coordinator.SetLayerPrimaryConfig`],
+    /// [`Coordinator.SetLayerPrimaryPosition`], or
+    /// [`Coordinator.SetLayerPrimaryAlpha`]) carry over into the color fill
+    /// layer. If the layer is later made a primary layer again, via
+    /// [`Coordinator.SetLayerPrimaryConfig`], all primary layer properties
+    /// start out at their defaults.
+    ///
     /// It is illegal to call this on an invalid layer.
     strict SetLayerColorConfig(struct {
         layer_id LayerId;
+
+        /// The color that fills `display_destination`.
+        ///
+        /// If `color`'s pixel format has an alpha channel, the alpha value is
+        /// the layer's opacity, and the color channels are premultiplied by
+        /// the alpha. A fully opaque color replaces the pixels of the layers
+        /// below it. A translucent color is blended with the layers below it.
+        /// Some display hardware cannot blend a translucent color layer, and
+        /// [`Coordinator.CheckConfig`] then reports the configuration as
+        /// `UNSUPPORTED_CONFIG`.
+        ///
+        /// If `color`'s pixel format does not have an alpha channel, the layer
+        /// is fully opaque.
         color fuchsia.hardware.display.types.Color;
 
         /// The display region occupied by the color fill layer.

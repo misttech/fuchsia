@@ -45,7 +45,8 @@ class Layer {
   // Corresponds to `fuchsia.hardware.display.Coordinator/SetLayerPrimaryConfig()`.
   // Modifies the layer's draft state; no FIDL methods are invoked.
   //
-  // Note: calling this clears the image, as done by the coordinator impl.
+  // Note: calling this clears the image, as done by the coordinator impl.  It also resets the
+  // position and alpha to their defaults, as specified by `coordinator.fidl`.
   void SetPrimaryConfig(const Extent2& image_dimensions, uint32_t image_tiling_type);
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/SetLayerPrimaryPosition()`.

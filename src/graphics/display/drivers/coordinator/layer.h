@@ -74,6 +74,17 @@ class Layer : public IdMappable<std::unique_ptr<Layer>, display::LayerId> {
     return draft_layer_config_.image_metadata();
   }
 
+  // True iff the draft config was set up by SetPrimaryConfig() with non-empty
+  // image metadata. Color layers and layers that were never configured have
+  // empty image metadata.
+  //
+  // This checks the image metadata, not the image source, because only
+  // SetPrimaryConfig() changes the metadata. SetPrimaryPosition() can set an
+  // empty image source on a primary layer, and that layer must stay primary:
+  // the FIDL makes an empty image source an invalid config, not an illegal
+  // call.
+  bool is_primary() const { return !draft_layer_config_.image_metadata().dimensions().IsEmpty(); }
+
   // If the layer properties were changed in the draft configuration, this
   // retires all images as they are invalidated with layer properties change.
   bool ResolveDraftLayerProperties();

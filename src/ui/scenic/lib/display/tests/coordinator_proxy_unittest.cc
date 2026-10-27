@@ -13,6 +13,8 @@
 #include <lib/zx/time.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -391,6 +393,118 @@ TEST_F(CoordinatorProxyTest, SetAndApplyLayerImage) {
   EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 3}).status_value(), ZX_OK);
   PingMockDisplayCoordinator();
   EXPECT_FALSE(set_layer_primary_alpha_called);
+
+  EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
+}
+
+// The Coordinator resets a layer's position and alpha whenever `SetLayerPrimaryConfig()` is called.
+// Test that the proxy re-sends them when it sends `SetLayerPrimaryConfig()`, even if they are
+// unchanged, and that it mirrors the reset when the client doesn't re-set them.
+TEST_F(CoordinatorProxyTest, SetLayerPrimaryConfigResetsPositionAndAlpha) {
+  // The re-sent position and alpha only take effect if they arrive after the config, which
+  // resets them, so the test records the order of the calls as well as their counts.
+  std::vector<std::string> calls;
+
+  int set_layer_primary_config_count = 0;
+  mock_coordinator_->set_set_layer_primary_config_fn(
+      [&](WireLayerId layer_id, WireImageMetadata image_metadata) {
+        ++set_layer_primary_config_count;
+        calls.push_back("config");
+      });
+
+  int set_layer_primary_position_count = 0;
+  WireCoordinateTransformation captured_transform = {};
+  WireRectU captured_src_frame = {};
+  WireRectU captured_dest_frame = {};
+  mock_coordinator_->set_layer_primary_position_fn([&](WireLayerId layer_id,
+                                                       WireCoordinateTransformation transform,
+                                                       WireRectU src_frame, WireRectU dest_frame) {
+    ++set_layer_primary_position_count;
+    calls.push_back("position");
+    captured_transform = transform;
+    captured_src_frame = src_frame;
+    captured_dest_frame = dest_frame;
+  });
+
+  int set_layer_primary_alpha_count = 0;
+  WireAlphaMode captured_alpha_mode = {};
+  float captured_alpha_val = 0.f;
+  mock_coordinator_->set_set_layer_primary_alpha_fn(
+      [&](WireLayerId layer_id, WireAlphaMode mode, float val) {
+        ++set_layer_primary_alpha_count;
+        calls.push_back("alpha");
+        captured_alpha_mode = mode;
+        captured_alpha_val = val;
+      });
+
+  mock_coordinator_->set_set_layer_image_fn(
+      [&](WireLayerId layer_id, WireImageId image_id, WireEventId wait_event_id) {
+        calls.push_back("image");
+      });
+
+  const LayerId layer_id = coordinator_proxy_->CreateLayer();
+  const ImageId kImageId(1);
+  const uint32_t kImageTilingType = 0;
+  const RotateFlip kTransform = RotateFlip::kReflectY();
+  const Rectangle kSrcFrame({.x = 0, .y = 0, .width = 100, .height = 100});
+  const Rectangle kDestFrame({.x = 0, .y = 0, .width = 200, .height = 200});
+  const BlendMode kBlendMode = BlendMode::kStraightAlpha();
+  const float kAlpha = 0.5f;
+
+  auto set_image_layer = [&](const types::Extent2& image_extent) {
+    coordinator_proxy_->SetLayerPrimaryConfig(layer_id, image_extent, kImageTilingType);
+    coordinator_proxy_->SetLayerPrimaryPosition(layer_id, kTransform, kSrcFrame, kDestFrame);
+    coordinator_proxy_->SetLayerPrimaryAlpha(layer_id, kBlendMode, kAlpha);
+    coordinator_proxy_->SetLayerImage(layer_id, kImageId, kInvalidEventId);
+  };
+
+  set_image_layer(types::Extent2({.width = 100, .height = 100}));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 1}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(set_layer_primary_config_count, 1);
+  EXPECT_EQ(set_layer_primary_position_count, 1);
+  EXPECT_EQ(set_layer_primary_alpha_count, 1);
+
+  // Same config, position, and alpha: nothing but the image is re-sent.
+  set_image_layer(types::Extent2({.width = 100, .height = 100}));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 2}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(set_layer_primary_config_count, 1);
+  EXPECT_EQ(set_layer_primary_position_count, 1);
+  EXPECT_EQ(set_layer_primary_alpha_count, 1);
+  EXPECT_EQ(calls, (std::vector<std::string>{"config", "position", "alpha", "image", "image"}));
+  calls.clear();
+
+  // Changing only the image dimensions re-sends the config, and therefore also the (unchanged)
+  // position and alpha, which the coordinator resets.
+  set_image_layer(types::Extent2({.width = 120, .height = 120}));
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 3}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  EXPECT_EQ(calls, (std::vector<std::string>{"config", "position", "alpha", "image"}));
+  EXPECT_EQ(set_layer_primary_config_count, 2);
+  EXPECT_EQ(set_layer_primary_position_count, 2);
+  EXPECT_EQ(RotateFlip::From(captured_transform), kTransform);
+  EXPECT_EQ(Rectangle::From(captured_src_frame), kSrcFrame);
+  EXPECT_EQ(Rectangle::From(captured_dest_frame), kDestFrame);
+  EXPECT_EQ(set_layer_primary_alpha_count, 2);
+  EXPECT_EQ(BlendMode::From(captured_alpha_mode), kBlendMode);
+  EXPECT_EQ(captured_alpha_val, kAlpha);
+
+  // Calling `SetLayerPrimaryConfig()` without re-setting position and alpha resets them to the
+  // defaults, just like the coordinator does.
+  const types::Extent2 kImageExtent({.width = 120, .height = 120});
+  coordinator_proxy_->SetLayerPrimaryConfig(layer_id, kImageExtent, kImageTilingType);
+  coordinator_proxy_->SetLayerImage(layer_id, kImageId, kInvalidEventId);
+  EXPECT_EQ(coordinator_proxy_->ApplyConfig(WireConfigStamp{.value = 4}).status_value(), ZX_OK);
+  PingMockDisplayCoordinator();
+  const Rectangle kImageArea({.x = 0, .y = 0, .width = 120, .height = 120});
+  EXPECT_EQ(set_layer_primary_position_count, 3);
+  EXPECT_EQ(RotateFlip::From(captured_transform), RotateFlip::kIdentity());
+  EXPECT_EQ(Rectangle::From(captured_src_frame), kImageArea);
+  EXPECT_EQ(Rectangle::From(captured_dest_frame), kImageArea);
+  EXPECT_EQ(set_layer_primary_alpha_count, 3);
+  EXPECT_EQ(BlendMode::From(captured_alpha_mode), BlendMode::kReplace());
+  EXPECT_EQ(captured_alpha_val, 1.f);
 
   EXPECT_EQ(mock_coordinator_->illegal_action_count(), 0u);
 }

@@ -893,13 +893,19 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id, const 
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
-  // We have to convert the `image_metadata`'s multiply color, which is an array of normalized
-  // floating point values, to an unnormalized array of `uint8_t`s in the range 0-255.
+  // We have to convert `color`, the solid color already multiplied by the layer's multiply color,
+  // from an array of normalized floating point values to an unnormalized array of `uint8_t`s in
+  // the range 0-255.
+  //
+  // A `kReplace` fill writes its premultiplied RGB without blending, so nothing below it shows
+  // through, and the alpha it leaves in the output is not displayed. Sending alpha 0xff therefore
+  // gives the same pixels on the display path as on the GPU path, even for a translucent color.
+  const bool is_replace = blend_mode == types::BlendMode::kReplace();
   const fidl::Array<uint8_t, 8> color_bytes = {
       static_cast<uint8_t>(255 * color[0]),
       static_cast<uint8_t>(255 * color[1]),
       static_cast<uint8_t>(255 * color[2]),
-      static_cast<uint8_t>(255 * color[3]),
+      is_replace ? uint8_t{0xff} : static_cast<uint8_t>(255 * color[3]),
       0,
       0,
       0,

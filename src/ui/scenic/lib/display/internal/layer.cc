@@ -12,14 +12,21 @@
 namespace display::internal {
 
 void Layer::SetPrimaryConfig(const Extent2& image_dimensions, uint32_t image_tiling_type) {
-  if (!std::holds_alternative<ImageLayerEquivalence>(draft_equiv_.config)) {
-    // TODO(https://fxbug.dev/571977404): The reset of blend mode and alpha state should match the
-    // coordinator.fidl behavior once that bug specifies it.
-    draft_equiv_ = ImageLayerEquivalence{};
-  }
-  auto& equiv = std::get<ImageLayerEquivalence>(draft_equiv_.config);
-  equiv.image_dimensions = image_dimensions;
-  equiv.image_tiling_type = image_tiling_type;
+  // Mirror the coordinator, which resets all primary layer properties to their defaults on every
+  // `SetLayerPrimaryConfig()` call: the position covers the whole image (with the identity
+  // transform), and alpha blending is disabled.
+  const Rectangle image_area(
+      {.x = 0, .y = 0, .width = image_dimensions.width(), .height = image_dimensions.height()});
+  draft_equiv_ = ImageLayerEquivalence{
+      .display_destination = image_area,
+      .image_source = image_area,
+      .image_source_transformation = RotateFlip::kIdentity(),
+      .image_dimensions = image_dimensions,
+      .image_tiling_type = image_tiling_type,
+      .blend_mode = BlendMode::kReplace(),
+      .alpha_range = ImageLayerEquivalence::kAlphaOne,
+  };
+  draft_values_ = ConfigValues{};
 
   draft_image_ = kInvalidImageId;
   draft_wait_event_ = kInvalidEventId;
@@ -125,11 +132,15 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
 
     must_set_config = draft_equiv.image_dimensions != applied_equiv.image_dimensions ||
                       draft_equiv.image_tiling_type != applied_equiv.image_tiling_type;
+    // Setting the config resets the position and alpha, as `coordinator.fidl` specifies, so
+    // `must_set_config == true` means that we must also set them, even if they match the
+    // already-applied values.
     must_set_position =
+        must_set_config ||
         draft_equiv.image_source_transformation != applied_equiv.image_source_transformation ||
         draft_equiv.image_source != applied_equiv.image_source ||
         draft_equiv.display_destination != applied_equiv.display_destination;
-    must_set_alpha = draft_equiv.blend_mode != applied_equiv.blend_mode ||
+    must_set_alpha = must_set_config || draft_equiv.blend_mode != applied_equiv.blend_mode ||
                      draft_values_.alpha_value != applied_values_.alpha_value;
     // Setting the config clears the image in the Coordinator impl, so `must_set_config == true`
     // means that we must set the image even if it matches the already-applied image.
