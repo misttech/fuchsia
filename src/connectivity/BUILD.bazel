@@ -9,7 +9,10 @@ package(default_applicable_licenses = ["//:license"])
 test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    tests = ["//src/connectivity/bluetooth:target_tests"],
+    tests = [
+        "//src/connectivity/bluetooth:target_tests",
+        "//src/connectivity/location:target_tests",
+    ],
 )
 
 test_suite(
