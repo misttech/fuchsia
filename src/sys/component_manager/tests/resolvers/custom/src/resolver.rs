@@ -33,22 +33,33 @@ async fn serve_resolver(mut stream: fresolution::ResolverRequestStream) -> Resul
                         server.into_channel(),
                     )
                     .context("failed to open /pkg")?;
-                    responder.send( Ok(fresolution::Component {
-                        url: Some("fuchsia-pkg://fuchsia.com/component-manager-test-resolver#meta/component.cm".to_string()),
-                        decl: Some(build_decl()),
-                        package: Some(fresolution::Package {
-                            url: Some("fuchsia-pkg://fuchsia.com/component-manager-test-resolver".to_string()),
-                            directory: Some(client),
+                    responder
+                        .send(Ok(fresolution::Component {
+                            decl: Some(build_decl()),
+                            package: Some(fresolution::Package {
+                                url: Some(
+                                    "fuchsia-pkg://fuchsia.com/component-manager-test-resolver"
+                                        .to_string(),
+                                ),
+                                directory: Some(client),
+                                ..Default::default()
+                            }),
+                            // component-manager-test-resolver only resolves test://trigger
+                            resolution_context: None,
+                            abi_revision: Some(
+                                version_history_data::HISTORY
+                                    .get_example_supported_version_for_tests()
+                                    .abi_revision
+                                    .into(),
+                            ),
                             ..Default::default()
-                        }),
-                        // component-manager-test-resolver only resolves test://trigger
-                        resolution_context: None,
-                        abi_revision: Some(version_history_data::HISTORY
-                            .get_example_supported_version_for_tests()
-                            .abi_revision
-                            .into()),
-                        ..Default::default()
-                    })).with_context(|| format!("failed to send response to resolve request for component URL {}", component_url))?;
+                        }))
+                        .with_context(|| {
+                            format!(
+                                "failed to send response to resolve request for component URL {}",
+                                component_url
+                            )
+                        })?;
                 } else {
                     responder
                         .send(Err(fresolution::ResolverError::ManifestNotFound))

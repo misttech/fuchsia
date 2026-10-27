@@ -253,7 +253,6 @@ class FakeComponentResolver final
 
     auto builder =
         fuchsia_component_resolution::wire::Component::Builder(arena)
-            .url(request->component_url)
             .abi_revision(abi_revision)
             .decl(fuchsia_mem::wire::Data::WithBuffer(arena,
                                                       fuchsia_mem::wire::Buffer{

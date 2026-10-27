@@ -197,7 +197,6 @@ async fn resolve_from_package(
         Err(e) => return Err(Error::AbiRevisionRead(e)),
     };
     Ok(fcomponent_resolution::Component {
-        url: Some(url.to_string()),
         resolution_context: Some(outgoing_context),
         decl: Some(fmem::Data::Buffer(fmem::Buffer { vmo: cm_vmo, size: cm_size })),
         package: Some(fcomponent_resolution::Package {

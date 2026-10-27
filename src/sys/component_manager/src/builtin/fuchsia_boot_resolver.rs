@@ -187,7 +187,6 @@ impl FuchsiaBootResolver {
             None
         };
         Ok(fresolution::Component {
-            url: Some(url.to_string()),
             resolution_context,
             decl: Some(data),
             package: Some(fresolution::Package {

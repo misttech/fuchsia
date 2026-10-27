@@ -4,14 +4,14 @@
 
 use anyhow::Error;
 use cm_rust::push_box;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_mem as fmem;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::new::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_mem as fmem, fuchsia_async as fasync,
-};
 
 const CAST_URL: &'static str = "cast:00000000";
 
@@ -118,7 +118,6 @@ async fn resolver_component(
 
 fn new_fresolution_component() -> fresolution::Component {
     fresolution::Component {
-        url: Some(CAST_URL.to_string()),
         decl: Some(fmem::Data::Bytes(fidl::persist(&fdecl::Component::default().clone()).unwrap())),
         abi_revision: Some(
             version_history_data::HISTORY

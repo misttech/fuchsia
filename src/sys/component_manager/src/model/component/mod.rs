@@ -172,7 +172,6 @@ impl From<&Component> for fresolution::Component {
             ..Default::default()
         });
         fresolution::Component {
-            url: None,
             decl,
             package,
             config_values: component

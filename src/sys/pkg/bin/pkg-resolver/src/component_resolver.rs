@@ -135,7 +135,6 @@ async fn resolve_component(
         dir.into_channel().map_err(|_| ResolverError::DirectoryProxyIntoChannel)?.into_zx_channel(),
     );
     Ok(fresolution::Component {
-        url: Some(component_url.to_string()),
         resolution_context: Some(fresolution::Context { bytes: outgoing_context.bytes }),
         decl: Some(manifest_data),
         package: Some(fresolution::Package {

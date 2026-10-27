@@ -1,16 +1,17 @@
 use anyhow::Error;
 use assert_matches::assert_matches;
 use cm_rust::push_box;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_sys2 as fsys;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::*;
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use std::fmt;
 use version_history::AbiRevision;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_resolution as fresolution,
-    fidl_fuchsia_mem as fmem, fidl_fuchsia_sys2 as fsys, fuchsia_async as fasync,
-};
 
 #[derive(Clone, Copy, Debug)]
 enum TargetAbi {
@@ -67,7 +68,6 @@ impl ComponentResolver {
     // fresolution::Component doesn't implement Clone.
     fn mock_component(&self) -> fresolution::Component {
         fresolution::Component {
-            url: Some("test".to_string()),
             decl: Some(fmem::Data::Bytes(
                 fidl::persist(&fdecl::Component::default().clone()).unwrap(),
             )),

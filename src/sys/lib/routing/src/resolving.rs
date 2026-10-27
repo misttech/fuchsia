@@ -96,7 +96,6 @@ impl From<ResolvedComponent> for fresolution::Component {
         let decl_vmo = fidl::Vmo::create(decl_bytes.len() as u64).expect("failed to create VMO");
         decl_vmo.write(&decl_bytes, 0).expect("failed to write to VMO");
         fresolution::Component {
-            url: None,
             decl: Some(fidl_fuchsia_mem::Data::Buffer(fidl_fuchsia_mem::Buffer {
                 vmo: decl_vmo,
                 size: decl_bytes.len() as u64,

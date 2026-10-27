@@ -1775,7 +1775,6 @@ async fn use_resolver_from_parent_environment() {
                         assert_eq!(component_url, "base://b");
                         responder
                             .send(Ok(fresolution::Component {
-                                url: Some("test://b".into()),
                                 decl: Some(fmem::Data::Bytes(
                                     fidl::persist(&default_component_decl().native_into_fidl())
                                         .unwrap(),
@@ -1876,7 +1875,6 @@ async fn use_resolver_from_grandparent_environment() {
                         assert_eq!(component_url, "base://c");
                         responder
                             .send(Ok(fresolution::Component {
-                                url: Some("test://c".into()),
                                 decl: Some(fmem::Data::Bytes(
                                     fidl::persist(&default_component_decl().native_into_fidl())
                                         .unwrap(),
@@ -1980,7 +1978,6 @@ async fn resolver_is_not_available() {
                         assert_eq!(component_url, "base://b");
                         responder
                             .send(Ok(fresolution::Component {
-                                url: Some("test://b".into()),
                                 decl: Some(fmem::Data::Bytes(
                                     fidl::persist(&default_component_decl().native_into_fidl())
                                         .unwrap(),
@@ -2082,7 +2079,6 @@ async fn resolver_component_decl_is_validated() {
                         assert_eq!(component_url, "base://b");
                         responder
                             .send(Ok(fresolution::Component {
-                                url: Some("test://b".into()),
                                 decl: Some(fmem::Data::Bytes({
                                     let fidl = fdecl::Component {
                                         exposes: Some(vec![fdecl::Expose::Protocol(
