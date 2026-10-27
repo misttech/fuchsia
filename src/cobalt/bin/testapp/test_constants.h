@@ -41,6 +41,10 @@ const int32_t kConnectionAttemptsNewStatusIndices[] = {0, 1};
 const int32_t kConnectionAttemptsNewHostNameIndices[] = {0, 1, 2};
 const int64_t kConnectionAttemptsNewCounts[] = {0, 1, 100, 1000};
 
+// atomic_submit_test metric constants.
+const uint32_t kAtomicSubmitTestStatusIndices[] = {0, 1};
+const int64_t kAtomicSubmitTestCounts[] = {1, 100};
+
 // power_usage_new metric constants.
 const uint32_t kPowerUsageNewApplicationStateIndices[] = {0, 1};
 const uint32_t kPowerUsageNewApplicationNameIndices[] = {0, 1};

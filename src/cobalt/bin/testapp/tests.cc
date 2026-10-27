@@ -279,7 +279,7 @@ bool TestLogInteger(CobaltTestAppLogger* logger, SystemClockInterface* clock,
 }
 
 // OCCURRENCE metrics for features_active_new, file_system_cache_misses_new,
-// connection_attempts_new, and error_occurred_new
+// connection_attempts_new, atomic_submit_test, and error_occurred_new
 bool TestLogOccurrence(CobaltTestAppLogger* logger, SystemClockInterface* clock,
                        fuchsia::cobalt::ControllerSyncPtr* cobalt_controller,
                        const size_t backfill_days, uint32_t project_id) {
@@ -304,6 +304,9 @@ bool TestLogOccurrence(CobaltTestAppLogger* logger, SystemClockInterface* clock,
       {{cobalt_registry::kConnectionAttemptsNewMetricId,
         cobalt_registry::kConnectionAttemptsNewConnectionAttemptsPerDeviceCountReportId},
        1},
+      {{cobalt_registry::kAtomicSubmitTestMetricId,
+        cobalt_registry::kAtomicSubmitTestAtomicSubmitTestCountsReportId},
+       1},
       {{cobalt_registry::kErrorOccurredNewMetricId,
         cobalt_registry::kErrorOccurredNewErrorCountsExperimentReportId},
        // This metric is logged with 3 distinct experiment ids, and this report uses
@@ -325,6 +328,9 @@ bool TestLogOccurrence(CobaltTestAppLogger* logger, SystemClockInterface* clock,
        0},
       {{cobalt_registry::kConnectionAttemptsNewMetricId,
         cobalt_registry::kConnectionAttemptsNewConnectionAttemptsPerDeviceCountReportId},
+       0},
+      {{cobalt_registry::kAtomicSubmitTestMetricId,
+        cobalt_registry::kAtomicSubmitTestAtomicSubmitTestCountsReportId},
        0},
       {{cobalt_registry::kErrorOccurredNewMetricId,
         cobalt_registry::kErrorOccurredNewErrorCountsExperimentReportId},
@@ -375,6 +381,18 @@ bool TestLogOccurrence(CobaltTestAppLogger* logger, SystemClockInterface* clock,
     }
   }
 
+  for (uint32_t status_index : kAtomicSubmitTestStatusIndices) {
+    for (int64_t count : kAtomicSubmitTestCounts) {
+      if (!logger->LogOccurrence(cobalt_registry::kAtomicSubmitTestMetricId, {status_index},
+                                 count)) {
+        FX_LOGS(INFO) << "LogOccurrence(" << cobalt_registry::kAtomicSubmitTestMetricId
+                      << ", { status: " << status_index << " }, " << count << ")";
+        FX_LOGS(INFO) << "TestLogOccurrence: FAIL";
+        return false;
+      }
+    }
+  }
+
   for (uint32_t index : kErrorOccurredNewIndicesToUse) {
     for (int64_t count : kErrorOccurredNewCounts) {
       ExperimentArm arm = kExperiment;
@@ -417,6 +435,7 @@ bool TestLogOccurrence(CobaltTestAppLogger* logger, SystemClockInterface* clock,
               (std::size(kConnectionAttemptsNewStatusIndices) *
                std::size(kConnectionAttemptsNewHostNameIndices) *
                std::size(kConnectionAttemptsNewCounts)) +
+              (std::size(kAtomicSubmitTestStatusIndices) * std::size(kAtomicSubmitTestCounts)) +
               (std::size(kErrorOccurredNewIndicesToUse) * std::size(kErrorOccurredNewCounts)),
           expected_num_obs)) {
     FX_LOGS(INFO) << "TestLogOccurrence : FAIL";
