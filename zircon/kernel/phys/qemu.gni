@@ -63,7 +63,7 @@ qemu_boot_formats = []
 qemu_default_boot_format = ""
 
 if (current_cpu == "x64") {
-  qemu_default_boot_format = "linuxbiboot"
+  qemu_default_boot_format = "linuxboot64"
 
   # The Linux/x86 16-bit/32-bit protocol is supported by QEMU and AEMU.
   linuxboot32_environments = [
@@ -86,6 +86,8 @@ if (current_cpu == "x64") {
       supported_environments = linuxboot32_environments
     },
     {
+      # The 64-bit build of the header supports all three boot protocols, so
+      # it can be booted everywhere.
       name = "linuxboot64"
       environment = phys_toolchain
       deps = [ "//zircon/kernel/arch/x86/phys:linuxboot64" ]
