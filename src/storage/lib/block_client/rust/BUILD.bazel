@@ -18,6 +18,7 @@ rustc_library(
     edition = "2024",
     target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
+        "//src/starnix/kernel/core:__pkg__",
         "//src/storage/benchmarks/fuchsia:__pkg__",
         "//src/storage/ext4:__pkg__",
         "//src/storage/fxfs/platform:__pkg__",

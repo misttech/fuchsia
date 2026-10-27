@@ -40,6 +40,7 @@ package_group(
     name = "once_cell_visibility",
     packages = [
         "//src/lib/async-utils",
+        "//src/starnix/kernel/core",
         "//src/storage/ext4",
 
         # Not enforced, matching visibility.gni.

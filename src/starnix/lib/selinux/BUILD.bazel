@@ -19,6 +19,14 @@ exports_files(
     visibility = ["//src/starnix/lib/selinux/scripts:__pkg__"],
 )
 
+exports_files(
+    [
+        "testdata/composite_policies/compiled/bounded_transition_policy",
+        "testdata/micro_policies/hooks_tests_policy",
+    ],
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+
 rustc_library(
     name = "selinux",
     srcs = [
