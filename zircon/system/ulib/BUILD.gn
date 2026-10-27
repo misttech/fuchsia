@@ -7,15 +7,21 @@
 # When a migration happens, the test needs to be removed from this list and
 # placed within the proper `tests` target under //src.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/fuzz.gni")
 
 # IMPORTANT NOTE
 # Do not add more libraries to this directory.
 # New libraries should be introduced under //src.
 
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//zircon/system/ulib:target_tests" ]
+}
+
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_tests",
     "affine:tests",
     "bitmap:tests",
     "closure-queue:tests",

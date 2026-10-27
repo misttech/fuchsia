@@ -1,0 +1,15 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# Bazel device tests for libraries under //zircon/system/ulib, exported to GN
+# by `bazel_test_suite("bazel_tests")` in BUILD.gn.
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//zircon/system/ulib/mock-function/test:mock-function-test-pkg",
+    ],
+)

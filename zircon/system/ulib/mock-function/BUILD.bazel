@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+
+package(default_applicable_licenses = ["//:license"])
+
+# <lib/mock-function/mock-function.h> includes <zxtest/zxtest.h>, so GN
+# consumers need zxtest as a public dependency. Bazel propagates the headers of
+# `deps` transitively, while bazel2gn would translate them to GN `deps`, so
+# the GN `public_deps` are emitted with a raw attribute and the Bazel `deps`
+# entry is skipped.
+# @bazel2gn:raw_attribute:public_deps = [ "//zircon/system/ulib/zxtest" ]
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/lib/mock-function/mock-function.h"],
+    visibility = [
+        "//zircon/system/ulib/hwreg:__pkg__",
+        "//zircon/system/ulib/uart:__pkg__",
+    ],
+    deps = ["//zircon/system/ulib/zxtest"],  # @bazel2gn:skip
+)
+
+fx_cc_library(
+    name = "mock-function",
+    # Injected by fidl_banjo() across the tree.
+    visibility = ["//:__subpackages__"],
+    deps = [":headers"],
+    alwayslink = True,
+)
