@@ -14,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <zircon/assert.h>
+#include <zircon/syscalls/port.h>
 
 #include <array>
 #include <memory>
@@ -139,45 +140,23 @@ void DwI2c::SetOpsHelper(std::vector<Op> ops) {
   rx_pending_ = 0;
 }
 
-void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
-                     TransactCompleter::Sync& completer) {
-  size_t count = request->op.size();
-  if (count == 0) {
-    completer.buffer(arena).ReplySuccess({});
-    return;
-  }
-
+zx::result<std::vector<fuchsia_hardware_i2cimpl::wire::ReadData>> DwI2c::PrepareOps(
+    TransactRequestView request, fdf::Arena& arena) {
   for (const auto& op : request->op) {
     if (op.type.is_read_size() && op.type.read_size() > kMaxTransfer) {
-      completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
-      return;
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
     if (op.type.is_write_data() && op.type.write_data().size() > kMaxTransfer) {
-      completer.buffer(arena).ReplyError(ZX_ERR_OUT_OF_RANGE);
-      return;
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
   }
 
-  for (size_t i = 1; i < count; ++i) {
+  for (size_t i = 1; i < request->op.size(); ++i) {
     if (request->op[i].address != request->op[0].address) {
-      completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
-      return;
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
   }
 
-  if (auto result = WaitBusBusy(); result.is_error()) {
-    fdf::error("I2C bus wait failed {}", result.status_value());
-    completer.buffer(arena).ReplyError(result.status_value());
-    return;
-  }
-
-  if (auto result = SetSlaveAddress(request->op[0].address); result.is_error()) {
-    fdf::error("I2C set address failed {}", result.status_value());
-    completer.buffer(arena).ReplyError(result.status_value());
-    return;
-  }
-
-  // Count reads.
   size_t read_count = 0;
   for (const auto& op : request->op) {
     if (op.type.is_read_size()) {
@@ -207,42 +186,80 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
     }
   }
 
-  DisableInterrupts();
   SetOpsHelper(std::move(ops));
+  return zx::ok(std::move(reads));
+}
+
+void DwI2c::DrainIrqPort(bool& irq_needs_ack) {
+  if (irq_needs_ack) {
+    irq_.ack();
+    irq_needs_ack = false;
+  }
+  zx_port_packet_t packet;
+  while (irq_port_.wait(zx::time::infinite_past(), &packet) == ZX_OK) {
+    irq_.ack();
+  }
+}
+
+zx::result<InterruptStatusReg> DwI2c::WaitForInterrupt(zx::time deadline, bool& irq_needs_ack) {
+  while (true) {
+    // Read the masked status register so masked raw bits (such as TX_EMPTY after all TX commands
+    // are queued) do not wake the loop.
+    if (auto reg = InterruptStatusReg::Get().ReadFrom(&mmio_.value()); reg.reg_value() != 0) {
+      return zx::ok(reg);
+    }
+    if (irq_needs_ack) {
+      // Only acknowledge the level-triggered interrupt after confirming all unmasked status bits
+      // are clear.
+      irq_.ack();
+      irq_needs_ack = false;
+      if (auto reg = InterruptStatusReg::Get().ReadFrom(&mmio_.value()); reg.reg_value() != 0) {
+        return zx::ok(reg);
+      }
+    }
+    zx_port_packet_t packet;
+    zx_status_t status = irq_port_.wait(deadline, &packet);
+    if (status == ZX_OK) {
+      irq_needs_ack = true;
+      continue;
+    }
+    if (status == ZX_ERR_TIMED_OUT) {
+      fdf::error("I2C interrupt timeout! Raw IRQ: 0x{:x}",
+                 RawInterruptStatusReg::Get().ReadFrom(&mmio_.value()).reg_value());
+    } else {
+      fdf::error("I2C interrupt wait failed: {}", zx_status_get_string(status));
+    }
+    return zx::error(status);
+  }
+}
+
+zx::result<> DwI2c::ExecuteTransact() {
+  DisableInterrupts();
   if (auto result = Enable(); result.is_error()) {
     fdf::error("I2C device enable failed {}", result.status_value());
-    completer.buffer(arena).ReplyError(result.status_value());
-    return;
+    return result.take_error();
   }
 
-  ClearInterrupts();
-  EnableInterrupts(kI2cInterruptDefaultMask);
-
   bool done = false;
+  bool irq_needs_ack = false;
   zx_status_t error_status = ZX_OK;
+
+  ClearInterrupts();
+  DrainIrqPort(irq_needs_ack);
+
+  // Prime the TX FIFO before unmasking TX_EMPTY so it does not fire before the initial commands
+  // are queued.
+  if (auto res = Transmit(); res.is_error()) {
+    error_status = res.status_value();
+    done = true;
+  } else if (tx_op_idx_ < ops_.size()) {
+    EnableInterrupts(kI2cInterruptDefaultMask);
+  }
+
+  const zx::time deadline = zx::deadline_after(transfer_timeout_);
   while (!done) {
-    // Poll instead of wait.
-    for (uint32_t timeout = 0;; timeout++) {
-      // Poll the masked interrupt status register (InterruptStatusReg) instead of the raw one.
-      // After all TX operations are queued, the TX_EMPTY interrupt mask is disabled in the
-      // InterruptMaskReg. If we poll RawInterruptStatusReg, the TX_EMPTY raw bit will remain
-      // set (because the TX FIFO is empty), causing the polling loop to exit immediately without
-      // sleeping, resulting in a CPU-spinning infinite loop. Polling the masked status register
-      // ensures we only exit when an unmasked (active) interrupt event occurs.
-      auto reg = InterruptStatusReg::Get().ReadFrom(&mmio_.value());
-      if (reg.reg_value()) {
-        break;
-      }
-      if (timeout > 1000) {  // 1 second timeout
-        fdf::error("I2C polling timeout! Raw IRQ: 0x{:x}",
-                   RawInterruptStatusReg::Get().ReadFrom(&mmio_.value()).reg_value());
-        error_status = ZX_ERR_TIMED_OUT;
-        done = true;
-        break;
-      }
-      zx::nanosleep(zx::deadline_after(zx::msec(1)));
-    }
-    if (done) {
+    if (zx::result status = WaitForInterrupt(deadline, irq_needs_ack); status.is_error()) {
+      error_status = status.error_value();
       break;
     }
 
@@ -254,14 +271,14 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
       done = true;
     }
 
-    if (reg.rx_full()) {
+    if (!done && reg.rx_full()) {
       if (auto res = Receive(); res.is_error()) {
         error_status = res.status_value();
         done = true;
       }
     }
 
-    if (reg.tx_empty()) {
+    if (!done && reg.tx_empty()) {
       if (auto res = Transmit(); res.is_error()) {
         error_status = res.status_value();
         done = true;
@@ -275,19 +292,52 @@ void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
     }
   }
 
+  // Mask and clear controller interrupts before acknowledging and draining the interrupt port.
+  DisableInterrupts();
+  ClearInterrupts();
+  DrainIrqPort(irq_needs_ack);
+
   if (auto result = Disable(); result.is_error()) {
     fdf::error("I2C device disable failed {}", result.status_value());
   }
 
-  if (error_status != ZX_OK) {
-    completer.buffer(arena).ReplyError(error_status);
+  return zx::make_result(error_status);
+}
+
+void DwI2c::Transact(TransactRequestView request, fdf::Arena& arena,
+                     TransactCompleter::Sync& completer) {
+  if (request->op.empty()) {
+    completer.buffer(arena).ReplySuccess({});
     return;
   }
 
-  if (reads.empty()) {
+  zx::result reads = PrepareOps(request, arena);
+  if (reads.is_error()) {
+    completer.buffer(arena).ReplyError(reads.error_value());
+    return;
+  }
+
+  if (auto result = WaitBusBusy(); result.is_error()) {
+    fdf::error("I2C bus wait failed {}", result.status_value());
+    completer.buffer(arena).ReplyError(result.status_value());
+    return;
+  }
+
+  if (auto result = SetSlaveAddress(request->op[0].address); result.is_error()) {
+    fdf::error("I2C set address failed {}", result.status_value());
+    completer.buffer(arena).ReplyError(result.status_value());
+    return;
+  }
+
+  if (auto result = ExecuteTransact(); result.is_error()) {
+    completer.buffer(arena).ReplyError(result.error_value());
+    return;
+  }
+
+  if (reads->empty()) {
     completer.buffer(arena).ReplySuccess({});
   } else {
-    completer.buffer(arena).ReplySuccess({arena, reads});
+    completer.buffer(arena).ReplySuccess({arena, *reads});
   }
 }
 
@@ -634,6 +684,15 @@ zx::result<> DwI2c::Start(fdf::DriverContext context) {
       return interrupt.take_error();
     }
     irq_ = std::move(interrupt.value());
+    if (zx_status_t status = zx::port::create(ZX_PORT_BIND_TO_INTERRUPT, &irq_port_);
+        status != ZX_OK) {
+      fdf::error("Failed to create interrupt port: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
+    if (zx_status_t status = irq_.bind(irq_port_, kIrqPortKey, 0); status != ZX_OK) {
+      fdf::error("Failed to bind interrupt to port: {}", zx_status_get_string(status));
+      return zx::error(status);
+    }
   }
 
   // Initialize i2c host controller.

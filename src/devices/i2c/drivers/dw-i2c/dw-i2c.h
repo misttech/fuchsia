@@ -11,7 +11,6 @@
 #include <fidl/fuchsia.hardware.pin/cpp/wire.h>
 #include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
-#include <lib/async/cpp/irq.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -19,7 +18,9 @@
 #include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
+#include <lib/zx/port.h>
 #include <lib/zx/result.h>
+#include <lib/zx/time.h>
 
 #include <memory>
 #include <mutex>
@@ -58,6 +59,11 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
  protected:
+  static constexpr zx::duration kTransferTimeout = zx::sec(1);
+
+  zx::duration transfer_timeout() const { return transfer_timeout_; }
+  void set_transfer_timeout(zx::duration timeout) { transfer_timeout_ = timeout; }
+
  private:
   struct ReadOp {
     std::span<uint8_t> data;
@@ -141,12 +147,21 @@ class DwI2c : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_i
   InterruptStatusReg ReadAndClearIrq();
   zx::result<> WaitBusBusy();
   void SetOpsHelper(std::vector<Op> ops);
+  zx::result<std::vector<fuchsia_hardware_i2cimpl::wire::ReadData>> PrepareOps(
+      TransactRequestView request, fdf::Arena& arena);
+  void DrainIrqPort(bool& irq_needs_ack);
+  zx::result<InterruptStatusReg> WaitForInterrupt(zx::time deadline, bool& irq_needs_ack);
+  zx::result<> ExecuteTransact();
 
   virtual zx::result<fdf::MmioBuffer> MapMmio(fdf::PDev& pdev);
 
+  static constexpr uint64_t kIrqPortKey = 1;
+
   std::optional<fdf::MmioBuffer> mmio_;
   zx::interrupt irq_;
-  zx::duration timeout_ = zx::msec(100);
+  // Bound to `irq_` so `Transact()` can wait for interrupts with a deadline.
+  zx::port irq_port_;
+  zx::duration transfer_timeout_ = kTransferTimeout;
   uint32_t tx_fifo_depth_ = 0;
   uint32_t rx_fifo_depth_ = 0;
 
