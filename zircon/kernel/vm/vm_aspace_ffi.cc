@@ -53,6 +53,14 @@ FFI_ALWAYS_INLINE const char* cpp_vm_aspace_name(VmAspace* aspace) { return aspa
 
 FFI_ALWAYS_INLINE bool cpp_vm_aspace_is_user(VmAspace* aspace) { return aspace->is_user(); }
 
+FFI_ALWAYS_INLINE bool cpp_vm_aspace_is_guest_physical(const VmAspace* aspace) {
+  return aspace->is_guest_physical();
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_aspace_can_enlarge_arch_unmap(const VmAspace* aspace) {
+  return aspace->can_enlarge_arch_unmap();
+}
+
 FFI_ALWAYS_INLINE uint8_t cpp_vm_aspace_enlarge_arch_unmap(const VmAspace* aspace) {
   return static_cast<uint8_t>(aspace->EnlargeArchUnmap());
 }

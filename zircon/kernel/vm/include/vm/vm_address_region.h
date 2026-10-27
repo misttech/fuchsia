@@ -1028,10 +1028,7 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
 
   // Unlocked convenience wrapper of ProtectLocked for testing.
   zx_status_t DebugProtect(vaddr_t base, size_t size, arch_mmu_flags_t new_arch_mmu_flags)
-      TA_EXCL(lock()) {
-    Guard<CriticalMutex> guard{lock()};
-    return ProtectLocked(base, size, new_arch_mmu_flags);
-  }
+      TA_EXCL(lock());
 
   // Page fault in an address within the mapping. The requested address must be paged aligned. If
   // |additional_pages| is non-zero, then up to that many additional pages may be resolved using the
@@ -1286,6 +1283,7 @@ class VmMapping final : public VmAddressRegionOrMapping, public fbl::Recyclable<
 
   // Copies protection ranges for the given sub-range into |out_first_flags| and |out_ranges|.
   // The sub-range [base, base + size) must be within [base(), base() + size()).
+  // Assumes size != 0, this mapping is alive, and out_ranges is empty.
   zx_status_t CopyProtectionRangesLocked(vaddr_t base, size_t size,
                                          arch_mmu_flags_t* out_first_flags,
                                          btree::BTree<vaddr_t, arch_mmu_flags_t>* out_ranges) const
@@ -1457,6 +1455,21 @@ void rust_vm_mapping_set_mem_priority_high_already_positive_locked_object_split(
 void rust_vm_mapping_activate_no_insert_locked(VmMapping* mapping);
 zx_status_t rust_vm_mapping_destroy_locked_object(VmMapping* mapping, VmMapping::DestroyUnmap unmap,
                                                   VmMapping::DestroyRemoveFromParent remove_region);
+zx_status_t rust_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
+                                          arch_mmu_flags_t new_arch_mmu_flags);
+zx_status_t rust_vm_mapping_protect_locked(VmMapping* mapping, vaddr_t base, size_t size,
+                                           arch_mmu_flags_t new_arch_mmu_flags);
+zx_status_t rust_vm_mapping_protect_or_unmap(const VmAspace* aspace, vaddr_t base, size_t size,
+                                             arch_mmu_flags_t new_arch_mmu_flags);
+zx_status_t rust_vm_mapping_copy_protection_ranges_locked(const VmMapping* mapping, vaddr_t base,
+                                                          size_t size,
+                                                          arch_mmu_flags_t* out_first_flags,
+                                                          VmMappingProtectionRanges* out_ranges);
+zx_status_t rust_vm_mapping_merge_protection_ranges_locked(VmMapping* mapping,
+                                                           const VmMapping* right);
+void rust_vm_mapping_clear_protection_range_transitions_locked(VmMapping* mapping, vaddr_t base,
+                                                               vaddr_t end);
+arch_mmu_flags_t rust_vm_mapping_remove_after_split_locked(VmMapping* mapping, vaddr_t split_addr);
 }
 
 inline void VmMapping::AssertCanary() const { rust_vm_mapping_assert_canary(this); }
@@ -1483,6 +1496,34 @@ inline arch_mmu_flags_t VmMapping::first_region_arch_mmu_flags_locked() const {
 }
 inline void VmMapping::set_first_region_arch_mmu_flags_locked(arch_mmu_flags_t flags) {
   rust_vm_mapping_set_first_region_arch_mmu_flags(this, flags);
+}
+inline zx_status_t VmMapping::DebugProtect(vaddr_t base, size_t size,
+                                           arch_mmu_flags_t new_arch_mmu_flags) {
+  return rust_vm_mapping_debug_protect(this, base, size, new_arch_mmu_flags);
+}
+inline zx_status_t VmMapping::ProtectLocked(vaddr_t base, size_t size,
+                                            arch_mmu_flags_t new_arch_mmu_flags) {
+  return rust_vm_mapping_protect_locked(this, base, size, new_arch_mmu_flags);
+}
+// static
+inline zx_status_t VmMapping::ProtectOrUnmap(const fbl::RefPtr<VmAspace>& aspace, vaddr_t base,
+                                             size_t size, arch_mmu_flags_t new_arch_mmu_flags) {
+  return rust_vm_mapping_protect_or_unmap(aspace.get(), base, size, new_arch_mmu_flags);
+}
+inline zx_status_t VmMapping::CopyProtectionRangesLocked(
+    vaddr_t base, size_t size, arch_mmu_flags_t* out_first_flags,
+    btree::BTree<vaddr_t, arch_mmu_flags_t>* out_ranges) const {
+  return rust_vm_mapping_copy_protection_ranges_locked(this, base, size, out_first_flags,
+                                                       out_ranges);
+}
+inline zx_status_t VmMapping::MergeProtectionRangesLocked(const VmMapping& right) {
+  return rust_vm_mapping_merge_protection_ranges_locked(this, &right);
+}
+inline void VmMapping::ClearProtectionRangeTransitionsLocked(vaddr_t base, vaddr_t end) {
+  rust_vm_mapping_clear_protection_range_transitions_locked(this, base, end);
+}
+inline arch_mmu_flags_t VmMapping::RemoveAfterSplitLocked(vaddr_t split_addr) {
+  return rust_vm_mapping_remove_after_split_locked(this, split_addr);
 }
 
 // Interface for walking a VmAspace-rooted VmAddressRegion/VmMapping tree.

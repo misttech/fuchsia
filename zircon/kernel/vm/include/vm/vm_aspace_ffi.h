@@ -30,6 +30,8 @@ vaddr_t cpp_vm_aspace_base(VmAspace* aspace);
 size_t cpp_vm_aspace_size(VmAspace* aspace);
 const char* cpp_vm_aspace_name(VmAspace* aspace);
 bool cpp_vm_aspace_is_user(VmAspace* aspace);
+bool cpp_vm_aspace_is_guest_physical(const VmAspace* aspace);
+bool cpp_vm_aspace_can_enlarge_arch_unmap(const VmAspace* aspace);
 uint8_t cpp_vm_aspace_enlarge_arch_unmap(const VmAspace* aspace);
 const VmMapping* cpp_vm_aspace_last_fault_locked(const VmAspace* aspace);
 void cpp_vm_aspace_clear_last_fault_locked(VmAspace* aspace);

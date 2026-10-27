@@ -4,18 +4,23 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::arch_vm_aspace::{ARCH_MMU_FLAG_CACHE_MASK, ArchMmuFlags};
+use super::arch_vm_aspace::{
+    ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_RWX_MASK, ARCH_MMU_FLAG_PERM_WRITE,
+    ARCH_UNMAP_OPTION_ENLARGE, ARCH_UNMAP_OPTION_NONE, ArchMmuFlags,
+};
 use super::page_source::MultiPageRequest;
 use super::vm_address_region::{
     LifeCycleState, MemoryPriority, VmAddressRegion, VmAddressRegionOrMapping, flag, region_list,
 };
-use super::vm_aspace::{VmAspaceLockClass, VmAspaceRegionLockClass};
+use super::vm_aspace::{VmAspace, VmAspaceLockClass, VmAspaceRegionLockClass};
 use super::vm_object::{VmObject, VmObjectLockClass};
+use crate::counters::define_kcounter;
 use crate::kernel::types::VAddr;
 use ::page as kernel_page;
 use core::cell::UnsafeCell;
 use core::cmp::min;
 use core::ffi::c_void;
+use core::hint;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
@@ -32,7 +37,8 @@ use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 use zx_types::zx_status_t;
 
-crate::counters::define_kcounter!(VM_MAPPINGS_STATE_DEAD, "vm.aspace.mapping.state.dead", Sum);
+define_kcounter!(VM_MAPPINGS_STATE_DEAD, "vm.aspace.mapping.state.dead", Sum);
+define_kcounter!(VM_MAPPINGS_PROTECT_NO_WRITE, "vm.aspace.mapping.protect_without_write", Sum);
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -104,6 +110,17 @@ impl ProtectionRanges {
         unsafe { bindings::cpp_vm_mapping_protection_ranges_is_empty(self.as_ffi_ptr()) }
     }
 
+    #[inline]
+    fn begin(&self) -> ProtectionRangesCursor<'_> {
+        // SAFETY: `self` is live and not mutated while the returned cursor is live, `out` is valid
+        // for writes, and the closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursor::new(|out| {
+                bindings::cpp_vm_mapping_protection_ranges_begin(self.as_ffi_ptr(), out.cast())
+            })
+        }
+    }
+
     /// Returns a cursor to the first item whose key is strictly greater than `key`, or an end
     /// cursor (for which `get()` returns `None`) if no such item.
     #[inline]
@@ -150,8 +167,95 @@ impl<'a> ProtectionRangesMut<'a> {
     }
 
     #[inline]
+    fn new(ranges: Pin<&'a mut ProtectionRanges>) -> Self {
+        // SAFETY: `ranges` is live for `'a` and exclusively borrowed.
+        unsafe { Self::from_raw(ranges.as_ffi_ptr()) }
+    }
+
+    #[inline]
     fn as_ffi_ptr(&self) -> *mut bindings::VmMappingProtectionRanges {
         self.ranges.as_ptr()
+    }
+
+    #[inline]
+    fn begin_mut(&mut self) -> ProtectionRangesCursorMut<'_> {
+        let ranges = self.as_ffi_ptr();
+        // SAFETY: `self` is live and exclusively accessed, `out` is valid for writes, and the
+        // closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursorMut::new(self, |out| {
+                bindings::cpp_vm_mapping_protection_ranges_begin(ranges, out.cast())
+            })
+        }
+    }
+
+    #[inline]
+    fn end_mut(&mut self) -> ProtectionRangesCursorMut<'_> {
+        let ranges = self.as_ffi_ptr();
+        // SAFETY: `self` is live and exclusively accessed, `out` is valid for writes, and the
+        // closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursorMut::new(self, |out| {
+                bindings::cpp_vm_mapping_protection_ranges_end(ranges, out.cast())
+            })
+        }
+    }
+
+    /// Returns a cursor to the first item whose key is greater than or equal to `key`, or
+    /// `end_mut()` if no such item.
+    #[inline]
+    fn lower_bound_mut(&mut self, key: usize) -> ProtectionRangesCursorMut<'_> {
+        let ranges = self.as_ffi_ptr();
+        // SAFETY: `self` is live and exclusively accessed, `out` is valid for writes, and the
+        // closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursorMut::new(self, |out| {
+                bindings::cpp_vm_mapping_protection_ranges_lower_bound(ranges, key, out.cast())
+            })
+        }
+    }
+
+    /// Returns a cursor to the item whose key is exactly `key`, or `end_mut()` if no such item.
+    #[inline]
+    fn find_mut(&mut self, key: usize) -> ProtectionRangesCursorMut<'_> {
+        let ranges = self.as_ffi_ptr();
+        // SAFETY: `self` is live and exclusively accessed, `out` is valid for writes, and the
+        // closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursorMut::new(self, |out| {
+                bindings::cpp_vm_mapping_protection_ranges_find(ranges, key, out.cast())
+            })
+        }
+    }
+
+    /// Inserts the provided value using the specified key. It is an error to insert a duplicate
+    /// key and attempting to do so will either cause a runtime assertion failure or data structure
+    /// corruption.
+    ///
+    /// If internal nodes needed to, but could not be, allocated then an end cursor (for which
+    /// `get()` returns `None`) is returned, otherwise a cursor to the new item is returned. In all
+    /// cases if an end cursor is returned the tree is left in an unmodified state.
+    ///
+    /// After an insertion all cursors, except the one returned, are stale and must not be used.
+    ///
+    /// # Safety
+    ///
+    /// `key` is not already present in `self`.
+    #[inline]
+    #[must_use]
+    unsafe fn insert(&mut self, key: usize, flags: ArchMmuFlags) -> ProtectionRangesCursor<'_> {
+        // SAFETY: `self` is live and exclusively accessed, `key` is not already present in it,
+        // `out` is valid for writes, and the closure initializes `out` to a cursor into `self`.
+        unsafe {
+            ProtectionRangesCursor::new(|out| {
+                bindings::cpp_vm_mapping_protection_ranges_insert(
+                    self.as_ffi_ptr(),
+                    key,
+                    flags,
+                    out.cast(),
+                )
+            })
+        }
     }
 
     /// Clears all content from the tree, returning it to the empty state. All cursors are
@@ -202,9 +306,7 @@ impl<'a> ProtectionRangesCursor<'a> {
 
     #[inline]
     fn get(&self) -> Option<(usize, ArchMmuFlags)> {
-        // SAFETY: `self.raw` is a cursor into live ranges that are not concurrently mutated, and
-        // is not stale.
-        if !unsafe { bindings::cpp_vm_mapping_protection_ranges_cursor_is_valid(self.raw.get()) } {
+        if !self.is_valid() {
             return None;
         }
         let mut key = 0;
@@ -219,6 +321,17 @@ impl<'a> ProtectionRangesCursor<'a> {
             )
         };
         Some((key, flags))
+    }
+
+    /// Returns whether the cursor is one that can be dereferenced, i.e. is not an end
+    /// cursor or `begin()` of an empty tree. If the cursor is stale due to `insert` or `erase`
+    /// having been called then the return value is undefined, and if iterator validation is
+    /// enabled this method counts as an access and will trigger an error.
+    #[inline]
+    fn is_valid(&self) -> bool {
+        // SAFETY: `self.raw` is a cursor into live ranges that are not concurrently mutated, and
+        // is not stale.
+        unsafe { bindings::cpp_vm_mapping_protection_ranges_cursor_is_valid(self.raw.get()) }
     }
 
     #[inline]
@@ -236,6 +349,125 @@ impl<'a> ProtectionRangesCursor<'a> {
         // SAFETY: `self.raw` is a cursor into live ranges that are not concurrently mutated, is
         // not stale, and is not before the first item.
         unsafe { bindings::cpp_vm_mapping_protection_ranges_cursor_prev(self.raw.get()) }
+    }
+}
+
+struct ProtectionRangesCursorMut<'a> {
+    ranges: NonNull<bindings::VmMappingProtectionRanges>,
+    raw: Opaque<bindings::VmMappingProtectionRangesCursor>,
+    _ranges: PhantomData<&'a mut ProtectionRanges>,
+}
+
+impl<'a> ProtectionRangesCursorMut<'a> {
+    /// # Safety
+    ///
+    /// `init` initializes the cursor it is passed to a cursor into `ranges`.
+    #[inline]
+    unsafe fn new(
+        ranges: &'a mut ProtectionRangesMut<'_>,
+        init: impl FnOnce(*mut bindings::VmMappingProtectionRangesCursor),
+    ) -> Self {
+        let raw = Opaque::uninit();
+        init(raw.get());
+        Self { ranges: ranges.ranges, raw, _ranges: PhantomData }
+    }
+
+    #[inline]
+    fn get(&self) -> Option<(usize, ArchMmuFlags)> {
+        if !self.is_valid() {
+            return None;
+        }
+        let mut key = 0;
+        let mut flags = 0;
+        // SAFETY: `self.raw` is a valid cursor into live ranges that are not concurrently
+        // mutated, and is not stale, and `key` and `flags` are valid for writes.
+        unsafe {
+            bindings::cpp_vm_mapping_protection_ranges_cursor_get(
+                self.raw.get(),
+                &mut key,
+                &mut flags,
+            )
+        };
+        Some((key, flags))
+    }
+
+    #[inline]
+    fn is_valid(&self) -> bool {
+        // SAFETY: `self.raw` is a cursor into live ranges that are not concurrently mutated, and
+        // is not stale.
+        unsafe { bindings::cpp_vm_mapping_protection_ranges_cursor_is_valid(self.raw.get()) }
+    }
+
+    /// # Safety
+    ///
+    /// `self` is not before the first item.
+    #[inline]
+    unsafe fn prev(&mut self) {
+        // SAFETY: `self.raw` is a cursor into live ranges that are not concurrently mutated, is
+        // not stale, and is not before the first item.
+        unsafe { bindings::cpp_vm_mapping_protection_ranges_cursor_prev(self.raw.get()) }
+    }
+
+    /// Like `ProtectionRangesMut::insert`, but uses `self` as a hint of an item to insert near,
+    /// and moves `self` to the cursor that `insert` would return. `self` can be to an invalid
+    /// location (i.e. `end_mut()`).
+    ///
+    /// # Safety
+    ///
+    /// `key` is not already present in the ranges.
+    #[inline]
+    unsafe fn insert_hint(&mut self, key: usize, flags: ArchMmuFlags) {
+        let raw: Opaque<bindings::VmMappingProtectionRangesCursor> = Opaque::uninit();
+        // SAFETY: `self.ranges` is live and exclusively accessed, `self.raw` is a cursor into it
+        // that is not stale, `key` is not already present in it, and `raw` is valid for writes.
+        unsafe {
+            bindings::cpp_vm_mapping_protection_ranges_insert_hint(
+                self.ranges.as_ptr(),
+                self.raw.get(),
+                key,
+                flags,
+                raw.get().cast(),
+            )
+        };
+        self.raw = raw;
+    }
+
+    /// Updates the flags of the item referenced by `self`. C++ `BTree::update` asserts that
+    /// `self.is_valid()` is true. As this does not change the structure of the tree this does not
+    /// invalidate any cursors.
+    #[inline]
+    fn update(&mut self, flags: ArchMmuFlags) {
+        // SAFETY: `self.ranges` is live and exclusively accessed, and `self.raw` is a cursor into
+        // it that is not stale.
+        unsafe {
+            bindings::cpp_vm_mapping_protection_ranges_update(
+                self.ranges.as_ptr(),
+                self.raw.get(),
+                flags,
+            )
+        }
+    }
+
+    /// Removes the item at `self`, and moves `self` to the item that followed it.
+    ///
+    /// After an erase all cursors, except `self`, are stale and must not be used.
+    ///
+    /// # Safety
+    ///
+    /// `self.is_valid()` is true.
+    #[inline]
+    unsafe fn erase(&mut self) {
+        let raw: Opaque<bindings::VmMappingProtectionRangesCursor> = Opaque::uninit();
+        // SAFETY: `self.ranges` is live and exclusively accessed, `self.raw` is a valid cursor
+        // into it that is not stale, and `raw` is valid for writes.
+        unsafe {
+            bindings::cpp_vm_mapping_protection_ranges_erase(
+                self.ranges.as_ptr(),
+                self.raw.get(),
+                raw.get().cast(),
+            )
+        };
+        self.raw = raw;
     }
 }
 
@@ -467,6 +699,33 @@ impl VmMapping {
                 self.as_ffi_ptr(),
             ))
         }
+    }
+
+    /// # Safety
+    ///
+    /// `other` is not `self`.
+    #[inline]
+    unsafe fn rest_protection_ranges_mut_and_other_locked<'a>(
+        &'a self,
+        other: &'a VmMapping,
+        _aspace_token: &'a mut LockToken<'_, VmAspaceLockClass>,
+        _object_token: &'a mut LockToken<'_, VmObjectLockClass>,
+    ) -> (ProtectionRangesMut<'a>, &'a ProtectionRanges) {
+        // SAFETY: `self` is live, and the returned pointer points to a live `ProtectionRanges` that
+        // outlives `'a` and that nothing else accesses during `'a`.
+        let ranges = unsafe {
+            ProtectionRangesMut::from_raw(bindings::cpp_vm_mapping_rest_protection_ranges(
+                self.as_ffi_ptr(),
+            ))
+        };
+        // SAFETY: `other` is live, and the returned pointer points to a live `ProtectionRanges`
+        // that outlives `'a` and is not mutated during `'a`.
+        let other_ranges = unsafe {
+            ProtectionRanges::from_raw_ref(bindings::cpp_vm_mapping_rest_protection_ranges_const(
+                other.as_ffi_ptr(),
+            ))
+        };
+        (ranges, other_ranges)
     }
 
     fn object_locked<'a>(
@@ -728,6 +987,394 @@ impl VmMapping {
             None => self.first_region_arch_mmu_flags_locked(token),
         };
         FlagsRange { mmu_flags: flags, region_top: top as u64 }
+    }
+
+    /// Helper for protect and unmap.
+    ///
+    /// # Safety
+    ///
+    /// `base` and `size` are page aligned, and `[base, base + size)` is part of a mapping in
+    /// `aspace` whose permissions may be changed to `new_arch_mmu_flags`, and which may be
+    /// unmapped.
+    unsafe fn protect_or_unmap(
+        aspace: &VmAspace,
+        base: usize,
+        size: usize,
+        new_arch_mmu_flags: ArchMmuFlags,
+    ) -> Result<(), Status> {
+        debug_assert!(kernel_page::is_aligned(base) && kernel_page::is_aligned(size));
+        // This can never be used to set a WRITE permission since it does not ask the underlying VMO
+        // to perform the copy-on-write step. The underlying VMO might also support dirty tracking,
+        // which requires write permission faults in order to track pages as dirty when written.
+        assert!((new_arch_mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) == 0);
+        // If not removing all permissions do the protect, otherwise skip straight to unmapping the
+        // entire region.
+        if (new_arch_mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) != 0 {
+            // SAFETY: The permissions of `[base, base + size)` may be changed to
+            // `new_arch_mmu_flags`.
+            let status = unsafe {
+                aspace.arch_aspace().protect(
+                    base,
+                    size / kernel_page::SIZE,
+                    new_arch_mmu_flags,
+                    if aspace.can_enlarge_arch_unmap() {
+                        ARCH_UNMAP_OPTION_ENLARGE
+                    } else {
+                        ARCH_UNMAP_OPTION_NONE
+                    },
+                )
+            };
+            // If the unmap failed and we are allowed to unmap extra portions of the aspace then
+            // fall through and unmap, otherwise return with whatever the status is.
+            if status.is_ok() {
+                return status;
+            }
+            hint::cold_path();
+            if !aspace.can_enlarge_arch_unmap() {
+                return status;
+            }
+        }
+
+        // SAFETY: `[base, base + size)` may be unmapped.
+        unsafe {
+            aspace.arch_aspace().unmap(base, size / kernel_page::SIZE, aspace.enlarge_arch_unmap())
+        }
+    }
+
+    /// Copies protection ranges for the given sub-range into the returned first flags and
+    /// `out_ranges`. The sub-range `[base, base + size)` must be within
+    /// `[self.base(), self.base() + self.size())`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` is not alive.
+    ///
+    /// # Safety
+    ///
+    /// `out_ranges` is empty.
+    unsafe fn copy_protection_ranges_locked(
+        &self,
+        token: &LockToken<'_, VmAspaceLockClass>,
+        base: usize,
+        size: usize,
+        out_ranges: Pin<&mut ProtectionRanges>,
+    ) -> Result<ArchMmuFlags, Status> {
+        debug_assert!(size != 0 && self.is_in_range(VAddr(base), size));
+        let mut out_ranges = ProtectionRangesMut::new(out_ranges);
+        let mut first_flags = None;
+        let out_first_flags = &mut first_flags;
+        self.enumerate_protection_ranges_locked(token, base, size, move |b, _s, flags| {
+            if b == base {
+                *out_first_flags = Some(flags);
+            } else {
+                // SAFETY: `b` is not present in `out_ranges`.
+                if !unsafe { out_ranges.insert(b, flags) }.is_valid() {
+                    hint::cold_path();
+                    return Err(Status::NO_MEMORY);
+                }
+            }
+            Err(Status::NEXT)
+        })?;
+        Ok(first_flags.expect("first_flags must be set"))
+    }
+
+    /// Merges a copy of the protection ranges of `right` into this mapping.
+    /// Assumes `right` is immediately to the right of this mapping.
+    ///
+    /// # Safety
+    ///
+    /// `right` is not `self`, and `right.base()` and the keys of the protection ranges of `right`
+    /// are distinct from each other and absent from the protection ranges of `self`.
+    unsafe fn merge_protection_ranges_locked(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+        right: &VmMapping,
+    ) -> Result<(), Status> {
+        debug_assert!(right.base().0 == self.base().0 + self.size());
+        let first_flags = self.first_region_arch_mmu_flags_locked(aspace_token);
+        let right_first_flags = right.first_region_arch_mmu_flags_locked(aspace_token);
+        // SAFETY: `right` is not `self`.
+        let (mut rest_protection_ranges, right_rest_protection_ranges) = unsafe {
+            self.rest_protection_ranges_mut_and_other_locked(right, aspace_token, object_token)
+        };
+        // Lookup the flags for the end of the range.
+        let mut it = rest_protection_ranges.end_mut();
+        // SAFETY: `it` is not before the first item.
+        unsafe { it.prev() };
+        let last_flags = match it.get() {
+            Some((_, flags)) => flags,
+            None => first_flags,
+        };
+        if last_flags != right_first_flags {
+            // SAFETY: `right.base()` is not present in `rest_protection_ranges`.
+            unsafe { it.insert_hint(right.base().0, right_first_flags) };
+            if !it.is_valid() {
+                hint::cold_path();
+                return Err(Status::NO_MEMORY);
+            }
+        }
+        let mut right_it = right_rest_protection_ranges.begin();
+        while let Some((key, value)) = right_it.get() {
+            // SAFETY: `key` is not present in `rest_protection_ranges`.
+            unsafe { it.insert_hint(key, value) };
+            if !it.is_valid() {
+                hint::cold_path();
+                return Err(Status::NO_MEMORY);
+            }
+            right_it.next();
+        }
+        Ok(())
+    }
+
+    /// Removes any protection range transitions within the range `[base, end)`.
+    fn clear_protection_range_transitions_locked(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+        base: usize,
+        end: usize,
+    ) {
+        let mut rest_protection_ranges =
+            self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+        let mut it = rest_protection_ranges.lower_bound_mut(base);
+        while it.get().is_some_and(|(key, _)| key < end) {
+            // SAFETY: `it` is valid.
+            unsafe { it.erase() };
+        }
+    }
+
+    /// Removes all protection range transitions at or below `split_addr`, returning the flags
+    /// that are active at `split_addr`.
+    fn remove_after_split_locked(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        object_token: &mut LockToken<'_, VmObjectLockClass>,
+        split_addr: usize,
+    ) -> ArchMmuFlags {
+        let mut flags = self.first_region_arch_mmu_flags_locked(aspace_token);
+        let mut rest_protection_ranges =
+            self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+        let mut it = rest_protection_ranges.begin_mut();
+        while let Some((key, value)) = it.get() {
+            if key > split_addr {
+                break;
+            }
+            flags = value;
+            // SAFETY: `it` is valid.
+            unsafe { it.erase() };
+        }
+        flags
+    }
+
+    /// Change access permissions for this mapping.  It is an error to specify a
+    /// caching mode in the flags.  This will persist the caching mode the
+    /// mapping was created with.  If a subrange of the mapping is specified, the
+    /// mapping may be split.
+    ///
+    /// # Safety
+    ///
+    /// `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is within
+    /// this mapping and may have its permissions changed and be unmapped, and `new_arch_mmu_flags`
+    /// has no cache flags and is valid for this mapping.
+    unsafe fn protect_locked(
+        &self,
+        aspace_token: &mut LockToken<'_, VmAspaceLockClass>,
+        base: usize,
+        size: usize,
+        new_arch_mmu_flags: ArchMmuFlags,
+    ) -> Result<(), Status> {
+        // Assert a few things that should already have been checked by the caller.
+        debug_assert!(size != 0 && kernel_page::is_aligned(base) && kernel_page::is_aligned(size));
+        debug_assert!((new_arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK) == 0);
+        debug_assert!(self.is_valid_mapping_flags(new_arch_mmu_flags));
+
+        let object = self
+            .object_locked(aspace_token)
+            .as_ref()
+            .map(RefPtr::as_ptr)
+            .expect("object must be set");
+        // SAFETY: `self` holds a reference to `object` that is only dropped with the aspace lock
+        // held, and `aspace_token` holds the aspace lock until this function returns.
+        let object = unsafe { object.as_ref_unchecked() };
+        // grab the lock for the vmo
+        ksync::lock!(let mut guard = object.lock_ref().lock());
+        let object_token = guard.as_mut().token_mut();
+
+        // Persist our current caching mode. Every protect region will have the same caching mode so
+        // we can acquire this from any region.
+        let new_arch_mmu_flags = new_arch_mmu_flags
+            | (self.first_region_arch_mmu_flags_locked(aspace_token) & ARCH_MMU_FLAG_CACHE_MASK);
+
+        // This will get called by `enumerate_protection_ranges_locked` below for every existing
+        // unique protection range that gets changed and allows us to fine tune the protect action
+        // based on the previous flags.
+        let protect_callback = move |base: usize, size: usize, old_arch_mmu_flags: ArchMmuFlags| {
+            // Perform an early return if the new and old flags are the same, as there's nothing to
+            // be done.
+            if new_arch_mmu_flags == old_arch_mmu_flags {
+                return Err(Status::NEXT);
+            }
+
+            let mut flags = new_arch_mmu_flags;
+            // Check if the new flags have the write permission. This is problematic as we cannot
+            // just change any existing hardware mappings to have the write permission, as any
+            // individual mapping may be the result of a read fault and still need to have a
+            // copy-on-write step performed. This could also map a dirty tracked VMO which requires
+            // write permission faults to track pages as dirty when written.
+            if (new_arch_mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0 {
+                // Whatever happens, we're not going to be protecting the arch aspace to have write
+                // mappings, so this has to be a user aspace so that we can lazily take write faults
+                // in the future.
+                assert!(self.aspace().is_user() || self.aspace().is_guest_physical());
+                flags &= !ARCH_MMU_FLAG_PERM_WRITE;
+                VM_MAPPINGS_PROTECT_NO_WRITE.add(1);
+                // If the new flags without write permission are the same as the old flags, then
+                // skip the protect step since it will be a no-op.
+                if flags == old_arch_mmu_flags {
+                    return Err(Status::NEXT);
+                }
+            }
+
+            // SAFETY: `base` and `size` are page aligned, and `[base, base + size)` is part of a
+            // mapping in `self.aspace()` whose permissions may be changed to `flags`, and which
+            // may be unmapped.
+            let status = unsafe { Self::protect_or_unmap(self.aspace(), base, size, flags) };
+            // If the protect failed then we do not have sufficient information left to rollback in
+            // order to return an error, nor can we claim success, so require the protect to have
+            // succeeded to continue.
+            assert!(status.is_ok());
+            Err(Status::NEXT)
+        };
+
+        // To handle the protection change, we need to ensure that the start and end of the
+        // requested range are represented as boundary nodes in the protection ranges B-tree if
+        // they are not already. This ensures that any change in protections for the sub-range does
+        // not unintentionally leak into adjacent sub-ranges.
+
+        // Efficiently calculate the flags before, at, and after the requested range using
+        // minimal BTree searches.
+        let mut flags_before = self.first_region_arch_mmu_flags_locked(aspace_token);
+        let mut flags_at_base = self.first_region_arch_mmu_flags_locked(aspace_token);
+        let mut flags_end = self.first_region_arch_mmu_flags_locked(aspace_token);
+        let mut rest_protection_ranges =
+            self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+        let mut base_exists = false;
+
+        let mut it_base = rest_protection_ranges.upper_bound(base);
+        // SAFETY: `it_base` is not before the first item.
+        unsafe { it_base.prev() };
+        if let Some((addr, flags)) = it_base.get() {
+            if addr == base {
+                base_exists = true;
+                flags_at_base = flags;
+                // SAFETY: `it_base` is not before the first item.
+                unsafe { it_base.prev() };
+                if let Some((_prev_addr, prev_flags)) = it_base.get() {
+                    flags_before = prev_flags;
+                }
+            } else {
+                flags_at_base = flags;
+                flags_before = flags_at_base;
+            }
+        }
+
+        let mut end_exists = false;
+
+        let mut it_end = rest_protection_ranges.upper_bound(base + size);
+        // SAFETY: `it_end` is not before the first item.
+        unsafe { it_end.prev() };
+        if let Some((addr, flags)) = it_end.get() {
+            if addr == base + size {
+                end_exists = true;
+                flags_end = flags;
+            } else {
+                flags_end = flags;
+            }
+        }
+
+        // We only need a boundary node at `base` if it's not the start of the mapping and the
+        // preceding flags are different from the new ones.
+        let need_base = base > self.base().0 && flags_before != new_arch_mmu_flags;
+        let insert_base = need_base && !base_exists;
+
+        // Similarly, we need a boundary node at `base + size` if it's not the end of the mapping
+        // and the new flags for the range are different from the existing flags that follow it.
+        let need_end = base + size < self.base().0 + self.size() && new_arch_mmu_flags != flags_end;
+        let insert_end = need_end && !end_exists;
+
+        // Perform any required insertions first. By inserting the *old* flags initially, we make
+        // the insertion a structural change only (a no-op for effective permissions). This allows
+        // us to handle OOM errors before we begin any non-reversible mutations.
+        if insert_base {
+            // SAFETY: `base` is not present.
+            let it = unsafe { rest_protection_ranges.insert(base, flags_at_base) };
+            if !it.is_valid() {
+                hint::cold_path();
+                return Err(Status::NO_MEMORY);
+            }
+        }
+        if insert_end {
+            // SAFETY: `base + size` is not present.
+            let it = unsafe { rest_protection_ranges.insert(base + size, flags_end) };
+            if !it.is_valid() {
+                hint::cold_path();
+                if insert_base {
+                    // SAFETY: `base` is present in `rest_protection_ranges`.
+                    unsafe { rest_protection_ranges.find_mut(base).erase() };
+                }
+                return Err(Status::NO_MEMORY);
+            }
+        }
+
+        // Now that all structural nodes are guaranteed to exist, we can safely perform the
+        // architectural protection changes. Calling this after successful insertions ensures
+        // that we don't have to rollback MMU changes if an allocation fails.
+        let _ = self.enumerate_protection_ranges_locked(aspace_token, base, size, protect_callback);
+
+        // Update the protection flags for the start of the range.
+        if base == self.base().0 {
+            self.set_first_region_arch_mmu_flags_locked(
+                aspace_token,
+                object_token,
+                new_arch_mmu_flags,
+            );
+        } else if need_base {
+            let mut rest_protection_ranges =
+                self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+            rest_protection_ranges.find_mut(base).update(new_arch_mmu_flags);
+        } else {
+            let mut rest_protection_ranges =
+                self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+            // If the boundary node is no longer needed (e.g., flags now match), remove it.
+            let mut it = rest_protection_ranges.find_mut(base);
+            if it.is_valid() {
+                // SAFETY: `it` is valid.
+                unsafe { it.erase() };
+            }
+        }
+
+        // If a boundary node at `base + size` is not needed, remove it to keep the tree minimal.
+        if !need_end {
+            let mut rest_protection_ranges =
+                self.rest_protection_ranges_mut_locked(aspace_token, object_token);
+            let mut it = rest_protection_ranges.find_mut(base + size);
+            if it.is_valid() {
+                // SAFETY: `it` is valid.
+                unsafe { it.erase() };
+            }
+        }
+
+        // Finally, erase any internal boundary nodes that were entirely within the protected
+        // range, as the entire range `[base, base + size)` now has uniform protections.
+        self.clear_protection_range_transitions_locked(
+            aspace_token,
+            object_token,
+            base + 1,
+            base + size,
+        );
+
+        Ok(())
     }
 
     #[inline(never)]
@@ -1179,22 +1826,24 @@ impl VmMapping {
         Status::ok(unsafe { bindings::cpp_vm_mapping_debug_unmap(self.as_ffi_ptr(), base, size) })
     }
 
-    /// Unlocked convenience wrapper around protect for testing.
-    pub fn debug_protect(
+    /// Unlocked convenience wrapper of `protect_locked` for testing.
+    ///
+    /// # Safety
+    ///
+    /// `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is within
+    /// this mapping and may have its permissions changed and be unmapped, and `new_arch_mmu_flags`
+    /// has no cache flags and is valid for this mapping.
+    pub unsafe fn debug_protect(
         &self,
         base: usize,
         size: usize,
         new_arch_mmu_flags: ArchMmuFlags,
     ) -> Result<(), Status> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        Status::ok(unsafe {
-            bindings::cpp_vm_mapping_debug_protect(
-                self.as_ffi_ptr(),
-                base,
-                size,
-                new_arch_mmu_flags,
-            )
-        })
+        ksync::lock!(let mut guard = self.lock().lock());
+        // SAFETY: `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is
+        // within this mapping and may have its permissions changed and be unmapped, and
+        // `new_arch_mmu_flags` has no cache flags and is valid for this mapping.
+        unsafe { self.protect_locked(guard.as_mut().token_mut(), base, size, new_arch_mmu_flags) }
     }
 
     // Accessors for VMO-mapping state.
@@ -1578,6 +2227,137 @@ pub unsafe extern "C" fn rust_vm_mapping_destroy_locked_object(
         unmap,
         remove_region,
     ))
+}
+
+/// # Safety
+///
+/// `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is within `this`
+/// and may have its permissions changed and be unmapped, and `new_arch_mmu_flags` has no cache
+/// flags and is valid for `this`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_debug_protect(
+    this: &VmMapping,
+    base: usize,
+    size: usize,
+    new_arch_mmu_flags: ArchMmuFlags,
+) -> zx_status_t {
+    // SAFETY: `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is
+    // within `this` and may have its permissions changed and be unmapped, and
+    // `new_arch_mmu_flags` has no cache flags and is valid for `this`.
+    Status::result_into_raw(unsafe { this.debug_protect(base, size, new_arch_mmu_flags) })
+}
+
+/// # Safety
+///
+/// The aspace lock is held. `size` is not zero, `base` and `size` are page aligned,
+/// `[base, base + size)` is within `this` and may have its permissions changed and be unmapped,
+/// and `new_arch_mmu_flags` has no cache flags and is valid for `this`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_protect_locked(
+    this: &VmMapping,
+    base: usize,
+    size: usize,
+    new_arch_mmu_flags: ArchMmuFlags,
+) -> zx_status_t {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut token = unsafe { LockToken::new() };
+    // SAFETY: `size` is not zero, `base` and `size` are page aligned, `[base, base + size)` is
+    // within `this` and may have its permissions changed and be unmapped, and
+    // `new_arch_mmu_flags` has no cache flags and is valid for `this`.
+    Status::result_into_raw(unsafe {
+        this.protect_locked(&mut token, base, size, new_arch_mmu_flags)
+    })
+}
+
+/// # Safety
+///
+/// `base` and `size` are page aligned, and `[base, base + size)` is part of a mapping in `aspace`
+/// whose permissions may be changed to `new_arch_mmu_flags`, and which may be unmapped.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_protect_or_unmap(
+    aspace: &VmAspace,
+    base: usize,
+    size: usize,
+    new_arch_mmu_flags: ArchMmuFlags,
+) -> zx_status_t {
+    // SAFETY: `base` and `size` are page aligned, and `[base, base + size)` is part of a mapping
+    // in `aspace` whose permissions may be changed to `new_arch_mmu_flags`, and which may be
+    // unmapped.
+    Status::result_into_raw(unsafe {
+        VmMapping::protect_or_unmap(aspace, base, size, new_arch_mmu_flags)
+    })
+}
+
+/// # Safety
+///
+/// The aspace lock is held, and `out_ranges` is empty.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_copy_protection_ranges_locked(
+    this: &VmMapping,
+    base: usize,
+    size: usize,
+    out_first_flags: &mut MaybeUninit<ArchMmuFlags>,
+    out_ranges: Pin<&mut ProtectionRanges>,
+) -> zx_status_t {
+    // SAFETY: The aspace lock is held by the caller.
+    let token = unsafe { LockToken::new() };
+    // SAFETY: `out_ranges` is empty.
+    let result = unsafe { this.copy_protection_ranges_locked(&token, base, size, out_ranges) };
+    Status::result_into_raw(result.map(|first_flags| {
+        out_first_flags.write(first_flags);
+    }))
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock of `this` and of `right` are held, `right` is not
+/// `this`, and `right.base()` and the keys of the protection ranges of `right` are distinct from
+/// each other and absent from the protection ranges of `this`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_merge_protection_ranges_locked(
+    this: &VmMapping,
+    right: &VmMapping,
+) -> zx_status_t {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    // SAFETY: `right` is not `this`, and `right.base()` and the keys of the protection ranges of
+    // `right` are distinct from each other and absent from the protection ranges of `this`.
+    Status::result_into_raw(unsafe {
+        this.merge_protection_ranges_locked(&mut aspace_token, &mut object_token, right)
+    })
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_clear_protection_range_transitions_locked(
+    this: &VmMapping,
+    base: usize,
+    end: usize,
+) {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    this.clear_protection_range_transitions_locked(&mut aspace_token, &mut object_token, base, end);
+}
+
+/// # Safety
+///
+/// The aspace lock and the object lock are held.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_mapping_remove_after_split_locked(
+    this: &VmMapping,
+    split_addr: usize,
+) -> ArchMmuFlags {
+    // SAFETY: The aspace lock is held by the caller.
+    let mut aspace_token = unsafe { LockToken::new() };
+    // SAFETY: The object lock is held by the caller.
+    let mut object_token = unsafe { LockToken::new() };
+    this.remove_after_split_locked(&mut aspace_token, &mut object_token, split_addr)
 }
 
 #[unsafe(no_mangle)]

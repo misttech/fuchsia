@@ -104,14 +104,36 @@ void* cpp_vm_mapping_state(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,
                                      bool ignore_existing);
 zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t size);
-zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
-                                         arch_mmu_flags_t new_arch_mmu_flags);
 zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
 void cpp_vm_mapping_mark_mergeable(VmMapping* mapping);
 bool cpp_vm_mapping_protection_ranges_is_empty(const VmMappingProtectionRanges* ranges);
 void cpp_vm_mapping_protection_ranges_clear(VmMappingProtectionRanges* ranges);
+void cpp_vm_mapping_protection_ranges_begin(
+    const VmMappingProtectionRanges* ranges,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_end(
+    const VmMappingProtectionRanges* ranges,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
 void cpp_vm_mapping_protection_ranges_upper_bound(
     const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_lower_bound(
+    const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_find(
+    const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_insert(
+    VmMappingProtectionRanges* ranges, vaddr_t key, arch_mmu_flags_t flags,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_insert_hint(
+    VmMappingProtectionRanges* ranges, const VmMappingProtectionRangesCursor* hint, vaddr_t key,
+    arch_mmu_flags_t flags, ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
+void cpp_vm_mapping_protection_ranges_update(VmMappingProtectionRanges* ranges,
+                                             const VmMappingProtectionRangesCursor* cursor,
+                                             arch_mmu_flags_t flags);
+void cpp_vm_mapping_protection_ranges_erase(
+    VmMappingProtectionRanges* ranges, const VmMappingProtectionRangesCursor* cursor,
     ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor);
 bool cpp_vm_mapping_protection_ranges_cursor_is_valid(
     const VmMappingProtectionRangesCursor* cursor);

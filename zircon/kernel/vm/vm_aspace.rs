@@ -289,6 +289,21 @@ impl VmAspace {
         unsafe { bindings::cpp_vm_aspace_is_user(self.as_ffi_ptr()) }
     }
 
+    /// Returns whether this aspace is a guest physical address space.
+    ///
+    /// TODO(https://fxbug.dev/42054461): Rationalize usage of `is_user` and `is_guest_physical`.
+    #[inline]
+    pub(super) fn is_guest_physical(&self) -> bool {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.
+        unsafe { bindings::cpp_vm_aspace_is_guest_physical(self.as_ffi_ptr()) }
+    }
+
+    #[inline]
+    pub(super) fn can_enlarge_arch_unmap(&self) -> bool {
+        // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.
+        unsafe { bindings::cpp_vm_aspace_can_enlarge_arch_unmap(self.as_ffi_ptr()) }
+    }
+
     /// Encodes the idea that we can always unmap from user aspaces.
     pub(super) fn enlarge_arch_unmap(&self) -> ArchUnmapOptions {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmAspace`.

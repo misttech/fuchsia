@@ -55,11 +55,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vad
                                                          size_t size) {
   return mapping->DebugUnmap(base, size);
 }
-FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base,
-                                                           size_t size,
-                                                           arch_mmu_flags_t new_arch_mmu_flags) {
-  return mapping->DebugProtect(base, size, new_arch_mmu_flags);
-}
 FFI_ALWAYS_INLINE VmMappingProtectionRanges* cpp_vm_mapping_rest_protection_ranges(
     VmMapping* mapping) TA_NO_THREAD_SAFETY_ANALYSIS {
   return &mapping->rest_protection_ranges_;
@@ -75,10 +70,52 @@ FFI_ALWAYS_INLINE bool cpp_vm_mapping_protection_ranges_is_empty(
 FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_clear(VmMappingProtectionRanges* ranges) {
   ranges->clear();
 }
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_begin(
+    const VmMappingProtectionRanges* ranges,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(ranges->begin());
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_end(
+    const VmMappingProtectionRanges* ranges,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(ranges->end());
+}
 FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_upper_bound(
     const VmMappingProtectionRanges* ranges, vaddr_t key,
     ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
   out_cursor->Initialize(ranges->upper_bound(key));
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_lower_bound(
+    const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(ranges->lower_bound(key));
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_find(
+    const VmMappingProtectionRanges* ranges, vaddr_t key,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(ranges->find(key));
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_insert(
+    VmMappingProtectionRanges* ranges, vaddr_t key, arch_mmu_flags_t flags,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(VmMappingProtectionRanges::const_iterator(ranges->insert(key, flags)));
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_insert_hint(
+    VmMappingProtectionRanges* ranges, const VmMappingProtectionRangesCursor* hint, vaddr_t key,
+    arch_mmu_flags_t flags, ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(VmMappingProtectionRanges::const_iterator(
+      ranges->insert(VmMappingProtectionRanges::iterator(*hint), key, flags)));
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_update(
+    VmMappingProtectionRanges* ranges, const VmMappingProtectionRangesCursor* cursor,
+    arch_mmu_flags_t flags) {
+  ranges->update(VmMappingProtectionRanges::iterator(*cursor), flags);
+}
+FFI_ALWAYS_INLINE void cpp_vm_mapping_protection_ranges_erase(
+    VmMappingProtectionRanges* ranges, const VmMappingProtectionRangesCursor* cursor,
+    ffi::Uninitialized<VmMappingProtectionRangesCursor>* out_cursor) {
+  out_cursor->Initialize(VmMappingProtectionRanges::const_iterator(
+      ranges->erase(VmMappingProtectionRanges::iterator(*cursor))));
 }
 FFI_ALWAYS_INLINE bool cpp_vm_mapping_protection_ranges_cursor_is_valid(
     const VmMappingProtectionRangesCursor* cursor) {

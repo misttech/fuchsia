@@ -36,6 +36,8 @@ extern "C" void* cpp_vm_aspace_lock(const VmAspace* aspace);
 extern "C" void* cpp_vm_aspace_region_lock(const VmAspace* aspace);
 extern "C" VmAddressRegion* cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
 extern "C" void cpp_vm_aspace_change_high_priority_count_locked(VmAspace* aspace, int64_t delta);
+extern "C" bool cpp_vm_aspace_is_guest_physical(const VmAspace* aspace);
+extern "C" bool cpp_vm_aspace_can_enlarge_arch_unmap(const VmAspace* aspace);
 extern "C" uint8_t cpp_vm_aspace_enlarge_arch_unmap(const VmAspace* aspace);
 extern "C" const VmMapping* cpp_vm_aspace_last_fault_locked(const VmAspace* aspace);
 extern "C" void cpp_vm_aspace_clear_last_fault_locked(VmAspace* aspace);
@@ -279,6 +281,8 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend VmAddressRegion* ::cpp_vm_aspace_root_vmar_locked(VmAspace* aspace);
   friend void ::cpp_vm_aspace_change_high_priority_count_locked(VmAspace* aspace, int64_t delta);
   friend uint8_t(::cpp_vm_aspace_enlarge_arch_unmap)(const VmAspace* aspace);
+  friend bool ::cpp_vm_aspace_is_guest_physical(const VmAspace* aspace);
+  friend bool ::cpp_vm_aspace_can_enlarge_arch_unmap(const VmAspace* aspace);
   friend const VmMapping* ::cpp_vm_aspace_last_fault_locked(const VmAspace* aspace);
   friend void ::cpp_vm_aspace_clear_last_fault_locked(VmAspace* aspace);
   friend const VmMapping* ::cpp_vm_aspace_vdso_code_mapping_locked(const VmAspace* aspace);

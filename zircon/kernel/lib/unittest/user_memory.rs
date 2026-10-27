@@ -15,8 +15,8 @@ use zx_status::Status;
 use crate::kernel::thread;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 use crate::vm::arch_vm_aspace::{
-    ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER,
-    ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
+    ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_EXECUTE, ARCH_MMU_FLAG_PERM_READ,
+    ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
 };
 use crate::vm::pmm;
 use crate::vm::scanner::AutoVmScannerDisable;
@@ -25,7 +25,7 @@ use crate::vm::vm_aspace::VmAspace;
 use crate::vm::vm_mapping::VmMapping;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
-use page::round_up;
+use page::{is_aligned, round_up};
 
 /// UserMemory facilitates testing code that requires user memory.
 ///
@@ -94,7 +94,7 @@ impl UserMemory {
         tag: u8,
         align_pow2: u8,
     ) -> Option<Self> {
-        debug_assert!(vmar.aspace().is_user());
+        assert!(vmar.aspace().is_user());
         let size = vmo.size() as usize;
         let vmar_flags = vm_address_region::flag::CAN_MAP_READ
             | vm_address_region::flag::CAN_MAP_WRITE
@@ -198,11 +198,19 @@ impl UserMemory {
 
     pub fn protect(&self, flags: ArchMmuFlags, offset: usize) -> Result<(), Status> {
         assert!(offset < self.mapping.size());
-        self.mapping.debug_protect(
-            self.mapping.base().0 + offset,
-            self.mapping.size() - offset,
-            ARCH_MMU_FLAG_PERM_USER | flags,
-        )
+        assert!(is_aligned(offset));
+        assert!((flags & ARCH_MMU_FLAG_CACHE_MASK) == 0);
+        // SAFETY: The size is not zero, the base and size are page aligned, the range is within the
+        // mapping, which is in a user aspace, so it may have its permissions changed and be
+        // unmapped, and the flags have no cache flags and are valid for the mapping, which may map
+        // with any permissions.
+        unsafe {
+            self.mapping.debug_protect(
+                self.mapping.base().0 + offset,
+                self.mapping.size() - offset,
+                ARCH_MMU_FLAG_PERM_USER | flags,
+            )
+        }
     }
 
     /// Changes the mapping permissions to be a Read-Only Executable mapping.

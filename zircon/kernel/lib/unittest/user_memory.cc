@@ -23,7 +23,7 @@ ktl::unique_ptr<UserMemory> UserMemory::CreateInVmar(fbl::RefPtr<VmObject> vmo,
   size_t size = vmo->size();
 
   DEBUG_ASSERT(vmar);
-  DEBUG_ASSERT(vmar->aspace()->is_user());
+  ASSERT(vmar->aspace()->is_user());
 
   constexpr uint32_t vmar_flags =
       VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE;

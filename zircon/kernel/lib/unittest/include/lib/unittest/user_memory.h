@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_LIB_UNITTEST_INCLUDE_LIB_UNITTEST_USER_MEMORY_H_
 #define ZIRCON_KERNEL_LIB_UNITTEST_INCLUDE_LIB_UNITTEST_USER_MEMORY_H_
 
+#include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 
 #include <ktl/unique_ptr.h>
@@ -93,6 +94,8 @@ class UserMemory {
 
   zx_status_t Protect(arch_mmu_flags_t flags, uint64_t offset = 0) {
     ASSERT(offset < mapping_->size());
+    ASSERT(IsPageRounded(offset));
+    ASSERT((flags & ARCH_MMU_FLAG_CACHE_MASK) == 0);
     return mapping_->DebugProtect(mapping_->base() + offset, mapping_->size() - offset,
                                   ARCH_MMU_FLAG_PERM_USER | flags);
   }
