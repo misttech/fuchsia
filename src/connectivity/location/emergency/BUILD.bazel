@@ -1,10 +1,115 @@
-# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load("//third_party/cobalt:metrics_registry.bzl", "metrics_registry")
 
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/emergency.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "emergency",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [],
+    deps = [
+        ":emergency_metrics_registry_rustlib",
+        ":lib",
+        "//sdk/fidl/fuchsia.location:fuchsia.location_rust",
+        "//sdk/fidl/fuchsia.location.position:fuchsia.location.position_rust",
+        "//sdk/fidl/fuchsia.location.sensor:fuchsia.location.sensor_rust",
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//src/lib/cobalt/rust/builders",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fidl/rust/fidl-contrib",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/bss_cache.rs",
+        "src/bss_resolver.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "emergency_lib",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [],
+    deps = [
+        "//sdk/fidl/fuchsia.location.position:fuchsia.location.position_rust",
+        "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
+        "//sdk/fidl/fuchsia.net.http:fuchsia.net.http_rust",
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:static_assertions",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+metrics_registry(
+    name = "emergency_metrics_registry",
+    generate_rust = True,
+    # This must match the ID of our Cobalt project as specified in:
+    # //third_party/cobalt_config/projects.yaml
+    project_id = 4,
+    visibility = [],
+)
+
+rustc_test(
+    name = "emergency-test",
+    crate = ":bin",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_rust",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+rustc_test(
+    name = "emergency-lib-test",
+    crate = ":lib",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+fx_unittest_package(
+    name = "emergency-tests",
+    unit_tests = [
+        ":emergency-test",
+        ":emergency-lib-test",
+    ],
+    visibility = ["//src/connectivity/location:__pkg__"],
 )
