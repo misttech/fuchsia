@@ -99,6 +99,24 @@ class BLEManagerTest : public WeaveTestFixture<> {
     event_loop_.RunUntilIdle();
   }
 
+  void SetWoBLEServiceMode(BLEManager::WoBLEServiceMode mode) {
+    EXPECT_EQ(ble_mgr_->_SetWoBLEServiceMode(mode), WEAVE_NO_ERROR);
+    event_loop_.RunUntilIdle();
+  }
+
+  bool IsBLEMgrAdvertisingEnabled() { return ble_mgr_->_IsAdvertisingEnabled(); }
+
+  bool IsGATTServicePublished() { return GetFlag(ble_mgr_->flags_, kFlag_GATTServicePublished); }
+
+  void OnPlatformEvent(const WeaveDeviceEvent* event) {
+    ble_mgr_->_OnPlatformEvent(event);
+    event_loop_.RunUntilIdle();
+  }
+
+  TestConfigurationManager& config_delegate() {
+    return *reinterpret_cast<TestConfigurationManager*>(ConfigurationMgrImpl().GetDelegate());
+  }
+
   void WeaveConnect() {
     size_t cb_count = 0;
     auto callback = [&cb_count](fuchsia::bluetooth::gatt2::LocalService_WriteValue_Result res) {
@@ -177,7 +195,48 @@ TEST_F(BLEManagerTest, EnableAndDisableAdvertising) {
   EXPECT_EQ(IsBLEMgrAdvertising(), true);
 }
 
-// TODO(https://fxbug.dev/42085753): Re-enable this test once the GATT Write / Indicate flakes are fixed.
+TEST_F(BLEManagerTest, DisableAdvertisingWhenProvisioned) {
+  constexpr DeviceEventType::PublicEventTypes kProvisioningEvents[] = {
+      DeviceEventType::kFabricMembershipChange,
+      DeviceEventType::kServiceProvisioningChange,
+      DeviceEventType::kAccountPairingChange,
+  };
+
+  config_delegate().set_is_thread_enabled(false);
+
+  for (auto event_type : kProvisioningEvents) {
+    // Enable WoBLE service and advertising while not yet fully provisioned.
+    config_delegate().set_is_paired_to_account(true).set_is_member_of_fabric(false);
+    ASSERT_FALSE(ConfigurationMgr().IsFullyProvisioned());
+    SetWoBLEServiceMode(ConnectivityManager::kWoBLEServiceMode_Enabled);
+    SetWoBLEAdvertising(true);
+    EXPECT_EQ(GetBLEMgrServiceMode(), ConnectivityManager::kWoBLEServiceMode_Enabled);
+    EXPECT_TRUE(IsGATTServicePublished());
+    EXPECT_TRUE(IsBLEMgrAdvertisingEnabled());
+    EXPECT_TRUE(IsBLEMgrAdvertising());
+
+    // A provisioning event while still partially provisioned should not disable WoBLE.
+    WeaveDeviceEvent event{.Type = static_cast<uint16_t>(event_type)};
+    OnPlatformEvent(&event);
+    EXPECT_EQ(GetBLEMgrServiceMode(), ConnectivityManager::kWoBLEServiceMode_Enabled);
+    EXPECT_TRUE(IsGATTServicePublished());
+    EXPECT_TRUE(IsBLEMgrAdvertisingEnabled());
+    EXPECT_TRUE(IsBLEMgrAdvertising());
+
+    // Once the device is fully provisioned, the platform event disables WoBLE advertising
+    // and unpublishes the GATT service.
+    config_delegate().set_is_member_of_fabric(true);
+    ASSERT_TRUE(ConfigurationMgr().IsFullyProvisioned());
+    OnPlatformEvent(&event);
+    EXPECT_EQ(GetBLEMgrServiceMode(), ConnectivityManager::kWoBLEServiceMode_Disabled);
+    EXPECT_FALSE(IsGATTServicePublished());
+    EXPECT_FALSE(IsBLEMgrAdvertisingEnabled());
+    EXPECT_FALSE(IsBLEMgrAdvertising());
+  }
+}
+
+// TODO(https://fxbug.dev/42085753): Re-enable this test once the GATT Write / Indicate flakes are
+// fixed.
 TEST_F(BLEManagerTest, DISABLED_TestWeaveConnect) { WeaveConnect(); }
 
 }  // namespace nl::Weave::DeviceLayer::Internal::testing

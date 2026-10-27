@@ -63,7 +63,7 @@ class BLEManagerImpl final : public BLEManager,
   WEAVE_ERROR _GetDeviceName(char *device_name, size_t device_name_size);
   WEAVE_ERROR _SetDeviceName(const char *device_name);
   uint16_t _NumConnections() { return 0; }
-  static void _OnPlatformEvent(const WeaveDeviceEvent *event);
+  void _OnPlatformEvent(const WeaveDeviceEvent *event);
   ::nl::Ble::BleLayer *_GetBleLayer() const;
 
   // ===== Members that implement virtual methods on BlePlatformDelegate.
@@ -107,8 +107,8 @@ class BLEManagerImpl final : public BLEManager,
   void WriteValue(::fuchsia::bluetooth::gatt2::LocalServiceWriteValueRequest request,
                   WriteValueCallback callback) override;
   void PeerUpdate(::fuchsia::bluetooth::gatt2::LocalServicePeerUpdateRequest request,
-                  PeerUpdateCallback callback) override{};
-  void ValueChangedCredit(uint8_t additional_credit) override{};
+                  PeerUpdateCallback callback) override {};
+  void ValueChangedCredit(uint8_t additional_credit) override {};
 
   // Drives the global |BLEManagerImpl| instance's BLE state.
   // This method will be scheduled on and called from platform manager's event loop.

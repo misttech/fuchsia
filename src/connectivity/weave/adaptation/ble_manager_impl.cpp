@@ -38,13 +38,12 @@ constexpr gatt::Handle kWeaveBleCharWriteHandle{WeaveBleChar::kWeaveBleCharWrite
 constexpr gatt::Handle kWeaveBleCharIndicateHandle{WeaveBleChar::kWeaveBleCharIndicate};
 
 // An array that holds the UUID for each |WeaveBleChar|
-constexpr WeaveBleUUID kWeaveBleChars[] = {
-    // UUID for |kWeaveBleCharWrite|
-    {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
-      0x11}},
-    // UUID for |kWeaveBleCharIndicate|
-    {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95, 0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D,
-      0x12}}};
+constexpr WeaveBleUUID kWeaveBleChars[] = {// UUID for |kWeaveBleCharWrite|
+                                           {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95,
+                                             0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D, 0x11}},
+                                           // UUID for |kWeaveBleCharIndicate|
+                                           {{0x18, 0xEE, 0x2E, 0xF5, 0x26, 0x3D, 0x45, 0x59, 0x95,
+                                             0x9F, 0x4F, 0x9C, 0x42, 0x9F, 0x9D, 0x12}}};
 
 }  // unnamed namespace
 
@@ -78,6 +77,18 @@ WEAVE_ERROR BLEManagerImpl::_Init() {
   if (ConfigurationMgrImpl().IsWoBLEAdvertisementEnabled()) {
     flags_ = kFlag_AdvertisingEnabled;
   }
+#if WEAVE_DEVICE_CONFIG_WOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
+  if (ConfigurationMgr().IsFullyProvisioned()) {
+    ClearFlag(flags_, kFlag_AdvertisingEnabled);
+    // Unlike single-function BLE microcontrollers in upstream OpenWeave where stopping
+    // WoBLE advertisements prevents any BLE connections, Fuchsia devices share the BLE
+    // peripheral across multiple system components. Disable the WoBLE service mode as
+    // well so DriveBLEState() does not publish the Weave GATT service when provisioned.
+    service_mode_ = ConnectivityManager::kWoBLEServiceMode_Disabled;
+    FX_LOGS(INFO)
+        << "WoBLE advertising and GATT service disabled because device is fully provisioned";
+  }
+#endif  // WEAVE_DEVICE_CONFIG_WOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
 
   // Initialize the Weave BleLayer.
   err = BleLayer::Init(this, this, &SystemLayer);
@@ -212,6 +223,26 @@ void BLEManagerImpl::_OnPlatformEvent(const WeaveDeviceEvent* event) {
       instance->HandleConnectionError(event->WoBLEConnectionError.ConId,
                                       event->WoBLEConnectionError.Reason);
       break;
+    case DeviceEventType::kFabricMembershipChange:
+    case DeviceEventType::kServiceProvisioningChange:
+    case DeviceEventType::kAccountPairingChange:
+      // If WOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED is enabled, and there is a change to the
+      // device's provisioning state, then automatically disable WoBLE advertising if the device
+      // is now fully provisioned.
+#if WEAVE_DEVICE_CONFIG_WOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
+      if (ConfigurationMgr().IsFullyProvisioned()) {
+        ClearFlag(flags_, kFlag_AdvertisingEnabled);
+        // Unlike single-function BLE microcontrollers in upstream OpenWeave where stopping
+        // WoBLE advertisements prevents any BLE connections, Fuchsia devices share the BLE
+        // peripheral across multiple system components. Disable the WoBLE service mode as
+        // well so DriveBLEState() unpublishes the Weave GATT service once fully provisioned.
+        service_mode_ = ConnectivityManager::kWoBLEServiceMode_Disabled;
+        FX_LOGS(INFO)
+            << "WoBLE advertising and GATT service disabled because device is fully provisioned";
+      }
+#endif  // WEAVE_DEVICE_CONFIG_WOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
+      DriveBLEState();
+      break;
     default:
       // Ignore events not intended for BLEManager.
       break;
@@ -245,9 +276,9 @@ bool BLEManagerImpl::SendIndication(BLE_CONNECTION_OBJECT conId, const WeaveBleU
   connection_state->pending_ind_buf = data;
   data = nullptr;
 
-  // TODO(https://fxbug.dev/42130443, https://fxbug.dev/42131435): The peer confirmation currently isn't returned to the
-  // caller. Proceed as if the confirmation is received, to avoid closing the connection. When the
-  // bug is fixed, block until the confirmation is received and handle it.
+  // TODO(https://fxbug.dev/42130443, https://fxbug.dev/42131435): The peer confirmation currently
+  // isn't returned to the caller. Proceed as if the confirmation is received, to avoid closing the
+  // connection. When the bug is fixed, block until the confirmation is received and handle it.
   PacketBuffer::Free(connection_state->pending_ind_buf);
   // If the confirmation was successful...
   // Post an event to the Weave queue to process the indicate confirmation.
