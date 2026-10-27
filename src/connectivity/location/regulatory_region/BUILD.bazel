@@ -1,0 +1,168 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "regulatory_region",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":lib",
+        "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",
+        "src/pub_sub_hub.rs",
+    ],
+    crate_name = "regulatory_region_lib",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+fx_packaged_binary(
+    name = "regulatory_region_packaged_bin",
+    binary = ":bin",
+    binary_name = "regulatory_region",
+)
+
+fx_component_manifest(
+    name = "regulatory_region_manifest",
+    component_name = "regulatory_region",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/regulatory_region.cml",
+)
+
+fx_component(
+    name = "regulatory_region_component",
+    compiled_manifest = ":regulatory_region_manifest",
+    component_name = "regulatory_region",
+    visibility = [
+        "//src/connectivity/location/regulatory_region/tests:__pkg__",
+        "//src/connectivity/wlan/tests/helpers/realm-factory:__pkg__",
+    ],
+    deps = [":regulatory_region_packaged_bin"],
+)
+
+rustc_test(
+    name = "regulatory_region_bin_test",
+    crate = ":bin",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+rustc_test(
+    name = "regulatory_region_lib_lib_test",
+    crate = ":lib",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures-test",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_test_packaged_bin",
+    testonly = True,
+    binary = ":regulatory_region_bin_test",
+    binary_name = "regulatory_region_bin_test",
+)
+
+fx_component_manifest(
+    name = "regulatory-region-test-manifest",
+    testonly = True,
+    component_name = "regulatory-region-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/regulatory_region_test.cml",
+)
+
+fx_test_component(
+    name = "regulatory-region-test",
+    compiled_manifest = ":regulatory-region-test-manifest",
+    component_name = "regulatory-region-test",
+    deps = [":bin_test_packaged_bin"],
+)
+
+fx_packaged_binary(
+    name = "lib_test_packaged_bin",
+    testonly = True,
+    binary = ":regulatory_region_lib_lib_test",
+    binary_name = "regulatory_region_lib_lib_test",
+)
+
+fx_component_manifest(
+    name = "regulatory-region-lib-test-manifest",
+    testonly = True,
+    component_name = "regulatory-region-lib-test",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/regulatory_region_lib_test.cml",
+)
+
+fx_test_component(
+    name = "regulatory-region-lib-test",
+    compiled_manifest = ":regulatory-region-lib-test-manifest",
+    component_name = "regulatory-region-lib-test",
+    deps = [":lib_test_packaged_bin"],
+)
+
+fx_package(
+    name = "regulatory-region-tests-package",
+    package_name = "regulatory-region-tests",
+    test_components = [
+        ":regulatory-region-test",
+        ":regulatory-region-lib-test",
+    ],
+)
+
+fx_test(
+    name = "regulatory-region-tests",
+    package = ":regulatory-region-tests-package",
+    visibility = ["//src/connectivity/location:__pkg__"],
+)
