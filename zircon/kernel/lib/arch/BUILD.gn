@@ -117,6 +117,14 @@ asm_headers = [
     arch = "x86"
     name = "cpuid"
   },
+  {
+    arch = "x86"
+    name = "descriptor"
+  },
+  {
+    arch = "x86"
+    name = "system"
+  },
 ]
 gen_asm_deps = []
 foreach(header, asm_headers) {

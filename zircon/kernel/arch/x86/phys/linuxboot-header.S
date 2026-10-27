@@ -5,9 +5,15 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/arch/asm.h>
+#include <lib/arch/x86/descriptor-asm.h>
+#include <lib/arch/x86/system-asm.h>
 
-#include "phys32.h"
 #include "linuxboot-asm.h"
+
+// Selectors into gLinuxbootGdt, defined below.
+#define LINUXBOOT_CODE32_SEL (1 << 3)
+#define LINUXBOOT_DATA32_SEL (2 << 3)
+#define LINUXBOOT_GDT_SIZE (3 * 8)
 
 // The phys.ld linker script places this first in the image.
 // The linuxboot.ld linker script arranges that this means it
@@ -271,7 +277,7 @@
   add $(Protected32Entry - zero_page), %eax
 
   // Push the long return address that will be popped below.
-  pushl $PHYS32_CODE32_SEL
+  pushl $LINUXBOOT_CODE32_SEL
   .cfi_adjust_cfa_offset 4
   pushl %eax
   .cfi_adjust_cfa_offset 4
@@ -287,14 +293,13 @@
   shl $4, %esi
   add $(boot_params - zero_page), %esi
 
-  // Build a temporary descriptor pointing at the GDT to load it.
-  // We reuse the gdt32.cc setup that start32.S will load again later.
-  // But we need it loaded first so we can enable 32-bit protected mode.
-  // Its runtime address is found relative to the 32-bit entry point, since
-  // the setup area here and the load image are placed independently.
-  lea (gPhys32Gdt - LinuxBase)(%ebx), %eax
+  // Build a temporary descriptor pointing at the GDT to load it.  The GDT is
+  // in the load image, whose runtime address is found relative to the 32-bit
+  // entry point since the setup area here and the load image are placed
+  // independently.
+  lea (gLinuxbootGdt - LinuxBase)(%ebx), %eax
   movl %eax, -4(%esp)
-  movw $(PHYS32_GDT_SIZE - 1), -6(%esp)
+  movw $(LINUXBOOT_GDT_SIZE - 1), -6(%esp)
   lgdtl -6(%esp)
 
   // Enable protected mode.  The Intel manual recommends doing a far jump
@@ -313,7 +318,7 @@
 .function Protected32Entry, align=16, nosection=nosection
   // Reload all the segment registers (except %cs).  The Intel manual
   // recommends doing this immediately after jumping into the new %cs segment.
-  mov $PHYS32_DATA32_SEL, %ax // Flat data segment for %ds, %es, and %ss.
+  mov $LINUXBOOT_DATA32_SEL, %ax // Flat data segment for %ds, %es, and %ss.
   mov %ax, %ds
   mov %ax, %es
   mov %ax, %ss
@@ -410,3 +415,18 @@
 0:ud2
   jmp 0b
 .end_function
+
+// This is the GDT used by the entry code in this file: by the 16-bit entry
+// path to enter 32-bit protected mode.  It's only for that transition; the
+// code entered afterwards installs its own GDT (start32.S).  It lives here in
+// the load image rather than in the setup area so that the 32-bit entry path,
+// which is entered directly by the 32-bit boot protocol, can use it too.
+.object gLinuxbootGdt, nosection=nosection, align=8
+  .quad 0                       // Null descriptor.
+  .quad X86_DESC32_FLAT_CODE32  // LINUXBOOT_CODE32_SEL
+  .quad X86_DESC32_FLAT_DATA32  // LINUXBOOT_DATA32_SEL
+  .if . - gLinuxbootGdt != LINUXBOOT_GDT_SIZE
+    .error "LINUXBOOT_GDT_SIZE does not match gLinuxbootGdt"
+  .endif
+.end_object
+

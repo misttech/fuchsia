@@ -186,7 +186,6 @@ if (current_toolchain == default_toolchain) {
         ":linuxboot-init",
         ":linuxboot.h",
         ":phys32",
-        ":phys32.h",
         "//zircon/kernel/lib/arch",
       ]
 
