@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "vdso_calculate_utc",
+    srcs = [
+        "vdso_calculate_time.h",
+        "vdso_calculate_utc.cc",
+        "vdso_platform.h",
+    ],
+    configs = [":vdso_config"],  # @bazel2gn:raw_overwrite:[ ":vdso_config" ]
+    implementation_deps = [
+        "//zircon/kernel/lib/fasttime:headers",
+        "//zircon/system/public",
+        "//zircon/system/ulib/affine",
+        "//zircon/system/ulib/concurrent:concurrent_vdso",
+    ],
+    visibility = ["//src/starnix/tests/vdso:__pkg__"],
+    alwayslink = True,
+)
