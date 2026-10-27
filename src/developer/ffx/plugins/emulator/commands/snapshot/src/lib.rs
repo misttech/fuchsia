@@ -120,6 +120,7 @@ fn format_snapshots(snapshots: &[SnapshotInfo]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ffx_emulator_config::BoxFuture;
     use ffx_emulator_snapshot_args::{
         SnapshotListCommand, SnapshotLoadCommand, SnapshotSaveCommand,
     };
@@ -143,23 +144,28 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait(?Send)]
     impl EmulatorEngine for StubEngine {
-        async fn save_snapshot(&mut self, name: &str) -> Result<()> {
-            self.result()?;
-            self.saved.push(name.to_string());
-            Ok(())
+        fn save_snapshot<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.result()?;
+                self.saved.push(name.to_string());
+                Ok(())
+            })
         }
 
-        async fn load_snapshot(&mut self, name: &str) -> Result<()> {
-            self.result()?;
-            self.loaded.push(name.to_string());
-            Ok(())
+        fn load_snapshot<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.result()?;
+                self.loaded.push(name.to_string());
+                Ok(())
+            })
         }
 
-        async fn list_snapshots(&mut self) -> Result<Vec<SnapshotInfo>> {
-            self.result()?;
-            Ok(self.snapshots.clone())
+        fn list_snapshots(&mut self) -> BoxFuture<'_, Result<Vec<SnapshotInfo>>> {
+            Box::pin(async move {
+                self.result()?;
+                Ok(self.snapshots.clone())
+            })
         }
     }
 

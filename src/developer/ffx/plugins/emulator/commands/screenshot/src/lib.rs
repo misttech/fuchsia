@@ -132,7 +132,6 @@ mod tests {
         config: EmulatorConfiguration,
     }
 
-    #[async_trait::async_trait(?Send)]
     impl EmulatorEngine for StubEngine {
         fn engine_state(&self) -> EngineState {
             self.state

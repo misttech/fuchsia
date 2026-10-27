@@ -818,11 +818,10 @@ mod tests {
     use super::*;
     use assembled_system::Image;
     use assembly_partitions_config::PartitionsConfig;
-    use async_trait::async_trait;
     use camino::{Utf8Path, Utf8PathBuf};
     use emulator_instance::{LogLevel, RuntimeConfig, SerialMode};
     use ffx_config::environment::TestEnvBuilder;
-    use ffx_emulator_config::SnapshotInfo;
+    use ffx_emulator_config::{BoxFuture, SnapshotInfo};
     use ffx_writer::TestBuffers;
     use pbms::ProductBundle;
     use product_bundle::ProductBundleV2;
@@ -871,33 +870,36 @@ mod tests {
         }
     }
 
-    #[async_trait(?Send)]
     impl EmulatorEngine for TestEngine {
-        async fn save_to_disk(&self) -> fho::Result<()> {
-            Ok(())
+        fn save_to_disk(&self) -> BoxFuture<'_, fho::Result<()>> {
+            Box::pin(async { Ok(()) })
         }
         fn build_emulator_cmd(&self) -> Command {
             Command::new(self.config.runtime.name.clone())
         }
-        async fn stage(&mut self) -> fho::Result<()> {
-            self.did_stage = true;
-            (self.stage_test_fn)(&mut self.config)?;
-            if !self.do_stage {
-                fho::return_bug!("Test called stage() when it wasn't supposed to.")
-            }
-            Ok(())
+        fn stage(&mut self) -> BoxFuture<'_, fho::Result<()>> {
+            Box::pin(async move {
+                self.did_stage = true;
+                (self.stage_test_fn)(&mut self.config)?;
+                if !self.do_stage {
+                    fho::return_bug!("Test called stage() when it wasn't supposed to.")
+                }
+                Ok(())
+            })
         }
-        async fn start(
-            &mut self,
-            _context: &EnvironmentContext,
+        fn start<'a>(
+            &'a mut self,
+            _context: &'a EnvironmentContext,
             emulator_cmd: Command,
-        ) -> fho::Result<i32> {
-            self.did_start = true;
-            (self.start_test_fn)(emulator_cmd)?;
-            if !self.do_start {
-                fho::return_bug!("Test called start() when it wasn't supposed to.")
-            }
-            Ok(0)
+        ) -> BoxFuture<'a, fho::Result<i32>> {
+            Box::pin(async move {
+                self.did_start = true;
+                (self.start_test_fn)(emulator_cmd)?;
+                if !self.do_start {
+                    fho::return_bug!("Test called start() when it wasn't supposed to.")
+                }
+                Ok(0)
+            })
         }
         fn configure(&mut self) -> fho::Result<()> {
             self.did_configure = true;
@@ -918,21 +920,23 @@ mod tests {
             &self.config
         }
 
-        async fn is_running(&mut self) -> bool {
-            self.running
+        fn is_running(&mut self) -> BoxFuture<'_, bool> {
+            Box::pin(async move { self.running })
         }
 
-        async fn list_snapshots(&mut self) -> fho::Result<Vec<SnapshotInfo>> {
-            Ok(self
-                .snapshots
-                .iter()
-                .map(|name| SnapshotInfo {
-                    name: name.to_string(),
-                    vm_size: "382 MiB".to_string(),
-                    date: "2026-09-30 22:30:24".to_string(),
-                    vm_clock: "0000:00:19.615".to_string(),
-                })
-                .collect())
+        fn list_snapshots(&mut self) -> BoxFuture<'_, fho::Result<Vec<SnapshotInfo>>> {
+            Box::pin(async move {
+                Ok(self
+                    .snapshots
+                    .iter()
+                    .map(|name| SnapshotInfo {
+                        name: name.to_string(),
+                        vm_size: "382 MiB".to_string(),
+                        date: "2026-09-30 22:30:24".to_string(),
+                        vm_clock: "0000:00:19.615".to_string(),
+                    })
+                    .collect())
+            })
         }
     }
 

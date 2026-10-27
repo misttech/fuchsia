@@ -54,7 +54,6 @@ if (is_host) {
       "//src/lib/assembly/partitions_config",
       "//src/lib/assembly/product_bundle",
       "//src/lib/fuchsia",
-      "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:camino",
       "//third_party/rust_crates:mockall",
       "//third_party/rust_crates:regex",

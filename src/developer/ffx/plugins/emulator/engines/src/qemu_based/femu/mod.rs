@@ -7,14 +7,13 @@
 
 use super::get_host_tool;
 use crate::qemu_based::QemuBasedEngine;
-use async_trait::async_trait;
 use emulator_instance::{
     EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo, EmulatorInstances,
     EngineState, EngineType,
 };
 use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config;
-use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
+use ffx_emulator_config::{BoxFuture, EmulatorEngine, EngineConsoleType, ShowDetail};
 use fho::{Result, bug, return_bug};
 use std::path::Path;
 use std::process::Command;
@@ -52,39 +51,44 @@ impl FemuEngine {
     }
 }
 
-#[async_trait(?Send)]
 impl EmulatorEngine for FemuEngine {
     fn get_instance_data(&self) -> &EmulatorInstanceData {
         &self.data
     }
 
-    async fn stage(&mut self) -> Result<()> {
-        let ctx_clone = self.context.clone();
-        let result = <Self as QemuBasedEngine>::stage(&mut self, &ctx_clone)
-            .await
-            .and_then(|()| self.validate_staging());
-        match result {
-            Ok(()) => {
-                self.data.set_engine_state(EngineState::Staged);
-                self.save_to_disk().await
+    fn stage(&mut self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let ctx_clone = self.context.clone();
+            let result = <Self as QemuBasedEngine>::stage(self, &ctx_clone)
+                .await
+                .and_then(|()| self.validate_staging());
+            match result {
+                Ok(()) => {
+                    self.data.set_engine_state(EngineState::Staged);
+                    self.save_to_disk().await
+                }
+                Err(e) => {
+                    self.data.set_engine_state(EngineState::Error);
+                    self.save_to_disk().await.and(Err(e))
+                }
             }
-            Err(e) => {
-                self.data.set_engine_state(EngineState::Error);
-                self.save_to_disk().await.and(Err(e))
-            }
-        }
+        })
     }
 
-    async fn start(&mut self, context: &EnvironmentContext, emulator_cmd: Command) -> Result<i32> {
-        self.run(context, emulator_cmd).await
+    fn start<'a>(
+        &'a mut self,
+        context: &'a EnvironmentContext,
+        emulator_cmd: Command,
+    ) -> BoxFuture<'a, Result<i32>> {
+        Box::pin(async move { self.run(context, emulator_cmd).await })
     }
 
     fn show(&self, details: Vec<ShowDetail>) -> Vec<ShowDetail> {
         <Self as QemuBasedEngine>::show(self, details)
     }
 
-    async fn stop(&mut self) -> Result<()> {
-        self.stop_emulator().await
+    fn stop(&mut self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move { self.stop_emulator().await })
     }
 
     fn configure(&mut self) -> Result<()> {
@@ -112,15 +116,17 @@ impl EmulatorEngine for FemuEngine {
         self.data.get_engine_type()
     }
 
-    async fn is_running(&mut self) -> bool {
-        let running = self.data.is_running();
-        if self.engine_state() == EngineState::Running && running == false {
-            self.set_engine_state(EngineState::Staged);
-            if self.save_to_disk().await.is_err() {
-                log::warn!("Problem saving serialized emulator to disk during state update.");
+    fn is_running(&mut self) -> BoxFuture<'_, bool> {
+        Box::pin(async move {
+            let running = self.data.is_running();
+            if self.engine_state() == EngineState::Running && running == false {
+                self.set_engine_state(EngineState::Staged);
+                if self.save_to_disk().await.is_err() {
+                    log::warn!("Problem saving serialized emulator to disk during state update.");
+                }
             }
-        }
-        running
+            running
+        })
     }
 
     fn attach(&self, console: EngineConsoleType) -> Result<()> {
@@ -203,21 +209,25 @@ impl EmulatorEngine for FemuEngine {
         self.data.get_emulator_configuration_mut()
     }
 
-    async fn screenshot(&mut self, output_path: &Path) -> Result<()> {
-        let absolute_path = crate::qemu_based::make_absolute_path(output_path)?;
-        crate::qemu_based::check_screenshot_preconditions(self, &absolute_path);
-        self.capture_screenshot_console(&absolute_path).await
+    fn screenshot<'a>(&'a mut self, output_path: &'a Path) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let absolute_path = crate::qemu_based::make_absolute_path(output_path)?;
+            crate::qemu_based::check_screenshot_preconditions(self, &absolute_path);
+            self.capture_screenshot_console(&absolute_path).await
+        })
     }
 
-    async fn save_to_disk(&self) -> Result<()> {
-        emulator_instance::write_to_disk(
-            &self.data,
-            &self
-                .emu_instances
-                .get_instance_dir(self.data.get_name(), true)
-                .map_err(|e| anyhow::Error::from(e))?,
-        )
-        .map_err(|e| bug!("Error saving instance to disk: {e}"))
+    fn save_to_disk(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            emulator_instance::write_to_disk(
+                &self.data,
+                &self
+                    .emu_instances
+                    .get_instance_dir(self.data.get_name(), true)
+                    .map_err(|e| anyhow::Error::from(e))?,
+            )
+            .map_err(|e| bug!("Error saving instance to disk: {e}"))
+        })
     }
 }
 

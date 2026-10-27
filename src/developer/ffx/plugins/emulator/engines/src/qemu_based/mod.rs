@@ -1249,12 +1249,12 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use async_trait::async_trait;
     use emulator_instance::{
         DataAmount, DataUnits, EmulatorInstanceData, EmulatorInstanceInfo, EmulatorInstances,
         EngineType, PortMapping,
     };
     use ffx_config::environment::{EnvironmentKind, TestEnvBuilder};
+    use ffx_emulator_config::BoxFuture;
 
     use serde::{Deserialize, Serialize};
     use std::io::Read;
@@ -1281,7 +1281,6 @@ pub(crate) mod tests {
             self.state
         }
     }
-    #[async_trait(?Send)]
     impl EmulatorEngine for TestEngine {
         fn engine_state(&self) -> EngineState {
             self.state
@@ -1289,11 +1288,11 @@ pub(crate) mod tests {
         fn engine_type(&self) -> EngineType {
             EngineType::default()
         }
-        async fn is_running(&mut self) -> bool {
-            process::is_running(self.pid)
+        fn is_running(&mut self) -> BoxFuture<'_, bool> {
+            Box::pin(async { process::is_running(self.pid) })
         }
-        async fn save_to_disk(&self) -> Result<()> {
-            Ok(())
+        fn save_to_disk(&self) -> BoxFuture<'_, Result<()>> {
+            Box::pin(async { Ok(()) })
         }
     }
     const ORIGINAL: &str = "THIS_STRING";
