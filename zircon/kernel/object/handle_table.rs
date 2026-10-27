@@ -44,7 +44,7 @@ fn map_handle_to_value(base_value: u32, mixer: u32) -> zx_handle_t {
 }
 
 /// Maps a user-visible handle value and mixer back to a Handle pointer.
-fn map_value_to_handle(value: zx_handle_t, mixer: u32) -> Option<*mut Handle> {
+fn map_value_to_handle(value: zx_handle_t, mixer: u32) -> Option<NonNull<Handle>> {
     // Validate that the "must be one" bits are actually one.
     if (value & HANDLE_MUST_BE_ONE_MASK) != HANDLE_MUST_BE_ONE_MASK {
         return None;
@@ -56,34 +56,35 @@ fn map_value_to_handle(value: zx_handle_t, mixer: u32) -> Option<*mut Handle> {
 /// `HandleCursor` is used to reduce lock duration while iterating over a handle table.
 ///
 /// It allows iteration over the handle table to be broken up into multiple critical sections while
-/// ensuring the iterator remains well defined in the face of handle removal (via `advance_if` and
-/// `invalidate`).
+/// ensuring the iterator remains well defined in the face of handle removal (via
+/// `advance_all_if` and `invalidate_all`).
 ///
 /// # Thread-safety
 ///
 /// Instances of this struct may be used concurrently by multiple threads as long as the `next`
 /// method is only called by the thread that creates the object. Calling `next` from any other
 /// thread is an error. This limitation allows the iterating thread to hold the lock in "read"
-/// (a.k.a. shared) mode while iterating. Because all other methods require holding the lock in
-/// "write" (a.k.a. exclusive) mode, *and* because a reader-writer lock cannot be simultaneously
-/// held in both read and write modes, there is no concurrent access of the `iter` field.
+/// (a.k.a. shared) mode while iterating. Because all other methods take a write token guard, which
+/// proves the lock is held in "write" (a.k.a. exclusive) mode, *and* because a reader-writer lock
+/// cannot be simultaneously held in both read and write modes, there is no concurrent access of
+/// the `iter` field. The write-mode operations (`advance_all_if`, `invalidate_all`) reach every
+/// registered cursor through the table's `cursors` list, which is only accessible via that guard.
 #[derive(DoublyLinkedListContainable)]
-struct HandleCursor {
-    handle_table: *const HandleTable,
-    iter: *mut Handle,
+struct HandleCursor<'a> {
+    handle_table: &'a HandleTable,
+    iter: Option<NonNull<Handle>>,
     #[dll_node]
-    node: DoublyLinkedListNode<HandleCursor>,
-    // Once registered, `cursors` holds a raw pointer to this cursor, so it must not move. This
-    // mirrors the deleted copy/move constructors in C++.
+    node: DoublyLinkedListNode<HandleCursor<'a>>,
+    /// Once registered, `cursors` holds a pointer to this cursor, so it must not move in memory.
     _pin: PhantomPinned,
 }
 
-impl HandleCursor {
+impl<'a> HandleCursor<'a> {
     /// Creates a new unlinked `HandleCursor` associated with `table`.
-    const fn new(table: *const HandleTable) -> Self {
+    const fn new(table: &'a HandleTable) -> Self {
         Self {
             handle_table: table,
-            iter: core::ptr::null_mut(),
+            iter: None,
             node: DoublyLinkedListNode::new(),
             _pin: PhantomPinned,
         }
@@ -92,86 +93,96 @@ impl HandleCursor {
     /// Registers this cursor with the handle table and initializes its iterator to the front
     /// of `handles`.
     ///
-    /// The caller must hold the handle table lock in Writer mode (proven by `guard`).
-    fn register<'a, 'b>(self: Pin<&mut Self>, guard: &mut HandleTableLockWriteTokenGuard<'b, 'a>) {
+    /// `guard` proves the handle table lock is held in Writer mode.
+    fn register(self: Pin<&mut Self>, guard: &mut HandleTableLockWriteTokenGuard<'_, '_>) {
         // SAFETY: The cursor is never moved out of; the `Pin` guarantees its address stays stable
         // until `Drop`, which unregisters it from `cursors`.
         let this = unsafe { self.get_unchecked_mut() };
-        this.iter = guard
-            .handles()
-            .front()
-            .map_or(core::ptr::null_mut(), |h| h as *const Handle as *mut Handle);
+        this.iter = guard.handles().front().map(NonNull::from);
         // Register so this cursor can be invalidated or advanced if the handle it points to
-        // is removed.
+        // is removed. Derive the pointer from the mutable borrow so that `invalidate_all` and
+        // `advance_all_if`, which update `iter` through the `cursors` list, keep write provenance.
+        let ptr = NonNull::from(&mut *this).cast::<HandleCursor<'static>>();
         // SAFETY: `this` is pinned for the duration of its usage, and `unregister` unlinks it
-        // before it is dropped.
-        unsafe { guard.cursors_mut().push_front_raw(this as *mut HandleCursor) };
+        // before it is dropped (and before `'a` ends).
+        unsafe { guard.cursors_mut().push_front_raw(ptr) };
     }
 
     /// Unregisters this cursor from the handle table.
     ///
-    /// The caller must hold the handle table lock in Writer mode (proven by `guard`).
-    fn unregister<'a, 'b>(&mut self, guard: &mut HandleTableLockWriteTokenGuard<'b, 'a>) {
+    /// `guard` proves the handle table lock is held in Writer mode.
+    fn unregister(&mut self, guard: &mut HandleTableLockWriteTokenGuard<'_, '_>) {
+        // SAFETY: `self` was registered in `cursors` with its lifetime erased to `'static`.
+        let static_ref =
+            unsafe { &*core::ptr::from_ref::<Self>(self).cast::<HandleCursor<'static>>() };
         // SAFETY: `self` was registered in `cursors` by `register`.
-        unsafe { guard.cursors_mut().erase(self) };
+        unsafe { guard.cursors_mut().erase(static_ref) };
     }
 
-    /// Invalidate this cursor.
+    /// Invalidates every cursor registered with the handle table.
     ///
-    /// Once invalidated `next` will return None and `advance_if` will be a no-op.
+    /// Once invalidated `next` will return None and `advance_all_if` will be a no-op.
     ///
-    /// The caller must hold the `lock` in Writer mode.
-    fn invalidate(self: Pin<&mut Self>) {
-        // SAFETY: Only `iter` is updated; the cursor itself is never moved out of the `Pin`.
-        let this = unsafe { self.get_unchecked_mut() };
-        this.iter = core::ptr::null_mut();
+    /// `guard` proves the handle table lock is held in Writer mode, and is the only way to reach
+    /// the registered cursors.
+    fn invalidate_all(guard: &mut HandleTableLockWriteTokenGuard<'_, '_>) {
+        for cursor in guard.cursors_mut().iter_mut() {
+            // SAFETY: Only `iter` is updated; the cursor itself is never moved out of the `Pin`.
+            let this = unsafe { cursor.get_unchecked_mut() };
+            this.iter = None;
+        }
     }
 
     /// Advance the cursor and return the next Handle or None if at the end of the list.
     ///
     /// Once `next` has returned None, all subsequent calls will return None.
     ///
-    /// The caller must hold the handle table lock in Reader mode (proven by `guard`).
-    fn next<'a>(
+    /// `guard` proves the handle table lock is held in Reader mode.
+    fn next<'g>(
         self: Pin<&mut Self>,
-        _guard: &HandleTableLockReadGuard<'a>,
-    ) -> Option<*mut Handle> {
+        _guard: &'g HandleTableLockReadGuard<'_>,
+    ) -> Option<&'g Handle> {
         // SAFETY: Only `iter` is updated; the cursor itself is never moved out of the `Pin`.
         let this = unsafe { self.get_unchecked_mut() };
-        if this.iter.is_null() {
-            return None;
-        }
-        let handle_ptr = this.iter;
+        let handle_ptr = this.iter?;
         // Thread safety is guaranteed by holding the read guard for the handle table lock
         // across the HandleCursor step.
-        // SAFETY: Read lock is held via guard, and handle_ptr is valid within handles list.
-        let next = unsafe { *(*handle_ptr).get_node().next.get() };
-        this.iter = if is_sentinel_ptr(next) { core::ptr::null_mut() } else { next };
-        Some(handle_ptr)
+        // SAFETY: Read lock is held via `_guard` for `'g`, and `handle_ptr` is valid within the
+        // `handles` list.
+        let handle = unsafe { handle_ptr.as_ref() };
+        // SAFETY: The read lock is held, so the intrusive list links of `handle` are valid.
+        let next = unsafe { *handle.get_node().next.get() };
+        this.iter = if is_sentinel_ptr(next) { None } else { NonNull::new(next) };
+        Some(handle)
     }
 
-    /// If the next element is `h`, advance the cursor past it.
+    /// For every cursor registered with the handle table, if its next element is `h`, advance
+    /// the cursor past it.
     ///
-    /// The caller must hold the `lock` in Writer mode.
-    fn advance_if(self: Pin<&mut Self>, h: *const Handle) {
-        // SAFETY: Only `iter` is updated; the cursor itself is never moved out of the `Pin`.
-        let this = unsafe { self.get_unchecked_mut() };
-        if !this.iter.is_null() && core::ptr::eq(this.iter, h) {
-            // SAFETY: `this.iter` is a valid pointer inside `handles`.
-            let next = unsafe { *(*this.iter).get_node().next.get() };
-            this.iter = if is_sentinel_ptr(next) { core::ptr::null_mut() } else { next };
+    /// `guard` proves the handle table lock is held in Writer mode, and is the only way to reach
+    /// the registered cursors.
+    fn advance_all_if(guard: &mut HandleTableLockWriteTokenGuard<'_, '_>, h: &Handle) {
+        for cursor in guard.cursors_mut().iter_mut() {
+            // SAFETY: Only `iter` is updated; the cursor itself is never moved out of the `Pin`.
+            let this = unsafe { cursor.get_unchecked_mut() };
+            // If it points to `h`, skip over it.
+            if let Some(iter) = this.iter
+                && core::ptr::eq(iter.as_ptr(), h)
+            {
+                // SAFETY: `guard` proves the write lock is held and `h` is still linked in
+                // `handles`.
+                let next = unsafe { *h.get_node().next.get() };
+                this.iter = if is_sentinel_ptr(next) { None } else { NonNull::new(next) };
+            }
         }
     }
 }
 
-impl Drop for HandleCursor {
+impl Drop for HandleCursor<'_> {
     fn drop(&mut self) {
         if self.node.in_container() {
-            // SAFETY: `self.handle_table` is a valid pointer to the `HandleTable` associated with
-            // this cursor.
-            let table = unsafe { &*self.handle_table };
             let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
-            ksync::lock!(let mut guard = table.write_lock());
+            ksync::lock!(let mut guard = self.handle_table.write_lock());
             let mut token_guard = guard.as_mut().as_token_guard_mut();
             self.unregister(&mut token_guard);
         }
@@ -203,7 +214,7 @@ impl HandleEntry<'_, '_, '_> {
     pub fn remove(self) -> HandleOwner {
         // SAFETY: `self.ptr` was looked up in `self.table` under the write lock `self.guard` still
         // holds, and the exclusive borrow of the guard ensures nothing has removed it since.
-        unsafe { self.table.remove_handle_ptr_locked(self.ptr.as_ptr(), self.guard) }
+        unsafe { self.table.remove_handle_ptr_locked(self.ptr, self.guard) }
     }
 }
 
@@ -235,12 +246,12 @@ pub struct HandleTable {
     count: u32,
     #[pin]
     #[guarded_by(lock)]
-    handles: DoublyLinkedList<*mut Handle>,
+    handles: DoublyLinkedList<NonNull<Handle>>,
 
     // A list of cursors that contain pointers to elements of handles.
     #[pin]
     #[guarded_by(lock)]
-    cursors: DoublyLinkedList<*mut HandleCursor>,
+    cursors: DoublyLinkedList<NonNull<HandleCursor<'static>>>,
 }
 
 zr::static_assert!(
@@ -251,7 +262,7 @@ zr::static_assert!(
 );
 
 // SAFETY: A `HandleTable` is shared between the threads of every process attached to it. The
-// raw-pointer intrusive lists (`handles`, `cursors`) and `count` are only accessed while holding
+// pointer intrusive lists (`handles`, `cursors`) and `count` are only accessed while holding
 // `lock` (`BrwLockPi`), as enforced by `#[guarded_by(lock)]` and the token guards. The remaining
 // fields (`koid`, `random_value`) are immutable after construction, and `ref_count` is atomic.
 unsafe impl Send for HandleTable {}
@@ -309,21 +320,26 @@ impl HandleTable {
         map_handle_to_value(handle.base_value(), self.random_value)
     }
 
-    // Same as public `get_handle_locked` overload, except process can be None.
-    // When `caller` is None, no policy enforcement happens.
-    fn get_handle_locked_internal<'a>(
+    /// Looks up the arena slot for `handle_value` and verifies that it belongs to this table,
+    /// without materializing a reference to the `Handle`.
+    ///
+    /// The returned pointer carries the arena's original (write) provenance, so it may be used
+    /// to remove the handle from the table and hand ownership to a `HandleOwner`. When `caller`
+    /// is `Some`, a failed lookup enforces `ZX_POL_BAD_HANDLE` on the calling process; when it is
+    /// `None`, no policy enforcement happens.
+    ///
+    /// `_token` proves that the table lock is held (in either mode), which is what keeps the slot
+    /// from being removed and freed while the pointer is in use.
+    fn lookup_handle_locked_internal(
         &self,
         caller: Option<&ProcessDispatcher>,
         handle_value: zx_handle_t,
-        _token: &ksync::LockToken<'a, HandleTableLockClass>,
-    ) -> Option<HandleRef<'a>> {
+        _token: &ksync::LockToken<'_, HandleTableLockClass>,
+    ) -> Option<NonNull<Handle>> {
         if let Some(handle_ptr) = map_value_to_handle(handle_value, self.random_value) {
-            // SAFETY: `handle_ptr` points to a committed Handle in the arena.
-            let handle = unsafe { &*handle_ptr };
-            if handle.handle_table_id() == self.koid {
-                // SAFETY: `handle_ptr` is verified to be non-null and belongs to this table.
-                // `_token` statically proves that the table lock is held for lifetime `'a`.
-                return Some(unsafe { HandleRef::from_raw(NonNull::new_unchecked(handle_ptr)) });
+            // SAFETY: `handle_ptr` points to a committed arena slot returned by `Handle::from_u32`.
+            if unsafe { Handle::raw_handle_table_id(handle_ptr) } == self.koid {
+                return Some(handle_ptr);
             }
         }
 
@@ -334,10 +350,24 @@ impl HandleTable {
             // equivalent for ZX_POL_BAD_HANDLE.
             let _ = proc.enforce_basic_policy(ZX_POL_BAD_HANDLE);
         } else {
-            // In C++, the 'if (caller)' branch was annotated with __builtin_expect(!!(caller), 1)
+            // `caller` is almost always `Some`; mark the `None` (no-policy) path as cold.
             core::hint::cold_path();
         }
         None
+    }
+
+    /// Same as public `get_handle_locked` overload, except process can be None.
+    /// When `caller` is None, no policy enforcement happens.
+    fn get_handle_locked_internal<'a>(
+        &'a self,
+        caller: Option<&ProcessDispatcher>,
+        handle_value: zx_handle_t,
+        token: &'a ksync::LockToken<'_, HandleTableLockClass>,
+    ) -> Option<HandleRef<'a>> {
+        let handle_ptr = self.lookup_handle_locked_internal(caller, handle_value, token)?;
+        // SAFETY: `handle_ptr` belongs to this table, and `token` statically proves that the
+        // table lock is held for lifetime `'a`.
+        Some(unsafe { HandleRef::from_raw(handle_ptr) })
     }
 
     /// Retrieves a handle reference while holding the handle table lock.
@@ -351,14 +381,17 @@ impl HandleTable {
         self.get_handle_locked_internal(Some(caller), handle_value.raw_value(), _token)
     }
 
-    /// Retrieves a `HandleRef` while holding the table's write lock.
-    pub fn get_handle_write_locked<'a, 'b>(
+    /// Looks up the arena slot for `handle_value` while holding the table's write lock.
+    ///
+    /// Returns a pointer (rather than a `HandleRef`) so that the handle can subsequently be
+    /// removed from the table and owned through it; see [`Self::lookup_handle_locked_internal`].
+    fn lookup_handle_write_locked(
         &self,
         caller: Option<&ProcessDispatcher>,
         handle_value: zx_handle_t,
-        guard: &HandleTableLockWriteTokenGuard<'b, 'a>,
-    ) -> Option<HandleRef<'a>> {
-        self.get_handle_locked_internal(caller, handle_value, guard.token())
+        guard: &HandleTableLockWriteTokenGuard<'_, '_>,
+    ) -> Option<NonNull<Handle>> {
+        self.lookup_handle_locked_internal(caller, handle_value, guard.token())
     }
 
     /// Retrieves a mutable handle entry while holding the handle table write lock.
@@ -372,9 +405,7 @@ impl HandleTable {
         caller: &ProcessDispatcher,
         handle_value: HandleValue,
     ) -> Option<HandleEntry<'g, 'b, 'a>> {
-        let ptr = self
-            .get_handle_write_locked(Some(caller), handle_value.raw_value(), guard)?
-            .as_non_null();
+        let ptr = self.lookup_handle_write_locked(Some(caller), handle_value.raw_value(), guard)?;
         Some(HandleEntry { table: self, ptr, guard })
     }
 
@@ -403,20 +434,6 @@ impl HandleTable {
         self.add_handle_locked_guard(handle, &mut token_guard);
     }
 
-    /// Adds `handle` to this handle table while holding the write lock.
-    ///
-    /// # Safety
-    /// `token` must have been obtained by acquiring this table's `lock` in write mode.
-    pub unsafe fn add_handle_locked(
-        &self,
-        token: &mut ksync::LockToken<'_, HandleTableLockClass>,
-        handle: HandleOwner,
-    ) {
-        // SAFETY: The caller guarantees `token` belongs to `self.lock`.
-        let mut guard = unsafe { self.guard_write_lock(token) };
-        self.add_handle_locked_guard(handle, &mut guard);
-    }
-
     /// Adds `handle` to this handle table using an existing write token guard.
     pub fn add_handle_locked_guard<'a, 'b>(
         &self,
@@ -426,23 +443,8 @@ impl HandleTable {
         handle.set_handle_table_id(self.koid);
         let raw = handle.release();
         // SAFETY: `raw` is a valid unlinked `Handle` allocated in the arena.
-        unsafe { guard.handles_mut().push_front_raw(raw.as_ptr()) };
+        unsafe { guard.handles_mut().push_front_raw(raw) };
         *guard.count_mut() += 1;
-    }
-
-    /// Removes a handle by value from the handle table while holding the write lock.
-    ///
-    /// # Safety
-    /// `token` must have been obtained by acquiring this table's `lock` in write mode.
-    pub unsafe fn remove_handle_locked(
-        &self,
-        token: &mut ksync::LockToken<'_, HandleTableLockClass>,
-        caller: &ProcessDispatcher,
-        handle_value: HandleValue,
-    ) -> Option<HandleOwner> {
-        // SAFETY: The caller guarantees `token` belongs to `self.lock`.
-        let mut guard = unsafe { self.guard_write_lock(token) };
-        self.remove_handle_val_locked(Some(caller), handle_value.raw_value(), &mut guard)
     }
 
     /// Removes `handle` from this handle table while holding the write lock.
@@ -450,37 +452,34 @@ impl HandleTable {
     /// # Safety
     /// `handle_ptr` must point to an initialized `Handle` currently linked in this table's
     /// `handles` list.
-    pub unsafe fn remove_handle_ptr_locked<'a, 'b>(
+    unsafe fn remove_handle_ptr_locked<'a, 'b>(
         &self,
-        handle_ptr: *mut Handle,
+        handle_ptr: NonNull<Handle>,
         guard: &mut HandleTableLockWriteTokenGuard<'b, 'a>,
     ) -> HandleOwner {
         debug_assert!(*guard.count() > 0);
         // SAFETY: Write lock is held and `handle_ptr` is a valid member of `handles`.
-        let handle = unsafe { &mut *handle_ptr };
+        let handle = unsafe { handle_ptr.as_ref() };
         handle.set_handle_table_id(ZX_KOID_INVALID);
         // Make sure we don't leave any dangling cursors.
-        for cursor in guard.cursors_mut().iter_mut() {
-            // If it points to handle_ptr, skip over it.
-            cursor.advance_if(handle_ptr);
-        }
+        HandleCursor::advance_all_if(guard, handle);
         // SAFETY: `handle` is linked in `handles`.
         unsafe { guard.handles_mut().erase(handle) };
         *guard.count_mut() -= 1;
-        // SAFETY: `handle_ptr` was just unlinked from this table and is valid.
-        unsafe { HandleOwner::from_raw(handle_ptr).unwrap() }
+        // SAFETY: `handle_ptr` was just unlinked from this table and is now uniquely owned.
+        unsafe { HandleOwner::from_non_null(handle_ptr) }
     }
 
-    /// Removes a handle from the table by handle value when caller holds the write lock.
+    /// Removes a handle from the table by handle value; `guard` proves the write lock is held.
     pub fn remove_handle_val_locked<'a, 'b>(
         &self,
         caller: Option<&ProcessDispatcher>,
         handle_value: zx_handle_t,
         guard: &mut HandleTableLockWriteTokenGuard<'b, 'a>,
     ) -> Option<HandleOwner> {
-        let handle_ref = self.get_handle_write_locked(caller, handle_value, guard)?;
-        // SAFETY: `handle_ref` was retrieved from this table and is linked in `handles`.
-        Some(unsafe { self.remove_handle_ptr_locked(handle_ref.as_ptr() as *mut Handle, guard) })
+        let handle_ptr = self.lookup_handle_write_locked(caller, handle_value, guard)?;
+        // SAFETY: `handle_ptr` was retrieved from this table and is linked in `handles`.
+        Some(unsafe { self.remove_handle_ptr_locked(handle_ptr, guard) })
     }
 
     /// Removes a handle by user-facing handle value.
@@ -687,7 +686,7 @@ impl HandleTable {
     ///
     /// `func` must not perform any operations on the handle table (e.g. adding or removing
     /// handles).
-    pub fn for_each_handle_locked<'a, 'b, F>(
+    fn for_each_handle_locked<'a, 'b, F>(
         &self,
         guard: &HandleTableLockReadTokenGuard<'b, 'a>,
         mut func: F,
@@ -765,12 +764,10 @@ impl HandleTable {
             {
                 ksync::lock!(let guard = self.read_lock());
                 while count < MAX_BATCH_SIZE {
-                    let Some(handle_ptr) = cursor.as_mut().next(&guard) else {
+                    let Some(handle) = cursor.as_mut().next(&guard) else {
                         done = true;
                         break;
                     };
-                    // SAFETY: Read lock is held and handle_ptr is valid within handles list.
-                    let handle = unsafe { &*handle_ptr };
                     batch[count] = Some(Args {
                         handle_value: self.map_handle_to_value(handle).raw_value(),
                         rights: handle.rights(),
@@ -828,14 +825,12 @@ impl HandleTable {
 
     /// Cleans up all handles in the handle table when all associated processes terminate.
     pub fn clean(&self) {
-        stack_pin_init!(let to_clean = DoublyLinkedList::<*mut Handle>::new());
+        stack_pin_init!(let to_clean = DoublyLinkedList::<NonNull<Handle>>::new());
         {
             let _preempt_disable = AutoExpiringPreemptDisabler::with_default_timeslice_extension();
             ksync::lock!(let mut guard = self.write_lock());
             let mut token_guard = guard.as_mut().as_token_guard_mut();
-            for cursor in token_guard.cursors_mut().iter_mut() {
-                cursor.invalidate();
-            }
+            HandleCursor::invalidate_all(&mut token_guard);
             *token_guard.count_mut() = 0;
             let handles = token_guard.handles_mut();
             for handle in handles.iter() {
@@ -848,7 +843,7 @@ impl HandleTable {
         while let Some(handle_ptr) = to_clean.as_mut().pop_front() {
             // Delete handle via HandleOwner dtor.
             // SAFETY: `handle_ptr` was unlinked from the table and is a valid allocated Handle.
-            drop(unsafe { HandleOwner::from_raw(handle_ptr).unwrap() });
+            drop(unsafe { HandleOwner::from_non_null(handle_ptr) });
         }
     }
 }
@@ -869,30 +864,30 @@ pub type HandleTableReadGuard<'a> = HandleTableLockReadGuard<'a>;
 /// RAII writer lock guard for a handle table.
 pub type HandleTableWriteGuard<'a> = HandleTableLockWriteGuard<'a>;
 
-impl<'a> HandleTableLockReadGuard<'a> {
+impl HandleTableLockReadGuard<'_> {
     /// Retrieves a handle reference while holding the handle table lock.
     #[inline]
     pub fn get_handle(
         &self,
         caller: &ProcessDispatcher,
         handle_value: HandleValue,
-    ) -> Option<HandleRef<'a>> {
+    ) -> Option<HandleRef<'_>> {
         self.parent.get_handle_locked_internal(Some(caller), handle_value.raw_value(), self.token())
     }
 }
 
-impl<'a> HandleTableLockWriteGuard<'a> {
+impl HandleTableLockWriteGuard<'_> {
     /// Retrieves a handle reference while holding the handle table write lock.
     #[inline]
     pub fn get_handle(
         &self,
         caller: &ProcessDispatcher,
         handle_value: HandleValue,
-    ) -> Option<HandleRef<'a>> {
+    ) -> Option<HandleRef<'_>> {
         self.parent.get_handle_locked_internal(Some(caller), handle_value.raw_value(), self.token())
     }
 
-    /// Adds an owned handle to the handle table while holding the write lock.
+    /// Adds an owned handle to the handle table under the write lock this guard holds.
     #[inline]
     pub fn add_handle(self: Pin<&mut Self>, handle: HandleOwner) {
         let parent = self.parent;
@@ -900,7 +895,7 @@ impl<'a> HandleTableLockWriteGuard<'a> {
         parent.add_handle_locked_guard(handle, &mut guard);
     }
 
-    /// Removes a handle by value from the handle table while holding the write lock.
+    /// Removes a handle by value from the handle table under the write lock this guard holds.
     #[inline]
     pub fn remove_handle(
         self: Pin<&mut Self>,
@@ -910,22 +905,6 @@ impl<'a> HandleTableLockWriteGuard<'a> {
         let parent = self.parent;
         let mut guard = self.as_token_guard_mut();
         parent.remove_handle_val_locked(Some(caller), handle_value.raw_value(), &mut guard)
-    }
-
-    /// Removes a handle known to be in this handle table while holding the write lock.
-    ///
-    /// # Safety
-    ///
-    /// The caller must guarantee that `handle` belongs to `self.parent`, is currently
-    /// linked in its handles list, and that no other `HandleRef` instances or copies will
-    /// be accessed after removal.
-    #[inline]
-    pub unsafe fn remove_handle_ref(self: Pin<&mut Self>, handle: HandleRef<'_>) -> HandleOwner {
-        let parent = self.parent;
-        let mut guard = self.as_token_guard_mut();
-        // SAFETY: The caller guarantees `handle` belongs to `self.parent` and is currently
-        // linked in its handles list.
-        unsafe { parent.remove_handle_ptr_locked(handle.as_ptr() as *mut _, &mut guard) }
     }
 }
 
@@ -962,7 +941,7 @@ pub unsafe extern "C" fn rust_handle_table_destroy(table: *mut HandleTable) {
 /// `table` must be a valid reference to an initialized `HandleTable`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_handle_table_get_lock(table: &HandleTable) -> *mut core::ffi::c_void {
-    core::ptr::from_ref(&table.lock).cast_mut().cast()
+    table.lock.raw_lock().as_mut_ptr()
 }
 
 /// Maps a `Handle` pointer to a user-visible handle value using the table's mixer.
@@ -997,9 +976,11 @@ pub unsafe extern "C" fn rust_handle_table_get_handle_locked(
     let token = unsafe { ksync::LockToken::new() };
     // SAFETY: `caller` if non-null points to a valid ProcessDispatcher for the call duration.
     let caller_ref = NonNull::new(caller).map(|c| unsafe { c.as_ref() });
+    // Return the arena slot pointer directly (rather than casting through a `HandleRef`) so the
+    // C++ caller receives the original write provenance it needs to remove or delete the handle.
     table
-        .get_handle_locked_internal(caller_ref, handle_value, &token)
-        .map_or(core::ptr::null_mut(), |r| r.as_ptr() as *mut Handle)
+        .lookup_handle_locked_internal(caller_ref, handle_value, &token)
+        .map_or(core::ptr::null_mut(), NonNull::as_ptr)
 }
 
 /// Returns the current number of handles in `table`.

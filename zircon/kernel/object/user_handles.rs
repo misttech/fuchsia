@@ -304,7 +304,8 @@ fn put_handles_from_user<'a, T: FromBytes>(
     ) -> Result<HandleOwner, Status>,
 ) -> Result<(&'a mut [T], Result<(), Status>), Status> {
     let num_handles = msg.num_handles();
-    debug_assert!(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES as usize); // This must be checked before calling.
+    // This must be checked before calling.
+    debug_assert!(num_handles <= ZX_CHANNEL_MAX_MSG_HANDLES as usize);
     // `msg` is created with `owns_handles = false`, so if copying from userspace fails before any
     // handles are written to `handles_ptr`, `MessagePacket::drop` will not inspect `handles_ptr`.
     let items = user_in.copy_slice_from_user(&mut buf[..num_handles])?;
@@ -370,7 +371,8 @@ pub fn remove_user_handles(
         // We process `num_handles` in chunks of `ZX_CHANNEL_MAX_MSG_HANDLES` because we don't have
         // a limit on how large `num_handles` can be.
         let chunk_size = cmp::min(num_handles - offset, ZX_CHANNEL_MAX_MSG_HANDLES as usize);
-        // A copy failure wins over any earlier remove failure, matching the C++ `break`.
+        // Stop immediately and return the copy error if reading from userspace fails, overriding
+        // any earlier handle removal error.
         let chunk =
             user_handles.element_offset(offset).copy_slice_from_user(&mut handles[..chunk_size])?;
 

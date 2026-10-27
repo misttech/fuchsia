@@ -12,7 +12,7 @@ use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use fbl::{DoublyLinkedListNode, HasRefCount, Recyclable, RefPtr};
-use relaxed_atomic::RelaxedAtomicU64;
+use relaxed_atomic::{RelaxedAtomicU32, RelaxedAtomicU64};
 use zx_status::Status;
 use zx_types::{ZX_KOID_INVALID, zx_handle_t, zx_koid_t, zx_rights_t, zx_status_t};
 
@@ -143,9 +143,19 @@ pub struct Handle {
     handle_table_id: RelaxedAtomicU64,
     dispatcher: RefPtr<Dispatcher>,
     rights: zx_rights_t,
-    base_value: u32,
+    base_value: RelaxedAtomicU32,
     #[dll_node]
     node_state: DoublyLinkedListNode<Handle>,
+}
+
+impl core::fmt::Debug for Handle {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Handle")
+            .field("handle_table_id", &self.handle_table_id())
+            .field("rights", &self.rights)
+            .field("base_value", &self.base_value())
+            .finish_non_exhaustive()
+    }
 }
 
 // This layout is mirrored by `HandleLayoutCheck` in handle.cc, which pins the C++ view of the same
@@ -164,7 +174,8 @@ zr::static_assert!(
         <= HANDLE_PRESERVE_SIZE
 );
 zr::static_assert!(
-    core::mem::offset_of!(Handle, base_value) + core::mem::size_of::<u32>() <= HANDLE_PRESERVE_SIZE
+    core::mem::offset_of!(Handle, base_value) + core::mem::size_of::<RelaxedAtomicU32>()
+        <= HANDLE_PRESERVE_SIZE
 );
 zr::static_assert!(
     core::mem::offset_of!(Handle, dispatcher) + core::mem::size_of::<RefPtr<Dispatcher>>()
@@ -182,6 +193,33 @@ impl Handle {
     #[inline]
     pub fn handle_table_id(&self) -> zx_koid_t {
         self.handle_table_id.load()
+    }
+
+    /// Reads `handle_table_id` from a committed arena slot without materializing `&Handle`.
+    ///
+    /// # Safety
+    /// `ptr` must point to a committed slot in the handle arena (such as one returned by
+    /// [`Handle::from_u32`]).
+    #[inline]
+    pub(crate) unsafe fn raw_handle_table_id(ptr: NonNull<Self>) -> zx_koid_t {
+        // SAFETY: `ptr` points to a committed arena slot whose `handle_table_id` field lies
+        // within `HANDLE_PRESERVE_SIZE` and is always valid as a `RelaxedAtomicU64`. We must
+        // not materialize `&Handle` here because a freed slot has a null `dispatcher`.
+        unsafe { (&*core::ptr::addr_of!((*ptr.as_ptr()).handle_table_id)).load() }
+    }
+
+    /// Reads `base_value` from a committed arena slot without materializing `&Handle`.
+    ///
+    /// # Safety
+    /// `ptr` must point to a committed slot in the handle arena. The slot may be free: the arena
+    /// preserves `base_value` across allocations so the next allocation can derive a fresh value
+    /// from it.
+    #[inline]
+    unsafe fn raw_base_value(ptr: NonNull<Self>) -> u32 {
+        // SAFETY: `ptr` points to a committed arena slot whose `base_value` field lies within
+        // `HANDLE_PRESERVE_SIZE` and is always valid as a `RelaxedAtomicU32`. We must not
+        // materialize `&Handle` here because a freed slot has a null `dispatcher`.
+        unsafe { (&*core::ptr::addr_of!((*ptr.as_ptr()).base_value)).load() }
     }
 
     /// Sets the owning handle table KOID and propagates it to the dispatcher if applicable.
@@ -208,16 +246,16 @@ impl Handle {
     /// Returns the internal base value for this handle.
     #[inline]
     pub fn base_value(&self) -> u32 {
-        self.base_value
+        self.base_value.load()
     }
 
     /// Initializes the global handle table arena.
-    pub fn init_global_arena() -> Result<(), Status> {
+    fn init_global_arena() -> Result<(), Status> {
         HandleTableArena::init()
     }
 
     /// Maps a 32-bit handle base value back to a pointer to a `Handle`.
-    pub fn from_u32(value: u32) -> Option<*mut Handle> {
+    pub(crate) fn from_u32(value: u32) -> Option<NonNull<Handle>> {
         HandleTableArena::from_u32(value)
     }
 
@@ -226,22 +264,44 @@ impl Handle {
         dispatcher.current_handle_count()
     }
 
+    /// Initializes an allocated arena slot field by field. The atomic `handle_table_id` and
+    /// `base_value` fields are written with atomic stores because lockless lookups may read them
+    /// concurrently; a whole-struct `write` would race with those readers.
+    ///
+    /// # Safety
+    /// `addr` must point to an allocated, writable `Handle` slot in the handle arena.
+    unsafe fn init_slot(
+        addr: NonNull<u8>,
+        dispatcher: RefPtr<Dispatcher>,
+        rights: zx_rights_t,
+        base_value: u32,
+    ) -> NonNull<Handle> {
+        let ptr = addr.cast::<Handle>();
+        let raw = ptr.as_ptr();
+        // SAFETY: `addr` points to a writable `Handle` slot in the arena. `handle_table_id` and
+        // `base_value` lie within `HANDLE_PRESERVE_SIZE` and may be read concurrently by lockless
+        // lookups, so they are updated via atomic stores; the remaining fields are initialized
+        // with `write`.
+        unsafe {
+            (&*core::ptr::addr_of_mut!((*raw).handle_table_id)).store(ZX_KOID_INVALID);
+            core::ptr::addr_of_mut!((*raw).dispatcher).write(dispatcher);
+            core::ptr::addr_of_mut!((*raw).rights).write(rights);
+            (&*core::ptr::addr_of_mut!((*raw).base_value)).store(base_value);
+            core::ptr::addr_of_mut!((*raw).node_state).write(DoublyLinkedListNode::new());
+        }
+        ptr
+    }
+
     /// Creates a newly allocated `Handle` pointing to `dispatcher` with `rights`.
     pub fn make(dispatcher: RefPtr<Dispatcher>, rights: zx_rights_t) -> Option<HandleOwner> {
         let (addr, base_value) = HandleTableArena::alloc(&dispatcher, "new")?;
         HANDLE_COUNT_MADE.add(1);
         HANDLE_COUNT_LIVE.add(1);
-        let ptr = addr.as_ptr().cast::<Handle>();
-        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`, and `init_slot` initializes
+        // it into a uniquely owned `Handle`.
         unsafe {
-            ptr.write(Handle {
-                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
-                dispatcher,
-                rights,
-                base_value,
-                node_state: DoublyLinkedListNode::new(),
-            });
-            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+            let ptr = Self::init_slot(addr, dispatcher, rights, base_value);
+            Some(HandleOwner::from_non_null(ptr))
         }
     }
 
@@ -254,17 +314,11 @@ impl Handle {
         let dispatcher = kernel_handle.release();
         HANDLE_COUNT_MADE.add(1);
         HANDLE_COUNT_LIVE.add(1);
-        let ptr = addr.as_ptr().cast::<Handle>();
-        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`, and `init_slot` initializes
+        // it into a uniquely owned `Handle`.
         unsafe {
-            ptr.write(Handle {
-                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
-                dispatcher,
-                rights,
-                base_value,
-                node_state: DoublyLinkedListNode::new(),
-            });
-            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+            let ptr = Self::init_slot(addr, dispatcher, rights, base_value);
+            Some(HandleOwner::from_non_null(ptr))
         }
     }
 
@@ -273,52 +327,53 @@ impl Handle {
         let (addr, base_value) = HandleTableArena::alloc(source.dispatcher(), "duplicate")?;
         HANDLE_COUNT_DUPED.add(1);
         HANDLE_COUNT_LIVE.add(1);
-        let ptr = addr.as_ptr().cast::<Handle>();
-        // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
+        // SAFETY: `addr` is an allocated slot from `HandleTableArena`, and `init_slot` initializes
+        // it into a uniquely owned `Handle`.
         unsafe {
             // Although this handle is intended to become owned by source.handle_table_id at the
             // point of creation it is stack owned and may be destroyed without actually being
             // assigned to the handle table. If this happens the assert in Handle::delete would get
             // triggered.
-            ptr.write(Handle {
-                handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
-                dispatcher: source.dispatcher.clone(),
-                rights,
-                base_value,
-                node_state: DoublyLinkedListNode::new(),
-            });
-            Some(HandleOwner::from_non_null(NonNull::new_unchecked(ptr)))
+            let ptr = Self::init_slot(addr, source.dispatcher.clone(), rights, base_value);
+            Some(HandleOwner::from_non_null(ptr))
         }
     }
 
     /// Deletes a handle, running its destructor and returning its memory slot to the arena.
-    fn delete(handle: *mut Handle) {
-        debug_assert!(!handle.is_null());
+    fn delete(handle: NonNull<Handle>) {
+        let raw = handle.as_ptr();
 
-        // SAFETY: `handle` is a valid, non-null pointer to an allocated `Handle`.
-        let Handle { handle_table_id, dispatcher, rights: _, base_value, node_state } =
-            unsafe { handle.read() };
+        // SAFETY: `handle` points to an allocated `Handle` slot in the arena. `handle_table_id`
+        // and `base_value` are read atomically because concurrent lockless lookups may inspect
+        // them, while `dispatcher` and `node_state` are moved out of the uniquely owned slot.
+        let (handle_table_id, dispatcher, base_value, node_state) = unsafe {
+            (
+                Self::raw_handle_table_id(handle),
+                core::ptr::addr_of!((*raw).dispatcher).read(),
+                Self::raw_base_value(handle),
+                core::ptr::addr_of!((*raw).node_state).read(),
+            )
+        };
 
         // There may be stale pointers to this slot and they will look at handle_table_id. We
         // expect handle_table_id to already have been cleared by the process dispatcher before
         // the handle got to this point.
-        debug_assert!(handle_table_id.load() == ZX_KOID_INVALID);
+        debug_assert!(handle_table_id == ZX_KOID_INVALID);
 
         if dispatcher.is_waitable() {
-            dispatcher.cancel_raw(handle.cast());
+            dispatcher.cancel_raw(raw.cast());
         }
 
         // The destructor should not do anything interesting but call it for completeness.
         drop(node_state);
         // Make sure the base value was not altered by the destructor.
-        // SAFETY: `handle` is non-null and points to the arena slot whose base_value was preserved.
-        debug_assert!(unsafe { core::ptr::addr_of!((*handle).base_value).read() } == base_value);
+        // SAFETY: `handle` points to the arena slot whose `base_value` was preserved.
+        debug_assert!(unsafe { Self::raw_base_value(handle) } == base_value);
 
-        // SAFETY: In C++, moving `handle->dispatcher_` sets the pointer to nullptr.
-        // We write null into the slot's dispatcher field so the debug assertion in `alloc()`
-        // verifies that recycled slots have null dispatcher pointers.
+        // SAFETY: Write null into the slot's preserved `dispatcher` field so the debug assertion in
+        // `alloc()` can verify that recycled slots have a null dispatcher pointer.
         unsafe {
-            core::ptr::addr_of_mut!((*handle).dispatcher)
+            core::ptr::addr_of_mut!((*raw).dispatcher)
                 .cast::<*mut ()>()
                 .write(core::ptr::null_mut());
         }
@@ -327,7 +382,7 @@ impl Handle {
 
         // SAFETY: `handle` was allocated by `cpp_handle_arena_alloc` and its contents have been
         // destructured.
-        unsafe { cpp_handle_arena_free(handle.cast()) };
+        unsafe { cpp_handle_arena_free(raw.cast()) };
 
         if zero_handles {
             dispatcher.on_zero_handles();
@@ -389,10 +444,6 @@ impl HandleTableArena {
     /// object. `base_value` gets the value for `Handle::base_value`. `what`
     /// says whether this is allocation or duplication, for the error message.
     fn alloc(dispatcher: &Dispatcher, what: &str) -> Option<(NonNull<u8>, u32)> {
-        // Allocate space for a Handle from the arena, but don't instantiate the
-        // object. `base_value` gets the value for `Handle::base_value`. `what`
-        // says whether this is allocation or duplication, for the error message.
-
         // Attempt to allocate a handle.
         // SAFETY: `cpp_handle_arena_alloc` allocates a raw slot in the global handle arena.
         let raw_addr = unsafe { cpp_handle_arena_alloc() };
@@ -414,31 +465,29 @@ impl HandleTableArena {
         }
 
         dispatcher.increment_handle_count();
-        let handle_ptr = addr.as_ptr().cast::<Handle>();
+        let handle_ptr = addr.cast::<Handle>();
         // checking the handle_table_id and dispatcher is really about trying to catch cases
         // where this Handle might somehow already be in use.
         // SAFETY: `handle_ptr` points to the newly allocated uninitialized arena slot.
         unsafe {
-            debug_assert!(
-                (&*core::ptr::addr_of!((*handle_ptr).handle_table_id)).load() == ZX_KOID_INVALID
-            );
-            let disp_ptr = core::ptr::addr_of!((*handle_ptr).dispatcher).cast::<*const ()>().read();
+            debug_assert!(Handle::raw_handle_table_id(handle_ptr) == ZX_KOID_INVALID);
+            let disp_ptr =
+                core::ptr::addr_of!((*handle_ptr.as_ptr()).dispatcher).cast::<*const ()>().read();
             debug_assert!(disp_ptr.is_null());
         }
-        let base_value = Self::get_new_base_value(addr.as_ptr());
+        let base_value = Self::get_new_base_value(handle_ptr);
         Some((addr, base_value))
     }
 
-    // Returns a new base_value based on the value stored in the free arena slot pointed to by addr.
-    // The new value will be different from the last base_value used by this slot.
-    fn get_new_base_value(addr: *mut u8) -> u32 {
+    /// Returns a new base_value based on the value stored in the free arena slot pointed to by
+    /// `handle`. The new value will be different from the last base_value used by this slot.
+    fn get_new_base_value(handle: NonNull<Handle>) -> u32 {
         // Get the index of this slot within the arena.
-        let handle_index = Self::handle_to_index(addr.cast());
+        let handle_index = Self::handle_to_index(handle.as_ptr());
         // Check the free memory for a stashed base_value.
-        // SAFETY: `addr` points to an arena slot whose previous base value is preserved across
+        // SAFETY: `handle` points to an arena slot whose previous base value is preserved across
         // allocations.
-        let old_base_value =
-            unsafe { core::ptr::addr_of!((*addr.cast::<Handle>()).base_value).read() };
+        let old_base_value = unsafe { Handle::raw_base_value(handle) };
         new_handle_value(handle_index, old_base_value)
     }
 
@@ -457,7 +506,7 @@ impl HandleTableArena {
     }
 
     /// Maps a 32-bit handle value back to a pointer to a `Handle`.
-    fn from_u32(value: u32) -> Option<*mut Handle> {
+    fn from_u32(value: u32) -> Option<NonNull<Handle>> {
         let index = handle_value_to_index(value);
         let handle_addr = Self::index_to_handle(index);
         // SAFETY: Checks if `handle_addr` is committed in the arena.
@@ -471,16 +520,12 @@ impl HandleTableArena {
         // SAFETY: Confines `handle_addr` to ensure it is within the arena boundary without
         // speculative bypass.
         let handle_addr = unsafe { cpp_handle_arena_confine(handle_addr) };
-        let handle = core::ptr::with_exposed_provenance_mut::<Handle>(handle_addr);
+        let handle = NonNull::new(core::ptr::with_exposed_provenance_mut::<Handle>(handle_addr))?;
         // SAFETY: `handle` points to committed, confined arena memory.
-        let actual_base = unsafe { core::ptr::addr_of!((*handle).base_value).read() };
+        let actual_base = unsafe { Handle::raw_base_value(handle) };
         let safe_addr =
             fbl::conditional_select_nospec_eq(actual_base as usize, value as usize, handle_addr, 0);
-        if safe_addr == 0 {
-            None
-        } else {
-            Some(core::ptr::with_exposed_provenance_mut::<Handle>(safe_addr))
-        }
+        NonNull::new(core::ptr::with_exposed_provenance_mut::<Handle>(safe_addr))
     }
 
     /// Returns the number of currently allocated handles in the arena.
@@ -512,17 +557,23 @@ pub struct HandleOwner {
 
 impl HandleOwner {
     /// Creates a new `HandleOwner` from a non-null `Handle` pointer.
-    pub fn from_non_null(ptr: NonNull<Handle>) -> Self {
+    ///
+    /// # Safety
+    /// Caller must ensure `ptr` is a valid, uniquely owned pointer to an allocated `Handle`.
+    #[inline]
+    pub unsafe fn from_non_null(ptr: NonNull<Handle>) -> Self {
         Self { ptr }
     }
 
     /// Creates a new `HandleOwner` from a raw `Handle` pointer if non-null.
     ///
     /// # Safety
-    /// Caller must ensure `ptr` is a valid pointer to an allocated `Handle`.
+    /// Caller must ensure `ptr` is null or a valid, uniquely owned pointer to an allocated
+    /// `Handle`.
     #[inline]
     pub unsafe fn from_raw(ptr: *mut Handle) -> Option<Self> {
-        NonNull::new(ptr).map(|ptr| Self { ptr })
+        // SAFETY: The caller guarantees `ptr`, if non-null, is a valid uniquely owned `Handle`.
+        NonNull::new(ptr).map(|ptr| unsafe { Self::from_non_null(ptr) })
     }
 
     /// Releases ownership of the pointer without running its destructor.
@@ -559,8 +610,7 @@ impl HandleOwner {
     /// Returns a borrowed `HandleRef` referencing this handle.
     #[inline]
     pub fn as_ref(&self) -> HandleRef<'_> {
-        // SAFETY: `self.ptr` is a valid owned handle pointer for the lifetime of `&self`.
-        unsafe { HandleRef::from_raw(self.ptr) }
+        HandleRef::new(self)
     }
 
     /// Returns a borrowed reference to the handle's dispatcher without incrementing its reference
@@ -597,13 +647,6 @@ impl core::ops::Deref for HandleOwner {
     }
 }
 
-impl core::ops::DerefMut for HandleOwner {
-    fn deref_mut(&mut self) -> &mut Handle {
-        // SAFETY: `self.ptr` is non-null and uniquely owned for mutable access.
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
 impl core::borrow::Borrow<Handle> for HandleOwner {
     #[inline]
     fn borrow(&self) -> &Handle {
@@ -621,7 +664,7 @@ impl core::borrow::Borrow<Handle> for &HandleOwner {
 impl Drop for HandleOwner {
     #[inline]
     fn drop(&mut self) {
-        Handle::delete(self.ptr.as_ptr());
+        Handle::delete(self.ptr);
     }
 }
 
@@ -777,13 +820,19 @@ where
 /// A borrowed reference to a Handle stored in a process's handle table.
 ///
 /// Holding this reference guarantees that the handle table lock is held for lifetime `'a`.
+#[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct HandleRef<'a> {
-    ptr: NonNull<Handle>,
-    _marker: core::marker::PhantomData<&'a ()>,
+    handle: &'a Handle,
 }
 
 impl<'a> HandleRef<'a> {
+    /// Creates a new `HandleRef` wrapping `handle`.
+    #[inline]
+    pub(crate) const fn new(handle: &'a Handle) -> Self {
+        Self { handle }
+    }
+
     /// Creates a new `HandleRef` from a non-null raw handle pointer.
     ///
     /// # Safety
@@ -792,76 +841,62 @@ impl<'a> HandleRef<'a> {
     /// is held for the lifetime `'a`.
     #[inline]
     pub unsafe fn from_raw(ptr: NonNull<Handle>) -> Self {
-        Self { ptr, _marker: core::marker::PhantomData }
+        // SAFETY: The caller guarantees `ptr` points to a valid `Handle` for `'a`.
+        Self { handle: unsafe { ptr.as_ref() } }
     }
 
     /// Returns whether this handle possesses the requested rights.
     #[inline]
     pub fn has_rights(&self, rights: zx_rights_t) -> bool {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().has_rights(rights) }
+        self.handle.has_rights(rights)
     }
 
     /// Returns the rights mask of the handle.
     #[inline]
     pub fn rights(&self) -> zx_rights_t {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().rights() }
+        self.handle.rights()
     }
 
     /// Duplicates this handle with the given rights.
     #[inline]
     pub fn dup(&self, rights: zx_rights_t) -> Result<HandleOwner, Status> {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        Handle::dup(unsafe { self.ptr.as_ref() }, rights).ok_or(Status::NO_MEMORY)
+        Handle::dup(self.handle, rights).ok_or(Status::NO_MEMORY)
     }
 
     /// Returns the base value of the handle.
     #[inline]
     pub fn base_value(&self) -> u32 {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().base_value() }
+        self.handle.base_value()
     }
 
     /// Returns the handle table KOID owning this handle.
     #[inline]
     pub fn handle_table_id(&self) -> zx_koid_t {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().handle_table_id() }
+        self.handle.handle_table_id()
     }
 
     /// Returns a cloned `RefPtr` to the handle's dispatcher.
     #[inline]
     pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().dispatcher().clone() }
+        self.handle.dispatcher().clone()
     }
 
     /// Returns a shared reference to the handle's dispatcher.
     #[inline]
     pub fn dispatcher_ref(&self) -> &Dispatcher {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is held.
-        unsafe { self.ptr.as_ref().dispatcher() }
+        self.handle.dispatcher()
     }
 
     /// Returns a shared reference to the underlying `Handle`.
     #[inline]
     pub fn as_handle(&self) -> &'a Handle {
-        // SAFETY: `self.ptr` points to a valid `Handle` while the handle table lock is
-        // held for `'a`.
-        unsafe { self.ptr.as_ref() }
+        self.handle
     }
 
     /// Returns a raw pointer to the handle.
     #[inline]
     pub fn as_ptr(&self) -> *const Handle {
-        self.ptr.as_ptr()
-    }
-
-    /// Returns the non-null pointer to the handle.
-    #[inline]
-    pub(crate) fn as_non_null(&self) -> NonNull<Handle> {
-        self.ptr
+        core::ptr::from_ref(self.handle)
     }
 }
 
@@ -936,18 +971,8 @@ pub unsafe extern "C" fn rust_handle_make(
     // SAFETY: Ownership of the dispatcher reference count is transferred by C++ caller upon
     // non-null return.
     let ref_ptr = unsafe { RefPtr::from_raw(dispatcher) };
-    let ptr = addr.as_ptr().cast::<Handle>();
     // SAFETY: `addr` is an allocated slot from `HandleTableArena`.
-    unsafe {
-        ptr.write(Handle {
-            handle_table_id: RelaxedAtomicU64::new(ZX_KOID_INVALID),
-            dispatcher: ref_ptr,
-            rights,
-            base_value,
-            node_state: DoublyLinkedListNode::new(),
-        });
-        ptr
-    }
+    unsafe { Handle::init_slot(addr, ref_ptr, rights, base_value).as_ptr() }
 }
 
 /// Destroys a handle and returns its memory to the handle table arena.
@@ -1226,7 +1251,7 @@ mod tests {
 
         let ptr = Handle::from_u32(base_val);
         expect_true!(ptr.is_some());
-        expect_eq!(ptr.unwrap() as *const Handle, ho.as_raw());
+        expect_eq!(ptr.unwrap().as_ptr() as *const Handle, ho.as_raw());
 
         expect_true!(Handle::from_u32(base_val ^ 0x1234_5678).is_none());
         drop(ho);

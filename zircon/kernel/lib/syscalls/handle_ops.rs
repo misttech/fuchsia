@@ -64,8 +64,8 @@ fn handle_dup_replace_process(
     }
 
     // When replacing, the source handle is removed from the table (and closed when the returned
-    // `HandleOwner` drops) exactly where C++ called `RemoveHandleLocked`: on a rights mismatch and
-    // after a successful `Handle::dup`. A `NO_MEMORY` failure leaves the source handle in place.
+    // `HandleOwner` drops) on a rights mismatch and after a successful `dup`; a `NO_MEMORY`
+    // failure from `dup` leaves the source handle in place.
     if rights == ZX_RIGHT_SAME_RIGHTS {
         rights = source.as_ref().rights();
     } else if (source.as_ref().rights() & rights) != rights {

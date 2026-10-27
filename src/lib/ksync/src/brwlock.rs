@@ -49,6 +49,12 @@ impl<Class: LockClass> BrwLockPi<Class> {
     ) -> impl PinInit<BrwLockPiWriteGuard<'_, Class>, core::convert::Infallible> {
         BrwLockPiWriteGuard::new(self)
     }
+
+    /// Returns a reference to the underlying raw lock.
+    #[inline]
+    pub fn raw_lock(&self) -> &RawBrwLockPi {
+        &self.lock
+    }
 }
 
 /// A validation guard representing reader lock ownership and active list participation.
