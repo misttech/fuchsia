@@ -24,7 +24,6 @@ source_set("vm") {
     "evictor.cc",
     "kstack.cc",
     "lz4_compressor.cc",
-    "mem_command.cc",
     "page_queues.cc",
     "page_source.cc",
     "page_source_ffi.cc",
@@ -104,8 +103,6 @@ kernel_bindgen_crate("evictor-bindings") {
   type_allowlist = [
     "Evictor",
     "Evictor_EvictionLevel",
-    "Evictor_Output",
-    "Evictor_TriggerReason",
     "Evictor_EvictionTarget",
     "Evictor_EvictedPageCounts",
     "Evictor_EvictionResult",
@@ -122,11 +119,7 @@ kernel_bindgen_crate("evictor-bindings") {
     "ktl::atomic",
     "std::atomic",
   ]
-  rustified_enum = [
-    "Evictor_EvictionLevel",
-    "Evictor_Output",
-    "Evictor_TriggerReason",
-  ]
+  rustified_enum = [ "Evictor_EvictionLevel" ]
   function_blocklist = [ "Evictor_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [ "//zircon/kernel/kernel:event-bindings" ]
@@ -1573,6 +1566,7 @@ kernel_rust_mod("vm-rs") {
     "discardable_vmo_tracker.rs",
     "evictor.rs",
     "fault.rs",
+    "mem_command.rs",
     "memory_stats.rs",
     "mod.rs",
     "name.rs",

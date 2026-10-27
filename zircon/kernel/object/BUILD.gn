@@ -171,7 +171,6 @@ kernel_bindgen_crate("executor-bindings") {
     "HandleOwner",
     "MemoryWatchdog",
   ]
-  type_blocklist = [ "MemoryWatchdog_.*" ]
   opaque_types = [
     "HandleOwner",
     "MemoryWatchdog",

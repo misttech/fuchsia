@@ -154,8 +154,6 @@ uint64_t pmm_count_loan_cancelled_pages() { return Pmm::Node().CountLoanCancelle
 
 uint64_t pmm_count_total_bytes() { return Pmm::Node().CountTotalBytes(); }
 
-Evictor* pmm_evictor() { return Pmm::Node().GetEvictor(); }
-
 void pmm_checker_check_all_free_pages() { Pmm::Node().CheckAllFreePages(); }
 
 #if __has_feature(address_sanitizer)

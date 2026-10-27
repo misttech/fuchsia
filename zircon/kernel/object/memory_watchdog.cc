@@ -13,9 +13,6 @@ extern "C" {
 
 void rust_memory_watchdog_construct(ffi::Uninitialized<MemoryWatchdog>* storage);
 void rust_memory_watchdog_destroy(void* storage);
-uint64_t rust_memory_watchdog_debug_num_bytes_till_pressure_level(const void* storage,
-                                                                  uint8_t level);
-void rust_memory_watchdog_dump(const void* storage);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE const MemoryWatchdog* cpp_get_memory_watchdog() { return &GetMemoryWatchdog(); }
@@ -28,10 +25,3 @@ MemoryWatchdog::MemoryWatchdog() {
 }
 
 MemoryWatchdog::~MemoryWatchdog() { rust_memory_watchdog_destroy(&opaque_storage_); }
-
-uint64_t MemoryWatchdog::DebugNumBytesTillPressureLevel(PressureLevel level) {
-  return rust_memory_watchdog_debug_num_bytes_till_pressure_level(&opaque_storage_,
-                                                                  static_cast<uint8_t>(level));
-}
-
-void MemoryWatchdog::Dump() { rust_memory_watchdog_dump(&opaque_storage_); }

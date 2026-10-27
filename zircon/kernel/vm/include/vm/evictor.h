@@ -40,16 +40,6 @@ class Evictor {
     IncludeNewest = 1,
   };
 
-  enum class Output : bool {
-    Print = true,
-    NoPrint = false,
-  };
-
-  enum class TriggerReason : bool {
-    OOM = true,
-    Other = false,
-  };
-
   // Eviction target state is grouped together behind a lock to allow different threads to safely
   // trigger and perform the eviction.
   struct EvictionTarget {
@@ -117,16 +107,6 @@ class Evictor {
   // Evict from a user specified external |target| which is only used for this eviction attempt and
   // does not interfere with the |eviction_target_|.
   EvictionResult EvictFromExternalTarget(EvictionTarget target);
-
-  // Performs a synchronous request to evict until free memory equals |free_mem_start| (in bytes)
-  // and at least |min_mem_to_free| (in bytes) has been reclaimed. The return value is an
-  // EvictionResult detailing exactly what was evicted and whether the free_mem_target was achieved.
-  // The |eviction_level| is a rough control that maps to how old a page needs to be for being
-  // considered for eviction. This may acquire arbitrary vmo and aspace locks.
-  EvictionResult EvictSynchronous(uint64_t min_mem_to_free, uint64_t free_mem_target,
-                                  EvictionLevel eviction_level = EvictionLevel::OnlyOldest,
-                                  Output output = Output::NoPrint,
-                                  TriggerReason reason = TriggerReason::Other);
 
   using TestReclaimFunction = bool (*)(void* ctx, VmCompression* compression,
                                        EvictionLevel eviction_level, bool* out_is_ok,

@@ -120,9 +120,6 @@ uint64_t pmm_count_total_bytes();
 // Return the PageQueues.
 inline PageQueues* pmm_page_queues() { return Pmm::Node().GetPageQueues(); }
 
-// Return the Evictor.
-Evictor* pmm_evictor();
-
 // virtual to physical for kernel addresses.
 paddr_t vaddr_to_paddr(const void* va);
 

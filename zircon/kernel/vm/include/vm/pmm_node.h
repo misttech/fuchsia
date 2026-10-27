@@ -289,8 +289,6 @@ class PmmNode {
     return alloc_failed_no_mem_.load(ktl::memory_order_relaxed);
   }
 
-  Evictor* GetEvictor() { return &evictor_; }
-
   // If randomly waiting on allocations is enabled, this re-seeds from the global prng, otherwise it
   // does nothing.
   void SeedRandomShouldWait();

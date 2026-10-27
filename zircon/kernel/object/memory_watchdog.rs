@@ -1065,33 +1065,3 @@ pub unsafe extern "C" fn rust_memory_watchdog_destroy(storage: *mut MemoryWatchd
         core::ptr::drop_in_place(storage);
     }
 }
-
-/// Returns the number of bytes of memory to allocate to reach `level`.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_debug_num_bytes_till_pressure_level(
-    storage: *const MemoryWatchdogState,
-    level: u8,
-) -> u64 {
-    // SAFETY: `storage` points to a valid, initialized `MemoryWatchdogState`.
-    let state = unsafe { &*storage };
-    let Ok(level) = PressureLevel::try_from(level) else {
-        return 0;
-    };
-    state.debug_num_bytes_till_pressure_level(level)
-}
-
-/// Dumps the current memory watchdog state to the kernel log.
-///
-/// # Safety
-///
-/// `storage` must point to a valid, initialized `MemoryWatchdogState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_memory_watchdog_dump(storage: *const MemoryWatchdogState) {
-    // SAFETY: `storage` points to a valid, initialized `MemoryWatchdogState`.
-    let state = unsafe { &*storage };
-    state.dump();
-}

@@ -17,10 +17,6 @@ void rust_evictor_enable_eviction(Evictor* evictor, bool use_compression);
 void rust_evictor_evict_from_external_target(Evictor* evictor,
                                              const Evictor::EvictionTarget* target,
                                              Evictor::EvictionResult* out_result);
-void rust_evictor_evict_synchronous(Evictor* evictor, uint64_t min_mem_to_free,
-                                    uint64_t free_mem_target, Evictor::EvictionLevel eviction_level,
-                                    Evictor::Output output, Evictor::TriggerReason reason,
-                                    Evictor::EvictionResult* out_result);
 void rust_evictor_debug_get_eviction_target(const Evictor* evictor,
                                             Evictor::EvictionTarget* out_target);
 void rust_evictor_combine_eviction_target(Evictor* evictor, const Evictor::EvictionTarget* target);
@@ -45,16 +41,6 @@ void Evictor::EnableEviction(bool use_compression) {
 Evictor::EvictionResult Evictor::EvictFromExternalTarget(Evictor::EvictionTarget target) {
   EvictionResult result;
   rust_evictor_evict_from_external_target(this, &target, &result);
-  return result;
-}
-
-Evictor::EvictionResult Evictor::EvictSynchronous(uint64_t min_mem_to_free,
-                                                  uint64_t free_mem_target,
-                                                  EvictionLevel eviction_level, Output output,
-                                                  TriggerReason reason) {
-  EvictionResult result;
-  rust_evictor_evict_synchronous(this, min_mem_to_free, free_mem_target, eviction_level, output,
-                                 reason, &result);
   return result;
 }
 

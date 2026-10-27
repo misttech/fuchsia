@@ -16,6 +16,8 @@ pub mod evictor;
 pub mod fault;
 #[path = "../lib/heap/heap.rs"]
 pub mod heap;
+#[cfg(console_enabled)]
+mod mem_command;
 pub mod memory_stats;
 pub mod name;
 pub mod page;

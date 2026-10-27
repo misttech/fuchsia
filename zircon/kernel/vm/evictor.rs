@@ -77,27 +77,12 @@ pub enum Output {
     Print = 1,
 }
 
-// Compile-time layout assertions against C++ Output
-zr::static_assert!(
-    core::mem::size_of::<Output>() == core::mem::size_of::<bindings::Evictor_Output>()
-);
-zr::static_assert!(Output::Print as u8 == bindings::Evictor_Output::Print as u8);
-zr::static_assert!(Output::NoPrint as u8 == bindings::Evictor_Output::NoPrint as u8);
-
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum TriggerReason {
     Other = 0,
     OOM = 1,
 }
-
-// Compile-time layout assertions against C++ TriggerReason
-zr::static_assert!(
-    core::mem::size_of::<TriggerReason>()
-        == core::mem::size_of::<bindings::Evictor_TriggerReason>()
-);
-zr::static_assert!(TriggerReason::OOM as u8 == bindings::Evictor_TriggerReason::OOM as u8);
-zr::static_assert!(TriggerReason::Other as u8 == bindings::Evictor_TriggerReason::Other as u8);
 
 /// Eviction target state is grouped together behind a lock to allow different threads to safely
 /// trigger and perform the eviction.
@@ -1353,35 +1338,6 @@ pub unsafe extern "C" fn rust_evictor_evict_from_external_target(
     // writing.
     unsafe {
         *out_result = evictor.evict_from_external_target(*target);
-    }
-}
-
-/// Performs synchronous eviction on `evictor`, writing the result to `out_result`.
-///
-/// # Safety
-///
-/// The caller must ensure that `evictor` is a valid reference to an initialized `Evictor` and
-/// `out_result` is a valid, aligned, non-null pointer writable for the duration of the call.
-// SAFETY: Symbol name is prefixed with `rust_evictor_` and matches `evictor.cc`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_evictor_evict_synchronous(
-    evictor: &Evictor,
-    min_mem_to_free: u64,
-    free_mem_target: u64,
-    eviction_level: EvictionLevel,
-    output: Output,
-    reason: TriggerReason,
-    out_result: *mut EvictionResult,
-) {
-    // SAFETY: The caller guarantees `out_result` is valid for writing.
-    unsafe {
-        *out_result = evictor.evict_synchronous(
-            min_mem_to_free,
-            free_mem_target,
-            eviction_level,
-            output,
-            reason,
-        );
     }
 }
 
