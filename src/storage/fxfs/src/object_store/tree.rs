@@ -18,6 +18,15 @@ pub trait MajorCompactable<K: 'static, V: 'static> {
     ) -> impl Future<Output = Result<impl LayerIterator<K, V>, Error>> + Send {
         ready(Ok(iter))
     }
+
+    /// Returns an iterator that wraps another iterator that is appropriate for minor compactions.
+    /// Such an iterator may elide items that don't need to be written given `layers_to_keep`.
+    fn minor_iter(
+        iter: impl LayerIterator<K, V>,
+        _layers_to_keep: impl AsRef<[LockedLayer<K, V>]> + Send + Sync,
+    ) -> impl Future<Output = Result<impl LayerIterator<K, V>, Error>> + Send {
+        ready(Ok(iter))
+    }
 }
 
 type Layers<K, V> = Vec<LockedLayer<K, V>>;
@@ -88,7 +97,8 @@ where
             let major_iter = LSMTree::<K, V>::major_iter(iter).await?;
             compact_with_iterator(major_iter, total_len, writer, block_size, yielder).await
         } else {
-            compact_with_iterator(iter, total_len, writer, block_size, yielder).await
+            let minor_iter = LSMTree::<K, V>::minor_iter(iter, &layers_to_keep).await?;
+            compact_with_iterator(minor_iter, total_len, writer, block_size, yielder).await
         }
         .context("ObjectStore::flush")?;
 

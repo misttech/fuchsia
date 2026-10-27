@@ -7,8 +7,8 @@
 use crate::errors::FxfsError;
 use crate::filesystem::{FlushReason, ForceMajor};
 use crate::log::*;
-use crate::lsm_tree::types::{ItemRef, LayerIterator};
-use crate::lsm_tree::{LSMTree, layer_from_handle};
+use crate::lsm_tree::types::{ItemRef, LayerIterator, MaybeContainsKey};
+use crate::lsm_tree::{LSMTree, LockedLayer, layer_from_handle};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
 use crate::object_store::extent_record::ExtentValue;
 use crate::object_store::object_manager::{ObjectManager, ReservationUpdate};
@@ -540,18 +540,23 @@ impl ObjectStore {
 mod tests {
     use super::{FlushReason, ForceMajor};
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder};
+    use crate::lsm_tree::types::{LayerIterator, MaybeContainsKey};
     use crate::object_handle::{
         INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
     };
-    use crate::object_store::directory::Directory;
+    use crate::object_store::allocator::max_extent_size_for_block_size;
+    use crate::object_store::directory::{Directory, replace_child};
+    use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::journal::JournalOptions;
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, LockKey, NewChildStoreOptions, ObjectStore, StoreOptions,
-        layer_size_from_encrypted_mutations_size,
+        DirType, HandleOptions, LockKey, NewChildStoreOptions, ObjectKey, ObjectStore, ObjectValue,
+        StoreOptions, layer_size_from_encrypted_mutations_size,
     };
     use fxfs_insecure_crypto::new_insecure_crypt;
+    use std::collections::HashSet;
+    use std::ops::Bound;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -1163,6 +1168,585 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_temporary_file_create_and_delete_does_not_force_major_compaction() {
+        let device = DeviceHolder::new(FakeDevice::new(65536, 512));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(JournalOptions { reclaim_size: 32768, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_id = store.store_object_id();
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // 1. Populate the store with old files so that its base layer exceeds 512 KiB
+        // (`DEFAULT_RECLAIM_SIZE`).
+        for i in 0..2000 {
+            let filename = format!("base_{i:04}_{:<200}", i);
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store_id, root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir
+                .create_child_file(&mut transaction, &filename)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        fs.journal().force_compact().await.expect("force_compact failed");
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+        fs.journal().force_compact().await.expect("force_compact failed");
+
+        let (base_layer_object_id, base_layer_len) = {
+            let layers = store.tree().immutable_layer_set().layers;
+            assert_eq!(layers.len(), 1);
+            assert!(layers[0].handle().unwrap().get_size() > 512 * 1024);
+            (layers[0].handle().unwrap().object_id(), layers[0].len())
+        };
+
+        // 2. Repeatedly create temporary files and delete/tombstone them across `NUM_TEMP_FILES`
+        // iterations, forcing minor compactions between creation and deletion periodically so that
+        // the creation records and tombstones span separate minor layers before merging.
+        const NUM_TEMP_FILES: usize = 200;
+        const MINOR_FLUSH_INTERVAL: usize = 25;
+        let graveyard_dir_id = store.graveyard_directory_object_id();
+        let mut tombstone_keys = Vec::with_capacity(NUM_TEMP_FILES * 3);
+        for i in 0..NUM_TEMP_FILES {
+            let filename = format!("tmp_{i:04}");
+            let oid = {
+                let mut transaction = store
+                    .new_transaction(
+                        lock_keys![LockKey::object(store_id, root_dir.object_id())],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                let file = root_dir
+                    .create_child_file(&mut transaction, &filename)
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+                file.object_id()
+            };
+
+            // Periodically flush right after creating the file so its live records are written to
+            // a persistent minor layer before it is deleted. That forces subsequent minor
+            // compactions to merge creation and tombstone records across separate persistent minor
+            // layers, while the remaining iterations exercise creation and deletion within the same
+            // mutable layer between journal-triggered compactions.
+            if i % MINOR_FLUSH_INTERVAL == 0 {
+                store
+                    .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+                    .await
+                    .expect("minor flush failed");
+            }
+
+            {
+                let mut context = root_dir
+                    .acquire_context_for_replace(None, filename.as_str(), true)
+                    .await
+                    .expect("acquire_context failed");
+                replace_child(&mut context.transaction, None, (&root_dir, filename.as_str()))
+                    .await
+                    .expect("replace_child failed");
+                context.transaction.commit().await.expect("commit failed");
+            }
+            fs.graveyard().queue_tombstone_object(store_id, oid);
+            fs.graveyard().flush().await;
+
+            tombstone_keys.push(ObjectKey::object(oid));
+            tombstone_keys.push(ObjectKey::child(root_dir.object_id(), &filename, DirType::Normal));
+            tombstone_keys.push(ObjectKey::graveyard_entry(graveyard_dir_id, oid));
+        }
+        fs.journal().force_compact().await.expect("force_compact failed");
+
+        // Almost all temporary file records and tombstones should have been eliminated during minor
+        // compactions via the base layer's bloom filter without ever rewriting the > 512 KiB base
+        // layer.
+        {
+            let layers = store.tree().immutable_layer_set().layers;
+            assert_eq!(layers.len(), 2);
+
+            // Every compaction allocates a fresh layer object ID and moves old layers to the
+            // graveyard, so matching `base_layer_object_id` proves no major compaction occurred.
+            assert_eq!(layers[1].handle().unwrap().object_id(), base_layer_object_id);
+            assert_eq!(layers[1].len(), base_layer_len);
+
+            // Without minor-compaction tombstone elision, `layers[0]` would contain
+            // `1 + 3 * NUM_TEMP_FILES` (601) items (`root_dir` plus `Object`, `Child`, and
+            // `GraveyardEntry` tombstones for all 200 deleted files). With tombstone elision,
+            // `layers[0]` retains only `root_dir` plus whichever tombstones hit a false positive in
+            // `layers[1]`'s bloom filter.
+            let expected_false_positives = tombstone_keys
+                .iter()
+                .filter(|key| layers[1].maybe_contains_key(key) != MaybeContainsKey::False)
+                .count();
+            assert_eq!(layers[0].len(), 1 + expected_false_positives);
+
+            // `layers[1]`'s bloom filter targets a 0.1% false-positive rate (`TARGET_FP_RATE =
+            // 0.001`), so across 600 tombstone keys the expected false-positive count is < 0.6
+            // (and P(> 15) < 1e-19), compared to 601 items without tombstone elision.
+            assert!(
+                layers[0].len() <= 16,
+                "unexpectedly many items in minor layer: {}",
+                layers[0].len()
+            );
+
+            let mut iter = layers[0].seek(Bound::Unbounded).await.expect("seek failed");
+            let mut saw_root_dir = false;
+            let mut count = 0;
+            while let Some(item) = iter.get() {
+                count += 1;
+                if item.key == &ObjectKey::object(root_dir.object_id()) {
+                    saw_root_dir = true;
+                } else {
+                    // Any other surviving item in the minor layer must be a tombstone kept due to a
+                    // bloom filter false positive against the base layer.
+                    assert!(
+                        matches!(
+                            item.value,
+                            ObjectValue::None | ObjectValue::Extent(ExtentValue::None)
+                        ),
+                        "unexpected non-tombstone item in minor layer: {item:?}"
+                    );
+                    assert_ne!(
+                        layers[1].maybe_contains_key(item.key),
+                        MaybeContainsKey::False,
+                        "tombstone survived despite base layer bloom filter returning False: \
+                         {item:?}"
+                    );
+                }
+                iter.advance().await.expect("advance failed");
+            }
+            assert!(saw_root_dir, "expected root_dir item in minor layer");
+            assert_eq!(count, layers[0].len());
+        }
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_minor_compaction_extent_tombstones() {
+        const MIB: u64 = 1024 * 1024;
+        let device = DeviceHolder::new(FakeDevice::new(16384, 4096));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let store_id = store.store_object_id();
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // 1. Populate the store with 2000 files so its base layer exceeds 512 KiB
+        // (`DEFAULT_RECLAIM_SIZE`), plus four files exercising multi-MiB extent ranges across the
+        // 1 MiB fuzzy-hash buckets (`EXTENT_HASH_BUCKET_SIZE`) and `MAX_HASH_PARTITIONS` (4):
+        //   - `large_base_file`: single contiguous maximum-sized (`1.75 MiB` for 4 KiB blocks)
+        //     extent at `512 KiB..2.25 MiB`, spanning 3 buckets (`[0..1M)`, `[1..2M)`, `[2..3M)`).
+        //   - `tail_4m_file`: 4 KiB extent only in the 4th bucket (`3.5 MiB..3.5 MiB + 4 KiB`).
+        //   - `tail_8m_file`: 4 KiB extent only in the 8th bucket (`7.5 MiB..7.5 MiB + 4 KiB`).
+        //   - `prefix_base_file`: 64 KiB extent only in the 1st bucket (`0..64 KiB`).
+        for i in 0..2000 {
+            let filename = format!("base_{i:04}_{:<200}", i);
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store_id, root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir
+                .create_child_file(&mut transaction, &filename)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        let create_file = |name: &'static str| {
+            let store = &store;
+            let root_dir = &root_dir;
+            async move {
+                let mut transaction = store
+                    .new_transaction(
+                        lock_keys![LockKey::object(store_id, root_dir.object_id())],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                let file = root_dir
+                    .create_child_file(&mut transaction, name)
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+                file
+            }
+        };
+
+        let large_base_len = max_extent_size_for_block_size(fs.block_size());
+        assert_eq!(large_base_len, 1792 * 1024);
+        let large_base_start = 512 * 1024;
+        let large_base_end = large_base_start + large_base_len;
+        let large_base_file = create_file("large_base_file").await;
+        {
+            let mut buf = large_base_file.allocate_buffer(large_base_len as usize).await;
+            buf.fill(0xaa);
+            large_base_file
+                .write_or_append(Some(large_base_start), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+
+        let tail_4m_offset = 3 * MIB + 512 * 1024;
+        let tail_4m_file = create_file("tail_4m_file").await;
+        {
+            let mut buf = tail_4m_file.allocate_buffer(4096).await;
+            buf.fill(0xbb);
+            tail_4m_file
+                .write_or_append(Some(tail_4m_offset), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+
+        let tail_8m_offset = 7 * MIB + 512 * 1024;
+        let tail_8m_file = create_file("tail_8m_file").await;
+        {
+            let mut buf = tail_8m_file.allocate_buffer(4096).await;
+            buf.fill(0xcc);
+            tail_8m_file
+                .write_or_append(Some(tail_8m_offset), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+
+        let prefix_base_file = create_file("prefix_base_file").await;
+        {
+            let mut buf = prefix_base_file.allocate_buffer(64 * 1024).await;
+            buf.fill(0xdd);
+            prefix_base_file
+                .write_or_append(Some(0), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+        let base_layer_object_id = {
+            let layers = store.tree().immutable_layer_set().layers;
+            assert_eq!(layers.len(), 1);
+            assert!(layers[0].handle().unwrap().get_size() > 512 * 1024);
+
+            // Confirm `large_base_file`'s 1.75 MiB allocation is stored as a single contiguous
+            // extent record spanning 3 fuzzy-hash buckets (`[0..1M)`, `[1..2M)`, `[2..3M)`) in the
+            // base layer.
+            let expected_key = ObjectKey::extent(
+                large_base_file.object_id(),
+                large_base_file.attribute_id(),
+                large_base_start..large_base_end,
+            );
+            let iter =
+                layers[0].seek(Bound::Included(&expected_key)).await.expect("base seek failed");
+            assert_eq!(iter.get().map(|item| item.key), Some(&expected_key));
+
+            layers[0].handle().unwrap().object_id()
+        };
+
+        // 2. Write new multi-MiB extents in ranges that have no records in the base layer (`1..4
+        // MiB` on `prefix_base_file` and `0..4 MiB` on a newly created `temp_extent_file`), and
+        // flush them into a persistent minor layer.
+        {
+            let mut buf = prefix_base_file.allocate_buffer((3 * MIB) as usize).await;
+            buf.fill(0xee);
+            prefix_base_file
+                .write_or_append(Some(MIB), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+        let temp_extent_file = create_file("temp_extent_file").await;
+        {
+            let mut buf = temp_extent_file.allocate_buffer((4 * MIB) as usize).await;
+            buf.fill(0xff);
+            temp_extent_file
+                .write_or_append(Some(0), buf.as_ref())
+                .await
+                .expect("write_or_append failed");
+        }
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("first minor flush failed");
+
+        // 3. Delete/zero extent ranges across all five files and run another minor compaction:
+        //   - On `large_base_file` (`512 KiB..2.25 MiB` in base): punch holes at the start in
+        //     bucket 0 (`512..516 KiB`), strictly inside interior bucket 1 (`1.5 MiB..1.5 MiB +
+        //     4 KiB`), straddling the bucket 1/2 boundary (`2 MiB - 4 KiB..2 MiB + 4 KiB`), and at
+        //     the very end in bucket 2 (`2.25 MiB - 4 KiB..2.25 MiB`).
+        //   - On `tail_4m_file`: zero `0..4 MiB` (4 buckets == `MAX_HASH_PARTITIONS`, overlapping
+        //     the base extent only in the 4th bucket).
+        //   - On `tail_8m_file`: zero `0..8 MiB` (8 buckets > `MAX_HASH_PARTITIONS`, returning
+        //     `RangeKeyTooLarge` and overlapping the base extent only in the 8th bucket).
+        //   - On `prefix_base_file`: zero `1..4 MiB` (buckets 1..4 are absent from the base layer,
+        //     even though bucket 0 is present for `prefix_base_file`).
+        //   - On `temp_extent_file`: truncate to 0 (emitting `0..4 MiB` `ExtentValue::None` across
+        //     4 buckets, all absent from the base layer).
+        let hole_start = large_base_start..(large_base_start + 4096);
+        let hole_interior = (MIB + 512 * 1024)..(MIB + 512 * 1024 + 4096);
+        let hole_boundary = (2 * MIB - 4096)..(2 * MIB + 4096);
+        let hole_end = (large_base_end - 4096)..large_base_end;
+        for hole in
+            [hole_start.clone(), hole_interior.clone(), hole_boundary.clone(), hole_end.clone()]
+        {
+            let mut transaction =
+                large_base_file.new_transaction().await.expect("new_transaction failed");
+            large_base_file.zero(&mut transaction, hole).await.expect("zero failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        {
+            let mut transaction =
+                tail_4m_file.new_transaction().await.expect("new_transaction failed");
+            tail_4m_file.zero(&mut transaction, 0..4 * MIB).await.expect("zero failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        {
+            let mut transaction =
+                tail_8m_file.new_transaction().await.expect("new_transaction failed");
+            tail_8m_file.zero(&mut transaction, 0..8 * MIB).await.expect("zero failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        {
+            let mut transaction =
+                prefix_base_file.new_transaction().await.expect("new_transaction failed");
+            prefix_base_file.zero(&mut transaction, MIB..4 * MIB).await.expect("zero failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        temp_extent_file.truncate(0).await.expect("truncate failed");
+
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("second minor flush failed");
+
+        // 4. Verify `maybe_contains_key` behavior and surviving `ExtentValue::None` records in the
+        // compacted minor layer (`layers[0]`), confirming no major compaction occurred.
+        let must_keep_keys = [
+            ObjectKey::extent(
+                large_base_file.object_id(),
+                large_base_file.attribute_id(),
+                hole_start.clone(),
+            ),
+            ObjectKey::extent(
+                large_base_file.object_id(),
+                large_base_file.attribute_id(),
+                hole_interior.clone(),
+            ),
+            ObjectKey::extent(
+                large_base_file.object_id(),
+                large_base_file.attribute_id(),
+                hole_boundary.clone(),
+            ),
+            ObjectKey::extent(
+                large_base_file.object_id(),
+                large_base_file.attribute_id(),
+                hole_end.clone(),
+            ),
+            ObjectKey::extent(tail_4m_file.object_id(), tail_4m_file.attribute_id(), 0..4 * MIB),
+            ObjectKey::extent(tail_8m_file.object_id(), tail_8m_file.attribute_id(), 0..8 * MIB),
+        ];
+        let elidable_keys = [
+            ObjectKey::extent(
+                prefix_base_file.object_id(),
+                prefix_base_file.attribute_id(),
+                MIB..4 * MIB,
+            ),
+            ObjectKey::extent(
+                temp_extent_file.object_id(),
+                temp_extent_file.attribute_id(),
+                0..4 * MIB,
+            ),
+        ];
+
+        {
+            let layers = store.tree().immutable_layer_set().layers;
+            assert_eq!(layers.len(), 2);
+            assert_eq!(layers[1].handle().unwrap().object_id(), base_layer_object_id);
+
+            // All 5 `<= 4`-bucket overlapping keys must return `Maybe` against the base layer
+            // (covering start, interior, boundary, and end buckets of `large_base_file` as well as
+            // `0..4 MiB` hitting only in the 4th bucket of `tail_4m_file`).
+            for key in &must_keep_keys[..5] {
+                assert_eq!(layers[1].maybe_contains_key(key), MaybeContainsKey::Maybe, "{key:?}");
+            }
+
+            // The 8-bucket key on `tail_8m_file` exceeds `MAX_HASH_PARTITIONS` (4) and must return
+            // `RangeKeyTooLarge`.
+            assert_eq!(
+                layers[1].maybe_contains_key(&must_keep_keys[5]),
+                MaybeContainsKey::RangeKeyTooLarge
+            );
+
+            let mut minor_deleted_extents = HashSet::new();
+            let mut iter = layers[0].seek(Bound::Unbounded).await.expect("seek failed");
+            while let Some(item) = iter.get() {
+                if matches!(item.value, ObjectValue::Extent(ExtentValue::None)) {
+                    minor_deleted_extents.insert(item.key.clone());
+                }
+                iter.advance().await.expect("advance failed");
+            }
+
+            for key in &must_keep_keys {
+                assert!(
+                    minor_deleted_extents.contains(key),
+                    "expected overlapping/large extent tombstone to be kept: {key:?}"
+                );
+            }
+            for key in &elidable_keys {
+                let expected_kept = layers[1].maybe_contains_key(key) != MaybeContainsKey::False;
+                assert_eq!(
+                    minor_deleted_extents.contains(key),
+                    expected_kept,
+                    "unexpected retention state for non-overlapping extent tombstone: {key:?}"
+                );
+            }
+        }
+
+        // 5. Read back file contents to ensure none of the zeroed base-layer ranges were
+        // resurrected and live base-layer data remains intact.
+        let mut buf_4k = large_base_file.allocate_buffer(4096).await;
+        let mut buf_8k = large_base_file.allocate_buffer(8192).await;
+
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_start.start, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_start.end, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_interior.start - 4096, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_interior.start, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_interior.end, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_boundary.start - 4096, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_boundary.start, buf_8k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            8192
+        );
+        assert_eq!(buf_8k.as_ptr_slice().to_vec(), vec![0u8; 8192]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_boundary.end, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_end.start - 4096, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0xaa; 4096]);
+        assert_eq!(
+            large_base_file
+                .read_aligned(hole_end.start, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+
+        assert_eq!(
+            tail_4m_file
+                .read_aligned(tail_4m_offset, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+
+        assert_eq!(
+            tail_8m_file
+                .read_aligned(tail_8m_offset, buf_4k.as_mut())
+                .await
+                .expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+
+        let mut buf_64k = prefix_base_file.allocate_buffer(64 * 1024).await;
+        assert_eq!(
+            prefix_base_file.read_aligned(0, buf_64k.as_mut()).await.expect("read_aligned failed"),
+            64 * 1024
+        );
+        assert_eq!(buf_64k.as_ptr_slice().to_vec(), vec![0xdd; 64 * 1024]);
+        assert_eq!(
+            prefix_base_file.read_aligned(MIB, buf_4k.as_mut()).await.expect("read_aligned failed"),
+            4096
+        );
+        assert_eq!(buf_4k.as_ptr_slice().to_vec(), vec![0u8; 4096]);
+        assert_eq!(temp_extent_file.get_size(), 0);
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
     async fn test_mixed_deletes_and_creates_reclaim_space_via_major_compaction() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let fs = FxFilesystemBuilder::new()
@@ -1238,13 +1822,9 @@ mod tests {
                     .acquire_context_for_replace(None, filename.as_str(), true)
                     .await
                     .expect("acquire_context failed");
-                crate::object_store::directory::replace_child(
-                    &mut context.transaction,
-                    None,
-                    (&root_dir, filename.as_str()),
-                )
-                .await
-                .expect("replace_child failed");
+                replace_child(&mut context.transaction, None, (&root_dir, filename.as_str()))
+                    .await
+                    .expect("replace_child failed");
                 context.transaction.commit().await.expect("commit failed");
             }
             fs.graveyard().queue_tombstone_object(store_id, *oid);
@@ -1278,6 +1858,23 @@ impl tree::MajorCompactable<ObjectKey, ObjectValue> for LSMTree<ObjectKey, Objec
             ItemRef { value: ObjectValue::None, .. } => false,
             // Deleted extent.
             ItemRef { value: ObjectValue::Extent(ExtentValue::None), .. } => false,
+            _ => true,
+        })
+        .await
+    }
+
+    async fn minor_iter(
+        iter: impl LayerIterator<ObjectKey, ObjectValue>,
+        layers_to_keep: impl AsRef<[LockedLayer<ObjectKey, ObjectValue>]> + Send + Sync,
+    ) -> Result<impl LayerIterator<ObjectKey, ObjectValue>, Error> {
+        iter.filter(move |item: ItemRef<'_, _, _>| match item {
+            // Object Tombstone or deleted extent: only keep if a kept layer might contain the key.
+            ItemRef { key, value: ObjectValue::None | ObjectValue::Extent(ExtentValue::None) } => {
+                layers_to_keep
+                    .as_ref()
+                    .iter()
+                    .any(|layer| layer.maybe_contains_key(key) != MaybeContainsKey::False)
+            }
             _ => true,
         })
         .await

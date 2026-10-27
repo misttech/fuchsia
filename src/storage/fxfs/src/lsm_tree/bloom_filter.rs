@@ -250,6 +250,7 @@ mod tests {
     use crate::lsm_tree::bloom_filter::{BloomFilterReader, BloomFilterWriter, estimate_params};
     use crate::lsm_tree::types::MaybeContainsKey;
     use crate::object_store::allocator::AllocatorKey;
+    use crate::object_store::{AttributeId, ObjectKey};
     use storage_ptr_slice::PtrByteSlice;
 
     #[test]
@@ -362,6 +363,82 @@ mod tests {
         // match should defensively return RangeKeyTooLarge without panicking.
         assert_eq!(
             filter.maybe_contains(&AllocatorKey { device_range: (104857600..110100480).into() }),
+            MaybeContainsKey::RangeKeyTooLarge
+        );
+    }
+
+    #[test]
+    fn test_object_extent_key_full_range() {
+        const MIB: u64 = 1024 * 1024;
+        let attr0 = AttributeId(0);
+        let attr1 = AttributeId(1);
+        let start = 512 * 1024;
+        let end = 8 * MIB + 512 * 1024;
+
+        // Size for 100 items so the bitmap is 2048 bits (`< 2%` fill for 9 buckets) and
+        // deterministic with `seed = 0`. Inserting a single 8 MiB unaligned `ObjectKey::extent`
+        // (`512 KiB..8.5 MiB`) must populate all 9 overlapping 1 MiB buckets (`[0..9 MiB)`), even
+        // though 9 exceeds `MAX_HASH_PARTITIONS` (4).
+        let mut filter = BloomFilterWriter::new(0, 100);
+        filter.insert(&ObjectKey::extent(1, attr0, start..end));
+        let filter = BloomFilterReader::from(filter);
+
+        // Queries at the exact start, exact end, and inside every 1 MiB bucket `0..9` must return
+        // `Maybe`.
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, start..(start + 4096))),
+            MaybeContainsKey::Maybe
+        );
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, (end - 4096)..end)),
+            MaybeContainsKey::Maybe
+        );
+        for bucket in 0..9 {
+            let probe_offset = bucket * MIB + 16 * 1024;
+            assert_eq!(
+                filter.maybe_contains(&ObjectKey::extent(
+                    1,
+                    attr0,
+                    probe_offset..(probe_offset + 4096)
+                )),
+                MaybeContainsKey::Maybe,
+                "expected hit in bucket {bucket}"
+            );
+        }
+
+        // A 4-bucket (`== MAX_HASH_PARTITIONS`) query overlapping only the last bucket
+        // (`[8..9 MiB)`) must still return `Maybe`.
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, (8 * MIB)..(12 * MIB))),
+            MaybeContainsKey::Maybe
+        );
+
+        // Non-overlapping byte ranges, different object IDs, and different attribute IDs must
+        // return `False`.
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, (9 * MIB)..(9 * MIB + 4096))),
+            MaybeContainsKey::False
+        );
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, (9 * MIB)..(13 * MIB))),
+            MaybeContainsKey::False
+        );
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(2, attr0, MIB..(MIB + 4096))),
+            MaybeContainsKey::False
+        );
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr1, MIB..(MIB + 4096))),
+            MaybeContainsKey::False
+        );
+
+        // Queries spanning `> MAX_HASH_PARTITIONS` (4) buckets must return `RangeKeyTooLarge`.
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, 0..(5 * MIB))),
+            MaybeContainsKey::RangeKeyTooLarge
+        );
+        assert_eq!(
+            filter.maybe_contains(&ObjectKey::extent(1, attr0, (10 * MIB)..(15 * MIB))),
             MaybeContainsKey::RangeKeyTooLarge
         );
     }
