@@ -16,6 +16,7 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.append(str(_SCRIPT_DIR))
 import bazel_action_utils
+import bazel_test_packages
 import build_utils
 import workspace_utils
 from build_utils import BazelLauncher, BazelPaths
@@ -457,8 +458,11 @@ def _generate_device_tests_json(
         # LINT.IfChange(device_cquery_output_schema)
         label = cquery_test["label"]
         normalized_label = _normalize_label(label)
-        package_manifest = _execroot_path_to_ninja_path(
-            bazel_paths, cquery_test["package_manifest_execroot_path"]
+        # Point consumers at the copy of the package that //build/bazel/target_tests
+        # exports to the Ninja build directory, rather than at the Bazel
+        # output base, where a later Bazel invocation may delete its files.
+        package_manifest = bazel_test_packages.export_path_for_manifest(
+            cquery_test["package_manifest_execroot_path"]
         )
         package_manifests.append(package_manifest)
 
@@ -698,9 +702,7 @@ def write_bazel_test_packages_list(
     `export_bazel_tests = false`, so that downstream consumers can always load
     it as valid JSON.
     """
-    # LINT.IfChange(bazel_test_packages_list)
-    output = ninja_build_dir / "bazel_test_packages.list"
-    # LINT.ThenChange(//scripts/fxtest/python/main.py:bazel_test_packages_list)
+    output = ninja_build_dir / bazel_test_packages.PACKAGES_LIST
     content = (
         json.dumps(
             {"content": {"manifests": package_manifests}, "version": "1"},

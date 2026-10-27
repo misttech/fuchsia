@@ -111,6 +111,29 @@ def validate_extra_bazel_targets(
                 )
 
 
+def validate_export_test_packages_owners(
+    bazel_target_infos_map: BazelTargetInfosMap,
+) -> None:
+    """Checks that at most one action exports Bazel test packages.
+
+    All exported packages share one directory, from which each export deletes
+    the files of packages that aren't in the list.
+
+    Raises:
+        ValueError: if more than one action sets `export_test_packages`.
+    """
+    owners = sorted(
+        target_info.bazel_target
+        for target_info in bazel_target_infos_map.all_infos()
+        if target_info.export_test_packages
+    )
+    if len(owners) > 1:
+        raise ValueError(
+            "At most one bazel_action() may set export_test_packages, "
+            f"but these do: {', '.join(owners)}"
+        )
+
+
 def compute_sources_by_owner(
     source_files: dict[str, list[str]],
     requested_targets: T.Iterable[str],
@@ -325,6 +348,7 @@ def main() -> int:
         validate_extra_bazel_targets(
             extra_targets_by_owner, bazel_target_infos_map
         )
+        validate_export_test_packages_owners(bazel_target_infos_map)
     except ValueError as e:
         parser.error(str(e))
 
@@ -580,6 +604,11 @@ def main() -> int:
                 extra_targets_file = target_info.extra_bazel_targets_file
                 if extra_targets_file:
                     depfile.add_input(extra_targets_file)
+                # `bazel_test_packages.list` (see `export_test_packages`) must
+                # not be recorded: its GN action (a no-op that marks the file
+                # as written by `fx gen`) depends on this one, so it would be a
+                # Ninja dependency cycle. Its contents are derived from the
+                # test suites in `extra_targets_file` anyway.
 
                 # And then write out the depfile
                 with open(action.ninja_depfile, "w") as f:

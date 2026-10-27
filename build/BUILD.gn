@@ -74,12 +74,11 @@ if (is_host) {
 
   python_build_time_tests("build_tests_json_tests") {
     tests = [ "//build/build_tests_json_test.py" ]
-    inputs = [
-      "//build/build_tests_json.py",
-      "//build/bazel/scripts/build_utils.py",
-      "//build/bazel/scripts/bazel_tests_utils.py",
+    inputs = [ "//build/build_tests_json.py" ]
+    deps = [
+      "//build/bazel/scripts:bazel_tests_utils",
+      "//build/python/modules/serialization",
     ]
-    deps = [ "//build/python/modules/serialization" ]
   }
 
   # Python scripts under //build that aren't part of any other Python target,
