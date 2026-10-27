@@ -1295,8 +1295,7 @@ TEST_P(Dwc3EndpointTransferSweepTest, StallDuringActiveTransfer) {
   sync_client = {};
 }
 
-// TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
-TEST_P(Dwc3EndpointTransferSweepTest, DISABLED_CancelAllDuringActiveTransfer) {
+TEST_P(Dwc3EndpointTransferSweepTest, CancelAllDuringActiveTransfer) {
   auto params = GetParam();
   uint8_t ep_addr = params.ep_addr;
   fdescriptor::EndpointType ep_type = params.ep_type;
@@ -1350,8 +1349,7 @@ TEST_P(Dwc3EndpointTransferSweepTest, DISABLED_CancelAllDuringActiveTransfer) {
   sync_client = {};
 }
 
-// TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
-TEST_P(Dwc3EndpointTransferSweepTest, DISABLED_DisableDuringActiveTransfer) {
+TEST_P(Dwc3EndpointTransferSweepTest, DisableDuringActiveTransfer) {
   auto params = GetParam();
   uint8_t ep_addr = params.ep_addr;
   fdescriptor::EndpointType ep_type = params.ep_type;
@@ -1558,8 +1556,7 @@ TEST_P(Dwc3EndpointsTest, ZeroLengthTransfer) {
   sync_client = {};
 }
 
-// TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
-TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
+TEST_P(Dwc3EndpointsTest, VerifySiliconBufferingDuringHandshakeReset) {
   SetUpAndPowerOnEndpoints();
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
@@ -1569,16 +1566,15 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
   zx_status_t completion_status = ZX_OK;
   TestEndpointEventHandler event_handler(completed, completion_status);
 
-  // 1. Initialize endpoint server, but keep it disabled!
+  // 1. Initialize endpoint server while awaiting XferNotReady handshake.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
     uep->ep.type = fdescriptor::EndpointType::kBulk;
     uep->ep.max_packet_size = 512;
 
-    // Explicitly disabled!
-    uep->ep.enabled = false;
-    uep->ep.got_not_ready = true;
+    uep->ep.enabled = true;
+    uep->ep.got_not_ready = false;
 
     ASSERT_TRUE(Dwc3TestHelper::InitFifo(drv, 2).is_ok());
 
@@ -1591,7 +1587,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
 
   auto requests = CreateVmoBuffer(sync_client, 512, 512, 1);
 
-  // 2. Queue request while endpoint is disabled!
+  // 2. Queue request before XferNotReady arrives!
   auto result = sync_client->QueueRequests({std::move(requests)});
   ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
 
@@ -1613,8 +1609,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
       [&](Dwc3& drv) { queued_size = Dwc3TestHelper::GetQueuedReqsSize(drv, 2); });
   EXPECT_EQ(queued_size, 1UL) << "Request was not buffered in queued_reqs!";
 
-  // 4. Simulate Host enabling the endpoint (e.g. SET_CONFIGURATION complete)
-  // - Enable it in the driver and call UserEpQueueNext()
+  // 4. Simulate hardware XferNotReady event arriving to complete the handshake
+  // and drain the software queue!
   auto completion = std::make_shared<libsync::Completion>();
   auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
 
@@ -1630,11 +1626,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
     depcmd.SetReadCallback([]() -> uint32_t { return 0; });
   });
 
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
-    // Configure and enable! This natively and automatically drains the software queue!
-    Dwc3TestHelper::EpSetConfig(drv, uep->ep, true);
-  });
+  dut_.RunInDriverContext(
+      [&](Dwc3& drv) { Dwc3TestHelper::HandleEpTransferNotReadyEvent(drv, 2, 0); });
 
   // 5. VERIFY RESUMPTION:
   // - Assert that DMA successfully starts on the buffered request!
@@ -1659,8 +1652,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
 
 // Verifies that resetting an endpoint with an active cancel in progress completes outstanding
 // requests without leaking FIFO or resource tracking when a trailing completion event arrives.
-// TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
-TEST_P(Dwc3EndpointsTest, DISABLED_DeferredCancelDisableAccountingLeak) {
+TEST_P(Dwc3EndpointsTest, DeferredCancelDisableAccountingLeak) {
   SetUpAndPowerOnEndpoints();
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
@@ -4077,9 +4069,9 @@ TEST_P(Dwc3EndpointsTest, ShortPacketZeroBytesTransferredReapsTrailingTrbs) {
   });
 }
 
-// Verifies that Bulk OUT TRBs do not set continuous stream flags.
-// DISABLED: Requires omitting TRB_CSP on discrete Bulk OUT descriptors in driver.
-TEST_P(Dwc3EndpointsTest, DISABLED_VerifyBulkOutTrbFormatting) {
+// Verifies that Bulk OUT TRBs set TRB_CSP only in ongoing multi-TRB mode and omit it in discrete
+// single-transfer mode.
+TEST_P(Dwc3EndpointsTest, VerifyBulkOutTrbFormatting) {
   const bool enqueue_many = GetParam();
   TriggerConnection();
 
@@ -4109,7 +4101,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifyBulkOutTrbFormatting) {
     const auto& trbs = uep.fifo.Read(uep.fifo.GetActiveCount());
 
     for (const auto& trb : trbs) {
-      EXPECT_EQ(trb.control & TRB_CSP, 0u);
+      EXPECT_EQ(static_cast<bool>(trb.control & TRB_CSP), enqueue_many);
     }
 
     auto* fifo_base = uep.fifo.current_read() - uep.fifo.ReadOffset();

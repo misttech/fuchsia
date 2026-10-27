@@ -188,8 +188,7 @@ TEST_F(UnmanagedTestFixture, ResetDuringControlWrite) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_Ep0ResetForceAbortsOutstandingSetupTrb) {
+TEST_F(UnmanagedTestFixture, Ep0ResetForceAbortsActiveTransfers) {
   // Shared sequential log to verify strict protocol stages chronologically!
   auto sequence_log = std::make_shared<std::vector<std::string>>();
 
@@ -224,12 +223,14 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0ResetForceAbortsOutstandingSetupTrb) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
-    // Place EP0 in Setup state waiting for packets
+    // Place EP0 in Setup state with active transfers on both directions
     Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
-    Dwc3TestHelper::SetEpTransferState(
-        drv, 0, Dwc3TestHelper::TransferState::kIdle);  // Outstanding Setup TRB queued!
+    Dwc3TestHelper::SetEpTransferState(drv, 0, Dwc3TestHelper::TransferState::kActiveSingle);
+    Dwc3TestHelper::SetEpRsrcId(drv, 0, 1);
+    Dwc3TestHelper::SetEpTransferState(drv, 1, Dwc3TestHelper::TransferState::kActiveSingle);
+    Dwc3TestHelper::SetEpRsrcId(drv, 1, 2);
 
-    // Invoke Ep0Reset! This must unconditionally and sequentially abort EP0 OUT then EP0 IN!
+    // Invoke Ep0Reset! This must sequentially abort EP0 OUT then EP0 IN!
     Dwc3TestHelper::Ep0Reset(drv);
   });
 
@@ -411,8 +412,7 @@ TEST_F(UnmanagedTestFixture, UsbBusResetDuringTransfer) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the deferred cancel logic production fixes land in a future CL.
-TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
+TEST_F(UnmanagedTestFixture, DisableEndpointDuringTransfer) {
   SetUpAndPowerOnDriver();
 
   auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
@@ -440,8 +440,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
   });
 
   // StopDriver calls Stop() which runs QuiesceCore() -> StopActiveTransfers().
-  // RemoveRequests should call CmdEpEndTransfer on EP2 because transfer_state is active!
-  // And since rsrc_id is invalid, it should crash!
+  // RemoveRequests guards against kInvalidResourceId and must not crash.
   TearDownAndPowerOffDriver();
 }
 
@@ -545,9 +544,9 @@ TEST_F(UnmanagedTestFixture, ZeroLengthPacket) {
   TearDownAndPowerOffDriver();
 }
 
-// This test verifies that the driver handles a Control Write with maximum buffer size.
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransfer) {
+// This test verifies that the driver stalls a Control Write that exceeds the maximum FIDL control
+// request length.
+TEST_F(UnmanagedTestFixture, MaxBufferSizeTransfer) {
   FakeUsbDciInterface fake_dci;
 
   SetUpAndPowerOnDriver();
@@ -571,10 +570,16 @@ TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransfer) {
         MakeSetupPacket(fdescriptor::EndpointDirection::kOut | fdescriptor::RequestType::kVendor |
                             fdescriptor::RequestRecipient::kDevice,
                         0x01, 0, 0, 65535));
+    // A 3-stage Control Write first arms the 64 KiB Data OUT TRB in State::DataOut;
+    // DoControlCall() checks the received payload length against kMaxControlRequestLen (65400)
+    // and stalls EP0 only after the Data OUT phase completes.
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataOut);
+    Dwc3TestHelper::SimulateDataOutPhase(drv, 65535);
   });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     // With the FIDL limit fix, oversized requests are stalled and state returns to Setup.
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
     EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
   });
 
@@ -1185,7 +1190,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlReadOversizedStallIn) {
   TearDownAndPowerOffDriver();
 }
 
-TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
+TEST_F(UnmanagedTestFixture, ControlWriteComplete) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
@@ -1216,9 +1221,11 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
                         0x99, 0, 0, 8);
     Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
+    Dwc3TestHelper::SimulateDataOutPhase(drv, 8);
   });
 
   ASSERT_EQ(control_called->Wait(zx::sec(5)), ZX_OK);
+  EXPECT_EQ(callback_received_len->load(), 8u);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1342,8 +1349,7 @@ TEST_F(UnmanagedTestFixture, ControlWriteShortPacketDataOut) {
   TearDownAndPowerOffDriver();
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransferIn) {
+TEST_F(UnmanagedTestFixture, MaxBufferSizeTransferIn) {
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 
@@ -1357,6 +1363,8 @@ TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransferIn) {
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
     Dwc3TestHelper::Ep0QueueSetup(drv);
     Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
 
@@ -1372,8 +1380,19 @@ TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransferIn) {
     Dwc3TestHelper::SimulateSetupReceived(drv, setup);
   });
 
+  ASSERT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool in_setup = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) {
+          in_setup = (Dwc3TestHelper::GetEp0State(drv) == Dwc3TestHelper::State::Setup);
+        });
+        return in_setup;
+      },
+      zx::sec(5)));
+
   dut_.RunInDriverContext([&](Dwc3& drv) {
     // With the FIDL limit fix, oversized requests are stalled and state returns to Setup.
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
     EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
   });
 

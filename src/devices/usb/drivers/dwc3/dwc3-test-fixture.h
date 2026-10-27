@@ -124,11 +124,8 @@ class Dwc3TestHelper {
   static void CmdEpStartTransfer(Dwc3& drv, Dwc3::Endpoint& ep, zx_paddr_t trb_phys) {
     drv.CmdEpStartTransfer(ep, trb_phys);
   }
-  static void CmdEpEndTransfer(Dwc3& drv, Dwc3::Endpoint& ep) { drv.CmdEpEndTransfer(ep); }
-  static void ForceCmdEpEndTransfer(Dwc3& drv, uint8_t ep_num) {
-    // Stubbed out: ForceCmdEpEndTransfer is not in production yet.
-    (void)drv;
-    (void)ep_num;
+  static bool CmdEpEndTransfer(Dwc3& drv, Dwc3::Endpoint& ep, bool cmd_ioc = true) {
+    return drv.CmdEpEndTransfer(ep, cmd_ioc);
   }
   static void CmdEpSetStall(Dwc3& drv, Dwc3::Endpoint& ep) { drv.CmdEpSetStall(ep); }
   static void CmdEpClearStall(Dwc3& drv, Dwc3::Endpoint& ep) { drv.CmdEpClearStall(ep); }

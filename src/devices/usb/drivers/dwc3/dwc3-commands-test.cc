@@ -172,26 +172,54 @@ TEST_F(Dwc3CommandsTest, CmdEpEndTransfer) {
   EXPECT_EQ(phycfg_val->load(), initial_phycfg);
 }
 
-// TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(Dwc3CommandsTest, DISABLED_CmdEpEndTransferInvalidRsrc) {
+TEST_F(Dwc3CommandsTest, UserEpResetGuardsInvalidRsrc) {
   MockDepCmd(2, &cmd_written_);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     ASSERT_NE(uep, nullptr);
     auto& ep = uep->ep;
+    ep.transfer_state = Dwc3TestHelper::TransferState::kStartingSingle;
     ep.rsrc_id = 0xFFFFFFFFu;  // kInvalidResourceId
 
     Dwc3TestHelper::SetPowerOn(drv, true);
-    Dwc3TestHelper::CmdEpEndTransfer(drv, ep);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+    Dwc3TestHelper::UserEpReset(drv, *uep);
   });
 
   // Should NOT write to register if resource ID is invalid.
   EXPECT_FALSE(cmd_written_.load());
 }
 
-TEST_F(Dwc3CommandsTest, DISABLED_ForceCmdEpEndTransfer) {
-  // TODO(b/509735595): Add tests for ForceCmdEpEndTransfer once the implementation lands.
+TEST_F(Dwc3CommandsTest, CmdEpEndTransferNoIoc) {
+  auto depcmd_written_val = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([this, depcmd_written_val](Environment& env) {
+    auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
+    depcmd.SetReadCallback([this]() -> uint32_t { return depcmd_val_.load(); });
+    depcmd.SetWriteCallback([this, depcmd_written_val](uint64_t val_raw) {
+      uint32_t val = static_cast<uint32_t>(val_raw);
+      cmd_written_.store(true, std::memory_order_relaxed);
+      depcmd_written_val->store(val, std::memory_order_relaxed);
+      depcmd_val_.store(val & ~(1 << 10));
+    });
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
+    ASSERT_NE(uep, nullptr);
+    auto& ep = uep->ep;
+    ep.rsrc_id = 3;
+
+    Dwc3TestHelper::SetPowerOn(drv, true);
+    EXPECT_TRUE(Dwc3TestHelper::CmdEpEndTransfer(drv, ep, /*cmd_ioc=*/false));
+  });
+
+  ASSERT_TRUE(cmd_written_.load());
+  const auto cmd = DEPCMD::Get(2).FromValue(depcmd_written_val->load());
+  EXPECT_EQ(cmd.CMDTYP(), DEPCMD::DEPENDXFER);
+  EXPECT_EQ(cmd.COMMANDPARAM(), 3u);
+  EXPECT_EQ(cmd.CMDIOC(), 0u);
+  EXPECT_EQ(cmd.HIPRI_FORCERM(), 1u);
 }
 
 TEST_F(Dwc3CommandsTest, CmdEpSetStall) {
