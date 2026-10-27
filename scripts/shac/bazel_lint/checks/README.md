@@ -327,7 +327,8 @@ traversal helpers:
   newlines (1-indexed line numbers correspond to `fc.lines[lineno - 1]`).
 * `fc.loaded_symbols: dict[str, tuple[str, str]]` - Mapping from local symbol
   name to `(module_label, exported_symbol_name)` for all symbols imported via
-  `load()`.
+  `load()`, where `module_label` is normalized via `normalize_repo_prefix()`
+  (converting `@@repo//...` to `@repo//...` and `@//...` to `//...`).
 * `fc.loads: list[LoadInfo]` - Pre-extracted `LoadInfo` metadata for all
   `load()` statements in file order.
 * `fc.calls: list[CallInfo]` - Pre-extracted `CallInfo` metadata for all
@@ -339,8 +340,22 @@ traversal helpers:
 
 * `fc.parent(node: ast.AST) -> ast.AST | None`: Returns the parent AST node of
   `node`, or `None` if `node` is the root module.
+* `fc.enclosing_statement_call(node: ast.AST) -> CallInfo | None`: Returns the
+  outermost non-`load()` `CallInfo` enclosing `node` within the current
+  statement, or `None` if `node` is not inside a call. Most checks should prefer
+  `enclosing_statement_call` over `enclosing_call` because arguments inside a
+  rule or macro call may be wrapped in helper calls such as `select(...)` or
+  `glob(...)`; `enclosing_statement_call` returns the outer rule/macro call
+  (which carries `target_name` and the rule's `func_name`), whereas
+  `enclosing_call` returns the innermost call (`select` or `glob`). (`load()`
+  statements are represented as `LoadInfo` in `fc.loads` rather than `CallInfo`
+  in `fc.calls`, so nodes inside `load(...)` return `None`.)
 * `fc.enclosing_call(node: ast.AST) -> CallInfo | None`: Returns the nearest
-  enclosing non-`load()` `CallInfo`, or `None` if the node is at module scope.
+  (innermost) enclosing non-`load()` `CallInfo`, or `None` if `node` is not
+  inside a call. Use this only when inspecting the immediate call directly
+  wrapping `node` (such as checking whether `node` is an argument to
+  `select(...)` or `glob(...)`); most checks should use
+  `fc.enclosing_statement_call(node)` instead.
 <!-- LINT.ThenChange(//scripts/shac/bazel_lint/framework.py:file_context) -->
 
 ## AST Metadata Classes (`*Info`)
@@ -352,8 +367,15 @@ Passed to `check_load(self, fc, load)`:
 
 * `load.node: ast.Call` - Underlying AST `Call` node for the `load(...)`
   statement.
-* `load.module_label: str` - First argument to `load()` (e.g.
-  `"@rules_cc//cc:defs.bzl"`).
+* `load.module_label: str` - Normalized first argument to `load()`, with leading
+  `@@` normalized to `@` and `@//` normalized to `//` via
+  `normalize_repo_prefix()` (e.g. `"@rules_cc//cc:defs.bzl"`). Almost all checks
+  should match against `load.module_label` so they handle `@` and `@@` forms
+  uniformly.
+* `load.raw_module_label: str` - Exact un-normalized module label string as
+  written in the `load()` statement (e.g. `"@@rules_cc//cc:defs.bzl"`). Use this
+  when formatting finding messages or calling `fc.report_string(...)` so the
+  emitted message and span match the source text.
 * `load.symbols: tuple[tuple[str, str, ast.AST], ...]` - Tuple of loaded
   symbols where each entry is `(local_name, exported_name, symbol_ast_node)`.
   When aliasing is used (`local = "exported"`), `local_name` holds the alias.
@@ -396,10 +418,20 @@ Passed to `check_string(self, fc, s)`:
   string (`"foobar"`) by the parser. Multiline strings preserve `\n` and
   whitespace is un-normalized.
 * `s.value: str` - Decoded string value.
-* `s.enclosing_call: CallInfo | None` - Nearest enclosing non-`load()` call,
-  if any.
+* `s.enclosing_statement_call: CallInfo | None` - Outermost non-`load()`
+  `CallInfo` enclosing this string within the current statement, if any. Most
+  checks should use `enclosing_statement_call` rather than `enclosing_call` so
+  strings nested inside helper calls like `select(...)` or `glob(...)` still
+  resolve to the enclosing rule/macro call (and its `target_name`).
+* `s.enclosing_call: CallInfo | None` - Nearest (innermost) enclosing
+  non-`load()` `CallInfo`, if any. Use this only when checking the immediate
+  call wrapping the string (e.g., `select(...)`); most checks should use
+  `s.enclosing_statement_call` instead. (`load()` statements are represented as
+  `LoadInfo` rather than `CallInfo`, so strings inside `load(...)` have
+  `enclosing_call = None` and `enclosing_statement_call = None`.)
 * `s.keyword_arg: str | None` - Keyword argument name if this string is
-  passed directly as or inside a keyword argument to `enclosing_call` (e.g.
+  passed directly as or inside a keyword argument to
+  `enclosing_statement_call` (or `enclosing_call` if different, e.g.
   `"visibility"` or `"doc"`).
 * `s.is_load_source: bool` - `True` if this string is the module label of a
   `load()` statement.

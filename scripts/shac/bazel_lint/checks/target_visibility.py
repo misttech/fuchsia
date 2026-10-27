@@ -58,14 +58,11 @@ class TargetVisibilityCheck(BazelCheck):
         # by bazel_package_default_visibility.
         if (
             fc.kind == FileKind.BUILD
-            and s.enclosing_call is not None
-            and s.enclosing_call.func_name == "package"
+            and s.enclosing_statement_call is not None
+            and s.enclosing_statement_call.func_name == "package"
             and s.keyword_arg == "default_visibility"
         ):
             return
-
-        target_name = s.enclosing_call.target_name if s.enclosing_call else None
-        targets = (target_name,) if target_name else ()
 
         if s.value == "//visibility:public":
             fc.report_string(
@@ -74,7 +71,6 @@ class TargetVisibilityCheck(BazelCheck):
                 s.value,
                 level="error",
                 url=PUBLIC_VISIBILITY_REFERENCE_URL,
-                targets=targets,
             )
         elif (
             s.keyword_arg == "visibility"
@@ -86,5 +82,4 @@ class TargetVisibilityCheck(BazelCheck):
                 s.value,
                 level="error",
                 url=VENDOR_VISIBILITY_REFERENCE_URL,
-                targets=targets,
             )

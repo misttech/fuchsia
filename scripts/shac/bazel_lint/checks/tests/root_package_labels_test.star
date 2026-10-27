@@ -8,14 +8,20 @@ load(
     "//scripts/shac/bazel.star",
     "_bazel_disallowed_workspace_root_package_labels",
 )
+load("./base_test.star", "run_lint_test")
 
 _DOCS_SUFFIX = "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/common#prohibited-label-patterns."
 
-def test_disallowed_workspace_root_package_labels():
-    res = testing.run(
+def _run_root_package_labels_test(files):
+    return run_lint_test(
         _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "foo/BUILD.bazel": """
+        "bazel_disallowed_workspace_root_package_labels",
+        files,
+    )
+
+def test_disallowed_workspace_root_package_labels():
+    res = _run_root_package_labels_test({
+        "foo/BUILD.bazel": """
 load("//:foo/bar.bzl", "symbol")
 src = '//:bar/baz'
 my_rule(url = "https://example.com/#readme", dep = "//:baz/qux")
@@ -24,8 +30,7 @@ my_rule(val = 'foo "#" bar', extra = "//:extra/target")
 colon_label = "//:foo/bar:baz"
 slash_label = "//:foo/bar/baz"
 """,
-        },
-    )
+    })
     asserts.eq(res.findings, (
         testing.finding(
             level = "error",
@@ -114,10 +119,8 @@ slash_label = "//:foo/bar/baz"
     ))
 
 def test_allowed_labels_in_build_files():
-    res = testing.run(
-        _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "foo/BUILD.bazel": """
+    res = _run_root_package_labels_test({
+        "foo/BUILD.bazel": """
 # Comment line //:foo/bar/baz
 normal_target = "//src/lib:lib"
 valid_root = "//:license"
@@ -126,45 +129,35 @@ external_ref = "@prebuilt_clang//:bin/clang"
 my_rule(url = "https://example.com/#readme") # dep = "//:skipped/in/comment"
 my_rule(val = 'foo "#" bar')
 """,
-        },
-    )
+    })
     asserts.eq(res.findings, ())
 
 def test_policy_exempt_workspace_root_exports():
-    res = testing.run(
-        _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "exports/BUILD.bazel": """
+    res = _run_root_package_labels_test({
+        "exports/BUILD.bazel": """
 prebuilt_clang = "//:prebuilt/third_party/clang/bin/clang"
 jiri_snapshot = "//:fuchsia_build_generated/jiri_snapshot.xml"
 milestone = "//:integration/MILESTONE"
 """,
-        },
-    )
+    })
     asserts.eq(res.findings, ())
 
 def test_policy_exempt_external_repository_files():
-    res = testing.run(
-        _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/repository_utils.bzl": 'tool = "//:bin/clang"\n',
-            "build/bazel/toolchains/rust/rust.BUILD.bazel": 'tool = "//:bin/rustc"\n',
-            "build/bazel/update-rustc-third-party/BUILD.bazel": 'cargo = "//:rust_toolchain/bin/cargo"\n',
-            "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/fuchsia_sdk.BUILD.bazel": """
+    res = _run_root_package_labels_test({
+        "build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/repository_utils.bzl": 'tool = "//:bin/clang"\n',
+        "build/bazel/toolchains/rust/rust.BUILD.bazel": 'tool = "//:bin/rustc"\n',
+        "build/bazel/update-rustc-third-party/BUILD.bazel": 'cargo = "//:rust_toolchain/bin/cargo"\n',
+        "build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/fuchsia_sdk.BUILD.bazel": """
 manifest = "//:meta/manifest.json"
 sysroot = "//:arch/x64/sysroot"
 """,
-        },
-    )
+    })
     asserts.eq(res.findings, ())
 
 def test_disallowed_external_repo_label_in_regular_build_file():
-    res = testing.run(
-        _bazel_disallowed_workspace_root_package_labels,
-        files = {
-            "src/BUILD.bazel": 'tool = "//:bin/clang"\n',
-        },
-    )
+    res = _run_root_package_labels_test({
+        "src/BUILD.bazel": 'tool = "//:bin/clang"\n',
+    })
     asserts.eq(res.findings, (
         testing.finding(
             level = "error",

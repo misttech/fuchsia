@@ -77,6 +77,19 @@ class _RawFinding:
     targets: tuple[str, ...]
 
 
+def normalize_repo_prefix(value: str) -> str:
+    """Normalizes leading canonical repository prefixes (`@@` and `@//`).
+
+    Converts `"@@repo//..."` to `"@repo//..."` and `"@//..."` or `"@@//..."` to
+    `"//..."` so checks do not need to duplicate `@` and `@@` strings.
+    """
+    if value.startswith("@@"):
+        value = value[1:]
+    if value.startswith("@//"):
+        return value[1:]
+    return value
+
+
 # LINT.IfChange(load_info)
 @dataclasses.dataclass(frozen=True)
 class LoadInfo:
@@ -84,8 +97,11 @@ class LoadInfo:
 
     Attributes:
         node (ast.Call): The underlying AST `Call` node for the `load()` statement.
-        module_label (str): The label of the `.bzl` module being loaded (first
-            argument to `load()`, e.g. `"@rules_cc//cc:defs.bzl"`).
+        module_label (str): The normalized label of the `.bzl` module being
+            loaded (first argument to `load()`, with leading `@@` normalized to
+            `@` and `@//` normalized to `//`, e.g. `"@rules_cc//cc:defs.bzl"`).
+        raw_module_label (str): The exact un-normalized module label string as
+            written in the `load()` statement (e.g. `"@@rules_cc//cc:defs.bzl"`).
         symbols (tuple[tuple[str, str, ast.AST], ...]): Tuple of loaded symbols,
             where each entry is `(local_name, exported_name, symbol_ast_node)`.
             `local_name` matches `exported_name` for positional string arguments,
@@ -94,6 +110,7 @@ class LoadInfo:
 
     node: ast.Call
     module_label: str
+    raw_module_label: str
     # Each entry is (local_name, exported_name, symbol_ast_node).
     symbols: tuple[tuple[str, str, ast.AST], ...]
 
@@ -163,11 +180,21 @@ class StringInfo:
     Attributes:
         node (ast.Constant): The underlying AST `Constant` string node.
         value (str): The decoded string value.
-        enclosing_call (CallInfo | None): The nearest enclosing non-`load()` call,
-            or `None` if the string is outside any function call.
+        enclosing_call (CallInfo | None): The nearest (innermost) enclosing
+            non-`load()` call (such as `select(...)` or `glob(...)`), or `None`
+            if the string is outside any function call or inside `load()`. Most
+            checks that want the rule or macro call owning an argument should
+            use `enclosing_statement_call` instead. (`load()` statements are
+            represented by `LoadInfo` rather than `CallInfo`.)
+        enclosing_statement_call (CallInfo | None): The enclosing
+            statement-level non-`load()` call (such as a rule or macro target
+            declaration in a `BUILD.bazel` file or macro body), skipping past
+            nested expression calls like `select(...)` or `glob(...)`, or `None`
+            if the string is not inside a call statement (e.g. in a module-level
+            assignment `DEPS = select(...)` or a `load()` statement).
         keyword_arg (str | None): The keyword argument name if this string is passed
-            directly to a keyword argument of `enclosing_call` (e.g. `"visibility"`
-            or `"doc"`).
+            directly as or inside a keyword argument of `enclosing_call` or
+            `enclosing_statement_call` (e.g. `"visibility"` or `"doc"`).
         is_load_source (bool): True if this string is the module label argument of a
             `load()` statement.
         is_docstring (bool): True if this string is a module, class, or function
@@ -182,6 +209,7 @@ class StringInfo:
     node: ast.Constant
     value: str
     enclosing_call: CallInfo | None
+    enclosing_statement_call: CallInfo | None
     keyword_arg: str | None
     is_load_source: bool
     is_docstring: bool
@@ -244,7 +272,9 @@ class FileContext:
         lines (list[str]): File content split into lines as strings without trailing
             newlines (1-indexed line numbers correspond to `lines[lineno - 1]`).
         loaded_symbols (dict[str, tuple[str, str]]): Map of local symbol name to
-            `(module_label, exported_symbol_name)` for all symbols imported via `load()`.
+            `(module_label, exported_symbol_name)` for all symbols imported via
+            `load()`, where `module_label` is normalized via
+            `normalize_repo_prefix()`.
         loads (list[LoadInfo]): Pre-extracted `LoadInfo` metadata for all `load()`
             calls in the file.
         calls (list[CallInfo]): Pre-extracted `CallInfo` metadata for all non-`load()`
@@ -259,11 +289,14 @@ class FileContext:
         kind: FileKind,
         tree: ast.Module,
         lines: list[str],
+        *,
+        supports_targets_allowlist: bool = False,
     ) -> None:
         self.path = path
         self.kind = kind
         self.tree = tree
         self.lines = lines
+        self._supports_targets_allowlist = supports_targets_allowlist
         self._raw_findings: list[_RawFinding] = []
 
         self._parents: dict[ast.AST, ast.AST] = {}
@@ -277,6 +310,8 @@ class FileContext:
         self.calls: list[CallInfo] = []
         self._call_by_node: dict[ast.Call, CallInfo] = {}
         self._load_source_nodes: set[ast.AST] = set()
+        self._load_symbol_to_local_name: dict[ast.AST, str] = {}
+        self._load_node_to_load: dict[ast.AST, LoadInfo] = {}
 
         self._extract_loads_and_calls()
         self.strings: list[StringInfo] = self._extract_strings()
@@ -286,12 +321,46 @@ class FileContext:
         return self._parents.get(node)
 
     def enclosing_call(self, node: ast.AST) -> CallInfo | None:
-        """Returns the nearest enclosing non-`load()` `CallInfo`, if any."""
+        """Returns the nearest (innermost) enclosing non-`load()` `CallInfo`, if any.
+
+        When `node` is nested inside an expression call such as `select(...)`
+        or `glob(...)`, this returns that inner call rather than the outer
+        rule or macro statement call. Most checks that want the rule or macro
+        invocation owning an argument or string should use
+        `enclosing_statement_call()` instead.
+
+        (`load()` statements are represented as `LoadInfo` in `loads` and
+        handled by `check_load()`, so they are not returned as `CallInfo`.)
+        """
         cur = self._parents.get(node)
         while cur is not None:
             if isinstance(cur, ast.Call) and cur in self._call_by_node:
                 return self._call_by_node[cur]
-            if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(cur, ast.stmt):
+                break
+            cur = self._parents.get(cur)
+        return None
+
+    def enclosing_statement_call(self, node: ast.AST) -> CallInfo | None:
+        """Returns the enclosing statement-level non-`load()` `CallInfo`, if any.
+
+        Walks up from `node` (inclusive) to the call that forms the enclosing
+        expression statement (an `ast.Call` whose parent is `ast.Expr`, such as
+        a rule or macro target declaration at module scope or inside a macro
+        body), skipping past nested expression calls like `select(...)` or
+        `glob(...)`. Returns `None` if `node` is not part of a call statement
+        (for example, when inside a variable assignment `DEPS = select(...)` or
+        a `load()` statement).
+        """
+        cur: ast.AST | None = node
+        while cur is not None:
+            if (
+                isinstance(cur, ast.Call)
+                and cur in self._call_by_node
+                and isinstance(self._parents.get(cur), ast.Expr)
+            ):
+                return self._call_by_node[cur]
+            if isinstance(cur, ast.stmt):
                 break
             cur = self._parents.get(cur)
         return None
@@ -307,7 +376,8 @@ class FileContext:
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)
             ):
-                module_label = node.args[0].value
+                raw_module_label = node.args[0].value
+                module_label = normalize_repo_prefix(raw_module_label)
                 self._load_source_nodes.add(node.args[0])
                 symbols: list[tuple[str, str, ast.AST]] = []
                 for arg in node.args[1:]:
@@ -319,6 +389,7 @@ class FileContext:
                             module_label,
                             arg.value,
                         )
+                        self._load_symbol_to_local_name[arg] = arg.value
                 for kw in node.keywords:
                     if (
                         kw.arg is not None
@@ -330,13 +401,16 @@ class FileContext:
                             module_label,
                             kw.value.value,
                         )
-                self.loads.append(
-                    LoadInfo(
-                        node=node,
-                        module_label=module_label,
-                        symbols=tuple(symbols),
-                    )
+                        self._load_symbol_to_local_name[kw] = kw.arg
+                load_info = LoadInfo(
+                    node=node,
+                    module_label=module_label,
+                    raw_module_label=raw_module_label,
+                    symbols=tuple(symbols),
                 )
+                self.loads.append(load_info)
+                self._load_node_to_load[node] = load_info
+                self._load_node_to_load[node.args[0]] = load_info
             else:
                 keywords = {
                     kw.arg: kw for kw in node.keywords if kw.arg is not None
@@ -376,17 +450,43 @@ class FileContext:
                 continue
 
             enclosing = self.enclosing_call(node)
+            enclosing_stmt_call = self.enclosing_statement_call(node)
             keyword_arg: str | None = None
             in_compare = False
+            # Walk up the AST from the string literal to the enclosing statement
+            # to determine whether the string appears inside a comparison (`==`,
+            # `in`, etc.) or inside a named keyword argument (`foo = ...`).
+            #
+            # For `keyword_arg`, record the first named keyword argument
+            # (`cur.arg is not None` excludes `**kwargs` unpacking) whose parent
+            # `ast.Call` is either:
+            # - `enclosing` (the innermost call containing the string, such as
+            #   `my_rule(visibility = ["..."])` or
+            #   `attr.label(default = "...")`), or
+            # - `enclosing_stmt_call` (the statement-level target/macro call, so
+            #   that when a string is inside a helper call without keyword
+            #   arguments, such as `select({...})` or `glob([...])` passed to
+            #   `cc_library(name = "foo", visibility = select({...}))`, it
+            #   still resolves `keyword_arg = "visibility"` from the outer call).
             cur: ast.AST | None = node
             while cur is not None:
                 if isinstance(cur, ast.Compare):
                     in_compare = True
                 if (
-                    isinstance(cur, ast.keyword)
+                    keyword_arg is None
+                    and isinstance(cur, ast.keyword)
                     and cur.arg is not None
-                    and enclosing is not None
-                    and self._parents.get(cur) is enclosing.node
+                    and (
+                        (
+                            enclosing is not None
+                            and self._parents.get(cur) is enclosing.node
+                        )
+                        or (
+                            enclosing_stmt_call is not None
+                            and self._parents.get(cur)
+                            is enclosing_stmt_call.node
+                        )
+                    )
                 ):
                     keyword_arg = cur.arg
                 if isinstance(cur, ast.stmt):
@@ -399,6 +499,7 @@ class FileContext:
                     node=node,
                     value=node.value,
                     enclosing_call=enclosing,
+                    enclosing_statement_call=enclosing_stmt_call,
                     keyword_arg=keyword_arg,
                     is_load_source=node in self._load_source_nodes,
                     is_docstring=node in self._docstrings,
@@ -408,6 +509,56 @@ class FileContext:
             )
         return strings
 
+    def _targets_using_symbol(self, local_name: str) -> tuple[str, ...]:
+        """Returns target names of statement calls referencing `local_name`.
+
+        Returns an empty tuple if `local_name` is unused or is referenced
+        outside a named statement call (so target-scoped allowlists do not
+        suppress unused or module-level loads).
+        """
+        targets: list[str] = []
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.Name) and node.id == local_name:
+                call = self.enclosing_statement_call(node)
+                if call is None or call.target_name is None:
+                    return ()
+                if call.target_name not in targets:
+                    targets.append(call.target_name)
+        return tuple(targets)
+
+    def _targets_using_load(self, load: LoadInfo) -> tuple[str, ...]:
+        """Returns target names of statement calls referencing symbols loaded by `load`.
+
+        Returns an empty tuple if `load` loads no symbols or if any loaded
+        symbol is unused or referenced outside a named statement call.
+        """
+        if not load.symbols:
+            return ()
+        targets: list[str] = []
+        for local_name, _exported_name, _sym_node in load.symbols:
+            sym_targets = self._targets_using_symbol(local_name)
+            if not sym_targets:
+                return ()
+            for target_name in sym_targets:
+                if target_name not in targets:
+                    targets.append(target_name)
+        return tuple(targets)
+
+    def _infer_targets(self, node: ast.AST | None) -> tuple[str, ...]:
+        """Infers the target name(s) associated with `node` for target-scoped allowlists."""
+        if not self._supports_targets_allowlist or node is None:
+            return ()
+        if node in self._load_symbol_to_local_name:
+            return self._targets_using_symbol(
+                self._load_symbol_to_local_name[node]
+            )
+        if node in self._load_node_to_load:
+            return self._targets_using_load(self._load_node_to_load[node])
+        call = self.enclosing_statement_call(node)
+        if call is not None and call.target_name is not None:
+            return (call.target_name,)
+        return ()
+
     def report(
         self,
         message: str,
@@ -415,9 +566,12 @@ class FileContext:
         *,
         level: str,
         url: str | None,
-        targets: Sequence[str] = (),
+        targets: Sequence[str] | None = None,
     ) -> None:
         """Emits a finding for `node` (or a file-level finding if `node` is `None`)."""
+        resolved_targets = (
+            tuple(targets) if targets is not None else self._infer_targets(node)
+        )
         full_message = f"{message} See {url}." if url is not None else message
         finding: Finding = {
             "filepath": self.path,
@@ -452,7 +606,7 @@ class FileContext:
             finding["end_col"] = end_col
 
         self._raw_findings.append(
-            _RawFinding(finding=finding, targets=tuple(targets))
+            _RawFinding(finding=finding, targets=resolved_targets)
         )
 
     def report_string(
@@ -463,7 +617,7 @@ class FileContext:
         *,
         level: str,
         url: str | None,
-        targets: Sequence[str] = (),
+        targets: Sequence[str] | None = None,
     ) -> None:
         """Emits a finding highlighting `substring` inside a string literal `node`.
 
@@ -471,6 +625,9 @@ class FileContext:
         full `node` span for multi-line strings, implicit string concatenation,
         or escaped literals.
         """
+        resolved_targets = (
+            tuple(targets) if targets is not None else self._infer_targets(node)
+        )
         target_str = (
             substring
             if substring is not None
@@ -506,12 +663,14 @@ class FileContext:
                             message=full_message,
                             level=level,
                         ),
-                        targets=tuple(targets),
+                        targets=resolved_targets,
                     )
                 )
                 return
 
-        self.report(message, node, level=level, url=url, targets=targets)
+        self.report(
+            message, node, level=level, url=url, targets=resolved_targets
+        )
 
 
 # LINT.ThenChange(//scripts/shac/bazel_lint/checks/README.md:file_context)
@@ -530,11 +689,17 @@ class BazelCheck:
     # in `bazel.star`, shac will never pass those files to the linter.
     file_kinds: frozenset[FileKind] = frozenset()
     # Optional repository-relative glob patterns in Bazel `glob()` syntax (for
-    # example, `"build/bazel_sdk/bazel_rules_fuchsia/**"` or `"build/config/**"`)
-    # for paths that are permanently exempt by policy (no tracking bug
-    # required). Use `allowlists/<name>.json` instead for temporary exceptions
-    # that require a tracking bug.
+    # example, `"build/bazel_sdk/bazel_rules_fuchsia/**"`) for paths that are
+    # permanently exempt by policy (no tracking bug required). Use
+    # `allowlists/<name>.json` instead for temporary exceptions that require a
+    # tracking bug.
     policy_exempt_globs: tuple[str, ...] = ()
+    # Whether entries in `allowlists/<name>.json` for a single file `"path"`
+    # may specify `"targets": [...]` to scope exemptions to specific named
+    # rules/macros (via their `name` attribute) instead of the entire file.
+    # Functions and rules without a `name` parameter (such as `exports_files()`
+    # and `package()`) do not have a target name and require a whole-file
+    # `"path"` entry without `"targets"`. Requires `supports_allowlist = True`.
     supports_targets_allowlist: bool = False
 
     def is_path_exempt_by_policy(self, rel_path: str) -> bool:
@@ -572,8 +737,9 @@ class BazelCheck:
         Multiline strings preserve newline characters (`\n`), and whitespace is
         unmodified and un-normalized.
 
-        Includes all string literals in the AST except module-level `load()`
-        arguments (which are passed to `check_load()`). Module, class, and
+        Includes all string literals in the AST, including `load()` arguments
+        (where the `.bzl` module label has `s.is_load_source == True` and loaded
+        symbol names have `s.is_load_source == False`). Module, class, and
         function docstrings are included and have `s.is_docstring == True`,
         so checks that do not want to inspect docstrings can return early
         (`if s.is_docstring: return`). Note that Bazel `doc = "..."` keyword
@@ -669,6 +835,7 @@ def run_check_on_contents(
         kind=kind,
         tree=tree,
         lines=content.splitlines(),
+        supports_targets_allowlist=check.supports_targets_allowlist,
     )
     check.check_module(fc)
     for load in fc.loads:

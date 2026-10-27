@@ -8,6 +8,7 @@ load(
     "//scripts/shac/bazel.star",
     "_bazel_package_default_visibility",
 )
+load("./base_test.star", "run_lint_test")
 
 _BROAD_ERROR_MSG = (
     "Do not use `default_visibility` in `package()` for broad visibility " +
@@ -32,21 +33,19 @@ _NARROW_WARNING_MSG = (
     "See https://fuchsia.dev/fuchsia-src/development/languages/bazel/style/build_files#avoid-package-default-visibility."
 )
 
-_EMPTY_ALLOWLIST = testing.file(
-    content = json.encode({"entries": []}),
-    affected = False,
-)
+def _run_package_default_visibility_test(files):
+    return run_lint_test(
+        _bazel_package_default_visibility,
+        "bazel_package_default_visibility",
+        files,
+    )
 
 def test_broad_package_default_visibility_errors():
-    res = testing.run(
-        _bazel_package_default_visibility,
-        files = {
-            "scripts/shac/bazel_lint/allowlists/bazel_package_default_visibility.json": _EMPTY_ALLOWLIST,
-            "broad_public/BUILD.bazel": 'package(default_visibility = ["//visibility:public"])\n',
-            "broad_root/BUILD.bazel": 'package(default_visibility = ["//:__subpackages__"])\n',
-            "broad_top/BUILD.bazel": 'package(default_visibility = ["//src:__subpackages__"])\n',
-        },
-    )
+    res = _run_package_default_visibility_test({
+        "broad_public/BUILD.bazel": 'package(default_visibility = ["//visibility:public"])\n',
+        "broad_root/BUILD.bazel": 'package(default_visibility = ["//:__subpackages__"])\n',
+        "broad_top/BUILD.bazel": 'package(default_visibility = ["//src:__subpackages__"])\n',
+    })
     asserts.eq(res.findings, (
         testing.finding(
             level = "error",
@@ -75,18 +74,14 @@ def test_broad_package_default_visibility_errors():
     ))
 
 def test_narrow_package_default_visibility_warnings():
-    res = testing.run(
-        _bazel_package_default_visibility,
-        files = {
-            "scripts/shac/bazel_lint/allowlists/bazel_package_default_visibility.json": _EMPTY_ALLOWLIST,
-            "narrow_pkg/BUILD.bazel": 'package(default_visibility = ["//tools/mdlint:__pkg__"])\n',
-            "narrow_sub/BUILD.bazel": 'package(default_visibility = ["//src/lib:__subpackages__"])\n',
-            "narrow_top_pkg/BUILD.bazel": 'package(default_visibility = ["//src:__pkg__"])\n',
-            "vendor_mixed/BUILD.bazel": 'package(default_visibility = ["//vendor:__subpackages__", "//src/lib:__subpackages__"])\n',
-            "vendor_repo_subpackages/BUILD.bazel": 'package(default_visibility = ["//vendor/google:__subpackages__"])\n',
-            "vendor_subpackages/BUILD.bazel": 'package(default_visibility = ["//vendor:__subpackages__"])\n',
-        },
-    )
+    res = _run_package_default_visibility_test({
+        "narrow_pkg/BUILD.bazel": 'package(default_visibility = ["//tools/mdlint:__pkg__"])\n',
+        "narrow_sub/BUILD.bazel": 'package(default_visibility = ["//src/lib:__subpackages__"])\n',
+        "narrow_top_pkg/BUILD.bazel": 'package(default_visibility = ["//src:__pkg__"])\n',
+        "vendor_mixed/BUILD.bazel": 'package(default_visibility = ["//vendor:__subpackages__", "//src/lib:__subpackages__"])\n',
+        "vendor_repo_subpackages/BUILD.bazel": 'package(default_visibility = ["//vendor/google:__subpackages__"])\n',
+        "vendor_subpackages/BUILD.bazel": 'package(default_visibility = ["//vendor:__subpackages__"])\n',
+    })
     asserts.eq(res.findings, (
         testing.finding(
             level = "warning",
@@ -139,16 +134,12 @@ def test_narrow_package_default_visibility_warnings():
     ))
 
 def test_disallowed_vendor_package_default_visibility():
-    res = testing.run(
-        _bazel_package_default_visibility,
-        files = {
-            "scripts/shac/bazel_lint/allowlists/bazel_package_default_visibility.json": _EMPTY_ALLOWLIST,
-            "disallowed_vendor_pkg/BUILD.bazel": 'package(default_visibility = ["//vendor/foo:__pkg__"])\n',
-            "disallowed_vendor_relative/BUILD.bazel": 'package(default_visibility = ["vendor/foo:__pkg__"])\n',
-            "disallowed_vendor_sub/BUILD.bazel": 'package(default_visibility = ["//vendor/google/foo:__subpackages__"])\n',
-            "disallowed_vendor_typo/BUILD.bazel": 'package(default_visibility = ["//vendorfoo:__pkg__"])\n',
-        },
-    )
+    res = _run_package_default_visibility_test({
+        "disallowed_vendor_pkg/BUILD.bazel": 'package(default_visibility = ["//vendor/foo:__pkg__"])\n',
+        "disallowed_vendor_relative/BUILD.bazel": 'package(default_visibility = ["vendor/foo:__pkg__"])\n',
+        "disallowed_vendor_sub/BUILD.bazel": 'package(default_visibility = ["//vendor/google/foo:__subpackages__"])\n',
+        "disallowed_vendor_typo/BUILD.bazel": 'package(default_visibility = ["//vendorfoo:__pkg__"])\n',
+    })
     asserts.eq(res.findings, (
         testing.finding(
             level = "error",
@@ -185,34 +176,10 @@ def test_disallowed_vendor_package_default_visibility():
     ))
 
 def test_allowed_package_default_visibility():
-    res = testing.run(
-        _bazel_package_default_visibility,
-        files = {
-            "clean/BUILD.bazel": 'package(default_applicable_licenses = ["//:license"])\n',
-            "no_package/BUILD.bazel": 'filegroup(name = "foo")\n',
-        },
-    )
-    asserts.eq(res.findings, ())
-
-def test_allowlisted_prefix():
-    allowlist = testing.file(
-        content = json.encode({
-            "entries": [
-                {
-                    "bug": "https://fxbug.dev/570203009",
-                    "path_prefix": "allowlisted_dir/",
-                },
-            ],
-        }),
-        affected = False,
-    )
-    res = testing.run(
-        _bazel_package_default_visibility,
-        files = {
-            "scripts/shac/bazel_lint/allowlists/bazel_package_default_visibility.json": allowlist,
-            "allowlisted_dir/foo/BUILD.bazel": 'package(default_visibility = ["//visibility:public"])\n',
-        },
-    )
+    res = _run_package_default_visibility_test({
+        "clean/BUILD.bazel": 'package(default_applicable_licenses = ["//:license"])\n',
+        "no_package/BUILD.bazel": 'filegroup(name = "foo")\n',
+    })
     asserts.eq(res.findings, ())
 
 def run_package_default_visibility_tests():
@@ -221,4 +188,3 @@ def run_package_default_visibility_tests():
     test_narrow_package_default_visibility_warnings()
     test_disallowed_vendor_package_default_visibility()
     test_allowed_package_default_visibility()
-    test_allowlisted_prefix()

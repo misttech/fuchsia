@@ -8,12 +8,18 @@ load(
     "//scripts/shac/bazel.star",
     "_ALL_BAZEL_FILES",
     "_bazel_default_applicable_licenses",
-    "_bazel_disallowed_workspace_root_package_labels",
     "_bazel_no_glob",
     "_bazel_no_recursive_glob",
     "_bazel_no_repo_rules_canonical_names",
     "_make_bazel_lint_check",
 )
+
+# Real checks loaded for use in bazel_lint framework tests below.
+load(
+    "//scripts/shac/bazel.star",
+    "_bazel_disallowed_workspace_root_package_labels",
+    "_bazel_target_visibility",
+)  # buildifier: disable=same-origin-load
 load(
     "//scripts/shac/bazel_lint/checks/tests/checks_test.star",
     _test_bazel_lint_checks = "test_bazel_lint_checks",
@@ -334,19 +340,49 @@ def test_bazel_lint_framework_allowlist():
                     "bug": "https://fxbug.dev/565897544",
                     "path": "allowlisted_file/BUILD.bazel",
                 },
+                {
+                    "bug": "https://fxbug.dev/565897544",
+                    "path": "some_targets_allowlisted/BUILD.bazel",
+                    "targets": ["allowed_target"],
+                },
             ],
         }),
         affected = False,
     )
     res = testing.run(
-        _FRAMEWORK_TEST_CHECK,
+        _bazel_target_visibility,
         files = {
-            _FRAMEWORK_TEST_CHECK_ALLOWLIST: allowlist,
-            "allowlisted_dir/foo/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
-            "allowlisted_file/BUILD.bazel": _FRAMEWORK_TEST_VIOLATION,
+            "scripts/shac/bazel_lint/allowlists/bazel_target_visibility.json": allowlist,
+            "allowlisted_dir/foo/BUILD.bazel": 'filegroup(name = "dir_target", visibility = ["//visibility:public"])\n',
+            "allowlisted_file/BUILD.bazel": 'filegroup(name = "file_target", visibility = ["//visibility:public"])\n',
+            "some_targets_allowlisted/BUILD.bazel": """
+filegroup(
+    name = "allowed_target",
+    visibility = select({
+        "//conditions:default": ["//visibility:public"],
+    }),
+)
+filegroup(
+    name = "unallowed_target",
+    visibility = ["//visibility:public"],
+)
+exports_files(
+    ["exports_files_does_not_define_a_target_so_not_allowlisted.txt"],
+    visibility = ["//visibility:public"],
+)
+""",
         },
     )
-    asserts.eq(res.findings, ())
+    asserts.eq(
+        [(f.filepath, f.line) for f in res.findings],
+        [
+            # `unallowed_target` is not in the allowlist entry's `targets` list:
+            ("some_targets_allowlisted/BUILD.bazel", 10),
+            # `exports_files()` has no `name` attribute and does not define a
+            # target, so it is never covered by a target-scoped allowlist entry:
+            ("some_targets_allowlisted/BUILD.bazel", 14),
+        ],
+    )
 
 def test_bazel_lint_framework_unchanged_lines_warning_only():
     check = _make_bazel_lint_check(
@@ -362,18 +398,50 @@ def test_bazel_lint_framework_unchanged_lines_warning_only():
                 content = _FRAMEWORK_TEST_VIOLATION,
                 affected_lines = [],
             ),
+            "multiline_changed/BUILD.bazel": testing.file(
+                content = """
+x = (
+    "//:foo/"
+    "bar"
+)
+""",
+                affected_lines = [(4, '    "bar"')],
+            ),
+            "multiline_unchanged/BUILD.bazel": testing.file(
+                content = """
+x = (
+    "//:foo/"
+    "bar"
+)
+y = 1
+""",
+                affected_lines = [(6, "y = 1")],
+            ),
             "partially_changed/BUILD.bazel": testing.file(
-                content = 'x = "//:foo/bar"\ny = "//:baz/qux"\n',
-                affected_lines = [(2, 'y = "//:baz/qux"')],
+                content = """
+x = "//:foo/bar"
+y = "//:baz/qux"
+""",
+                affected_lines = [(3, 'y = "//:baz/qux"')],
             ),
         },
     )
     asserts.eq(
-        [(f.filepath, f.level, f.line) for f in res.findings],
+        [(f.filepath, f.level, f.line, f.end_line) for f in res.findings],
         [
-            ("deletion_only/BUILD.bazel", "warning", 1),
-            ("partially_changed/BUILD.bazel", "warning", 1),
-            ("partially_changed/BUILD.bazel", "error", 2),
+            # Modified file with only deleted lines (`affected_lines = []`):
+            # findings on remaining unchanged lines are downgraded to warning.
+            ("deletion_only/BUILD.bazel", "warning", 1, 1),
+            # Multi-line finding (lines 3-4) where line 4 was modified:
+            # overlaps a changed line, so it remains an error.
+            ("multiline_changed/BUILD.bazel", "error", 3, 4),
+            # Multi-line finding (lines 3-4) where only line 6 was modified:
+            # does not overlap any changed line, so it is downgraded to warning.
+            ("multiline_unchanged/BUILD.bazel", "warning", 3, 4),
+            # Unchanged line 2 is downgraded to warning, while modified line 3
+            # remains an error.
+            ("partially_changed/BUILD.bazel", "warning", 2, 2),
+            ("partially_changed/BUILD.bazel", "error", 3, 3),
         ],
     )
 

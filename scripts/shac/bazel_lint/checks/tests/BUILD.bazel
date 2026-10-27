@@ -11,6 +11,7 @@ filegroup(
     name = "files",
     testonly = True,
     srcs = [
+        "base_test.star",
         "checks_test.star",
         # LINT.IfChange(all_check_test_files)
         "load_visibility_test.star",
