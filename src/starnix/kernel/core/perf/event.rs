@@ -28,8 +28,6 @@ const FTRACE_PRINT_ID: U16 = U16::new(5);
 // Used for inspect tracking.
 const DROPPED_PAGES: &str = "dropped_pages";
 
-const MAX_TIME_DELTA_NANOS: u32 = (1 << 27) - 1;
-
 #[repr(C)]
 #[derive(Debug, Default, IntoBytes, Immutable, Unaligned)]
 struct PrintEventHeader {
@@ -85,12 +83,12 @@ impl TraceEventHeader {
     }
 
     fn set_time_delta(&mut self, nanos: u32) {
-        // The max delta is capped at MAX_TIME_DELTA_NANOS so it fits into 27 bits.
-        // another option is to just shift it over, but that could lead to other misleading
-        // deltas if the value is large.
-        let saturated_nanos = nanos.min(MAX_TIME_DELTA_NANOS);
+        // `Reservation::header_time_delta()` already fits in 27 bits: the ring buffer puts a
+        // TIME_STAMP record before a record whose delta doesn't. Saturate anyway, so that a bug
+        // can't spill into the `type_or_length` bits.
+        let saturated_nanos = u64::from(nanos).min(LocklessRingBuffer::MAX_TIME_DELTA_NANOS) as u32;
         // Move into the high 27 bits reserving the lower 5 bits for the type_or_length value.
-        self.time_delta = U32::new(saturated_nanos << 5);
+        self.time_delta = U32::new(saturated_nanos << LocklessRingBuffer::TYPE_OR_LENGTH_BITS);
     }
 }
 
@@ -222,13 +220,25 @@ impl<'a> TraceEventQueue {
     /// Returns the delta duration between this event and the previous event written.
     pub fn push_event(
         &self,
+        event: TraceEvent,
+        data: &[u8],
+    ) -> Result<zx::Duration<BootTimeline>, Errno> {
+        self.push_event_with_clock(event, data, zx::BootInstant::get)
+    }
+
+    /// Like `push_event()`, but reads the current time from `current_boot_time`, so that tests can
+    /// control timestamps.
+    fn push_event_with_clock(
+        &self,
         mut event: TraceEvent,
         data: &[u8],
+        current_boot_time: impl Fn() -> zx::BootInstant,
     ) -> Result<zx::Duration<BootTimeline>, Errno> {
         let size = event.size();
         let ring_buffer = self.ring_buffer.read();
 
-        let (res, _timestamp, delta) = match ring_buffer.reserve(size) {
+        let (res, _timestamp, delta) = match ring_buffer.reserve_with_clock(size, current_boot_time)
+        {
             Ok(res) => res,
             Err(e) if e == errno!(EINVAL) => {
                 log_error!("Invalid reservation size: {}", size);
@@ -241,8 +251,7 @@ impl<'a> TraceEventQueue {
             Err(e) => return Err(e),
         };
 
-        let nanos = delta.into_nanos().try_into().unwrap_or(u32::MAX);
-        event.header.set_time_delta(nanos);
+        event.header.set_time_delta(res.header_time_delta());
 
         let bytes = event.as_bytes();
         res.write_at(0, bytes);
@@ -430,8 +439,8 @@ impl paged_ring_buffer::OutputBuffer for RingOutputBuffer<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, TraceEvent, TraceEventQueue,
-        TraceEventQueueList,
+        DEFAULT_RING_BUFFER_SIZE_BYTES, LocklessRingBuffer, PrintEvent, TraceEvent,
+        TraceEventQueue, TraceEventQueueList,
     };
     use crate::vfs::OutputBuffer;
     use crate::vfs::buffers::VecOutputBuffer;
@@ -440,6 +449,7 @@ mod tests {
 
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::error;
+    use zerocopy::IntoBytes;
 
     #[fuchsia::test]
     fn trace_event_queue_empty_errors() {
@@ -569,52 +579,150 @@ mod tests {
         assert_eq!(queue.read(&mut buffer), error!(EAGAIN));
     }
 
+    const TYPE_OR_LENGTH_MASK: u32 = (1 << LocklessRingBuffer::TYPE_OR_LENGTH_BITS) - 1;
+    // The `type_or_length` of a data record whose length is in the u32 after the header.
+    const TYPE_OR_LENGTH_DATA: u32 = 0;
+
+    /// A data record from an ftrace page.
+    struct PageRecord {
+        /// The absolute time from the `TIME_STAMP` record right before this record, if any.
+        time_stamp: Option<u64>,
+        /// The record header's time delta field.
+        time_delta: u32,
+        /// The length word, which counts itself and the body.
+        length: u32,
+        /// The bytes after the length word.
+        body: Vec<u8>,
+    }
+
+    /// Splits an ftrace page into its data records. Panics on any other record type, on a
+    /// `TIME_STAMP` record that no data record follows, or on a record that runs past the page's
+    /// data size.
+    fn page_records(page: &[u8]) -> Vec<PageRecord> {
+        let data_size = u64::from_le_bytes(page[8..16].try_into().unwrap()) as usize;
+        let end = LocklessRingBuffer::PAGE_HEADER_SIZE + data_size;
+        assert!(end <= page.len(), "data size {data_size} runs past the page");
+        let word = |at: usize| {
+            assert!(at + 4 <= end, "read at {at} runs past the page data ({end})");
+            u32::from_le_bytes(page[at..at + 4].try_into().unwrap())
+        };
+        let mut records = vec![];
+        let mut time_stamp = None;
+        let mut offset = LocklessRingBuffer::PAGE_HEADER_SIZE;
+        while offset < end {
+            let header = word(offset);
+            let time_delta = header >> LocklessRingBuffer::TYPE_OR_LENGTH_BITS;
+            match header & TYPE_OR_LENGTH_MASK {
+                LocklessRingBuffer::RINGBUF_TYPE_TIME_STAMP => {
+                    assert!(time_stamp.is_none(), "two TIME_STAMP records in a row at {offset}");
+                    let high = word(offset + 4);
+                    time_stamp = Some(
+                        (u64::from(high) << LocklessRingBuffer::TIME_DELTA_BITS)
+                            | u64::from(time_delta),
+                    );
+                    offset += LocklessRingBuffer::TIME_STAMP_RECORD_SIZE;
+                }
+                TYPE_OR_LENGTH_DATA => {
+                    let length = word(offset + 4);
+                    let record_end = offset + 4 + length as usize;
+                    assert!(record_end <= end, "record at {offset} runs past the page data");
+                    let body = page[offset + 8..record_end].to_vec();
+                    records.push(PageRecord {
+                        time_stamp: time_stamp.take(),
+                        time_delta,
+                        length,
+                        body,
+                    });
+                    offset = record_end;
+                }
+                other => panic!("unexpected record type {other} at offset {offset}"),
+            }
+        }
+        assert!(time_stamp.is_none(), "no data record follows the last TIME_STAMP record");
+        records
+    }
+
     #[fuchsia::test]
     fn page_overflow() {
         let queue = TraceEventQueue::new(0).expect("create queue");
-        let queue_start_timestamp = queue.enable().expect("enable queue");
+        let queue_start_timestamp = queue.enable().expect("enable queue").into_nanos();
 
         let pid = 1234;
         let data = b"B|1234|loooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\
         ooooooooooooooooooooooooooooooooooooooooooooooooooooooooongevent";
         let expected_event = TraceEvent::new(pid, data.len());
         assert_eq!(expected_event.size(), 155);
+        let page_capacity = *PAGE_SIZE as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let events_per_page = page_capacity / expected_event.size();
+        // Page 0 holds `events_per_page` events even with a TIME_STAMP record among them.
+        assert!(
+            events_per_page * expected_event.size() + LocklessRingBuffer::TIME_STAMP_RECORD_SIZE
+                <= page_capacity
+        );
 
-        let events_per_page =
-            (*PAGE_SIZE as usize - LocklessRingBuffer::PAGE_HEADER_SIZE) / expected_event.size();
+        // Events are STEP_NANOS apart, except that event GAP_EVENT is more than
+        // MAX_TIME_DELTA_NANOS after the one before it. Push one more event than Page 0 holds, so
+        // that Page 0 is finalized and can be read.
+        const STEP_NANOS: i64 = 1000;
+        const GAP_EVENT: usize = 5;
+        let gap_nanos = LocklessRingBuffer::MAX_TIME_DELTA_NANOS as i64 + 1;
+        let times: Vec<i64> = (0..=events_per_page)
+            .scan(queue_start_timestamp, |time, i| {
+                *time += if i == GAP_EVENT { gap_nanos } else { STEP_NANOS };
+                Some(*time)
+            })
+            .collect();
+        let deltas: Vec<i64> = times
+            .iter()
+            .map(|&time| {
+                let event = TraceEvent::new(pid, data.len());
+                queue
+                    .push_event_with_clock(event, data, || zx::BootInstant::from_nanos(time))
+                    .expect("push event")
+                    .into_nanos()
+            })
+            .collect();
 
-        // Push the event into the queue.
-        for i in 0..=events_per_page {
-            let event = TraceEvent::new(pid, data.len());
-            let result = queue.push_event(event, data);
-            assert!(result.is_ok());
-            let delta = result.ok().expect("delta").into_nanos();
-            // The first event on Page 0 (i == 0) and the first event on Page 1 (i == events_per_page,
-            // due to overflow since a page holds exactly events_per_page events of size 155) must
-            // have a time delta of exactly 0 in their event headers as per the Ftrace format.
-            if i == 0 || i == events_per_page {
-                assert_eq!(delta, 0);
-            } else {
-                assert!(delta > 0);
-            }
-        }
-
-        // Read a page of data.
         let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
         assert_eq!(queue.read(&mut buffer), Ok(*PAGE_SIZE as usize));
         assert_eq!(buffer.bytes_written() as u64, *PAGE_SIZE);
+        let page = buffer.data();
+        // The page header holds the time of the first event on the page.
+        let page_timestamp = u64::from_le_bytes(page[0..8].try_into().unwrap());
+        assert_eq!(page_timestamp, times[0] as u64);
+        // Page 0 holds the first `events_per_page` events and GAP_EVENT's TIME_STAMP record. The
+        // next event doesn't fit.
+        let data_size = u64::from_le_bytes(page[8..16].try_into().unwrap()) as usize;
+        assert_eq!(
+            data_size,
+            events_per_page * expected_event.size() + LocklessRingBuffer::TIME_STAMP_RECORD_SIZE
+        );
 
-        // Verify timestamp is monotonic
-        let actual_ts_bytes = &buffer.data()[0..8];
-        let actual_ts = u64::from_le_bytes(actual_ts_bytes.try_into().unwrap());
-        assert!(actual_ts >= queue_start_timestamp.into_nanos() as u64);
+        // Each event is one ftrace record, in push order. push_event() returns the delta from the
+        // previous event, and the record header holds it, except for the first event on the page,
+        // whose time the page header carries, and GAP_EVENT, whose time a TIME_STAMP record
+        // carries. Their header deltas are 0.
+        let records = page_records(page);
+        assert_eq!(records.len(), events_per_page);
+        let mut expected_body = PrintEvent::new(pid).as_bytes().to_vec();
+        expected_body.extend_from_slice(data);
+        expected_body.push(b'\n');
+        for (i, record) in records.iter().enumerate() {
+            assert_eq!(record.length as usize, expected_event.size() - 4, "event {i}");
+            assert_eq!(record.body, expected_body, "event {i}");
+            let (expected_delta, expected_time_delta, expected_time_stamp) = match i {
+                0 => (0, 0, None),
+                GAP_EVENT => (gap_nanos, 0, Some(times[i] as u64)),
+                _ => (STEP_NANOS, STEP_NANOS as u32, None),
+            };
+            assert_eq!(deltas[i], expected_delta, "event {i}");
+            assert_eq!(record.time_delta, expected_time_delta, "event {i}");
+            assert_eq!(record.time_stamp, expected_time_stamp, "event {i}");
+        }
+        // The next event is the first on Page 1.
+        assert_eq!(deltas[events_per_page], 0);
 
-        // Verify size of events
-        let actual_size_bytes = &buffer.data()[8..16];
-        let expected_size_bytes = &((expected_event.size() * events_per_page) as u64).to_le_bytes();
-        assert_eq!(actual_size_bytes, expected_size_bytes);
-
-        // Try reading another page.
+        // Page 1 is not full, so it can't be read yet.
         let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);
         assert_eq!(queue.read(&mut buffer), error!(EAGAIN));
     }

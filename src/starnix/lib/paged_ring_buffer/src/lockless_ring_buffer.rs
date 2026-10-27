@@ -120,6 +120,22 @@ const ACTIVE_WRITERS_MASK: usize = !FLAGS_MASK;
 // ftrace's `RB_WRITE_MASK`.
 const WRITE_OFFSET_SEALED_BIT: usize = 1 << 63;
 
+/// Encodes a `TIME_STAMP` record that sets the absolute time of the record after it to
+/// `ts_nanos`. The low 27 bits go in the header's time delta field and the rest in the next u32.
+/// This is the layout Linux 4.17+ writes and Perfetto's `CpuReader::ParsePagePayload` reads.
+fn encode_time_stamp(ts_nanos: u64) -> [u8; LocklessRingBuffer::TIME_STAMP_RECORD_SIZE] {
+    // Saturate, so that a timestamp too large for 59 bits can't wrap to a smaller one.
+    let ts_nanos = ts_nanos.min(LocklessRingBuffer::MAX_TIME_STAMP_NANOS);
+    let low = (ts_nanos & LocklessRingBuffer::MAX_TIME_DELTA_NANOS) as u32;
+    let high = (ts_nanos >> LocklessRingBuffer::TIME_DELTA_BITS) as u32;
+    let header = (low << LocklessRingBuffer::TYPE_OR_LENGTH_BITS)
+        | LocklessRingBuffer::RINGBUF_TYPE_TIME_STAMP;
+    let mut bytes = [0u8; LocklessRingBuffer::TIME_STAMP_RECORD_SIZE];
+    bytes[0..4].copy_from_slice(&header.to_le_bytes());
+    bytes[4..8].copy_from_slice(&high.to_le_bytes());
+    bytes
+}
+
 // When yielding under high contention, if we busy-spin we risk priority inversion and CPU starvation
 // of preempted writers. Sleeping for 50 microseconds gives the OS scheduler sufficient window (accounting
 // for 2-5us context switch overhead and 15-30us thread execution time) to reschedule and execute the
@@ -282,6 +298,24 @@ impl LocklessRingBuffer {
     // This is an Ftrace page header consisting of a u64 timestamp at offset 0 and a u64 data size at offset 8.
     pub const PAGE_HEADER_SIZE: usize = 16;
 
+    // An ftrace record header is a u32: the low `TYPE_OR_LENGTH_BITS` hold `type_or_length`, and
+    // the high `TIME_DELTA_BITS` hold the time delta from the previous record, in nanoseconds.
+
+    /// The number of low bits of an ftrace record header that hold `type_or_length`.
+    pub const TYPE_OR_LENGTH_BITS: u32 = 5;
+    /// The number of high bits of an ftrace record header that hold the time delta. A `TIME_STAMP`
+    /// record puts the low `TIME_DELTA_BITS` of its time there.
+    pub const TIME_DELTA_BITS: u32 = 27;
+    /// The largest time delta, in nanoseconds, that a record header holds.
+    pub const MAX_TIME_DELTA_NANOS: u64 = (1 << Self::TIME_DELTA_BITS) - 1;
+    /// The `type_or_length` of a `TIME_STAMP` record (`RINGBUF_TYPE_TIME_STAMP` in Linux
+    /// include/linux/ring_buffer.h).
+    pub const RINGBUF_TYPE_TIME_STAMP: u32 = 31;
+    /// The size of a `TIME_STAMP` record: the header and a u32 with the high bits of the time.
+    pub const TIME_STAMP_RECORD_SIZE: usize = 8;
+    // The largest time a `TIME_STAMP` record holds: 27 bits in the header and 32 in the next u32.
+    const MAX_TIME_STAMP_NANOS: u64 = (1 << (Self::TIME_DELTA_BITS + u32::BITS)) - 1;
+
     /// Creates a new LocklessRingBuffer.
     /// size_bytes: Size of the ring buffer. Must be at least PAGE_SIZE * 3 and will be rounded up to a multiple of PAGE_SIZE.
     /// overwrite: If true, old pages will be dropped when the ring is full. If false, writes will fail until the data is read.
@@ -409,11 +443,21 @@ pub struct Reservation<'a> {
     pub offset: usize,
     pub node_idx: usize,
     pub size: usize,
+    /// See `header_time_delta()`.
+    header_time_delta: u32,
     buffer: &'a LocklessRingBuffer,
     committed: bool,
 }
 
 impl<'a> Reservation<'a> {
+    /// Returns the value, in nanoseconds, for the time delta field of the record header written
+    /// into this reservation. It is at most `MAX_TIME_DELTA_NANOS`. It is 0 when a `TIME_STAMP`
+    /// record written before the reservation carries the record's absolute time, and for the
+    /// first record on a page, whose time the page header carries.
+    pub fn header_time_delta(&self) -> u32 {
+        self.header_time_delta
+    }
+
     pub fn write_at(&self, rel_offset: usize, data: &[u8]) {
         assert!(rel_offset + data.len() <= self.size, "Write exceeds reservation size");
         self.buffer.mapping.write_at(self.offset + rel_offset, data);
@@ -449,6 +493,7 @@ impl<'a> std::fmt::Debug for Reservation<'a> {
             .field("offset", &self.offset)
             .field("node_idx", &self.node_idx)
             .field("size", &self.size)
+            .field("header_time_delta", &self.header_time_delta)
             .field("committed", &self.committed)
             .finish()
     }
@@ -463,48 +508,85 @@ enum AdvanceResult {
     Error(Errno),
 }
 
+/// A reservation made by `try_reserve_on_page()`.
+struct PageReservation {
+    /// Offset in the page of the caller's record, after its `TIME_STAMP` record if it has one.
+    offset: usize,
+    /// The record's time.
+    now: zx::BootInstant,
+    /// The delta from the previous record, or 0 for the first record on a page.
+    delta: zx::Duration<zx::BootTimeline>,
+    /// See `Reservation::header_time_delta()`.
+    header_time_delta: u32,
+}
+
 impl LocklessRingBuffer {
     /// Attempts to reserve space on the current tail page, stamping the record with the time from
     /// `current_boot_time`.
     ///
-    /// Returns `Ok((offset, now, delta))` if successful, or `Err(())` if the page is full or
-    /// sealed.
+    /// Returns `Err(())` if the page is full or sealed.
     fn try_reserve_on_page(
         &self,
         tail_node: &Node,
         size: usize,
         current_boot_time: &impl Fn() -> zx::BootInstant,
-    ) -> Result<(usize, zx::BootInstant, zx::Duration<zx::BootTimeline>), ()> {
+    ) -> Result<PageReservation, ()> {
         // Atomically reserve space on the page using a bounded CAS loop.
         // By verifying that `WRITE_OFFSET_SEALED_BIT` is not set and that
-        // `current_offset + size <= PAGE_SIZE` before executing the CAS, we guarantee that failed
-        // reservations never advance `write_offset` and that no reservation can succeed after
-        // `Node::finalize()` seals the page. A CAS that loses to the seal returns the sealed value,
-        // so the next iteration fails without retrying.
+        // `current_offset + total_size <= PAGE_SIZE` before executing the CAS, we guarantee that
+        // failed reservations never advance `write_offset` and that no reservation can succeed
+        // after `Node::finalize()` seals the page. A CAS that loses to the seal returns the sealed
+        // value, so the next iteration fails without retrying.
+        //
+        // A record more than `MAX_TIME_DELTA_NANOS` after the previous one can't store its delta
+        // in its header, so a `TIME_STAMP` record goes in front of it, and the claim includes it.
+        // Each attempt reads the clock and `prev_timestamp` again, so a writer that lost the CAS
+        // after a preemption decides with a current time, not one older than `prev_timestamp`.
         // Relaxed: see `Node::write_offset`.
         let mut current_offset = tail_node.write_offset.load(Ordering::Relaxed);
-        loop {
-            if (current_offset & WRITE_OFFSET_SEALED_BIT) != 0
-                || current_offset + size > (*PAGE_SIZE) as usize
+        let (now_nanos, time_stamp_size) = loop {
+            if (current_offset & WRITE_OFFSET_SEALED_BIT) != 0 {
+                return Err(());
+            }
+            let now_nanos = current_boot_time().into_nanos() as u64;
+            // Relaxed: only the value is used, to size the claim. See the `debug_assert!` below.
+            let prev_estimate = self.prev_timestamp.load(Ordering::Relaxed);
+            // The first record on a page takes its time from the page header and never needs a
+            // `TIME_STAMP` record, so any `size` that `reserve()` accepts fits on an empty page.
+            let time_stamp_size = if current_offset != LocklessRingBuffer::PAGE_HEADER_SIZE
+                && now_nanos.saturating_sub(prev_estimate)
+                    > LocklessRingBuffer::MAX_TIME_DELTA_NANOS
             {
+                LocklessRingBuffer::TIME_STAMP_RECORD_SIZE
+            } else {
+                0
+            };
+            let total_size = size + time_stamp_size;
+            if current_offset + total_size > (*PAGE_SIZE) as usize {
                 return Err(());
             }
             match tail_node.write_offset.compare_exchange_weak(
                 current_offset,
-                current_offset + size,
+                current_offset + total_size,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
-                Ok(_) => break,
+                Ok(_) => break (now_nanos, time_stamp_size),
                 Err(actual) => current_offset = actual,
             }
-        }
+        };
 
-        let now_candidate = current_boot_time().into_nanos() as u64;
-        let actual_prev = self.prev_timestamp.fetch_max(now_candidate, Ordering::AcqRel);
-        let final_now_nanos = std::cmp::max(now_candidate, actual_prev);
+        let actual_prev = self.prev_timestamp.fetch_max(now_nanos, Ordering::AcqRel);
+        let final_now_nanos = std::cmp::max(now_nanos, actual_prev);
         let now = zx::BootInstant::from_nanos(final_now_nanos as i64);
 
+        // TODO(https://fxbug.dev/566957812): The claim and the `fetch_max` are separate steps, so
+        // a writer preempted between them stamps after writers that claimed later. Its time is
+        // then their later time, not its own clock read, and `delta_nanos` is measured from the
+        // time that the `fetch_max` returns, not from the record before this one on the page. So,
+        // by up to how long the writer was preempted, a record without a `TIME_STAMP` record can
+        // decode early, a record with one or the first record on a page can decode late, and
+        // records can decode out of order along the page.
         // First write on this page. Set timestamp.
         let delta_nanos = if current_offset == LocklessRingBuffer::PAGE_HEADER_SIZE {
             tail_node.page_data.write_at(0, &final_now_nanos.to_le_bytes());
@@ -513,9 +595,34 @@ impl LocklessRingBuffer {
             final_now_nanos.saturating_sub(actual_prev)
         };
 
+        let header_time_delta = if time_stamp_size > 0 {
+            // The `TIME_STAMP` record carries `final_now_nanos` as the record's absolute time, so
+            // the record decodes to that time whatever order concurrent writers finish in. That
+            // time can be late, as the TODO above describes. Write the record even if another
+            // writer has raised `prev_timestamp` so that the delta would fit: the claimed bytes
+            // must hold a valid record.
+            tail_node.page_data.write_at(current_offset, &encode_time_stamp(final_now_nanos));
+            0
+        } else {
+            // The `fetch_max` reads a value no older than `prev_estimate` (read-read coherence),
+            // and `prev_timestamp` only grows while this thread holds `ref_count`: only `enable()`
+            // lowers it, and only when `ref_count` is 0. So `delta_nanos` is at most
+            // `now_nanos - prev_estimate`, which needed no `TIME_STAMP` record.
+            debug_assert!(
+                delta_nanos <= LocklessRingBuffer::MAX_TIME_DELTA_NANOS,
+                "delta {delta_nanos} too large"
+            );
+            delta_nanos.min(LocklessRingBuffer::MAX_TIME_DELTA_NANOS) as u32
+        };
+
         let delta = zx::Duration::from_nanos(delta_nanos as i64);
 
-        Ok((current_offset, now, delta))
+        Ok(PageReservation {
+            offset: current_offset + time_stamp_size,
+            now,
+            delta,
+            header_time_delta,
+        })
     }
 
     /// Advances the tail page to the next page in the ring.
@@ -709,6 +816,11 @@ impl LocklessRingBuffer {
         AdvanceResult::Advanced
     }
 
+    /// Reserves `size` bytes for a record.
+    ///
+    /// Returns the reservation, the record's time, and the delta from the previous record (0 for
+    /// the first record on a page). The delta can exceed what a record header holds; write
+    /// `Reservation::header_time_delta()` into the header instead.
     pub fn reserve(
         &self,
         size: usize,
@@ -718,7 +830,7 @@ impl LocklessRingBuffer {
 
     /// Like `reserve()`, but reads the current time from `current_boot_time`, so that tests can
     /// control timestamps.
-    fn reserve_with_clock(
+    pub fn reserve_with_clock(
         &self,
         size: usize,
         current_boot_time: impl Fn() -> zx::BootInstant,
@@ -803,17 +915,18 @@ impl LocklessRingBuffer {
 
             // Try to claim space on the current page.
             match reservation_result {
-                Ok((offset, now, delta)) => {
+                Ok(page) => {
                     break Ok((
                         Reservation {
-                            offset: tail_idx * (*PAGE_SIZE) as usize + offset,
+                            offset: tail_idx * (*PAGE_SIZE) as usize + page.offset,
                             node_idx: tail_idx,
                             size,
+                            header_time_delta: page.header_time_delta,
                             buffer: self,
                             committed: false,
                         },
-                        now,
-                        delta,
+                        page.now,
+                        page.delta,
                     ));
                 }
                 Err(()) => {
@@ -1169,29 +1282,6 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    // An ftrace record header is a u32: the low `TYPE_OR_LENGTH_BITS` hold `type_or_length`, and the
-    // high `TIME_DELTA_SHIFT` bits hold the time delta from the previous record, in nanoseconds.
-    const TYPE_OR_LENGTH_BITS: u32 = 5;
-    const TIME_DELTA_SHIFT: u32 = 27;
-    const MAX_TIME_DELTA_NANOS: u64 = (1 << TIME_DELTA_SHIFT) - 1;
-    // `RINGBUF_TYPE_TIME_STAMP` in Linux include/linux/ring_buffer.h.
-    const RINGBUF_TYPE_TIME_STAMP: u32 = 31;
-    const TIME_STAMP_RECORD_SIZE: usize = 8;
-
-    /// Encodes a `TIME_STAMP` record that sets the absolute time of the record after it to
-    /// `ts_nanos`. The low 27 bits go in the header's time delta field and the rest in the next u32.
-    /// This is the layout Linux 4.17+ writes and Perfetto's `CpuReader::ParsePagePayload` reads.
-    fn encode_time_stamp(ts_nanos: u64) -> [u8; TIME_STAMP_RECORD_SIZE] {
-        let low = (ts_nanos & MAX_TIME_DELTA_NANOS) as u32;
-        // Saturate, so that a timestamp too large for 59 bits can't wrap to a small one.
-        let high = u32::try_from(ts_nanos >> TIME_DELTA_SHIFT).unwrap_or(u32::MAX);
-        let header = (low << TYPE_OR_LENGTH_BITS) | RINGBUF_TYPE_TIME_STAMP;
-        let mut bytes = [0u8; TIME_STAMP_RECORD_SIZE];
-        bytes[0..4].copy_from_slice(&header.to_le_bytes());
-        bytes[4..8].copy_from_slice(&high.to_le_bytes());
-        bytes
-    }
-
     /// An `OutputBuffer` that collects what is written into a `Vec`, in place of starnix_core's
     /// `VecOutputBuffer`.
     struct VecOutputBuffer {
@@ -1232,8 +1322,8 @@ mod tests {
     }
 
     /// Calls `reserve()` with the time 1 ns after the ring's last timestamp. Tests that check exact
-    /// offsets or page placement use it, so that a scheduling stall between two reservations
-    /// can't change how the records are laid out.
+    /// offsets or page placement use it: with the real clock, a scheduling stall longer than
+    /// `MAX_TIME_DELTA_NANOS` between two reservations would add a `TIME_STAMP` record.
     fn reserve_without_gap(
         buffer: &LocklessRingBuffer,
         size: usize,
@@ -1245,9 +1335,12 @@ mod tests {
     }
 
     /// Writes a variable-length ftrace data record (`type_or_length == 0`) into `res`.
-    fn write_ftrace_record(res: &Reservation<'_>, time_delta: u32, payload: &[u8]) {
+    fn write_ftrace_record(res: &Reservation<'_>, payload: &[u8]) {
         assert_eq!(res.size, 8 + payload.len());
-        res.write_at(0, &(time_delta << TYPE_OR_LENGTH_BITS).to_le_bytes());
+        res.write_at(
+            0,
+            &(res.header_time_delta() << LocklessRingBuffer::TYPE_OR_LENGTH_BITS).to_le_bytes(),
+        );
         res.write_at(4, &((4 + payload.len()) as u32).to_le_bytes());
         res.write_at(8, payload);
     }
@@ -1259,12 +1352,66 @@ mod tests {
         payload: Vec<u8>,
     }
 
+    /// Returns a time after the ring's initial timestamp, so that no injected time is raised to it.
+    fn injected_start(buffer: &LocklessRingBuffer) -> u64 {
+        // Relaxed: the tests that call this are single-threaded.
+        buffer.prev_timestamp.load(Ordering::Relaxed) + 1_000
+    }
+
+    /// Writes an ftrace data record holding `payload` at `now_nanos`. Returns the node it landed
+    /// on and the delta that `reserve()` returned.
+    fn write_record_at(
+        buffer: &LocklessRingBuffer,
+        now_nanos: u64,
+        payload: &[u8],
+    ) -> (usize, u64) {
+        let (res, now, delta) =
+            reserve_at(buffer, 8 + payload.len(), zx::BootInstant::from_nanos(now_nanos as i64))
+                .unwrap();
+        assert_eq!(now.into_nanos() as u64, now_nanos);
+        let delta = delta.into_nanos() as u64;
+        // With one writer, the header holds the delta unless it doesn't fit.
+        let expected_header =
+            if delta > LocklessRingBuffer::MAX_TIME_DELTA_NANOS { 0 } else { delta };
+        assert_eq!(res.header_time_delta() as u64, expected_header);
+        write_ftrace_record(&res, payload);
+        let node_idx = res.node_idx;
+        buffer.commit(res);
+        (node_idx, delta)
+    }
+
+    /// Reads and decodes every page written so far. Returns each page's records and the indices
+    /// of the records that follow a `TIME_STAMP` record.
+    fn read_ftrace_pages(buffer: &LocklessRingBuffer) -> Vec<(Vec<DecodedRecord>, Vec<usize>)> {
+        let mut pages = vec![];
+        let read_all = |pages: &mut Vec<_>| loop {
+            let mut dest = VecOutputBuffer::new((*PAGE_SIZE) as usize);
+            match buffer.read(&mut dest) {
+                Ok(_) => pages.push(decode_ftrace_page(dest.data())),
+                Err(e) if e == errno!(EAGAIN) => break,
+                Err(e) => panic!("read failed: {e:?}"),
+            }
+        };
+        read_all(&mut pages);
+        // A record that fills a page moves the tail off the last page, so it can be read too.
+        let max_payload = (*PAGE_SIZE) as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let (res, _, _) = reserve_without_gap(buffer, max_payload).unwrap();
+        buffer.commit(res);
+        read_all(&mut pages);
+        pages
+    }
+
+    /// Returns the record timestamps on `page` and how many follow a `TIME_STAMP` record.
+    fn timestamps(page: &(Vec<DecodedRecord>, Vec<usize>)) -> (Vec<u64>, usize) {
+        (page.0.iter().map(|r| r.timestamp).collect(), page.1.len())
+    }
+
     /// Decodes an ftrace page the way Perfetto's `CpuReader::ParsePagePayload`
     /// (third_party/perfetto/src/traced/probes/ftrace/cpu_reader.cc) does. Returns the data records
     /// with their absolute timestamps, and the indices of the records that follow a `TIME_STAMP`
     /// record.
     fn decode_ftrace_page(page: &[u8]) -> (Vec<DecodedRecord>, Vec<usize>) {
-        const TYPE_OR_LENGTH_MASK: u32 = (1 << TYPE_OR_LENGTH_BITS) - 1;
+        const TYPE_OR_LENGTH_MASK: u32 = (1 << LocklessRingBuffer::TYPE_OR_LENGTH_BITS) - 1;
         const TYPE_PADDING: u32 = 29;
         const TYPE_TIME_EXTEND: u32 = 30;
         let read_u32 =
@@ -1281,7 +1428,7 @@ mod tests {
             let header = read_u32(ptr);
             ptr += 4;
             let type_or_length = header & TYPE_OR_LENGTH_MASK;
-            let time_delta = (header >> TYPE_OR_LENGTH_BITS) as u64;
+            let time_delta = (header >> LocklessRingBuffer::TYPE_OR_LENGTH_BITS) as u64;
             match type_or_length {
                 TYPE_PADDING => {
                     assert!(ptr + 4 <= end, "short PADDING at {ptr}");
@@ -1292,12 +1439,14 @@ mod tests {
                 }
                 TYPE_TIME_EXTEND => {
                     assert!(ptr + 4 <= end, "short TIME_EXTEND at {ptr}");
-                    timestamp += time_delta + ((read_u32(ptr) as u64) << TIME_DELTA_SHIFT);
+                    timestamp += time_delta
+                        + ((read_u32(ptr) as u64) << LocklessRingBuffer::TIME_DELTA_BITS);
                     ptr += 4;
                 }
-                RINGBUF_TYPE_TIME_STAMP => {
+                LocklessRingBuffer::RINGBUF_TYPE_TIME_STAMP => {
                     assert!(ptr + 4 <= end, "short TIME_STAMP at {ptr}");
-                    timestamp = time_delta + ((read_u32(ptr) as u64) << TIME_DELTA_SHIFT);
+                    timestamp = time_delta
+                        + ((read_u32(ptr) as u64) << LocklessRingBuffer::TIME_DELTA_BITS);
                     ptr += 4;
                     after_time_stamp = true;
                 }
@@ -1579,6 +1728,18 @@ mod tests {
                         let mut offset = LocklessRingBuffer::PAGE_HEADER_SIZE;
                         let mut first_msg = true;
                         while offset + TestMessage::SIZE <= max_offset {
+                            // Skip the `TIME_STAMP` record that `reserve()` puts before a message
+                            // more than `MAX_TIME_DELTA_NANOS` after the previous one. A message
+                            // starts with `thread_index`, which is never `RINGBUF_TYPE_TIME_STAMP`.
+                            let header = u32::from_le_bytes(
+                                dest.data()[offset..offset + 4].try_into().unwrap(),
+                            );
+                            if header & ((1 << LocklessRingBuffer::TYPE_OR_LENGTH_BITS) - 1)
+                                == LocklessRingBuffer::RINGBUF_TYPE_TIME_STAMP
+                            {
+                                offset += LocklessRingBuffer::TIME_STAMP_RECORD_SIZE;
+                                continue;
+                            }
                             let msg_bytes = &dest.data()[offset..offset + TestMessage::SIZE];
                             let msg = TestMessage::from_bytes(msg_bytes);
                             if first_msg {
@@ -1723,7 +1884,8 @@ mod tests {
             let handle = std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(10 + thread_index as u64));
                 for _ in 0..msgs_per_thread {
-                    let (res, now, delta) = buffer_clone.reserve(TestMessage::SIZE).unwrap();
+                    let (res, now, delta) =
+                        reserve_without_gap(&buffer_clone, TestMessage::SIZE).unwrap();
                     let msg = TestMessage {
                         thread_index,
                         timestamp_nanos: now.into_nanos() as u64,
@@ -1898,7 +2060,8 @@ mod tests {
         let thread_index = 0;
         let writer_handle = std::thread::spawn(move || {
             for _ in 0..msgs_per_thread {
-                let (res, now, delta) = buffer_clone.reserve(TestMessage::SIZE).unwrap();
+                let (res, now, delta) =
+                    reserve_without_gap(&buffer_clone, TestMessage::SIZE).unwrap();
                 let msg = TestMessage {
                     thread_index,
                     timestamp_nanos: now.into_nanos() as u64,
@@ -2655,14 +2818,15 @@ mod tests {
                 .unwrap();
         // Start after the ring's initial timestamp, so that no time is raised to it.
         let t0 = buffer.prev_timestamp.load(Ordering::Relaxed) + 1_000;
-        let times = [t0, t0 + 5, t0 + 5 + MAX_TIME_DELTA_NANOS];
+        let times = [t0, t0 + 5, t0 + 5 + LocklessRingBuffer::MAX_TIME_DELTA_NANOS];
         for (i, &t) in times.iter().enumerate() {
             let payload = format!("record {i}").into_bytes();
             let (res, now, delta) =
                 reserve_at(&buffer, 8 + payload.len(), zx::BootInstant::from_nanos(t as i64))
                     .unwrap();
             assert_eq!(now.into_nanos() as u64, t);
-            write_ftrace_record(&res, delta.into_nanos() as u32, &payload);
+            assert_eq!(res.header_time_delta() as i64, delta.into_nanos());
+            write_ftrace_record(&res, &payload);
             buffer.commit(res);
         }
         // A record that fills a page moves the tail off Node 0, which finalizes it.
@@ -2681,11 +2845,23 @@ mod tests {
 
     #[test]
     fn test_encode_time_stamp() {
-        let max = MAX_TIME_DELTA_NANOS;
-        for ts in [0, 1, max, max + 1, 10_000_000_000, 1_000_000_000_000_000, u64::MAX] {
+        let max = LocklessRingBuffer::MAX_TIME_DELTA_NANOS;
+        for ts in [
+            0,
+            1,
+            max,
+            max + 1,
+            10_000_000_000,
+            1_000_000_000_000_000,
+            LocklessRingBuffer::MAX_TIME_STAMP_NANOS,
+            LocklessRingBuffer::MAX_TIME_STAMP_NANOS + 1,
+            u64::MAX,
+        ] {
             // A page that holds a `TIME_STAMP` record and a data record with a delta of 0.
             let mut page = vec![0u8; LocklessRingBuffer::PAGE_HEADER_SIZE];
-            page[8..16].copy_from_slice(&(TIME_STAMP_RECORD_SIZE as u64 + 12).to_le_bytes());
+            page[8..16].copy_from_slice(
+                &(LocklessRingBuffer::TIME_STAMP_RECORD_SIZE as u64 + 12).to_le_bytes(),
+            );
             page.extend_from_slice(&encode_time_stamp(ts));
             page.extend_from_slice(&0u32.to_le_bytes());
             page.extend_from_slice(&8u32.to_le_bytes());
@@ -2693,12 +2869,83 @@ mod tests {
 
             let (records, stamped) = decode_ftrace_page(&page);
             assert_eq!(stamped, vec![0]);
-            if ts == u64::MAX {
-                // Bits above 59 don't fit, so the high word saturates instead of wrapping.
-                assert_eq!(records[0].timestamp >> TIME_DELTA_SHIFT, u32::MAX as u64);
-            } else {
-                assert_eq!(records[0].timestamp, ts);
-            }
+            // A time that doesn't fit in 59 bits saturates instead of wrapping.
+            assert_eq!(
+                records[0].timestamp,
+                ts.min(LocklessRingBuffer::MAX_TIME_STAMP_NANOS),
+                "ts {ts}"
+            );
         }
+    }
+
+    #[test]
+    fn test_time_stamp_record_only_for_deltas_over_27_bits() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let payload = b"launchingActivity#1";
+        let record_size = 8 + payload.len();
+        let t0 = injected_start(&buffer);
+        let t1 = t0 + LocklessRingBuffer::MAX_TIME_DELTA_NANOS;
+        let t2 = t1 + LocklessRingBuffer::MAX_TIME_DELTA_NANOS + 1;
+        let t3 = t2 + 200_000_000;
+        let t4 = t3 + 10_000_000_000;
+
+        assert_eq!(write_record_at(&buffer, t0, payload), (0, 0));
+        let mut offset = buffer.nodes[0].write_offset.load(Ordering::Relaxed);
+        // A delta of exactly `MAX_TIME_DELTA_NANOS` fits in the header.
+        assert_eq!(
+            write_record_at(&buffer, t1, payload),
+            (0, LocklessRingBuffer::MAX_TIME_DELTA_NANOS)
+        );
+        offset += record_size;
+        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), offset);
+        // One more nanosecond, 200 ms, and 10 s each need a `TIME_STAMP` record.
+        for (prev, next) in [(t1, t2), (t2, t3), (t3, t4)] {
+            assert_eq!(write_record_at(&buffer, next, payload), (0, next - prev));
+            offset += LocklessRingBuffer::TIME_STAMP_RECORD_SIZE + record_size;
+            assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), offset);
+        }
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0, t1, t2, t3, t4], 3));
+    }
+
+    #[test]
+    fn test_time_stamp_records_decode_exactly_across_pages() {
+        let buffer =
+            LocklessRingBuffer::new(8 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let max = LocklessRingBuffer::MAX_TIME_DELTA_NANOS;
+        let gaps = [1, 1_000, max, max + 1, 200_000_000, 7, 10_000_000_000, (3 << 27) + 5, 0];
+        let mut now = injected_start(&buffer);
+        let mut expected: Vec<Vec<DecodedRecord>> = vec![vec![]];
+        // Fill 4 pages with records of varying sizes and gaps.
+        for i in 0.. {
+            now += gaps[i % gaps.len()];
+            let mut payload = format!("event {i}").into_bytes();
+            payload.resize(payload.len() + i % 13, b'.');
+            let (node_idx, _) = write_record_at(&buffer, now, &payload);
+            if node_idx == 4 {
+                break;
+            }
+            if node_idx == expected.len() {
+                expected.push(vec![]);
+            }
+            expected[node_idx].push(DecodedRecord { timestamp: now, payload });
+        }
+
+        let pages = read_ftrace_pages(&buffer);
+        for (node_idx, records) in expected.iter().enumerate() {
+            assert_eq!(&pages[node_idx].0, records, "page {node_idx}");
+            // A record has a `TIME_STAMP` record exactly when it comes more than
+            // `MAX_TIME_DELTA_NANOS` after the record before it on its page. The first record on
+            // a page never has one.
+            let expected_stamped: Vec<usize> = (1..records.len())
+                .filter(|&j| records[j].timestamp - records[j - 1].timestamp > max)
+                .collect();
+            assert_eq!(pages[node_idx].1, expected_stamped, "stamped records on page {node_idx}");
+        }
+        assert!(pages.iter().take(4).map(|page| page.1.len()).sum::<usize>() > 0);
     }
 }
