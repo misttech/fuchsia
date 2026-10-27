@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "netsvc-proto",
+    srcs = [
+        "src/debuglog.rs",
+        "src/lib.rs",
+        "src/netboot.rs",
+        "src/tftp.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    visibility = [
+        "//src/bringup/bin/netsvc/test/integration:__pkg__",
+        "//src/connectivity/lib/packet-formats:__pkg__",
+    ],
+    deps = [
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:arrayvec",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:unicase",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "netsvc-proto_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":netsvc-proto",
+    edition = "2024",
+    deps = [
+        "//third_party/rust_crates/vendor:assert_matches",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "netsvc-proto_host_test",
+    binary_name = "netsvc-proto_test",
+)
+
+fx_unittest_package(
+    name = "netsvc-proto-test",
+    unit_tests = [":netsvc-proto_test"],
+)
