@@ -4,14 +4,17 @@
 
 //! Synchronization primitives for Netstack3.
 
+#![no_std]
 #![warn(missing_docs, unreachable_patterns, unused)]
 
 extern crate alloc;
+#[cfg(any(test, feature = "rc-debug-names"))]
+extern crate std;
 
+#[cfg(not(loom))]
+pub(crate) use core::sync;
 #[cfg(loom)]
 pub(crate) use loom::sync;
-#[cfg(not(loom))]
-pub(crate) use std::sync;
 
 use net_types::ip::{GenericOverIp, Ip};
 

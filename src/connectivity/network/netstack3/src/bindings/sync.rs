@@ -12,7 +12,28 @@ use crate::bindings::BindingsCtx;
 impl BindingsSyncTypes for BindingsCtx {
     type Mutex = RawMutex;
     type RwLock = RawRwLock;
-    type Once = std::sync::Once;
+    type Once = StdOnce;
+}
+
+/// A [`netstack3_core::sync::once::Once`] implementation backed by
+/// [`std::sync::Once`].
+#[derive(Default)]
+pub(crate) struct StdOnce(std::sync::Once);
+
+// SAFETY: `std::sync::Once` upholds all the guarantees required by
+// `netstack3_core::sync::once::Once`.
+unsafe impl netstack3_core::sync::Once for StdOnce {
+    #[inline]
+    fn once(&self, f: impl FnOnce()) {
+        let Self(once) = self;
+        once.call_once(f);
+    }
+
+    #[inline]
+    fn is_completed(&self) -> bool {
+        let Self(once) = self;
+        once.is_completed()
+    }
 }
 
 /// A mutex backed by [`fuchsia_sync::RawMutex`].

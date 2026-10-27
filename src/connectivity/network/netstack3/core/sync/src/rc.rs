@@ -20,7 +20,25 @@ use core::ops::Deref;
 use core::panic::Location;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use alloc::boxed::Box;
 use derivative::Derivative;
+
+/// Returns `true` if the current thread is unwinding due to a panic.
+///
+/// Always returns `false` when panics abort, since no code runs while
+/// panicking in that case.
+#[inline]
+fn thread_panicking() -> bool {
+    #[cfg(panic = "abort")]
+    {
+        false
+    }
+    #[cfg(not(panic = "abort"))]
+    {
+        extern crate std;
+        std::thread::panicking()
+    }
+}
 
 mod caller {
     //! Provides tracking of instances via tracked caller location.
@@ -123,9 +141,9 @@ mod caller {
 
 mod resource_token {
     use core::fmt::Debug;
+    use core::marker::PhantomData;
+    use core::num::NonZeroU64;
     use core::sync::atomic::{AtomicU64, Ordering};
-    use std::marker::PhantomData;
-    use std::num::NonZeroU64;
 
     /// An opaque token associated with a resource.
     ///
@@ -407,7 +425,7 @@ impl<T> Drop for Primary<T> {
         // invariants provided by Primary are possibly violated during an
         // unwind, but we're sidestepping that problem because Fuchsia is our
         // only audience here.
-        if !std::thread::panicking() {
+        if !thread_panicking() {
             assert_eq!(was_marked, false, "Must not be marked for destruction yet");
 
             let Inner {
@@ -966,6 +984,7 @@ impl<T> Notifier<T> for ! {
 mod tests {
     use super::*;
 
+    use alloc::format;
     use fuchsia_sync::RawMutex;
 
     type ArcNotifier<T> = super::ArcNotifier<T, RawMutex>;
@@ -987,14 +1006,14 @@ mod tests {
         const INITIAL_VAL: u8 = 1;
         const NEW_VAL: u8 = 2;
 
-        let primary = Primary::new(crate::sync::Mutex::new(INITIAL_VAL));
+        let primary = Primary::new(crate::Mutex::<_, RawMutex>::new(INITIAL_VAL));
         let strong = Primary::clone_strong(&primary);
         let weak = Strong::downgrade(&strong);
 
-        *primary.lock().unwrap() = NEW_VAL;
-        assert_eq!(*primary.deref().lock().unwrap(), NEW_VAL);
-        assert_eq!(*strong.deref().lock().unwrap(), NEW_VAL);
-        assert_eq!(*weak.upgrade().unwrap().deref().lock().unwrap(), NEW_VAL);
+        *primary.lock() = NEW_VAL;
+        assert_eq!(*primary.deref().lock(), NEW_VAL);
+        assert_eq!(*strong.deref().lock(), NEW_VAL);
+        assert_eq!(*weak.upgrade().unwrap().deref().lock(), NEW_VAL);
     }
 
     #[test]

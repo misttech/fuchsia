@@ -41,18 +41,6 @@ pub unsafe trait Once: Default + Send + Sync + 'static {
     fn is_completed(&self) -> bool;
 }
 
-unsafe impl Once for std::sync::Once {
-    #[inline]
-    fn once(&self, f: impl FnOnce()) {
-        self.call_once(f);
-    }
-
-    #[inline]
-    fn is_completed(&self) -> bool {
-        self.is_completed()
-    }
-}
-
 /// A synchronization primitive which can nominally be written to only once.
 pub struct OnceLock<T, O: Once> {
     once: O,
@@ -183,10 +171,27 @@ mod tests {
 
     use alloc::format;
     use alloc::sync::Arc;
+    use alloc::vec::Vec;
     use core::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
-    type TestOnceLock<T> = OnceLock<T, std::sync::Once>;
+    #[derive(Default)]
+    struct StdOnce(std::sync::Once);
+
+    // SAFETY: `std::sync::Once` upholds all the guarantees required by `Once`.
+    unsafe impl Once for StdOnce {
+        fn once(&self, f: impl FnOnce()) {
+            let Self(once) = self;
+            once.call_once(f);
+        }
+
+        fn is_completed(&self) -> bool {
+            let Self(once) = self;
+            once.is_completed()
+        }
+    }
+
+    type TestOnceLock<T> = OnceLock<T, StdOnce>;
 
     #[test]
     fn once_lock_get_and_init() {

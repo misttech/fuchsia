@@ -26,7 +26,25 @@ pub mod lock_impl {
     extern crate std;
 
     pub use fuchsia_sync::{RawMutex, RawRwLock};
+
     /// Default [`netstack3_sync::once::Once`] implementation backed by
     /// [`std::sync::Once`].
-    pub type Once = std::sync::Once;
+    #[derive(Default)]
+    pub struct Once(std::sync::Once);
+
+    // SAFETY: `std::sync::Once` upholds all the guarantees required by
+    // `netstack3_sync::once::Once`.
+    unsafe impl super::once::Once for Once {
+        #[inline]
+        fn once(&self, f: impl FnOnce()) {
+            let Self(once) = self;
+            once.call_once(f);
+        }
+
+        #[inline]
+        fn is_completed(&self) -> bool {
+            let Self(once) = self;
+            once.is_completed()
+        }
+    }
 }
