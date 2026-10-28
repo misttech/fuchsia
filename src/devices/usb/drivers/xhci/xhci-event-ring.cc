@@ -721,6 +721,11 @@ void EventRing::HandlePortStatusChangeInterrupt() {
   // Section 6.4.2.3 (Port Status change TRB)
   auto change_event = static_cast<PortStatusChangeEvent*>(erdp_virt_);
   uint8_t port_id = static_cast<uint8_t>(change_event->PortID());
+  if (port_id < 1 || port_id > hci_->GetPortCount()) {
+    fdf::error("Invalid port ID {} in Port Status Change Event (max ports: {})", port_id,
+               hci_->GetPortCount());
+    return;
+  }
   fdf::info("xhci: HandlePortStatusChangeInterrupt port={}", port_id);
   auto event = std::move(hci_->GetPortState(port_id).wait_for_port_status_change_);
   // Resume interrupted wait

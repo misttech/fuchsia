@@ -120,12 +120,12 @@ class EventRingHarness : public ::testing::Test {
 
   bool PortResetPending() { return port_sc_.PR(); }
 
-  void InsertPortStatusChangeEvent() {
+  void InsertPortStatusChangeEvent(uint8_t port_id = kPortNo) {
     TRB trb;
     trb.ptr = 0;
     Control::FromTRB(&trb).set_Type(Control::PortStatusChangeEvent).ToTrb(&trb);
     auto evt = static_cast<PortStatusChangeEvent*>(&trb);
-    evt->set_PortID(kPortNo);
+    evt->set_PortID(port_id);
     auto command_completion = static_cast<CommandCompletionEvent*>(&trb);
     command_completion->set_CompletionCode(CommandCompletionEvent::Success);
     AddTRB(trb);
@@ -636,6 +636,19 @@ TEST_F(EventRingHarness, ClearPendingPortStatusChangesAbortsWait) {
   ASSERT_FALSE(HasCommand());
   event_ring()->ClearPendingPortStatusChanges();
   EXPECT_FALSE(driver_test().driver()->GetPortState(kPortNo).wait_for_port_status_change_);
+}
+
+TEST_F(EventRingHarness, PortStatusChangeEventInvalidPortIdIgnored) {
+  ConnectDevice();
+  // PortID 0 (underflow) and PortID > GetPortCount() (32 in test harness) should be ignored
+  // without crashing or scheduling enumeration.
+  InsertPortStatusChangeEvent(0);
+  InsertPortStatusChangeEvent(33);
+  InsertPortStatusChangeEvent(255);
+  InsertPortStatusChangeEvent(kPortNo);
+  Interrupt();
+  EXPECT_TRUE(PortResetPending());
+  EXPECT_FALSE(HasCommand());
 }
 
 }  // namespace
