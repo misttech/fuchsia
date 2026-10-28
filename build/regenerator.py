@@ -16,39 +16,30 @@ import sys
 import typing as T
 from pathlib import Path
 
-import build_tests_json
-
-_SCRIPT_DIR = Path(__file__).parent
-
-# The directory that contains helper Python modules for this script.
-_BUILD_BAZEL_SCRIPTS = _SCRIPT_DIR / ".." / "build" / "bazel" / "scripts"
-# The root directory of Bazel build scripts.
-_BUILD_BAZEL_DIR = _SCRIPT_DIR / ".." / "build" / "bazel"
-# The directory that contains Python modules related to the IDK.
-_BUILD_SDK_SCRIPTS = _SCRIPT_DIR / ".." / "build" / "sdk"
-_BUILD_PYTHON_DIR = _SCRIPT_DIR / ".." / "build" / "python"
-sys.path.insert(0, str(_BUILD_BAZEL_SCRIPTS))
-sys.path.insert(0, str(_BUILD_BAZEL_DIR))
-sys.path.insert(0, str(_BUILD_PYTHON_DIR))
-sys.path.insert(0, str(_BUILD_SDK_SCRIPTS))
-sys.path.insert(0, str(_BUILD_SDK_SCRIPTS / "generate_prebuild_idk"))
-
-# Insert fuchsia root directory to sys.path so we can import build packages hermetically
-_FUCHSIA_DIR = _SCRIPT_DIR.parent
+# When invoked by Ninja to regenerate build.ninja (python3 -S), PYTHONPATH is
+# not set by Ninja. Ensure the Fuchsia root is in sys.path for absolute imports.
+_FUCHSIA_DIR = Path(__file__).resolve().parent.parent
 if str(_FUCHSIA_DIR) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_DIR))
 
-import bazel_repository_utils
-import build_utils
-import compute_content_hash
-import remote_services_utils
-import workspace_utils
-from bazel_action_file_copy_utils import write_file_if_changed
+from build import build_tests_json
+from build.bazel.fuchsia_idk import generate_repository
+from build.bazel.scripts import (
+    bazel_repository_utils,
+    build_utils,
+    compute_content_hash,
+    remote_services_utils,
+    workspace_utils,
+)
+from build.bazel.scripts.bazel_action_file_copy_utils import (
+    write_file_if_changed,
+)
+from build.python.pyright_config import create_pyright_base_config
 from build.rbe import rbe_settings
 from build.scripts import properties
-from fuchsia_idk import generate_repository
-from idk_generator.idk_generator import IdkGenerator
-from pyright_config import create_pyright_base_config
+from build.sdk.generate_prebuild_idk.idk_generator.idk_generator import (
+    IdkGenerator,
+)
 
 _DEFAULT_HOST_TAG = "linux-x64"
 

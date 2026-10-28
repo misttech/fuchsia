@@ -26,16 +26,23 @@ _FUCHSIA_ROOT_DIR = _SCRIPT_DIR.parent.parent.parent.parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 from . import generate_sdk_package_manifest
 
-# The directory that contains module dependencies for this script.
-sys.path.insert(0, str(_SCRIPT_DIR / ".."))
+# The directories containing module dependencies for this script:
+# - _SCRIPT_DIR.parents[1] (//build/sdk) contains generate_version_history and sdk_common.
+# - _SCRIPT_DIR.parents[2] (//build) contains cpp.
+# - _SCRIPT_DIR.parent (//build/sdk/generate_prebuild_idk) contains generate_sdk_package_manifest.
+# Inserting these paths before importing makes idk_generator self-contained when
+# imported directly from the source tree (e.g. by //build/regenerator.py) without
+# relying on ambient caller paths, while still resolving cleanly when packaged into
+# a standalone .pyz zipapp archive where dependencies are staged at the archive root.
+sys.path.insert(0, str(_SCRIPT_DIR.parents[1]))  # //build/sdk
+sys.path.insert(0, str(_SCRIPT_DIR.parents[2]))  # //build
+sys.path.insert(0, str(_SCRIPT_DIR.parent))
 # For yaml.
 sys.path.insert(0, str(_FUCHSIA_ROOT_DIR / "third_party/pyyaml/src/lib"))
 import generate_version_history
 import yaml
-from sdk_common import MinimalAtom, Validator
-
-sys.path.insert(0, str(_SCRIPT_DIR / "../.."))
 from cpp import check_for_missing_runtime_deps
+from sdk_common import MinimalAtom, Validator
 
 from . import generate_sdk_package_manifest
 

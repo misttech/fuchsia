@@ -7,17 +7,21 @@
 
 import json
 import os
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import build_tests_json
-from build_utils import BazelPaths, CommandRunner, MockCommandRunner
-from serialization import instance_from_dict, instance_to_dict
+from build import build_tests_json
+from build.bazel.scripts.build_utils import (
+    BazelPaths,
+    CommandRunner,
+    MockCommandRunner,
+)
+from build.python.modules.serialization.serialization import (
+    instance_from_dict,
+    instance_to_dict,
+)
 
 
 class BuildTestsJsonTest(unittest.TestCase):

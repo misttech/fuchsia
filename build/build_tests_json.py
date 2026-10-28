@@ -14,12 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parent / "bazel/scripts"))
-sys.path.insert(0, str(Path(__file__).parent / "python/modules"))
-import bazel_tests_utils
-import build_utils
-from build_utils import CommandRunner
-from serialization import JSONValue, instance_from_dict
+from build.bazel.scripts import bazel_tests_utils, build_utils
+from build.bazel.scripts.build_utils import CommandRunner
+from build.python.modules.serialization.serialization import (
+    JSONValue,
+    instance_from_dict,
+)
 
 
 @dataclass(frozen=True)

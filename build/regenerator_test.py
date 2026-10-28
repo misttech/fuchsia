@@ -6,16 +6,12 @@
 """Unit-tests for build/regenerator.py functions."""
 
 import os
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-# Import regenerator.py as a module.
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import regenerator
+from build import regenerator
 
 
 class ContentHashTest(unittest.TestCase):
