@@ -15,6 +15,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/async-loop-testing/cpp:cpp_idk",
     "//sdk/lib/async-testing:async-testing_idk",
     "//sdk/lib/async_patterns/cpp:cpp_idk",
+    "//sdk/lib/async_patterns/testing/cpp:cpp_idk",
     "//sdk/lib/component/incoming/cpp:cpp_idk",
     "//sdk/lib/component/outgoing/cpp:cpp_idk",
     "//sdk/lib/driver/runtime:driver_runtime_cpp_idk",
