@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
 package(
@@ -49,7 +49,7 @@ rustc_library(
     tags = [
         "assert_no_deps=//src/developer/ffx/lib/target/*",
     ],
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     test_deps = [
         "//src/developer/ffx/config/domain:test_data",
         "//src/lib/fuchsia",

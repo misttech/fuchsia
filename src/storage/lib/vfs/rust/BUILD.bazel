@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/rust:defs.bzl", "rustc_dylib", "rustc_library")
 
 package(default_applicable_licenses = ["//:license"])
@@ -193,7 +193,7 @@ rustc_library(
     crate_name = "vfs",
     edition = "2024",
     proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     test_deps = _COMMON_TEST_DEPS + [
         "//src/lib/fdomain/local",
         "//src/lib/fdomain/local:local_fdomain_flex",
