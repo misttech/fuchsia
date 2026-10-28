@@ -9,16 +9,16 @@
 #include <lib/driver/fake-powerdomain/cpp/fake-powerdomain.h>
 #include <lib/driver/fake-reset/cpp/fake-reset.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-#include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/interrupt.h>
 
 #include <array>
-#include <atomic>
-#include <condition_variable>
 #include <deque>
+#include <initializer_list>
 #include <mutex>
-#include <thread>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
@@ -30,9 +30,7 @@ namespace dw_i2c {
 
 class TestDwI2c : public DwI2c {
  public:
-  using DwI2c::kTransferTimeout;
   using DwI2c::set_transfer_timeout;
-  using DwI2c::transfer_timeout;
 
   explicit TestDwI2c() : DwI2c() {}
 
@@ -57,11 +55,43 @@ class TestDwI2c : public DwI2c {
 
 std::optional<fdf::MmioBuffer> TestDwI2c::mmio_;
 
+// Fake DesignWare I2C controller.
+//
+// Once given the driver's virtual interrupt via `set_interrupt()`, the fake also models the I2C bus
+// and the level-triggered interrupt line, synchronously inside the driver's MMIO accesses:
+//  - The bus only makes progress when the driver reads a zero InterruptStatusReg while no interrupt
+//    is pending, i.e. just before the driver waits for the interrupt. At that point all queued
+//    commands complete on the wire (or the transfer aborts, see `AbortNextTransfer()`), and the
+//    interrupt is triggered if this asserted an unmasked status bit. The read still returns zero,
+//    so the driver must be woken by the interrupt. A consequence of this model is that the driver
+//    must re-read InterruptStatusReg after acknowledging the interrupt for the bus to advance.
+//  - Whenever an unmasked status bit is asserted while no interrupt is pending, a level-triggered
+//    interrupt would fire again. The fake detects this on every register access, re-triggers the
+//    interrupt, and counts it in `spurious_retrigger_count()`.
 class FakeDwI2cController {
  public:
   static constexpr size_t kRegCount = 0x100;
   static constexpr uint32_t kTxFifoDepth = 8;
   static constexpr uint32_t kRxFifoDepth = 8;
+
+  // Register offsets.
+  static constexpr size_t kTargetAddress = 0x04;  // TargetAddressReg
+  static constexpr size_t kDataCommand = 0x10;    // DataCommandReg
+  static constexpr size_t kIntrStat = 0x2c;       // InterruptStatusReg
+  static constexpr size_t kIntrMask = 0x30;       // InterruptMaskReg
+  static constexpr size_t kRawIntrStat = 0x34;    // RawInterruptStatusReg
+  static constexpr size_t kRxTl = 0x38;           // RxFifoThresholdReg
+  static constexpr size_t kTxTl = 0x3c;           // TxFifoThresholdReg
+  static constexpr size_t kClrIntr = 0x40;        // ClearInterruptReg
+  static constexpr size_t kClrTxAbrt = 0x54;      // ClearTxAbrtReg
+  static constexpr size_t kClrStopDet = 0x60;     // ClearStopDetReg
+  static constexpr size_t kEnable = 0x6c;         // EnableReg
+  static constexpr size_t kTxFifoLevel = 0x74;    // TxFifoLevelReg
+  static constexpr size_t kRxFifoLevel = 0x78;    // RxFifoLevelReg
+  static constexpr size_t kTxAbrtSource = 0x80;   // TxAbrtSourceReg
+  static constexpr size_t kEnableStatus = 0x9c;   // EnableStatusReg
+  static constexpr size_t kCompParam1 = 0xf4;     // CompParam1Reg
+  static constexpr size_t kCompType = 0xfc;       // CompTypeReg
 
   struct RecordedCommand {
     uint16_t target_addr;
@@ -73,20 +103,12 @@ class FakeDwI2cController {
 
   FakeDwI2cController() : mmio_(sizeof(uint32_t), kRegCount) {
     for (size_t i = 0; i < kRegCount; ++i) {
-      size_t offset = i * sizeof(uint32_t);
-      mmio_[offset].SetReadCallback([this, i]() {
-        std::lock_guard lock(lock_);
-        return regs_[i];
-      });
-      mmio_[offset].SetWriteCallback([this, i](uint64_t val) {
-        std::lock_guard lock(lock_);
-        regs_[i] = static_cast<uint32_t>(val);
-      });
+      OnRead(i * sizeof(uint32_t), [this, i]() { return regs_[i]; });
+      OnWrite(i * sizeof(uint32_t), [this, i](uint32_t val) { regs_[i] = val; });
     }
 
-    // DataCommandReg (0x10): writing queues TX/read commands; reading pops from RX FIFO.
-    mmio_[0x10].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
+    // Writing queues TX/read commands; reading pops from RX FIFO.
+    OnRead(kDataCommand, [this]() -> uint32_t {
       uint8_t byte = 0;
       if (!rx_fifo_.empty()) {
         byte = rx_fifo_.front();
@@ -95,145 +117,84 @@ class FakeDwI2cController {
       UpdateRxFifoStateLocked();
       return byte;
     });
-    mmio_[0x10].SetWriteCallback([this](uint64_t val) {
-      fit::function<void()> on_tx_fifo_full;
-      fit::function<void()> on_stop;
-      {
-        std::lock_guard lock(lock_);
-        auto cmd = DataCommandReg::Get().FromValue(static_cast<uint32_t>(val));
-        auto tar = TargetAddressReg::Get().FromValue(regs_[0x04 / sizeof(uint32_t)]);
-        tx_commands_.push_back(RecordedCommand{
-            .target_addr = static_cast<uint16_t>(tar.target_address()),
-            .data = static_cast<uint8_t>(cmd.data()),
-            .is_read = cmd.command() != 0,
-            .start = cmd.start() != 0,
-            .stop = cmd.stop() != 0,
-        });
-        if (tx_fifo_level_ < kTxFifoDepth) {
-          ++tx_fifo_level_;
-        }
-        UpdateTxFifoStateLocked();
-        if (cmd.command() != 0) {
-          uint8_t rx_byte = 0;
-          if (!canned_rx_bytes_.empty()) {
-            rx_byte = canned_rx_bytes_.front();
-            canned_rx_bytes_.pop_front();
-          }
-          pending_wire_rx_.push_back(rx_byte);
-        }
-        if (tx_fifo_level_ == kTxFifoDepth && on_tx_fifo_full_) {
-          on_tx_fifo_full = on_tx_fifo_full_.share();
-        }
-        if (cmd.stop() != 0 && on_stop_command_) {
-          on_stop = on_stop_command_.share();
-        }
+    OnWrite(kDataCommand, [this](uint32_t val) {
+      auto cmd = DataCommandReg::Get().FromValue(val);
+      auto tar = TargetAddressReg::Get().FromValue(RegLocked(kTargetAddress));
+      tx_commands_.push_back(RecordedCommand{
+          .target_addr = static_cast<uint16_t>(tar.target_address()),
+          .data = static_cast<uint8_t>(cmd.data()),
+          .is_read = cmd.command() != 0,
+          .start = cmd.start() != 0,
+          .stop = cmd.stop() != 0,
+      });
+      if (tx_fifo_level_ < kTxFifoDepth) {
+        ++tx_fifo_level_;
       }
-      if (on_tx_fifo_full) {
-        on_tx_fifo_full();
+      UpdateTxFifoStateLocked();
+      if (cmd.command() != 0) {
+        uint8_t rx_byte = 0;
+        if (!canned_rx_bytes_.empty()) {
+          rx_byte = canned_rx_bytes_.front();
+          canned_rx_bytes_.pop_front();
+        }
+        pending_wire_rx_.push_back(rx_byte);
       }
-      if (on_stop) {
-        on_stop();
+      if (cmd.stop() != 0) {
+        stop_pending_ = true;
       }
     });
 
-    // InterruptStatusReg (0x2c) = RawInterruptStatusReg (0x34) & InterruptMaskReg (0x30).
-    mmio_[0x2c].SetReadCallback([this]() {
-      fit::function<void()> on_empty;
-      uint32_t status = 0;
-      {
-        std::lock_guard lock(lock_);
-        status = regs_[0x34 / sizeof(uint32_t)] & regs_[0x30 / sizeof(uint32_t)];
-        if (status == 0 && on_empty_intr_stat_) {
-          on_empty = on_empty_intr_stat_.share();
+    // InterruptStatusReg = RawInterruptStatusReg & InterruptMaskReg.
+    OnRead(kIntrStat, [this]() {
+      const uint32_t status = InterruptStatusLocked();
+      if (status == 0 && irq_.is_valid() && !bus_stalled_ && !IsInterruptTriggered()) {
+        AdvanceBusLocked();
+        if (InterruptStatusLocked() != 0) {
+          TriggerInterruptLocked();
         }
-      }
-      if (on_empty) {
-        on_empty();
       }
       return status;
     });
 
-    // RxFifoThresholdReg (0x38) and TxFifoThresholdReg (0x3c) update raw RX_FULL / TX_EMPTY bits.
-    mmio_[0x38].SetWriteCallback([this](uint64_t val) {
-      std::lock_guard lock(lock_);
-      regs_[0x38 / sizeof(uint32_t)] = static_cast<uint32_t>(val);
+    // The FIFO thresholds determine the raw RX_FULL / TX_EMPTY bits.
+    OnWrite(kRxTl, [this](uint32_t val) {
+      RegLocked(kRxTl) = val;
       UpdateRxFifoStateLocked();
     });
-    mmio_[0x3c].SetWriteCallback([this](uint64_t val) {
-      std::lock_guard lock(lock_);
-      regs_[0x3c / sizeof(uint32_t)] = static_cast<uint32_t>(val);
+    OnWrite(kTxTl, [this](uint32_t val) {
+      RegLocked(kTxTl) = val;
       UpdateTxFifoStateLocked();
     });
 
-    // ClearInterruptReg (0x40) clears latched raw interrupt status bits.
-    mmio_[0x40].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
-      auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-      raw.set_tx_abrt(0).set_activity(0).set_stop_det(0).set_start_det(0);
-      regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-      return 0u;
-    });
-    mmio_[0x54].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
-      auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-      raw.set_tx_abrt(0);
-      regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-      return 0u;
-    });
-    mmio_[0x5c].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
-      auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-      raw.set_activity(0);
-      regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-      return 0u;
-    });
-    mmio_[0x60].SetReadCallback([this]() {
-      fit::function<void()> on_clear_stop_det;
-      {
-        std::lock_guard lock(lock_);
-        auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-        raw.set_stop_det(0);
-        regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-        if (on_clear_stop_det_) {
-          on_clear_stop_det = on_clear_stop_det_.share();
-        }
+    // Reading the clear registers clears latched raw interrupt status bits. The fake only latches
+    // TX_ABRT and STOP_DET.
+    const uint32_t tx_abrt = RawInterruptStatusReg::Get().FromValue(0).set_tx_abrt(1).reg_value();
+    const uint32_t stop_det = RawInterruptStatusReg::Get().FromValue(0).set_stop_det(1).reg_value();
+    OnReadClearsRaw(kClrIntr, tx_abrt | stop_det);
+    OnReadClearsRaw(kClrTxAbrt, tx_abrt);
+    OnRead(kClrStopDet, [this, stop_det]() {
+      RegLocked(kRawIntrStat) &= ~stop_det;
+      if (retrigger_on_stop_det_clear_) {
+        retrigger_on_stop_det_clear_ = false;
+        TriggerInterruptLocked();
       }
-      if (on_clear_stop_det) {
-        on_clear_stop_det();
-      }
-      return 0u;
-    });
-    mmio_[0x64].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
-      auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-      raw.set_start_det(0);
-      regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
       return 0u;
     });
 
-    // EnableReg (0x6c) mirrors enable state into EnableStatusReg (0x9c) and flushes FIFOs when
-    // disabled.
-    mmio_[0x6c].SetWriteCallback([this](uint64_t val) {
-      std::lock_guard lock(lock_);
-      const uint32_t reg_val = static_cast<uint32_t>(val);
-      regs_[0x6c / sizeof(uint32_t)] = reg_val;
-      regs_[0x9c / sizeof(uint32_t)] = reg_val & 0x1u;
-      if ((reg_val & 0x1u) == 0) {
-        tx_fifo_level_ = 0;
-        pending_wire_rx_.clear();
-        rx_fifo_.clear();
-        UpdateRxFifoStateLocked();
+    // EnableReg mirrors enable state into EnableStatusReg and flushes FIFOs when disabled.
+    OnWrite(kEnable, [this](uint32_t val) {
+      RegLocked(kEnable) = val;
+      RegLocked(kEnableStatus) = val & 0x1u;
+      if ((val & 0x1u) == 0) {
+        FlushFifosLocked();
       }
       UpdateTxFifoStateLocked();
     });
 
-    // Mock CompParam1Reg (0xf4) to return depths (8 for tx and rx).
-    mmio_[0xf4].SetReadCallback([]() { return (kTxFifoDepth << 16) | (kRxFifoDepth << 8); });
-    // Mock CompTypeReg (0xfc) to return kDwCompTypeNum (0x44570140) when powered.
-    mmio_[0xfc].SetReadCallback([this]() {
-      std::lock_guard lock(lock_);
-      return powered_ ? DwI2c::kDwCompTypeNum : 0u;
-    });
+    // Report FIFO depths of 8 for tx and rx.
+    OnRead(kCompParam1, []() { return (kTxFifoDepth << 16) | (kRxFifoDepth << 8); });
+    // Report kDwCompTypeNum (0x44570140) when powered.
+    OnRead(kCompType, [this]() { return powered_ ? DwI2c::kDwCompTypeNum : 0u; });
   }
 
   fdf::MmioBuffer GetMmioBuffer() { return mmio_.GetMmioBuffer(); }
@@ -246,9 +207,7 @@ class FakeDwI2cController {
   void ResetWritableRegs() {
     std::lock_guard lock(lock_);
     regs_.fill(0);
-    tx_fifo_level_ = 0;
-    pending_wire_rx_.clear();
-    rx_fifo_.clear();
+    FlushFifosLocked();
   }
 
   void set_powered(bool powered) {
@@ -256,101 +215,151 @@ class FakeDwI2cController {
     powered_ = powered;
   }
 
-  void set_on_tx_fifo_full(fit::function<void()> callback) {
+  // Enables modelling of the bus and the level-triggered interrupt line. `irq` must be a duplicate
+  // of the virtual interrupt given to the driver, and must be set before the driver starts.
+  void set_interrupt(zx::interrupt irq) {
     std::lock_guard lock(lock_);
-    on_tx_fifo_full_ = std::move(callback);
+    irq_ = std::move(irq);
   }
 
-  void set_on_stop_command(fit::function<void()> callback) {
+  // Prevents the bus from making progress, so queued transfers never complete.
+  void StallBus() {
     std::lock_guard lock(lock_);
-    on_stop_command_ = std::move(callback);
+    bus_stalled_ = true;
   }
 
-  void set_on_empty_intr_stat(fit::function<void()> callback) {
+  // Makes the next transfer on the bus fail with TX_ABRT, latching `abort_source` in
+  // TxAbrtSourceReg (e.g. 0x1 for an address NACK).
+  void AbortNextTransfer(uint32_t abort_source) {
     std::lock_guard lock(lock_);
-    on_empty_intr_stat_ = std::move(callback);
+    abort_source_ = abort_source;
   }
 
-  void set_on_clear_stop_det(fit::function<void()> callback) {
+  // Triggers the interrupt once more when the driver next clears STOP_DET, i.e. while the driver
+  // still has to acknowledge the interrupt that reported it.
+  void RetriggerOnNextStopDetClear() {
     std::lock_guard lock(lock_);
-    on_clear_stop_det_ = std::move(callback);
+    retrigger_on_stop_det_clear_ = true;
   }
 
   void QueueCannedRxBytes(std::initializer_list<uint8_t> bytes) {
     std::lock_guard lock(lock_);
-    for (uint8_t b : bytes) {
-      canned_rx_bytes_.push_back(b);
-    }
-  }
-
-  // Simulates draining queued TX FIFO commands onto the wire mid-frame. Returns true if an
-  // unmasked interrupt is now asserted.
-  bool DrainTxFifoToWire() {
-    std::lock_guard lock(lock_);
-    tx_fifo_level_ = 0;
-    UpdateTxFifoStateLocked();
-    return IsLevelIrqAssertedLocked();
-  }
-
-  // Simulates completion of the queued I2C transfer: drains the TX FIFO, moves pending RX bytes
-  // into the RX FIFO, and latches STOP_DET. Returns true if an unmasked interrupt is now asserted.
-  bool CompleteWireTransfer() {
-    std::lock_guard lock(lock_);
-    tx_fifo_level_ = 0;
-    UpdateTxFifoStateLocked();
-    while (!pending_wire_rx_.empty()) {
-      rx_fifo_.push_back(pending_wire_rx_.front());
-      pending_wire_rx_.pop_front();
-    }
-    UpdateRxFifoStateLocked();
-    auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-    raw.set_stop_det(1);
-    regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-    return IsLevelIrqAssertedLocked();
-  }
-
-  // Simulates a bus abort (e.g. NACK) latching TX_ABRT in RawInterruptStatusReg and TxAbrtSource.
-  bool FailWireTransferWithAbort(uint32_t abort_source = 0x1u) {
-    std::lock_guard lock(lock_);
-    regs_[0x80 / sizeof(uint32_t)] = abort_source;
-    auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
-    raw.set_tx_abrt(1);
-    regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
-    return IsLevelIrqAssertedLocked();
-  }
-
-  bool IsLevelIrqAsserted() const {
-    std::lock_guard lock(lock_);
-    return IsLevelIrqAssertedLocked();
+    canned_rx_bytes_.insert(canned_rx_bytes_.end(), bytes);
   }
 
   std::vector<RecordedCommand> TakeTxCommands() {
     std::lock_guard lock(lock_);
-    std::vector<RecordedCommand> cmds = std::move(tx_commands_);
-    tx_commands_.clear();
-    return cmds;
+    return std::exchange(tx_commands_, {});
+  }
+
+  // Returns true if the interrupt has been triggered and not yet acknowledged.
+  //
+  // `irq_` is set once before the driver starts, so this can read it without holding `lock_` (and
+  // is also called from MMIO callbacks with `lock_` held).
+  bool IsInterruptTriggered() const {
+    zx_signals_t observed = 0;
+    return irq_.is_valid() && irq_.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
+                                            zx::time::infinite_past(), &observed) != ZX_OK;
+  }
+
+  // Number of times the fake triggered the interrupt, excluding spurious re-triggers.
+  uint32_t irq_trigger_count() const {
+    std::lock_guard lock(lock_);
+    return irq_trigger_count_;
+  }
+
+  // Number of times an unmasked status bit was asserted while the interrupt wasn't pending (e.g.
+  // the driver acknowledged the interrupt too early, or unmasked an already-asserted bit), so the
+  // fake re-asserted the level-triggered interrupt.
+  uint32_t spurious_retrigger_count() const {
+    std::lock_guard lock(lock_);
+    return spurious_retrigger_count_;
   }
 
  private:
-  bool IsLevelIrqAssertedLocked() const {
-    return (regs_[0x34 / sizeof(uint32_t)] & regs_[0x30 / sizeof(uint32_t)]) != 0;
+  // Installs MMIO callbacks that run with `lock_` held, after re-triggering the interrupt if an
+  // unmasked status bit is asserted while the interrupt isn't pending.
+  void OnRead(size_t offset, fit::function<uint32_t()> read) {
+    mmio_[offset].SetReadCallback([this, read = std::move(read)]() -> uint64_t {
+      std::lock_guard lock(lock_);
+      RetriggerIfLevelAssertedLocked();
+      return read();
+    });
+  }
+  void OnWrite(size_t offset, fit::function<void(uint32_t)> write) {
+    mmio_[offset].SetWriteCallback([this, write = std::move(write)](uint64_t val) {
+      std::lock_guard lock(lock_);
+      RetriggerIfLevelAssertedLocked();
+      write(static_cast<uint32_t>(val));
+    });
+  }
+  // Installs a read callback that clears `bits` in RawInterruptStatusReg.
+  void OnReadClearsRaw(size_t offset, uint32_t bits) {
+    OnRead(offset, [this, bits]() {
+      RegLocked(kRawIntrStat) &= ~bits;
+      return 0u;
+    });
+  }
+
+  uint32_t& RegLocked(size_t offset) { return regs_[offset / sizeof(uint32_t)]; }
+
+  uint32_t InterruptStatusLocked() { return RegLocked(kRawIntrStat) & RegLocked(kIntrMask); }
+
+  void TriggerInterruptLocked() {
+    ++irq_trigger_count_;
+    EXPECT_OK(irq_.trigger(0, zx::clock::get_boot()));
+  }
+
+  void RetriggerIfLevelAssertedLocked() {
+    if (InterruptStatusLocked() != 0 && irq_.is_valid() && !IsInterruptTriggered()) {
+      ++spurious_retrigger_count_;
+      EXPECT_OK(irq_.trigger(0, zx::clock::get_boot()));
+    }
+  }
+
+  // Completes (or aborts) all commands queued in the TX FIFO.
+  void AdvanceBusLocked() {
+    auto raw = RawInterruptStatusReg::Get().FromValue(RegLocked(kRawIntrStat));
+    if (abort_source_) {
+      RegLocked(kTxAbrtSource) = *std::exchange(abort_source_, std::nullopt);
+      raw.set_tx_abrt(1);
+    } else {
+      rx_fifo_.insert(rx_fifo_.end(), pending_wire_rx_.begin(), pending_wire_rx_.end());
+      if (stop_pending_) {
+        raw.set_stop_det(1);
+      }
+    }
+    RegLocked(kRawIntrStat) = raw.reg_value();
+    tx_fifo_level_ = 0;
+    pending_wire_rx_.clear();
+    stop_pending_ = false;
+    UpdateTxFifoStateLocked();
+    UpdateRxFifoStateLocked();
+  }
+
+  void FlushFifosLocked() {
+    tx_fifo_level_ = 0;
+    pending_wire_rx_.clear();
+    stop_pending_ = false;
+    rx_fifo_.clear();
+    UpdateRxFifoStateLocked();
   }
 
   void UpdateTxFifoStateLocked() {
-    regs_[0x74 / sizeof(uint32_t)] = tx_fifo_level_;
-    const bool enabled = (regs_[0x6c / sizeof(uint32_t)] & 0x1u) != 0;
-    const uint32_t tx_tl = regs_[0x3c / sizeof(uint32_t)] & 0xffu;
-    auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
+    RegLocked(kTxFifoLevel) = tx_fifo_level_;
+    const bool enabled = (RegLocked(kEnable) & 0x1u) != 0;
+    const uint32_t tx_tl = RegLocked(kTxTl) & 0xffu;
+    auto raw = RawInterruptStatusReg::Get().FromValue(RegLocked(kRawIntrStat));
     raw.set_tx_empty(enabled && tx_fifo_level_ <= tx_tl ? 1 : 0);
-    regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
+    RegLocked(kRawIntrStat) = raw.reg_value();
   }
 
   void UpdateRxFifoStateLocked() {
-    regs_[0x78 / sizeof(uint32_t)] = static_cast<uint32_t>(rx_fifo_.size());
-    const uint32_t rx_tl = regs_[0x38 / sizeof(uint32_t)] & 0xffu;
-    auto raw = RawInterruptStatusReg::Get().FromValue(regs_[0x34 / sizeof(uint32_t)]);
+    RegLocked(kRxFifoLevel) = static_cast<uint32_t>(rx_fifo_.size());
+    const uint32_t rx_tl = RegLocked(kRxTl) & 0xffu;
+    auto raw = RawInterruptStatusReg::Get().FromValue(RegLocked(kRawIntrStat));
     raw.set_rx_full(!rx_fifo_.empty() && rx_fifo_.size() > rx_tl ? 1 : 0);
-    regs_[0x34 / sizeof(uint32_t)] = raw.reg_value();
+    RegLocked(kRawIntrStat) = raw.reg_value();
   }
 
   mutable std::mutex lock_;
@@ -359,12 +368,16 @@ class FakeDwI2cController {
   std::array<uint32_t, kRegCount> regs_{};
   std::vector<RecordedCommand> tx_commands_;
   std::deque<uint8_t> canned_rx_bytes_;
+  // Bytes to be read by the queued read commands, and whether a queued command has STOP set.
   std::deque<uint8_t> pending_wire_rx_;
+  bool stop_pending_ = false;
   std::deque<uint8_t> rx_fifo_;
-  fit::function<void()> on_tx_fifo_full_;
-  fit::function<void()> on_stop_command_;
-  fit::function<void()> on_empty_intr_stat_;
-  fit::function<void()> on_clear_stop_det_;
+  zx::interrupt irq_;
+  bool bus_stalled_ = false;
+  std::optional<uint32_t> abort_source_;
+  bool retrigger_on_stop_det_clear_ = false;
+  uint32_t irq_trigger_count_ = 0;
+  uint32_t spurious_retrigger_count_ = 0;
   ddk_fake::FakeMmioRegRegion mmio_;
 };
 
@@ -911,160 +924,120 @@ TEST(DwI2cTest, SuspendAndResumeRollbackOnError) {
   ASSERT_OK(driver_test.StopDriver());
 }
 
-TEST(DwI2cTest, TransactWakesOnLevelIrqWithoutSpuriousRetrigger) {
-  FakeDwI2cController controller;
-  TestDwI2c::set_mmio(controller.GetMmioBuffer());
+// Fixture for Transact tests. The fake controller models the bus and the level-triggered interrupt
+// line, so no extra test threads are needed: each transfer completes inside the driver's
+// InterruptStatusReg read just before it waits for the interrupt. The bus only advances on a zero
+// status read while no interrupt is pending, so the driver must re-read the status after acking.
+class DwI2cTransactTest : public ::testing::Test {
+ protected:
+  using I2cImplOp = fuchsia_hardware_i2cimpl::wire::I2cImplOp;
+  static constexpr uint16_t kAddress = 0x60;
 
-  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
+  void SetUp() override {
+    TestDwI2c::set_mmio(controller_.GetMmioBuffer());
 
-  zx::interrupt interrupt;
-  ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-  zx::interrupt test_irq;
-  ASSERT_OK(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &test_irq));
+    zx::interrupt interrupt;
+    ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
+    zx::interrupt controller_irq;
+    ASSERT_OK(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &controller_irq));
+    controller_.set_interrupt(std::move(controller_irq));
+    driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
 
-  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
+    ASSERT_OK(driver_test_.StartDriver());
+    driver_started_ = true;
 
-  ASSERT_OK(driver_test.StartDriver());
-
-  driver_test.RunInDriverContext([](TestDwI2c& driver) {
-    EXPECT_EQ(driver.transfer_timeout(), zx::sec(1));
-    driver.set_transfer_timeout(zx::sec(10));
-  });
-
-  std::mutex wire_mutex;
-  std::condition_variable wire_cv;
-  bool stop_awaiting_empty_stat = false;
-  uint32_t ready_transfers = 0;
-  bool stop_wire_thread = false;
-  std::atomic<uint32_t> irq_triggers{0};
-  std::atomic<uint32_t> spurious_level_retriggers{0};
-
-  // Wait until the STOP command is queued and interrupts are unmasked before completing the
-  // transfer on the wire thread.
-  controller.set_on_stop_command([&]() {
-    std::lock_guard lock(wire_mutex);
-    stop_awaiting_empty_stat = true;
-  });
-  controller.set_on_empty_intr_stat([&]() {
-    std::lock_guard lock(wire_mutex);
-    if (stop_awaiting_empty_stat) {
-      stop_awaiting_empty_stat = false;
-      ++ready_transfers;
-      wire_cv.notify_one();
-    }
-  });
-
-  // Re-triggers the interrupt if the driver acknowledges it while an unmasked interrupt status bit
-  // is still asserted, matching level-triggered interrupt semantics.
-  std::thread wire_thread([&]() {
-    while (true) {
-      {
-        std::unique_lock lock(wire_mutex);
-        wire_cv.wait(lock, [&]() { return ready_transfers > 0 || stop_wire_thread; });
-        if (stop_wire_thread && ready_transfers == 0) {
-          return;
-        }
-        --ready_transfers;
-      }
-
-      zx::nanosleep(zx::deadline_after(zx::usec(50)));
-      EXPECT_TRUE(controller.CompleteWireTransfer());
-      irq_triggers.fetch_add(1, std::memory_order_relaxed);
-      EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-
-      while (controller.IsLevelIrqAsserted()) {
-        zx_signals_t observed = 0;
-        zx_status_t wait_status = test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
-                                                    zx::deadline_after(zx::usec(10)), &observed);
-        if (wait_status == ZX_OK && controller.IsLevelIrqAsserted()) {
-          spurious_level_retriggers.fetch_add(1, std::memory_order_relaxed);
-          EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-        }
-      }
-    }
-  });
-
-  auto join_wire_thread = fit::defer([&]() {
-    controller.set_on_stop_command(nullptr);
-    controller.set_on_empty_intr_stat(nullptr);
-    {
-      std::lock_guard lock(wire_mutex);
-      stop_wire_thread = true;
-      wire_cv.notify_all();
-    }
-    if (wire_thread.joinable()) {
-      wire_thread.join();
-    }
-  });
-
-  zx::result client_end = driver_test.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
-  ASSERT_OK(client_end);
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c(std::move(*client_end));
-  fdf::Arena arena('TEST');
-
-  // Execute 3 back-to-back 2-byte writes followed by a 1-byte write + 2-byte read transaction.
-  for (uint8_t i = 0; i < 3; ++i) {
-    std::array<uint8_t, 2> write_bytes = {static_cast<uint8_t>(0x10 + i),
-                                          static_cast<uint8_t>(0x80 | i)};
-    auto write_view =
-        fidl::VectorView<uint8_t>::FromExternal(write_bytes.data(), write_bytes.size());
-    std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 1> ops = {{
-        {
-            .address = 0x60,
-            .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-                fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_view)),
-            .stop = true,
-        },
-    }};
-    auto result = i2c.buffer(arena)->Transact(
-        fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                  ops.size()));
-    ASSERT_OK(result.status());
-    ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->read.size(), 0u);
+    zx::result client_end = driver_test_.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
+    ASSERT_OK(client_end);
+    i2c_ = fdf::WireSyncClient(std::move(*client_end));
   }
 
-  controller.QueueCannedRxBytes({0xa5, 0x5a});
-  std::array<uint8_t, 1> reg_addr = {0x42};
-  auto reg_view = fidl::VectorView<uint8_t>::FromExternal(reg_addr.data(), reg_addr.size());
-  std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 2> rw_ops = {{
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&reg_view)),
-          .stop = false,
-      },
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(2),
-          .stop = true,
-      },
-  }};
-  auto rw_result = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(rw_ops.data(),
-                                                                                rw_ops.size()));
-  ASSERT_OK(rw_result.status());
-  ASSERT_TRUE(rw_result->is_ok());
-  ASSERT_EQ(rw_result->value()->read.size(), 1u);
-  ASSERT_EQ(rw_result->value()->read[0].data.size(), 2u);
-  EXPECT_EQ(rw_result->value()->read[0].data[0], 0xa5);
-  EXPECT_EQ(rw_result->value()->read[0].data[1], 0x5a);
+  void TearDown() override {
+    if (driver_started_) {
+      EXPECT_OK(driver_test_.StopDriver());
+    }
+  }
 
-  join_wire_thread.call();
+  I2cImplOp WriteOp(const std::vector<uint8_t>& data, bool stop) {
+    fidl::VectorView<uint8_t> bytes(arena_, data);
+    return {
+        .address = kAddress,
+        .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(arena_, bytes),
+        .stop = stop,
+    };
+  }
 
-  EXPECT_EQ(irq_triggers.load(std::memory_order_relaxed), 4u);
-  EXPECT_EQ(spurious_level_retriggers.load(std::memory_order_relaxed), 0u);
-  EXPECT_FALSE(controller.IsLevelIrqAsserted());
-  EXPECT_EQ(controller.ReadReg(0x30), 0u);  // InterruptMaskReg
-  EXPECT_EQ(controller.ReadReg(0x6c), 0u);  // EnableReg
+  static I2cImplOp ReadOp(uint32_t size, bool stop) {
+    return {
+        .address = kAddress,
+        .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(size),
+        .stop = stop,
+    };
+  }
 
-  zx_signals_t observed = 0;
-  EXPECT_OK(
-      test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &observed));
+  // Performs a transaction and returns the data received by its read ops.
+  zx::result<std::vector<std::vector<uint8_t>>> Transact(std::vector<I2cImplOp> ops) {
+    auto result = i2c_.buffer(arena_)->Transact(fidl::VectorView<I2cImplOp>::FromExternal(ops));
+    EXPECT_OK(result.status());
+    if (!result.ok()) {
+      return zx::error(result.status());
+    }
+    if (result->is_error()) {
+      return zx::error(result->error_value());
+    }
+    std::vector<std::vector<uint8_t>> reads;
+    for (const auto& read : result->value()->read) {
+      reads.emplace_back(read.data.begin(), read.data.end());
+    }
+    return zx::ok(std::move(reads));
+  }
 
-  const std::vector<FakeDwI2cController::RecordedCommand> cmds = controller.TakeTxCommands();
+  // Checks that the driver masked interrupts, disabled the controller, and acknowledged the
+  // interrupt only once it was no longer asserted.
+  void ExpectIdle() {
+    EXPECT_EQ(controller_.ReadReg(FakeDwI2cController::kIntrMask), 0u);
+    EXPECT_EQ(controller_.ReadReg(FakeDwI2cController::kEnable), 0u);
+    EXPECT_FALSE(controller_.IsInterruptTriggered());
+    EXPECT_EQ(controller_.spurious_retrigger_count(), 0u);
+  }
+
+  // The controller must outlive the driver.
+  FakeDwI2cController controller_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  bool driver_started_ = false;
+  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c_;
+  fdf::Arena arena_{'TEST'};
+};
+
+TEST_F(DwI2cTransactTest, WakesOnLevelIrqWithoutSpuriousRetrigger) {
+  // Execute 3 back-to-back 2-byte writes followed by a 1-byte write + 2-byte read transaction.
+  for (uint8_t i = 0; i < 3; ++i) {
+    zx::result reads =
+        Transact({WriteOp({static_cast<uint8_t>(0x10 + i), static_cast<uint8_t>(0x80 | i)},
+                          /*stop=*/true)});
+    ASSERT_OK(reads);
+    EXPECT_TRUE(reads->empty());
+    ExpectIdle();
+  }
+
+  controller_.QueueCannedRxBytes({0xa5, 0x5a});
+  zx::result reads = Transact({WriteOp({0x42}, /*stop=*/false), ReadOp(2, /*stop=*/true)});
+  ASSERT_OK(reads);
+  ASSERT_EQ(reads->size(), 1u);
+  EXPECT_EQ(reads->at(0), (std::vector<uint8_t>{0xa5, 0x5a}));
+  ExpectIdle();
+
+  // Each transaction is completed by a single STOP_DET interrupt.
+  EXPECT_EQ(controller_.irq_trigger_count(), 4u);
+
+  const std::vector<FakeDwI2cController::RecordedCommand> cmds = controller_.TakeTxCommands();
   ASSERT_EQ(cmds.size(), 9u);
-  EXPECT_EQ(cmds[6].target_addr, 0x60);
+  for (uint8_t i = 0; i < 3; ++i) {
+    EXPECT_EQ(cmds[2 * i].data, 0x10 + i);
+    EXPECT_FALSE(cmds[2 * i].stop);
+    EXPECT_EQ(cmds[2 * i + 1].data, 0x80 | i);
+    EXPECT_TRUE(cmds[2 * i + 1].stop);
+  }
+  EXPECT_EQ(cmds[6].target_addr, kAddress);
   EXPECT_FALSE(cmds[6].is_read);
   EXPECT_EQ(cmds[6].data, 0x42);
   EXPECT_FALSE(cmds[6].stop);
@@ -1073,321 +1046,48 @@ TEST(DwI2cTest, TransactWakesOnLevelIrqWithoutSpuriousRetrigger) {
   EXPECT_FALSE(cmds[7].stop);
   EXPECT_TRUE(cmds[8].is_read);
   EXPECT_TRUE(cmds[8].stop);
-
-  ASSERT_OK(driver_test.StopDriver());
 }
 
-TEST(DwI2cTest, TransactTxAbortMasksBeforeAck) {
-  FakeDwI2cController controller;
-  TestDwI2c::set_mmio(controller.GetMmioBuffer());
+TEST_F(DwI2cTransactTest, TxAbortMasksBeforeAck) {
+  // Use a transfer longer than the TX FIFO so TX_EMPTY is still unmasked when the abort is handled.
+  // The abort flushes the TX FIFO, asserting TX_EMPTY, so acknowledging the interrupt before
+  // masking it would re-trigger the level-triggered interrupt.
+  controller_.AbortNextTransfer(0x1);
 
-  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
-
-  zx::interrupt interrupt;
-  ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-  zx::interrupt test_irq;
-  ASSERT_OK(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &test_irq));
-  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
-
-  ASSERT_OK(driver_test.StartDriver());
-  driver_test.RunInDriverContext(
-      [](TestDwI2c& driver) { driver.set_transfer_timeout(zx::sec(10)); });
-
-  std::mutex wire_mutex;
-  std::condition_variable wire_cv;
-  bool stop_awaiting_empty_stat = false;
-  uint32_t ready_transfers = 0;
-  bool stop_wire_thread = false;
-  std::atomic<uint32_t> irq_triggers{0};
-  std::atomic<uint32_t> spurious_level_retriggers{0};
-
-  controller.set_on_stop_command([&]() {
-    std::lock_guard lock(wire_mutex);
-    stop_awaiting_empty_stat = true;
-  });
-  controller.set_on_empty_intr_stat([&]() {
-    std::lock_guard lock(wire_mutex);
-    if (stop_awaiting_empty_stat) {
-      stop_awaiting_empty_stat = false;
-      ++ready_transfers;
-      wire_cv.notify_one();
-    }
-  });
-
-  std::thread wire_thread([&]() {
-    {
-      std::unique_lock lock(wire_mutex);
-      wire_cv.wait(lock, [&]() { return ready_transfers > 0 || stop_wire_thread; });
-      if (stop_wire_thread && ready_transfers == 0) {
-        return;
-      }
-      --ready_transfers;
-    }
-    EXPECT_TRUE(controller.FailWireTransferWithAbort(0x1u));
-    irq_triggers.fetch_add(1, std::memory_order_relaxed);
-    EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-    while (controller.IsLevelIrqAsserted()) {
-      zx_signals_t observed = 0;
-      zx_status_t wait_status = test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
-                                                  zx::deadline_after(zx::usec(10)), &observed);
-      if (wait_status == ZX_OK && controller.IsLevelIrqAsserted()) {
-        spurious_level_retriggers.fetch_add(1, std::memory_order_relaxed);
-        EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-      }
-    }
-  });
-
-  auto join_wire_thread = fit::defer([&]() {
-    controller.set_on_stop_command(nullptr);
-    controller.set_on_empty_intr_stat(nullptr);
-    {
-      std::lock_guard lock(wire_mutex);
-      stop_wire_thread = true;
-      wire_cv.notify_all();
-    }
-    if (wire_thread.joinable()) {
-      wire_thread.join();
-    }
-  });
-
-  zx::result client_end = driver_test.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
-  ASSERT_OK(client_end);
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c(std::move(*client_end));
-  fdf::Arena arena('TEST');
-
-  std::array<uint8_t, 2> write_bytes = {0x01, 0x02};
-  auto write_view = fidl::VectorView<uint8_t>::FromExternal(write_bytes.data(), write_bytes.size());
-  std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 1> ops = {{
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_view)),
-          .stop = true,
-      },
-  }};
-  auto result = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                ops.size()));
-  join_wire_thread.call();
-
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result->is_error());
-  EXPECT_STATUS(result->error_value(), ZX_ERR_IO);
-  EXPECT_EQ(irq_triggers.load(std::memory_order_relaxed), 1u);
-  EXPECT_EQ(spurious_level_retriggers.load(std::memory_order_relaxed), 0u);
-  EXPECT_FALSE(controller.IsLevelIrqAsserted());
-  EXPECT_EQ(controller.ReadReg(0x30), 0u);  // InterruptMaskReg
-  EXPECT_EQ(controller.ReadReg(0x6c), 0u);  // EnableReg
-
-  zx_signals_t observed = 0;
-  EXPECT_OK(
-      test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &observed));
-
-  ASSERT_OK(driver_test.StopDriver());
+  EXPECT_STATUS(Transact({WriteOp({0, 1, 2, 3, 4, 5}, /*stop=*/false),
+                          WriteOp({6, 7, 8, 9, 10, 11}, /*stop=*/true)}),
+                ZX_ERR_IO);
+  EXPECT_EQ(controller_.irq_trigger_count(), 1u);
+  ExpectIdle();
+  // Nothing is transmitted after the abort.
+  EXPECT_EQ(controller_.TakeTxCommands().size(), 8u);
 }
 
-TEST(DwI2cTest, TransactTimeoutMasksAndDisables) {
-  FakeDwI2cController controller;
-  TestDwI2c::set_mmio(controller.GetMmioBuffer());
-
-  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
-
-  zx::interrupt interrupt;
-  ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
-
-  ASSERT_OK(driver_test.StartDriver());
-  driver_test.RunInDriverContext(
+TEST_F(DwI2cTransactTest, TimeoutMasksAndDisables) {
+  controller_.StallBus();
+  driver_test_.RunInDriverContext(
       [](TestDwI2c& driver) { driver.set_transfer_timeout(zx::msec(5)); });
 
-  zx::result client_end = driver_test.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
-  ASSERT_OK(client_end);
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c(std::move(*client_end));
-  fdf::Arena arena('TEST');
-
-  std::array<uint8_t, 2> write_bytes = {0x01, 0x02};
-  auto write_view = fidl::VectorView<uint8_t>::FromExternal(write_bytes.data(), write_bytes.size());
-  std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 1> ops = {{
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_view)),
-          .stop = true,
-      },
-  }};
   const zx::time start = zx::clock::get_monotonic();
-  auto result = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                ops.size()));
+  zx::result reads = Transact({WriteOp({0x01, 0x02}, /*stop=*/true)});
   const zx::duration elapsed = zx::clock::get_monotonic() - start;
 
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result->is_error());
-  EXPECT_STATUS(result->error_value(), ZX_ERR_TIMED_OUT);
+  EXPECT_STATUS(reads, ZX_ERR_TIMED_OUT);
   EXPECT_GE(elapsed, zx::msec(5));
-  EXPECT_EQ(controller.ReadReg(0x30), 0u);  // InterruptMaskReg
-  EXPECT_EQ(controller.ReadReg(0x6c), 0u);  // EnableReg
-
-  ASSERT_OK(driver_test.StopDriver());
+  EXPECT_EQ(controller_.irq_trigger_count(), 0u);
+  ExpectIdle();
 }
 
-TEST(DwI2cTest, TransactMultiChunkTxEmptyAndStopDetLevelIrq) {
-  FakeDwI2cController controller;
-  TestDwI2c::set_mmio(controller.GetMmioBuffer());
-
-  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
-
-  zx::interrupt interrupt;
-  ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-  zx::interrupt test_irq;
-  ASSERT_OK(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &test_irq));
-  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
-
-  ASSERT_OK(driver_test.StartDriver());
-  driver_test.RunInDriverContext(
-      [](TestDwI2c& driver) { driver.set_transfer_timeout(zx::sec(10)); });
-
-  std::mutex wire_mutex;
-  std::condition_variable wire_cv;
-  bool tx_fifo_full = false;
-  bool empty_stat_after_fifo_full = false;
-  bool stop_seen = false;
-  uint32_t empty_stats_after_stop = 0;
-  bool abort_wire_thread = false;
-  std::atomic<uint32_t> irq_triggers{0};
-  std::atomic<uint32_t> spurious_level_retriggers{0};
-
-  controller.set_on_tx_fifo_full([&]() {
-    std::lock_guard lock(wire_mutex);
-    tx_fifo_full = true;
-    empty_stat_after_fifo_full = false;
-  });
-  controller.set_on_empty_intr_stat([&]() {
-    std::lock_guard lock(wire_mutex);
-    if (tx_fifo_full && !empty_stat_after_fifo_full) {
-      empty_stat_after_fifo_full = true;
-      wire_cv.notify_one();
-    }
-    if (stop_seen) {
-      ++empty_stats_after_stop;
-      wire_cv.notify_one();
-    }
-  });
-  controller.set_on_stop_command([&]() {
-    std::lock_guard lock(wire_mutex);
-    stop_seen = true;
-    empty_stats_after_stop = 0;
-    wire_cv.notify_one();
-  });
-
-  auto monitor_level_irq = [&]() {
-    while (controller.IsLevelIrqAsserted()) {
-      zx_signals_t observed = 0;
-      zx_status_t wait_status = test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
-                                                  zx::deadline_after(zx::usec(10)), &observed);
-      if (wait_status == ZX_OK && controller.IsLevelIrqAsserted()) {
-        spurious_level_retriggers.fetch_add(1, std::memory_order_relaxed);
-        EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-      }
-    }
-  };
-
-  std::thread wire_thread([&]() {
-    {
-      std::unique_lock lock(wire_mutex);
-      wire_cv.wait(lock, [&]() {
-        return (tx_fifo_full && empty_stat_after_fifo_full) || abort_wire_thread;
-      });
-      if (abort_wire_thread) {
-        return;
-      }
-    }
-
-    // Drain the initial 8-command TX FIFO chunk so TX_EMPTY wakes the driver for the next chunk.
-    zx::nanosleep(zx::deadline_after(zx::usec(50)));
-    EXPECT_TRUE(controller.DrainTxFifoToWire());
-    irq_triggers.fetch_add(1, std::memory_order_relaxed);
-    EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-    monitor_level_irq();
-
-    // Wait for the remaining 4 commands (including STOP) to be queued and the TX_EMPTY interrupt
-    // to be acknowledged before delivering STOP_DET.
-    {
-      std::unique_lock lock(wire_mutex);
-      wire_cv.wait(
-          lock, [&]() { return (stop_seen && empty_stats_after_stop >= 2) || abort_wire_thread; });
-      if (abort_wire_thread) {
-        return;
-      }
-    }
-    zx_signals_t observed = 0;
-    EXPECT_OK(test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::deadline_after(zx::sec(5)),
-                                &observed));
-
-    zx::nanosleep(zx::deadline_after(zx::usec(50)));
-    EXPECT_TRUE(controller.CompleteWireTransfer());
-    irq_triggers.fetch_add(1, std::memory_order_relaxed);
-    EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-    monitor_level_irq();
-  });
-
-  auto join_wire_thread = fit::defer([&]() {
-    controller.set_on_tx_fifo_full(nullptr);
-    controller.set_on_empty_intr_stat(nullptr);
-    controller.set_on_stop_command(nullptr);
-    {
-      std::lock_guard lock(wire_mutex);
-      abort_wire_thread = true;
-      wire_cv.notify_all();
-    }
-    if (wire_thread.joinable()) {
-      wire_thread.join();
-    }
-  });
-
-  zx::result client_end = driver_test.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
-  ASSERT_OK(client_end);
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c(std::move(*client_end));
-  fdf::Arena arena('TEST');
-
+TEST_F(DwI2cTransactTest, MultiChunkTxEmptyAndStopDetLevelIrq) {
   // Two 6-byte WriteOps = 12 commands (> tx_fifo_depth_ == 8), while each op is <= kMaxTransfer
   // (8), forcing a priming 8-command chunk + TX_EMPTY wakeup + 4-command chunk + STOP_DET wakeup.
-  std::array<uint8_t, 6> chunk0 = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15};
-  std::array<uint8_t, 6> chunk1 = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25};
-  auto view0 = fidl::VectorView<uint8_t>::FromExternal(chunk0.data(), chunk0.size());
-  auto view1 = fidl::VectorView<uint8_t>::FromExternal(chunk1.data(), chunk1.size());
-  std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 2> ops = {{
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&view0)),
-          .stop = false,
-      },
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&view1)),
-          .stop = true,
-      },
-  }};
-  auto result = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                ops.size()));
-  join_wire_thread.call();
+  const std::vector<uint8_t> chunk0 = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15};
+  const std::vector<uint8_t> chunk1 = {0x20, 0x21, 0x22, 0x23, 0x24, 0x25};
+  ASSERT_OK(Transact({WriteOp(chunk0, /*stop=*/false), WriteOp(chunk1, /*stop=*/true)}));
+  EXPECT_EQ(controller_.irq_trigger_count(), 2u);
+  ExpectIdle();
 
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result->is_ok());
-  EXPECT_EQ(irq_triggers.load(std::memory_order_relaxed), 2u);
-  EXPECT_EQ(spurious_level_retriggers.load(std::memory_order_relaxed), 0u);
-  EXPECT_FALSE(controller.IsLevelIrqAsserted());
-  EXPECT_EQ(controller.ReadReg(0x30), 0u);  // InterruptMaskReg
-  EXPECT_EQ(controller.ReadReg(0x6c), 0u);  // EnableReg
-
-  zx_signals_t observed = 0;
-  EXPECT_OK(
-      test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &observed));
-
-  const std::vector<FakeDwI2cController::RecordedCommand> cmds = controller.TakeTxCommands();
+  const std::vector<FakeDwI2cController::RecordedCommand> cmds = controller_.TakeTxCommands();
   ASSERT_EQ(cmds.size(), 12u);
   for (size_t i = 0; i < 6; ++i) {
     EXPECT_EQ(cmds[i].data, chunk0[i]);
@@ -1400,126 +1100,22 @@ TEST(DwI2cTest, TransactMultiChunkTxEmptyAndStopDetLevelIrq) {
     EXPECT_EQ(cmds[6 + i].start, i == 0);
     EXPECT_EQ(cmds[6 + i].stop, i == 5);
   }
-
-  ASSERT_OK(driver_test.StopDriver());
 }
 
-TEST(DwI2cTest, TransactDrainsRetriggeredInterruptOnAck) {
-  FakeDwI2cController controller;
-  TestDwI2c::set_mmio(controller.GetMmioBuffer());
-
-  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
-
-  zx::interrupt interrupt;
-  ASSERT_OK(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
-  zx::interrupt test_irq;
-  ASSERT_OK(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &test_irq));
-  driver_test.RunInEnvironmentTypeContext([&](auto& env) { env.Init(std::move(interrupt)); });
-
-  ASSERT_OK(driver_test.StartDriver());
-  driver_test.RunInDriverContext(
-      [](TestDwI2c& driver) { driver.set_transfer_timeout(zx::sec(10)); });
-
-  std::mutex wire_mutex;
-  std::condition_variable wire_cv;
-  bool stop_awaiting_empty_stat = false;
-  uint32_t ready_transfers = 0;
-  bool stop_wire_thread = false;
-  std::atomic<bool> inject_retrigger_on_clear{true};
-  std::atomic<uint32_t> retrigger_count{0};
-
-  controller.set_on_stop_command([&]() {
-    std::lock_guard lock(wire_mutex);
-    stop_awaiting_empty_stat = true;
-  });
-  controller.set_on_empty_intr_stat([&]() {
-    std::lock_guard lock(wire_mutex);
-    if (stop_awaiting_empty_stat) {
-      stop_awaiting_empty_stat = false;
-      ++ready_transfers;
-      wire_cv.notify_one();
-    }
-  });
+TEST_F(DwI2cTransactTest, DrainsRetriggeredInterruptOnAck) {
   // Trigger the interrupt again when ClearStopDetReg is read (before the end-of-transaction ack)
   // so acknowledging the first interrupt re-queues a packet on irq_port_.
-  controller.set_on_clear_stop_det([&]() {
-    if (inject_retrigger_on_clear.exchange(false, std::memory_order_relaxed)) {
-      retrigger_count.fetch_add(1, std::memory_order_relaxed);
-      EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-    }
-  });
-
-  std::thread wire_thread([&]() {
-    while (true) {
-      {
-        std::unique_lock lock(wire_mutex);
-        wire_cv.wait(lock, [&]() { return ready_transfers > 0 || stop_wire_thread; });
-        if (stop_wire_thread && ready_transfers == 0) {
-          return;
-        }
-        --ready_transfers;
-      }
-      zx::nanosleep(zx::deadline_after(zx::msec(1)));
-      EXPECT_TRUE(controller.CompleteWireTransfer());
-      EXPECT_OK(test_irq.trigger(0, zx::clock::get_boot()));
-    }
-  });
-
-  auto join_wire_thread = fit::defer([&]() {
-    controller.set_on_stop_command(nullptr);
-    controller.set_on_empty_intr_stat(nullptr);
-    controller.set_on_clear_stop_det(nullptr);
-    {
-      std::lock_guard lock(wire_mutex);
-      stop_wire_thread = true;
-      wire_cv.notify_all();
-    }
-    if (wire_thread.joinable()) {
-      wire_thread.join();
-    }
-  });
-
-  zx::result client_end = driver_test.Connect<fuchsia_hardware_i2cimpl::Service::Device>();
-  ASSERT_OK(client_end);
-  fdf::WireSyncClient<fuchsia_hardware_i2cimpl::Device> i2c(std::move(*client_end));
-  fdf::Arena arena('TEST');
-
-  std::array<uint8_t, 2> write_bytes = {0x33, 0x44};
-  auto write_view = fidl::VectorView<uint8_t>::FromExternal(write_bytes.data(), write_bytes.size());
-  std::array<fuchsia_hardware_i2cimpl::wire::I2cImplOp, 1> ops = {{
-      {
-          .address = 0x60,
-          .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
-              fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_view)),
-          .stop = true,
-      },
-  }};
-  auto result = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                ops.size()));
-  ASSERT_OK(result.status());
-  ASSERT_TRUE(result->is_ok());
-  EXPECT_EQ(retrigger_count.load(std::memory_order_relaxed), 1u);
+  controller_.RetriggerOnNextStopDetClear();
+  ASSERT_OK(Transact({WriteOp({0x33, 0x44}, /*stop=*/true)}));
+  EXPECT_EQ(controller_.irq_trigger_count(), 2u);
 
   // Verify the re-queued interrupt packet was drained and acknowledged before Transact returned.
-  zx_signals_t observed = 0;
-  EXPECT_OK(
-      test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &observed));
+  ExpectIdle();
 
   // Verify a subsequent transaction still wakes cleanly via irq_port_.
-  auto result2 = i2c.buffer(arena)->Transact(
-      fidl::VectorView<fuchsia_hardware_i2cimpl::wire::I2cImplOp>::FromExternal(ops.data(),
-                                                                                ops.size()));
-  join_wire_thread.call();
-
-  ASSERT_OK(result2.status());
-  ASSERT_TRUE(result2->is_ok());
-  EXPECT_EQ(controller.ReadReg(0x30), 0u);  // InterruptMaskReg
-  EXPECT_EQ(controller.ReadReg(0x6c), 0u);  // EnableReg
-  EXPECT_OK(
-      test_irq.wait_one(ZX_VIRTUAL_INTERRUPT_UNTRIGGERED, zx::time::infinite_past(), &observed));
-
-  ASSERT_OK(driver_test.StopDriver());
+  ASSERT_OK(Transact({WriteOp({0x33, 0x44}, /*stop=*/true)}));
+  EXPECT_EQ(controller_.irq_trigger_count(), 3u);
+  ExpectIdle();
 }
 
 }  // namespace dw_i2c
