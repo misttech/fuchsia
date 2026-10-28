@@ -76,7 +76,10 @@ group("tests") {
 
   # Tools whose unit tests have been migrated to Bazel (in
   # //src/developer/ffx:tests).
-  _bazel_tested_tools = [ "efi" ]
+  _bazel_tested_tools = [
+    "//src/developer/ffx/plugins/coverage",
+    "efi",
+  ]
   foreach(tool, _tools - _bazel_tested_tools) {
     deps += [ "$tool:tests" ]
   }

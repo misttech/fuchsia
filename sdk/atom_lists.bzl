@@ -120,6 +120,7 @@ _NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK = [
 
 NON_BUILD_FFX_TOOLS_ATOMS = _NON_BUILD_FFX_TOOLS_ATOMS_REQUIRED_BY_BAZEL_SDK + [
     # buildifier: keep sorted
+    "//src/developer/ffx/plugins/coverage:ffx_coverage_tool_idk",
 ]
 
 ALL_FFX_TOOL_ATOMS = BUILD_FFX_TOOLS_ATOMS + NON_BUILD_FFX_TOOLS_ATOMS

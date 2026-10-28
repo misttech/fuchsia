@@ -58,6 +58,7 @@ test_suite(
         "//src/developer/ffx/lib/version:lib_test",
         "//src/developer/ffx/plugins/config:ffx_config_plugin_args_test",
         "//src/developer/ffx/plugins/config:ffx_config_plugin_test",
+        "//src/developer/ffx/plugins/coverage:ffx_coverage_test",
         "//src/developer/ffx/plugins/emulator/common:ffx_emulator_common_test",
         "//src/developer/ffx/plugins/package/blob/compress:ffx_package_blob_compress_test",
         "//src/developer/ffx/plugins/package/blob/decompress:ffx_package_blob_decompress_test",
