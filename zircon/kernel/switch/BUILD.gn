@@ -174,7 +174,12 @@ config("instrumented-stack-size") {
     increase_stack_size = true
   }
   if (increase_stack_size) {
-    defines = [ "CUSTOM_DEFAULT_STACK_SIZE=16384" ]
+    custom_default_stack_size = 16384
+
+    # C++ <lib/thread-stack/abi.h> reads the define and Rust thread_stack
+    # reads the environment variable with option_env!().
+    defines = [ "CUSTOM_DEFAULT_STACK_SIZE=$custom_default_stack_size" ]
+    rustenv = [ "CUSTOM_DEFAULT_STACK_SIZE=$custom_default_stack_size" ]
   }
 }
 

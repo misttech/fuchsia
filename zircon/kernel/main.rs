@@ -119,6 +119,9 @@ pub mod suspend_wakeup_timer;
 #[path = "lib/syscalls/mod.rs"]
 pub mod syscalls_rs;
 
+#[path = "lib/thread-stack/src/mod.rs"]
+pub mod thread_stack;
+
 #[path = "lib/topology/src/mod.rs"]
 pub mod topology;
 

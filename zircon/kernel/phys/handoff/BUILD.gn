@@ -72,7 +72,10 @@ kernel_bindgen_crate("handoff-rs") {
   notice_year = "2026"
 
   cpp = true
-  headers = [ "include/phys/handoff/handoff.h" ]
+  headers = [
+    "include/phys/handoff/handoff.h",
+    "include/phys/handoff/zircon-abi-spec.h",
+  ]
   non_rust_deps = [ ":handoff" ]
   deps = [ "//src/lib/stdbind:stdbind-rs" ]
 
@@ -86,10 +89,20 @@ kernel_bindgen_crate("handoff-rs") {
   # No functions needed at this time.
   function_blocklist = [ ".*" ]
 
-  type_allowlist = [ "PhysHandoff" ]
+  type_allowlist = [
+    "PhysHandoff",
+
+    # ZirconAbiSpec::Stack is used by //zircon/kernel/lib/thread-stack, whose
+    # tests compare its constants against the kernel's kZirconAbiSpec.
+    "ZirconAbiSpec",
+    "ZirconAbiSpec::Stack",
+  ]
   type_blocklist = [
     "stdbind::optional",  # Ready-made bindings swapped in instead
   ]
+
+  # This is a ktl::string_view that only physboot uses.
+  var_blocklist = [ "ZirconAbiSpec::kDebugBootSpinVariable" ]
 
   opaque_types = [
     "std::.*",
