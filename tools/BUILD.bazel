@@ -38,7 +38,6 @@ test_suite(
         "//tools/debug/covargs:covargs_tests",
         "//tools/debug/debugsyms:debugsyms_tests",
         "//tools/debug/elflib:elflib_tests",
-        "//tools/debug/generate_breakpad:generate_breakpad_tests",
         "//tools/debug/symbolize:symbolize_tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
         "//tools/fidl/gidl-format:gidl_format_tests",

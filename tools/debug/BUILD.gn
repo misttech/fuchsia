@@ -9,7 +9,6 @@ group("tools") {
     "//tools/debug/bloatalyzer",
     "//tools/debug/buildidtool",
     "//tools/debug/covargs",
-    "//tools/debug/generate_breakpad",
     "//tools/debug/sourcerer",
     "//tools/debug/symbolize",
   ]
