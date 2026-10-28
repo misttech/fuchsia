@@ -4,6 +4,7 @@
 
 //! Diagnostic checks and automatic repair for `ffx uart`.
 
+use crate::driver::SOCKET_PROBE_TIMEOUT;
 use crate::metadata::{
     CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UART_FILE_PREFIX,
     UNIX_SOCKET_EXTENSION, canonicalize_target, get_shared_uart_path, get_target_id, is_target_id,
@@ -13,8 +14,10 @@ use ffx_config::EnvironmentContext;
 use fho::Result;
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::ErrorKind;
 use std::os::unix::fs::FileTypeExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::net::UnixStream;
 
 /// Outcome of a single diagnostic check executed by `ffx uart doctor`.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -59,6 +62,67 @@ pub trait DiagnosticCheck {
 /// Returns `true` if `path` refers to a regular file or a UNIX domain socket.
 fn is_file_or_socket(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|m| m.is_file() || m.file_type().is_socket())
+}
+
+/// Returns the path of the UART file with extension `ext` for `target_id` under `shared_path`.
+pub(crate) fn uart_file_path(shared_path: &Path, target_id: &str, ext: &str) -> PathBuf {
+    shared_path.join(format!("{UART_FILE_PREFIX}{target_id}.{ext}"))
+}
+
+/// Returns `true` if a process is accepting connections on the UNIX socket at `path`.
+async fn socket_has_listener(path: &Path) -> bool {
+    matches!(tokio::time::timeout(SOCKET_PROBE_TIMEOUT, UnixStream::connect(path)).await, Ok(Ok(_)))
+}
+
+/// Returns `true` if any socket for `target_id` under `shared_path` has an active listener.
+async fn any_socket_has_listener(shared_path: &Path, target_id: &str) -> bool {
+    for ext in [CONTROL_SOCKET_EXTENSION, UNIX_SOCKET_EXTENSION] {
+        if socket_has_listener(&uart_file_path(shared_path, target_id, ext)).await {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns the conflicting ID if `meta` does not describe the connection whose files are named
+/// after `file_target_id`, checking both the recorded ID and the ID derived from the target path.
+fn mismatched_metadata_id(meta: &ConnectionMetadata, file_target_id: &str) -> Option<String> {
+    let computed_id = get_target_id(&canonicalize_target(&meta.target));
+    let meta_id = meta.id.as_deref().unwrap_or(&computed_id);
+    if meta_id != file_target_id {
+        Some(meta_id.to_string())
+    } else if computed_id != file_target_id {
+        Some(computed_id)
+    } else {
+        None
+    }
+}
+
+/// Returns `true` if `target_id` currently has a live connection that repairs must not disturb.
+///
+/// A connection is live if its metadata is consistent and names a running driver, or if its
+/// metadata is absent or names a dead driver while one of its sockets has an active listener.
+/// The latter covers a driver that has bound its sockets but not yet written its metadata.
+/// Corrupted, unreadable, or mismatched metadata never counts as live, so those are always
+/// repaired.
+pub(crate) async fn has_live_connection(shared_path: &Path, target_id: &str) -> bool {
+    let json_path = uart_file_path(shared_path, target_id, METADATA_FILE_EXTENSION);
+    match fs::read_to_string(&json_path) {
+        Ok(content) => {
+            let Ok(meta) = serde_json::from_str::<ConnectionMetadata>(&content) else {
+                return false;
+            };
+            if mismatched_metadata_id(&meta, target_id).is_some() {
+                return false;
+            }
+            if is_driver_running(meta.pid) {
+                return true;
+            }
+        }
+        Err(e) if e.kind() != ErrorKind::NotFound => return false,
+        Err(_) => {}
+    }
+    any_socket_has_listener(shared_path, target_id).await
 }
 
 /// Extracts the non-empty target ID from a UART file path of the form
@@ -141,6 +205,7 @@ impl DiagnosticCheck for MetadataCheck {
         };
 
         let mut failures = Vec::new();
+        let mut warnings = Vec::new();
         let mut target_ids = BTreeSet::new();
 
         for entry in entries.flatten() {
@@ -154,9 +219,22 @@ impl DiagnosticCheck for MetadataCheck {
             };
 
             if matches!(ext, Some(UNIX_SOCKET_EXTENSION | CONTROL_SOCKET_EXTENSION)) {
-                if !path.with_extension(METADATA_FILE_EXTENSION).exists()
-                    && matches_target_filter(target_filter_id.as_deref(), &target_id, None)
+                if path.with_extension(METADATA_FILE_EXTENSION).exists()
+                    || !matches_target_filter(target_filter_id.as_deref(), &target_id, None)
                 {
+                    continue;
+                }
+                // A starting driver binds its data socket before replacing a stale control
+                // socket, so a listener on any of the target's sockets means its files are in use.
+                // This matches the `has_live_connection` check that `--fix` applies before
+                // repairing.
+                if any_socket_has_listener(&shared_path, &target_id).await {
+                    warnings.push(format!(
+                        "UART socket {:?} has no metadata JSON, but target '{target_id}' has an \
+                         active listener; its driver may still be starting",
+                        path
+                    ));
+                } else {
                     failures.push(format!("Orphaned UART file {:?} without metadata JSON", path));
                     target_ids.insert(target_id);
                 }
@@ -193,10 +271,7 @@ impl DiagnosticCheck for MetadataCheck {
                 continue;
             }
 
-            let computed_id = get_target_id(&canonicalize_target(&meta.target));
-            let meta_id = meta.id.as_deref().unwrap_or(&computed_id);
-            if meta_id != target_id || computed_id != target_id {
-                let found_id = if meta_id != target_id { meta_id } else { &computed_id };
+            if let Some(found_id) = mismatched_metadata_id(&meta, &target_id) {
                 failures.push(format!(
                     "Mismatched metadata target ID in {:?} (expected '{}', found '{}')",
                     path, target_id, found_id
@@ -205,8 +280,18 @@ impl DiagnosticCheck for MetadataCheck {
                 continue;
             }
 
-            // If PID is not running, metadata is stale.
-            if !is_driver_running(meta.pid) {
+            if is_driver_running(meta.pid) {
+                continue;
+            }
+            // A dead PID with a live socket listener means a new driver is replacing the old one
+            // and has not yet rewritten the metadata.
+            if any_socket_has_listener(&shared_path, &target_id).await {
+                warnings.push(format!(
+                    "Metadata for target '{}' names dead PID {}, but its socket has an active \
+                     listener; a new driver may still be starting",
+                    meta.target, meta.pid
+                ));
+            } else {
                 failures.push(format!(
                     "Stale metadata found for target '{}' (PID {} is dead)",
                     meta.target, meta.pid
@@ -216,12 +301,16 @@ impl DiagnosticCheck for MetadataCheck {
         }
 
         if !failures.is_empty() {
+            failures.extend(warnings.into_iter().map(|w| format!("Warning: {w}")));
             return Ok(CheckStatus::Failure {
                 message: failures.join("\n    "),
                 fix_type: Some(FixType::DeleteMetadataFiles {
                     target_ids: target_ids.into_iter().collect(),
                 }),
             });
+        }
+        if !warnings.is_empty() {
+            return Ok(CheckStatus::Warning(warnings.join("\n    ")));
         }
 
         Ok(CheckStatus::Success)
@@ -278,7 +367,13 @@ impl DiagnosticCheck for ConnectionExistsCheck {
                 let Some(file_id) = uart_file_target_id(&path) else {
                     return false;
                 };
-                target_filter.as_deref().is_none_or(|tid| file_id == tid)
+                // Parse metadata when present so this check matches targets the same way
+                // `MetadataCheck` does.
+                let meta = (ext == Some(METADATA_FILE_EXTENSION))
+                    .then(|| fs::read_to_string(&path).ok())
+                    .flatten()
+                    .and_then(|content| serde_json::from_str::<ConnectionMetadata>(&content).ok());
+                matches_target_filter(target_filter.as_deref(), file_id, meta.as_ref())
             })
         };
 

@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 use crate::args::DoctorCommand;
-use crate::doctor::{CheckStatus, ConnectionExistsCheck, DiagnosticCheck, FixType, MetadataCheck};
+use crate::doctor::{
+    CheckStatus, ConnectionExistsCheck, DiagnosticCheck, FixType, MetadataCheck,
+    has_live_connection, uart_file_path,
+};
 use crate::metadata::{
-    CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UART_FILE_PREFIX,
-    UNIX_SOCKET_EXTENSION, find_active_connection, get_shared_uart_path, is_target_id,
+    CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION,
+    find_active_connection, get_shared_uart_path, is_target_id,
 };
 use crate::sys::{get_peer_pid, is_driver_running};
 use ffx_config::EnvironmentContext;
@@ -14,21 +17,28 @@ use ffx_writer::{SimpleWriter, ToolIO};
 use fho::{FfxMain, FfxTool, Result, user_error};
 use std::fs;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::net::UnixStream;
 
 const UART_FILE_EXTENSIONS: [&str; 3] =
     [METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION, CONTROL_SOCKET_EXTENSION];
 
-/// Returns the path of the UART file with extension `ext` for `target_id` under `shared_path`.
-fn uart_file_path(shared_path: &Path, target_id: &str, ext: &str) -> PathBuf {
-    shared_path.join(format!("{UART_FILE_PREFIX}{target_id}.{ext}"))
-}
-
 #[derive(Default)]
 struct DoctorCounts {
     issues_found: usize,
     issues_repaired: usize,
+    /// Issues that had resolved on their own by the time a repair was attempted.
+    issues_cleared: usize,
+}
+
+/// Result of a successful `apply_fix`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum FixOutcome {
+    /// At least one target was repaired.
+    Repaired,
+    /// Every target was skipped because it had gained a live connection since diagnosis, so
+    /// there was nothing left to repair.
+    Skipped,
 }
 
 /// Subtool for diagnosing and optionally repairing UART connections (`ffx uart doctor`).
@@ -120,16 +130,34 @@ impl DoctorTool {
         if let Ok(Some((_path, meta))) = find_active_connection(&self.context, raw_target) {
             return Ok(meta.target);
         }
+        if let Ok(path) = uart_driver_api::parse_target_endpoint(raw_target, &self.context) {
+            return Ok(path.to_string_lossy().into_owned());
+        }
         Ok(raw_target.to_string())
     }
 
-    async fn apply_fix(&self, fix: FixType, _writer: &mut SimpleWriter) -> Result<()> {
+    pub(crate) async fn apply_fix(
+        &self,
+        fix: FixType,
+        writer: &mut SimpleWriter,
+    ) -> Result<FixOutcome> {
         match fix {
             FixType::DeleteMetadataFiles { target_ids } => {
+                let shared_path = get_shared_uart_path(&self.context)?;
+                let mut outcome = FixOutcome::Skipped;
                 for target_id in target_ids {
+                    // A driver may have started for this target since diagnosis ran; deleting its
+                    // files (and terminating it) would break a healthy connection.
+                    if has_live_connection(&shared_path, &target_id).await {
+                        writer.print(format!(
+                            "skipping target {target_id}, which now has a live connection... "
+                        ))?;
+                        continue;
+                    }
                     self.terminate_and_delete_files_for_target_id(&target_id).await?;
+                    outcome = FixOutcome::Repaired;
                 }
-                Ok(())
+                Ok(outcome)
             }
         }
     }
@@ -152,9 +180,13 @@ impl DoctorTool {
                     if self.cmd.fix {
                         writer.print("    Attempting repair... ")?;
                         match self.apply_fix(fix, writer).await {
-                            Ok(()) => {
+                            Ok(FixOutcome::Repaired) => {
                                 writer.print("OK\n")?;
                                 counts.issues_repaired += 1;
+                            }
+                            Ok(FixOutcome::Skipped) => {
+                                writer.print("SKIPPED (nothing left to repair)\n")?;
+                                counts.issues_cleared += 1;
                             }
                             Err(e) => writer.print(format!("FAILED: {}\n", e))?,
                         }
@@ -183,13 +215,18 @@ impl DoctorTool {
         self.run_check(ConnectionExistsCheck, target_str, &mut counts, writer).await?;
         self.run_check(MetadataCheck, target_str, &mut counts, writer).await?;
 
-        let DoctorCounts { issues_found, issues_repaired } = counts;
+        let DoctorCounts { issues_found, issues_repaired, issues_cleared } = counts;
+        let cleared_msg = if issues_cleared > 0 {
+            format!(", {issues_cleared} no longer present")
+        } else {
+            String::new()
+        };
         writer.print(format!(
-            "\nStatus: {} issues found ({} repaired).\n",
-            issues_found, issues_repaired
+            "\nStatus: {} issues found ({} repaired{}).\n",
+            issues_found, issues_repaired, cleared_msg
         ))?;
 
-        if issues_found > issues_repaired {
+        if issues_found > issues_repaired + issues_cleared {
             Err(user_error!("Doctor found unresolved issues."))
         } else {
             Ok(())

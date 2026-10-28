@@ -1094,7 +1094,7 @@ fn setup_mock_connection_fixture(
     fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
 
     let socket_path = shared_data_dir.join(format!("ffx_uart_{}.sock", target_id));
-    drop(std::os::unix::net::UnixListener::bind(&socket_path).unwrap());
+    bind_unlistened_socket(&socket_path);
 
     (child, meta_path)
 }
@@ -1167,11 +1167,24 @@ fn write_doctor_test_metadata(
     meta_path
 }
 
+/// Creates a UNIX domain socket file at `path` with no listener behind it.
+///
+/// The socket is bound but never put into the listening state, so connecting to it always fails
+/// with `ECONNREFUSED`. Binding a `UnixListener` and dropping it is not equivalent: a concurrent
+/// test that spawns a process can briefly hold a duplicate of the listening descriptor, letting a
+/// connection succeed and making the socket appear live.
+fn bind_unlistened_socket(path: &Path) {
+    use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, bind, socket};
+    use std::os::fd::AsRawFd;
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SockFlag::SOCK_CLOEXEC, None).unwrap();
+    bind(fd.as_raw_fd(), &UnixAddr::new(path).unwrap()).unwrap();
+}
+
 /// Creates a UNIX socket file with no listener for `target_id` in `shared_data_dir`.
 fn create_orphaned_socket(shared_data_dir: &Path, target_id: &str) -> PathBuf {
     fs::create_dir_all(shared_data_dir).unwrap();
     let sock_path = shared_data_dir.join(format!("ffx_uart_{target_id}.sock"));
-    drop(std::os::unix::net::UnixListener::bind(&sock_path).unwrap());
+    bind_unlistened_socket(&sock_path);
     assert!(
         std::os::unix::fs::FileTypeExt::is_socket(&fs::metadata(&sock_path).unwrap().file_type()),
         "Orphan socket fixture must be an actual UNIX domain socket"
@@ -1247,6 +1260,195 @@ async fn test_doctor_detects_and_fixes_orphaned_socket() {
     let (result, output) = run_doctor(&env.context, true).await;
     assert!(result.is_ok(), "Repair should succeed: {output}");
     assert!(!orphan_sock_path.exists(), "Orphan socket file should be deleted after fix");
+}
+
+#[fuchsia::test]
+async fn test_doctor_fix_preserves_socket_with_live_listener() {
+    let (env, temp_path) = create_test_env("test_doctor_live_listener_socket");
+    let shared_data_dir = temp_path.path().join("ffx_uart");
+    fs::create_dir_all(&shared_data_dir).unwrap();
+    let target_id = get_target_id(&canonicalize_target("/emu:test-target-starting"));
+    let sock_path = shared_data_dir.join(format!("ffx_uart_{target_id}.sock"));
+    // Keep the listener open to simulate a driver that has bound its socket but not yet
+    // written its metadata.
+    let _listener = std::os::unix::net::UnixListener::bind(&sock_path).unwrap();
+
+    let (result, output) = run_doctor(&env.context, true).await;
+    assert!(result.is_ok(), "A starting driver is not an unresolved issue: {output}");
+    assert!(output.contains("has an active listener"), "Expected live listener warning: {output}");
+    assert!(!output.contains("Orphaned UART file"), "Live socket must not be orphaned: {output}");
+    assert!(sock_path.exists(), "Socket with a live listener must not be deleted by --fix");
+}
+
+#[fuchsia::test]
+async fn test_doctor_fix_preserves_dead_pid_metadata_with_live_listener() {
+    let (env, temp_path) = create_test_env("test_doctor_dead_pid_live_listener");
+    let shared_data_dir = temp_path.path().join("ffx_uart");
+    let target = "/emu:test-target-restarting";
+    let target_id = get_target_id(&canonicalize_target(target));
+    let meta_path = write_doctor_test_metadata(&shared_data_dir, &target_id, target, 999999);
+    let sock_path = shared_data_dir.join(format!("ffx_uart_{target_id}.sock"));
+    let _listener = std::os::unix::net::UnixListener::bind(&sock_path).unwrap();
+
+    let (result, output) = run_doctor(&env.context, true).await;
+    assert!(result.is_ok(), "A restarting driver is not an unresolved issue: {output}");
+    assert!(output.contains("names dead PID"), "Expected restarting driver warning: {output}");
+    assert!(!output.contains("Stale metadata found"), "Metadata must not be stale: {output}");
+    assert!(meta_path.exists(), "Metadata must not be deleted while a listener is active");
+    assert!(sock_path.exists(), "Socket with a live listener must not be deleted by --fix");
+}
+
+#[fuchsia::test]
+async fn test_doctor_fix_preserves_stale_control_socket_of_starting_driver() {
+    let (env, temp_path) = create_test_env("test_doctor_stale_control_starting_driver");
+    let shared_data_dir = temp_path.path().join("ffx_uart");
+    let target_id = get_target_id(&canonicalize_target("/emu:test-target-stale-control"));
+    // A driver that has bound its data socket but has not yet written its metadata or replaced
+    // the control socket left behind by a previous driver.
+    let control_path = shared_data_dir.join(format!("ffx_uart_{target_id}.control"));
+    fs::create_dir_all(&shared_data_dir).unwrap();
+    bind_unlistened_socket(&control_path);
+    let sock_path = shared_data_dir.join(format!("ffx_uart_{target_id}.sock"));
+    let _listener = std::os::unix::net::UnixListener::bind(&sock_path).unwrap();
+
+    let (result, output) = run_doctor(&env.context, true).await;
+    assert!(result.is_ok(), "A starting driver is not an unresolved issue: {output}");
+    assert!(!output.contains("Orphaned UART file"), "Stale control must not be orphaned: {output}");
+    assert!(!output.contains("Attempting repair"), "No repair should be attempted: {output}");
+    assert!(sock_path.exists(), "Socket with a live listener must not be deleted by --fix");
+    assert!(control_path.exists(), "A starting driver's files must not be deleted by --fix");
+}
+
+/// Binds and returns a listener on the UNIX socket for `target_id` with extension `ext`.
+fn bind_doctor_test_socket(
+    shared_data_dir: &Path,
+    target_id: &str,
+    ext: &str,
+) -> std::os::unix::net::UnixListener {
+    fs::create_dir_all(shared_data_dir).unwrap();
+    let path = shared_data_dir.join(format!("ffx_uart_{target_id}.{ext}"));
+    std::os::unix::net::UnixListener::bind(path).unwrap()
+}
+
+#[fuchsia::test]
+async fn test_has_live_connection() {
+    use crate::doctor::has_live_connection;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let shared = temp_dir.path();
+    let live_child = ChildProcessGuard::spawn_sleeper();
+    let live_pid = live_child.id();
+    let dead_pid = 999999;
+
+    let target_for = |name: &str| {
+        let target = format!("/emu:{name}");
+        let id = get_target_id(&canonicalize_target(&target));
+        (target, id)
+    };
+
+    // No files at all.
+    let (_, id) = target_for("no-files");
+    assert!(!has_live_connection(shared, &id).await, "No files is not live");
+
+    // Metadata naming a running driver.
+    let (target, id) = target_for("live-pid");
+    write_doctor_test_metadata(shared, &id, &target, live_pid);
+    assert!(has_live_connection(shared, &id).await, "Running driver is live");
+
+    // Metadata naming a dead driver, with no listener.
+    let (target, id) = target_for("dead-pid");
+    write_doctor_test_metadata(shared, &id, &target, dead_pid);
+    assert!(!has_live_connection(shared, &id).await, "Dead driver without listener is not live");
+
+    // Metadata naming a dead driver, with a listener (a driver is replacing it).
+    let (target, id) = target_for("dead-pid-listener");
+    write_doctor_test_metadata(shared, &id, &target, dead_pid);
+    let _l1 = bind_doctor_test_socket(shared, &id, uart_driver_api::UNIX_SOCKET_EXTENSION);
+    assert!(has_live_connection(shared, &id).await, "Dead driver with listener is live");
+
+    // No metadata, with a listener on the control socket only (a driver is starting).
+    let (_, id) = target_for("no-meta-listener");
+    let _l2 = bind_doctor_test_socket(shared, &id, uart_driver_api::CONTROL_SOCKET_EXTENSION);
+    assert!(has_live_connection(shared, &id).await, "Starting driver is live");
+
+    // No metadata and a socket with no listener.
+    let (_, id) = target_for("no-meta-orphan");
+    create_orphaned_socket(shared, &id);
+    assert!(!has_live_connection(shared, &id).await, "Orphaned socket is not live");
+
+    // Corrupted metadata is never live, even with a listener.
+    let (_, id) = target_for("corrupt-listener");
+    fs::write(shared.join(format!("ffx_uart_{id}.json")), b"not valid json").unwrap();
+    let _l3 = bind_doctor_test_socket(shared, &id, uart_driver_api::UNIX_SOCKET_EXTENSION);
+    assert!(!has_live_connection(shared, &id).await, "Corrupted metadata is not live");
+
+    // Mismatched metadata is never live, even when it names a running driver with a listener.
+    let (_, id) = target_for("mismatch-listener");
+    write_doctor_test_metadata(shared, &id, "/emu:some-other-target", live_pid);
+    let _l4 = bind_doctor_test_socket(shared, &id, uart_driver_api::UNIX_SOCKET_EXTENSION);
+    assert!(!has_live_connection(shared, &id).await, "Mismatched metadata is not live");
+}
+
+#[fuchsia::test]
+async fn test_doctor_apply_fix_skips_targets_with_live_connection() {
+    use crate::doctor::FixType;
+    use crate::subtools::doctor::FixOutcome;
+
+    let (env, temp_path) = create_test_env("test_doctor_apply_fix_skips_live");
+    let shared_data_dir = temp_path.path().join("ffx_uart");
+    let live_id = get_target_id(&canonicalize_target("/emu:test-target-now-live"));
+    let live_sock = shared_data_dir.join(format!("ffx_uart_{live_id}.sock"));
+    let _listener =
+        bind_doctor_test_socket(&shared_data_dir, &live_id, uart_driver_api::UNIX_SOCKET_EXTENSION);
+    let orphan_id = get_target_id(&canonicalize_target("/emu:test-target-still-orphaned"));
+    let orphan_sock = create_orphaned_socket(&shared_data_dir, &orphan_id);
+
+    let tool = DoctorTool { cmd: DoctorCommand { fix: true }, context: env.context.clone() };
+    let buffers = TestBuffers::default();
+    let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
+
+    // Every target has gained a live connection since diagnosis, so nothing is repaired.
+    let fix = FixType::DeleteMetadataFiles { target_ids: vec![live_id.clone()] };
+    let outcome = tool.apply_fix(fix, &mut writer).await.unwrap();
+    assert_eq!(outcome, FixOutcome::Skipped);
+    assert!(live_sock.exists(), "Socket with a live listener must not be deleted");
+    let output = buffers.stdout.into_string();
+    assert!(output.contains(&format!("skipping target {live_id}")), "Expected skip: {output}");
+
+    // Skipping one target does not prevent repairing another.
+    let buffers = TestBuffers::default();
+    let mut writer = ffx_writer::SimpleWriter::new_test(&buffers);
+    let fix = FixType::DeleteMetadataFiles { target_ids: vec![live_id.clone(), orphan_id] };
+    let outcome = tool.apply_fix(fix, &mut writer).await.unwrap();
+    assert_eq!(outcome, FixOutcome::Repaired);
+    assert!(live_sock.exists(), "Socket with a live listener must not be deleted");
+    assert!(!orphan_sock.exists(), "Orphaned socket should be deleted");
+}
+
+#[fuchsia::test]
+async fn test_doctor_connection_check_matches_metadata_id() {
+    let (mut env, temp_path) = create_test_env("test_doctor_connection_check_meta_id");
+    let shared_data_dir = temp_path.path().join("ffx_uart");
+    let file_target_id = get_target_id(&canonicalize_target("/emu:test-target-file"));
+    let requested_target = "/emu:test-target-requested";
+    let requested_target_id = get_target_id(&canonicalize_target(requested_target));
+    // The file is named after one target but its metadata records the requested target's ID.
+    let meta_path =
+        write_doctor_test_metadata(&shared_data_dir, &file_target_id, requested_target, 999999);
+    let content = fs::read_to_string(&meta_path).unwrap();
+    let mut meta: ConnectionMetadata = serde_json::from_str(&content).unwrap();
+    meta.id = Some(requested_target_id.clone());
+    fs::write(&meta_path, serde_json::to_string(&meta).unwrap()).unwrap();
+
+    env.context.override_target_specifier(&Some(format!("uart:{requested_target_id}")));
+    let (result, output) = run_doctor(&env.context, false).await;
+    assert!(result.is_err(), "Mismatched metadata should be reported: {output}");
+    assert!(
+        !output.contains("No active or stale UART connections"),
+        "Connection check should match the metadata ID like MetadataCheck does: {output}"
+    );
+    assert!(output.contains("Mismatched metadata target ID"), "Expected mismatch: {output}");
+    assert!(meta_path.exists(), "Metadata should not be deleted without --fix");
 }
 
 #[fuchsia::test]
@@ -1409,7 +1611,7 @@ async fn test_doctor_target_specifier_without_healthy_metadata() {
     // 2. Orphaned UNIX socket targeted by 16-hex ID (without .json) should be detected and fixed.
     let orphan_id = get_target_id(&canonicalize_target("/dev/ttyUSB77"));
     let orphan_sock = shared_data_dir.join(format!("ffx_uart_{orphan_id}.sock"));
-    drop(std::os::unix::net::UnixListener::bind(&orphan_sock).unwrap());
+    bind_unlistened_socket(&orphan_sock);
 
     env.context.override_target_specifier(&Some(format!("uart:{orphan_id}")));
     let tool_detect =
