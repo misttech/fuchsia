@@ -56,9 +56,14 @@ const fn make_mutex_storage() -> [u8; RAW_MUTEX_SIZE] {
 #[repr(C, align(8))]
 struct RawMutexStorage(zr::OpaqueBytes<RAW_MUTEX_SIZE>);
 
+#[cfg(feature = "lock_dep")]
 #[derive(Default)]
 #[repr(C, align(8))]
 pub struct LockEntryStorage(zr::OpaqueBytes<40>);
+
+#[cfg(not(feature = "lock_dep"))]
+#[derive(Default)]
+pub struct LockEntryStorage(zr::OpaqueBytes<0>);
 
 /// Opaque layout block matching the Zircon C++ Mutex exactly.
 #[pin_data(PinnedDrop)]

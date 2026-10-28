@@ -101,7 +101,11 @@ class VmCompression final : public fbl::RefCounted<VmCompression>,
     explicit CompressorGuard(const VmCompression* compression);
     friend VmCompression;
 
+#if defined(LOCK_DEP_ENABLED_FEATURE_LEVEL) && LOCK_DEP_ENABLED_FEATURE_LEVEL >= 2
     [[maybe_unused]] OpaqueStorage<56, 8> storage_{};
+#else
+    [[maybe_unused]] OpaqueStorage<16, 8> storage_{};
+#endif
   };
 
   // Retrieve a reference to a VmCompressor, wrapped in the RAII CompressorGuard. Once the
