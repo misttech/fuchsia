@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //! This module implements a lockup detector for Starnix kernel threads.
-//! It tracks the start time of operations and reports threads that run for too long
+//! It tracks the operations running on threads and reports threads that run for too long
 //! without pausing or stopping the operation.
 //!
 //! It uses a global registry to track active operations across all threads.
@@ -12,7 +12,7 @@ use pin_project::pin_project;
 use starnix_sync::{LockDepRwLock, ThreadLockupDetectorRegistryLock};
 use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
@@ -31,7 +31,7 @@ impl ThreadState {
     fn new() -> Self {
         let handle = fuchsia_runtime::with_thread_self(|thread| thread.raw_handle());
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
-        let ptr = OPERATION_START_NANOS.with(|atomic| atomic as *const AtomicU64);
+        let ptr = OPERATION_GENERATION.with(|atomic| atomic as *const AtomicU64);
 
         let mut rcu_nesting_level = std::ptr::null();
         let mut rcu_counter_index = std::ptr::null();
@@ -64,15 +64,18 @@ impl Drop for ThreadState {
 thread_local! {
     static THREAD_STATE: RefCell<Option<ThreadState>> = const { RefCell::new(None) };
 
-    /// The start time of the operation running on the current thread, in nanoseconds on the
-    /// monotonic clock, or 0 if no operation is running.
+    /// The generation of the operation running on the current thread, or 0 if no operation is
+    /// running.
     ///
     /// This is a `const`-initialized thread-local without a destructor, so accessing it is cheap and
     /// its storage remains valid until the thread exits. `ThreadState::new` registers its address
     /// in `REGISTRY`, and dropping the `ThreadState` removes it again.
-    static OPERATION_START_NANOS: AtomicU64 = const { AtomicU64::new(0) };
+    static OPERATION_GENERATION: AtomicU64 = const { AtomicU64::new(0) };
 
-    /// Whether the current thread's `OPERATION_START_NANOS` is registered in `REGISTRY`.
+    /// Last generation published by the current thread (never 0 once an operation started).
+    static LAST_GENERATION: Cell<u64> = const { Cell::new(0) };
+
+    /// Whether the current thread's `OPERATION_GENERATION` is registered in `REGISTRY`.
     static IS_REGISTERED: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -83,7 +86,7 @@ struct RegisteredThread {
     thread: zx::Unowned<'static, zx::Thread>,
     /// The KOID of the thread.
     koid: zx::Koid,
-    /// Pointer to the thread's `OPERATION_START_NANOS` thread-local.
+    /// Pointer to the thread's `OPERATION_GENERATION` thread-local.
     atomic: *const AtomicU64,
     /// Pointer to the RCU nesting level.
     rcu_nesting_level: *const AtomicUsize,
@@ -123,8 +126,15 @@ unsafe impl Sync for RegisteredThread {}
 pub struct ThreadLockupInfo {
     pub thread: zx::Unowned<'static, zx::Thread>,
     pub koid: zx::Koid,
+    /// When `get_long_running_threads` first observed the operation. The operation started at or
+    /// before this time.
     pub start_time: zx::MonotonicInstant,
 }
+
+/// For each thread running an operation, the generation of that operation and the time at which
+/// `get_long_running_threads` first observed it.
+static FIRST_SEEN: LazyLock<fuchsia_sync::Mutex<HashMap<zx::Koid, (u64, zx::MonotonicInstant)>>> =
+    LazyLock::new(|| Default::default());
 
 /// Global registry of all tracked threads.
 static REGISTRY: LazyLock<
@@ -132,14 +142,20 @@ static REGISTRY: LazyLock<
 > = LazyLock::new(|| Default::default());
 
 impl ThreadLockupDetector {
-    /// Starts an operation by storing the current time in the thread-local atomic.
+    /// Starts an operation by publishing a new, non-zero operation generation in the
+    /// thread-local atomic.
+    ///
+    /// This runs on every syscall, so it avoids reading the monotonic clock, which is a
+    /// significant part of the cost of a trivial syscall. Instead, `get_long_running_threads`
+    /// timestamps each operation the first time it observes it.
     #[inline]
     fn start_operation() {
         if !IS_REGISTERED.get() {
             Self::register_current_thread();
         }
-        let now = zx::MonotonicInstant::get().into_nanos() as u64;
-        OPERATION_START_NANOS.with(|start| start.store(now, Ordering::Relaxed));
+        let next = LAST_GENERATION.get().wrapping_add(1).max(1);
+        LAST_GENERATION.set(next);
+        OPERATION_GENERATION.with(|gen_atomic| gen_atomic.store(next, Ordering::Relaxed));
     }
 
     /// Registers the current thread in `REGISTRY` the first time it starts an operation.
@@ -157,14 +173,27 @@ impl ThreadLockupDetector {
     /// Stops an operation by storing 0 in the thread-local atomic.
     #[inline]
     fn stop_operation() {
-        OPERATION_START_NANOS.with(|start| start.store(0, Ordering::Relaxed));
+        OPERATION_GENERATION.with(|gen_atomic| gen_atomic.store(0, Ordering::Relaxed));
     }
 
-    /// Iterates over the registry, finds threads that have been running longer than the threshold,
-    /// and returns their `ThreadLockupInfo`.
+    /// Iterates over the registry, finds threads that have been running an operation for at least
+    /// the threshold, and returns their `ThreadLockupInfo`.
+    ///
+    /// Operations are timestamped by the first call that observes them, not when they start: an
+    /// operation is reported once the call that first observed it is at least `threshold` old.
+    /// When called periodically, this delays reports by at most one period.
     pub fn get_long_running_threads(threshold: zx::MonotonicDuration) -> Vec<ThreadLockupInfo> {
         let now = zx::MonotonicInstant::get();
         let registry = REGISTRY.read();
+        let mut first_seen = FIRST_SEEN.lock();
+        // Forget threads that are idle or gone.
+        first_seen.retain(|koid, _| {
+            registry.get(koid).is_some_and(|registered| {
+                // SAFETY: We hold the read lock on REGISTRY, so the thread-local is still alive
+                // (see below).
+                unsafe { &*registered.atomic }.load(Ordering::Relaxed) != 0
+            })
+        });
         registry
             .iter()
             .filter_map(|registered| {
@@ -172,12 +201,18 @@ impl ThreadLockupDetector {
                 // acquire the write lock to remove its pointer before freeing the memory.
                 // So the pointer is valid as long as we hold the read lock.
                 let atomic = unsafe { &*registered.atomic };
-                let start_nanos = atomic.load(Ordering::Relaxed);
-                if start_nanos == 0 {
+                let generation = atomic.load(Ordering::Relaxed);
+                if generation == 0 {
                     return None;
                 }
-                let start_time = zx::MonotonicInstant::from_nanos(start_nanos as i64);
-                if now - start_time > threshold {
+                // The operation started no later than the first scan that observed this
+                // generation.
+                let entry = first_seen.entry(registered.koid).or_insert((generation, now));
+                if entry.0 != generation {
+                    *entry = (generation, now);
+                }
+                let start_time = entry.1;
+                if now - start_time >= threshold {
                     Some(ThreadLockupInfo {
                         thread: registered.thread.clone(),
                         koid: registered.koid,
@@ -360,19 +395,46 @@ mod tests {
     fn test_start_time_is_recorded() {
         let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
 
-        let before = zx::MonotonicInstant::get();
         let _guard = ThreadLockupDetector::track();
-        let after = zx::MonotonicInstant::get();
-
-        // Make sure the operation has been running for longer than the zero threshold.
-        std::thread::sleep(std::time::Duration::from_millis(1));
-
-        let info =
+        let before = zx::MonotonicInstant::get();
+        let first =
             ThreadLockupDetector::get_long_running_threads(zx::MonotonicDuration::from_nanos(0))
                 .into_iter()
                 .find(|info| info.koid == koid)
                 .expect("current thread is tracked");
-        assert!(before <= info.start_time && info.start_time <= after);
+        let after = zx::MonotonicInstant::get();
+        assert!(before <= first.start_time && first.start_time <= after);
+
+        // Subsequent scans of the same operation generation preserve the first-seen timestamp.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let second =
+            ThreadLockupDetector::get_long_running_threads(zx::MonotonicDuration::from_nanos(0))
+                .into_iter()
+                .find(|info| info.koid == koid)
+                .expect("current thread is still tracked");
+        assert_eq!(first.start_time, second.start_time);
+    }
+
+    #[test]
+    fn test_new_operation_resets_start_time() {
+        let koid = fuchsia_runtime::with_thread_self(|thread| thread.koid()).unwrap();
+        let start_time = || {
+            ThreadLockupDetector::get_long_running_threads(zx::MonotonicDuration::from_nanos(0))
+                .into_iter()
+                .find(|info| info.koid == koid)
+                .expect("current thread is tracked")
+                .start_time
+        };
+
+        let first = {
+            let _guard = ThreadLockupDetector::track();
+            start_time()
+        };
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        // A new operation does not inherit the timestamp of the previous one.
+        let _guard = ThreadLockupDetector::track();
+        assert!(start_time() > first);
     }
 
     #[test]
