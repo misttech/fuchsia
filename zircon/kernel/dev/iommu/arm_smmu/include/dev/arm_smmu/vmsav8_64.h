@@ -9,7 +9,12 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/types.h>
+
+#if defined(ARM_SMMU_HOST_TEST)
+#include <lib/arch/cache.h>
+#endif
 
 #include <dev/iommu/common.h>
 
@@ -149,6 +154,26 @@ inline uint64_t MakePageEntry(paddr_t addr, uint32_t perms) {
   ZX_DEBUG_ASSERT(IsValidAddr(addr));
   return (addr & kValidAddrMask) | kValidEntryBit | kPageEntryBit | kPageEntryAccessFlagBit |
          GetPageEntryPerms(perms);
+}
+
+// Writes a single descriptor into a translation table at |level|. Every store
+// into translation table memory goes through this function or ZeroTablePage(),
+// so that the host test hardware model observes all of them.
+inline void WritePte(uint64_t* slot, uint64_t val, uint32_t level) {
+#if defined(ARM_SMMU_HOST_TEST)
+  arch::OnPteWrite(slot, val, level);
+#endif
+  *slot = val;
+}
+
+// Zero-fills a whole translation table page. Every store into translation
+// table memory goes through WritePte() or this function, so that the host test
+// hardware model observes all of them.
+inline void ZeroTablePage(void* table_vaddr) {
+#if defined(ARM_SMMU_HOST_TEST)
+  arch::OnTableZero(reinterpret_cast<uint64_t>(table_vaddr), kEntriesPerPage * sizeof(uint64_t));
+#endif
+  memset(table_vaddr, 0, kEntriesPerPage * sizeof(uint64_t));
 }
 
 }  // namespace vmsav8_64

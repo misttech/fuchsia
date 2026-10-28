@@ -76,7 +76,7 @@ void TranslationTableHelper::AssignPageEntry(uint64_t page_entry) {
 
   ZX_DEBUG_ASSERT(L.table != nullptr);
   ZX_DEBUG_ASSERT(L.ndx <= kAddrBitsMask);
-  L.table[L.ndx] = page_entry;
+  WritePte(&L.table[L.ndx], page_entry, kLevels - 1);
   L.dirty = true;
 }
 
@@ -214,7 +214,7 @@ void TranslationTableHelper::FinishLevel(uint32_t level_ndx) {
         ZX_DEBUG_ASSERT(prev_level.table != nullptr);
         ZX_DEBUG_ASSERT(prev_level.ndx <= kAddrBitsMask);
 
-        prev_level.table[prev_level.ndx] = 0;
+        WritePte(&prev_level.table[prev_level.ndx], 0, level_ndx - 1);
         prev_level.dirty = true;
 
         const paddr_t return_me_phys = physmap_to_paddr(l.table);
@@ -289,7 +289,7 @@ zx::result<> TranslationTableHelper::FindPageForLevel(uint32_t level) {
   // new page, and flagging it as dirty so it will be flushed at the proper
   // time).
   paddr_t page_phys = maybe_page.value()->paddr();
-  levels_[prev].table[levels_[prev].ndx] = MakeTableEntry(page_phys);
+  WritePte(&levels_[prev].table[levels_[prev].ndx], MakeTableEntry(page_phys), prev);
   levels_[level].table = static_cast<uint64_t*>(paddr_to_physmap(maybe_page.value()->paddr()));
   levels_[prev].dirty = true;
   return zx::ok();

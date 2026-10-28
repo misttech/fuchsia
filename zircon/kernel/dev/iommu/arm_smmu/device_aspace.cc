@@ -262,11 +262,11 @@ void DeviceAspace::FreeTranslationTablesHelper(vm_page_t* table_page, uint32_t l
         // to walk every entry in the level 3 page, so explicitly zero out the
         // level 3 page before proceeding.
         ZX_DEBUG_ASSERT(level == 2);
-        memset(next_va, 0, kPageSize);
+        ZeroTablePage(next_va);
       }
 
       // Zero out the entry;
-      table[i] = 0;
+      WritePte(&table[i], 0, level);
 
       // Flush the (now zero) page, and add the page to our page cache.  We will
       // free the entire page cache all at once when we are done.  Note: the

@@ -10,9 +10,22 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <vm/pmm.h>
+
 namespace arch {
 
-inline void CleanDataCacheRange(uint64_t addr, size_t size) {}
+inline void CleanDataCacheRange(uint64_t addr, size_t size) {
+  PmmMock::Get().CleanDataCacheRange(addr, size);
+}
+
+inline void OnPteWrite(uint64_t* slot, uint64_t new_val, uint32_t level) {
+  PmmMock::Get().OnPteWrite(slot, new_val, level);
+}
+
+inline void OnTableZero(uint64_t addr, size_t size) { PmmMock::Get().OnTableZero(addr, size); }
+inline void Yield() {}
+
+inline void DeviceMemoryBarrier() {}
 
 }  // namespace arch
 

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <zircon/assert.h>
 
+#include <dev/arm_smmu/vmsav8_64.h>
 #include <vm/page.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -59,7 +60,7 @@ class PageCache {
     // page cache and device aspace code currently verify this behavior.
     paddr_t page_paddr = ret->paddr();
     void* page_vaddr = paddr_to_physmap(page_paddr);
-    memset(page_vaddr, 0, kPageSize);
+    vmsav8_64::ZeroTablePage(page_vaddr);
     arch::CleanDataCacheRange(reinterpret_cast<uintptr_t>(page_vaddr), kPageSize);
     ++in_flight_pages_;
 

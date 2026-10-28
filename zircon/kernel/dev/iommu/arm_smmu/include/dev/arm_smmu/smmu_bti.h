@@ -104,6 +104,7 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
 
  private:
   friend class Smmu;
+  friend class SmmuTestAccess;
   friend class fbl::RefPtr<SmmuBti>;
 
   static zx::result<ktl::unique_ptr<DeviceAspace>> CreateAspace();

@@ -17,21 +17,34 @@ cc_test_executable("arm_smmu_tests_binary") {
 
   # The subset of code being tested on the host
   sources += [
+    "../context_bank.cc",
     "../device_aspace.cc",
+    "../smmu.cc",
+    "../smmu_bti.cc",
     "../smmu_mode.cc",
+    "../smmu_pmt.cc",
+    "../stream_match_reg_group.cc",
     "../translation_table_helper.cc",
+    "../utils.cc",
   ]
 
   # Mocks and other dependencies
   sources += [
     "//zircon/system/ulib/region-alloc/region-alloc.cc",
+    "mocks/iommu.cc",
     "mocks/pmm.cc",
   ]
 
+  defines = [ "ARM_SMMU_HOST_TEST=1" ]
+
   deps = [
+    "//sdk/lib/zbi-format",
     "//sdk/lib/zircon-assert",
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/hwreg:headers",
+    "//zircon/system/ulib/mmio-ptr",
     "//zircon/system/ulib/region-alloc:headers",
+    "//zircon/system/ulib/zircon-internal",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]

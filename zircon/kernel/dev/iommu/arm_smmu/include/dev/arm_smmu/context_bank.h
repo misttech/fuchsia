@@ -46,6 +46,7 @@ class ContextBank : public fbl::DoublyLinkedListable<ktl::unique_ptr<ContextBank
  private:
   friend class ktl::default_delete<ContextBank>;
   friend class SmmuBti;
+  friend class SmmuTestAccess;
 
   // Info fetched from the TCR which tells us a few different things about how a
   // TTBR is configured.

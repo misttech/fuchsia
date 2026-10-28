@@ -128,6 +128,7 @@ class Smmu final : public iommu::Iommu, public fbl::DoublyLinkedListable<fbl::Re
   friend class ContextBank;
   friend class SmmuBti;
   friend class StreamMatchRegGroup;
+  friend class SmmuTestAccess;
 
   struct GlobalIrqVector {
     Smmu* smmu{nullptr};

@@ -49,6 +49,12 @@ class PinnedVmObject {
   size_t offset() const { return offset_; }
   size_t size() const { return size_; }
 
+  void reset() {
+    vmo_.reset();
+    offset_ = 0;
+    size_ = 0;
+  }
+
  private:
   fbl::RefPtr<VmObject> vmo_;
   size_t offset_ = 0;
