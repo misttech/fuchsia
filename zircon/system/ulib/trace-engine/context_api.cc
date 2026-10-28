@@ -89,6 +89,9 @@ struct StringEntry : public internal::SinglyLinkedListable<StringEntry> {
   static constexpr uint32_t kCategoryChecked = 1u << 2;
   // Category is enabled.
   static constexpr uint32_t kCategoryEnabled = 1u << 3;
+  // Registration failed because the rolling buffers were full; retry once |retry_epoch| differs
+  // from the context's buffer_service_epoch().
+  static constexpr uint32_t kRetryPending = 1u << 4u;
 
   // The string literal itself.
   const unsigned char* bytes;
@@ -99,10 +102,16 @@ struct StringEntry : public internal::SinglyLinkedListable<StringEntry> {
   // The index with which the string was associated, or 0 if none.
   trace_string_index_t index;
 
+  // Low 16 bits of buffer_service_epoch() when kRetryPending was set. Fits in what would otherwise
+  // be padding after |index|.
+  uint16_t retry_epoch;
+
   // Used by the hash table.
   const unsigned char* GetKey() const { return bytes; }
   static size_t GetHash(const unsigned char* key) { return reinterpret_cast<uintptr_t>(key); }
 };
+// Every thread caches ContextCache::kMaxStringEntries of these, so keep retry_epoch in padding.
+static_assert(sizeof(StringEntry) == 3 * sizeof(void*));
 
 // A thread table entry.
 struct ThreadEntry : public internal::SinglyLinkedListable<ThreadEntry> {
@@ -111,6 +120,11 @@ struct ThreadEntry : public internal::SinglyLinkedListable<ThreadEntry> {
 
   // Thread reference for this thread.
   trace_thread_ref_t thread_ref{};
+
+  // Registration failed because the rolling buffers were full; retry once |retry_epoch| differs
+  // from the context's buffer_service_epoch().
+  bool retry_pending{false};
+  uint32_t retry_epoch{0u};
 
   // Used by the hash table.
   zx_koid_t GetKey() const { return thread_koid; }
@@ -133,6 +147,11 @@ struct ContextCache {
 
   // Thread reference created when this thread was registered.
   trace_thread_ref_t thread_ref{};
+
+  // Registering this thread failed because the rolling buffers were full; retry once
+  // |thread_retry_epoch| differs from the context's buffer_service_epoch().
+  bool thread_retry_pending{false};
+  uint32_t thread_retry_epoch{0u};
 
   // Maximum number of strings to cache per thread.
   static constexpr size_t kMaxStringEntries = 256;
@@ -171,6 +190,7 @@ ContextCache* GetCurrentContextCache(uint32_t generation) {
   }
   cache->generation = generation;
   cache->thread_ref = trace_make_unknown_thread_ref();
+  cache->thread_retry_pending = false;
   cache->string_table.clear();
   cache->thread_table.clear();
   return cache;
@@ -194,6 +214,7 @@ StringEntry* CacheStringEntry(uint32_t generation, const unsigned char* bytes_po
   entry->bytes = bytes_pointer;
   entry->flags = 0u;
   entry->index = 0u;
+  entry->retry_epoch = 0u;
   cache->string_table.insert(entry);
   return entry;
 }
@@ -215,6 +236,7 @@ ThreadEntry* CacheThreadEntry(uint32_t generation, zx_koid_t thread_koid) {
   ThreadEntry* entry = &cache->thread_entries[count];
   entry->thread_koid = thread_koid;
   entry->thread_ref = trace_make_unknown_thread_ref();
+  entry->retry_pending = false;
   cache->thread_table.insert(entry);
   return entry;
 }
@@ -518,6 +540,66 @@ bool WriteThreadRecord(trace_context_t* context, trace_thread_index_t index, zx_
   return false;
 }
 
+bool WriteKernelObjectRecord(trace_context_t* context, bool use_durable, zx_koid_t koid,
+                             zx_obj_type_t type, const trace_string_ref_t* name_ref,
+                             const trace_arg_t* args, size_t num_args) {
+  const size_t record_size = sizeof(trace::RecordHeader) + trace::WordsToBytes(1) +
+                             trace::SizeOfEncodedStringRef(name_ref) +
+                             trace::SizeOfEncodedArgs(args, num_args);
+  trace::Payload payload(context, use_durable, record_size);
+  if (unlikely(!payload && use_durable &&
+               context->buffering_mode() == TRACE_BUFFERING_MODE_CIRCULAR)) {
+    // In circular mode, if the durable buffer is full, fall back to writing
+    // the kernel object record into the rolling buffer so process and thread
+    // names remain available for events in the active rolling buffer.
+    payload = trace::Payload(context, false, record_size);
+  }
+  if (payload) {
+    payload
+        .WriteUint64(trace::MakeRecordHeader(trace::RecordType::kKernelObject, record_size) |
+                     trace::KernelObjectRecordFields::ObjectType::Make(type) |
+                     trace::KernelObjectRecordFields::NameStringRef::Make(name_ref->encoded_value) |
+                     trace::KernelObjectRecordFields::ArgumentCount::Make(num_args))
+        .WriteUint64(koid)
+        .WriteStringRef(name_ref)
+        .WriteArgs(args, num_args);
+    return true;
+  }
+  return false;
+}
+
+bool WriteThreadInfoRecord(trace_context_t* context, zx_koid_t process_koid, zx_koid_t thread_koid,
+                           const trace_string_ref_t* thread_name_ref) {
+  // TODO(https://fxbug.dev/42105894): We should probably store the related koid in the trace
+  // event directly instead of packing it into an argument like this.
+  trace_arg_t arg;
+  trace_context_register_string_literal(context, "process", &arg.name_ref);
+  arg.value.type = TRACE_ARG_KOID;
+  arg.value.koid_value = process_koid;
+  return WriteKernelObjectRecord(context, true, thread_koid, ZX_OBJ_TYPE_THREAD, thread_name_ref,
+                                 &arg, 1u);
+}
+
+// Returns whether |entry|, whose string has no cached registration result,
+// should try to register it now: either it never tried, or a rolling buffer has
+// been saved since its last attempt failed on full rolling buffers.
+bool ShouldRetryRegistration(trace_context_t* context, const StringEntry* entry) {
+  return !(entry->flags & StringEntry::kRetryPending) ||
+         entry->retry_epoch != static_cast<uint16_t>(context->buffer_service_epoch());
+}
+
+// Records a failed registration of |entry|'s string. A cacheable failure
+// latches the inline reference; otherwise the entry waits for the epoch to move
+// past |epoch|, the buffer_service_epoch() read before the attempt.
+void MarkRegistrationFailed(StringEntry* entry, bool cacheable, uint32_t epoch) {
+  if (cacheable) {
+    entry->flags |= StringEntry::kAllocIndexAttempted;
+  } else {
+    entry->flags |= StringEntry::kRetryPending;
+    entry->retry_epoch = static_cast<uint16_t>(epoch);
+  }
+}
+
 // N.B. This may only return false if |check_category| is true.
 
 bool RegisterString(trace_context_t* context, const char* string_literal, bool check_category,
@@ -548,22 +630,27 @@ bool RegisterString(trace_context_t* context, const char* string_literal, bool c
     }
 
     if (out_ref_optional) {
-      if (unlikely(!(entry->flags & StringEntry::kAllocIndexAttempted))) {
-        entry->flags |= StringEntry::kAllocIndexAttempted;
+      if (unlikely(!(entry->flags & StringEntry::kAllocIndexAttempted)) &&
+          ShouldRetryRegistration(context, entry)) {
+        const uint32_t epoch = context->buffer_service_epoch();
         const auto* bytes_ptr = reinterpret_cast<const unsigned char*>(string_literal);
         bool rqst_durable = true;
-        // If allocating an index succeeds but writing the record
-        // fails, toss the index and return an inline reference. The
-        // index is lost anyway, but the result won't be half-complete.
-        // The subsequent write of the inlined reference will likely
-        // also fail, but that's ok.
+        bool cacheable = false;
+        // In streaming mode, if writing the string record fails because the
+        // rolling buffers are full, LookupOrAllocStringIndex releases the index
+        // and sets |cacheable| to false. The entry then retries registration
+        // once a rolling buffer has been saved, instead of permanently latching
+        // an inline reference or retrying on every event.
         if (likely(context->LookupOrAllocStringIndex(
                 bytes_ptr, &entry->index,
                 [context, rqst_durable, string_literal, bytes_ptr](trace_string_index_t index) {
                   return WriteStringRecord(context, rqst_durable, index,
                                            std::span{bytes_ptr, strlen(string_literal)});
-                }))) {
-          entry->flags |= StringEntry::kAllocIndexSucceeded;
+                },
+                &cacheable))) {
+          entry->flags |= StringEntry::kAllocIndexAttempted | StringEntry::kAllocIndexSucceeded;
+        } else {
+          MarkRegistrationFailed(entry, cacheable, epoch);
         }
       }
       if (likely(entry->flags & StringEntry::kAllocIndexSucceeded)) {
@@ -632,22 +719,27 @@ bool RegisterByteString(trace_context_t* context, std::span<const unsigned char>
     }
 
     if (out_ref_optional) {
-      if (unlikely(!(entry->flags & StringEntry::kAllocIndexAttempted))) {
-        entry->flags |= StringEntry::kAllocIndexAttempted;
+      if (unlikely(!(entry->flags & StringEntry::kAllocIndexAttempted)) &&
+          ShouldRetryRegistration(context, entry)) {
+        const uint32_t epoch = context->buffer_service_epoch();
         bool rqst_durable = true;
-        // If allocating an index succeeds but writing the record
-        // fails, toss the index and return an inline reference. The
-        // index is lost anyway, but the result won't be half-complete.
-        // The subsequent write of the inlined reference will likely
-        // also fail, but that's ok.
+        bool cacheable = false;
+        // In streaming mode, if writing the string record fails because the
+        // rolling buffers are full, LookupOrAllocStringIndex releases the index
+        // and sets |cacheable| to false. The entry then retries registration
+        // once a rolling buffer has been saved, instead of permanently latching
+        // an inline reference or retrying on every event.
         //
         // NOTE: WriteStringRecord doesn't expect a null terminator
         if (likely(context->LookupOrAllocStringIndex(
                 bytes.data(), &entry->index,
                 [context, rqst_durable, bytes](trace_string_index_t index) {
                   return WriteStringRecord(context, rqst_durable, index, bytes);
-                }))) {
-          entry->flags |= StringEntry::kAllocIndexSucceeded;
+                },
+                &cacheable))) {
+          entry->flags |= StringEntry::kAllocIndexAttempted | StringEntry::kAllocIndexSucceeded;
+        } else {
+          MarkRegistrationFailed(entry, cacheable, epoch);
         }
       }
       if (likely(entry->flags & StringEntry::kAllocIndexSucceeded)) {
@@ -706,6 +798,31 @@ std::variant<VThreadRegistered, VThreadNeedsRegistration> LookUpVThread(
   return VThreadNeedsRegistration{.vthread_koid = vthread_koid, .entry = entry};
 }
 
+// Writes the kKernelObject thread info record and the kThread record for
+// |thread_koid|. Returns the thread reference to use and whether the caller may
+// cache it. If the thread info record can't be written, the kThread record is
+// skipped too: the smaller 24-byte kThread record could fit in the remaining
+// tail of the buffer and cache a thread index without ever recording the
+// thread's name. In streaming mode a failed write leaves the inline reference
+// uncached, so registration is retried once a rolling buffer is serviced.
+std::pair<trace_thread_ref_t, bool> WriteAndRegisterThread(
+    trace_context_t* context, zx_koid_t process_koid, zx_koid_t thread_koid,
+    const trace_string_ref_t* thread_name_ref) {
+  const bool cache_on_write_failure = context->buffering_mode() != TRACE_BUFFERING_MODE_STREAMING;
+  if (unlikely(!WriteThreadInfoRecord(context, process_koid, thread_koid, thread_name_ref))) {
+    return {trace_make_inline_thread_ref(process_koid, thread_koid), cache_on_write_failure};
+  }
+  trace_thread_index_t index;
+  if (likely(context->AllocThreadIndex(&index))) {
+    if (likely(WriteThreadRecord(context, index, process_koid, thread_koid))) {
+      return {trace_make_indexed_thread_ref(index), true};
+    }
+    context->ReleaseThreadIndex(index);
+    return {trace_make_inline_thread_ref(process_koid, thread_koid), cache_on_write_failure};
+  }
+  return {trace_make_inline_thread_ref(process_koid, thread_koid), true};
+}
+
 // Registers a vthread, after determining that registration is needed via LookUpVThread.
 void RegisterVThread(trace_context_t* context, zx_koid_t process_koid,
                      VThreadNeedsRegistration needs_registration,
@@ -716,22 +833,24 @@ void RegisterVThread(trace_context_t* context, zx_koid_t process_koid,
   }
 
   auto [vthread_koid, entry] = needs_registration;
-  trace_thread_ref_t ref = context->LookupOrRegisterVThread(
-      vthread_koid, [context, process_koid, vthread_koid, name_ref] {
-        trace_context_write_thread_info_record(context, process_koid, vthread_koid, name_ref);
-        trace_thread_index_t index;
-        // If allocating an index succeeds but writing the record fails,
-        // toss the index and return an inline reference. The index is lost
-        // anyway, but the result won't be half-complete. The subsequent
-        // write of the inlined reference will likely also fail, but that's ok.
-        if (likely(context->AllocThreadIndex(&index) &&
-                   trace::WriteThreadRecord(context, index, process_koid, vthread_koid))) {
-          return trace_make_indexed_thread_ref(index);
-        }
-        return trace_make_inline_thread_ref(process_koid, vthread_koid);
+  const uint32_t epoch = context->buffer_service_epoch();
+  if (entry && entry->retry_pending && entry->retry_epoch == epoch) {
+    // A previous attempt failed on full rolling buffers, and no buffer has been
+    // saved since, so don't take vthread_table_mutex_ to try again.
+    *out_ref = trace_make_inline_thread_ref(process_koid, vthread_koid);
+    return;
+  }
+  auto [ref, cacheable] = context->LookupOrRegisterVThread(
+      vthread_koid, epoch, [context, process_koid, vthread_koid, name_ref] {
+        return WriteAndRegisterThread(context, process_koid, vthread_koid, name_ref);
       });
   if (likely(entry)) {
-    entry->thread_ref = ref;
+    if (likely(cacheable)) {
+      entry->thread_ref = ref;
+    } else {
+      entry->retry_pending = true;
+      entry->retry_epoch = epoch;
+    }
   }
   *out_ref = ref;
 }
@@ -758,19 +877,18 @@ EXPORT_NO_DDK void trace_context_register_string_copy(trace_context_t* context, 
   // guarded by a mutex.
   trace_string_index_t index;
   bool rqst_durable = true;
-  // If allocating an index succeeds but writing the record
-  // fails, toss the index and return an inline reference. The
-  // index is lost anyway, but the result won't be half-complete.
-  // The subsequent write of the inlined reference will likely
-  // also fail, but that's ok.
-  if (likely(context->AllocStringIndex(&index) &&
-             trace::WriteStringRecord(
-                 context, rqst_durable, index,
-                 std::span{reinterpret_cast<const unsigned char*>(string), length}))) {
-    *out_ref = trace_make_indexed_string_ref(index);
-  } else {
-    *out_ref = trace_make_inline_string_ref(string, length);
+  // If allocating an index succeeds but writing the record fails, release the
+  // index and return an inline reference so the result isn't half-complete.
+  if (likely(context->AllocStringIndex(&index))) {
+    if (likely(trace::WriteStringRecord(
+            context, rqst_durable, index,
+            std::span{reinterpret_cast<const unsigned char*>(string), length}))) {
+      *out_ref = trace_make_indexed_string_ref(index);
+      return;
+    }
+    context->ReleaseStringIndex(index);
   }
+  *out_ref = trace_make_inline_string_ref(string, length);
 }
 
 EXPORT void trace_context_register_string_literal(trace_context_t* context,
@@ -814,33 +932,32 @@ EXPORT void trace_context_register_current_thread(trace_context_t* context,
     return;
   }
 
-  trace_string_ref name_ref;
-  char name_buf[ZX_MAX_NAME_LEN];
-  trace::GetObjectName(zx_thread_self(), name_buf, sizeof(name_buf), &name_ref);
   zx_koid_t process_koid = trace::GetCurrentProcessKoid();
   zx_koid_t thread_koid = trace::GetCurrentThreadKoid();
-  trace_context_write_thread_info_record(context, process_koid, thread_koid, &name_ref);
-
-  if (likely(cache)) {
-    trace_thread_index_t index;
-    // If allocating an index succeeds but writing the record fails,
-    // toss the index and return an inline reference. The index is lost
-    // anyway, but the result won't be half-complete. The subsequent
-    // write of the inlined reference will likely also fail, but that's ok.
-    if (likely(context->AllocThreadIndex(&index) &&
-               trace::WriteThreadRecord(context, index, process_koid, thread_koid))) {
-      cache->thread_ref = trace_make_indexed_thread_ref(index);
-    } else {
-      cache->thread_ref = trace_make_inline_thread_ref(process_koid, thread_koid);
-    }
-    *out_ref = cache->thread_ref;
+  const uint32_t epoch = context->buffer_service_epoch();
+  if (cache && cache->thread_retry_pending && cache->thread_retry_epoch == epoch) {
+    // A previous attempt failed on full rolling buffers, and no buffer has been
+    // saved since, so skip the name syscall and the record writes.
+    *out_ref = trace_make_inline_thread_ref(process_koid, thread_koid);
     return;
   }
 
-  // Slow path: the context's generation is out of date so we can't
-  // cache anything related to the current thread.
-  trace_context_register_thread(context, trace::GetCurrentProcessKoid(),
-                                trace::GetCurrentThreadKoid(), out_ref);
+  trace_string_ref name_ref;
+  char name_buf[ZX_MAX_NAME_LEN];
+  trace::GetObjectName(zx_thread_self(), name_buf, sizeof(name_buf), &name_ref);
+  auto [ref, cacheable] =
+      trace::WriteAndRegisterThread(context, process_koid, thread_koid, &name_ref);
+  // A null |cache| means the context's generation is out of date, so nothing
+  // related to the current thread can be cached.
+  if (likely(cache)) {
+    if (likely(cacheable)) {
+      cache->thread_ref = ref;
+    } else {
+      cache->thread_retry_pending = true;
+      cache->thread_retry_epoch = epoch;
+    }
+  }
+  *out_ref = ref;
 }
 
 EXPORT_NO_DDK void trace_context_register_thread(trace_context_t* context, zx_koid_t process_koid,
@@ -849,16 +966,16 @@ EXPORT_NO_DDK void trace_context_register_thread(trace_context_t* context, zx_ko
   // TODO(https://fxbug.dev/42105900): Since we can't use the thread-local cache here, cache
   // this registered thread on the trace context structure, guarded by a mutex.
   trace_thread_index_t index;
-  // If allocating an index succeeds but writing the record fails,
-  // toss the index and return an inline reference. The index is lost
-  // anyway, but the result won't be half-complete. The subsequent
-  // write of the inlined reference will likely also fail, but that's ok.
-  if (likely(context->AllocThreadIndex(&index) &&
-             trace::WriteThreadRecord(context, index, process_koid, thread_koid))) {
-    *out_ref = trace_make_indexed_thread_ref(index);
-  } else {
-    *out_ref = trace_make_inline_thread_ref(process_koid, thread_koid);
+  // If allocating an index succeeds but writing the record fails, release the
+  // index and return an inline reference so the result isn't half-complete.
+  if (likely(context->AllocThreadIndex(&index))) {
+    if (likely(trace::WriteThreadRecord(context, index, process_koid, thread_koid))) {
+      *out_ref = trace_make_indexed_thread_ref(index);
+      return;
+    }
+    context->ReleaseThreadIndex(index);
   }
+  *out_ref = trace_make_inline_thread_ref(process_koid, thread_koid);
 }
 
 EXPORT void trace_context_register_vthread(trace_context_t* context, zx_koid_t process_koid,
@@ -943,32 +1060,6 @@ EXPORT void trace_context_send_alert_bytestring(trace_context_t* context,
 }
 #endif
 
-void trace_context_write_kernel_object_record(trace_context_t* context, bool use_durable,
-                                              zx_koid_t koid, zx_obj_type_t type,
-                                              const trace_string_ref_t* name_ref,
-                                              const trace_arg_t* args, size_t num_args) {
-  const size_t record_size = sizeof(trace::RecordHeader) + trace::WordsToBytes(1) +
-                             trace::SizeOfEncodedStringRef(name_ref) +
-                             trace::SizeOfEncodedArgs(args, num_args);
-  trace::Payload payload(context, use_durable, record_size);
-  if (unlikely(!payload && use_durable && context->UsingDurableBuffer())) {
-    // If the durable buffer is full, fall back to writing the kernel object
-    // record into the rolling buffer so process and thread names remain
-    // available for events in the active rolling buffer.
-    payload = trace::Payload(context, false, record_size);
-  }
-  if (payload) {
-    payload
-        .WriteUint64(trace::MakeRecordHeader(trace::RecordType::kKernelObject, record_size) |
-                     trace::KernelObjectRecordFields::ObjectType::Make(type) |
-                     trace::KernelObjectRecordFields::NameStringRef::Make(name_ref->encoded_value) |
-                     trace::KernelObjectRecordFields::ArgumentCount::Make(num_args))
-        .WriteUint64(koid)
-        .WriteStringRef(name_ref)
-        .WriteArgs(args, num_args);
-  }
-}
-
 EXPORT void trace_context_write_kernel_object_record_for_handle(trace_context_t* context,
                                                                 zx_handle_t handle,
                                                                 const trace_arg_t* args,
@@ -994,29 +1085,22 @@ EXPORT void trace_context_write_kernel_object_record_for_handle(trace_context_t*
       trace_context_write_thread_info_record(context, info.related_koid, info.koid, &name_ref);
       break;
     default:
-      trace_context_write_kernel_object_record(context, false, info.koid, obj_type, &name_ref, args,
-                                               num_args);
+      trace::WriteKernelObjectRecord(context, false, info.koid, obj_type, &name_ref, args,
+                                     num_args);
       break;
   }
 }
 
 EXPORT_NO_DDK void trace_context_write_process_info_record(
     trace_context_t* context, zx_koid_t process_koid, const trace_string_ref_t* process_name_ref) {
-  trace_context_write_kernel_object_record(context, true, process_koid, ZX_OBJ_TYPE_PROCESS,
-                                           process_name_ref, nullptr, 0u);
+  trace::WriteKernelObjectRecord(context, true, process_koid, ZX_OBJ_TYPE_PROCESS, process_name_ref,
+                                 nullptr, 0u);
 }
 
 EXPORT_NO_DDK void trace_context_write_thread_info_record(
     trace_context_t* context, zx_koid_t process_koid, zx_koid_t thread_koid,
     const trace_string_ref_t* thread_name_ref) {
-  // TODO(https://fxbug.dev/42105894): We should probably store the related koid in the trace
-  // event directly instead of packing it into an argument like this.
-  trace_arg_t arg;
-  trace_context_register_string_literal(context, "process", &arg.name_ref);
-  arg.value.type = TRACE_ARG_KOID;
-  arg.value.koid_value = process_koid;
-  trace_context_write_kernel_object_record(context, true, thread_koid, ZX_OBJ_TYPE_THREAD,
-                                           thread_name_ref, &arg, 1u);
+  trace::WriteThreadInfoRecord(context, process_koid, thread_koid, thread_name_ref);
 }
 
 EXPORT_NO_DDK void trace_context_write_context_switch_record(

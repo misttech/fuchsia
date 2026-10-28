@@ -41,9 +41,14 @@
 // small strings are recorded there. The two buffers holding normal trace
 // output are called "rolling buffers", as they fill we roll from one to the
 // next. Thread and string records typically aren't very large, the durable
-// buffer can hold a lot of records. Once the durable buffer fills, subsequent
-// string and thread registrations fall back to inline references so tracing
-// can continue recording into the rolling buffers.
+// buffer can hold a lot of records. Once the durable buffer fills, behavior
+// depends on the mode. In streaming mode, later durable records overflow into
+// the active rolling buffer, which is saved after the durable data, so new
+// strings and threads still get indexed references. They fall back to inline
+// references only while both rolling buffers are full, or once the string or
+// thread index space runs out. In circular mode, later string and thread
+// registrations fall back to inline references, so tracing keeps recording
+// into the rolling buffers.
 // Note: The term "rolling buffer" is intended to be internal to the trace
 // engine/reader/manager and is not intended to appear in public APIs
 // (at least not today). Externally, the two rolling buffers comprise the
@@ -147,10 +152,23 @@ void trace_context::SetPendingBufferService(RollingBufferState prev_state) {
 
 uint64_t* trace_context::AllocDurableRecord(size_t num_bytes) {
   ZX_DEBUG_ASSERT(UsingDurableBuffer());
-  // When the durable buffer is full, callers fall back to inline string and
-  // thread references (or rolling buffer allocations for kernel object info
-  // records) so tracing can continue without dropping rolling buffer events.
-  return durable_buffer_.AllocRecord(num_bytes);
+  if (likely(!durable_overflowed_.load(std::memory_order_relaxed))) {
+    uint64_t* ptr = durable_buffer_.AllocRecord(num_bytes);
+    if (likely(ptr != nullptr)) {
+      return ptr;
+    }
+    if (buffering_mode_ == TRACE_BUFFERING_MODE_STREAMING) {
+      // Latch before allocating from the rolling buffer: see durable_overflowed_.
+      durable_overflowed_.store(true, std::memory_order_relaxed);
+    }
+  }
+  if (buffering_mode_ == TRACE_BUFFERING_MODE_STREAMING) {
+    return AllocRecord(num_bytes);
+  }
+  // In circular mode, callers fall back to inline string and thread
+  // references (or rolling buffer allocations for kernel object info records)
+  // so tracing can continue without dropping rolling buffer events.
+  return nullptr;
 }
 
 bool trace_context::AllocThreadIndex(trace_thread_index_t* out_index) {
@@ -164,6 +182,17 @@ bool trace_context::AllocThreadIndex(trace_thread_index_t* out_index) {
   return true;
 }
 
+void trace_context::ReleaseThreadIndex(trace_thread_index_t index) {
+  // Best-effort rollback of the most recently allocated thread index when
+  // writing the kThread record fails. Reclaims |index| if no concurrent
+  // AllocThreadIndex() call has advanced |next_thread_index_| past |index + 1|.
+  // |next_thread_index_| only assigns unique integer IDs and does not publish
+  // any associated memory state, so std::memory_order_relaxed is sufficient.
+  trace_thread_index_t expected = index + 1u;
+  next_thread_index_.compare_exchange_strong(expected, index, std::memory_order_relaxed,
+                                             std::memory_order_relaxed);
+}
+
 bool trace_context::AllocStringIndex(trace_string_index_t* out_index) {
   trace_string_index_t index = next_string_index_.fetch_add(1u, std::memory_order_relaxed);
   if (unlikely(index > TRACE_ENCODED_STRING_REF_MAX_INDEX)) {
@@ -173,6 +202,19 @@ bool trace_context::AllocStringIndex(trace_string_index_t* out_index) {
   }
   *out_index = index;
   return true;
+}
+
+void trace_context::ReleaseStringIndex(trace_string_index_t index) {
+  // Roll back the most recently allocated string index when writing the
+  // kString record fails. Reclaims |index| if no concurrent AllocStringIndex()
+  // call has advanced |next_string_index_| past |index + 1| (exact when all
+  // callers go through LookupOrAllocStringIndex() under |string_table_mutex_|,
+  // best-effort if racing with trace_context_register_string_copy()).
+  // |next_string_index_| only assigns unique integer IDs and does not publish
+  // any associated memory state, so std::memory_order_relaxed is sufficient.
+  trace_string_index_t expected = index + 1u;
+  next_string_index_.compare_exchange_strong(expected, index, std::memory_order_relaxed,
+                                             std::memory_order_relaxed);
 }
 
 void trace_context::ComputeBufferSizes() {
@@ -235,6 +277,7 @@ void trace_context::ResetBufferPointers() {
   ZX_DEBUG_ASSERT(generation_ != 0u);
   durable_buffer_.Reset();
   rolling_buffer_.Reset();
+  durable_overflowed_.store(false, std::memory_order_relaxed);
   next_thread_index_.store(TRACE_ENCODED_THREAD_REF_MIN_INDEX, std::memory_order_relaxed);
   next_string_index_.store(TRACE_ENCODED_STRING_REF_MIN_INDEX, std::memory_order_relaxed);
   {
@@ -267,7 +310,15 @@ void trace_context::ClearEntireBuffer() {
   InitBufferHeader();
 }
 
-void trace_context::ClearRollingBuffers() { rolling_buffer_.Reset(); }
+void trace_context::ClearRollingBuffers() {
+  if (durable_overflowed_.load(std::memory_order_relaxed)) {
+    // Some string and thread records were in the rolling buffers being
+    // cleared, so their indices can't be kept. Start over as for a full clear.
+    ClearEntireBuffer();
+    return;
+  }
+  rolling_buffer_.Reset();
+}
 
 void trace_context::UpdateBufferHeaderAfterStopped() {
   std::lock_guard<std::mutex> lock(header_mutex_);
@@ -329,7 +380,9 @@ void trace_context::MarkRollingBufferSaved(uint32_t wrapped_count, uint64_t dura
   header_
       ->rolling_data_end[static_cast<uint8_t>(RollingBufferState::ToBufferNumber(wrapped_count))] =
       0;
-  rolling_buffer_.SetBufferServiced(wrapped_count);
+  if (rolling_buffer_.SetBufferServiced(wrapped_count)) {
+    buffer_service_epoch_.fetch_add(1u, std::memory_order_release);
+  }
 }
 
 void trace_context::FlushBuffer() {

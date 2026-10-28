@@ -15,6 +15,7 @@
 #include <mutex>
 #include <span>
 #include <unordered_map>
+#include <utility>
 
 #include "buffer.h"
 #include "rolling_buffer.h"
@@ -86,6 +87,12 @@ struct trace_context {
   }
   void MarkRecordDropped() { MarkRecordsDropped(1); }
 
+  // Returns the number of rolling buffer saves so far (see buffer_service_epoch_). Only read on
+  // registration paths whose result was not cached, never on the cached fast paths.
+  uint32_t buffer_service_epoch() const {
+    return buffer_service_epoch_.load(std::memory_order_acquire);
+  }
+
   void ResetRollingBufferPointers();
   void ResetBufferPointers();
   void InitBufferHeader();
@@ -98,14 +105,21 @@ struct trace_context {
   uint64_t* AllocRecord(size_t num_bytes);
   uint64_t* AllocDurableRecord(size_t num_bytes);
   bool AllocThreadIndex(trace_thread_index_t* out_index);
+  void ReleaseThreadIndex(trace_thread_index_t index);
   bool AllocStringIndex(trace_string_index_t* out_index);
+  void ReleaseStringIndex(trace_string_index_t index);
 
   // Looks up |bytes_pointer| in the process-wide string literal cache using a lock-free
   // open-addressed read fast path. On a miss, acquires |string_table_mutex_|, allocates a new
   // string index, invokes |write_record(index)|, and publishes the entry with release semantics.
+  // When registration fails, sets |*out_cacheable| (if non-null) to indicate whether the caller
+  // should latch the inline fallback in its thread-local cache.
   template <typename WriteRecordFn>
   bool LookupOrAllocStringIndex(const unsigned char* bytes_pointer, trace_string_index_t* out_index,
-                                WriteRecordFn&& write_record) {
+                                WriteRecordFn&& write_record, bool* out_cacheable = nullptr) {
+    if (out_cacheable) {
+      *out_cacheable = true;
+    }
     const uint64_t key = StringTableKey(bytes_pointer);
     const size_t start_slot = HashStringTableKey(key);
     if (FindStringTableEntry(key, start_slot, std::memory_order_acquire, out_index)) {
@@ -119,29 +133,42 @@ struct trace_context {
       return true;
     }
     trace_string_index_t index;
-    if (likely(AllocStringIndex(&index) && write_record(index))) {
-      if (likely(empty_slot < kStringTableCapacity)) {
-        string_table_[empty_slot].store(MakeStringTableEntry(key, index),
-                                        std::memory_order_release);
+    if (likely(AllocStringIndex(&index))) {
+      if (likely(write_record(index))) {
+        if (likely(empty_slot < kStringTableCapacity)) {
+          string_table_[empty_slot].store(MakeStringTableEntry(key, index),
+                                          std::memory_order_release);
+        }
+        *out_index = index;
+        return true;
       }
-      *out_index = index;
-      return true;
+      ReleaseStringIndex(index);
+      if (out_cacheable) {
+        *out_cacheable = buffering_mode_ != TRACE_BUFFERING_MODE_STREAMING;
+      }
+      return false;
     }
     return false;
   }
 
   // Looks up |vthread_koid| in the process-wide virtual thread cache. If not found, invokes
-  // |register_vthread()| to write the thread records and caches the resulting thread reference.
+  // |register_vthread()| to write the thread records and caches the resulting thread reference
+  // when |register_vthread()| indicates the result is cacheable. Returns the resolved thread
+  // reference and whether the caller may cache it in its thread-local table.
   template <typename RegisterFn>
-  trace_thread_ref_t LookupOrRegisterVThread(zx_koid_t vthread_koid,
-                                             RegisterFn&& register_vthread) {
+  // |epoch| is buffer_service_epoch(), read before the call. An uncacheable result is kept with
+  // |epoch|, and registration is retried only once a rolling buffer has been saved since then.
+  std::pair<trace_thread_ref_t, bool> LookupOrRegisterVThread(zx_koid_t vthread_koid,
+                                                              uint32_t epoch,
+                                                              RegisterFn&& register_vthread) {
     std::scoped_lock lock(vthread_table_mutex_);
-    if (auto it = vthread_table_.find(vthread_koid); it != vthread_table_.end()) {
-      return it->second;
+    auto it = vthread_table_.find(vthread_koid);
+    if (it != vthread_table_.end() && (it->second.cacheable || it->second.retry_epoch == epoch)) {
+      return {it->second.ref, it->second.cacheable};
     }
-    trace_thread_ref_t ref = register_vthread();
-    vthread_table_.emplace(vthread_koid, ref);
-    return ref;
+    auto [ref, cacheable] = register_vthread();
+    vthread_table_.insert_or_assign(vthread_koid, VThreadTableEntry{ref, cacheable, epoch});
+    return {ref, cacheable};
   }
 
   // This is called by the handler when it has been notified that a buffer
@@ -218,8 +245,36 @@ struct trace_context {
 
   std::atomic<RollingBufferState> pending_service_{RollingBufferState()};
 
+  // Counts rolling buffer saves: MarkRollingBufferSaved() increments it after it marks a buffer
+  // serviced. In streaming mode a string or thread registration that fails because the rolling
+  // buffers are full is not cached, so it must be retried, but retrying on every event would
+  // repeat the mutex, index allocation, failed write and dropped-record count until a buffer is
+  // saved. Instead the caller keeps the epoch it read before the failed attempt and retries only
+  // once the epoch has changed.
+  //
+  // Release/acquire: the increment is ordered after SetBufferServiced()'s update of the rolling
+  // buffer state, so a writer whose acquire load returns the new epoch also sees the serviced
+  // buffer when its retry calls AllocRecord(), instead of failing again on the old state and
+  // waiting for the next save.
+  std::atomic<uint32_t> buffer_service_epoch_{0};
+
   // A count of the number of records that have been dropped.
   std::atomic<uint64_t> num_records_dropped_{0};
+
+  // Latches to true once a durable record overflows into the rolling buffers in
+  // streaming mode. While it is set, AllocDurableRecord() skips durable_buffer_,
+  // so a smaller durable record can't land in its leftover tail space, which is
+  // saved ahead of the records already in the rolling buffers.
+  //
+  // Relaxed is enough. A record that references an overflowed string or thread
+  // index is written by the thread that wrote the index's record, or by a thread
+  // that got the index from it through string_table_mutex_,
+  // vthread_table_mutex_, the release store and acquire load of
+  // string_table_[slot], or a caller handoff. Before publishing the index, the
+  // first thread either stored true or read true, so by coherence the later
+  // thread also reads true. ResetBufferPointers() clears the latch, and
+  // ClearRollingBuffers() reads it, only while no writer holds a context.
+  std::atomic<bool> durable_overflowed_{false};
 
   // Handler associated with the trace session.
   trace_handler_t* const handler_;
@@ -287,6 +342,10 @@ struct trace_context {
     }
     return false;
   }
+  // Lock order: vthread_table_mutex_, then string_table_mutex_, then
+  // header_mutex_. Registering a virtual thread writes its kKernelObject record,
+  // which registers the "process" string, whose record allocation can take
+  // header_mutex_ in SetPendingBufferService().
   std::mutex string_table_mutex_;
   std::atomic<uint64_t> string_table_[kStringTableCapacity]{};
 
@@ -295,7 +354,14 @@ struct trace_context {
   // thread exceeds the 4-entry thread-local cache, avoiding repeated durable
   // kKernelObject and kThread writes.
   std::mutex vthread_table_mutex_;
-  std::unordered_map<zx_koid_t, trace_thread_ref_t> vthread_table_
+  struct VThreadTableEntry {
+    trace_thread_ref_t ref;
+    // False if registration failed because the rolling buffers were full.
+    bool cacheable;
+    // buffer_service_epoch() read before the attempt that produced |ref|.
+    uint32_t retry_epoch;
+  };
+  std::unordered_map<zx_koid_t, VThreadTableEntry> vthread_table_
       __TA_GUARDED(vthread_table_mutex_);
 };
 
