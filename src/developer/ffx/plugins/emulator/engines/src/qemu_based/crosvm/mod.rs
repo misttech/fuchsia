@@ -17,6 +17,7 @@ use ffx_emulator_common::config::CROSVM_TOOL;
 use ffx_emulator_common::{find_unused_vsock_cid, process};
 use ffx_emulator_config::{BoxFuture, EmulatorEngine, EngineConsoleType, ShowDetail};
 use fho::{Result, bug, return_bug};
+use nix::sys::signal::Signal;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -168,8 +169,8 @@ impl EmulatorEngine for CrosvmEngine {
                     log::warn!(
                         "crosvm stop command failed, falling back to killing PID: {result:?}"
                     );
-                    if let Some(terminate_error) = process::terminate(self.get_pid()).err() {
-                        log::warn!("Error encountered terminating process: {:?}", terminate_error);
+                    if let Err(e) = process::signal(self.get_pid(), Signal::SIGKILL) {
+                        log::warn!("Error encountered terminating process: {e:?}");
                     }
                 }
             }

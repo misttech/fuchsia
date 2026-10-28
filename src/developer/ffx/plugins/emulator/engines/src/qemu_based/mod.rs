@@ -21,6 +21,7 @@ use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use ffx_target::{KnockError, TargetInfoQuery};
 use fho::{FfxContext, Result, bug, return_bug, return_user_error, user_error};
 use fuchsia_async::Timer;
+use nix::sys::signal::Signal;
 use serde_json::{Deserializer, Value, json};
 use shared_child::SharedChild;
 use std::fs::{self, File};
@@ -251,8 +252,12 @@ pub(crate) struct PortPair {
     pub guest: u16,
     pub host: u16,
 }
-/// How long `QemuBasedEngine::stop_emulator()` waits for the emulator process to exit after it has
-/// been killed.
+/// How long `QemuBasedEngine::stop_emulator()` gives the emulator to exit on its own, after asking
+/// it to, before it kills it.
+const EXIT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long `QemuBasedEngine::stop_emulator()` waits in all for the emulator process to exit,
+/// including the `EXIT_REQUEST_TIMEOUT` before it kills it.
 const STOP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Waits for the process with the given pid to exit, for at most `timeout`. Returns whether it has
@@ -266,6 +271,26 @@ async fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
         Timer::new(Duration::from_millis(100)).await;
     }
     true
+}
+
+/// Stops the process with the given pid: asks it to exit, and kills it if it is still there after
+/// `exit_timeout`. Returns whether the process has gone, which is given up on `kill_timeout` after
+/// the kill.
+async fn stop_process(pid: u32, exit_timeout: Duration, kill_timeout: Duration) -> bool {
+    if let Err(e) = process::signal(pid, Signal::SIGTERM) {
+        log::warn!("Error asking process {pid} to exit: {e:?}");
+    }
+    if wait_for_exit(pid, exit_timeout).await {
+        return true;
+    }
+    log::warn!(
+        "Process {pid} has not exited {} seconds after being asked to; killing it.",
+        exit_timeout.as_secs()
+    );
+    if let Err(e) = process::signal(pid, Signal::SIGKILL) {
+        log::warn!("Error encountered terminating process: {e:?}");
+    }
+    wait_for_exit(pid, kill_timeout).await
 }
 
 /// QemuBasedEngine collects the interface for
@@ -1023,19 +1048,20 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
     async fn stop_emulator(&mut self) -> Result<()> {
         if self.is_running().await {
             let pid = self.get_pid();
-            log::info!("Terminating running instance {pid}");
-            if let Some(terminate_error) = process::terminate(pid).err() {
-                log::warn!("Error encountered terminating process: {:?}", terminate_error);
-            }
-            // The process doesn't go away the moment it is killed: the kernel still has to release
-            // the guest's memory and the files which the emulator had open, which takes seconds
-            // for a large guest. Wait for that, so that the instance can be started again as soon
-            // as stop returns, as `ffx emu stop --persist && ffx emu start --reuse` does.
-            if !wait_for_exit(pid, STOP_TIMEOUT).await {
+            log::info!("Stopping running instance {pid}");
+            // The emulator is asked to exit before it is killed, so that it can finish its I/O and
+            // close the disk image properly: QEMU writes back its cached qcow2 metadata on the way
+            // out, while a killed QEMU leaves the image as a crash would. Either way the process
+            // doesn't go away the moment it exits: the kernel still has to release the guest's
+            // memory and the files which the emulator had open, which takes seconds for a large
+            // guest. Wait for that, so that the instance can be started again as soon as stop
+            // returns, as `ffx emu stop --persist && ffx emu start --reuse` does.
+            let kill_timeout = STOP_TIMEOUT - EXIT_REQUEST_TIMEOUT;
+            if !stop_process(pid, EXIT_REQUEST_TIMEOUT, kill_timeout).await {
                 return_user_error!(
                     "The emulator process (pid {pid}) was killed, but is still shutting down {} \
                     seconds later. Wait for it to exit before starting the instance again.",
-                    STOP_TIMEOUT.as_secs()
+                    kill_timeout.as_secs()
                 );
             }
         }
@@ -2335,6 +2361,40 @@ pub(crate) mod tests {
         let mut engine = TestEngine { pid: 0, state: EngineState::Running };
         engine.stop_emulator().await.expect("stop");
         assert_eq!(engine.get_engine_state(), EngineState::Staged);
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_process_asks_first() {
+        // A process which exits when asked to is gone well before it would have been killed.
+        let child = Command::new("sleep").arg("60").spawn().expect("spawn sleep");
+        let start = Instant::now();
+        assert!(stop_process(child.id(), Duration::from_secs(30), Duration::from_secs(30)).await);
+        assert!(start.elapsed() < Duration::from_secs(30));
+        assert!(!process::is_running(child.id()));
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_process_kills_after_timeout() {
+        // A process which ignores the request to exit is killed once the time for it has run out.
+        let mut command = Command::new("sleep");
+        command.arg("60");
+        unsafe {
+            command.pre_exec(|| {
+                nix::sys::signal::signal(
+                    nix::sys::signal::Signal::SIGTERM,
+                    nix::sys::signal::SigHandler::SigIgn,
+                )
+                .map(|_| ())
+                .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
+            });
+        }
+        let child = command.spawn().expect("spawn sleep");
+        let start = Instant::now();
+        assert!(
+            stop_process(child.id(), Duration::from_millis(300), Duration::from_secs(30)).await
+        );
+        assert!(start.elapsed() >= Duration::from_millis(300));
+        assert!(!process::is_running(child.id()));
     }
 
     #[derive(Deserialize, Debug)]

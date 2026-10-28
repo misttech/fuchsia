@@ -48,15 +48,15 @@ pub fn is_running(pid: u32) -> bool {
     return false;
 }
 
-/// Terminates the process.
-pub fn terminate(pid: u32) -> Result<()> {
+/// Sends the signal to the process, if it is running.
+pub fn signal(pid: u32, signal: nix::sys::signal::Signal) -> Result<()> {
     if pid != 0 && is_running(pid) {
         match nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(pid.try_into().unwrap()),
-            Some(nix::sys::signal::Signal::SIGKILL),
+            Some(signal),
         ) {
             Ok(_) => return Ok(()),
-            Err(e) => bail!("Terminate error: {}", e),
+            Err(e) => bail!("Error sending {signal:?} to process {pid}: {e}"),
         };
     }
     return Ok(());
