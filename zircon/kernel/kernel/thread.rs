@@ -36,6 +36,7 @@ use crate::kernel::scheduler_state::{SchedulerState, SchedulerStateBaseProfile, 
 use crate::kernel::types::{cpu_mask_t, cpu_num_t};
 use crate::kernel::wait_queue::{ResourceOwnership, ThreadState, WaitQueue, WaitQueueBase};
 use crate::ktrace_rs::InternedString;
+use crate::vm::kstack::KernelStack;
 use crate::vm::vm_aspace::VmAspace;
 
 pub use crate::kconcurrent::CallsiteInfo as CltTag;
@@ -113,9 +114,6 @@ unsafe extern "C" {
     fn cpp_thread_current_sleep_interruptible(deadline: InstantMono) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
     fn cpp_thread_get_arch(thread: *mut Thread) -> *mut c_void;
-    fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
-    fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
-    fn cpp_thread_dump_current_stack();
     fn cpp_thread_is_running(thread: *const Thread) -> bool;
     fn cpp_thread_process_pending_signals(frame: *mut c_void);
     fn cpp_thread_in_restricted(thread: *mut Thread) -> bool;
@@ -1407,6 +1405,8 @@ pub struct Thread {
     /// Architecture-specific stuff.
     arch: Opaque<layout::ThreadArchStorage>,
 
+    /// `KernelStack` storage. C++ constructs, `Init`s, tears down and destroys it; Rust reads it
+    /// through `stack`, whose callers exclude those mutations.
     stack: Opaque<layout::ThreadStackStorage>,
 
     /// This is used by dispatcher.cc:SafeDeleter.
@@ -1551,6 +1551,8 @@ static_assert!(offset_of!(Thread, tid) == layout::ThreadLayout_kTidOffset);
 static_assert!(offset_of!(Thread, pid) == layout::ThreadLayout_kPidOffset);
 static_assert!(offset_of!(Thread, arch) == layout::ThreadLayout_kArchOffset);
 static_assert!(offset_of!(Thread, stack) == layout::ThreadLayout_kStackOffset);
+static_assert!(size_of::<KernelStack>() == size_of::<layout::ThreadStackStorage>());
+static_assert!(align_of::<KernelStack>() == align_of::<layout::ThreadStackStorage>());
 static_assert!(
     offset_of!(Thread, recursive_object_deletion_list)
         == layout::ThreadLayout_kRecursiveObjectDeletionListOffset
@@ -1971,6 +1973,23 @@ impl Thread {
         // live for as long as `self` is, and `SchedulerState` is a zero-sized facade over it. The
         // caller excludes concurrent mutation.
         unsafe { &*self.scheduler_state.get().cast::<SchedulerState>() }
+    }
+
+    /// Returns the [`KernelStack`] in `this`'s `stack` member, without forming a `&Thread`.
+    ///
+    /// # Safety
+    ///
+    /// `this` must point to a valid, live [`Thread`], and nothing may mutate its `KernelStack`
+    /// while the returned reference is live.
+    #[inline]
+    unsafe fn stack<'a>(this: *const Self) -> &'a KernelStack {
+        // SAFETY: `this` points to a valid `Thread` per the caller, and `&raw const` projects the
+        // `stack` field place without forming a reference to the whole `Thread`.
+        let stack = unsafe { &raw const (*this).stack };
+        // SAFETY: `stack` holds the thread's `KernelStack`. C++ constructed it in place, and its
+        // size and alignment are asserted after the struct definition. The caller ensures it is
+        // not mutated while the reference is live.
+        unsafe { &*(*stack).get().cast::<KernelStack>() }
     }
 
     /// Returns a reference to the global thread list spinlock (`Thread::get_list_lock()`).
@@ -3266,8 +3285,16 @@ pub fn preempt() {
 /// Logs the relevant stack memory addresses of the current thread at the `CRITICAL` debug level.
 ///
 /// This is useful during a thread dump.
-pub fn dump_current_stack() {
-    unsafe { cpp_thread_dump_current_stack() }
+///
+/// # Safety
+///
+/// This CPU must have a constructed current [`Thread`] (`ConstructFirstThread` has completed on
+/// this CPU), and its stack must not be concurrently initialized or torn down (see
+/// [`Thread::stack`]).
+pub unsafe fn dump_current_stack() {
+    // SAFETY: The caller guarantees `current_get()` returns a valid, constructed `Thread` that
+    // meets the requirements of `Thread::stack`.
+    unsafe { Thread::stack(current_get()) }.dump_info(debug::dprintf::CRITICAL);
 }
 
 /// Processes any pending thread signals on the current thread using the given `frame`.
@@ -3304,19 +3331,31 @@ pub unsafe fn get_arch(thread: *mut Thread) -> *mut c_void {
 /// Returns the top of the stack for `thread`.
 ///
 /// # Safety
-/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+///
+/// `thread` must point to a valid, constructed `Thread` that meets the requirements of
+/// `Thread::stack`, so that its stack is not concurrently initialized or torn down.
 pub unsafe fn get_stack_top(thread: *mut Thread) -> usize {
-    // SAFETY: Forwarded to C++ Thread::stack().top() with caller-verified pointer.
-    unsafe { cpp_thread_get_stack_top(thread) }
+    // SAFETY: The caller guarantees `thread` is valid and that the requirements of
+    // `Thread::stack` hold.
+    unsafe { Thread::stack(thread) }.top()
 }
 
-/// Returns the shadow call stack base for `thread`.
+/// Returns the shadow call stack base for `thread`, or 0 if shadow call stacks are disabled.
 ///
 /// # Safety
-/// Caller must ensure `thread` points to a valid C++ `Thread` instance.
+///
+/// As for [`get_stack_top`].
 pub unsafe fn get_shadow_call_base(thread: *mut Thread) -> usize {
-    // SAFETY: Forwarded to C++ Thread::stack().shadow_call_base() with caller-verified pointer.
-    unsafe { cpp_thread_get_shadow_call_base(thread) }
+    #[cfg(sanitize = "shadow-call-stack")]
+    {
+        // SAFETY: As for `get_stack_top`.
+        unsafe { Thread::stack(thread) }.shadow_call_base()
+    }
+    #[cfg(not(sanitize = "shadow-call-stack"))]
+    {
+        let _ = thread;
+        0
+    }
 }
 
 /// Returns `true` if `thread`'s user state has been saved.

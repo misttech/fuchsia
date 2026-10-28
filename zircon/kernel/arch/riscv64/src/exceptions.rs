@@ -217,6 +217,11 @@ unsafe extern "C" {
 }
 
 /// Print panic details, dump frame & stack, fill crashlog, and halt.
+///
+/// # Safety
+///
+/// If `iframe` is non-null, it must point to a valid trap `Iframe` on the current stack. This CPU
+/// must have a constructed current `Thread` (`ConstructFirstThread` has completed on this CPU).
 unsafe fn exception_die(iframe: *mut Iframe, cause: i64, tval: u64, msg: &str) -> ! {
     crate::platform_rs::power::platform_panic_start();
     dprintf!(0, "{}", msg);
@@ -227,7 +232,9 @@ unsafe fn exception_die(iframe: *mut Iframe, cause: i64, tval: u64, msg: &str) -
     }
     dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
     dprintf!(0, "tval   {:#18x}\n", tval);
-    crate::kernel::thread::dump_current_stack();
+    // SAFETY: The caller guarantees this CPU's first thread has been constructed, and a running
+    // thread's stack is not concurrently initialized or torn down.
+    unsafe { crate::kernel::thread::dump_current_stack() };
     // SAFETY: records the faulting register state for the crashlog. A null
     // `iframe` is expected and handled on the C++ side, which renders
     // "missing" instead of dereferencing it.
@@ -241,6 +248,11 @@ unsafe fn exception_die(iframe: *mut Iframe, cause: i64, tval: u64, msg: &str) -
 }
 
 /// Handle a fatal exception that cannot be recovered.
+///
+/// # Safety
+///
+/// If `frame` is non-null, it must point to a valid trap `Iframe` on the current stack. This CPU
+/// must have a constructed current `Thread` (`ConstructFirstThread` has completed on this CPU).
 unsafe fn fatal_exception(cause: i64, tval: u64, frame: *mut Iframe) -> ! {
     let cpu = super::mp::arch_curr_cpu_num();
     // SAFETY: the read only happens on the non-null branch, and a non-null frame
@@ -274,7 +286,9 @@ unsafe fn fatal_exception(cause: i64, tval: u64, frame: *mut Iframe) -> ! {
     }
     dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
     dprintf!(0, "tval   {:#18x}\n", tval);
-    crate::kernel::thread::dump_current_stack();
+    // SAFETY: The caller guarantees this CPU's first thread has been constructed, and a running
+    // thread's stack is not concurrently initialized or torn down.
+    unsafe { crate::kernel::thread::dump_current_stack() };
     // SAFETY: records the faulting register state for the crashlog. A null
     // `frame` is expected and handled on the C++ side, which renders
     // "missing" instead of dereferencing it.
@@ -373,7 +387,9 @@ unsafe fn riscv64_page_fault_handler(cause: i64, tval: u64, frame: *mut Iframe, 
         }
         dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
         dprintf!(0, "tval   {:#18x}\n", tval);
-        crate::kernel::thread::dump_current_stack();
+        // SAFETY: `current_get()` returns this CPU's running thread (as above), and its stack is
+        // not concurrently initialized or torn down.
+        unsafe { crate::kernel::thread::dump_current_stack() };
         // SAFETY: records the faulting register state for the crashlog. A null
         // `frame` is expected and handled on the C++ side, which renders
         // "missing" instead of dereferencing it.
@@ -470,7 +486,9 @@ unsafe fn riscv64_page_fault_handler(cause: i64, tval: u64, frame: *mut Iframe, 
     }
     dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
     dprintf!(0, "tval   {:#18x}\n", tval);
-    crate::kernel::thread::dump_current_stack();
+    // SAFETY: `current_get()` returns this CPU's running thread (as above), and its stack is
+    // not concurrently initialized or torn down.
+    unsafe { crate::kernel::thread::dump_current_stack() };
     // SAFETY: records the faulting register state for the crashlog. A null
     // `frame` is expected and handled on the C++ side, which renders
     // "missing" instead of dereferencing it.
@@ -498,7 +516,9 @@ unsafe fn riscv64_misaligned_fault_handler(cause: i64, tval: u64, frame: *mut If
         }
         dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
         dprintf!(0, "tval   {:#18x}\n", tval);
-        crate::kernel::thread::dump_current_stack();
+        // SAFETY: `current_get()` returns this CPU's running thread, which is constructed by the
+        // time faults are handled, and its stack is not concurrently initialized or torn down.
+        unsafe { crate::kernel::thread::dump_current_stack() };
         // SAFETY: records the faulting register state for the crashlog. A null
         // `frame` is expected and handled on the C++ side, which renders
         // "missing" instead of dereferencing it.
@@ -536,7 +556,9 @@ unsafe fn riscv64_illegal_instruction_handler(
         }
         dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
         dprintf!(0, "tval   {:#18x}\n", tval);
-        crate::kernel::thread::dump_current_stack();
+        // SAFETY: `current_get()` returns this CPU's running thread, which is constructed by the
+        // time faults are handled, and its stack is not concurrently initialized or torn down.
+        unsafe { crate::kernel::thread::dump_current_stack() };
         // SAFETY: records the faulting register state for the crashlog. A null
         // `frame` is expected and handled on the C++ side, which renders
         // "missing" instead of dereferencing it.
@@ -571,7 +593,9 @@ unsafe fn riscv64_breakpoint_handler(cause: i64, tval: u64, frame: *mut Iframe, 
         }
         dprintf!(0, "cause  {:18} {}\n", cause, cause_to_string(cause));
         dprintf!(0, "tval   {:#18x}\n", tval);
-        crate::kernel::thread::dump_current_stack();
+        // SAFETY: `current_get()` returns this CPU's running thread, which is constructed by the
+        // time faults are handled, and its stack is not concurrently initialized or torn down.
+        unsafe { crate::kernel::thread::dump_current_stack() };
         // SAFETY: records the faulting register state for the crashlog. A null
         // `frame` is expected and handled on the C++ side, which renders
         // "missing" instead of dereferencing it.
