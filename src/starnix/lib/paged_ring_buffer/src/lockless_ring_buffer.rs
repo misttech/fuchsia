@@ -251,6 +251,51 @@ impl Node {
     }
 }
 
+/// Points in `try_reserve_on_page()` where a test can run code, to force an interleaving that
+/// another thread would otherwise have to hit by chance.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TestHook {
+    /// After the claim is sized and before its CAS.
+    BeforeClaim,
+    /// After the claim CAS succeeds and before the record is stamped.
+    AfterClaim,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The hook armed by `set_test_hook()`. It is thread-local, so tests that run in parallel
+    /// don't see each other's hooks.
+    static TEST_HOOK: std::cell::RefCell<Option<(TestHook, Box<dyn FnOnce(&LocklessRingBuffer)>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Arms `hook` to run once, on this thread, the next time it reaches `point`.
+#[cfg(test)]
+fn set_test_hook(point: TestHook, hook: impl FnOnce(&LocklessRingBuffer) + 'static) {
+    TEST_HOOK.with(|h| *h.borrow_mut() = Some((point, Box::new(hook))));
+}
+
+/// Returns whether a hook is armed on this thread. Tests check that it is not after the code
+/// under test runs, which shows that the hook fired.
+#[cfg(test)]
+fn test_hook_is_armed() -> bool {
+    TEST_HOOK.with(|h| h.borrow().is_some())
+}
+
+/// Runs and disarms the hook armed for `point`, if any. The hook is disarmed before it runs, so
+/// it can call back into `buffer`.
+#[cfg(test)]
+fn run_test_hook(point: TestHook, buffer: &LocklessRingBuffer) {
+    let hook = TEST_HOOK.with(|h| {
+        let mut h = h.borrow_mut();
+        if h.as_ref().is_some_and(|(p, _)| *p == point) { h.take() } else { None }
+    });
+    if let Some((_, hook)) = hook {
+        hook(buffer);
+    }
+}
+
 // We are only 64 bit today, but make it easy to find this assumption if we go to a smaller arch.
 static_assertions::const_assert!(std::mem::size_of::<usize>() == 8);
 
@@ -565,6 +610,8 @@ impl LocklessRingBuffer {
             if current_offset + total_size > (*PAGE_SIZE) as usize {
                 return Err(());
             }
+            #[cfg(test)]
+            run_test_hook(TestHook::BeforeClaim, self);
             match tail_node.write_offset.compare_exchange_weak(
                 current_offset,
                 current_offset + total_size,
@@ -575,6 +622,9 @@ impl LocklessRingBuffer {
                 Err(actual) => current_offset = actual,
             }
         };
+
+        #[cfg(test)]
+        run_test_hook(TestHook::AfterClaim, self);
 
         let actual_prev = self.prev_timestamp.fetch_max(now_nanos, Ordering::AcqRel);
         let final_now_nanos = std::cmp::max(now_nanos, actual_prev);
@@ -1280,6 +1330,7 @@ impl Drop for LocklessRingBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::sync::Arc;
 
     /// An `OutputBuffer` that collects what is written into a `Vec`, in place of starnix_core's
@@ -2947,5 +2998,223 @@ mod tests {
             assert_eq!(pages[node_idx].1, expected_stamped, "stamped records on page {node_idx}");
         }
         assert!(pages.iter().take(4).map(|page| page.1.len()).sum::<usize>() > 0);
+    }
+
+    #[test]
+    fn test_first_record_on_page_has_no_time_stamp_record() {
+        let buffer =
+            LocklessRingBuffer::new(4 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let page_size = (*PAGE_SIZE) as usize;
+        let max_payload = page_size - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let t0 = injected_start(&buffer);
+        // Leave 10 bytes free on Node 0, so the next record moves to Node 1.
+        assert_eq!(write_record_at(&buffer, t0, &vec![0xaa; max_payload - 8 - 10]).0, 0);
+
+        // After a long gap, the record is the first on Node 1. The page header carries its time,
+        // so it needs no `TIME_STAMP` record and its delta is 0.
+        let t1 = t0 + 1_000_000_000;
+        assert_eq!(write_record_at(&buffer, t1, b"first on page"), (1, 0));
+        assert_eq!(
+            buffer.nodes[1].write_offset.load(Ordering::Relaxed),
+            LocklessRingBuffer::PAGE_HEADER_SIZE + 8 + 13
+        );
+
+        // A record of the largest size `reserve()` accepts has no room for a `TIME_STAMP`
+        // record, but still succeeds on the next empty page.
+        let t2 = t1 + 1_000_000_000;
+        assert_eq!(write_record_at(&buffer, t2, &vec![0xbb; max_payload - 8]), (2, 0));
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0], 0));
+        assert_eq!(timestamps(&pages[1]), (vec![t1], 0));
+        assert_eq!(timestamps(&pages[2]), (vec![t2], 0));
+    }
+
+    #[test]
+    fn test_record_moves_to_next_page_when_time_stamp_record_does_not_fit() {
+        let buffer =
+            LocklessRingBuffer::new(4 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let page_size = (*PAGE_SIZE) as usize;
+        let max_payload = page_size - LocklessRingBuffer::PAGE_HEADER_SIZE;
+        let payload = b"rollover";
+        let record_size = 8 + payload.len();
+        let gap = 500_000_000;
+        let t0 = injected_start(&buffer);
+
+        // Node 0: leave room for the record but not for the record and a `TIME_STAMP` record.
+        let free = record_size + LocklessRingBuffer::TIME_STAMP_RECORD_SIZE - 1;
+        assert_eq!(write_record_at(&buffer, t0, &vec![0xbb; max_payload - 8 - free]).0, 0);
+        // The record moves to Node 1 instead of going without its `TIME_STAMP` record.
+        let t1 = t0 + gap;
+        assert_eq!(write_record_at(&buffer, t1, payload), (1, 0));
+        assert_eq!(
+            buffer.nodes[0].write_offset.load(Ordering::Relaxed),
+            (page_size - free) | WRITE_OFFSET_SEALED_BIT
+        );
+
+        // Node 1: leave room for exactly the record and a `TIME_STAMP` record, which then fill it.
+        let t2 = t1 + 1;
+        let free = record_size + LocklessRingBuffer::TIME_STAMP_RECORD_SIZE;
+        let filler = vec![0xcc; max_payload - record_size - 8 - free];
+        assert_eq!(write_record_at(&buffer, t2, &filler).0, 1);
+        let t3 = t2 + gap;
+        assert_eq!(write_record_at(&buffer, t3, payload), (1, gap));
+        // The last writer on a full page finalizes it, so Node 1 may already be sealed.
+        assert_eq!(Node::unsealed(buffer.nodes[1].write_offset.load(Ordering::Relaxed)), page_size);
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0], 0));
+        assert_eq!(timestamps(&pages[1]), (vec![t1, t2, t3], 1));
+    }
+
+    #[test]
+    fn test_time_stamp_records_decode_exactly_when_stamped_out_of_order() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let t0 = injected_start(&buffer);
+        write_record_at(&buffer, t0, b"first");
+        // After an idle gap, writer A claims space for a record and a `TIME_STAMP` record. Before
+        // A stamps them, writer B claims and stamps its own, at a later time.
+        let t_a = t0 + 1_000_000_000;
+        let t_b = t_a + 10;
+        set_test_hook(TestHook::AfterClaim, move |buffer| {
+            assert_eq!(write_record_at(buffer, t_b, b"writer B"), (0, t_b - t0));
+        });
+        let (res, now, delta) =
+            reserve_at(&buffer, 16, zx::BootInstant::from_nanos(t_a as i64)).unwrap();
+        assert!(!test_hook_is_armed());
+        // A's `fetch_max` returns B's later time, so A gets that time and a delta of 0. A
+        // relative delta would decode from the record before A on the page, at `t0`.
+        assert_eq!(now.into_nanos() as u64, t_b);
+        assert_eq!(delta.into_nanos(), 0);
+        assert_eq!(res.header_time_delta(), 0);
+        write_ftrace_record(&res, b"writer A");
+        buffer.commit(res);
+        let t_c = t_b + 5;
+        assert_eq!(write_record_at(&buffer, t_c, b"third"), (0, 5));
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0, t_b, t_b, t_c], 2));
+    }
+
+    #[test]
+    fn test_time_stamp_record_written_after_page_finalized() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let t0 = injected_start(&buffer);
+        write_record_at(&buffer, t0, b"first");
+        // After an idle gap, writer W claims space for a record and a `TIME_STAMP` record. Before
+        // W stamps them, another writer finalizes Node 0 and moves the tail to Node 1. W's pin
+        // keeps Node 0 from being read or reset in the meantime. The hook's `finalize()` call
+        // borrows W's pin, which `finalize()` requires.
+        set_test_hook(TestHook::AfterClaim, |buffer| {
+            buffer.nodes[0].finalize();
+            let tail_val = buffer.tail_page.load(Ordering::Relaxed);
+            let mut yield_tracker = YieldTracker::default();
+            assert_eq!(
+                buffer.advance_to_next_page(&buffer.nodes[0], tail_val, &mut yield_tracker),
+                AdvanceResult::Advanced
+            );
+        });
+        let t1 = t0 + 1_000_000_000;
+        assert_eq!(write_record_at(&buffer, t1, b"late"), (0, t1 - t0));
+        assert!(!test_hook_is_armed());
+
+        // The seal counted W's claim, so the reader gets both records, with exact times.
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0, t1], 1));
+    }
+
+    #[test]
+    fn test_claim_retry_rechecks_time_stamp_need() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let t0 = injected_start(&buffer);
+        write_record_at(&buffer, t0, b"first");
+        // After an idle gap, writer W sizes its claim with a `TIME_STAMP` record. Before W's CAS,
+        // writer X claims and stamps a record, with its own `TIME_STAMP` record.
+        let t1 = t0 + 1_000_000_000;
+        set_test_hook(TestHook::BeforeClaim, move |buffer| {
+            assert_eq!(write_record_at(buffer, t1, b"writer X"), (0, t1 - t0));
+        });
+        // W's CAS fails. Its retry reads X's time from `prev_timestamp`, so W needs no
+        // `TIME_STAMP` record and its delta fits in the header.
+        assert_eq!(write_record_at(&buffer, t1 + 1, b"writer W"), (0, 1));
+        assert!(!test_hook_is_armed());
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0, t1, t1 + 1], 1));
+    }
+
+    #[test]
+    fn test_claim_retry_reads_clock_again() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, false, fuchsia_trace::Id::new())
+                .unwrap();
+        let t0 = injected_start(&buffer);
+        write_record_at(&buffer, t0, b"first");
+        // Writer W reads the time `t1` and sizes its claim without a `TIME_STAMP` record. Before
+        // W's CAS, writer X writes a record 1 ms later, and then the system idles for 200 ms.
+        let t1 = t0 + 1_000;
+        let t_x = t1 + 1_000_000;
+        let t2 = t_x + 200_000_000;
+        set_test_hook(TestHook::BeforeClaim, move |buffer| {
+            assert_eq!(write_record_at(buffer, t_x, b"writer X"), (0, t_x - t0));
+        });
+        let clock_reads = Cell::new(0);
+        let current_boot_time = || {
+            clock_reads.set(clock_reads.get() + 1);
+            zx::BootInstant::from_nanos(if clock_reads.get() == 1 { t1 } else { t2 } as i64)
+        };
+        let (res, now, delta) = buffer.reserve_with_clock(16, current_boot_time).unwrap();
+        assert!(!test_hook_is_armed());
+        // W's CAS fails and its retry reads the clock again, so W gets the time it lands at. With
+        // `t1`, W would get X's time and a delta of 0, 200 ms before it wrote.
+        assert_eq!(now.into_nanos() as u64, t2);
+        assert_eq!(delta.into_nanos() as u64, t2 - t_x);
+        assert_eq!(res.header_time_delta(), 0);
+        write_ftrace_record(&res, b"writer W");
+        buffer.commit(res);
+
+        let pages = read_ftrace_pages(&buffer);
+        assert_eq!(timestamps(&pages[0]), (vec![t0, t_x, t2], 1));
+    }
+
+    #[test]
+    fn test_time_stamp_records_survive_overwrite() {
+        let buffer =
+            LocklessRingBuffer::new(4 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+        let gaps =
+            [1_000, LocklessRingBuffer::MAX_TIME_DELTA_NANOS + 1, 200_000_000, 7, 10_000_000_000];
+        let mut now = injected_start(&buffer);
+        let mut expected = std::collections::HashMap::new();
+        // Write until the ring has wrapped and dropped pages.
+        for i in 0.. {
+            if buffer.dropped_pages() >= 3 {
+                break;
+            }
+            assert!(i < 100_000, "the ring never dropped pages");
+            now += gaps[i % gaps.len()];
+            let mut payload = format!("overwrite {i}").into_bytes();
+            payload.resize(payload.len() + i % 11, b'.');
+            write_record_at(&buffer, now, &payload);
+            expected.insert(payload, now);
+        }
+
+        // Every page that is left decodes, with exact times.
+        let pages = read_ftrace_pages(&buffer);
+        assert!(!pages.is_empty());
+        for (records, _) in &pages {
+            for record in records {
+                assert_eq!(record.timestamp, expected[&record.payload]);
+            }
+        }
+        assert!(pages.iter().map(|page| page.1.len()).sum::<usize>() > 0);
     }
 }
