@@ -1990,26 +1990,26 @@ alias(
 )
 
 alias(
-    name = "pest-2.9.0",
-    actual = "//third_party/rust_crates/vendor/pest-2.9.0:pest",
+    name = "pest-2.9.2",
+    actual = "//third_party/rust_crates/vendor/pest-2.9.2:pest",
     tags = ["manual"],
 )
 
 alias(
     name = "pest",
-    actual = "//third_party/rust_crates/vendor/pest-2.9.0:pest",
+    actual = "//third_party/rust_crates/vendor/pest-2.9.2:pest",
     tags = ["manual"],
 )
 
 alias(
-    name = "pest_derive-2.9.0",
-    actual = "//third_party/rust_crates/vendor/pest_derive-2.9.0:pest_derive",
+    name = "pest_derive-2.9.2",
+    actual = "//third_party/rust_crates/vendor/pest_derive-2.9.2:pest_derive",
     tags = ["manual"],
 )
 
 alias(
     name = "pest_derive",
-    actual = "//third_party/rust_crates/vendor/pest_derive-2.9.0:pest_derive",
+    actual = "//third_party/rust_crates/vendor/pest_derive-2.9.2:pest_derive",
     tags = ["manual"],
 )
 
