@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# The package-tool host binary used by bazel_action() to extract the archives
+# of Fuchsia packages built by Bazel (see `package_outputs`).
+#
+# This follows the same logic as `compiled_action()`: sub-builds use a
+# previously built binary instead of depending on the tool's target.
+#
+# Defines:
+#
+#   bazel_action_package_tool_path: (GN path)
+#     Path to the package-tool binary, to list in an action's `inputs`.
+#
+#   bazel_action_package_tool_rebased: (string)
+#     Path to the package-tool binary, relative to `root_build_dir`.
+#
+#   bazel_action_package_tool_deps: (list of GN labels)
+#     Dependencies needed to build the package-tool binary, if any.
+
+# Only expose `host_tools_base_path_override` from host.gni, not every
+# variable and template it defines.
+_host_gni = {
+  import("//build/host.gni")
+}
+
+_package_tool_label = "//src/sys/pkg/bin/package-tool($host_toolchain)"
+bazel_action_package_tool_path =
+    get_label_info(_package_tool_label, "root_out_dir") + "/" +
+    get_label_info(_package_tool_label, "name")
+
+if (_host_gni.host_tools_base_path_override != "") {
+  bazel_action_package_tool_rebased =
+      _host_gni.host_tools_base_path_override + "/" +
+      rebase_path(bazel_action_package_tool_path, root_build_dir)
+  bazel_action_package_tool_path =
+      "//" +
+      rebase_path(bazel_action_package_tool_rebased, "//", root_build_dir)
+  bazel_action_package_tool_deps = []
+} else {
+  bazel_action_package_tool_rebased =
+      rebase_path(bazel_action_package_tool_path, root_build_dir)
+  bazel_action_package_tool_deps = [ _package_tool_label ]
+}

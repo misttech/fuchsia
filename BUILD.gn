@@ -2320,6 +2320,10 @@ build_api_module("nuc11_fastboot_images_location") {
 #          - Required: path the package archive (far) file
 #          - Type: string
 #
+#        ninja_package_out_dir:
+#          - Required: path in the ninja outdir where the package archive is extracted to
+#          - Type: string
+#
 #        copy_debug_symbols:
 #          - Optional: whether or not to copy debug symbols from the package back to ninja.
 #          - Default: false

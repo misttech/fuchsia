@@ -32,6 +32,10 @@ generated_file("global_args.json") {
   contents = {
     auto_refresh_compdb = bazel_auto_refresh_compdb
     rust_sysroot = rebased_rustc_prefix
+
+    # Used by bazel_action_impl.py to extract the archives of packages listed
+    # in `package_outputs`. Each such bazel_action() depends on the binary.
+    package_tool = bazel_action_package_tool_rebased
   }
   output_conversion = "json"
 }

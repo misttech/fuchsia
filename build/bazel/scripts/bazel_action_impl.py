@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import typing as T
@@ -97,6 +98,10 @@ class MissingOutputDirectoryError(BazelActionScriptError):
 
 class MissingTrackedFileError(BazelActionScriptError):
     """Missing tracked file inside output directory."""
+
+
+class PackageExtractionError(BazelActionScriptError):
+    """Failed to extract a package archive."""
 
 
 @dataclasses.dataclass
@@ -453,6 +458,15 @@ class BazelActionRunner(object):
                     f"Failed to export Bazel test packages: {e}"
                 ) from e
 
+        if command == "build" and outputs.packages:
+            # Extract the package archives that request it, now that they have
+            # been copied into the Ninja build directory.
+            all_output_files.extend(
+                self._extract_package_archives(
+                    outputs.packages, all_output_files, time_profile
+                )
+            )
+
         # Perform the merging of debug symbols data, and optionally copy
         # and write the output to a manifest.
         need_to_copy_debug_symbols = outputs.copy_debug_symbols or any(
@@ -542,6 +556,120 @@ class BazelActionRunner(object):
                 )
             )
         return package_archive_paths
+
+    def _extract_package_archives(
+        self,
+        packages: list[bazel_action_utils.PackageOutput],
+        updated_files: list[Path],
+        time_profile: build_utils.TimeProfile,
+    ) -> list[Path]:
+        """Extract the package archives of PackageOutputs into package_out_dir.
+
+        This replaces the use of a separate `prebuilt_package()` GN target to
+        extract the archive, which cannot be traced as a hermetic action
+        because the set of blobs it writes is not known in advance.
+
+        To preserve Ninja's `restat` behavior, an archive is only extracted if
+        it was updated by this action, or if any of the extracted files that
+        are tracked by Ninja are missing.
+
+        Args:
+            packages: The package outputs of this action.
+            updated_files: The Ninja output paths updated by this action.
+            time_profile: The TimeProfile to update.
+
+        Returns:
+            The list of Ninja output paths updated by the extraction.
+
+        Raises:
+            PackageExtractionError if package-tool fails.
+        """
+        updated = set(updated_files)
+        build_dir = self.paths.ninja_build_dir
+
+        def _needs_extraction(
+            package: bazel_action_utils.PackageOutput,
+        ) -> bool:
+            """Returns True if the package archive needs to be extracted.
+
+            This is the case if the archive was just updated by this action
+            (i.e. the Bazel output changed), or if any of the extracted files
+            that are tracked by Ninja are missing (e.g. a clean build, or a
+            previous extraction that failed or was interrupted).
+
+            Otherwise, the previously extracted content is up to date, and
+            skipping extraction preserves the timestamps of the tracked files
+            so that Ninja's `restat` can prune downstream actions.
+            """
+            if Path(package.archive_path) in updated:
+                return True
+            return not all(
+                (build_dir / p).exists()
+                for p in package.extracted_ninja_paths()
+            )
+
+        to_extract = [p for p in packages if _needs_extraction(p)]
+
+        if not to_extract:
+            return []
+
+        time_profile.start(
+            "extract_package_archives",
+            "Extract Fuchsia package archives into the Ninja build directory",
+        )
+
+        def _extract(package: bazel_action_utils.PackageOutput) -> str | None:
+            out_dir = build_dir / package.package_out_dir
+            # Remove the outputs of previous extractions, to avoid keeping
+            # stale files around. Removing the files tracked by Ninja first
+            # also ensures that `_needs_extraction()` returns True on the next
+            # build if extraction fails or is interrupted.
+            for p in package.extracted_ninja_paths():
+                (build_dir / p).unlink(missing_ok=True)
+            for subdir in ("blobs", "manifests"):
+                shutil.rmtree(out_dir / subdir, ignore_errors=True)
+            cmd = [
+                self.global_args.package_tool,
+                "package",
+                "archive",
+                "extract",
+                package.archive_path,
+                "-o",
+                package.package_out_dir,
+                "--repository",
+                "fuchsia.com",
+                "--blobs-json",
+            ]
+            ret = subprocess.run(
+                cmd, cwd=build_dir, capture_output=True, text=True
+            )
+            if ret.returncode == 0:
+                return None
+
+            # The tracked outputs were removed above, so the next build will
+            # retry extraction even if the Bazel output did not change.
+            return (
+                f"Failed to extract {package.archive_path} for {package.package_label}:\n"
+                + f"  {build_utils.cmd_args_to_string(cmd)}\n"
+                + ret.stdout
+                + ret.stderr
+            )
+
+        errors = [
+            e
+            for e in thread_pool_helpers.map_threaded(_extract, to_extract)
+            if e
+        ]
+        if errors:
+            raise PackageExtractionError(
+                "\nBAZEL_ACTION_ERROR: " + "\n".join(errors)
+            )
+
+        return [
+            Path(p)
+            for package in to_extract
+            for p in package.extracted_ninja_paths()
+        ]
 
     def _create_buildfiles_genqueries(
         self, targets: list[str]

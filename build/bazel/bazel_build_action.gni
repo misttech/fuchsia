@@ -111,6 +111,10 @@ import("//build/bazel/bazel_action.gni")
 #          manifest: (optional)
 #             output path for the package's manifest file, relative to $target_out_dir.
 #
+#          package_out_dir: (required)
+#             The directory, relative to $target_out_dir, into which the
+#             package archive is extracted. See `bazel_action()` for details.
+#
 #          copy_debug_symbols: (optional)
 #             A boolean flag, set it to true to copy all debug symbols from
 #             the package's ELF binaries to the top-level ${root_build_dir}/.build-id/

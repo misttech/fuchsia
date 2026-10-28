@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_build_action.gni")
-import("//build/packages/prebuilt_package.gni")
 
 # Wraps a `fuchsia_package()` in a `BUILD.bazel` file.
 # Use this template to make a `fuchsia_package()` target in a `BUILD.bazel`
@@ -61,14 +60,16 @@ template("bazel_fuchsia_package") {
     package_name = target_name
   }
 
-  bazel_build_target = "$target_name.bazel_build"
+  # The Bazel action extracts the package archive into this directory, which
+  # is where other GN templates expect to find the package's
+  # package_manifest.json, i.e. $target_out_dir/$target_name.
+  package_out_dir = "$target_out_dir/$target_name"
 
-  bazel_build_action(bazel_build_target) {
+  bazel_build_action(target_name) {
     forward_variables_from(invoker,
                            [
                              "bazel_config",
                              "deps",
-                             "metadata",
                              "testonly",
                              "visibility",
                              "inputs",
@@ -86,28 +87,27 @@ template("bazel_fuchsia_package") {
       {
         package_label = bazel_target
         archive = "$package_name.far"
+
+        # Derived from `package_out_dir` above so that the extraction
+        # directory and the package metadata always agree.
+        package_out_dir = rebase_path(package_out_dir, target_out_dir)
         copy_debug_symbols = true
       },
     ]
-  }
 
-  # From the perspective of GN/Ninja, this package is a prebuilt
-  # even though we just built it ourselves.
-  prebuilt_package(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "deps",
-                             "testonly",
-                             "visibility",
-                           ])
-    package_name = package_name
-    archive = "$target_out_dir/$package_name.far"
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += [ ":$bazel_build_target" ]
     metadata = {
-      expect_includes_barrier = []
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
+
+      # Package metadata, see define_package_metadata().
+      package_names = [ package_name ]
+      snapshot_entries =
+          [ "$package_name/0=" +
+            rebase_path("$package_out_dir/blobs.json", root_build_dir) ]
+      blob_manifests =
+          [ rebase_path("$package_out_dir/blobs.manifest", root_build_dir) ]
+      package_output_manifests = [ "$package_out_dir/package_manifest.json" ]
     }
   }
 }

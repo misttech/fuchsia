@@ -4,6 +4,7 @@
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/config/logging.gni")
+import("//build/bazel/package_tool.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
 import("//build/rust/config.gni")
@@ -195,7 +196,20 @@ declare_args() {
 #             target. This target must be reachable from the bazel_target argument.
 #
 #          archive: (required)
-#             output path for the package's archive, relative to `ninja_base_dir`.
+#             output path for the package's archive, relative to
+#             `ninja_base_dir` (i.e. `target_out_dir` by default).
+#
+#          package_out_dir: (required)
+#             The directory, relative to `ninja_base_dir` (i.e.
+#             `target_out_dir` by default), into which the
+#             package archive is extracted using
+#             `package-tool package archive extract --repository fuchsia.com`.
+#             This produces the same layout as
+#             `package_tool_package_archive_extract()`, i.e.
+#             `package_manifest.json`, `blobs.json`, `blobs/` and
+#             `manifests/`. The first two files are declared as outputs of
+#             this action. Other GN templates expect this to resolve to
+#             `$target_out_dir/<package GN target name>`.
 #
 #          copy_debug_symbols: (optional)
 #             A boolean flag, set it to true to copy all debug symbols from
@@ -503,16 +517,17 @@ template("bazel_action") {
              "`package_outputs` items must be scopes, string found: \"$entry\"")
       assert(defined(entry.package_label),
              "`package_outputs` scope requires package_label key: $entry")
-      _archive = ""
-      if (defined(entry.archive)) {
-        _archive = "${_ninja_base_dir}/${entry.archive}"
-      }
+      assert(defined(entry.archive),
+             "`package_outputs` scope requires archive key: $entry")
+      assert(defined(entry.package_out_dir),
+             "`package_outputs` scope requires package_out_dir key: $entry")
       _all_outputs += [
         {
           type = "package"
           bazel_target =
               get_label_info(entry.package_label, "label_no_toolchain")
-          ninja_archive = _archive
+          ninja_archive = "${_ninja_base_dir}/${entry.archive}"
+          ninja_package_out_dir = "${_ninja_base_dir}/${entry.package_out_dir}"
           copy_debug_symbols =
               defined(entry.copy_debug_symbols) && entry.copy_debug_symbols
         },
@@ -738,6 +753,13 @@ template("bazel_action") {
         inputs += invoker.inputs
       }
 
+      if (_package_outputs != []) {
+        # Used by bazel_action_impl.py to extract package archives. The path
+        # itself is passed to the script via global_args.json.
+        inputs += [ bazel_action_package_tool_path ]
+        deps += bazel_action_package_tool_deps
+      }
+
       depfile = "${target_gen_dir}/${target_name}.d"
 
       outputs = [ _stamp_path ]
@@ -782,7 +804,13 @@ template("bazel_action") {
             outputs += [ "${output.ninja_dir}/${tracked_file}" ]
           }
         } else if (output.type == "package") {
-          outputs += [ output.ninja_archive ]
+          # LINT.IfChange(extracted_package_outputs)
+          outputs += [
+            output.ninja_archive,
+            "${output.ninja_package_out_dir}/package_manifest.json",
+            "${output.ninja_package_out_dir}/blobs.json",
+          ]
+          # LINT.ThenChange(//build/bazel/scripts/bazel_action_utils.py:extracted_package_outputs)
         } else if (output.type == "final_symlink") {
           outputs += [ output.ninja_file ]
         }
@@ -812,6 +840,7 @@ template("bazel_action") {
                                        "ninja_file",
                                        "ninja_archive",
                                        "ninja_dir",
+                                       "ninja_package_out_dir",
                                      ])
 
               # To differentiate different bazel invocations' outputs.
@@ -830,6 +859,10 @@ template("bazel_action") {
               }
               if (defined(entry.ninja_dir)) {
                 ninja_dir = rebase_path(entry.ninja_dir, root_build_dir)
+              }
+              if (defined(entry.ninja_package_out_dir)) {
+                ninja_package_out_dir =
+                    rebase_path(entry.ninja_package_out_dir, root_build_dir)
               }
 
               # The depfile that ninja will read for this action.

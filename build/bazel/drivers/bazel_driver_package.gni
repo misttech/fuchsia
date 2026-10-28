@@ -4,7 +4,6 @@
 import("//build/bazel/bazel_build_action.gni")
 import("//build/bazel/drivers/verify_driver_package.gni")
 import("//build/packages/exported_fuchsia_package_archive.gni")
-import("//build/packages/prebuilt_package.gni")
 
 # Wraps a `fuchsia_package()` in a `BUILD.bazel` file.
 # Use this template to make a `fuchsia_package()` target in a `BUILD.bazel`
@@ -40,7 +39,13 @@ template("bazel_driver_package") {
   assert(defined(invoker.package_name), "package_name must be defined")
   bazel_target = invoker.bazel_target
   package_name = invoker.package_name
+  package_target = target_name
   bazel_build_target = "$target_name.bazel_build"
+
+  # The Bazel action extracts the package archive into this directory, which
+  # is where other GN templates expect to find the package's
+  # package_manifest.json, i.e. $target_out_dir/$target_name.
+  package_out_dir = "$target_out_dir/$target_name"
 
   bazel_build_action(bazel_build_target) {
     forward_variables_from(invoker,
@@ -48,9 +53,12 @@ template("bazel_driver_package") {
                              "deps",
                              "metadata",
                              "testonly",
-                             "visibility",
                              "inputs",
                            ])
+
+    # Only reachable through the wrapper group below, which provides the
+    # package metadata.
+    visibility = [ ":$package_target" ]
 
     bazel_target = bazel_target
     bazel_config = "fuchsia_sdk"
@@ -66,6 +74,10 @@ template("bazel_driver_package") {
       {
         package_label = bazel_target
         archive = "$package_name.far"
+
+        # Derived from `package_out_dir` above so that the extraction
+        # directory and the package metadata always agree.
+        package_out_dir = rebase_path(package_out_dir, target_out_dir)
         copy_debug_symbols = true
       },
     ]
@@ -77,27 +89,26 @@ template("bazel_driver_package") {
     }
   }
 
-  # From the perspective of GN/Ninja, this package is a prebuilt
-  # even though we just built it ourselves.
-  package_target = target_name
-
-  prebuilt_package(package_target) {
+  group(package_target) {
     forward_variables_from(invoker,
                            [
-                             "deps",
                              "testonly",
                              "visibility",
                            ])
-    package_name = package_name
-    archive = "$target_out_dir/$package_name.far"
-    if (!defined(deps)) {
-      deps = []
-    }
-    deps += [ ":$bazel_build_target" ]
+    public_deps = [ ":$bazel_build_target" ]
 
     metadata = {
       # Used by the assert_driver_components template.
       driver_component_barrier = []
+
+      # Package metadata, see define_package_metadata().
+      package_names = [ package_name ]
+      snapshot_entries =
+          [ "$package_name/0=" +
+            rebase_path("$package_out_dir/blobs.json", root_build_dir) ]
+      blob_manifests =
+          [ rebase_path("$package_out_dir/blobs.manifest", root_build_dir) ]
+      package_output_manifests = [ "$package_out_dir/package_manifest.json" ]
     }
   }
 
