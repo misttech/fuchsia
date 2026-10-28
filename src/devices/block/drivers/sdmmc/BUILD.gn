@@ -134,15 +134,6 @@ fuchsia_structured_config_cpp_elf_lib("sdmmc-config") {
   cm_label = ":sdmmc-manifest"
 }
 
-fuchsia_structured_config_values("sc-values") {
-  cm_label = ":sdmmc-manifest"
-  values = {
-    enable_suspend = false
-    storage_power_management_enabled = true
-    command_queueing_enabled = false
-  }
-}
-
 power_config("sdio-power-config") {
   output_name = "sdio_power_config.fidl"
   value_file = "sdio_power_config.json5"
@@ -151,10 +142,7 @@ power_config("sdio-power-config") {
 fuchsia_driver_package("package") {
   package_name = "sdmmc"
   driver_components = [ ":sdmmc" ]
-  deps = [
-    ":sc-values",
-    ":sdio-power-config",
-  ]
+  deps = [ ":sdio-power-config" ]
 }
 
 source_set("fake-sdmmc-device") {

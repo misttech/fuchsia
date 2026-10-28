@@ -20,11 +20,4 @@
             type: "bool",
         },
     ],
-    config: {
-        device_path: {
-            type: "string",
-            max_size: 512,
-            mutability: [ "parent" ],
-        },
-    },
 }

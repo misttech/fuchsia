@@ -164,13 +164,6 @@ fuchsia_structured_config_cpp_elf_lib("structured-config") {
   cm_label = ":amlogic-display-manifest"
 }
 
-fuchsia_structured_config_values("structured-config-values") {
-  cm_label = ":amlogic-display-manifest"
-  values = {
-    visual_debugging_level = 0
-  }
-}
-
 fuchsia_driver_component("amlogic-display") {
   cm_label = ":amlogic-display-manifest"
   info = "meta/amlogic-display-info.json"
@@ -181,7 +174,6 @@ fuchsia_driver_package("package") {
   package_name = "amlogic-display"
   export_to_bazel = true
   driver_components = [ ":amlogic-display" ]
-  deps = [ ":structured-config-values" ]
 }
 
 test("amlogic-display-test") {

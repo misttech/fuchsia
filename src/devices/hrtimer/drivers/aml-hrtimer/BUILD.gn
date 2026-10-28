@@ -50,17 +50,9 @@ fuchsia_structured_config_cpp_elf_lib("aml-hrtimer-config") {
   cm_label = ":aml-hrtimer-manifest"
 }
 
-fuchsia_structured_config_values("sc-values") {
-  cm_label = ":aml-hrtimer-manifest"
-  values = {
-    enable_suspend = true
-  }
-}
-
 fuchsia_driver_package("package") {
   package_name = "aml-hrtimer"
   driver_components = [ ":aml-hrtimer" ]
-  deps = [ ":sc-values" ]
 }
 
 source_set("common") {

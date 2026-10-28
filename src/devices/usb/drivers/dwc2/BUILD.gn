@@ -86,18 +86,10 @@ fuchsia_structured_config_cpp_elf_lib("dwc2-config") {
   cm_label = ":dwc2-dml_manifest"
 }
 
-fuchsia_structured_config_values("dwc2-values") {
-  cm_label = ":dwc2-dml_manifest"
-  values = {
-    enable_suspend = false
-  }
-}
-
 fuchsia_driver_package("package") {
   package_name = "dwc2"
   export_to_bazel = true
   driver_components = [ ":dwc2" ]
-  deps = [ ":dwc2-values" ]
 }
 
 test("dwc2-test-bin") {

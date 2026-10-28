@@ -79,23 +79,8 @@ fuchsia_test_package("package") {
     "//src/power/system-activity-governor/integration/testing/realm-factory",
   ]
   deps = [
-    ":bogus_session_manager_test_config_values",
     ":use-configuration",
     ":use-power-fidl",
     "//src/session/bin/session_manager:session_manager_comp",
   ]
-}
-
-# TODO(https://fxbug.dev/42077036): Configuration gets specified using RealmBuilder, but
-# we need to provide values in the package for reasons (see bug). Include some
-# bogus defaults.
-fuchsia_structured_config_values("bogus_session_manager_test_config_values") {
-  cm_label = "//src/session/bin/session_manager:manifest"
-  component_name = "session_manager"
-  values = {
-    session_url = ""
-    autolaunch = false
-    suspend_enabled = false
-    enable_debug_shortcut = false
-  }
 }

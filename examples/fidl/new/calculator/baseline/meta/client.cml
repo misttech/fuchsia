@@ -10,5 +10,4 @@
     use: [
         { protocol: "examples.calculator.baseline.Calculator" },
     ],
-    config: {},
 }

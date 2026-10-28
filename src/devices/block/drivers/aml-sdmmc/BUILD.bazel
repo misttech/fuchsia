@@ -11,7 +11,6 @@ load(
     "fuchsia_package",
     "fuchsia_prebuilt_package",
     "fuchsia_structured_config_cpp_elf_lib",
-    "fuchsia_structured_config_values",
 )
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 
@@ -101,21 +100,12 @@ fuchsia_structured_config_cpp_elf_lib(
     cm_label = ":manifest",
 )
 
-fuchsia_structured_config_values(
-    name = "sc-values",
-    cm_label = ":manifest",
-    values = {
-        "enable_suspend": False,
-    },
-)
-
 fuchsia_package(
     name = "aml-sdmmc-no-banjo",
     package_name = "aml-sdmmc",
     components = [":component"],
     fuchsia_api_level = "HEAD",
     package_repository_name = "fuchsia.com",
-    resources = [":sc-values"],
     visibility = ["//visibility:public"],
 )
 

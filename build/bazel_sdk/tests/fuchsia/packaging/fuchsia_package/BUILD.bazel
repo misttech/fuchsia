@@ -247,9 +247,6 @@ fuchsia_package_checker_test(
         "meta/test_driver.cm",
     ],
     package_under_test = "//fuchsia/packaging/fuchsia_package/cc_driver:pkg",
-    structured_config_files = [
-        "meta/test_driver.cvf",
-    ],
 )
 
 fuchsia_package_checker_test(
@@ -281,9 +278,6 @@ fuchsia_package_checker_test(
         "meta/test_driver.cm",
     ],
     package_under_test = "//fuchsia/packaging/fuchsia_package/cc_driver:pkg_with_tool",
-    structured_config_files = [
-        "meta/test_driver.cvf",
-    ],
 )
 
 fuchsia_package_checker_test(

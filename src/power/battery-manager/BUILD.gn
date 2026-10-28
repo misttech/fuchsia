@@ -72,32 +72,10 @@ rustc_binary("bin") {
   ]
 }
 
-fuchsia_structured_config_values("default_config_values") {
-  cm_label = ":manifest"
-  values = {
-    suspend_enabled = false
-  }
-}
-
 fuchsia_component("battery_manager") {
   component_name = "battery_manager"
   manifest = "meta/battery_manager.cml"
-  deps = [
-    ":bin",
-    ":default_config_values",
-  ]
-}
-
-fuchsia_component_manifest("fake_time_manifest") {
-  component_name = "battery_manager_fake_time"
-  manifest = "meta/battery_manager_fake_time.cml"
-}
-
-fuchsia_structured_config_values("fake_time_default_config_values") {
-  cm_label = ":fake_time_manifest"
-  values = {
-    suspend_enabled = false
-  }
+  deps = [ ":bin" ]
 }
 
 rustc_binary("bin_with_fake_time") {
@@ -114,10 +92,7 @@ fuchsia_component("battery_manager_fake_time") {
   testonly = true
   component_name = "battery_manager_fake_time"
   manifest = "meta/battery_manager_fake_time.cml"
-  deps = [
-    ":bin_with_fake_time",
-    ":fake_time_default_config_values",
-  ]
+  deps = [ ":bin_with_fake_time" ]
 }
 
 fuchsia_package("battery-manager") {

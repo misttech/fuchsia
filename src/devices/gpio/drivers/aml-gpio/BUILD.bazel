@@ -11,7 +11,6 @@ load(
     "fuchsia_driver_component",
     "fuchsia_package",
     "fuchsia_structured_config_cpp_elf_lib",
-    "fuchsia_structured_config_values",
     "fuchsia_unittest_package",
 )
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
@@ -93,21 +92,12 @@ fuchsia_structured_config_cpp_elf_lib(
     cm_label = ":manifest",
 )
 
-fuchsia_structured_config_values(
-    name = "sc-values",
-    cm_label = ":manifest",
-    values = {
-        "suspend_enabled": False,
-    },
-)
-
 fuchsia_package(
     name = "aml-gpio",
     package_name = "aml-gpio",
     components = [":component"],
     fuchsia_api_level = "HEAD",
     package_repository_name = "fuchsia.com",
-    resources = [":sc-values"],
     visibility = ["//visibility:public"],
 )
 

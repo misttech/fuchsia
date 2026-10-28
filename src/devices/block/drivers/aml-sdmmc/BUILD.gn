@@ -104,18 +104,10 @@ fuchsia_structured_config_cpp_elf_lib("aml-sdmmc-config") {
   cm_label = ":aml-sdmmc-manifest"
 }
 
-fuchsia_structured_config_values("sc-values") {
-  cm_label = ":aml-sdmmc-manifest"
-  values = {
-    enable_suspend = false
-  }
-}
-
 fuchsia_driver_package("package") {
   package_name = "aml-sdmmc"
   export_to_bazel = true
   driver_components = [ ":aml-sdmmc" ]
-  deps = [ ":sc-values" ]
 }
 
 test("aml-sdmmc-test-bin") {
