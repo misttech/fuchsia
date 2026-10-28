@@ -53,6 +53,8 @@
         },
         {
             config: [
+                "fuchsia.recovery.android.TopMargin",
+                "fuchsia.recovery.android.TouchScreenEnabled",
                 "fuchsia.recovery.DisplayRotation",
                 "fuchsia.system-updater.ManifestPublicKeys",
             ],

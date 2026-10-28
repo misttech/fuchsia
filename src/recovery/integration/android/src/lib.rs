@@ -194,6 +194,10 @@ impl TestEnvBuilder {
             .add_route(
                 Route::new()
                     .capability(Capability::configuration("fuchsia.recovery.DisplayRotation"))
+                    .capability(Capability::configuration("fuchsia.recovery.android.TopMargin"))
+                    .capability(Capability::configuration(
+                        "fuchsia.recovery.android.TouchScreenEnabled",
+                    ))
                     .from(Ref::void())
                     .to(&system_recovery),
             )

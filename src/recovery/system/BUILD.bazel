@@ -43,7 +43,6 @@ fx_component_manifest(
 fuchsia_structured_config_rust_lib(
     name = "recovery_ui_config",
     cm_label = ":ui_config_manifest",
-    visibility = ["//src/recovery/system/android:__pkg__"],
 )
 
 rustc_library(
@@ -154,6 +153,12 @@ fx_component_manifest(
         "//sdk/lib/syslog:client.shard",
     ],
     manifest = "meta/system_recovery_android.cml",
+)
+
+fuchsia_structured_config_rust_lib(
+    name = "recovery_android_config",
+    cm_label = ":manifest_android",
+    visibility = ["//src/recovery/system/android:__pkg__"],
 )
 
 # This is used by system_recovery_fdr via the following path:

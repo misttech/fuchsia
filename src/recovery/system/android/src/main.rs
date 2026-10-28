@@ -52,6 +52,8 @@ const MENU_SELECTED_COLOR: Color = Color::white();
 
 struct RecoveryAppAssistant {
     display_rotation: DisplayRotation,
+    touch_screen_enabled: bool,
+    top_margin: u16,
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -61,6 +63,8 @@ struct RecoveryAppAssistant {
 impl RecoveryAppAssistant {
     fn new(
         display_rotation: DisplayRotation,
+        touch_screen_enabled: bool,
+        top_margin: u16,
         sideload_request_receiver: mpsc::Receiver<UpdaterRequest>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -68,6 +72,8 @@ impl RecoveryAppAssistant {
     ) -> Self {
         Self {
             display_rotation,
+            touch_screen_enabled,
+            top_margin,
             sideload_request_receiver: Arc::new(Mutex::new(sideload_request_receiver)),
             exposed_dir,
             svc_dir,
@@ -88,6 +94,8 @@ impl AppAssistant for RecoveryAppAssistant {
         Ok(Box::new(RecoveryViewAssistant::new(
             params.view_key,
             params.app_sender,
+            self.touch_screen_enabled,
+            self.top_margin,
             Arc::clone(&self.sideload_request_receiver),
             Arc::clone(&self.exposed_dir),
             Arc::clone(&self.svc_dir),
@@ -114,6 +122,8 @@ struct RecoveryViewAssistant {
     waiting_for_confirmation: bool,
     // tuple of touch contact id, start location, current location
     active_contact: Option<(input::touch::ContactId, IntPoint, IntPoint)>,
+    touch_screen_enabled: bool,
+    top_margin: u16,
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -126,6 +136,8 @@ impl RecoveryViewAssistant {
     fn new(
         view_key: ViewKey,
         app_sender: AppSender,
+        touch_screen_enabled: bool,
+        top_margin: u16,
         sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -160,6 +172,8 @@ impl RecoveryViewAssistant {
             message: None,
             waiting_for_confirmation: false,
             active_contact: None,
+            touch_screen_enabled,
+            top_margin,
             sideload_request_receiver,
             exposed_dir,
             svc_dir,
@@ -283,6 +297,9 @@ impl ViewAssistant for RecoveryViewAssistant {
 
             builder.group().column().max_size().main_align(MainAxisAlignment::Start).contents(
                 |builder| {
+                    if self.top_margin > 0 {
+                        builder.space(size2(size.width, self.top_margin as f32));
+                    }
                     if let Some(logo_file) = &self.logo_file {
                         // Centre the logo
                         builder.start_group(
@@ -483,7 +500,7 @@ impl ViewAssistant for RecoveryViewAssistant {
         _event: &input::Event,
         touch_event: &input::touch::Event,
     ) -> Result<(), Error> {
-        if self.logs.is_some() || !self.show_text {
+        if !self.touch_screen_enabled || self.logs.is_some() || !self.show_text {
             return Ok(());
         }
         match *touch_event.contacts {
@@ -789,7 +806,7 @@ async fn process_bootloader_message() -> Result<BootloaderMessage, Error> {
 fn main() -> Result<(), Error> {
     log::info!("recovery-android started.");
 
-    let config = recovery_ui_config::Config::take_from_startup_handle();
+    let config = recovery_android_config::Config::take_from_startup_handle();
     let display_rotation = match config.display_rotation {
         0 => DisplayRotation::Deg0,
         180 => DisplayRotation::Deg180,
@@ -840,6 +857,8 @@ fn main() -> Result<(), Error> {
 
             let assistant = Box::new(RecoveryAppAssistant::new(
                 display_rotation,
+                config.touch_screen_enabled,
+                config.top_margin,
                 sideload_request_receiver,
                 exposed_dir,
                 svc_dir,

@@ -67,6 +67,20 @@
             protocol: "fuchsia.sys2.LifecycleController",
             from: "framework",
         },
+        {
+            config: "fuchsia.recovery.android.TopMargin",
+            key: "top_margin",
+            availability: "optional",
+            type: "uint16",
+            default: 0,
+        },
+        {
+            config: "fuchsia.recovery.android.TouchScreenEnabled",
+            key: "touch_screen_enabled",
+            availability: "optional",
+            type: "bool",
+            default: false,
+        },
     ],
     offer: [
         {

@@ -89,7 +89,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                     builder.platform_bundle("recovery_fdr")?;
                     configure_platform_system_recovery(context, config, builder)?;
                 }
-                SystemRecovery::Android => {
+                SystemRecovery::Android(android_recovery_config) => {
                     context.ensure_feature_set_level(
                         &[FeatureSetLevel::Utility],
                         "Android System Recovery",
@@ -99,6 +99,20 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                     builder.set_config_capability(
                         "fuchsia.adb.IsRecovery",
                         Config::new(ConfigValueType::Bool, true.into()),
+                    )?;
+                    builder.set_config_capability(
+                        "fuchsia.recovery.android.TouchScreenEnabled",
+                        Config::new(
+                            ConfigValueType::Bool,
+                            android_recovery_config.touch_screen_enabled.into(),
+                        ),
+                    )?;
+                    builder.set_config_capability(
+                        "fuchsia.recovery.android.TopMargin",
+                        Config::new(
+                            ConfigValueType::Uint16,
+                            android_recovery_config.top_margin.into(),
+                        ),
                     )?;
                 }
                 SystemRecovery::Bootfs(bootfs_recovery_config) => {

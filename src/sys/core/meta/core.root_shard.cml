@@ -114,6 +114,8 @@
                 "fuchsia.omaha.StartupDelaySeconds",
                 "fuchsia.power.cpu.BoostEnabled",
                 "fuchsia.power.SuspendEnabled",
+                "fuchsia.recovery.android.TopMargin",
+                "fuchsia.recovery.android.TouchScreenEnabled",
                 "fuchsia.recovery.DisplayRotation",
                 "fuchsia.recovery.UseFxBlob",
                 "fuchsia.scenic.DisplayComposition",

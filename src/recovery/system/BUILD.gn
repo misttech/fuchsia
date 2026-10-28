@@ -94,10 +94,6 @@ fuchsia_component_manifest("ui_config_manifest") {
 }
 fuchsia_structured_config_rust_lib("recovery_ui_config") {
   cm_label = ":ui_config_manifest"
-  visibility = [
-    ":*",
-    "//src/recovery/system/android:*",
-  ]
 }
 rustc_library("fdr_lib") {
   sources = [ "src/fdr.rs" ]
@@ -201,6 +197,13 @@ fuchsia_component("component_fdr") {
 fuchsia_component_manifest("manifest_android") {
   component_name = "system_recovery_android"
   manifest = "meta/system_recovery_android.cml"
+}
+fuchsia_structured_config_rust_lib("recovery_android_config") {
+  cm_label = ":manifest_android"
+  visibility = [
+    ":*",
+    "//src/recovery/system/android:*",
+  ]
 }
 rustc_library("ota_lib") {
   sources = [

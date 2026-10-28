@@ -58,13 +58,61 @@ impl RecoveryConfig {
     }
 }
 
-/// Which system recovery implementation to include in the image
-#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SystemRecovery {
+enum SystemRecoveryString {
     Fdr,
     Android,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SystemRecoveryMap {
+    Android(AndroidRecoveryConfig),
     Bootfs(BootfsRecoveryConfig),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SystemRecoveryDeserializer {
+    String(SystemRecoveryString),
+    Map(SystemRecoveryMap),
+}
+
+impl From<SystemRecoveryDeserializer> for SystemRecovery {
+    fn from(s: SystemRecoveryDeserializer) -> Self {
+        match s {
+            SystemRecoveryDeserializer::String(SystemRecoveryString::Fdr) => Self::Fdr,
+            SystemRecoveryDeserializer::String(SystemRecoveryString::Android) => {
+                Self::Android(AndroidRecoveryConfig::default())
+            }
+            SystemRecoveryDeserializer::Map(SystemRecoveryMap::Android(c)) => Self::Android(c),
+            SystemRecoveryDeserializer::Map(SystemRecoveryMap::Bootfs(c)) => Self::Bootfs(c),
+        }
+    }
+}
+
+/// Which system recovery implementation to include in the image
+#[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case", from = "SystemRecoveryDeserializer")]
+#[schemars(!from)]
+pub enum SystemRecovery {
+    Fdr,
+    Android(AndroidRecoveryConfig),
+    Bootfs(BootfsRecoveryConfig),
+}
+
+/// Details of Android recovery if it is selected.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct AndroidRecoveryConfig {
+    /// Enable touch screen input in recovery UI.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub touch_screen_enabled: bool,
+
+    /// Top margin in pixels for the recovery UI.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub top_margin: u16,
 }
 
 /// Details of bootfs recovery if it is selected
@@ -129,6 +177,44 @@ mod tests {
     fn test_recovery_config_check_for_managed_mode() {
         let config = RecoveryConfig { check_for_managed_mode: true, ..Default::default() };
         let serialized = serde_json::to_value(&config).expect("serialization failed");
+        let deserialized: RecoveryConfig =
+            serde_json::from_value(serialized).expect("deserialization failed");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_recovery_config_android() {
+        let json = json!({
+            "system_recovery": "android"
+        });
+        let config: RecoveryConfig = serde_json::from_value(json).expect("deserialization failed");
+        assert_eq!(
+            config.system_recovery,
+            Some(SystemRecovery::Android(AndroidRecoveryConfig {
+                touch_screen_enabled: false,
+                top_margin: 0,
+            }))
+        );
+
+        let config = RecoveryConfig {
+            system_recovery: Some(SystemRecovery::Android(AndroidRecoveryConfig {
+                touch_screen_enabled: true,
+                top_margin: 100,
+            })),
+            ..Default::default()
+        };
+        let serialized = serde_json::to_value(&config).expect("serialization failed");
+        assert_eq!(
+            serialized,
+            json!({
+                "system_recovery": {
+                    "android": {
+                        "touch_screen_enabled": true,
+                        "top_margin": 100
+                    }
+                }
+            })
+        );
         let deserialized: RecoveryConfig =
             serde_json::from_value(serialized).expect("deserialization failed");
         assert_eq!(config, deserialized);

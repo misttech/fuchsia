@@ -30,7 +30,7 @@ rustc_binary("bin") {
     "//src/lib/ui/carnelian",
     "//src/recovery/lib/bootloader-message",
     "//src/recovery/lib/recovery-ui",
-    "//src/recovery/system:recovery_ui_config",
+    "//src/recovery/system:recovery_android_config",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/block_client/rust",
     "//src/storage/lib/vfs/rust:vfs",
