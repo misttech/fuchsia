@@ -43,6 +43,9 @@ class SharedBuffer {
   std::pair<tracing::TransferStatus, TransferStats> TransferAll(
       const std::shared_ptr<const tracing::BufferForwarder>& output) const;
 
+  // Reset streaming state when tracing starts according to buffer disposition.
+  void OnStart(fuchsia_tracing::BufferDisposition disposition);
+
   SharedBuffer(SharedBuffer&&) = default;
   SharedBuffer& operator=(SharedBuffer&&) = default;
 

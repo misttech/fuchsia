@@ -235,6 +235,20 @@ tracing::TransferStatus SharedBuffer::WriteProviderIdRecord(
   return status;
 }
 
+void SharedBuffer::OnStart(fuchsia_tracing::BufferDisposition disposition) {
+  switch (disposition) {
+    case fuchsia_tracing::BufferDisposition::kClearEntire:
+      last_wrapped_count_ = 0u;
+      last_durable_data_end_ = 0;
+      break;
+    case fuchsia_tracing::BufferDisposition::kClearNondurable:
+      last_wrapped_count_ = 0u;
+      break;
+    case fuchsia_tracing::BufferDisposition::kRetain:
+      break;
+  }
+}
+
 bool SharedBuffer::StreamingTransfer(const std::shared_ptr<const tracing::BufferForwarder>& output,
                                      uint32_t wrapped_count, uint64_t durable_data_end) {
   FX_DCHECK(buffering_mode_ == fuchsia_tracing::BufferingMode::kStreaming);

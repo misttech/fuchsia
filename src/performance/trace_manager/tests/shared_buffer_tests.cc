@@ -187,6 +187,73 @@ TEST_F(SharedBufferTest, DurableEndBeforeTransferredOffsetReportsProviderError) 
   EXPECT_EQ(status, TransferStatus::kProviderError);
 }
 
+TEST_F(SharedBufferTest, OnStartClearEntireResetsStreamingOffsets) {
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  AdvanceStreamingState(/*wrapped_count=*/1, kTestRecordSizeBytes);
+
+  buffer_->OnStart(fuchsia_tracing::BufferDisposition::kClearEntire);
+
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  bool success = buffer_->StreamingTransfer(forwarder_, /*wrapped_count=*/0, kTestRecordSizeBytes);
+
+  EXPECT_TRUE(success);
+}
+
+TEST_F(SharedBufferTest, OnStartClearNondurableResetsWrappedCountOnly) {
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kDurableBufferOffset + kTestRecordSizeBytes, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0,
+                             /*durable_data_end=*/2 * kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, 2 * kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1,
+                             /*durable_data_end=*/2 * kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  AdvanceStreamingState(/*wrapped_count=*/1, 2 * kTestRecordSizeBytes);
+
+  buffer_->OnStart(fuchsia_tracing::BufferDisposition::kClearNondurable);
+
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0,
+                             /*durable_data_end=*/2 * kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  bool success =
+      buffer_->StreamingTransfer(forwarder_, /*wrapped_count=*/0, 2 * kTestRecordSizeBytes);
+
+  EXPECT_TRUE(success);
+}
+
+TEST_F(SharedBufferTest, OnStartRetainPreservesStreamingOffsets) {
+  WriteTestRecord(vmo(), kDurableBufferOffset, kDurableTicks);
+  WriteTestRecord(vmo(), kRollingBuffer0Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/0, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes, /*rolling_data_end_1=*/0);
+  AdvanceStreamingState(/*wrapped_count=*/0, kTestRecordSizeBytes);
+  WriteTestRecord(vmo(), kRollingBuffer1Offset, kValidTicks);
+  SetupStreamingBufferHeader(vmo(), /*wrapped_count=*/1, /*durable_data_end=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_0=*/kTestRecordSizeBytes,
+                             /*rolling_data_end_1=*/kTestRecordSizeBytes);
+  AdvanceStreamingState(/*wrapped_count=*/1, kTestRecordSizeBytes);
+
+  buffer_->OnStart(fuchsia_tracing::BufferDisposition::kRetain);
+
+  bool wrapped_zero_accepted =
+      buffer_->StreamingTransfer(forwarder_, /*wrapped_count=*/0, kTestRecordSizeBytes);
+
+  EXPECT_FALSE(wrapped_zero_accepted);
+}
+
 }  // namespace
 }  // namespace test
 }  // namespace tracing

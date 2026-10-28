@@ -145,6 +145,9 @@ void Tracee::Start(fuchsia_tracing::BufferDisposition buffer_disposition,
   TransitionToState(State::kStarting);
   was_started_ = true;
   results_written_ = false;
+  // Reset here rather than when TRACE_PROVIDER_STARTED arrives: the provider can send
+  // TRACE_PROVIDER_SAVE_BUFFER for the new run first, and we handle saves while kStarting.
+  buffer_->OnStart(buffer_disposition);
 }
 
 void Tracee::Stop(bool write_results) {

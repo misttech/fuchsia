@@ -149,6 +149,10 @@ void TraceeV2::Start(fuchsia_tracing::BufferDisposition buffer_disposition,
   TransitionToState(State::kStarting);
   was_started_ = true;
   results_written_ = false;
+  // Reset here rather than in the Start() reply: the provider can send OnSaveBuffer for the new run
+  // before it replies to Start(), and we handle saves while kStarting. Resetting in the reply would
+  // validate those saves against the previous run's offsets, then discard the offsets they set.
+  buffer_->OnStart(buffer_disposition);
 }
 
 void TraceeV2::Stop(fit::closure cb) {

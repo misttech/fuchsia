@@ -240,5 +240,44 @@ TEST_F(TraceManagerTest, V2ProviderSaveBufferInUnexpectedStateDoesNotStrandProvi
   EXPECT_EQ(provider1->terminate_count(), 1);
 }
 
+// Test that in streaming mode, multiple starts succeed without terminating the provider
+// when the provider sends OnSaveBuffer with reset wrapped_count for subsequent runs.
+TEST_F(TraceManagerTest, V2ProviderStreamingMultiStartSucceeds) {
+  ConnectToProvisionerService();
+
+  FakeProviderV2* provider1;
+  ASSERT_TRUE(AddFakeProviderV2(kProvider1Pid, kProvider1Name, &provider1));
+
+  RunLoopUntilIdle();
+
+  auto config = GetDefaultTraceConfig();
+  config.buffering_mode(fuchsia_tracing::BufferingMode::kStreaming);
+  ASSERT_TRUE(InitializeSession(std::move(config)));
+  ASSERT_TRUE(StartSession());
+
+  // Run 1: provider wraps buffers 0 and 1.
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/0, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/1, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+  ASSERT_TRUE(StopSession());
+
+  // Run 2: provider restarts with a fresh buffer and sends wrapped_count 0.
+  ASSERT_TRUE(StartSession());
+  provider1->SendOnSaveBuffer(/*wrapped_count=*/0, /*durable_data_end=*/16);
+  RunLoopUntilIdle();
+
+  // If trace_manager rejected run 2's first save, it aborted the provider; stop here rather than
+  // tearing down a session whose provider is already terminating.
+  ASSERT_EQ(provider1->terminate_count(), 0);
+  EXPECT_EQ(provider1->notify_buffer_saved_count(), 3);
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kStarted);
+
+  ASSERT_TRUE(StopSession());
+  ASSERT_TRUE(TerminateSession());
+  EXPECT_EQ(provider1->state(), FakeProviderV2::State::kTerminated);
+  EXPECT_EQ(provider1->terminate_count(), 1);
+}
+
 }  // namespace test
 }  // namespace tracing
