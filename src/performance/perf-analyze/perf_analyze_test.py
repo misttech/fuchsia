@@ -103,7 +103,8 @@ class PerfAnalyzeTest(unittest.TestCase):
             self.assertNotEqual(exit_code, 0)
             output = stdout.getvalue().strip()
             self.assertTrue(
-                output.startswith("Error: Traceback"), f"Output was: {output!r}"
+                output.startswith(("Error: Traceback", "Error:  --> query:")),
+                f"Output was: {output!r}",
             )
             self.assertIn("no such column: invalid", output)
 
