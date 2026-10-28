@@ -30,6 +30,6 @@ fidl_rust_next_allowlist = [
     "//src/ui/lib/input_pipeline:__subpackages__",
     "//src/ui/tools/print-input-report:__subpackages__",
     "//tools/fidl:__subpackages__",
-    "//vendor/google:__subpackages__",
+    "//vendor:__subpackages__",
 ]
 # LINT.ThenChange(fidl_rust_next.gni)
