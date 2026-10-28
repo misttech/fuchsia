@@ -519,52 +519,6 @@ class FfxTests(unittest.TestCase):
         )
         mock_ffx_run.assert_called_once()
 
-    # TODO: Remove test_get_target_ssh_address_deprecated and
-    # test_get_target_ssh_address_returns_none_for_usb once //vendor/google
-    # code is updated to use get_target_address().
-    @mock.patch.object(
-        ffx.FFX,
-        "run",
-        return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
-        autospec=True,
-    )
-    def test_get_target_ssh_address_deprecated(
-        self, mock_ffx_run: mock.Mock
-    ) -> None:
-        """Verify deprecated get_target_ssh_address returns TargetSshAddress or None."""
-        self.assertEqual(
-            self.ffx_obj_wo_ip.get_target_ssh_address(),
-            custom_types.TargetSshAddress(ip=_SSH_ADDRESS, port=_SSH_PORT),
-        )
-        mock_ffx_run.assert_called_once()
-
-    @mock.patch.object(
-        ffx.FFX,
-        "run",
-        return_value=_MOCK_USB_ADDRESS,
-        autospec=True,
-    )
-    def test_get_target_ssh_address_returns_none_for_usb(
-        self, mock_ffx_run: mock.Mock
-    ) -> None:
-        """Verify deprecated get_target_ssh_address returns None for UsbAddress."""
-        self.assertIsNone(self.ffx_obj_wo_ip.get_target_ssh_address())
-        mock_ffx_run.assert_called_once()
-
-    # TODO: Remove test_resolve_target_address_deprecated once //vendor/google
-    # code is updated to use get_target_address(refresh=True).
-    @mock.patch.object(
-        ffx.FFX,
-        "_resolve_target_address",
-        autospec=True,
-    )
-    def test_resolve_target_address_deprecated(
-        self, mock_resolve_target_address: mock.Mock
-    ) -> None:
-        """Verify deprecated resolve_target_address calls _resolve_target_address."""
-        self.ffx_obj_wo_ip.resolve_target_address()
-        mock_resolve_target_address.assert_called_once_with(self.ffx_obj_wo_ip)
-
     @parameterized.expand(
         [
             ("missing_type", [{"addresses": [{}]}]),

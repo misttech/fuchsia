@@ -1799,10 +1799,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 self.fd_fc_obj.is_static_address,
                 parameterized_dict["expected"],
             )
-            self.assertEqual(
-                self.fd_fc_obj.is_static_ip,
-                parameterized_dict["expected"],
-            )
         finally:
             self.fd_fc_obj._device_info = orig_device_info
 
@@ -2560,21 +2556,6 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             log_status_on_failure=False,
         )
         mock_fuchsia_device_health_check.assert_called_once()
-
-    # TODO: Remove test_resolve_device_ip_deprecated once //vendor/google code
-    # is updated to use resolve_device_address().
-    @mock.patch.object(
-        fuchsia_device.FuchsiaDevice,
-        "resolve_device_address",
-        autospec=True,
-    )
-    async def test_resolve_device_ip_deprecated(
-        self,
-        mock_resolve_device_address: mock.Mock,
-    ) -> None:
-        """Testcase for deprecated FuchsiaDevice.resolve_device_ip()"""
-        await self.fd_fc_obj.resolve_device_ip()
-        mock_resolve_device_address.assert_called_once_with(self.fd_fc_obj)
 
     # Verifies FuchsiaDevice.resolve_device_address() re-resolves target address for USB-connected devices.
     @mock.patch.object(

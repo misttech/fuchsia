@@ -82,17 +82,6 @@ class FuchsiaController:
         self.create_context()
         self.check_connection()
 
-    # TODO: Remove _target_ip_port once //vendor/google code is updated to use
-    # _target_addr.
-    @property
-    def _target_ip_port(self) -> custom_types.TargetAddr | None:
-        """Deprecated alias for _target_addr."""
-        return self._target_addr
-
-    @_target_ip_port.setter
-    def _target_ip_port(self, value: custom_types.TargetAddr | None) -> None:
-        self._target_addr = value
-
     def create_context(self) -> None:
         """Creates the fuchsia-controller context.
 

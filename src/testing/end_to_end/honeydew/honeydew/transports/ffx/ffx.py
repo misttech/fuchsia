@@ -320,29 +320,6 @@ class FFX:
         assert self._target_addr is not None
         return self._target_addr
 
-    # TODO: Remove resolve_target_address() once //vendor/google code is
-    # updated to use get_target_address(refresh=True).
-    def resolve_target_address(self) -> None:
-        """Resolves the target using 'ffx target list' and caches it."""
-        self._resolve_target_address()
-
-    # TODO: Remove get_target_ssh_address() once //vendor/google code is
-    # updated to use get_target_address().
-    def get_target_ssh_address(self) -> custom_types.TargetSshAddress | None:
-        """Returns the target's ssh ip address and port information.
-
-        Returns:
-            (Target SSH IP Address, Target SSH Port) if address is an IP, None otherwise.
-
-        Raises:
-            DeviceNotConnectedError: If FFX fails to reach target.
-            FfxCommandError: In case of other FFX command failure.
-        """
-        addr = self.get_target_address()
-        if isinstance(addr, custom_types.IpPort):
-            return custom_types.TargetSshAddress(ip=addr.ip, port=addr.port)
-        return None
-
     def get_target_board(self) -> str:
         """Returns the target's board.
 

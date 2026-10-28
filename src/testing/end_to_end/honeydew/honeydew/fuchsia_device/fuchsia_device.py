@@ -261,13 +261,6 @@ class FuchsiaDevice(
             and common.is_infra()
         )
 
-    # TODO: Remove is_static_ip once //vendor/google code is updated to use
-    # is_static_address.
-    @property
-    def is_static_ip(self) -> bool:
-        """Returns True if the device was created with a statically provided IP."""
-        return self.is_static_address
-
     async def manufacturer(self) -> str:
         """Returns the manufacturer of the device, cached after the first retrieval.
 
@@ -1177,12 +1170,6 @@ class FuchsiaDevice(
 
         # Step #3 - Ensure device is healthy
         self.health_check()
-
-    # TODO: Remove resolve_device_ip() once //vendor/google code is updated to
-    # use resolve_device_address().
-    async def resolve_device_ip(self) -> None:
-        """Resolves the IP address of Fuchsia device."""
-        await self.resolve_device_address()
 
     def register_for_on_device_address_change(
         self,

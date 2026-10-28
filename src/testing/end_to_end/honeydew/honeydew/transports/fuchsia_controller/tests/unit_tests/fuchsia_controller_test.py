@@ -143,18 +143,6 @@ class FuchsiaControllerTests(unittest.TestCase):
             new_ip_port,
         )
         self.assertEqual(
-            self.fuchsia_controller_obj_with_device_ip._target_ip_port,
-            new_ip_port,
-        )
-        self.fuchsia_controller_obj_with_device_ip._target_ip_port = (
-            _TARGET_IP_PORT
-        )
-        self.assertEqual(
-            self.fuchsia_controller_obj_with_device_ip._target_addr,
-            _TARGET_IP_PORT,
-        )
-        self.fuchsia_controller_obj_with_device_ip._target_addr = new_ip_port
-        self.assertEqual(
             self.fuchsia_controller_obj_with_device_ip._target,
             str(new_ip_port),
         )

@@ -67,8 +67,6 @@ class FfxConfigData:
     ssh_auth_sock: str | None = None
     identities_only: bool | None = None
     shared_data: str | None = None
-    # TODO: Remove isolate_dir once //vendor/google code is updated.
-    isolate_dir: Any = None
 
     def __str__(self) -> str:
         return (
@@ -160,8 +158,6 @@ class FfxConfig:
         ssh_auth_sock: str | None = None,
         identities_only: bool | None = None,
         shared_data: str | None = None,
-        # TODO: Remove isolate_dir once //vendor/google code is updated.
-        isolate_dir: str | None = None,  # pylint: disable=unused-argument
     ) -> None:
         """Sets up configuration need to be used while running FFX command.
 

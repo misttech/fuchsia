@@ -19,13 +19,6 @@ class RebootCapableDevice(abc.ABC):
     def is_static_address(self) -> bool:
         """Returns True if the device was created with a statically provided address."""
 
-    # TODO: Remove is_static_ip once //vendor/google code is updated to use
-    # is_static_address.
-    @property
-    def is_static_ip(self) -> bool:
-        """Returns True if the device was created with a statically provided IP."""
-        return self.is_static_address
-
     @abc.abstractmethod
     async def reboot(self) -> None:
         """Soft reboot the device."""

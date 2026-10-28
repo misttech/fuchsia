@@ -229,15 +229,6 @@ class CustomTypesTests(unittest.TestCase):
         )
         self.assertIsNone(info_none.address)
 
-        info_legacy_ip_port = custom_types.DeviceInfo(
-            name="dut",
-            serial_number=None,
-            ip_port=ip_port,
-            serial_socket=None,
-        )
-        self.assertEqual(info_legacy_ip_port.address, ip_port)
-        self.assertEqual(info_legacy_ip_port.ip_port, ip_port)
-
     def test_mac_with_bytes(self) -> None:
         """Test if initialization works for valid bytes."""
         mac = custom_types.MacAddress(

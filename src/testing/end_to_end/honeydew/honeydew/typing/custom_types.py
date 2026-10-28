@@ -190,18 +190,6 @@ class IpPort(TargetAddr):
         return str(self.ip)
 
 
-# TODO: Remove TargetSshAddress once //vendor/google code is updated to use
-# get_target_address() and IpPort.
-@dataclass(frozen=True)
-class TargetSshAddress(IpPort):
-    """Dataclass that holds target's ssh address information.
-
-    Args:
-        ip: Target's SSH IP Address
-        port: Target's SSH port
-    """
-
-
 @dataclass(frozen=True)
 class DeviceInfo:
     """Dataclass that holds Fuchsia device information.
@@ -212,7 +200,6 @@ class DeviceInfo:
         address: Target address of the device (IP or USB).
         serial_socket: Device serial socket path.
         fastboot_node_id: Fastboot node ID.
-        ip_port: Deprecated. Use `address` instead.
     """
 
     name: str
@@ -220,15 +207,8 @@ class DeviceInfo:
     address: TargetAddr | None = None
     serial_socket: str | None = None
     fastboot_node_id: str | None = None
-    # TODO: Remove ip_port once //vendor/google code is updated to use address.
-    ip_port: IpPort | None = None
 
     def __post_init__(self) -> None:
-        if self.address is None and self.ip_port is not None:
-            object.__setattr__(self, "address", self.ip_port)
-        elif self.ip_port is None and isinstance(self.address, IpPort):
-            object.__setattr__(self, "ip_port", self.address)
-
         for attr in ("serial_number", "serial_socket", "fastboot_node_id"):
             val = getattr(self, attr)
             if isinstance(val, str):
