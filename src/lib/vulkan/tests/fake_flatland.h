@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef SRC_LIB_VULKAN_TESTS_FAKE_FLATLAND_H_
+#define SRC_LIB_VULKAN_TESTS_FAKE_FLATLAND_H_
+
 #include <dlfcn.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl_test_base.h>
@@ -10,6 +13,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/binding.h>
+#include <lib/zx/clock.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
 
@@ -183,14 +187,15 @@ class FakeFlatland : public fuchsia::ui::composition::testing::Allocator_TestBas
 
     pending_present_count_++;
     if (!squashable(args) || pending_present_count_ == 1) {
-      static zx::time last_present_time;
+      constexpr zx::duration kVsyncPeriod = zx::usec(16666);
       zx::time current_time = zx::clock::get_monotonic();
-      zx::duration time_since_last_present = current_time - last_present_time;
-      zx::duration time_to_next_vsync = zx::usec(16666) - time_since_last_present;
-      if (time_to_next_vsync < zx::duration(0)) {
-        time_to_next_vsync = zx::duration(0);
+      zx::duration time_since_last_present = current_time - last_present_time_;
+      zx::duration time_to_next_vsync = kVsyncPeriod - time_since_last_present;
+      if (time_to_next_vsync <= zx::duration(0)) {
+        time_to_next_vsync =
+            (squashable(args) && !presented_.empty()) ? kVsyncPeriod : zx::duration(0);
       }
-      last_present_time = current_time + time_to_next_vsync;
+      last_present_time_ = current_time + time_to_next_vsync;
 
       zx_status_t status = async::PostDelayedTask(
           loop_.dispatcher(),
@@ -266,6 +271,7 @@ class FakeFlatland : public fuchsia::ui::composition::testing::Allocator_TestBas
   std::mutex mutex_;
   std::vector<Presented> presented_;
   std::set<uint64_t> acquire_fences_;
+  zx::time last_present_time_;
   int pending_present_count_ = 0;
   std::atomic_int dropped_frame_count_ = 0;
 };
@@ -298,3 +304,5 @@ void GetFakeFlatlandInjectedToLib(std::unique_ptr<FakeFlatland>* flatland, bool 
 }
 
 }  // namespace
+
+#endif  // SRC_LIB_VULKAN_TESTS_FAKE_FLATLAND_H_

@@ -10,6 +10,8 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/zx/channel.h>
+#include <lib/zx/clock.h>
+#include <lib/zx/time.h>
 
 #include <chrono>
 #include <future>
@@ -761,6 +763,8 @@ TEST_P(TEST_CLASS_NAME, FifoAcquireAndPresent) {
   ASSERT_EQ(VK_SUCCESS, vkCreateSemaphore(test_->vk_device_, &semaphore_create_info, nullptr,
                                           &acquire_semaphore));
 
+  std::vector<VkImage> swapchain_images = test_->GetSwapchainImages(swapchain);
+
   constexpr uint32_t kFrameCount = 1000;
   for (uint32_t i = 0; i < kFrameCount; i++) {
     uint32_t image_index;
@@ -769,8 +773,6 @@ TEST_P(TEST_CLASS_NAME, FifoAcquireAndPresent) {
               test_->acquire_next_image_khr_(test_->vk_device_, swapchain, kTimeoutNs,
                                              acquire_semaphore, VK_NULL_HANDLE, &image_index))
         << "failed on frame " << i << " of " << kFrameCount;
-
-    auto swapchain_images = test_->GetSwapchainImages(swapchain);
 
     test_->TransitionLayout(swapchain_images[image_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                             acquire_semaphore);
@@ -836,6 +838,9 @@ TEST_P(TEST_CLASS_NAME, ImmediateAcquireAndPresent) {
   ASSERT_EQ(VK_SUCCESS, vkCreateSemaphore(test_->vk_device_, &semaphore_create_info, nullptr,
                                           &acquire_semaphore));
 
+  std::vector<VkImage> swapchain_images = test_->GetSwapchainImages(swapchain);
+  zx::time next_present_time = zx::clock::get_monotonic();
+
   constexpr uint32_t kFrameCount = 1000;
   for (uint32_t i = 0; i < kFrameCount; i++) {
     uint32_t image_index;
@@ -845,8 +850,6 @@ TEST_P(TEST_CLASS_NAME, ImmediateAcquireAndPresent) {
                                              acquire_semaphore, VK_NULL_HANDLE, &image_index))
         << "failed on frame " << i << " of " << kFrameCount;
 
-    auto swapchain_images = test_->GetSwapchainImages(swapchain);
-
     test_->TransitionLayout(swapchain_images[image_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                             acquire_semaphore);
 
@@ -854,7 +857,9 @@ TEST_P(TEST_CLASS_NAME, ImmediateAcquireAndPresent) {
     // utility has limits on pending presents so keep the present frequency reasonable.
     constexpr int kVsyncPeriodUs = 16667;
     constexpr int kMaxPresentsPerFrame = 10;
-    usleep(kVsyncPeriodUs / kMaxPresentsPerFrame);
+    zx::nanosleep(next_present_time);
+    next_present_time =
+        zx::clock::get_monotonic() + zx::usec(kVsyncPeriodUs / kMaxPresentsPerFrame);
 
     VkResult present_result;
     VkPresentInfoKHR present_info = {
