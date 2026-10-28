@@ -128,7 +128,7 @@ void PmmMock::CleanDataCacheRange(vaddr_t addr, size_t size) {
   }
 }
 
-void PmmMock::OnPteWrite(uint64_t* slot, uint64_t new_val, uint32_t level) {
+void PmmMock::OnPteWrite(const uint64_t* slot, uint64_t new_val, uint32_t level) {
   const paddr_t slot_pa = reinterpret_cast<paddr_t>(slot);
   const paddr_t table_pa = slot_pa & ~paddr_t{kPageSize - 1};
   const uint32_t index = static_cast<uint32_t>((slot_pa & (kPageSize - 1)) / sizeof(uint64_t));

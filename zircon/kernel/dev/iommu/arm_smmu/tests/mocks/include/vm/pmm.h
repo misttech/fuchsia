@@ -40,7 +40,7 @@ class PmmMock {
   void ClearAllocationLimit();
 
   void CleanDataCacheRange(vaddr_t addr, size_t size);
-  void OnPteWrite(uint64_t* slot, uint64_t new_val, uint32_t level);
+  void OnPteWrite(const uint64_t* slot, uint64_t new_val, uint32_t level);
   // Reports that [addr, addr + size) of a translation table page is about to be
   // zero-filled. Observers see it as a clear of every non-zero descriptor in
   // the range, at level kPteLevelUnknown.

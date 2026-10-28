@@ -22,6 +22,7 @@ cc_test_executable("arm_smmu_tests_binary") {
     "../device_aspace.cc",
     "../smmu.cc",
     "../smmu_bti.cc",
+    "../smmu_env_ffi.cc",
     "../smmu_mode.cc",
     "../smmu_pmt.cc",
     "../stream_match_reg_group.cc",

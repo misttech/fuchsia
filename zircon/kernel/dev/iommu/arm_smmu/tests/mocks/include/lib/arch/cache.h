@@ -18,7 +18,7 @@ inline void CleanDataCacheRange(uint64_t addr, size_t size) {
   PmmMock::Get().CleanDataCacheRange(addr, size);
 }
 
-inline void OnPteWrite(uint64_t* slot, uint64_t new_val, uint32_t level) {
+inline void OnPteWrite(const uint64_t* slot, uint64_t new_val, uint32_t level) {
   PmmMock::Get().OnPteWrite(slot, new_val, level);
 }
 

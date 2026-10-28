@@ -48,6 +48,7 @@ pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
     unsafe { cpp_arm64_cpu_num_to_mpidr(cpu_num) }
 }
 
+pub use cache::clean_dcache_range;
 pub use libarch::arm64::{device_memory_barrier, isb, thread_memory_barrier, wfi};
 pub use periphmap::periph_paddr_to_vaddr;
 pub use user_copy::{

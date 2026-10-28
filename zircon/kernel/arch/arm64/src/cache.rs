@@ -40,6 +40,19 @@ unsafe extern "C" {
     pub fn InvalidateInstructionCacheRange(addr: usize, size: usize);
 }
 
+/// Cleans the data cache over `[start, start + len)` to the Point of Coherency (PoC).
+///
+/// # Safety
+///
+/// `[start, start + len)` must be a valid mapped kernel virtual address range (or `len == 0`).
+#[inline]
+pub unsafe fn clean_dcache_range(start: usize, len: usize) {
+    // SAFETY: Caller guarantees `[start, start + len)` is a valid mapped kernel address range.
+    unsafe {
+        arch_clean_cache_range(start, len);
+    }
+}
+
 /// Invalidate the entire instruction cache.
 #[inline]
 pub fn invalidate_global_instruction_cache() {

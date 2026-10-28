@@ -7,6 +7,12 @@
 #ifndef ZIRCON_KERNEL_DEV_IOMMU_ARM_SMMU_TESTS_MOCKS_INCLUDE_KERNEL_FFI_H_
 #define ZIRCON_KERNEL_DEV_IOMMU_ARM_SMMU_TESTS_MOCKS_INCLUDE_KERNEL_FFI_H_
 
+#ifdef __clang__
+#define FFI_ALWAYS_INLINE [[gnu::always_inline]]
+#else
+#define FFI_ALWAYS_INLINE
+#endif
+
 namespace ffi {
 template <typename T>
 struct Uninitialized {};
