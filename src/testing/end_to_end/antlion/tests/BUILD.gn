@@ -19,9 +19,9 @@ group("e2e_tests") {
       # fuchsia_internal builders.
       connectivity_policy_e2e_tests_for_staging +
       connectivity_policy_e2e_tests_for_postsubmit +
-      connectivity_policy_e2e_tests_for_presubmit + core_tests_for_fyi_iperf +
-      core_tests_for_fyi_iperf_attenuator + core_tests_for_fyi_long +
-      wlancfg_tests_for_presubmit + wlancfg_tests_for_wlan_presubmit +
-      wlancfg_tests_for_postsubmit + wlancfg_tests_for_fyi +
-      wlancfg_tests_for_fyi_long
+      connectivity_policy_e2e_tests_for_presubmit + core_tests_for_fyi +
+      core_tests_for_fyi_iperf + core_tests_for_fyi_iperf_attenuator +
+      core_tests_for_fyi_long + wlancfg_tests_for_presubmit +
+      wlancfg_tests_for_wlan_presubmit + wlancfg_tests_for_postsubmit +
+      wlancfg_tests_for_fyi + wlancfg_tests_for_fyi_long
 }

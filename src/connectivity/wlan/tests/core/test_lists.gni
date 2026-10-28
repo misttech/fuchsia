@@ -51,6 +51,9 @@ core_tests_for_postsubmit = [
 # above.
 core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:association_rejection_test",
+  "//src/connectivity/wlan/tests/core:phy_compliance_abg_test",
+  "//src/connectivity/wlan/tests/core:phy_compliance_ac_test",
+  "//src/connectivity/wlan/tests/core:phy_compliance_n_test",
   "//src/connectivity/wlan/tests/core:phy_reset_test",  # Note: no shield box
                                                         # needed
   "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
@@ -71,8 +74,4 @@ core_tests_for_fyi_iperf_attenuator = [
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run
 # them at reduced frequency.
-core_tests_for_fyi_long = [
-  "//src/connectivity/wlan/tests/core:phy_compliance_ac_test",
-  "//src/connectivity/wlan/tests/core:phy_compliance_n_test",
-  "//src/connectivity/wlan/tests/core:phy_compliance_abg_test",
-]
+core_tests_for_fyi_long = []
