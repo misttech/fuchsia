@@ -1400,6 +1400,16 @@ def check_rust_target_attr_alignment_info(
         if gn_rustenv and bz_rustc_env
         else [""]
     )
+    # Cover `rustc_test(crate = ":<crate>")` targets that inherit `edition` from `crate`
+    # in Bazel while `bazel2gn` emits `edition` explicitly on the generated GN `rustc_test`.
+    edition_opts = (
+        ["", "edition in GN not carried over to Bazel"]
+        if bt_rule in ("rustc_test", "rust_test")
+        and "crate" in bt_kws
+        and "edition" not in bt_kws
+        and ("edition" in gn_top or (cur_top and "edition" in cur_top))
+        else [""]
+    )
     is_feat_lib = tmpl == "rustc_library_with_features" and bt_rule == "rustc_library"
     # Rust tests with `crate = ":<lib>"` inherit `edition`, `crate_root` (`source_root`),
     # and `rustc_env` (`rustenv`) from the referenced crate in both rules_rust and bazel2gn.
@@ -1427,16 +1437,17 @@ def check_rust_target_attr_alignment_info(
     for r_len in range(1, len(extra_notes) + 1):
         extra_opts.extend(itertools.permutations(extra_notes, r_len))
     seen_msgs = set()
-    for c1, c2, c3, c4, c5, c6, ext in itertools.product(
+    for c1, c2, c3, c4, c5, c6, c7, ext in itertools.product(
         crate_name_opts,
         lint_cfg_opts,
         output_name_opts,
         cfg_opts,
         unit_test_opts,
         rustenv_opts,
+        edition_opts,
         extra_opts,
     ):
-        notes = [x for x in (c1, c2, c3, c4, c5, c6, *ext) if x]
+        notes = [x for x in (c1, c2, c3, c4, c5, c6, c7, *ext) if x]
         if not notes:
             continue
         orders = itertools.permutations(notes) if len(notes) <= 3 else [tuple(notes)]

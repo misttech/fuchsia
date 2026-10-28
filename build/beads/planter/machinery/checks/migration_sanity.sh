@@ -3693,7 +3693,9 @@ for pkg_dir in sorted(candidate_dirs):
                         local = l.split(":", 1)[1]
                 if local:
                     pkg_test_deps.add(local)
-                    comp = gn_info["pre_targets"].get(local)
+                    comp = gn_info["pre_targets"].get(local) or gn_info.get(
+                        "post_targets", {}
+                    ).get(local)
                     if comp and comp[0] in ("fuchsia_test_component", "fuchsia_unittest_component", "fuchsia_component"):
                         for cm in re.finditer(r"\bdeps\s*\+?=\s*\[([^\]]*)\]", comp[2]):
                             for cl in re.findall(r'"([^"]+)"', cm.group(1)):
@@ -4202,20 +4204,36 @@ for pkg_dir in sorted(candidate_dirs):
         has_bridge_files = os.path.isfile(os.path.join(workdir, bridge_gn_rel)) or os.path.isfile(
             os.path.join(workdir, bridge_bazel_rel)
         )
+        # Match references to the package's own bridge directory (`//<bridge_dir_rel>`,
+        # `//<bridge_dir_rel>:<target>`, or `//<bridge_dir_rel>(...)`), excluding
+        # unmigrated child subpackage bridges (`//<bridge_dir_rel>/<sub>...`).
+        bridge_label_re = re.compile(
+            r'"//' + re.escape(bridge_dir_rel) + r'(?:[:(][^"]*)?"'
+        )
         in_assembly_bazel = False
         if os.path.isfile(os.path.join(workdir, assembly_bazel_rel)):
             try:
-                in_assembly_bazel = f"//{bridge_dir_rel}" in open(
-                    os.path.join(workdir, assembly_bazel_rel), encoding="utf-8"
-                ).read()
+                asm_bz_clean = re.sub(
+                    r"#[^\n]*",
+                    "",
+                    open(
+                        os.path.join(workdir, assembly_bazel_rel), encoding="utf-8"
+                    ).read(),
+                )
+                in_assembly_bazel = bridge_label_re.search(asm_bz_clean) is not None
             except Exception:
                 pass
         in_assembly_inputs_gn = False
         if os.path.isfile(os.path.join(workdir, assembly_inputs_gn_rel)):
             try:
-                in_assembly_inputs_gn = f"//{bridge_dir_rel}" in open(
-                    os.path.join(workdir, assembly_inputs_gn_rel), encoding="utf-8"
-                ).read()
+                asm_in_clean = re.sub(
+                    r"#[^\n]*",
+                    "",
+                    open(
+                        os.path.join(workdir, assembly_inputs_gn_rel), encoding="utf-8"
+                    ).read(),
+                )
+                in_assembly_inputs_gn = bridge_label_re.search(asm_in_clean) is not None
             except Exception:
                 pass
         # Verify whether an assembly bazel_inputs bridge points to a GN package target
