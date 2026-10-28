@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# "symbol-index is used cross toolchain with
+#  //sdk.
+# @bazel2gn:raw_attribute:deps += [ ":symbol_index_json($default_toolchain)" ]
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "symbol_index",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/debug/ffx_zxdb:__pkg__",
+        "//src/developer/ffx:__subpackages__",
+    ],
+    deps = [
+        "//src/developer/ffx/config:lib",
+        "//src/developer/ffx/lib/errors:lib",
+        "//third_party/rust_crates/vendor:glob",
+        "//third_party/rust_crates/vendor:schemars",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
