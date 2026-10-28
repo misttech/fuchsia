@@ -1,0 +1,74 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "guest_cli",
+    srcs = [
+        "src/attach.rs",
+        "src/balloon.rs",
+        "src/launch.rs",
+        "src/lib.rs",
+        "src/list.rs",
+        "src/mem.rs",
+        "src/platform/fuchsia.rs",
+        "src/platform/host.rs",
+        "src/platform/mod.rs",
+        "src/socat.rs",
+        "src/stop.rs",
+        "src/vsockperf.rs",
+    ],
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/virtualization/bin/guest:__pkg__",
+        "//src/virtualization/ffx:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_rust",
+        "//sdk/rust/zx-status",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/virtualization/lib/cli/args:guest_cli_args",
+        # prettytable-rs is a fork outside vendor/; GN reaches it through
+        # the //third_party/rust_crates:prettytable-rs alias group.
+        "//third_party/rust_crates/forks/prettytable-rs:prettytable",  # @bazel2gn:path_overwrite://third_party/rust_crates:prettytable-rs
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:blocking",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:serde",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/lib/fuchsia-component"],
+        "//conditions:default": [],
+    }) + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+            "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "guest_cli_test",
+    crate = ":guest_cli",
+    edition = "2024",
+    deps = [
+        "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
+        "//src/lib/async-utils",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_unittest_package(
+    name = "guest_cli_tests",
+    unit_tests = [":guest_cli_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)

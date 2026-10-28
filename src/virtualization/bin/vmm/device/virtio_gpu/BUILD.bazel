@@ -1,0 +1,104 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+_COMMON_SOURCES = [
+    "src/gpu_command.rs",
+    "src/gpu_device.rs",
+    "src/main.rs",
+    "src/resource.rs",
+    "src/scanout.rs",
+    "src/wire.rs",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//sdk/fidl/fuchsia.element:fuchsia.element_rust",
+    "//sdk/fidl/fuchsia.math:fuchsia.math_rust",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_rust",
+    "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_rust",
+    "//sdk/fidl/fuchsia.virtualization.hardware:fuchsia.virtualization.hardware_rust",
+    "//sdk/rust/zx",
+    "//src/lib/async-utils",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/mapped-vmo",
+    "//src/lib/ui/fuchsia-scenic",
+    "//src/virtualization/lib/machina-virtio-device",
+    "//src/virtualization/lib/virtio-device",
+    "//third_party/rust_crates/vendor:anyhow",
+    "//third_party/rust_crates/vendor:futures",
+    "//third_party/rust_crates/vendor:log",
+    "//third_party/rust_crates/vendor:zerocopy",
+]
+
+rustc_binary(
+    name = "virtio_gpu_bin",
+    srcs = _COMMON_SOURCES,
+    edition = "2024",
+    tags = ["manual"],
+    deps = _COMMON_DEPS + [
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_rust",
+        "//src/lib/ui/fuchsia-framebuffer",
+    ],
+)
+
+rustc_test(
+    name = "virtio_gpu_bin_test",
+    srcs = _COMMON_SOURCES,
+    crate_root = "src/main.rs",
+    edition = "2024",
+    deps = _COMMON_DEPS,
+)
+
+fx_unittest_package(
+    name = "virtio_gpu_unittests",
+    unit_tests = [":virtio_gpu_bin_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "virtio_gpu_packaged_bin",
+    binary = ":virtio_gpu_bin",
+    binary_name = "virtio_gpu_bin",
+)
+
+fx_component_manifest(
+    name = "virtio_gpu_manifest",
+    component_name = "virtio_gpu",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard",
+    ],
+    manifest = "meta/virtio_gpu.cml",
+)
+
+fx_component(
+    name = "virtio_gpu_component",
+    compiled_manifest = ":virtio_gpu_manifest",
+    component_name = "virtio_gpu",
+    visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
+    deps = [":virtio_gpu_packaged_bin"],
+)
