@@ -60,7 +60,7 @@ const MIN_DURATION_BETWEEN_SNAPSHOTS_HOURS: zx::MonotonicDuration =
 
 #[derive(PartialEq, Debug)]
 pub enum ProfileReport {
-    Partial { provider_id: u64, process_name: String, profile: Vmo, size: u64, iteration: usize },
+    Partial { provider_id: u64, process_name: String, profile: Vmo, size: u64 },
     Final { provider_id: u64, process_name: String, profile: Vmo, size: u64 },
 }
 
@@ -182,16 +182,14 @@ fn sanitize_for_attachment_key(name: &str) -> String {
 /// as to not spam the crash reporting system. As a safe baseline, aim
 /// to never file more than a crash report per hour.
 ///
-/// Note: Attached final profiles, are grouped by process name, then
-/// numbered, and carry the `PROFILE_ATTACHMENT_EXTENSION` extension.
-/// Characters disallowed in `fuchsia.feedback/Attachment` keys (spaces,
-/// `'/'`, and non-printable ASCII) are replaced with `'_'`.
-/// E.g. if there are two final profiles for "process 1" and one profile
-/// for "process 2", then they will be named "process_1_final_0.pb.gz",
-/// "process_1_final_1.pb.gz" and "process_2_final_0.pb.gz". Partial
-/// profiles are numbered by their index; currently no further effort
-/// is done to distinguish partial profiles from different processes
-/// that share the same name.
+/// Note: Attached final and partial profiles are grouped by process
+/// name and kind, then numbered sequentially, and carry the
+/// `PROFILE_ATTACHMENT_EXTENSION` extension. Characters disallowed in
+/// `fuchsia.feedback/Attachment` keys (spaces, `'/'`, and non-printable
+/// ASCII) are replaced with `'_'`. E.g. if there are two final profiles
+/// for "process 1" and one partial profile for "process 2", then they
+/// will be named "process_1_final_0.pb.gz", "process_1_final_1.pb.gz"
+/// and "process_2_partial_0.pb.gz".
 ///
 /// Warning: panics if called with more than
 /// `MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT` profiles.
@@ -203,28 +201,21 @@ async fn file_report(
     if profiles.is_empty() {
         return Ok(());
     }
-    let mut final_counts: HashMap<String, usize> = HashMap::new();
+    let mut counts: HashMap<String, usize> = HashMap::new();
     let attachments: Vec<Attachment> = profiles
         .into_iter()
         .map(|profile_report| {
-            let (key, profile, size) = match profile_report {
+            let (process_name, kind, profile, size) = match profile_report {
                 ProfileReport::Final { process_name, profile, size, .. } => {
-                    let sanitized = sanitize_for_attachment_key(&process_name);
-                    let i =
-                        *final_counts.entry(sanitized.clone()).and_modify(|c| *c += 1).or_insert(0);
-                    (format!("{sanitized}_final_{i}{PROFILE_ATTACHMENT_EXTENSION}"), profile, size)
+                    (process_name, "final", profile, size)
                 }
-                ProfileReport::Partial { process_name, profile, size, iteration, .. } => (
-                    format!(
-                        "{}_partial_{}{}",
-                        sanitize_for_attachment_key(&process_name),
-                        iteration,
-                        PROFILE_ATTACHMENT_EXTENSION
-                    ),
-                    profile,
-                    size,
-                ),
+                ProfileReport::Partial { process_name, profile, size, .. } => {
+                    (process_name, "partial", profile, size)
+                }
             };
+            let prefix = format!("{}_{}", sanitize_for_attachment_key(&process_name), kind);
+            let i = *counts.entry(prefix.clone()).and_modify(|c| *c += 1).or_insert(0);
+            let key = format!("{prefix}_{i}{PROFILE_ATTACHMENT_EXTENSION}");
             Attachment { key, value: Buffer { vmo: profile, size } }
         })
         .collect();
@@ -366,7 +357,7 @@ mod test {
     /// Note: this function assumes the following format for `Attachment::key`,
     /// where `<ext>` is `PROFILE_ATTACHMENT_EXTENSION`:
     ///   - `<process_name>_final_<index><ext>` if it is a complete report.
-    ///   - `<process_name>_partial_<iteration><ext>` if it is a partial report.
+    ///   - `<process_name>_partial_<index><ext>` if it is a partial report.
     fn retrieve_profile_from_attachment(attachment: Attachment) -> ProfileReport {
         let Attachment { key, value, .. } = attachment;
         let profile = value.vmo;
@@ -375,6 +366,7 @@ mod test {
             .strip_suffix(PROFILE_ATTACHMENT_EXTENSION)
             .unwrap_or_else(|| panic!("Attachment name misses the profile extension: {}", key));
         let (prefix_key, index) = stem.rsplit_once('_').unwrap();
+        let _: usize = index.parse().unwrap();
         let (process_name, suffix) = prefix_key.rsplit_once('_').unwrap();
         let is_final = match suffix {
             "final" => true,
@@ -394,7 +386,6 @@ mod test {
                 process_name: process_name.to_string(),
                 profile,
                 size,
-                iteration: index.parse().unwrap(),
             }
         }
     }
@@ -508,12 +499,11 @@ mod test {
             .clone()
             .into_iter()
             .enumerate()
-            .map(|(iteration, (process_name, size))| ProfileReport::Partial {
-                provider_id: iteration as u64 + 1,
+            .map(|(idx, (process_name, size))| ProfileReport::Partial {
+                provider_id: idx as u64 + 1,
                 process_name,
                 size,
                 profile: create_vmo_with_some_data(size as usize),
-                iteration,
             })
             .collect();
 
@@ -528,34 +518,35 @@ mod test {
 
         assert_eq!(report.program_name, Some(CRASH_PROGRAM_NAME.to_string()));
         assert_eq!(report.crash_signature, Some(CRASH_SIGNATURE.to_string()));
-        assert!(
-            report.attachments.as_ref().unwrap().iter().all(|a| a.key.ends_with(".pb.gz")),
-            "Attachments should be named after the profile format."
+        assert_eq!(
+            report.attachments.as_ref().unwrap().iter().map(|a| a.key.as_str()).collect::<Vec<_>>(),
+            vec![
+                "test_process_1_partial_0.pb.gz",
+                "test_process_2_partial_0.pb.gz",
+                "test_process_1_partial_1.pb.gz",
+            ]
         );
-        let attachments: Vec<(String, Vec<u8>, u64, usize)> = report
+        let attachments: Vec<(String, Vec<u8>, u64)> = report
             .attachments
             .unwrap()
             .into_iter()
             .map(retrieve_profile_from_attachment)
             .map(|p| match p {
-                ProfileReport::Partial { process_name, profile, size, iteration, .. } => {
-                    (process_name, profile.read_to_vec(0, size).unwrap(), size, iteration)
+                ProfileReport::Partial { process_name, profile, size, .. } => {
+                    (process_name, profile.read_to_vec(0, size).unwrap(), size)
                 }
                 _ => panic!("Expected a partial report, but received a complete report instead."),
             })
             .collect();
         assert_equal(
             attachments.into_iter(),
-            profiles_metadata.clone().into_iter().enumerate().map(
-                |(iteration, (process_name, size))| {
-                    (
-                        process_name,
-                        create_vmo_with_some_data(size as usize).read_to_vec(0, size).unwrap(),
-                        size,
-                        iteration,
-                    )
-                },
-            ),
+            profiles_metadata.into_iter().map(|(process_name, size)| {
+                (
+                    process_name,
+                    create_vmo_with_some_data(size as usize).read_to_vec(0, size).unwrap(),
+                    size,
+                )
+            }),
         );
     }
 
@@ -681,14 +672,13 @@ mod test {
         // profiles than a single report can take.
         let attachments_per_report = MAX_NUM_ATTACHMENTS_PER_CRASH_REPORT as usize;
         let size = 42;
-        for iteration in 0..attachments_per_report {
+        for idx in 0..attachments_per_report {
             sender
                 .try_send(ProfileReport::Partial {
-                    provider_id: iteration as u64 + 1,
-                    process_name: format!("test_process_{iteration}"),
+                    provider_id: idx as u64 + 1,
+                    process_name: format!("test_process_{idx}"),
                     size,
                     profile: create_vmo_with_some_data(size as usize),
-                    iteration,
                 })
                 .expect("Queue should hold a full report worth of profiles.");
         }
@@ -717,12 +707,12 @@ mod test {
         builder.deallocate(0x100, vec![30, 40]);
         // Address 0x200: allocated in Partial 0 and still alive at Partial 0.
         builder.allocate_with_scale(0x200, vec![50, 60], 200, 1.0);
-        let partial_0 = builder.build_partial_profile(0).unwrap();
+        let partial_0 = builder.build_partial_profile().unwrap();
 
         // Address 0x200 is freed during Partial 1's window, and 0x300 remains live.
         builder.deallocate(0x200, vec![70, 80]);
         builder.allocate_with_scale(0x300, vec![90, 100], 300, 1.0);
-        let partial_1 = builder.build_partial_profile(1).unwrap();
+        let partial_1 = builder.build_partial_profile().unwrap();
 
         // Queue both partial profiles before the task runs so they coalesce in the same report.
         sender.try_send(partial_0).unwrap();
@@ -736,7 +726,7 @@ mod test {
 
         let attachments = report.attachments.unwrap();
         assert_eq!(1, attachments.len());
-        assert_eq!("coalesced_proc_partial_1.pb.gz", attachments[0].key);
+        assert_eq!("coalesced_proc_partial_0.pb.gz", attachments[0].key);
 
         let merged = vmo_to_profile(&attachments[0].value.vmo, attachments[0].value.size).unwrap();
         // Live sample (0x300), two dead allocation sites (0x100 and 0x200), two dealloc sites.
@@ -761,7 +751,7 @@ mod test {
         builder.allocate_with_scale(0x1, vec![1, 2], 64, 1.0);
         builder.deallocate(0x1, vec![3, 4]);
         builder.allocate_with_scale(0x2, vec![5, 6], 128, 1.0);
-        let partial = builder.build_partial_profile(0).unwrap();
+        let partial = builder.build_partial_profile().unwrap();
         let final_report = builder.build().unwrap();
 
         sender.try_send(partial).unwrap();
@@ -796,7 +786,7 @@ mod test {
         let mut instance_1 = ProfileBuilder::default();
         instance_1.set_process_info(Some("respawning_proc".to_string()), std::iter::empty());
         instance_1.allocate_with_scale(0x10, vec![1, 2], 64, 1.0);
-        let inst1_partial = instance_1.build_partial_profile(0).unwrap();
+        let inst1_partial = instance_1.build_partial_profile().unwrap();
         let inst1_final = instance_1.build().unwrap();
 
         // Second (respawned) instance of "respawning_proc" with a new provider_id emits two
@@ -805,14 +795,14 @@ mod test {
         let mut instance_2 = ProfileBuilder::default();
         instance_2.set_process_info(Some("respawning_proc".to_string()), std::iter::empty());
         instance_2.allocate_with_scale(0x20, vec![3, 4], 128, 1.0);
-        let inst2_partial_0 = instance_2.build_partial_profile(0).unwrap();
+        let inst2_partial_0 = instance_2.build_partial_profile().unwrap();
         instance_2.allocate_with_scale(0x30, vec![5, 6], 256, 1.0);
-        let inst2_partial_1 = instance_2.build_partial_profile(1).unwrap();
+        let inst2_partial_1 = instance_2.build_partial_profile().unwrap();
 
         let mut instance_3 = ProfileBuilder::default();
         instance_3.set_process_info(Some("respawning_proc".to_string()), std::iter::empty());
         instance_3.allocate_with_scale(0x40, vec![7, 8], 512, 1.0);
-        let inst3_partial_0 = instance_3.build_partial_profile(0).unwrap();
+        let inst3_partial_0 = instance_3.build_partial_profile().unwrap();
 
         sender.try_send(inst1_partial).unwrap();
         sender.try_send(inst1_final).unwrap();
@@ -828,12 +818,12 @@ mod test {
 
         // Instance 1 coalesced (partial + final -> 1 final), Instance 2 coalesced
         // (partial 0 + partial 1 -> 1 partial), and Instance 3 remained separate (1 partial),
-        // yielding 3 distinct attachments rather than merging across providers.
+        // yielding 3 distinct attachments with unique sequential keys.
         let attachments = report.attachments.unwrap();
         assert_eq!(3, attachments.len());
         assert_eq!("respawning_proc_final_0.pb.gz", attachments[0].key);
-        assert_eq!("respawning_proc_partial_1.pb.gz", attachments[1].key);
-        assert_eq!("respawning_proc_partial_0.pb.gz", attachments[2].key);
+        assert_eq!("respawning_proc_partial_0.pb.gz", attachments[1].key);
+        assert_eq!("respawning_proc_partial_1.pb.gz", attachments[2].key);
     }
 
     #[fuchsia::test]
@@ -883,7 +873,7 @@ mod test {
         let mut slash_space_builder = ProfileBuilder::default();
         slash_space_builder
             .set_process_info(Some("/pkg/bin/my proc".to_string()), std::iter::empty());
-        let slash_space_partial = slash_space_builder.build_partial_profile(0).unwrap();
+        let slash_space_partial = slash_space_builder.build_partial_profile().unwrap();
 
         let (_, report) = try_join!(
             file_report(vec![tainted_final, slash_space_partial], &client),

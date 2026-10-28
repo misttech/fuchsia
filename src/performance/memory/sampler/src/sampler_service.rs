@@ -57,7 +57,6 @@ fn check_lossy_signal(socket: &Option<zx::Socket>, builder: &mut ProfileBuilder)
 async fn maybe_emit_partial_profile<'a>(
     builder: &'a mut ProfileBuilder,
     tx: &'a mut mpsc::Sender<ProfileReport>,
-    index: usize,
     mut time_of_last_profile: Instant,
     shared_socket: &Option<zx::Socket>,
 ) -> Result<Option<(&'a mut ProfileBuilder, &'a mut mpsc::Sender<ProfileReport>, Instant)>, Error> {
@@ -67,7 +66,7 @@ async fn maybe_emit_partial_profile<'a>(
             >= RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD)
     {
         check_lossy_signal(shared_socket, builder);
-        let profile = builder.build_partial_profile(index)?;
+        let profile = builder.build_partial_profile()?;
         let res = tx.try_send(profile);
         if let Err(ref e) = res
             && e.is_full()
@@ -148,7 +147,6 @@ async fn process_sampler_requests(
 ) -> Result<ProfileReport, Error> {
     let mut profile_builder = ProfileBuilder::default();
     let mut time_of_last_profile = Instant::now();
-    let mut request_index = 0;
     let mut is_enabled = true;
     let mut shared_socket: Option<zx::Socket> = None;
 
@@ -253,11 +251,9 @@ async fn process_sampler_requests(
             ClientEvent::Ignored => continue,
         }
 
-        request_index += 1;
         if let Some((_, _, new_time)) = maybe_emit_partial_profile(
             &mut profile_builder,
             tx,
-            request_index,
             time_of_last_profile,
             &shared_socket,
         )
@@ -451,7 +447,6 @@ mod test {
         }
 
         let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
-        const TEST_INDEX: usize = 42;
         builder.allocate(
             RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD as u64,
             stack_trace.stack_frames.unwrap(),
@@ -459,14 +454,13 @@ mod test {
             None,
         );
         let profile_future =
-            maybe_emit_partial_profile(&mut builder, &mut tx, TEST_INDEX, Instant::now(), &None);
+            maybe_emit_partial_profile(&mut builder, &mut tx, Instant::now(), &None);
         let _ = request_stream; // Silence unused variable warning
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
-            ProfileReport::Partial { process_name, iteration, profile, size, .. } => {
+            ProfileReport::Partial { process_name, profile, size, .. } => {
                 assert_eq!(process_name, TEST_NAME.to_string());
-                assert_eq!(iteration, TEST_INDEX);
                 // This test assumes that every single allocation ends
                 // up as a sample in the produced profile.
                 let profile = deserialize_profile(profile, size);
@@ -486,12 +480,10 @@ mod test {
         builder.set_process_info(Some(TEST_NAME.to_string()), vec![].into_iter());
 
         let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
-        const TEST_INDEX: usize = 42;
         builder.allocate(1, stack_trace.stack_frames.unwrap(), 10, None);
         let profile_future = maybe_emit_partial_profile(
             &mut builder,
             &mut tx,
-            TEST_INDEX,
             Instant::now() - MAX_DURATION_BETWEEN_PARTIAL_PROFILES,
             &None,
         );
@@ -499,9 +491,8 @@ mod test {
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
-            ProfileReport::Partial { process_name, iteration, profile, size, .. } => {
+            ProfileReport::Partial { process_name, profile, size, .. } => {
                 assert_eq!(process_name, TEST_NAME.to_string());
-                assert_eq!(iteration, TEST_INDEX);
                 // This test assumes that every single allocation ends
                 // up as a sample in the produced profile.
                 let profile = deserialize_profile(profile, size);

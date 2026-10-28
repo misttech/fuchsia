@@ -256,7 +256,7 @@ impl ProfileBuilder {
     /// Note: this lets one produce regular running profiles from a
     /// long-lived process, while clearing from memory the state that
     /// will no longer be useful.
-    pub fn build_partial_profile(&mut self, iteration: usize) -> Result<ProfileReport, Error> {
+    pub fn build_partial_profile(&mut self) -> Result<ProfileReport, Error> {
         let process_name = self.annotated_process_name();
         let profile = {
             pprof::build_profile(
@@ -276,7 +276,6 @@ impl ProfileBuilder {
             process_name,
             profile: vmo,
             size,
-            iteration,
         })
     }
 }
@@ -306,12 +305,12 @@ impl ProfileReport {
             Err(e) => return Err((newer, e)),
         };
 
-        let (provider_id, new_name, new_vmo, new_size, new_iteration) = match &newer {
-            ProfileReport::Partial { provider_id, process_name, profile, size, iteration } => {
-                (*provider_id, process_name, profile, *size, Some(*iteration))
+        let (provider_id, new_name, new_vmo, new_size, is_final) = match &newer {
+            ProfileReport::Partial { provider_id, process_name, profile, size } => {
+                (*provider_id, process_name, profile, *size, false)
             }
             ProfileReport::Final { provider_id, process_name, profile, size } => {
-                (*provider_id, process_name, profile, *size, None)
+                (*provider_id, process_name, profile, *size, true)
             }
         };
         let newer_proto = match vmo_to_profile(new_vmo, new_size) {
@@ -336,11 +335,10 @@ impl ProfileReport {
             new_name.clone()
         };
 
-        match new_iteration {
-            Some(iteration) => {
-                Ok(ProfileReport::Partial { provider_id, process_name, profile, size, iteration })
-            }
-            None => Ok(ProfileReport::Final { provider_id, process_name, profile, size }),
+        if is_final {
+            Ok(ProfileReport::Final { provider_id, process_name, profile, size })
+        } else {
+            Ok(ProfileReport::Partial { provider_id, process_name, profile, size })
         }
     }
 }
@@ -484,13 +482,12 @@ mod test {
         let allocation_stack_trace = vec![1, 2];
         let deallocation_stack_trace = vec![3, 4];
         let size = 10;
-        let test_index = 42;
 
         builder.allocate(address, allocation_stack_trace.clone(), size, None);
         builder.deallocate(address, deallocation_stack_trace.clone());
 
         assert_ne!(0, builder.get_approximate_reclaimable_stack_traces_count());
-        let _ = builder.build_partial_profile(test_index).unwrap();
+        let _ = builder.build_partial_profile().unwrap();
         assert_eq!(0, builder.get_approximate_reclaimable_stack_traces_count());
     }
 
@@ -530,8 +527,7 @@ mod test {
         let mut builder = ProfileBuilder::default();
         builder.allocate(0x1000, vec![1, 2], 10, None);
 
-        let ProfileReport::Partial { profile, size, .. } =
-            builder.build_partial_profile(0).unwrap()
+        let ProfileReport::Partial { profile, size, .. } = builder.build_partial_profile().unwrap()
         else {
             panic!("Expected a partial profile.");
         };

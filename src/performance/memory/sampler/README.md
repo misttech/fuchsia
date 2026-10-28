@@ -133,10 +133,7 @@ final profile at the end of the process. Both kind of profiles have the same sha
     allocations that have been deallocated *within the period covered by this
     profile*. In particular, if an allocation was deallocated in profile X, it
     won't appear in the list of dead allocations of profile X+N. This is done to
-    restrict the growth of partial profiles.  Partial profiles also come with an
-    iteration number; this number is meaningless, except that profiles come in
-    numerical order (i.e. profile 1000 was captured earlier than profile 9999
-    regardless of when they were captured).
+    restrict the growth of partial profiles.
   * Final profiles: residual allocations are allocations that were never
     deallocated within the lifetime of the process. If an instrumented process
     has memory leaks, they are very likely to appear here (if they were
