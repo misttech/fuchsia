@@ -11,4 +11,9 @@
         binary: "bin/starnix_modules_binderfs_lib_test",
         is_shared_process: "true",
     },
+    use: [
+        {
+            protocol: [ "fuchsia.scheduler.RoleManager" ],
+        },
+    ],
 }

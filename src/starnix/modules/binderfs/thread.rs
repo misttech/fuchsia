@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::objects::{LocalBinderObject, TransactionData};
-use crate::process::{BinderProcess, BinderProcessGuard};
+use crate::process::{AvailableThreads, BinderProcess, BinderProcessGuard};
 
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
@@ -16,7 +16,6 @@ use starnix_sync::{
 };
 use starnix_uapi::vfs::FdEvents;
 
-use crossbeam::queue::SegQueue;
 use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::errors::{EACCES, EPERM, ESRCH, Errno};
@@ -239,7 +238,7 @@ pub struct BinderThread {
     pub command_queue_poll_waiters: WaitQueue,
 
     /// A shared queue of available threads for the `BinderProcess`.
-    pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
+    pub available_threads: Arc<AvailableThreads>,
 }
 
 impl BinderThread {

@@ -16,7 +16,6 @@ use crate::thread::{
     BinderThread, BinderThreadState, Command, QueuedCommand, RegistrationState,
     generate_dead_replies,
 };
-use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mutable_state::Guard;
@@ -24,8 +23,8 @@ use starnix_core::task::{Kernel, Pid, Task};
 use starnix_core::vfs::FdNumber;
 use starnix_logging::{log_trace, log_warn, track_stub};
 use starnix_sync::{
-    BinderFreezeLevel, BinderProcessSharedMemoryLevel, BinderProcessStateLevel,
-    BinderThreadPoolLevel, LockDepGuard, LockDepMutex,
+    BinderAvailableThreadsLock, BinderFreezeLevel, BinderProcessSharedMemoryLevel,
+    BinderProcessStateLevel, BinderThreadPoolLevel, LockDepGuard, LockDepMutex,
 };
 use starnix_types::ownership::{
     DropGuard, OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_after,
@@ -358,6 +357,72 @@ pub enum RequestType {
     RequestResponse,
 }
 
+/// A thread-safe queue of available threads for a [`BinderProcess`].
+///
+/// Threads register themselves here when they become available to process commands.
+/// This queue is backed by [`LockDepMutex`] with [`BinderAvailableThreadsLock`], a terminal
+/// lock level acquired after [`BinderProcessStateLevel`] and `BinderThreadStateLock`;
+/// nothing may be acquired while it is held, and it must not be taken while holding another
+/// terminal lock.
+///
+/// Using a priority-inheriting mutex with no userspace spinning avoids the `sched_yield`
+/// spinning / starvation livelock seen with `SegQueue` under deadline scheduler roles
+/// (see https://fxbug.dev/577150201).
+#[derive(Debug)]
+pub struct AvailableThreads {
+    inner: LockDepMutex<VecDeque<WeakRef<BinderThread>>, BinderAvailableThreadsLock>,
+}
+
+impl Default for AvailableThreads {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AvailableThreads {
+    /// Creates a new empty `AvailableThreads` queue.
+    pub fn new() -> Self {
+        Self { inner: LockDepMutex::new(VecDeque::new()) }
+    }
+
+    /// Pops a thread from the front of the queue, releasing the lock immediately before returning.
+    ///
+    /// May briefly block while acquiring the inner lock.
+    /// Returns `None` if the queue is empty.
+    #[inline]
+    pub fn pop(&self) -> Option<WeakRef<BinderThread>> {
+        self.inner.lock().pop_front()
+    }
+
+    /// Pushes `thread` to the back of the queue.
+    ///
+    /// May briefly block while acquiring the inner lock.
+    #[inline]
+    pub fn push(&self, thread: WeakRef<BinderThread>) {
+        self.inner.lock().push_back(thread);
+    }
+
+    /// Returns `true` if the queue is empty.
+    ///
+    /// May briefly block while acquiring the inner lock.
+    ///
+    /// # Concurrency Notes
+    /// - In [`BinderProcess::enqueue_command`], this is called while holding
+    ///   [`BinderProcess::state`] (where popping and locking a [`BinderThread`] is not allowed) to
+    ///   check whether a thread became available after
+    ///   [`BinderProcess::try_enqueue_on_available_thread`] returned `Err`. Because
+    ///   `BinderDriver::handle_thread_read` drops `thread_state` (which calls [`push`](Self::push))
+    ///   before dropping `proc_state`, any `push` ordered before `BinderProcess::state` is
+    ///   acquired is guaranteed to be visible to this check.
+    /// - A `false` return indicates entries are present in the queue, but queued entries may be
+    ///   dead [`WeakRef`]s (if the target thread has exited) or live threads that are no longer
+    ///   available.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().is_empty()
+    }
+}
+
 #[derive(Debug)]
 pub struct BinderProcess {
     /// Weak reference to self.
@@ -377,7 +442,9 @@ pub struct BinderProcess {
     // `freeze_state`, `state`, and `thread_pool`. For ordering purposes, locks must be taken in
     // the order they are defined in this struct, even across `BinderProcess` instances.
     // Moreover, any `BinderThread` lock must be ordered after `state` and `thread_pool` from a
-    // `BinderProcess`.
+    // `BinderProcess`. `available_threads` has its own terminal lock. It may be taken while
+    // holding any of the above or a `BinderThread` lock, and no lock may be taken while holding
+    // it.
     /// The [`SharedMemory`] region mapped in both the driver and the binder process. Allows for
     /// transactions to copy data once from the sender process into the receiver process.
     pub shared_memory: LockDepMutex<Option<SharedMemory>, BinderProcessSharedMemoryLevel>,
@@ -392,9 +459,9 @@ pub struct BinderProcess {
     /// FD events when commands are available.
     pub process_waiters: starnix_core::task::WaitQueue,
 
-    /// A lock-free queue of threads that are available to handle commands.
+    /// A queue of threads that are available to handle commands.
     /// A thread adds itself to this queue when it transitions to being available.
-    pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
+    pub available_threads: Arc<AvailableThreads>,
 
     /// The set of threads that are interacting with the binder driver.
     /// Protected by a dedicated mutex to allow thread lookup on the ioctl hot path without
@@ -433,7 +500,7 @@ impl BinderProcess {
             freeze_state: Default::default(),
             state: Default::default(),
             process_waiters: Default::default(),
-            available_threads: Arc::new(SegQueue::new()),
+            available_threads: Default::default(),
             thread_pool: Default::default(),
         });
         log_trace!("new BinderProcess id={}", result.identifier());

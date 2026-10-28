@@ -32,21 +32,27 @@ pub mod tests {
     use memoffset::offset_of;
     use starnix_core::device::DeviceOps;
     use starnix_core::device::mem::new_null_file;
+    use starnix_core::execution::execute_task;
     use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
     use starnix_core::mm::memory::MemoryObject;
     use starnix_core::mm::{
         DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
         ProtectionFlags,
     };
-    use starnix_core::task::{CurrentTask, EventHandler, ExitStatus, Kernel, Waiter};
+    use starnix_core::signals::{SignalInfo, send_standard_signal};
+    use starnix_core::task::{
+        CurrentTask, EventHandler, ExitStatus, Kernel, RoleOverrides, SchedulerManager, Task,
+        Waiter,
+    };
     use starnix_core::testing::*;
     use starnix_core::vfs::{
         Anon, FdFlags, FdNumber, FileHandle, FileObject, FileSystemOptions, VecOutputBuffer,
         WhatToMount, anon_fs,
     };
     use starnix_logging::log_warn;
+    use starnix_task_command::TaskCommand;
     use starnix_types::convert::IntoFidl;
-    use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
+    use starnix_types::ownership::{OwnedRef, Releasable, Share, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::device_id::DeviceId;
@@ -54,6 +60,7 @@ pub mod tests {
     use starnix_uapi::file_mode::mode;
     use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::signals::SIGUSR1;
     use starnix_uapi::union::struct_with_union_into_bytes;
     use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::vfs::FdEvents;
@@ -72,7 +79,8 @@ pub mod tests {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::ops::Deref;
-    use std::sync::{Arc, Weak};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier, OnceLock, Weak};
     use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
     const BASE_ADDR: UserAddress = UserAddress::const_from(0x0000000000000100);
@@ -7934,6 +7942,618 @@ pub mod tests {
                 .handle_free_buffer(second_buffer_addr)
                 .expect("handle_free_buffer second transaction");
             assert!(!target_object.lock().handling_oneway_transaction);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn enqueue_command_skips_dead_available_thread_entries() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let device = BinderDevice::default();
+            let receiver = BinderProcessFixture::new(current_task, &device);
+
+            // Queue an entry for a thread that is then unregistered, leaving a dead WeakRef.
+            let dead_task = create_task(kernel, "dead");
+            let dead = receiver.proc.find_or_register_thread(&dead_task.task).expect("register");
+            receiver.proc.available_threads.push(dead.weak_self.clone());
+            dead.release(kernel);
+            receiver.proc.unregister_thread(kernel, &dead_task.tid);
+
+            // Make the receiver thread available; dropping the guard queues it behind the dead
+            // entry.
+            receiver.thread.lock().registration = RegistrationState::Main;
+            let reader_guard = receiver.thread.lock().begin_wait();
+
+            // The command must skip the dead entry and be delivered to the live thread.
+            let target =
+                receiver.proc.enqueue_command(Command::DeadBinder(1).into()).expect("thread");
+            assert_eq!(TempRef::as_ptr(&target), OwnedRef::as_ptr(&receiver.thread));
+            drop(target);
+            assert!(receiver.proc.available_threads.is_empty());
+            assert_eq!(reader_guard.block_until(None, zx::MonotonicInstant::ZERO), Ok(()));
+
+            // Queue a live thread that is no longer waiting for work (`begin_wait` not called).
+            // `enqueue_command` must skip it, fall back to the process command queue, and leave
+            // `available_threads` empty.
+            receiver.proc.available_threads.push(receiver.thread.weak_self.clone());
+            assert!(receiver.proc.enqueue_command(Command::DeadBinder(2).into()).is_none());
+            assert!(receiver.proc.available_threads.is_empty());
+            assert_eq!(receiver.proc.lock().command_queue.len(), 1);
+
+            dead_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn concurrent_available_threads_push_and_pop() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let device = BinderDevice::default();
+            let receiver = BinderProcessFixture::new(current_task, &device);
+
+            const NUM_PRODUCERS: usize = 4;
+            const NUM_CONSUMERS: usize = 4;
+            const ITEMS_PER_PRODUCER: usize = 50;
+            const TOTAL_ITEMS: usize = NUM_PRODUCERS * ITEMS_PER_PRODUCER;
+
+            let threads: Vec<OwnedRef<BinderThread>> = (0..TOTAL_ITEMS)
+                .map(|_| {
+                    BinderThread::new(
+                        &receiver.proc,
+                        receiver.thread.tid.clone(),
+                        Arc::new(zx::Thread::invalid()),
+                    )
+                })
+                .collect();
+
+            let producer_batches: Vec<Vec<WeakRef<BinderThread>>> = threads
+                .chunks(ITEMS_PER_PRODUCER)
+                .map(|chunk| chunk.iter().map(|t| t.weak_self.clone()).collect())
+                .collect();
+
+            let barrier = Arc::new(Barrier::new(NUM_PRODUCERS + NUM_CONSUMERS));
+            let remaining = Arc::new(AtomicUsize::new(TOTAL_ITEMS));
+            let mut producer_handles = Vec::new();
+            let mut consumer_handles = Vec::new();
+
+            for batch in producer_batches {
+                let queue = receiver.proc.available_threads.clone();
+                let barrier = barrier.clone();
+                producer_handles.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    for weak_thread in batch {
+                        queue.push(weak_thread);
+                    }
+                }));
+            }
+
+            for _ in 0..NUM_CONSUMERS {
+                let queue = receiver.proc.available_threads.clone();
+                let barrier = barrier.clone();
+                let remaining = remaining.clone();
+                consumer_handles.push(std::thread::spawn(move || {
+                    let mut popped = Vec::new();
+                    barrier.wait();
+                    while remaining.load(Ordering::Acquire) > 0 {
+                        if let Some(weak_thread) = queue.pop() {
+                            assert!(weak_thread.upgrade().is_some());
+                            popped.push(weak_thread.as_ptr() as usize);
+                            remaining.fetch_sub(1, Ordering::Release);
+                        } else {
+                            std::thread::yield_now();
+                        }
+                    }
+                    popped
+                }));
+            }
+
+            for handle in producer_handles {
+                handle.join().expect("producer thread panicked");
+            }
+            let mut popped_ptrs = Vec::new();
+            for handle in consumer_handles {
+                popped_ptrs.extend(handle.join().expect("consumer thread panicked"));
+            }
+
+            assert!(receiver.proc.available_threads.is_empty());
+            assert!(receiver.proc.available_threads.pop().is_none());
+
+            let mut expected_ptrs: Vec<usize> =
+                threads.iter().map(|t| t.weak_self.as_ptr() as usize).collect();
+            expected_ptrs.sort_unstable();
+            popped_ptrs.sort_unstable();
+            assert_eq!(popped_ptrs, expected_ptrs);
+
+            for thread in threads {
+                thread.release(kernel);
+            }
+        })
+        .await;
+    }
+
+    /// Reproduces the multi-threaded Binder `available_threads` contention pattern where
+    /// looper threads repeatedly push themselves onto `available_threads` via interrupted
+    /// `BC_DEAD_BINDER_DONE` + `BINDER_GET_EXTENDED_ERROR` write/read cycles while unlocked
+    /// `BC_CLEAR_DEATH_NOTIFICATION` readers and futex-synchronized popper waves concurrently
+    /// drain `available_threads`, verifying that pusher progress never livelocks.
+    #[fuchsia::test]
+    async fn available_threads_push_pop_wave_does_not_livelock() {
+        #[repr(C, packed)]
+        #[derive(Copy, Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+        struct BcClearDeathPkt {
+            cmd: u32,
+            handle: u32,
+            cookie: u64,
+        }
+
+        #[repr(C, packed)]
+        #[derive(Copy, Clone, IntoBytes, FromBytes, Immutable, KnownLayout)]
+        struct BcDeadBinderDonePkt {
+            cmd: u32,
+            cookie: u64,
+        }
+
+        const NUM_PUSHERS: usize = 10;
+        const MIN_POPPERS: usize = 6;
+        const NUM_SIGNALERS: usize = 2;
+        const WAVE_US: u64 = 20;
+        const BURST_POPS: usize = 2;
+        const MAX_BURST_POPS: usize = 16;
+        const TOTAL_TICKS: usize = 80;
+        const STALL_THRESHOLD_TICKS: usize = 10;
+        const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+        const CLEAR_DEATH_READ_BUF_SIZE: u64 = 12;
+        const PUSHER_READ_BUF_SIZE: u64 = 4096;
+        const BWR_OFFSET: u64 = 0;
+        const EE_OFFSET: u64 = 64;
+        const WRITE_BUF_OFFSET: u64 = 128;
+        const READ_BUF_OFFSET: u64 = 512;
+
+        let num_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        let num_poppers = (num_cpus + 2).max(MIN_POPPERS);
+
+        let mut role_overrides = RoleOverrides::new();
+        role_overrides.add(".*", "Blocking Thread", None, "fuchsia.memory-monitor.main");
+        role_overrides.add(".*", "RenderThread", None, "fuchsia.scenic.main");
+        role_overrides.add(
+            ".*",
+            "signaler_wave",
+            None,
+            "fuchsia.devices.usb.drivers.xhci.interrupter",
+        );
+        role_overrides.add(".*", "signaler_spin", None, "fuchsia.memory-monitor.main");
+        role_overrides.add(".*", "watchdog", None, "fuchsia.devices.usb.drivers.xhci.interrupter");
+        role_overrides.add(".*", "demoted", None, "fuchsia.cobalt.main");
+        role_overrides.add(".*", ".*", None, "fuchsia.async.loop");
+        let scheduler =
+            SchedulerManager::new(role_overrides.build().expect("build role overrides"));
+
+        spawn_kernel_with_scheduler_and_run_sync(scheduler, move |current_task| {
+            current_task.thread_group().write().did_exec = true;
+            current_task.set_command_name(TaskCommand::new(b"watchdog"));
+            let _ = current_task.sync_scheduler_state_to_role();
+
+            let device = BinderDevice::default();
+            let receiver = BinderProcessFixture::new_current(current_task, &device);
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let pushes = Arc::new(AtomicUsize::new(0));
+            let pops = Arc::new(AtomicUsize::new(0));
+            let wake_epoch = Arc::new(zx::Futex::new(0));
+            let sig_loops: Arc<[AtomicUsize; NUM_SIGNALERS]> =
+                Arc::new(std::array::from_fn(|_| AtomicUsize::new(0)));
+            let pusher_tasks: Arc<[OnceLock<Weak<Task>>; NUM_PUSHERS]> =
+                Arc::new(std::array::from_fn(|_| OnceLock::new()));
+            let popper_tasks: Arc<Vec<OnceLock<Weak<Task>>>> =
+                Arc::new((0..num_poppers).map(|_| OnceLock::new()).collect());
+            let start_barrier =
+                Arc::new(Barrier::new(1 + NUM_SIGNALERS + NUM_PUSHERS + num_poppers));
+
+            let clone_flags = (uapi::CLONE_VM
+                | uapi::CLONE_FS
+                | uapi::CLONE_FILES
+                | uapi::CLONE_SIGHAND
+                | uapi::CLONE_THREAD) as u64;
+            let mut worker_done_rxs =
+                Vec::with_capacity(NUM_SIGNALERS + NUM_PUSHERS + num_poppers);
+
+            for idx in 0..NUM_SIGNALERS {
+                let task_builder = current_task
+                    .clone_task(
+                        clone_flags,
+                        None,
+                        UserRef::default(),
+                        UserRef::default(),
+                        UserRef::default(),
+                    )
+                    .expect("clone signaler task");
+                let stop = stop.clone();
+                let wake_epoch = wake_epoch.clone();
+                let sig_loops = sig_loops.clone();
+                let pusher_tasks = pusher_tasks.clone();
+                let start_barrier = start_barrier.clone();
+                let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                worker_done_rxs.push(done_rx);
+
+                execute_task(
+                    task_builder,
+                    move |worker_task| {
+                        let role_cmd = if idx == 0 {
+                            TaskCommand::new(b"signaler_wave")
+                        } else {
+                            TaskCommand::new(b"signaler_spin")
+                        };
+                        worker_task.set_command_name(role_cmd);
+                        let _ = worker_task.sync_scheduler_state_to_role();
+
+                        start_barrier.wait();
+                        while !stop.load(Ordering::Relaxed) {
+                            sig_loops[idx].fetch_add(1, Ordering::Relaxed);
+                            if idx == 0 {
+                                wake_epoch.fetch_add(1, Ordering::Release);
+                                wake_epoch.wake_all();
+                                if WAVE_US > 0 {
+                                    std::thread::sleep(std::time::Duration::from_micros(WAVE_US));
+                                }
+                            } else {
+                                for slot in pusher_tasks.iter() {
+                                    if let Some(task) = slot.get().and_then(Weak::upgrade) {
+                                        task.read().wake();
+                                    }
+                                }
+                                std::thread::yield_now();
+                            }
+                        }
+                        wake_epoch.fetch_add(1, Ordering::Release);
+                        wake_epoch.wake_all();
+
+                        worker_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+                        let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                            thread.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup thread")
+                        });
+                        done_tx.send(thread_handle).expect("send signaler done");
+                        Err(errno!(EHWPOISON))
+                    },
+                    |_| {},
+                )
+                .expect("execute signaler task");
+            }
+
+            for idx in 0..NUM_PUSHERS {
+                let base_addr = map_memory(current_task, UserAddress::default(), 2 * *PAGE_SIZE);
+                let task_builder = current_task
+                    .clone_task(
+                        clone_flags,
+                        None,
+                        UserRef::default(),
+                        UserRef::default(),
+                        UserRef::default(),
+                    )
+                    .expect("clone pusher task");
+                let device = device.clone();
+                let proc = OwnedRef::share(&receiver.proc);
+                let stop = stop.clone();
+                let pushes = pushes.clone();
+                let pops = pops.clone();
+                let pusher_tasks = pusher_tasks.clone();
+                let start_barrier = start_barrier.clone();
+                let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                worker_done_rxs.push(done_rx);
+
+                execute_task(
+                    task_builder,
+                    move |worker_task| {
+                        worker_task.set_command_name(TaskCommand::new(b"Blocking Thread"));
+                        let _ = worker_task.sync_scheduler_state_to_role();
+
+                        let bwr_addr = (base_addr + BWR_OFFSET).expect("bwr_addr");
+                        let ee_addr = (base_addr + EE_OFFSET).expect("ee_addr");
+                        let write_buf_addr =
+                            (base_addr + WRITE_BUF_OFFSET).expect("write_buf_addr");
+                        let read_buf_addr = (base_addr + READ_BUF_OFFSET).expect("read_buf_addr");
+                        let bwr_ref = UserRef::<uapi::binder_write_read>::new(bwr_addr);
+
+                        let enter_cmd: u32 = uapi::binder_driver_command_protocol_BC_ENTER_LOOPER;
+                        worker_task
+                            .write_object(UserRef::<u32>::new(write_buf_addr), &enter_cmd)
+                            .expect("write BC_ENTER_LOOPER");
+                        let enter_bwr = uapi::binder_write_read {
+                            write_size: std::mem::size_of::<u32>() as u64,
+                            write_consumed: 0,
+                            write_buffer: write_buf_addr.ptr() as u64,
+                            read_size: 0,
+                            read_consumed: 0,
+                            read_buffer: 0,
+                        };
+                        worker_task
+                            .write_object(bwr_ref, &enter_bwr)
+                            .expect("write enter_looper bwr");
+                        device
+                            .ioctl(
+                                worker_task,
+                                &proc,
+                                None,
+                                uapi::BINDER_WRITE_READ,
+                                bwr_addr.into(),
+                                Vec::new(),
+                            )
+                            .expect("enter_looper ioctl");
+
+                        if (idx % 3) != 2 {
+                            let pkt = BcDeadBinderDonePkt {
+                                cmd: uapi::binder_driver_command_protocol_BC_DEAD_BINDER_DONE,
+                                cookie: 0,
+                            };
+                            worker_task
+                                .write_object(
+                                    UserRef::<BcDeadBinderDonePkt>::new(write_buf_addr),
+                                    &pkt,
+                                )
+                                .expect("write BC_DEAD_BINDER_DONE");
+                        } else {
+                            let pkt = BcClearDeathPkt {
+                                cmd:
+                                    uapi::binder_driver_command_protocol_BC_CLEAR_DEATH_NOTIFICATION,
+                                handle: 0,
+                                cookie: 0,
+                            };
+                            worker_task
+                                .write_object(
+                                    UserRef::<BcClearDeathPkt>::new(write_buf_addr),
+                                    &pkt,
+                                )
+                                .expect("write BC_CLEAR_DEATH_NOTIFICATION");
+                        }
+
+                        let _ = pusher_tasks[idx].set(Arc::downgrade(&worker_task.task));
+                        send_standard_signal(&worker_task.task, SignalInfo::kernel(SIGUSR1));
+                        start_barrier.wait();
+
+                        while !stop.load(Ordering::Relaxed) {
+                            if (idx % 3) != 2 {
+                                loop {
+                                    let bwr = uapi::binder_write_read {
+                                        write_size: std::mem::size_of::<BcDeadBinderDonePkt>()
+                                            as u64,
+                                        write_consumed: 0,
+                                        write_buffer: write_buf_addr.ptr() as u64,
+                                        read_size: PUSHER_READ_BUF_SIZE,
+                                        read_consumed: 0,
+                                        read_buffer: read_buf_addr.ptr() as u64,
+                                    };
+                                    worker_task.write_object(bwr_ref, &bwr).expect("write push bwr");
+                                    let _ = device.ioctl(
+                                        worker_task,
+                                        &proc,
+                                        None,
+                                        uapi::BINDER_WRITE_READ,
+                                        bwr_addr.into(),
+                                        Vec::new(),
+                                    );
+                                    let out =
+                                        worker_task.read_object(bwr_ref).expect("read push bwr");
+                                    if out.read_consumed == 0 || stop.load(Ordering::Relaxed) {
+                                        break;
+                                    }
+                                }
+                                let _ = device.ioctl(
+                                    worker_task,
+                                    &proc,
+                                    None,
+                                    uapi::BINDER_GET_EXTENDED_ERROR,
+                                    ee_addr.into(),
+                                    Vec::new(),
+                                );
+                                pushes.fetch_add(1, Ordering::Relaxed);
+                            } else {
+                                let bwr = uapi::binder_write_read {
+                                    write_size: std::mem::size_of::<BcClearDeathPkt>() as u64,
+                                    write_consumed: 0,
+                                    write_buffer: write_buf_addr.ptr() as u64,
+                                    read_size: CLEAR_DEATH_READ_BUF_SIZE,
+                                    read_consumed: 0,
+                                    read_buffer: read_buf_addr.ptr() as u64,
+                                };
+                                worker_task
+                                    .write_object(bwr_ref, &bwr)
+                                    .expect("write pop_and_wake bwr");
+                                let _ = device.ioctl(
+                                    worker_task,
+                                    &proc,
+                                    None,
+                                    uapi::BINDER_WRITE_READ,
+                                    bwr_addr.into(),
+                                    Vec::new(),
+                                );
+                                pops.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+
+                        proc.unregister_thread(worker_task.kernel(), &worker_task.tid);
+                        proc.release(worker_task.kernel());
+                        worker_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+                        let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                            thread.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup thread")
+                        });
+                        done_tx.send(thread_handle).expect("send pusher done");
+                        Err(errno!(EHWPOISON))
+                    },
+                    |_| {},
+                )
+                .expect("execute pusher task");
+            }
+
+            for idx in 0..num_poppers {
+                let base_addr = map_memory(current_task, UserAddress::default(), *PAGE_SIZE);
+                let task_builder = current_task
+                    .clone_task(
+                        clone_flags,
+                        None,
+                        UserRef::default(),
+                        UserRef::default(),
+                        UserRef::default(),
+                    )
+                    .expect("clone popper task");
+                let device = device.clone();
+                let proc = OwnedRef::share(&receiver.proc);
+                let stop = stop.clone();
+                let pops = pops.clone();
+                let wake_epoch = wake_epoch.clone();
+                let popper_tasks = popper_tasks.clone();
+                let start_barrier = start_barrier.clone();
+                let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                worker_done_rxs.push(done_rx);
+
+                execute_task(
+                    task_builder,
+                    move |worker_task| {
+                        worker_task.set_command_name(TaskCommand::new(b"RenderThread"));
+                        let _ = worker_task.sync_scheduler_state_to_role();
+                        let _ = popper_tasks[idx].set(Arc::downgrade(&worker_task.task));
+
+                        let bwr_addr = (base_addr + BWR_OFFSET).expect("bwr_addr");
+                        let write_buf_addr =
+                            (base_addr + WRITE_BUF_OFFSET).expect("write_buf_addr");
+                        let bwr_ref = UserRef::<uapi::binder_write_read>::new(bwr_addr);
+
+                        let write_pkts: [BcClearDeathPkt; MAX_BURST_POPS] =
+                            std::array::from_fn(|i| BcClearDeathPkt {
+                                cmd:
+                                    uapi::binder_driver_command_protocol_BC_CLEAR_DEATH_NOTIFICATION,
+                                handle: 0,
+                                cookie: i as u64,
+                            });
+                        worker_task
+                            .write_object(
+                                UserRef::<[BcClearDeathPkt; MAX_BURST_POPS]>::new(write_buf_addr),
+                                &write_pkts,
+                            )
+                            .expect("write popper packets");
+
+                        start_barrier.wait();
+
+                        let mut last_epoch = wake_epoch.load(Ordering::Acquire);
+                        while !stop.load(Ordering::Relaxed) {
+                            let cur_epoch = wake_epoch.load(Ordering::Acquire);
+                            if cur_epoch == last_epoch {
+                                let _ =
+                                    wake_epoch.wait(cur_epoch, None, zx::MonotonicInstant::INFINITE);
+                                continue;
+                            }
+                            last_epoch = cur_epoch;
+                            for _ in 0..BURST_POPS {
+                                if stop.load(Ordering::Relaxed) {
+                                    break;
+                                }
+                                let count = 1usize.min(MAX_BURST_POPS);
+                                let bwr = uapi::binder_write_read {
+                                    write_size: (count * std::mem::size_of::<BcClearDeathPkt>())
+                                        as u64,
+                                    write_consumed: 0,
+                                    write_buffer: write_buf_addr.ptr() as u64,
+                                    read_size: 0,
+                                    read_consumed: 0,
+                                    read_buffer: 0,
+                                };
+                                worker_task
+                                    .write_object(bwr_ref, &bwr)
+                                    .expect("write pop_write_only bwr");
+                                let _ = device.ioctl(
+                                    worker_task,
+                                    &proc,
+                                    None,
+                                    uapi::BINDER_WRITE_READ,
+                                    bwr_addr.into(),
+                                    Vec::new(),
+                                );
+                                pops.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+
+                        proc.unregister_thread(worker_task.kernel(), &worker_task.tid);
+                        proc.release(worker_task.kernel());
+                        worker_task.write().set_exit_status_if_not_already(ExitStatus::Exit(0));
+                        let thread_handle = fuchsia_runtime::with_thread_self(|thread| {
+                            thread.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup thread")
+                        });
+                        done_tx.send(thread_handle).expect("send popper done");
+                        Err(errno!(EHWPOISON))
+                    },
+                    |_| {},
+                )
+                .expect("execute popper task");
+            }
+
+            start_barrier.wait();
+
+            let mut last_pushes = 0;
+            let mut last_pops = 0;
+            let mut stalled_ticks = 0;
+            let mut livelock_detected = false;
+
+            for _tick in 1..=TOTAL_TICKS {
+                std::thread::sleep(TICK_INTERVAL);
+                let cur_pushes = pushes.load(Ordering::Relaxed);
+                let cur_pops = pops.load(Ordering::Relaxed);
+                if cur_pushes == last_pushes && cur_pushes > 0 {
+                    stalled_ticks += 1;
+                    if stalled_ticks == STALL_THRESHOLD_TICKS {
+                        livelock_detected = true;
+                        break;
+                    }
+                } else {
+                    stalled_ticks = 0;
+                }
+                last_pushes = cur_pushes;
+                last_pops = cur_pops;
+            }
+
+            stop.store(true, Ordering::Release);
+            if livelock_detected {
+                // Rescue livelocked popper threads by demoting their scheduler role to
+                // `fuchsia.cobalt.main` (Fair priority 0) so preempted pusher threads can complete
+                // in-flight queue operations and all worker threads can terminate cleanly.
+                for slot in popper_tasks.iter() {
+                    if let Some(task) = slot.get().and_then(Weak::upgrade) {
+                        task.set_command_name(TaskCommand::new(b"demoted"));
+                        let _ = task.sync_scheduler_state_to_role();
+                    }
+                }
+            }
+            wake_epoch.fetch_add(1, Ordering::Release);
+            wake_epoch.wake_all();
+            receiver.proc.lock().closed = true;
+            receiver.proc.kick_all_threads();
+            for slot in pusher_tasks.iter() {
+                if let Some(task) = slot.get().and_then(Weak::upgrade) {
+                    send_standard_signal(&task, SignalInfo::kernel(SIGUSR1));
+                }
+            }
+
+            for done_rx in worker_done_rxs {
+                let thread_handle: zx::Thread = done_rx.recv().expect("worker task finished");
+                thread_handle
+                    .wait_one(zx::Signals::THREAD_TERMINATED, zx::MonotonicInstant::INFINITE)
+                    .expect("wait worker thread terminated");
+            }
+
+            assert!(
+                !livelock_detected,
+                "livelock detected: pushes stalled at {last_pushes} (pops={last_pops}, wake_epoch={}, sig_loops=({}, {}))",
+                wake_epoch.load(Ordering::Relaxed),
+                sig_loops[0].load(Ordering::Relaxed),
+                sig_loops[1].load(Ordering::Relaxed),
+            );
+            assert!(
+                pushes.load(Ordering::Relaxed) > 0,
+                "expected pusher threads to make progress"
+            );
+            assert!(
+                pops.load(Ordering::Relaxed) > 0,
+                "expected popper threads to make progress"
+            );
         })
         .await;
     }
