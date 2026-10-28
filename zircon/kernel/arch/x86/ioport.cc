@@ -185,3 +185,15 @@ int IoBitmap::SetIoBitmap(uint32_t port, uint32_t len, bool enable) {
 
   return ZX_OK;
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE IoBitmap* cpp_io_bitmap_get_current() {
+  return IoBitmap::GetCurrent();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_io_bitmap_set_io_bitmap(IoBitmap* bitmap,
+                                                                     uint32_t port, uint32_t len,
+                                                                     bool enable) {
+  return bitmap->SetIoBitmap(port, len, enable);
+}

@@ -184,7 +184,7 @@ static THREADLOAD_STATE: ksync::KCell<ThreadLoadState, ThreadLoadStateLock> =
         last_idle_time: [0; SMP_MAX_CPUS],
     });
 
-extern "C" fn threadload_callback() {
+fn threadload_callback() {
     kprintln!(
         "cpu    load sched (cs ylds pmpts)   sysc ints (hw  tmr tmr_cb) ipi (rs  gen)     watts"
     );
@@ -283,7 +283,7 @@ extern "C" fn threadload_callback() {
     }
 }
 
-extern "C" fn threadq_callback() {
+fn threadq_callback() {
     kprintln!("----------------------------------------------------");
     for i in 0..(PerCpu::processor_count() as cpu_num_t) {
         if scheduler::peek_is_active(i) {
@@ -294,7 +294,7 @@ extern "C" fn threadq_callback() {
     kprintln!("");
 }
 
-extern "C" fn threadq_stats_callback() {
+fn threadq_stats_callback() {
     kprintln!("----------------------------------------------------");
     for i in 0..(PerCpu::processor_count() as cpu_num_t) {
         if scheduler::peek_is_active(i) {

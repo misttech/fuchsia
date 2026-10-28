@@ -9,21 +9,19 @@ use crate::kernel::thread;
 use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
 use crate::platform_rs::timer::{DurationMono, DurationUnknown, InstantMono};
 use core::ffi::c_void;
-use core::mem::MaybeUninit;
 use ksync::{KMutex, KSpinlock, guarded, kcell_init};
-use pin_init::{InPlaceWrite, PinInit, pin_init};
+use pin_init::{PinInit, pin_init};
 use zx_types::zx_instant_mono_t;
 
 const SLACK: TimerSlack =
     TimerSlack::new(DurationUnknown(DurationMono::from_millis(10).into_nanos()), SlackMode::Center);
 
 /// Function pointer type for recurring callbacks.
-pub type CallbackFunc = extern "C" fn();
+pub type CallbackFunc = fn();
 
 /// A recurring callback that fires once per second when toggled on.
 #[guarded]
-#[repr(C)]
-pub struct RecurringCallback {
+struct RecurringCallback {
     #[mutex]
     lock: KSpinlock,
     #[pin]
@@ -34,27 +32,9 @@ pub struct RecurringCallback {
     func: CallbackFunc,
 }
 
-const EXPECTED_SPINLOCK_SIZE: usize = if cfg!(scheduler_lock_spin_tracing_enabled) {
-    24
-} else if cfg!(with_lock_dep) {
-    16
-} else {
-    8
-};
-const EXPECTED_RECURRING_CALLBACK_SIZE: usize = EXPECTED_SPINLOCK_SIZE + 88;
-
-zr::static_assert!(core::mem::size_of::<RecurringCallback>() == EXPECTED_RECURRING_CALLBACK_SIZE);
-zr::static_assert!(core::mem::align_of::<RecurringCallback>() == 8);
-zr::static_assert!(core::mem::offset_of!(RecurringCallback, lock) == 0);
-zr::static_assert!(core::mem::offset_of!(RecurringCallback, timer) == EXPECTED_SPINLOCK_SIZE);
-zr::static_assert!(
-    core::mem::offset_of!(RecurringCallback, started) == EXPECTED_SPINLOCK_SIZE + 72
-);
-zr::static_assert!(core::mem::offset_of!(RecurringCallback, func) == EXPECTED_SPINLOCK_SIZE + 80);
-
 impl RecurringCallback {
     /// Creates an in-place initializer for a `RecurringCallback` with the given `callback`.
-    pub fn init(callback: CallbackFunc) -> impl PinInit<Self, core::convert::Infallible> {
+    fn init(callback: CallbackFunc) -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
             lock <- KSpinlock::init(),
             timer <- kcell_init(Timer::init(ZX_CLOCK_MONOTONIC)),
@@ -65,16 +45,15 @@ impl RecurringCallback {
 
     /// # Safety
     ///
-    /// `arg` must be a valid pointer to an initialized [`RecurringCallback`] that remains live for
-    /// the duration of this callback, and this callback must be invoked from interrupt context
-    /// with interrupts and preemption disabled.
+    /// `arg` must be a valid pointer to an initialized `'static` [`RecurringCallback`], and this
+    /// callback must be invoked from interrupt context with interrupts and preemption disabled.
     unsafe extern "C" fn callback_wrapper(
         _t: *mut Timer,
         now: zx_instant_mono_t,
         arg: *mut c_void,
     ) {
-        // SAFETY: `arg` was passed as a pointer to `Self` in `toggle` or a previous
-        // `callback_wrapper` invocation, and remains valid for the duration of the callback.
+        // SAFETY: `arg` was passed as a pointer to a `'static` `Self` in `toggle` or a previous
+        // `callback_wrapper` invocation, so it remains valid for the lifetime of the kernel.
         let cb = unsafe { &*(arg as *const Self) };
         (cb.func)();
 
@@ -85,7 +64,8 @@ impl RecurringCallback {
             if *fields.started {
                 let deadline =
                     Deadline::new((InstantMono(now) + DurationMono::from_seconds(1)).into(), SLACK);
-                // SAFETY: `Self::callback_wrapper` and `arg` are valid for the timer callback.
+                // SAFETY: `Self::callback_wrapper` and `'static` `arg` remain valid for the timer
+                // callback.
                 unsafe {
                     fields.timer.as_ref().set_deadline(&deadline, Self::callback_wrapper, arg);
                 }
@@ -97,15 +77,16 @@ impl RecurringCallback {
     }
 
     /// Toggles the recurring callback on or off.
-    pub fn toggle(&self) {
+    fn toggle(&'static self) {
         ksync::lock!(let mut guard = self.lock_lock());
         let fields = guard.as_mut().fields_mut();
 
         if !*fields.started {
             let deadline = Deadline::after_mono(DurationMono::from_seconds(1), SLACK);
             // Start the timer
-            // SAFETY: `Self::callback_wrapper` is a valid FFI timer callback and `self` points to
-            // a pinned `RecurringCallback` that remains valid while the timer is active.
+            // SAFETY: `Self::callback_wrapper` is a valid FFI timer callback and `self` is a
+            // `'static` pinned `RecurringCallback` that remains valid for the lifetime of the
+            // kernel.
             unsafe {
                 fields.timer.as_ref().set_deadline(
                     &deadline,
@@ -121,51 +102,10 @@ impl RecurringCallback {
     }
 }
 
-/// FFI trampoline to initialize a [`RecurringCallback`] in place.
-///
-/// # Safety
-///
-/// `cb` must point to valid, aligned, uninitialized storage for a [`RecurringCallback`], and the
-/// initialized object must remain pinned in memory until dropped by
-/// [`rust_recurring_callback_destroy`].
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_recurring_callback_init(
-    cb: *mut MaybeUninit<RecurringCallback>,
-    callback: CallbackFunc,
-) {
-    // SAFETY: Caller guarantees `cb` points to valid, aligned, uninitialized storage that remains
-    // pinned after initialization.
-    let slot = unsafe { &mut *cb };
-    let _ = slot.write_pin_init(RecurringCallback::init(callback));
-}
-
-/// FFI trampoline to destroy a [`RecurringCallback`] in place.
-///
-/// # Safety
-///
-/// `cb` must point to a valid, initialized [`RecurringCallback`] that will not be used again.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_recurring_callback_destroy(cb: *mut RecurringCallback) {
-    // SAFETY: Caller guarantees `cb` points to a valid, initialized `RecurringCallback`.
-    unsafe {
-        core::ptr::drop_in_place(cb);
-    }
-}
-
-/// FFI trampoline for [`RecurringCallback::toggle`].
-///
-/// # Safety
-///
-/// `cb` must point to a valid, initialized [`RecurringCallback`] that remains pinned in memory
-/// while toggled on.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_recurring_callback_toggle(cb: *const RecurringCallback) {
-    // SAFETY: Caller guarantees `cb` points to a valid, initialized, pinned `RecurringCallback`.
-    unsafe { (*cb).toggle() };
-}
-
-// Spinlock protecting lazy initialization of `StaticRecurringCallback` instances.
-ksync::declare_singleton_spinlock!(RecurringCallbackInitLock);
+ksync::declare_singleton_spinlock!(
+    /// Spinlock protecting lazy initialization of `StaticRecurringCallback` instances.
+    RecurringCallbackInitLock
+);
 
 /// A statically allocated [`RecurringCallback`] that lazily initializes its pinned [`Timer`] on
 /// first [`toggle`](Self::toggle).

@@ -32,26 +32,19 @@ source_set("syscalls") {
 source_set("impl") {
   visibility = [ ":*" ]
   sources = [
-    "driver.cc",
     "membarrier_ffi.cc",
-    "test.cc",
     "thread_ffi.cc",
   ]
   deps = [
     ":dispatch",
     ":headers",
     ":syscalls-rs",
-    "//zircon/kernel/dev/iommu",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/page-map",
     "//zircon/kernel/object",
   ]
-  if (current_cpu == "x64") {
-    sources += [ "system_x86.cc" ]
-  }
 }
 
 # Only this file depends on vdso-valid-sysret.h.
@@ -90,6 +83,7 @@ kernel_rust_mod("syscalls-rs") {
     "cprng.rs",
     "debug.rs",
     "debuglog.rs",
+    "driver.rs",
     "event.rs",
     "exceptions.rs",
     "fifo.rs",

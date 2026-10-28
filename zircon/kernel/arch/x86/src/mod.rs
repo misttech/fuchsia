@@ -52,7 +52,7 @@ zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
 use debug::ltracef;
 use zx_status::Status;
-use zx_types::{zx_restricted_state_t, zx_thread_state_general_regs_t};
+use zx_types::{zx_restricted_state_t, zx_status_t, zx_thread_state_general_regs_t};
 
 use arch_x86_aspace_bindings as aspace_bindings;
 
@@ -65,6 +65,56 @@ unsafe extern "C" {
     fn cpp_x86_enter_uspace(iframe: *const Iframe) -> !;
     fn cpp_x86_get_general_regs(regs: *mut zx_thread_state_general_regs_t) -> i32;
     fn cpp_x86_set_general_regs(regs: *const zx_thread_state_general_regs_t) -> i32;
+
+    fn cpp_io_bitmap_get_current() -> *mut IoBitmap;
+    fn cpp_io_bitmap_set_io_bitmap(
+        bitmap: *mut IoBitmap,
+        port: u32,
+        len: u32,
+        enable: bool,
+    ) -> zx_status_t;
+}
+
+/// Opaque Rust facade for the C++ `IoBitmap` class (`arch/x86/ioport.h`).
+#[repr(C)]
+pub struct IoBitmap {
+    _facade: zr::OpaqueFacade,
+}
+
+impl IoBitmap {
+    /// Invokes `f` with a pinned reference to the [`IoBitmap`] associated with the current
+    /// thread's active address space, or returns `None` if the thread has no associated
+    /// [`IoBitmap`] (such as idle threads).
+    #[inline]
+    pub fn with_current<R>(f: impl FnOnce(core::pin::Pin<&IoBitmap>) -> R) -> Option<R> {
+        // SAFETY: `cpp_io_bitmap_get_current` returns the current thread's `IoBitmap*` (pinned
+        // inside its active `VmAspace`) or null if the thread has no active user address space.
+        let ptr = core::ptr::NonNull::new(unsafe { cpp_io_bitmap_get_current() })?;
+        // SAFETY: `ptr` points to the current thread's active `VmAspace`'s `IoBitmap`, which
+        // remains pinned, alive, and attached for the duration of `f` (detaching or switching
+        // the current thread's active `VmAspace` is `unsafe`).
+        Some(f(unsafe { core::pin::Pin::new_unchecked(ptr.as_ref()) }))
+    }
+
+    /// Sets or clears I/O port permissions `[port, port + len)` in this `IoBitmap`.
+    #[inline]
+    pub fn set_io_bitmap(
+        self: core::pin::Pin<&Self>,
+        port: u32,
+        len: u32,
+        enable: bool,
+    ) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `IoBitmap` facade reference; `SetIoBitmap` synchronizes via
+        // its internal spinlock.
+        Status::ok(unsafe {
+            cpp_io_bitmap_set_io_bitmap(
+                core::ptr::from_ref(self.get_ref()).cast_mut(),
+                port,
+                len,
+                enable,
+            )
+        })
+    }
 }
 
 pub const MAX_CACHE_LINE: usize = 64;

@@ -7,7 +7,8 @@
 use range_check::get_intersect_offset_len;
 use zx_status::Status;
 use zx_types::{
-    ZX_RSRC_KIND_IRQ, ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM, zx_rsrc_kind_t, zx_rsrc_system_base_t,
+    ZX_RSRC_KIND_IOPORT, ZX_RSRC_KIND_IRQ, ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM, zx_rsrc_kind_t,
+    zx_rsrc_system_base_t,
 };
 
 use super::handle::HandleValue;
@@ -132,7 +133,17 @@ pub fn validate_system_resource(handle: HandleValue, base: u64) -> Result<(), St
     validate_ranged_resource(handle, ZX_RSRC_KIND_SYSTEM, base, 1)
 }
 
-// Validates creation of an interrupt object based on a resource handle
+/// Validates enabling ioport access bits for a given process based on a resource handle.
+pub fn validate_resource_ioport(handle: HandleValue, base: u64, size: usize) -> Result<(), Status> {
+    validate_ranged_resource(handle, ZX_RSRC_KIND_IOPORT, base, size)
+}
+
+/// Validates mapping an MMIO range based on a resource handle.
+pub fn validate_resource_mmio(handle: HandleValue, base: u64, size: usize) -> Result<(), Status> {
+    validate_ranged_resource(handle, ZX_RSRC_KIND_MMIO, base, size)
+}
+
+/// Validates creation of an interrupt object based on a resource handle.
 pub fn validate_resource_irq(handle: HandleValue, irq: u32) -> Result<(), Status> {
     validate_ranged_resource(handle, ZX_RSRC_KIND_IRQ, u64::from(irq), 1)
 }

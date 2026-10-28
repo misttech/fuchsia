@@ -15,6 +15,7 @@ mod counter;
 mod cprng;
 mod debug;
 mod debuglog;
+mod driver;
 mod event;
 mod exceptions;
 mod fifo;

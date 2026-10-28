@@ -8,6 +8,8 @@
 #define ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_IOPORT_H_
 
 #include <sys/types.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
 #include <bitmap/rle-bitmap.h>
 #include <kernel/spinlock.h>
@@ -33,5 +35,12 @@ class IoBitmap {
   ktl::unique_ptr<bitmap::RleBitmap> bitmap_;
   DECLARE_SPINLOCK(IoBitmap) lock_;
 };
+
+__BEGIN_CDECLS
+
+IoBitmap* cpp_io_bitmap_get_current();
+zx_status_t cpp_io_bitmap_set_io_bitmap(IoBitmap* bitmap, uint32_t port, uint32_t len, bool enable);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_X86_IOPORT_H_
