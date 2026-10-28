@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::Result;
-use futures::future::LocalBoxFuture;
+use ffx_futures::LocalBoxFuture;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::process::{Command, ExitStatus};

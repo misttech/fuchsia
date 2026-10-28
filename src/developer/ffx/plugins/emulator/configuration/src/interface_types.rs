@@ -10,14 +10,11 @@
 use crate::enumerations::{EngineConsoleType, ShowDetail, SnapshotInfo};
 use emulator_instance::{EmulatorConfiguration, EmulatorInstanceData, EngineState, EngineType};
 use ffx_config::EnvironmentContext;
+pub use ffx_futures::LocalBoxFuture as BoxFuture;
 use fho::{Result, user_error};
 use std::backtrace::Backtrace;
-use std::future::Future;
 use std::path::Path;
-use std::pin::Pin;
 use std::process::Command;
-
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 pub trait EmulatorEngine: Send + Sync {
     /// Expose the EmulatorInstanceData object. This stores all the instance data for the

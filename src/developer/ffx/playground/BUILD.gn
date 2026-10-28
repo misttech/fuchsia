@@ -27,6 +27,7 @@ rustc_library("playground") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
     "//sdk/rust/zx-status",
+    "//src/developer/ffx/lib/futures:lib",
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fidl_codec/rust:fidl_codec_fdomain",

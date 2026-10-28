@@ -383,7 +383,7 @@ async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()
 fn connect_to_capability<T: DiscoverableProtocolMarker>(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     time_to_wait: Duration,
-) -> futures::future::LocalBoxFuture<'static, Result<T::Proxy>> {
+) -> ffx_futures::LocalBoxFuture<'static, Result<T::Proxy>> {
     Box::pin(async move {
         let rcs_proxy = try_rcs_proxy_connection(rcs_proxy_connector, time_to_wait).await?;
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.

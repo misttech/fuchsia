@@ -10,7 +10,7 @@ use crate::target_connector::{
 use anyhow::Result;
 use ffx_command_error::FfxContext as _;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
-use futures::future::LocalBoxFuture;
+use ffx_futures::LocalBoxFuture;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::process::Stdio;

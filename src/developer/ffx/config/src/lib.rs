@@ -10,7 +10,7 @@ use analytics::metrics_state::MetricsStatus;
 use analytics::{set_new_opt_in_status, show_status_message};
 
 use core::fmt;
-use futures::future::LocalBoxFuture;
+use ffx_futures::LocalBoxFuture;
 use std::fmt::Debug;
 use std::io::Write;
 use std::path::PathBuf;

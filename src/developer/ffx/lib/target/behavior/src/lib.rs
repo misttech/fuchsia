@@ -96,7 +96,7 @@ impl DirectConnector {
     // the nested async blocks can otherwise exceed the compiler's recursion limit.
     pub fn resolution(
         &self,
-    ) -> futures::future::LocalBoxFuture<'_, Result<Arc<Resolution>, TargetResolutionError>> {
+    ) -> ffx_futures::LocalBoxFuture<'_, Result<Arc<Resolution>, TargetResolutionError>> {
         Box::pin(async move {
             let mut resolution = self.0.resolution.lock().await;
 

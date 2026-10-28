@@ -10,12 +10,13 @@ use fdomain_fuchsia_tracing_controller::{
     SessionManagerProxy, StopResult, TraceConfig, TraceOptions, Trigger,
 };
 use ffx_config::EnvironmentContext;
+use ffx_futures::BoxFuture;
 use ffx_target::get_target_specifier;
 use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand, Upload};
 use ffx_tracing::{self as ffx_trace, FidlLibraries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
-use futures::future::{BoxFuture, Future, FutureExt as _};
+use futures::future::{Future, FutureExt as _};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, row};
 use serde::{Deserialize, Serialize};

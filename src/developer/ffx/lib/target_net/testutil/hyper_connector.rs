@@ -7,8 +7,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use derivative::Derivative;
+use ffx_futures::BoxFuture;
 use ffx_target_net::{SocketProvider, TargetTcpStream};
-use futures::future::BoxFuture;
 use futures::{AsyncRead as _, AsyncWrite as _, FutureExt as _};
 use http::uri::{Scheme, Uri};
 use hyper_util::client::legacy::Client;

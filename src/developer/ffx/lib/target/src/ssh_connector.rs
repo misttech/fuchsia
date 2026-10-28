@@ -11,12 +11,12 @@ use anyhow::Result;
 use async_channel::Sender;
 use ffx_command_error::FfxContext as _;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
+use ffx_futures::LocalBoxFuture;
 use ffx_ssh::ssh::{
     ManageSshControlMasterError, SpawnControlMasterError, SshCommandError, SshError,
     build_ssh_command_with_env,
 };
 use fuchsia_async::Task;
-use futures::future::LocalBoxFuture;
 use netext::ScopedSocketAddr;
 use nix::sys::signal::Signal::SIGKILL;
 use nix::sys::signal::kill;

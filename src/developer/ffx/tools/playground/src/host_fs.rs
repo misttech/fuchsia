@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use fdomain_fuchsia_io as fio;
-use futures::future::BoxFuture;
+use ffx_futures::BoxFuture;
 use std::any::Any;
 use std::future::ready;
 use std::io::{Read, Seek, Write};

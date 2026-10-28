@@ -5,12 +5,9 @@
 use fdomain_fuchsia_audio_device as fadevice;
 use fdomain_fuchsia_hardware_audio as fhaudio;
 use ffx_command_error::{FfxContext, Result, bug, user_error};
+pub use ffx_futures::BoxFuture;
 use fuchsia_audio_fdomain::dai::DaiFormat;
-use std::future::Future;
-use std::pin::Pin;
 use zx_status::Status;
-
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait DeviceControl {
     fn set_dai_format<'a>(

@@ -12,6 +12,7 @@ if (is_host) {
 
     deps = [
       "//sdk/fidl/fuchsia.audio.controller:fuchsia.audio.controller_rust_fdomain",
+      "//src/developer/ffx/lib/futures:lib",
       "//src/developer/ffx/lib/target/holders:lib",
       "//src/developer/ffx/lib/timeout:lib",
       "//src/lib/fdomain/client",

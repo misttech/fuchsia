@@ -21,6 +21,7 @@ rustc_library(
         "//src/developer/ffx/lib/addr:lib",
         "//src/developer/ffx/lib/discovery:lib",
         "//src/developer/ffx/lib/fho:lib",
+        "//src/developer/ffx/lib/futures:lib",
         "//src/developer/ffx/lib/ssh:lib",
         "//src/developer/ffx/lib/target:lib",
         "//src/lib/fdomain/client",

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_lock::Mutex as AsyncMutex;
-use futures::future::BoxFuture;
+use ffx_futures::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use num_bigint::BigInt;
 use std::sync::Arc;

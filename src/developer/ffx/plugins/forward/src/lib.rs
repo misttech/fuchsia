@@ -11,11 +11,12 @@ use std::time::{Duration, Instant};
 
 use errors::ffx_error;
 use ffx_forward_args::{Direction, ForwardCommand, ForwardSpec, ProtoSpec};
+use ffx_futures::BoxFuture;
 use ffx_target_net::{Bidirectional, Counters, PortForwarder};
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
 use fuchsia_async as fasync;
-use futures::future::{BoxFuture, Fuse, FusedFuture as _, OptionFuture};
+use futures::future::{Fuse, FusedFuture as _, OptionFuture};
 use futures::stream::FusedStream;
 use futures::{FutureExt as _, Stream, StreamExt as _};
 use log::{error, info};

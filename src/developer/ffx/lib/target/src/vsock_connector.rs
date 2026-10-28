@@ -9,7 +9,7 @@ use crate::target_connector::{
 };
 use anyhow::Result;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
-use futures::future::LocalBoxFuture;
+use ffx_futures::LocalBoxFuture;
 use nix::errno::Errno;
 use nix::sys::socket::sockopt::SocketError;
 use nix::sys::socket::{

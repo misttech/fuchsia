@@ -5,10 +5,10 @@
 use fdomain_client::HandleBased as _;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_io as fio;
+use ffx_futures::BoxFuture;
 use fidl_codec_fdomain::{ObjectType, Value as FidlValue, library as lib};
 use futures::channel::mpsc::{UnboundedSender, unbounded as unbounded_channel};
 use futures::channel::oneshot::{Sender as OneshotSender, channel as oneshot_channel};
-use futures::future::BoxFuture;
 use futures::{Future, FutureExt, Stream, StreamExt};
 use regex::Regex;
 use std::collections::HashMap;
@@ -965,8 +965,7 @@ impl Interpreter {
                             fs_root: Value,
                             pwd: Value,
                             import: String,
-                        ) -> futures::future::BoxFuture<'static, Result<GlobalVariables>>
-                        {
+                        ) -> BoxFuture<'static, Result<GlobalVariables>> {
                             async move {
                                 let interpreter =
                                     Interpreter::new_with_inner(inner, fs_root, pwd).await;

@@ -5,12 +5,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 
 pub type CheckResult<T> = Result<T, anyhow::Error>;
 
-pub type CheckFut<'a, T> = Pin<Box<dyn Future<Output = CheckResult<T>> + 'a>>;
+pub type CheckFut<'a, T> = ffx_futures::LocalBoxFuture<'a, CheckResult<T>>;
 
 pub trait Check {
     /// The input for the next check in the check stream.

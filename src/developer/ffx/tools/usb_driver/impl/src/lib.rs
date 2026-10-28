@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use ffx_futures::LocalBoxFuture;
 use ffx_metrics::{UsbDriverConnectionEvent, UsbDriverShutdownEvent, UsbDriverTelemetryEvent};
 use fidl_fuchsia_ffx_usb_common::{
     self as usb_fidl, control_ordinals, ffx_usb_ordinals, list_devices_ordinals,
 };
 use futures::channel::{mpsc, oneshot};
-use futures::future::{Either, LocalBoxFuture, select};
+use futures::future::{Either, select};
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, SinkExt, StreamExt};
 use std::collections::hash_map::Entry;

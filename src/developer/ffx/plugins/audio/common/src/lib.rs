@@ -85,7 +85,7 @@ where
         .map_err(|e| anyhow!("Record request failed with error {:?}", e))
 }
 
-pub fn get_stdin_waiter() -> futures::future::BoxFuture<'static, Result<(), std::io::Error>> {
+pub fn get_stdin_waiter() -> ffx_futures::BoxFuture<'static, Result<(), std::io::Error>> {
     blocking::unblock(move || {
         let _ = std::io::stdin().lock().read_line(&mut String::new());
         Ok(())

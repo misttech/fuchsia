@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use ffx_futures::BoxFuture;
 use fidl_codec_fdomain::{AsPlatform as _, ObjectType, Value as FidlValue, library as lib};
-use futures::future::BoxFuture;
 use num_bigint::BigInt;
 use num_rational::Ratio;
 use num_traits::ToPrimitive;

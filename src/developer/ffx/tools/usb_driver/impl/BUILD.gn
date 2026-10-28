@@ -16,6 +16,7 @@ rustc_library("lib") {
 
   deps = [
     "//src/developer/ffx/fidl/usb:fuchsia.ffx.usb_rust_common",
+    "//src/developer/ffx/lib/futures:lib",
     "//src/developer/ffx/lib/metrics:lib",
     "//src/developer/ffx/lib/usb_vsock_host",
     "//src/lib/fidl/rust/fidl",

@@ -14,8 +14,8 @@ use crate::target_connector::{
 };
 use errors::FfxError;
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
+use ffx_futures::LocalBoxFuture;
 use fidl_fuchsia_developer_ffx as ffx;
-use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};

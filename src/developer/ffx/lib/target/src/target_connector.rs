@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
+use ffx_futures::LocalBoxFuture;
 use fuchsia_async::Task;
 use std::fmt::Debug;
 use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, BufReader};
 
 // LINT.IfChange
@@ -108,7 +108,7 @@ impl OvernetConnection {
         mut recv: W,
         send: R,
         error_sender: Sender<ConnectionStreamError>,
-    ) -> Pin<Box<dyn Future<Output = ()> + 'a>>
+    ) -> LocalBoxFuture<'a, ()>
     where
         R: AsyncRead + Unpin + Sized + 'a,
         W: AsyncWrite + Unpin + Sized + 'a,

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crossterm::style::{Attribute, Color, StyledContent, Stylize, style};
-use futures::future::{FutureExt, LocalBoxFuture};
+use ffx_futures::LocalBoxFuture;
+use futures::future::FutureExt;
 use futures::io::{AsyncWrite, AsyncWriteExt as _};
 use futures::stream::StreamExt;
 use playground::interpreter::Interpreter;
