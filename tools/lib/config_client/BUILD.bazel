@@ -1,0 +1,53 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "config_client",
+    srcs = [
+        "src/cpp.rs",
+        "src/fidl.rs",
+        "src/lib.rs",
+        "src/rust.rs",
+    ],
+    compile_data = [
+        "templates/cpp_elf.cc.hbs",
+        "templates/cpp_elf.h.hbs",
+        "templates/helpers.cc.hbs",
+        "templates/typedef.h.hbs",
+        "templates/vmo_create.cc.hbs",
+        "templates/vmo_parse.cc.hbs",
+        "templates/vmo_parse_helpers.cc.hbs",
+    ],
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools/configc:__pkg__"],
+    deps = [
+        "//src/sys/lib/cm_rust",
+        "//third_party/rust_crates/vendor:handlebars",
+        "//third_party/rust_crates/vendor:proc-macro2",
+        "//third_party/rust_crates/vendor:quote",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:syn",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+host_rustc_test(
+    name = "config_client_test",
+    crate = ":config_client",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//src/sys/lib/fidl_fuchsia_component_config_ext",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)
