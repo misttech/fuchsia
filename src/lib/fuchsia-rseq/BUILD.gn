@@ -13,22 +13,8 @@ group("tests") {
   testonly = true
   deps = [
     ":bazel_tests",
-    ":fuchsia-rseq-tests",
+    ":fuchsia-rseq-tests-package",
   ]
-}
-
-# GN copy of the Bazel test "fuchsia-rseq-tests", while the library is used in
-# both build systems. bazel2gn can't translate explicit fx_package() tests yet.
-fuchsia_unittest_package("fuchsia-rseq-tests") {
-  package_name = "fuchsia-rseq-tests-gn"
-  component_name = "fuchsia-rseq-tests"
-  manifest = "meta/fuchsia_rseq_tests.cml"
-  deps = [ ":fuchsia-rseq_test" ]
-  test_specs = {
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -70,4 +56,23 @@ rustc_library("fuchsia-rseq") {
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
   ]
+}
+fuchsia_component_manifest("fuchsia-rseq-tests-manifest") {
+  testonly = true
+  component_name = "fuchsia-rseq-tests"
+  manifest = "meta/fuchsia_rseq_tests.cml"
+}
+fuchsia_test_component("fuchsia-rseq-tests-component") {
+  cm_label = ":fuchsia-rseq-tests-manifest"
+  component_name = "fuchsia-rseq-tests"
+  deps = [ ":fuchsia-rseq_test" ]
+}
+fuchsia_test_package("fuchsia-rseq-tests-package") {
+  package_name = "fuchsia-rseq-tests-gn"
+  test_components = [ ":fuchsia-rseq-tests-component" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

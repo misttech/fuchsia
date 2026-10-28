@@ -180,9 +180,10 @@ to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
     (which lists `.cml` shard inputs for the Bazel action sandbox; GN runs `cmc`
     with global include paths and a depfile instead). An
     `fx_component_manifest()` referenced via `compiled_manifest` only by
-    `fx_test_component()` or a skipped `fx_component()` in the same
-    `BUILD.bazel` (and not by any un-skipped `fx_component()` or
-    `fuchsia_structured_config_rust_lib()`) is skipped automatically.
+    Bazel-only `fx_test_component()`s (see [Tests](#tests)) or skipped
+    `fx_component()`s in the same `BUILD.bazel` (and not by any converted
+    component or `fuchsia_structured_config_rust_lib()`) is skipped
+    automatically.
 *   `fx_component()` maps `compiled_manifest` (which must refer to a
     `:<manifest>` target in the same `BUILD` file) to `cm_label`. If the
     `fx_component_manifest()` or `fx_compiled_manifest()` appears after a
@@ -199,7 +200,8 @@ to GN `fuchsia_component_manifest()`, `cm()`, and `fuchsia_component()`:
     `fx_component()` can't use an `fx_compiled_manifest()` as its
     `compiled_manifest`.
 *   `fx_packaged_binary()` has no standalone GN equivalent, but when an
-    `fx_component()` depends on a `:<packaged_bin>` defined in the same
+    `fx_component()` (or a converted `fx_test_component()`) depends on a
+    `:<packaged_bin>` defined in the same
     `BUILD.bazel` wrapping an un-skipped binary target in the same file:
     *   If `install_root + binary_name` matches the GN binary's default
         `"bin/<output_name>"`, `:<packaged_bin>` in `deps` unwraps directly to
@@ -236,10 +238,37 @@ so `bazel2gn` translates test rules too:
     `package_name`, `unit_tests`, `max_log_severity`, `tags`, `testonly`, and
     `visibility` are supported; any other attribute (such as `resources` or
     `environments`) is an error.
+*   An `fx_package()` with un-skipped `test_components` maps to
+    `fuchsia_test_package()`, with the same `-gn` suffix on the package name.
+    `test_components` (which must be a list literal) and `subpackages` are
+    passed through, and `components` maps to `deps`. Any other attribute (such
+    as `resources` or `tools`) is an error. The `fx_test()` in the same
+    `BUILD.bazel` whose `package` is the `fx_package()` (at most one) sets the
+    GN `test_specs`: `max_log_severity` maps to `log_settings.max_severity`,
+    `build_only` is passed through, and `environments` must be a list of
+    `//build/testing/environments:<env>` labels, which map to the `<env>`
+    variables of `//build/testing/environments.gni`. GN only supports
+    `test_type` on components, so `fx_test(test_type = ...)` is set on each test
+    component instead.
+*   An `fx_test_component()` listed in the `test_components` of such an
+    `fx_package()` in the same `BUILD.bazel` maps to `fuchsia_test_component()`
+    like `fx_component()` maps to `fuchsia_component()`, and also passes
+    `test_type` through. A listed `fx_unittest_component()` maps to
+    `fuchsia_unittest_component()` with `binary` in `deps` (only `name`,
+    `binary`, `component_name`, `test_type`, `tags`, `testonly`, and
+    `visibility` are supported). Any other same-package test component (such as
+    a skipped one) is an error. Other `fx_test_component()`s and
+    `fx_unittest_component()`s, `fx_package()`s without `test_components`, and
+    `fx_test()` are ignored.
 *   The `with_unit_tests`, `with_host_unit_tests`, and `test_deps` attributes
     of Rust rules are passed through to the GN templates.
-*   `wrap_host_rust_test()`, explicit `fx_package()` / `fx_test()` chains, and
-    the other `host_*_test()` rules have no GN equivalent and are ignored.
+*   `wrap_host_rust_test()` and the other `host_*_test()` rules have no GN
+    equivalent and are ignored.
+
+Put `# @bazel2gn:skip` (with a brief explanatory comment) on an `fx_package()`
+with `test_components` when the test is Bazel-only (for example, because its
+test binary is skipped) or when its GN copy must be written by hand; its
+`fx_test_component()`s and their manifests are then ignored too.
 
 #### Tags
 

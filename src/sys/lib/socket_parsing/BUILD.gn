@@ -5,19 +5,6 @@
 import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 
-fuchsia_component("socket_parsing_test_component") {
-  testonly = true
-  deps = [ ":socket_parsing_test" ]
-  component_name = "socket_parsing_tests"
-  manifest = "meta/socket_parsing_tests.cml"
-}
-
-fuchsia_test_package("socket_parsing_tests") {
-  package_name = "socket_parsing_tests-gn"
-  test_components = [ ":socket_parsing_test_component" ]
-  deps = [ ":socket_parsing_test_component" ]
-}
-
 bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/sys/lib/socket_parsing:socket_parsing_tests" ]
 }
@@ -27,7 +14,7 @@ group("tests") {
 
   deps = [
     ":bazel_tests",
-    ":socket_parsing_tests",
+    ":socket_parsing_tests_package",
   ]
 }
 
@@ -80,4 +67,12 @@ rustc_test("socket_parsing_test") {
            "//third_party/rust_crates:thiserror",
          ] + [ "//src/lib/fuchsia" ]
   output_name = "socket_parsing_lib_test"
+}
+fuchsia_unittest_component("socket_parsing_tests_component") {
+  deps = [ ":socket_parsing_test" ]
+  component_name = "socket_parsing_tests"
+}
+fuchsia_test_package("socket_parsing_tests_package") {
+  package_name = "socket_parsing_tests-gn"
+  test_components = [ ":socket_parsing_tests_component" ]
 }

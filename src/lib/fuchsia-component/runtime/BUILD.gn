@@ -15,18 +15,8 @@ group("tests") {
   testonly = true
   deps = [
     ":bazel_tests",
-    ":fuchsia-component-runtime-unittests",
+    ":fuchsia-component-runtime-unittests-package",
   ]
-}
-
-# GN copy of the Bazel test "fuchsia-component-runtime-unittests", while the
-# library is used in both build systems. bazel2gn can't translate explicit
-# fx_package() tests yet.
-fuchsia_unittest_package("fuchsia-component-runtime-unittests") {
-  package_name = "fuchsia-component-runtime-unittests-gn"
-  component_name = "fuchsia-component-runtime-unittests"
-  manifest = "meta/fuchsia-component-runtime-unittests.cml"
-  deps = [ ":runtime_test" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -76,4 +66,18 @@ rustc_library("runtime") {
     "//src/lib/fuchsia-component/client",
     "//third_party/rust_crates:futures",
   ]
+}
+fuchsia_component_manifest("fuchsia-component-runtime-unittests-manifest") {
+  testonly = true
+  component_name = "fuchsia-component-runtime-unittests"
+  manifest = "meta/fuchsia-component-runtime-unittests.cml"
+}
+fuchsia_test_component("fuchsia-component-runtime-unittests-component") {
+  cm_label = ":fuchsia-component-runtime-unittests-manifest"
+  component_name = "fuchsia-component-runtime-unittests"
+  deps = [ ":runtime_test" ]
+}
+fuchsia_test_package("fuchsia-component-runtime-unittests-package") {
+  package_name = "fuchsia-component-runtime-unittests-gn"
+  test_components = [ ":fuchsia-component-runtime-unittests-component" ]
 }

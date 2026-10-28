@@ -76,6 +76,8 @@ fx_test_component(
     deps = [":fuchsia-vulkan_test_packaged_bin"],
 )
 
+# GN copy is hand-written in BUILD.gn because it uses `vulkan_envs`, which has no Bazel equivalent.
+# @bazel2gn:skip
 fx_package(
     name = "fuchsia_vulkan_tests-package",
     package_name = "fuchsia_vulkan_tests",

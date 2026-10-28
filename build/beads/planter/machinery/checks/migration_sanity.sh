@@ -504,6 +504,7 @@ def parse_bazel_targets(bazel_path, pkg_dir="", text=None):
         gn_dep_refs = set()
         ext_tut_refs = set()
         is_test_pkg = rule == "fx_unittest_package"
+        has_test_components = False
         has_resources = False
         has_test_data = False
         has_rustc_env = False
@@ -521,6 +522,11 @@ def parse_bazel_targets(bazel_path, pkg_dir="", text=None):
                 isinstance(kw.value, ast.List) and not kw.value.elts
             ):
                 is_test_pkg = True
+                if not has_skip_comment(lines, kw.lineno) and (
+                    not isinstance(kw.value, ast.List)
+                    or any(not has_skip_comment(lines, elt.lineno) for elt in kw.value.elts)
+                ):
+                    has_test_components = True
             if (
                 kw.arg == "testonly"
                 and isinstance(kw.value, ast.Constant)
@@ -657,6 +663,7 @@ def parse_bazel_targets(bazel_path, pkg_dir="", text=None):
             "ext_tut_refs": ext_tut_refs,
             "gn_dep_refs": gn_dep_refs,
             "is_test_pkg": is_test_pkg,
+            "has_test_components": has_test_components,
             "has_resources": has_resources,
             "has_test_data": has_test_data,
             "has_rustc_env": has_rustc_env,
@@ -3196,7 +3203,7 @@ for pkg_dir in sorted(candidate_dirs):
         for gname, (gtmpl, gline, gbody) in sorted(gn_info["pre_targets"].items()):
             # Record authoritative INFO when a fuchsia_package stays hand-written above the
             # sentinel in a dual-build BUILD.gn without fx_package in BUILD.bazel (bazel2gn does
-            # not translate fx_package, so GN subpackages/deps callers still need the GN package,
+            # not translate non-test fx_package, so GN subpackages/deps callers still need the GN package,
             # and fx_packaged_binary on a rustc_binary with transitive rustc_dylib deps fails in
             # _build_fuchsia_package_impl with duplicate lib/lib*.so runfiles).
             if gtmpl in ("fuchsia_package", "fuchsia_package_with_single_component") and not fx_pkgs:
@@ -3209,7 +3216,7 @@ for pkg_dir in sorted(candidate_dirs):
                     "message": (
                         f'GN target "{gname}" ({gtmpl} at {gn_rel}:{gline}) remains hand-written '
                         "in BUILD.gn (above the bazel2gn sentinel) and is not migrated to "
-                        "BUILD.bazel: `bazel2gn` does not translate `fx_package`, so "
+                        "BUILD.bazel: `bazel2gn` does not translate non-test `fx_package`, so "
                         f"`{gtmpl}(\"{gname}\")` stays above the sentinel for GN `subpackages`/"
                         "`deps` callers (and avoids `_build_fuchsia_package_impl` duplicate "
                         "`lib/lib*.so` runfile collisions when a packaged `rustc_binary` has "
@@ -3516,10 +3523,16 @@ for pkg_dir in sorted(candidate_dirs):
     if gn_info and FX_TEST_AVAILABLE:
         bazel_test_pkg_names = {t["package_name"] for t in fx_all_pkgs}
         bazel_rules = {t["name"]: t["rule"] for t in bazel_targets}
+        # bazel2gn translates test `fx_package(test_components = ...)` chains, so only a skipped
+        # one (or one with `resources`, which bazel2gn rejects) needs a hand-written GN copy.
         bazel_untranslatable_test_pkg_names = {
             t["package_name"]
             for t in bazel_targets
-            if t["rule"] in ("fx_package", "fuchsia_package")
+            if t["rule"] == "fuchsia_package"
+            or (
+                t["rule"] == "fx_package"
+                and (not t.get("has_test_components") or t.get("skip_line") is not None or t.get("has_resources"))
+            )
             or (
                 t["rule"] == "fx_unittest_package"
                 and (
@@ -3660,7 +3673,7 @@ for pkg_dir in sorted(candidate_dirs):
             if gn_pkg_name.endswith("-gn") and gn_pkg_name[: -len("-gn")] in bazel_test_pkg_names:
                 base_pkg_name = gn_pkg_name[: -len("-gn")]
                 if base_pkg_name in bazel_untranslatable_test_pkg_names:
-                    # The GN copy of a Bazel test package that bazel2gn can't translate (explicit
+                    # The GN copy of a Bazel test package that bazel2gn can't translate (skipped
                     # fx_package chain, fx_unittest_package with resources, or unsupported test binary).
                     continue
                 if gn_info["has_sentinel"]:
@@ -3672,13 +3685,14 @@ for pkg_dir in sorted(candidate_dirs):
                         "line": gline,
                         "message": (
                             f"GN `{gtmpl}(\"{gname}\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}' duplicates "
-                            f"`fx_unittest_package` `{base_pkg_name}` in '{bazel_rel}', which has no `resources` "
-                            "and is translated directly by `bazel2gn` below the sentinel."
+                            f"Bazel test package `{base_pkg_name}` in '{bazel_rel}' (an `fx_unittest_package` "
+                            "without `resources` or an `fx_package` with `test_components`), which `bazel2gn` "
+                            "translates directly below the sentinel."
                         ),
                         "remediation": (
                             f"Delete `{gtmpl}(\"{gname}\")` above `## BAZEL2GN SENTINEL` in '{gn_rel}', remove any "
-                            f"`# @bazel2gn:skip` on `fx_unittest_package(name = \"{base_pkg_name}\")` in '{bazel_rel}', "
-                            f"and re-run `fx bazel2gn -d {pkg_dir}`."
+                            f"`# @bazel2gn:skip` on the Bazel package of `{base_pkg_name}` in '{bazel_rel}', "
+                            f"list the generated package in `group(\"tests\")`, and re-run `fx bazel2gn -d {pkg_dir}`."
                         ),
                     })
                     continue

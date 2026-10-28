@@ -23,7 +23,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":bazel_tests",
-    "carnelian:carnelian-tests",
+    "carnelian:carnelian-tests-package",
     "fidl_fuchsia_ui_focus_ext:tests",
     "fidl_fuchsia_ui_views_ext:tests",
     "flatland-frame-scheduling:tests",

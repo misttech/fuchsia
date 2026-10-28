@@ -2,20 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-
-# GN copy of the Bazel test "page_buf_tests", while the library is used in both
-# build systems. bazel2gn can't translate explicit fx_package() tests yet.
-fuchsia_unittest_package("page_buf_tests") {
-  package_name = "page_buf_tests-gn"
-  component_name = "page_buf_tests"
-  manifest = "meta/page_buf_tests.cml"
-  deps = [ ":page_buf_lib_test" ]
-}
-
 group("tests") {
   testonly = true
-  deps = [ ":page_buf_tests" ]
+  deps = [ ":page_buf_tests-package" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -65,4 +54,19 @@ rustc_test("page_buf_lib_test") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-runtime",
   ]
+}
+fuchsia_component_manifest("page_buf_tests-manifest") {
+  testonly = true
+  component_name = "page_buf_tests"
+  manifest = "meta/page_buf_tests.cml"
+}
+fuchsia_test_component("page_buf_tests-component") {
+  cm_label = ":page_buf_tests-manifest"
+  component_name = "page_buf_tests"
+  test_type = "starnix"
+  deps = [ ":page_buf_lib_test" ]
+}
+fuchsia_test_package("page_buf_tests-package") {
+  package_name = "page_buf_tests-gn"
+  test_components = [ ":page_buf_tests-component" ]
 }

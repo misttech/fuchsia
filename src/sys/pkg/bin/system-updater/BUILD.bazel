@@ -244,6 +244,8 @@ fx_test_component(
     deps = [":bin_test_packaged_bin"],
 )
 
+# Bazel-only test, because `:bin_test` is skipped.
+# @bazel2gn:skip
 fx_package(
     name = "system-updater-tests-package",
     package_name = "system-updater-tests",

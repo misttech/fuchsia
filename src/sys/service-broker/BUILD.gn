@@ -18,18 +18,8 @@ group("tests") {
   testonly = true
   deps = [
     ":bazel_tests",
-    ":service-broker-unittests",
+    ":service-broker-unittests-package",
   ]
-}
-
-fuchsia_unittest_component("service-broker-unittests-component") {
-  component_name = "service-broker-unittests"
-  deps = [ ":lib_test" ]
-}
-
-fuchsia_test_package("service-broker-unittests") {
-  package_name = "service-broker-unittests-gn"
-  test_components = [ ":service-broker-unittests-component" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -103,4 +93,12 @@ rustc_test("lib_test") {
         "//third_party/rust_crates:log",
       ] + [ "//src/lib/fuchsia" ]
   output_name = "service_broker_lib_test"
+}
+fuchsia_unittest_component("service-broker-unittests-component") {
+  deps = [ ":lib_test" ]
+  component_name = "service-broker-unittests"
+}
+fuchsia_test_package("service-broker-unittests-package") {
+  package_name = "service-broker-unittests-gn"
+  test_components = [ ":service-broker-unittests-component" ]
 }

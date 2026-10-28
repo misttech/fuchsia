@@ -14,16 +14,6 @@ fuchsia_package("system-update-committer") {
   deps = [ ":component" ]
 }
 
-fuchsia_unittest_component("unittest_component") {
-  manifest = "meta/unittests.cml"
-  deps = [ ":lib_test" ]
-}
-
-fuchsia_test_package("system-update-committer-tests") {
-  package_name = "system-update-committer-tests-gn"
-  test_components = [ ":unittest_component" ]
-}
-
 bazel_test_suite("bazel_tests") {
   target_tests = [
     "//src/sys/pkg/bin/system-update-committer:system-update-committer-tests",
@@ -34,7 +24,7 @@ group("hermetic_tests") {
   testonly = true
   public_deps = [
     ":bazel_tests",
-    ":system-update-committer-tests",
+    ":system-update-committer-tests-package",
   ]
 }
 
@@ -173,4 +163,18 @@ rustc_test("lib_test") {
          ]
   lint_config = "//build/config/rust/lints:clippy_warn_all"
   output_name = "system_update_committer_lib_test"
+}
+fuchsia_component_manifest("unittest_manifest") {
+  testonly = true
+  component_name = "unittest_component"
+  manifest = "meta/unittests.cml"
+}
+fuchsia_test_component("unittest_component") {
+  cm_label = ":unittest_manifest"
+  component_name = "unittest_component"
+  deps = [ ":lib_test" ]
+}
+fuchsia_test_package("system-update-committer-tests-package") {
+  package_name = "system-update-committer-tests-gn"
+  test_components = [ ":unittest_component" ]
 }

@@ -65,6 +65,8 @@ fx_test_component(
     deps = [":ring-buffer_test_packaged_bin"],
 )
 
+# Bazel-only test, because the unit tests of `:ring-buffer` are skipped.
+# @bazel2gn:skip
 fx_package(
     name = "ring-buffer-tests-package",
     package_name = "ring-buffer-tests",

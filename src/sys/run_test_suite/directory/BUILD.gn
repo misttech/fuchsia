@@ -4,25 +4,10 @@
 
 import("//build/components.gni")
 
-fuchsia_unittest_component("test-output-directory-lib-test") {
-  manifest = "meta/test-output-directory-lib-test.cml"
-  deps = [ ":test_output_directory_lib_test" ]
-}
-
-fuchsia_test_package("test-output-directory-unit-tests") {
-  package_name = "test-output-directory-unit-tests-gn"
-  test_components = [ ":test-output-directory-lib-test" ]
-  test_specs = {
-    log_settings = {
-      max_severity = "ERROR"
-    }
-  }
-}
-
 group("tests") {
   testonly = true
   deps = [
-    ":test-output-directory-unit-tests",
+    ":test-output-directory-unit-tests-package",
     ":test_output_directory_lib_test($host_toolchain)",
   ]
 }
@@ -97,4 +82,22 @@ rustc_test("test_output_directory_lib_test") {
            "//third_party/rust_crates:valico",
          ]
   proc_macro_deps = [ "//src/lib/testing/fixture" ]
+}
+fuchsia_component_manifest("test-output-directory-lib-test-manifest") {
+  testonly = true
+  component_name = "test-output-directory-lib-test"
+  manifest = "meta/test-output-directory-lib-test.cml"
+}
+fuchsia_test_component("test-output-directory-lib-test") {
+  cm_label = ":test-output-directory-lib-test-manifest"
+  deps = [ ":test_output_directory_lib_test" ]
+}
+fuchsia_test_package("test-output-directory-unit-tests-package") {
+  package_name = "test-output-directory-unit-tests-gn"
+  test_components = [ ":test-output-directory-lib-test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

@@ -48,6 +48,9 @@ func FileToGN(f *syntax.File) ([]string, error) {
 	if err := inlineRustTestCrates(f); err != nil {
 		return nil, err
 	}
+	if err := resolveTestPackages(f); err != nil {
+		return nil, err
+	}
 	if err := resolveComponentTargets(f); err != nil {
 		return nil, err
 	}
@@ -293,10 +296,25 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		}
 		return rustcCheckCfgBuildFlagsToGN(expr)
 	}
+	if bazelRule == internalFxTestPackageRule {
+		if len(rawAttrs) > 0 {
+			return nil, errors.New("raw_attribute annotation is not supported on fx_package")
+		}
+		return fxTestPackageToGN(expr)
+	}
+	if bazelRule == internalFxUnittestComponentRule {
+		if len(rawAttrs) > 0 {
+			return nil, errors.New("raw_attribute annotation is not supported on fx_unittest_component")
+		}
+		return fxUnittestComponentToGN(expr)
+	}
 	var gnTemplateName string
-	if bazelRule == internalRenamedBinaryRule {
+	switch bazelRule {
+	case internalRenamedBinaryRule:
 		gnTemplateName = "renamed_binary"
-	} else {
+	case internalFxTestComponentRule:
+		gnTemplateName = "fuchsia_test_component"
+	default:
 		var ok bool
 		gnTemplateName, ok = bazelRuleToGNTemplate[bazelRule]
 		if !ok {
@@ -317,7 +335,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		if err := prepareFxCompiledManifest(expr); err != nil {
 			return nil, err
 		}
-	case "fx_component":
+	case "fx_component", internalFxTestComponentRule:
 		if err := validateFxComponent(expr); err != nil {
 			return nil, err
 		}

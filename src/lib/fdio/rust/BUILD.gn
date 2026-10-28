@@ -13,32 +13,6 @@ rustc_link_attribute("fdio_for_rust_stdlib") {
   lib_shared_target = "//sdk/lib/fdio"
 }
 
-fuchsia_component("test-component") {
-  testonly = true
-  visibility = [ ":*" ]
-  component_name = "fdio_lib_test"
-  deps = [
-    ":fdio_test",
-    ":spawn_builder_test_target",
-    ":spawn_test_target",
-  ]
-  manifest = "meta/fdio_lib_test.cml"
-}
-
-fuchsia_unittest_component("fdio_zxio_test_component") {
-  visibility = [ ":*" ]
-  component_name = "fdio_zxio_test"
-  deps = [ ":fdio_zxio_test" ]
-}
-
-fuchsia_test_package("test-package") {
-  package_name = "fdio-rust-tests-gn"
-  test_components = [
-    ":test-component",
-    ":fdio_zxio_test_component",
-  ]
-}
-
 bazel_test_suite("bazel_tests") {
   target_tests = [ "//src/lib/fdio/rust:fdio-rust-tests" ]
 }
@@ -145,4 +119,29 @@ if (is_fuchsia) {
     source_root = "test/spawn_builder_test_target.rs"
     edition = "2024"
   }
+}
+fuchsia_component_manifest("test-component-manifest") {
+  testonly = true
+  component_name = "fdio_lib_test"
+  manifest = "meta/fdio_lib_test.cml"
+}
+fuchsia_test_component("test-component") {
+  cm_label = ":test-component-manifest"
+  component_name = "fdio_lib_test"
+  deps = [
+    ":fdio_test",
+    ":spawn_builder_test_target",
+    ":spawn_test_target",
+  ]
+}
+fuchsia_unittest_component("fdio_zxio_test_component") {
+  deps = [ ":fdio_zxio_test" ]
+  component_name = "fdio_zxio_test"
+}
+fuchsia_test_package("test-package") {
+  package_name = "fdio-rust-tests-gn"
+  test_components = [
+    ":fdio_zxio_test_component",
+    ":test-component",
+  ]
 }

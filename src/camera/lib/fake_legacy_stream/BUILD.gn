@@ -14,17 +14,8 @@ group("tests") {
   testonly = true
   public_deps = [
     ":bazel_tests",
-    ":fake_legacy_stream_unittest",
+    ":fake_legacy_stream_unittest_package",
   ]
-}
-
-# GN copy of the Bazel test while the library is used in both build systems;
-# bazel2gn cannot translate explicit fx_package tests.
-fuchsia_unittest_package("fake_legacy_stream_unittest") {
-  package_name = "fake_legacy_stream_unittest-gn"
-  component_name = "fake_legacy_stream_unittest"
-  manifest = "meta/fake_legacy_stream_unittest.cml"
-  deps = [ ":fake_legacy_stream_unittest_bin" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -93,4 +84,18 @@ if (is_fuchsia) {
       "//src/lib/testing/loop_fixture",
     ]
   }
+}
+fuchsia_component_manifest("fake_legacy_stream_unittest_manifest") {
+  testonly = true
+  component_name = "fake_legacy_stream_unittest"
+  manifest = "meta/fake_legacy_stream_unittest.cml"
+}
+fuchsia_test_component("fake_legacy_stream_unittest_component") {
+  cm_label = ":fake_legacy_stream_unittest_manifest"
+  component_name = "fake_legacy_stream_unittest"
+  deps = [ ":fake_legacy_stream_unittest_bin" ]
+}
+fuchsia_test_package("fake_legacy_stream_unittest_package") {
+  package_name = "fake_legacy_stream_unittest-gn"
+  test_components = [ ":fake_legacy_stream_unittest_component" ]
 }

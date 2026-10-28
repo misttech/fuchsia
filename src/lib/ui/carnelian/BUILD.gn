@@ -66,21 +66,6 @@ rustc_binary("spinning_square") {
   ]
 }
 
-fuchsia_unittest_package("carnelian-render-tests") {
-  package_name = "carnelian-render-tests-gn"
-  component_name = "carnelian-render-tests"
-  manifest = "meta/carnelian_lib_test.cml"
-  deps = [ ":carnelian_test" ]
-}
-
-fuchsia_unittest_package("carnelian-tests") {
-  package_name = "carnelian-tests-gn"
-  component_name = "carnelian-tests"
-  manifest = "meta/carnelian_lib_test.cml"
-  deps = [ ":carnelian_test" ]
-  test_type = "system"
-}
-
 rustc_test("carnelian_integration_test_bin") {
   name = "carnelian_integration_test"
   edition = "2024"
@@ -722,4 +707,33 @@ rustc_test("carnelian_test") {
   inputs = [ "//prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf" ]
   configs += [ ":carnelian-performance" ]
   output_name = "carnelian_lib_test"
+}
+fuchsia_component_manifest("carnelian-render-tests-manifest") {
+  testonly = true
+  component_name = "carnelian-render-tests"
+  manifest = "meta/carnelian_lib_test.cml"
+}
+fuchsia_test_component("carnelian-render-tests-component") {
+  cm_label = ":carnelian-render-tests-manifest"
+  component_name = "carnelian-render-tests"
+  deps = [ ":carnelian_test" ]
+}
+fuchsia_test_package("carnelian-render-tests-package") {
+  package_name = "carnelian-render-tests-gn"
+  test_components = [ ":carnelian-render-tests-component" ]
+}
+fuchsia_component_manifest("carnelian-tests-manifest") {
+  testonly = true
+  component_name = "carnelian-tests"
+  manifest = "meta/carnelian_lib_test.cml"
+}
+fuchsia_test_component("carnelian-tests-component") {
+  cm_label = ":carnelian-tests-manifest"
+  component_name = "carnelian-tests"
+  deps = [ ":carnelian_test" ]
+  test_type = "system"
+}
+fuchsia_test_package("carnelian-tests-package") {
+  package_name = "carnelian-tests-gn"
+  test_components = [ ":carnelian-tests-component" ]
 }

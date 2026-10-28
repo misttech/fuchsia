@@ -5,8 +5,8 @@
 import("//build/bazel/bazel_test_suite.gni")
 import("//build/components.gni")
 
-# Kept in GN for `fuchsia-hyper-tests` because `bazel2gn` does not translate
-# `fx_test_component` (`noGNEquivalent`).
+# Kept in GN for `fuchsia-hyper-tests` because the Bazel `fx_package` is
+# skipped by `bazel2gn` (see below), so its test component isn't generated.
 fuchsia_test_component("fuchsia-hyper-lib-test") {
   manifest = "meta/fuchsia_hyper_lib_test.cml"
   deps = [ ":fuchsia-hyper_test" ]

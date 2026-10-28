@@ -149,6 +149,8 @@ fx_test_component(
     deps = [":fuchsia-hyper_test_packaged_bin"],
 )
 
+# GN copy is hand-written in BUILD.gn because it depends on `//src/connectivity/network/netstack3:component-for-tests`, which has no Bazel build yet.
+# @bazel2gn:skip
 fx_package(
     name = "fuchsia-hyper-tests-pkg",
     package_name = "fuchsia-hyper-tests",

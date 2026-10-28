@@ -497,6 +497,7 @@ var attrMapsByRules = map[string]map[string]string{
 	// Components
 	"fuchsia_structured_config_rust_lib": structuredConfigRustLibAttrMap,
 	"fx_component":                       fxComponentAttrMap,
+	internalFxTestComponentRule:          fxComponentAttrMap,
 
 	// Tools
 	"ffx_plugin": ffxPluginAttrMap,

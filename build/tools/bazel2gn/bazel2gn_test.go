@@ -275,16 +275,36 @@ fx_test_component(
 	deps = [":foo_packaged_bin"],
 )
 
+# Not referenced by an fx_package with test_components.
+fx_test_component(
+	name = "unpackaged-test-component",
+	compiled_manifest = ":foo-manifest",
+)
+
 fx_package(
 	name = "foo-package",
 	package_name = "foo",
 	components = [":foo-component"],
+)
+
+fx_package(
+	name = "foo-test-package",
+	package_name = "foo-test",
+	test_components = [
+		# @bazel2gn:skip
+		":foo-test-component",
+	],
+)
+
+# @bazel2gn:skip
+fx_package(
+	name = "skipped-test-package",
 	test_components = [":foo-test-component"],
 )
 
 fx_test(
 	name = "foo-test",
-	package = ":foo-package",
+	package = ":foo-test-package",
 )`,
 			wantGN: "",
 		},
