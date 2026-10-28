@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/cc:fx_cc_library_headers.bzl", "fx_cc_library_headers")
+load("//build/bazel/rules/host_tests:host_cc_test.bzl", "host_cc_test")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library_headers(
+    name = "headers",
+    hdrs = ["include/lib/stdbind/optional.h"],
+    visibility = ["//zircon/kernel:__subpackages__"],
+)
+
+fx_cc_library(
+    name = "stdbind",
+    visibility = ["//zircon/kernel:__subpackages__"],
+    deps = [":headers"],
+    alwayslink = True,
+)
+
+rustc_library(
+    name = "stdbind-rs",
+    srcs = [
+        "src/lib.rs",
+        "src/optional.rs",
+    ],
+    crate_name = "stdbind",
+    edition = "2024",
+    visibility = ["//zircon/kernel:__subpackages__"],
+)
+
+host_rustc_test(
+    name = "stdbind-rs_test",
+    crate = ":stdbind-rs",
+    edition = "2024",
+    visibility = ["//src/lib:__pkg__"],
+)
+
+host_cc_test(
+    name = "stdbind-cpp-unittests",
+    srcs = ["optional-test.cc"],
+    visibility = ["//src/lib:__pkg__"],
+    deps = [
+        ":stdbind",
+        "//zircon/system/ulib/zxtest",
+    ],
+)
