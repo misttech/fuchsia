@@ -30,6 +30,7 @@ test_suite(
         "//tools/check-licenses:tests",
         "//tools/clidoc:clidoc_bin_test",
         "//tools/cmc:host_tests",
+        "//tools/component_manager_config:generate_config_bin_test",
         "//tools/create:create_bin_test",
         "//tools/dart_test_parser:dart_test_parser_lib_tests",
         "//tools/debug/bloaty:bloaty_tests",
