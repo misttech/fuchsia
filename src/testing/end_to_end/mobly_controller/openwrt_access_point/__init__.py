@@ -380,15 +380,18 @@ class OpenWrtAP:
             f"or an ASCII string of {_WEP_STR_LENGTH} characters."
         )
 
-    def _configure_wep(self, section_name: str, bss: BssSettings) -> None:
+    def _configure_wep(self, section_name: str, bss: BssSettings) -> list[str]:
         """Configures WEP parameters directly in hostapd to bypass fragile UCI translation.
 
         Args:
             section_name: The UCI wireless interface section name.
             bss: The BSS configuration containing the WEP security and password.
+
+        Returns:
+            A list of UCI commands configuring hostapd WEP options.
         """
         if not bss.password:
-            return
+            return []
         if not isinstance(bss.security, SecurityWep):
             raise TypeError(
                 f"Expected SecurityWep security configuration, got {type(bss.security)}"
@@ -401,15 +404,11 @@ class OpenWrtAP:
         # ignored in modern OpenWrt releases.
         # Direct hostapd injection via hostapd_bss_options is used instead to
         # ensure robust, version-independent configuration.
-        self.ssh.run(
-            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_default_key=0'"
-        )
-        self.ssh.run(
-            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_key0={wep_key}'"
-        )
-        self.ssh.run(
-            f"uci add_list wireless.{section_name}.hostapd_bss_options='auth_algs={auth_algs}'"
-        )
+        return [
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_default_key=0'",
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='wep_key0={wep_key}'",
+            f"uci add_list wireless.{section_name}.hostapd_bss_options='auth_algs={auth_algs}'",
+        ]
 
     def _configure_owe_transition(
         self, open_iface_section: str, bss: BssSettings, radio: Radio
@@ -421,7 +420,8 @@ class OpenWrtAP:
             bss: The BSS configuration, which includes OWE Transition settings.
             radio: The radio device name.
         Returns:
-            the name of the OWE BSS section, so additional configuration can be added to it.
+            A list of UCI commands configuring the OWE Transition link, OWE BSS,
+            and any custom UCI options on the OWE BSS section.
         """
         if not isinstance(bss.security, SecurityOweTransition):
             raise TypeError(
@@ -435,81 +435,71 @@ class OpenWrtAP:
         owe_ssid = f"{bss.ssid}-owe"
         owe_iface_section = f"{open_iface_section}_owe"
 
-        # Update the Open BSS (under `open_iface_section`) to point to the OWE BSS.
-        self.ssh.run(
-            f"uci set wireless.{open_iface_section}.owe_transition_ssid='{owe_ssid}'"
+        commands = [
+            # Update the Open BSS (under `open_iface_section`) to point to the OWE BSS.
+            f"uci set wireless.{open_iface_section}.owe_transition_ssid='{owe_ssid}'",
+            f"uci set wireless.{open_iface_section}.owe_transition_bssid='{owe_bssid}'",
+            f"uci set wireless.{open_iface_section}.macaddr='{open_bssid}'",
+            # Configure the OWE BSS
+            f"uci set wireless.{owe_iface_section}='wifi-iface'",
+            f"uci set wireless.{owe_iface_section}.device='{radio}'",
+            f"uci set wireless.{owe_iface_section}.network='lan'",
+            f"uci set wireless.{owe_iface_section}.mode='ap'",
+            f"uci set wireless.{owe_iface_section}.ssid='{owe_ssid}'",
+            f"uci set wireless.{owe_iface_section}.encryption='owe'",
+            # The OWE BSS must also point back to the open BSS
+            f"uci set wireless.{owe_iface_section}.owe_transition_ssid='{bss.ssid}'",
+            f"uci set wireless.{owe_iface_section}.owe_transition_bssid='{open_bssid}'",
+            f"uci set wireless.{owe_iface_section}.macaddr='{owe_bssid}'",
+            f"uci set wireless.{owe_iface_section}.hidden='1'",
+        ]
+        commands.extend(
+            self._apply_custom_uci_options(
+                owe_iface_section, bss.custom_uci_options
+            )
         )
-        self.ssh.run(
-            f"uci set wireless.{open_iface_section}.owe_transition_bssid='{owe_bssid}'"
-        )
-        self.ssh.run(
-            f"uci set wireless.{open_iface_section}.macaddr='{open_bssid}'"
-        )
+        return commands
 
-        # Configure the OWE BSS
-        self.ssh.run(f"uci set wireless.{owe_iface_section}='wifi-iface'")
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.device='{radio}'")
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.network='lan'")
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.mode='ap'")
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.ssid='{owe_ssid}'")
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.encryption='owe'")
-        # The OWE BSS must also point back to the open BSS
-        self.ssh.run(
-            f"uci set wireless.{owe_iface_section}.owe_transition_ssid='{bss.ssid}'"
-        )
-        self.ssh.run(
-            f"uci set wireless.{owe_iface_section}.owe_transition_bssid='{open_bssid}'"
-        )
-        self.ssh.run(
-            f"uci set wireless.{owe_iface_section}.macaddr='{owe_bssid}'"
-        )
-        self.ssh.run(f"uci set wireless.{owe_iface_section}.hidden='1'")
-
-        return [open_iface_section, owe_iface_section]
-
-    def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
+    def _configure_bss(self, bss: BssSettings, radio: Radio) -> list[str]:
         """Configures a BSS on the Access Point.
 
         Args:
             bss: The BSS configuration containing SSID, password, band, etc.
         """
         section_name = f"{bss.name}_{radio}"
-        self.ssh.run(f"uci set wireless.{section_name}='wifi-iface'")
-        self.ssh.run(f"uci set wireless.{section_name}.device='{radio}'")
-        self.ssh.run(f"uci set wireless.{section_name}.network='lan'")
-        self.ssh.run(f"uci set wireless.{section_name}.mode='ap'")
-        self.ssh.run(f"uci set wireless.{section_name}.ssid='{bss.ssid}'")
         encryption = bss.security.uci_encryption
-
-        self.ssh.run(
-            f"uci set wireless.{section_name}.encryption='{encryption}'"
-        )
-        self.ssh.run(
-            f"uci set wireless.{section_name}.ieee80211w='{bss.security.pmf_support.value}'"
-        )
+        commands = [
+            f"uci set wireless.{section_name}='wifi-iface'",
+            f"uci set wireless.{section_name}.device='{radio}'",
+            f"uci set wireless.{section_name}.network='lan'",
+            f"uci set wireless.{section_name}.mode='ap'",
+            f"uci set wireless.{section_name}.ssid='{bss.ssid}'",
+            f"uci set wireless.{section_name}.encryption='{encryption}'",
+            f"uci set wireless.{section_name}.ieee80211w='{bss.security.pmf_support.value}'",
+        ]
 
         if bss.password and not isinstance(bss.security, SecurityOpen):
             if isinstance(bss.security, SecurityWep):
-                self._configure_wep(section_name, bss)
+                commands.extend(self._configure_wep(section_name, bss))
             else:
-                self.ssh.run(
+                commands.append(
                     f"uci set wireless.{section_name}.key='{bss.password}'"
                 )
 
         hidden = "1" if bss.hidden else "0"
-        self.ssh.run(f"uci set wireless.{section_name}.hidden='{hidden}'")
+        commands.append(f"uci set wireless.{section_name}.hidden='{hidden}'")
 
-        # OWE transition has two sections. Keep track of section names to apply custom options
-        # to all sections.
+        # OWE transition has two sections; _configure_owe_transition also
+        # applies custom_uci_options to the OWE section.
         if isinstance(bss.security, SecurityOweTransition):
-            section_names = self._configure_owe_transition(
-                section_name, bss, radio
+            commands.extend(
+                self._configure_owe_transition(section_name, bss, radio)
             )
-        else:
-            section_names = [section_name]
 
-        for section_name in section_names:
+        commands.extend(
             self._apply_custom_uci_options(section_name, bss.custom_uci_options)
+        )
+        return commands
 
     @staticmethod
     def _format_uci_value(value: object) -> str:
@@ -518,18 +508,20 @@ class OpenWrtAP:
 
     def _apply_custom_uci_options(
         self, section: str, options: Mapping[str, object]
-    ) -> None:
+    ) -> list[str]:
         """Applies custom UCI options to a wireless section."""
+        commands: list[str] = []
         for option, value in options.items():
             if isinstance(value, list):
                 for item in value:
                     v = self._format_uci_value(item)
-                    self.ssh.run(
+                    commands.append(
                         f"uci add_list wireless.{section}.{option}='{v}'"
                     )
             else:
                 v = self._format_uci_value(value)
-                self.ssh.run(f"uci set wireless.{section}.{option}='{v}'")
+                commands.append(f"uci set wireless.{section}.{option}='{v}'")
+        return commands
 
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
@@ -538,7 +530,7 @@ class OpenWrtAP:
             config: The Wi-Fi configuration containing multiple radios.
         """
         _LOGGER.info(f"Configuring Wi-Fi with config: {config}")
-        self.reset_wifi_config()
+        ssh_commands = self._reset_wifi_config_commands()
 
         for radio_config in config.radios:
             match radio_config.channel.band:
@@ -546,17 +538,19 @@ class OpenWrtAP:
                     radio = Radio.RADIO_2G
                 case Band.BAND_5G:
                     radio = Radio.RADIO_5G
-            self.ssh.run(f"uci set wireless.{radio}.disabled='0'")
-            self.ssh.run(
-                f"uci set wireless.{radio}.channel='{radio_config.channel.number}'"
+            ssh_commands.extend(
+                [
+                    f"uci set wireless.{radio}.disabled='0'",
+                    f"uci set wireless.{radio}.channel='{radio_config.channel.number}'",
+                    f"uci set wireless.{radio}.htmode='{radio_config.channel.phy_mode.uci_htmode}'",
+                ]
             )
-            self.ssh.run(
-                f"uci set wireless.{radio}.htmode='{radio_config.channel.phy_mode.uci_htmode}'"
-            )
-            self._set_capabilities(
-                radio,
-                radio_config.n_capabilities,
-                radio_config.ac_capabilities,
+            ssh_commands.extend(
+                self._set_capabilities(
+                    radio,
+                    radio_config.n_capabilities,
+                    radio_config.ac_capabilities,
+                )
             )
 
             country = radio_config.country
@@ -567,10 +561,12 @@ class OpenWrtAP:
                     "country=XF requested without allow_regdb_bypass. Falling back to US."
                 )
                 country = "US"
-            self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
+            ssh_commands.append(f"uci set wireless.{radio}.country='{country}'")
 
-            self._apply_custom_uci_options(
-                radio, radio_config.custom_uci_options
+            ssh_commands.extend(
+                self._apply_custom_uci_options(
+                    radio, radio_config.custom_uci_options
+                )
             )
 
             # Apply hostapd options
@@ -580,16 +576,17 @@ class OpenWrtAP:
                     value,
                 ) in radio_config.custom_hostapd_options.items():
                     v = self._format_uci_value(value)
-                    self.ssh.run(
+                    ssh_commands.append(
                         f"uci add_list wireless.{radio}.hostapd_options='{option}={v}'"
                     )
 
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:
-                    self._configure_bss(bss, radio)
+                    ssh_commands.extend(self._configure_bss(bss, radio))
 
-        self.ssh.run("uci commit wireless")
-        self.start_wifi()
+        ssh_commands.append("uci commit wireless")
+        ssh_commands.extend(self._start_wifi_commands())
+        self.ssh.run(" && ".join(ssh_commands))
 
         for radio_config in config.radios:
             self._verify_wifi_status(radio_config.channel.band)
@@ -599,7 +596,7 @@ class OpenWrtAP:
         radio: str,
         n_sel: CapabilitySelection,
         ac_sel: CapabilitySelection,
-    ) -> None:
+    ) -> list[str]:
         """Applies the Wi-Fi capabilities to the specified radio.
 
         For a list of available OpenWrt UCI capabilities, refer to:
@@ -617,17 +614,16 @@ class OpenWrtAP:
                 provided_caps.extend(c for c in sel.capabilities if c)
 
         if not uci_options:
-            return
+            return []
 
         for cap in provided_caps:
             cap_info = capabilities.to_openwrt_capability(cap)
             uci_options[cap_info.uci_option] = cap_info.value
 
-        cmds = [
+        return [
             f"uci set wireless.{radio}.{k}='{v}'"
             for k, v in uci_options.items()
         ]
-        self.ssh.run("; ".join(cmds))
 
     def get_configured_ssids(self) -> list[str]:
         """Retrieves all currently configured SSIDs from the AP's wireless configuration."""
@@ -898,7 +894,11 @@ class OpenWrtAP:
 
     def start_wifi(self) -> None:
         """Starts the access point."""
-        self.ssh.run("wifi up")
+        self.ssh.run(" && ".join(self._start_wifi_commands()))
+
+    def _start_wifi_commands(self) -> list[str]:
+        """Builds shell commands to start the access point."""
+        return ["wifi up"]
 
     def stop_wifi(self) -> None:
         """Stops the access point."""
@@ -1030,12 +1030,18 @@ class OpenWrtAP:
                 option ssid 'OpenWrt'
                 option encryption 'none'
         """
+        self.ssh.run(" && ".join(self._reset_wifi_config_commands()))
+
+    def _reset_wifi_config_commands(self) -> list[str]:
+        """Builds shell commands to regenerate default wireless config on OpenWrt."""
         # Regenerate default wifi config as documented at
         # https://openwrt.org/docs/guide-user/network/wifi/basic#regenerate_configuration
-        self.ssh.run("rm -f /etc/config/wireless")
-        self.ssh.run("wifi config")
-        # Delete all default BSSs generated by `wifi config` to ensure a clean slate.
-        self.ssh.run("while uci -q delete wireless.@wifi-iface[0]; do :; done")
+        return [
+            "rm -f /etc/config/wireless",
+            "wifi config",
+            # Delete all default BSSs generated by `wifi config` to ensure a clean slate.
+            "while uci -q delete wireless.@wifi-iface[0]; do :; done",
+        ]
 
     def get_addr(
         self,
