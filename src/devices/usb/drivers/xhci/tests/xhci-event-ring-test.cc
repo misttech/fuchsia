@@ -651,6 +651,25 @@ TEST_F(EventRingHarness, PortStatusChangeEventInvalidPortIdIgnored) {
   EXPECT_FALSE(HasCommand());
 }
 
+TEST_F(EventRingHarness, TransferEventInvalidSlotIdIgnored) {
+  InitSlot(1);
+  // SlotID 0 (underflow) and SlotID > max_slots_ (32 in test harness) should be ignored
+  // without out-of-bounds access or crashing.
+  for (uint8_t invalid_slot_id : {uint8_t{0}, uint8_t{33}, uint8_t{200}, uint8_t{255}}) {
+    TRB trb;
+    trb.ptr = kFakeTrb;
+    Control::FromTRB(&trb).set_Type(Control::TransferEvent).ToTrb(&trb);
+    auto* evt = static_cast<TransferEvent*>(&trb);
+    evt->set_SlotID(invalid_slot_id);
+    evt->set_EndpointID(2);
+    evt->set_CompletionCode(CommandCompletionEvent::Success);
+    evt->set_TransferLength(kFinalTransferLength);
+    AddTRB(trb);
+  }
+  Interrupt();
+  EXPECT_FALSE(HasCommand());
+}
+
 }  // namespace
 
 }  // namespace usb_xhci

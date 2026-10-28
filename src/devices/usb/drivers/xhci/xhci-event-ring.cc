@@ -776,7 +776,13 @@ void EventRing::HandleTransferInterrupt() {
   auto transfer_event = static_cast<TransferEvent*>(erdp_virt_);
   transfer_event_->Insert(transfer_event->CompletionCode());
 
-  auto device_state = hci_->GetDeviceState()[transfer_event->SlotID() - 1];
+  uint8_t slot_id = static_cast<uint8_t>(transfer_event->SlotID());
+  if (slot_id < 1 || slot_id > hci_->GetDeviceState().size()) {
+    fdf::warn("Invalid slot ID {} in transfer event (max slots: {})", slot_id,
+              hci_->GetDeviceState().size());
+    return;
+  }
+  auto device_state = hci_->GetDeviceState()[slot_id - 1];
   if (!device_state) {
     fdf::warn("Device state invalid");
     return;
@@ -788,6 +794,13 @@ void EventRing::HandleTransferInterrupt() {
   }
 
   Endpoint* ep;
+
+  // Guard against underflow.
+  if (unlikely(static_cast<uint8_t>(transfer_event->EndpointID()) == 0)) {
+    fdf::error("Invalid EndpointID in TransferEvent, must be nonzero");
+    return;
+  }
+
   uint8_t endpoint_id = static_cast<uint8_t>(transfer_event->EndpointID() - 1);
   if (unlikely(endpoint_id == 0)) {
     ep = &device_state->GetEndpoint();
