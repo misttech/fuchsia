@@ -1,0 +1,117 @@
+{
+    project_id: 3676913920,
+
+    // TODO(https://fxbug.dev/578582286): If a device has multiple matching drivers (e.g. SD card
+    // + UFS) or after a driver restart, Sampler may incorrectly compare counters across drivers.
+    data_sets: [
+        {
+            metrics: [
+                {
+                    event_codes: [
+                        "BLOCK_READ",
+                    ],
+                    metric_name: "block_operation_events",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.read.count",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.read.count",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.read.count",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.read.count",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_WRITE",
+                    ],
+                    metric_name: "block_operation_events",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.write.count",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.write.count",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.write.count",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.write.count",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_FLUSH",
+                    ],
+                    metric_name: "block_operation_events",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.flush.count",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.flush.count",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.flush.count",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.flush.count",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_TRIM",
+                    ],
+                    metric_name: "block_operation_events",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.trim.count",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.trim.count",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.trim.count",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.trim.count",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_READ",
+                    ],
+                    metric_name: "block_operation_kibibytes",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.read.kib",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.read.kib",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.read.kib",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.read.kib",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_WRITE",
+                    ],
+                    metric_name: "block_operation_kibibytes",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.write.kib",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.write.kib",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.write.kib",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.write.kib",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_FLUSH",
+                    ],
+                    metric_name: "block_operation_kibibytes",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.flush.kib",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.flush.kib",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.flush.kib",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.flush.kib",
+                    ],
+                },
+                {
+                    event_codes: [
+                        "BLOCK_TRIM",
+                    ],
+                    metric_name: "block_operation_kibibytes",
+                    metric_type: "Occurrence",
+                    selector: [
+                        "bootstrap/*-drivers\\:*:[name=ftl]root/ftl:block.trim.kib",
+                        "bootstrap/*-drivers\\:*:[name=sdmmc]root/sdmmc_core:block.trim.kib",
+                        "bootstrap/*-drivers\\:*:[name=ufs]root/ufs:block.trim.kib",
+                        "bootstrap/*-drivers\\:*:[name=virtio-block]root/virtio_block:block.trim.kib",
+                    ],
+                },
+            ],
+            poll_rate_sec: 1800,
+        },
+    ],
+}
