@@ -8,6 +8,7 @@ use crate::{InitialSid, ReferenceInitialSid, SecurityId};
 use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
+use starnix_logging::log_info;
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 
@@ -76,6 +77,9 @@ impl SidTable {
         }
 
         let context_to_sid = RcuRawHashMap::with_capacity(portable_sids.entries.len());
+        if !portable_sids.entries.is_empty() {
+            log_info!("SELinux:  Converting {} SID table entries...", portable_sids.entries.len());
+        }
         let scope = RcuReadScope::new();
         for (offset, context_string) in portable_sids.entries.iter().enumerate() {
             if let Ok(context) = policy.parse_security_context(context_string.as_ref().into())
@@ -90,6 +94,11 @@ impl SidTable {
                         context_to_sid.insert(&scope, context, sid);
                     }
                 }
+            } else {
+                log_info!(
+                    "SELinux:  Context {} is not valid (left unmapped).",
+                    bstr::BStr::new(context_string.as_ref())
+                );
             }
         }
 

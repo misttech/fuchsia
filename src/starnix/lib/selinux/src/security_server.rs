@@ -22,6 +22,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
+use starnix_logging::log_info;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -261,6 +262,21 @@ impl SecurityServer {
         let exceptions = self.exceptions.iter().map(String::as_str).collect::<Vec<&str>>();
         let exceptions = ExceptionsConfig::new(&policy, &exceptions)?;
         let parsed = PolicyIndex::new(policy)?;
+
+        log_info!(
+            "SELinux:  {} users, {} roles, {} types, {} bools, {} sens, {} cats",
+            parsed.users().len(),
+            parsed.roles().len(),
+            parsed.types().primary_names_count(),
+            parsed.conditional_booleans().len(),
+            parsed.sensitivities().len(),
+            parsed.categories().len(),
+        );
+        log_info!(
+            "SELinux:  {} classes, {} rules",
+            parsed.classes().len(),
+            parsed.access_vector_rules().rules_count(),
+        );
 
         // Replace any existing policy and push update to `state.status_publisher`.
         self.with_mut_state_and_reset_cache(|state| {

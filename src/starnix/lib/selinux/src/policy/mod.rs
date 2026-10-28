@@ -209,7 +209,7 @@ impl Policy {
     }
 
     /// Returns the roles table.
-    fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
+    pub(crate) fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
         &self.roles
     }
 
@@ -219,7 +219,7 @@ impl Policy {
     }
 
     /// Returns the users table.
-    fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
+    pub(crate) fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
         &self.users
     }
 
@@ -229,17 +229,17 @@ impl Policy {
     }
 
     /// Returns the sensitivities table.
-    fn sensitivities(&self) -> &IdAndNameIndexed<SymbolArray<Sensitivity>> {
+    pub(crate) fn sensitivities(&self) -> &IdAndNameIndexed<SymbolArray<Sensitivity>> {
         &self.sensitivities
     }
 
     /// Returns the categories table.
-    fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
+    pub(crate) fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
         &self.categories
     }
 
     /// Returns the access vector rules table.
-    fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
+    pub(crate) fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
         &self.access_vector_rules
     }
 

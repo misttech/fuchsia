@@ -608,6 +608,11 @@ pub struct IndexedAccessVectorRules {
 }
 
 impl IndexedAccessVectorRules {
+    /// Returns the total number of unconditional access vector, type, and extended permission rules.
+    pub fn rules_count(&self) -> usize {
+        self.rules.rule_order.len()
+    }
+
     /// Builds an index over the specified access vector rules.
     ///
     /// Returns [`ParseError::DuplicateAccessVectorRule`] if non-contiguous rules share the same key.

@@ -188,6 +188,11 @@ impl Validate for Types {
 }
 
 impl Types {
+    /// Returns the number of primary type and attribute names (excluding aliases).
+    pub fn primary_names_count(&self) -> usize {
+        self.primary_names_count as usize
+    }
+
     pub(super) fn get_by_id(&self, id: TypeId) -> Option<&Type> {
         let index = self.by_id.get((id.as_u32() - 1) as usize)?.as_ref()?;
         Some(&self.ordered[*index])
