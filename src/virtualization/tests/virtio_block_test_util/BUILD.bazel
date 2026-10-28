@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_block_test_util",
+    srcs = select({
+        "@platforms//os:fuchsia": ["src/fuchsia_main.rs"],
+        "@platforms//os:linux": ["src/linux_main.rs"],
+    }),
+    crate_root = select({
+        "@platforms//os:fuchsia": "src/fuchsia_main.rs",
+        "@platforms//os:linux": "src/linux_main.rs",
+    }),
+    edition = "2024",
+    visibility = [
+        "//src/virtualization/packages/debian_guest:__pkg__",
+        "//src/virtualization/tests:__pkg__",
+    ],
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia",
+            "//src/lib/fuchsia-component",
+            "//src/lib/fuchsia-fs",
+            # GN uses the default :rust group alias of this directory, while
+            # Bazel depends on :block-client directly.
+            "//src/storage/lib/block_client/rust:block-client",  # @bazel2gn:path_overwrite://src/storage/lib/block_client/rust
+            "//third_party/rust_crates/vendor:anyhow",
+            "//third_party/rust_crates/vendor:clap",
+            "//third_party/rust_crates/vendor:futures",
+        ],
+        "@platforms//os:linux": [
+            "//third_party/rust_crates/vendor:clap",
+            "//third_party/rust_crates/vendor:libc",
+        ],
+    }),
+)

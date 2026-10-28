@@ -1,0 +1,15 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [
+        "//src/virtualization/lib/guest_config:guest-config-tests",
+        "//src/virtualization/lib/machina-virtio-device:machina-virtio-device-tests",
+        "//src/virtualization/lib/virtio-device:virtio-device-tests",
+    ],
+)

@@ -1,0 +1,55 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+fx_cc_library(
+    name = "guest_config",
+    srcs = ["guest_config.cc"],
+    hdrs = ["guest_config.h"],
+    implementation_deps = [
+        "//sdk/lib/fdio",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl",
+        "//third_party/rapidjson",
+    ],
+    visibility = [
+        "//src/virtualization/bin/guest_manager:__pkg__",
+        "//src/virtualization/bin/vmm:__pkg__",
+        "//src/virtualization/tests/lib:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
+        "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_hlcpp",
+        "//zircon/system/ulib/zx",
+    ],
+    alwayslink = True,
+)
+
+# fx_cc_binary names the binary after the target, while GN sets
+# output_name, so restore the GN binary name.
+# @bazel2gn:raw_attribute:output_name = "guest_config_unittest"
+fx_cc_binary(
+    name = "unittests",
+    testonly = True,
+    srcs = ["guest_config_unittest.cc"],
+    tags = ["manual"],
+    deps = [
+        ":guest_config",
+        "//src/lib/fxl/test:gtest_main",
+        # Bazel's gtest target bundles gmock; GN's :gmock publicly depends on :gtest.
+        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gmock
+    ],
+)
+
+fx_unittest_package(
+    name = "guest-config-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":unittests"],
+    visibility = ["//src/virtualization:__pkg__"],
+)

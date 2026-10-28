@@ -1,0 +1,44 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_net_test_util",
+    srcs = select({
+        "@platforms//os:fuchsia": ["src/fuchsia_main.rs"],
+        "@platforms//os:linux": ["src/linux_main.rs"],
+    }),
+    crate_root = select({
+        "@platforms//os:fuchsia": "src/fuchsia_main.rs",
+        "@platforms//os:linux": "src/linux_main.rs",
+    }),
+    edition = "2024",
+    visibility = [
+        "//src/virtualization/packages/debian_guest:__pkg__",
+        "//src/virtualization/tests:__pkg__",
+    ],
+    deps = select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
+            "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+            "//sdk/rust/zx",
+            "//src/connectivity/lib/network-device/rust",
+            "//src/lib/fdio/rust:fdio",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia",
+            "//src/lib/fuchsia-async",
+            "//src/lib/fuchsia-fs",
+            "//src/lib/network/fidl_fuchsia_net_ext",
+            "//third_party/rust_crates/vendor:anyhow",
+            "//third_party/rust_crates/vendor:clap",
+            "//third_party/rust_crates/vendor:futures",
+        ],
+        "@platforms//os:linux": [
+            "//third_party/rust_crates/vendor:clap",
+        ],
+    }),
+)

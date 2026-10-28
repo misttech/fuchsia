@@ -26,6 +26,7 @@ rustc_library(
         "//src/storage/gpt/component:__pkg__",
         "//src/storage/lib/fs_management/rust:__pkg__",
         "//src/storage/lib/storage_device:__pkg__",
+        "//src/virtualization/tests/virtio_block_test_util:__pkg__",
         "//vendor/google:__subpackages__",
     ],
     deps = [

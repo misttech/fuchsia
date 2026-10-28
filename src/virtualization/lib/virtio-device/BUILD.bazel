@@ -1,0 +1,46 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "virtio-device",
+    srcs = [
+        "src/chain.rs",
+        "src/fake_queue.rs",
+        "src/lib.rs",
+        "src/mem.rs",
+        "src/queue.rs",
+        "src/ring.rs",
+        "src/util.rs",
+    ],
+    edition = "2024",
+    version = "1.0.0",
+    visibility = [
+        "//src/virtualization/bin/vmm/device:__subpackages__",
+        "//src/virtualization/lib/machina-virtio-device:__pkg__",
+    ],
+    deps = [
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "virtio-device_test",
+    crate = ":virtio-device",
+    edition = "2024",
+)
+
+fx_unittest_package(
+    name = "virtio-device-tests",
+    unit_tests = [":virtio-device_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)

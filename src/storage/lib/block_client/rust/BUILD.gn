@@ -106,6 +106,7 @@ if (is_fuchsia) {
       "//src/storage/gpt/component:*",
       "//src/storage/lib/fs_management/rust:*",
       "//src/storage/lib/storage_device:*",
+      "//src/virtualization/tests/virtio_block_test_util:*",
       "//vendor/google/*",
     ]
     deps = [

@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
+
 group("virtualization") {
   testonly = true
 
@@ -37,6 +39,7 @@ group("tests") {
   ]
 
   deps = [
+    ":bazel_tests",
     "bin:tests",
     "lib:tests",
     "tests/smoke",
@@ -47,4 +50,8 @@ group("tests") {
     # included on the virtualization builders.
     "tests:build_only",
   ]
+}
+
+bazel_test_suite("bazel_tests") {
+  target_tests = [ "//src/virtualization:target_tests" ]
 }
