@@ -9,16 +9,9 @@ import filecmp
 import itertools
 import json
 import pathlib
+import typing
 from collections.abc import Callable, Mapping, Sequence
-from typing import (
-    Any,
-    Literal,
-    Optional,
-    TypedDict,
-    TypeVar,
-    get_args,
-    get_type_hints,
-)
+from typing import Any, Literal, Optional, TypedDict, TypeVar
 
 from .validate_idk import *
 
@@ -91,20 +84,25 @@ class LoadableModuleMeta(TypedDict):
     stable: bool
 
 
+UnmergeableAtomType = Literal[
+    "bind_library",
+    "cc_source_library",
+    "component_manifest",
+    "config",
+    "dart_library",
+    "documentation",
+    "experimental_python_e2e_test",
+    "fidl_library",
+    "license",
+    "version_history",
+]
+
+UNMERGEABLE_ATOM_TYPES = typing.get_args(UnmergeableAtomType)
+
+
 class UnmergeableMeta(TypedDict):
     name: str
-    type: Literal[
-        "bind_library",
-        "cc_source_library",
-        "component_manifest",
-        "config",
-        "dart_library",
-        "documentation",
-        "experimental_python_e2e_test",
-        "fidl_library",
-        "license",
-        "version_history",
-    ]
+    type: UnmergeableAtomType
     stable: bool
 
 
@@ -600,7 +598,7 @@ def _merge_disjoint_dicts(
 
 def _merge_atom_meta(a: AtomMeta, b: AtomMeta) -> AtomMeta:
     """Merge two atoms, according to type-specific rules."""
-    if a["type"] in get_args(get_type_hints(UnmergeableMeta)["type"]):
+    if a["type"] in UNMERGEABLE_ATOM_TYPES:
         _assert_dicts_equal(a, b, [])
         return a
 

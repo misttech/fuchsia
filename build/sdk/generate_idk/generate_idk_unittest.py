@@ -4,22 +4,15 @@
 
 import pathlib
 import tempfile
-import typing
 import unittest
 from pathlib import Path
 
 import generate_idk
 
-# Access to type hints via get_type_hints is well-defined and sound,
-# resolving string annotations that arise from 'from __future__ import annotations'.
-UNMERGEABLE_TYPES = typing.get_args(
-    typing.get_type_hints(generate_idk.UnmergeableMeta)["type"]
-)
-
 
 class GenerateIdkTests(unittest.TestCase):
     def test_unmergeables_error(self) -> None:
-        for atom_type in UNMERGEABLE_TYPES:
+        for atom_type in generate_idk.UNMERGEABLE_ATOM_TYPES:
             meta_a: generate_idk.UnmergeableMeta = {
                 "name": "fallback",
                 "type": atom_type,
@@ -58,7 +51,7 @@ class GenerateIdkTests(unittest.TestCase):
             )
 
     def test_unmergeables_pass(self) -> None:
-        for atom_type in UNMERGEABLE_TYPES:
+        for atom_type in generate_idk.UNMERGEABLE_ATOM_TYPES:
             meta_a1: generate_idk.UnmergeableMeta = {
                 "name": "fallback",
                 "type": atom_type,

@@ -94,8 +94,6 @@ Define the public interface inheriting from
 # found in the LICENSE file.
 """Abstract base class for MyFeature affordance."""
 
-from __future__ import annotations
-
 import abc
 
 from honeydew.affordances import affordance

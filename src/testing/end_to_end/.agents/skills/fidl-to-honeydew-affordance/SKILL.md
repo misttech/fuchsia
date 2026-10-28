@@ -82,7 +82,6 @@ structs in immutable Python dataclasses:
 
 #### Generic Pattern:
 ```python
-from __future__ import annotations
 import enum
 from dataclasses import dataclass
 from datetime import timedelta
@@ -169,7 +168,6 @@ The main class should:
 
 #### Generic Pattern:
 ```python
-from __future__ import annotations
 import logging
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from honeydew import affordances_capable, errors
