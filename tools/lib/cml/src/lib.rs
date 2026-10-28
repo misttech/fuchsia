@@ -805,93 +805,6 @@ pub fn alias_or_path<'a>(alias: Option<&'a Path>, path: &'a Path) -> &'a Path {
     alias.unwrap_or(path)
 }
 
-fn is_integer_literal(s: &str) -> bool {
-    let s = s.strip_prefix(['+', '-']).unwrap_or(s);
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
-    } else {
-        !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
-    }
-}
-
-fn compare_values(left: &json5format::Value, right: &json5format::Value) -> std::cmp::Ordering {
-    if let (
-        json5format::Value::Primitive { val: left_primitive, .. },
-        json5format::Value::Primitive { val: right_primitive, .. },
-    ) = (left, right)
-    {
-        let left_str = left_primitive.as_str();
-        let right_str = right_primitive.as_str();
-        left_str.to_lowercase().cmp(&right_str.to_lowercase()).then_with(|| left_str.cmp(right_str))
-    } else {
-        std::cmp::Ordering::Equal
-    }
-}
-
-fn sort_array_if_not_integers(array: &mut json5format::Array) {
-    let mut items: Vec<_> = array.items_mut().collect();
-    let is_int_array = !items.is_empty()
-        && items.iter().all(|item| {
-            matches!(&**item, json5format::Value::Primitive { val, .. } if is_integer_literal(val.as_str()))
-        });
-    if is_int_array {
-        return;
-    }
-
-    for i in 1..items.len() {
-        let mut j = i;
-        while j > 0 && compare_values(&items[j - 1], &items[j]) == std::cmp::Ordering::Greater {
-            let (left, right) = items.split_at_mut(j);
-            std::mem::swap(&mut *left[j - 1], &mut *right[0]);
-            j -= 1;
-        }
-    }
-}
-
-fn sort_non_integer_arrays_in_value(value: &mut json5format::Value, sort_self: bool) {
-    match value {
-        json5format::Value::Primitive { .. } => {}
-        json5format::Value::Object { val, .. } => {
-            for prop in val.properties_mut() {
-                sort_non_integer_arrays_in_value(&mut prop.value_mut(), true);
-            }
-        }
-        json5format::Value::Array { val, .. } => {
-            for mut item in val.items_mut() {
-                sort_non_integer_arrays_in_value(&mut item, true);
-            }
-            if sort_self {
-                sort_array_if_not_integers(val);
-            }
-        }
-    }
-}
-
-fn sort_non_integer_arrays(document: &mut json5format::ParsedDocument) {
-    for mut item in document.content.items_mut() {
-        if let json5format::Value::Object { val, .. } = &mut *item {
-            for prop in val.properties_mut() {
-                if prop.name() == "program" {
-                    if let json5format::Value::Object { val: program_obj, .. } =
-                        &mut *prop.value_mut()
-                    {
-                        for program_prop in program_obj.properties_mut() {
-                            // Do not sort direct array properties under `/*/program/*` (e.g. `args`).
-                            sort_non_integer_arrays_in_value(&mut program_prop.value_mut(), false);
-                        }
-                    } else {
-                        sort_non_integer_arrays_in_value(&mut prop.value_mut(), true);
-                    }
-                } else {
-                    sort_non_integer_arrays_in_value(&mut prop.value_mut(), true);
-                }
-            }
-        } else {
-            sort_non_integer_arrays_in_value(&mut item, true);
-        }
-    }
-}
-
 pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8>, Error> {
     let general_order = PathOption::PropertyNameOrder(vec![
         "name",
@@ -924,7 +837,7 @@ pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8
     ]);
     let options = FormatOptions {
         collapse_containers_of_one: true,
-        sort_array_items: false, // arrays of non-integers are sorted via `sort_non_integer_arrays`
+        sort_array_items: false, // use options_by_path to turn this on only for unordered CML sets
         options_by_path: hashmap! {
             "/*" => hashset! {
                 PathOption::PropertyNameOrder(vec![
@@ -945,6 +858,9 @@ pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8
                     "metadata_mappings",
                 ])
             },
+            "/*/include" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
             "/*/program" => hashset! {
                 PathOption::CollapseContainersOfOne(false),
                 PathOption::PropertyNameOrder(vec![
@@ -953,26 +869,68 @@ pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8
                     "args",
                 ]),
             },
-            "/*/program/*" => hashset! {
-                PathOption::SortArrayItems(false),
-            },
             "/*/*/*" => hashset! {
                 general_order.clone()
             },
+            "/*/*/*/config" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/dictionary" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/directory" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/event" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/event_stream" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/from" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/mutability" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/protocol" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/resolver" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/rights" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/runner" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/scope" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/service" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/storage" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/to" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
             "/*/*/*/*/*" => hashset! {
                 general_order
+            },
+            "/*/*/*/*/*/protocol" => hashset! {
+                PathOption::SortArrayItems(true),
+            },
+            "/*/*/*/*/*/service" => hashset! {
+                PathOption::SortArrayItems(true),
             },
         },
         ..Default::default()
     };
 
-    let filename = file.map(|f| f.to_string_lossy().to_string());
-    let mut parsed_document = json5format::ParsedDocument::from_str(buffer, filename)
-        .map_err(|e| Error::json5(e, file))?;
-    sort_non_integer_arrays(&mut parsed_document);
-    json5format::Json5Format::with_options(options)
-        .map_err(|e| Error::json5(e, file))?
-        .to_utf8(&parsed_document)
+    json5format::format(buffer, file.map(|f| f.to_string_lossy().to_string()), Some(options))
         .map_err(|e| Error::json5(e, file))
 }
 
@@ -1113,6 +1071,10 @@ mod tests {
             tune_params: {
                 tune_param1: {
                     tune_name: "sup_dig_lvl_ovrd_in_addr",
+                    tune_names: [
+                        "reg_b",
+                        "reg_a",
+                    ],
                     tune_value: [
                         0x6202,
                         0x29,
@@ -1143,6 +1105,10 @@ mod tests {
             tune_params: {
                 tune_param1: {
                     tune_name: "sup_dig_lvl_ovrd_in_addr",
+                    tune_names: [
+                        "reg_b",
+                        "reg_a",
+                    ],
                     tune_value: [
                         0x6202,
                         0x29,
@@ -1161,5 +1127,176 @@ mod tests {
             format_cml(input, Some(Path::new("usb.shard.dml"))).expect("failed to format");
         let formatted_str = std::str::from_utf8(&formatted).unwrap();
         assert_eq!(formatted_str, expected);
+    }
+
+    #[test]
+    fn test_format_preserves_config_default_and_value_array_order() {
+        let input = r##"{
+    include: [
+        "syslog/client.shard.cml",
+        "inspect/client.shard.cml",
+    ],
+    capabilities: [
+        {
+            protocol: [
+                "fuchsia.example.ServiceB",
+                "fuchsia.example.ServiceA",
+            ],
+        },
+        {
+            config: "fuchsia.config.StringVector",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 100,
+            },
+            max_count: 10,
+            value: [
+                "zebra",
+                "alpha",
+                "middle",
+            ],
+        },
+    ],
+    use: [
+        {
+            config: "fuchsia.example.WorkerIds",
+            key: "worker_ids",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 100,
+            },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                "storage",
+                "network",
+                "audio",
+                "display",
+            ],
+        },
+        {
+            config: "fuchsia.example.WorkerEndpoints",
+            key: "worker_endpoints",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 256,
+            },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                "fuchsia.example.storage.Endpoint",
+                "fuchsia.example.net.stack.Endpoint",
+                "fuchsia.example.media.audio.Endpoint",
+                "fuchsia.example.ui.display.Endpoint",
+            ],
+        },
+        {
+            config: "fuchsia.example.WorkerBufferSizes",
+            key: "worker_buffer_sizes",
+            type: "vector",
+            element: { type: "uint64" },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                65536,
+                131072,
+                65536,
+                32768,
+            ],
+        },
+    ],
+}
+"##;
+        let expected = r##"{
+    include: [
+        "inspect/client.shard.cml",
+        "syslog/client.shard.cml",
+    ],
+    capabilities: [
+        {
+            protocol: [
+                "fuchsia.example.ServiceA",
+                "fuchsia.example.ServiceB",
+            ],
+        },
+        {
+            config: "fuchsia.config.StringVector",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 100,
+            },
+            max_count: 10,
+            value: [
+                "zebra",
+                "alpha",
+                "middle",
+            ],
+        },
+    ],
+    use: [
+        {
+            config: "fuchsia.example.WorkerIds",
+            key: "worker_ids",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 100,
+            },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                "storage",
+                "network",
+                "audio",
+                "display",
+            ],
+        },
+        {
+            config: "fuchsia.example.WorkerEndpoints",
+            key: "worker_endpoints",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 256,
+            },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                "fuchsia.example.storage.Endpoint",
+                "fuchsia.example.net.stack.Endpoint",
+                "fuchsia.example.media.audio.Endpoint",
+                "fuchsia.example.ui.display.Endpoint",
+            ],
+        },
+        {
+            config: "fuchsia.example.WorkerBufferSizes",
+            key: "worker_buffer_sizes",
+            type: "vector",
+            element: { type: "uint64" },
+            max_count: 20,
+            availability: "transitional",
+            default: [
+                65536,
+                131072,
+                65536,
+                32768,
+            ],
+        },
+    ],
+}
+"##;
+        let formatted =
+            format_cml(input, Some(Path::new("worker_manager.cml"))).expect("failed to format");
+        let formatted_str = std::str::from_utf8(&formatted).unwrap();
+        assert_eq!(formatted_str, expected);
+
+        // Verify idempotency.
+        let formatted_twice = format_cml(formatted_str, Some(Path::new("worker_manager.cml")))
+            .expect("failed to format twice");
+        assert_eq!(std::str::from_utf8(&formatted_twice).unwrap(), expected);
     }
 }
