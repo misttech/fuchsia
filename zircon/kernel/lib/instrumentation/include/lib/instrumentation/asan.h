@@ -60,13 +60,13 @@ extern "C" void asan_unpoison_shadow(uintptr_t address, size_t size);
 
 // Return the address of the first poisoned byte in [|address|, |address + size|).
 // If no bytes are poisoned, returns 0.
-uintptr_t asan_region_is_poisoned(uintptr_t address, size_t size);
+extern "C" uintptr_t asan_region_is_poisoned(uintptr_t address, size_t size);
 
 // Return true if kernel |address| is poisoned.
-bool asan_address_is_poisoned(uintptr_t address);
+extern "C" bool asan_address_is_poisoned(uintptr_t address);
 
 // Return true if all bytes in [|address|, |address + size|) are poisoned.
-bool asan_entire_region_is_poisoned(uintptr_t address, size_t size);
+extern "C" bool asan_entire_region_is_poisoned(uintptr_t address, size_t size);
 
 // Returns number of bytes to add to heap allocations of |size| for a redzone, to detect out-of
 // bounds accesses. (Rounds up the size to an ASAN granule)

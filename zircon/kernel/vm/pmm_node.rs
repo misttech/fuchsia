@@ -3004,8 +3004,8 @@ mod pmm_node_rust {
     use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
     use pin_init::{stack_pin_init, stack_try_pin_init};
     use unittest::{
-        assert_gt, assert_ok, assert_true, expect_eq, expect_false, expect_ne, expect_ok,
-        expect_true, unwrap_ok,
+        assert_gt, assert_ne, assert_ok, assert_true, expect_eq, expect_false, expect_ne,
+        expect_ok, expect_true, unwrap_ok,
     };
     use zx_status::Status;
 
@@ -4112,6 +4112,40 @@ mod pmm_node_rust {
         // SAFETY: alloc_list contains allocated pages.
         unsafe {
             node.node().free_list(alloc_list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that kasan poisons freed PMM pages and unpoisons allocated pages.
+    #[test]
+    fn kasan_detects_use_after_free() {
+        unsafe extern "C" {
+            fn asan_region_is_poisoned(address: usize, size: usize) -> usize;
+            fn asan_entire_region_is_poisoned(address: usize, size: usize) -> bool;
+        }
+
+        // TODO(https://fxbug.dev/42104852): Enable on arm64 when kasan poisoning works there.
+        if cfg!(all(sanitize = "address", target_arch = "x86_64")) {
+            stack_try_pin_init!(let node = ManagedPmmNode::init());
+            let mut node = unwrap_ok!(node);
+            assert_ok!(node.as_mut().setup());
+
+            let page =
+                unwrap_ok!(node.node().alloc_page(ALLOC_FLAG_ANY), "pmm_alloc_page one page");
+            // SAFETY: `page` is a valid allocated page.
+            let paddr = unsafe { page.paddr() };
+            assert_ne!(paddr.0, 0);
+            // SAFETY: `paddr` is a valid physical page address in the physmap.
+            expect_eq!(0, unsafe {
+                asan_region_is_poisoned(paddr_to_physmap(paddr).0, page::SIZE)
+            });
+            // SAFETY: `page` was allocated from `node` and is owned by this test.
+            unsafe {
+                node.node().free_page(page, PmmOptDelayReuse::Default);
+            }
+            // SAFETY: `paddr` is a valid physical page address in the physmap.
+            expect_true!(unsafe {
+                asan_entire_region_is_poisoned(paddr_to_physmap(paddr).0, page::SIZE)
+            });
         }
     }
 
