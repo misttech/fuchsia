@@ -21,13 +21,6 @@
 class VmCowPages;
 class PageQueues;
 
-// Version of PageQueues::VmoBacklink that uses a raw pointer instead of a RefPtr for FFI.
-struct PageQueuesVmoBacklink {
-  VmCowPages* cow;
-  vm_page_t* page;
-  uint64_t offset;
-};
-
 extern "C" {
 void rust_page_queues_init(void* storage);
 void rust_page_queues_destroy(void* storage);
@@ -65,11 +58,7 @@ void rust_page_queues_mark_accessed(const void* storage, vm_page_t* page);
 
 void rust_page_queues_rotate_reclaim_queues(const void* storage);
 
-bool rust_page_queues_peek_isolate(const void* storage, size_t lowest_queue,
-                                   PageQueuesVmoBacklink* out_backlink);
-
 void rust_page_queues_queue_counts(const void* storage, void* out_counts);
-void rust_page_queues_get_active_inactive_counts(const void* storage, void* out_counts);
 bool rust_page_queues_reclaim_is_only_pager_backed(const void* storage);
 bool rust_page_queues_is_page_reclaimable(const vm_page_t* page);
 
@@ -81,10 +70,6 @@ bool rust_page_queues_debug_page_is_anonymous(const void* storage, const vm_page
 bool rust_page_queues_debug_page_is_any_anonymous(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_wired(const void* storage, const vm_page_t* page);
 bool rust_page_queues_debug_page_is_high_priority(const void* storage, const vm_page_t* page);
-
-void rust_page_queues_start_threads(const void* storage, zx_duration_mono_t min_mru_rotate_time,
-                                    zx_duration_mono_t max_mru_rotate_time);
-void rust_page_queues_set_active_ratio_multiplier(const void* storage, uint32_t multiplier);
 }  // extern "C"
 
 // Allocated pages that are part of the cow pages in a VmObjectPaged can be placed in a page queue.
@@ -107,48 +92,6 @@ class PageQueues {
   // the inactive queues. Additional queues have reduced value as sufficiently old pages quickly
   // become equivalently unlikely to be used in the future.
   static constexpr size_t kNumReclaim = 8;
-
-  // Two active queues are used to allow for better fidelity of active information. This prevents
-  // a race between aging once and needing to collect/harvest age information.
-  static constexpr size_t kNumActiveQueues = 2;
-
-  // The amount of pages that will have to move around the queues before the active/inactive
-  // ratio is re-checked. This therefore represents how much error the active ratio aging process
-  // might have, or how delayed the MRU generation might be.
-  // In the worst case once the active ratio is triggered this value is how much page data needs to
-  // then change queues before the aging process happens.
-  static constexpr size_t kActiveInactiveErrorMargin = (2 * MB) / kPageSize;
-
-  static_assert(kNumReclaim > kNumActiveQueues, "Needs to be at least one non-active queue");
-
-  // In addition to active and inactive, we want to consider some of the queues as 'oldest' to
-  // provide an additional way to limit eviction. Presently the processing of the LRU queue to make
-  // room for aging is not integrated with the Evictor, and so will not trigger eviction, therefore
-  // to have a non-zero number of pages ever appear in an oldest queue for eviction the last two
-  // queues are considered the oldest.
-  static constexpr size_t kNumOldestQueues = 2;
-  static_assert(kNumOldestQueues + kNumActiveQueues <= kNumReclaim);
-
-  // Number of different isolate queues that are available. Different isolate queues allow for
-  // separating isolate pages into different buckets such that more nuanced choices on what page to
-  // reclaim can be made.
-  // We use 2 queues to separate "Don't Need" pages (high reclamation priority, index 0) from
-  // standard aged pages (standard reclamation priority, index 1).
-  static constexpr size_t kIsolateQueueDontNeed = 0;
-  static constexpr size_t kIsolateQueueStandard = 1;
-  static constexpr size_t kNumIsolateQueues = 2;
-
-  static_assert(kIsolateQueueDontNeed < kNumIsolateQueues);
-  static_assert(kIsolateQueueStandard < kNumIsolateQueues);
-  static_assert(kIsolateQueueDontNeed < kIsolateQueueStandard);
-
-  static constexpr zx_duration_mono_t kDefaultMinMruRotateTime = ZX_SEC(5);
-  static constexpr zx_duration_mono_t kDefaultMaxMruRotateTime = ZX_SEC(5);
-
-  // This is presently an arbitrary constant, since the min and max mru rotate time are currently
-  // fixed at the same value, meaning that the active ratio can not presently trigger, or prevent,
-  // aging.
-  static constexpr uint64_t kDefaultActiveRatioMultiplier = 0;
 
   PageQueues();
   ~PageQueues();
@@ -252,25 +195,6 @@ class PageQueues {
   // Only for tests and debugging.
   void RotateReclaimQueues();
 
-  // Used to represent and return page backlink information acquired whilst holding the page queue
-  // lock. As a VMO may not destruct while it has pages in it, the cow RefPtr will always be valid,
-  // although the page and offset contained here are not synchronized and must be separately
-  // validated before use. This can be done by acquiring the returned vmo's lock and then validating
-  // that the page is still contained at the offset.
-  struct VmoBacklink {
-    fbl::RefPtr<VmCowPages> cow;
-    vm_page_t* page = nullptr;
-    uint64_t offset = 0;
-  };
-
-  // Looks at the isolate queues and returns backlink information of the first page found. If the
-  // isolate queue is empty then LRU queues up to |lowest_queue| epochs from the most recent will be
-  // processed to attempt to fill the isolate list. If no page was found a nullopt is returned,
-  // otherwise if it has_value the vmo field may be null to indicate that the vmo is running its
-  // destructor (see VmoBacklink for more details). If a page is returned its location in the
-  // reclaim queue is not modified.
-  ktl::optional<VmoBacklink> PeekIsolate(size_t lowest_queue);
-
   // Helper struct to group queue length counts returned by QueueCounts.
   struct Counts {
     ktl::array<size_t, kNumReclaim> reclaim = {0};
@@ -292,20 +216,6 @@ class PageQueues {
   };
 
   Counts QueueCounts() const;
-
-  struct ActiveInactiveCounts {
-    // Pages that would normally be available for eviction, but are presently considered active and
-    // so will not be evicted.
-    size_t active = 0;
-    // Pages that are available for eviction due to not presently being considered active.
-    size_t inactive = 0;
-
-    bool operator==(const ActiveInactiveCounts& other) const {
-      return active == other.active && inactive == other.inactive;
-    }
-    bool operator!=(const ActiveInactiveCounts& other) const { return !(*this == other); }
-  };
-  ActiveInactiveCounts GetActiveInactiveCounts() const;
 
   // Returns whether or not the reclaim queues only include pager backed pages or not.
   FFI_ALWAYS_INLINE bool ReclaimIsOnlyPagerBacked() const {
@@ -329,23 +239,6 @@ class PageQueues {
   bool DebugPageIsAnyAnonymous(const vm_page_t* page) const;
   bool DebugPageIsWired(const vm_page_t* page) const;
   bool DebugPageIsHighPriority(const vm_page_t* page) const;
-
-  // These methods are public so that the scanner can call. Once the scanner is an object that can
-  // be friended, and not a collection of anonymous functions, these can be made private.
-
-  // Creates any threads for queue management. This needs to be done separately to construction as
-  // there is a recursive dependency where creating threads will need to manipulate pages, which
-  // will call back into the page queues.
-  // Delaying thread creation is fine as these threads are purely for aging and eviction management,
-  // which is not needed during early kernel boot.
-  // Failure to start the threads may cause operations such as RotatePagerBackedQueues to block
-  // indefinitely as they might attempt to offload work to a nonexistent thread. This issue is only
-  // relevant for unittests that may wish to avoid starting the threads for some tests.
-  // It is the responsibility of the caller to only call this once, otherwise it will panic.
-  void StartThreads(zx_duration_mono_t min_mru_rotate_time, zx_duration_mono_t max_mru_rotate_time);
-
-  // Sets the active ratio multiplier.
-  void SetActiveRatioMultiplier(uint32_t multiplier);
 
  private:
   OpaqueStorage<kPageQueuesStorageSize, kPageQueuesStorageAlign> storage_;

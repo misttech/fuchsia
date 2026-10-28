@@ -441,9 +441,7 @@ kernel_bindgen_crate("page-queues-bindings") {
   type_allowlist = [
     "Counts",
     "PageQueues",
-    "PageQueues_ActiveInactiveCounts",
     "PageQueues_Counts",
-    "PageQueuesVmoBacklink",
   ]
   type_blocklist = [
     "VmPageDoublyLinkedList",
@@ -453,7 +451,6 @@ kernel_bindgen_crate("page-queues-bindings") {
     "zx_instant_mono_t",
     "zx_paddr_t",
     "zx_status_t",
-    "PageQueues_VmoBacklink",
   ]
   var_allowlist = [ "PageQueues_k.*" ]
   opaque_types = [
@@ -465,13 +462,9 @@ kernel_bindgen_crate("page-queues-bindings") {
   ]
   function_blocklist = [ "PageQueues_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  deps = [
-    ":page-bindings",
-    "//sdk/rust/zx-types",
-  ]
+  deps = [ "//sdk/rust/zx-types" ]
   raw_lines = [
     "#![no_std]",
-    "use page_bindings::vm_page_t;",
     "pub use zx_types::{zx_duration_mono_t, zx_instant_mono_t};",
     "pub use zx_types::zx_paddr_t;",
     "pub type VmCowPages = *const core::ffi::c_void;",
@@ -1704,7 +1697,6 @@ source_set("tests") {
     "unittests/aspace_unittest.cc",
     "unittests/continuous_attribution_unittest.cc",
     "unittests/evictor_unittest.cc",
-    "unittests/page_queues_unittest.cc",
     "unittests/slab_unittest.cc",
     "unittests/test_helper.cc",
     "unittests/test_helper_ffi.cc",

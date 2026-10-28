@@ -17,27 +17,9 @@ PageQueues::~PageQueues() { rust_page_queues_destroy(&storage_); }
 
 void PageQueues::RotateReclaimQueues() { rust_page_queues_rotate_reclaim_queues(&storage_); }
 
-ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_queue) {
-  PageQueuesVmoBacklink backlink{};
-  if (!rust_page_queues_peek_isolate(&storage_, lowest_queue, &backlink)) {
-    return ktl::nullopt;
-  }
-  return VmoBacklink{
-      .cow = fbl::ImportFromRawPtr(backlink.cow),
-      .page = backlink.page,
-      .offset = backlink.offset,
-  };
-}
-
 PageQueues::Counts PageQueues::QueueCounts() const {
   Counts counts;
   rust_page_queues_queue_counts(&storage_, &counts);
-  return counts;
-}
-
-PageQueues::ActiveInactiveCounts PageQueues::GetActiveInactiveCounts() const {
-  ActiveInactiveCounts counts;
-  rust_page_queues_get_active_inactive_counts(&storage_, &counts);
   return counts;
 }
 
@@ -67,13 +49,4 @@ bool PageQueues::DebugPageIsWired(const vm_page_t* page) const {
 
 bool PageQueues::DebugPageIsHighPriority(const vm_page_t* page) const {
   return rust_page_queues_debug_page_is_high_priority(&storage_, page);
-}
-
-void PageQueues::StartThreads(zx_duration_mono_t min_mru_rotate_time,
-                              zx_duration_mono_t max_mru_rotate_time) {
-  rust_page_queues_start_threads(&storage_, min_mru_rotate_time, max_mru_rotate_time);
-}
-
-void PageQueues::SetActiveRatioMultiplier(uint32_t multiplier) {
-  rust_page_queues_set_active_ratio_multiplier(&storage_, multiplier);
 }

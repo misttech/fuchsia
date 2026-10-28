@@ -33,7 +33,7 @@ use page_bindings::{vm_page_state, vm_page_t};
 use page_queues_bindings as bindings;
 use pin_init::{InPlaceWrite as _, PinInit, pin_data, pin_init_array_from_fn};
 use vm_constants_rs as vm_constants;
-use zx_types::{ZX_TIME_INFINITE_PAST, zx_duration_mono_t};
+use zx_types::ZX_TIME_INFINITE_PAST;
 
 define_kcounter!(PQ_AGING_REASON_TIMEOUT, "pq.aging.reason.timeout", Sum);
 define_kcounter!(PQ_AGING_REASON_ACTIVE_RATIO, "pq.aging.reason.active_ratio", Sum);
@@ -124,7 +124,6 @@ pub struct ReclaimCounts {
 
 /// Helper struct to group active and inactive page counts returned by
 /// [`PageQueues::get_active_inactive_counts`].
-#[repr(C)]
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ActiveInactiveCounts {
     /// Pages that would normally be available for eviction, but are presently considered active
@@ -133,17 +132,6 @@ pub struct ActiveInactiveCounts {
     /// Pages that are available for eviction due to not presently being considered active.
     pub inactive: usize,
 }
-zr::static_assert!(
-    offset_of!(ActiveInactiveCounts, active)
-        == offset_of!(bindings::PageQueues_ActiveInactiveCounts, active)
-);
-zr::static_assert!(
-    offset_of!(ActiveInactiveCounts, inactive)
-        == offset_of!(bindings::PageQueues_ActiveInactiveCounts, inactive)
-);
-zr::static_assert!(
-    size_of::<ActiveInactiveCounts>() == size_of::<bindings::PageQueues_ActiveInactiveCounts>()
-);
 
 /// Used to represent and return page backlink information acquired whilst holding the page queue
 /// lock. As a VMO may not destruct while it has pages in it, the cow RefPtr will always be valid,
@@ -164,40 +152,6 @@ impl core::fmt::Debug for VmoBacklink {
             .field("page", &self.page)
             .field("offset", &self.offset)
             .finish()
-    }
-}
-
-/// FFI-compatible representation of `PageQueuesVmoBacklink` matching C++.
-#[repr(C)]
-pub struct PageQueuesVmoBacklink {
-    pub cow: *mut bindings::VmCowPages,
-    pub page: *mut vm_page_t,
-    pub offset: u64,
-}
-zr::static_assert!(
-    size_of::<PageQueuesVmoBacklink>() == size_of::<bindings::PageQueuesVmoBacklink>()
-);
-zr::static_assert!(
-    align_of::<PageQueuesVmoBacklink>() == align_of::<bindings::PageQueuesVmoBacklink>()
-);
-zr::static_assert!(
-    offset_of!(PageQueuesVmoBacklink, cow) == offset_of!(bindings::PageQueuesVmoBacklink, cow)
-);
-zr::static_assert!(
-    offset_of!(PageQueuesVmoBacklink, page) == offset_of!(bindings::PageQueuesVmoBacklink, page)
-);
-zr::static_assert!(
-    offset_of!(PageQueuesVmoBacklink, offset)
-        == offset_of!(bindings::PageQueuesVmoBacklink, offset)
-);
-
-impl From<VmoBacklink> for PageQueuesVmoBacklink {
-    fn from(backlink: VmoBacklink) -> Self {
-        let cow = match backlink.cow {
-            Some(c) => RefPtr::into_raw(c).cast_mut().cast(),
-            None => core::ptr::null_mut(),
-        };
-        Self { cow, page: backlink.page.as_ffi(), offset: backlink.offset }
     }
 }
 
@@ -239,7 +193,6 @@ zr::static_assert!(NUM_RECLAIM == bindings::PageQueues_kNumReclaim);
 /// Two active queues are used to allow for better fidelity of active information. This prevents
 /// a race between aging once and needing to collect/harvest age information.
 pub const NUM_ACTIVE_QUEUES: usize = 2;
-zr::static_assert!(NUM_ACTIVE_QUEUES == bindings::PageQueues_kNumActiveQueues);
 
 /// The amount of pages that will have to move around the queues before the active/inactive
 /// ratio is re-checked. This therefore represents how much error the active ratio aging process
@@ -248,7 +201,6 @@ zr::static_assert!(NUM_ACTIVE_QUEUES == bindings::PageQueues_kNumActiveQueues);
 /// aging process happens.
 const MB: usize = 1024 * 1024;
 pub const ACTIVE_INACTIVE_ERROR_MARGIN: usize = (2 * MB) / page::SIZE;
-zr::static_assert!(ACTIVE_INACTIVE_ERROR_MARGIN == bindings::PageQueues_kActiveInactiveErrorMargin);
 
 // Needs to be at least one non-active queue
 zr::static_assert!(NUM_RECLAIM > NUM_ACTIVE_QUEUES);
@@ -259,7 +211,6 @@ zr::static_assert!(NUM_RECLAIM > NUM_ACTIVE_QUEUES);
 /// therefore to have a non-zero number of pages ever appear in an oldest queue for eviction the
 /// last two queues are considered the oldest.
 pub const NUM_OLDEST_QUEUES: usize = 2;
-zr::static_assert!(NUM_OLDEST_QUEUES == bindings::PageQueues_kNumOldestQueues);
 zr::static_assert!(NUM_OLDEST_QUEUES + NUM_ACTIVE_QUEUES <= NUM_RECLAIM);
 
 /// Number of different isolate queues that are available. Different isolate queues allow for
@@ -269,32 +220,20 @@ zr::static_assert!(NUM_OLDEST_QUEUES + NUM_ACTIVE_QUEUES <= NUM_RECLAIM);
 /// We use 2 queues to separate "Don't Need" pages (high reclamation priority, index 0) from
 /// standard aged pages (standard reclamation priority, index 1).
 pub const ISOLATE_QUEUE_DONT_NEED: usize = 0;
-zr::static_assert!(ISOLATE_QUEUE_DONT_NEED == bindings::PageQueues_kIsolateQueueDontNeed);
 pub const ISOLATE_QUEUE_STANDARD: usize = 1;
-zr::static_assert!(ISOLATE_QUEUE_STANDARD == bindings::PageQueues_kIsolateQueueStandard);
 pub const NUM_ISOLATE_QUEUES: usize = 2;
-zr::static_assert!(NUM_ISOLATE_QUEUES == bindings::PageQueues_kNumIsolateQueues);
 
 zr::static_assert!(ISOLATE_QUEUE_DONT_NEED < NUM_ISOLATE_QUEUES);
 zr::static_assert!(ISOLATE_QUEUE_STANDARD < NUM_ISOLATE_QUEUES);
 zr::static_assert!(ISOLATE_QUEUE_DONT_NEED < ISOLATE_QUEUE_STANDARD);
 
 pub const DEFAULT_MIN_MRU_ROTATE_TIME: DurationMono = DurationMono::from_seconds(5);
-zr::static_assert!(
-    DEFAULT_MIN_MRU_ROTATE_TIME.into_nanos() == bindings::PageQueues_kDefaultMinMruRotateTime
-);
 pub const DEFAULT_MAX_MRU_ROTATE_TIME: DurationMono = DurationMono::from_seconds(5);
-zr::static_assert!(
-    DEFAULT_MAX_MRU_ROTATE_TIME.into_nanos() == bindings::PageQueues_kDefaultMaxMruRotateTime
-);
 
 /// This is presently an arbitrary constant, since the min and max mru rotate time are currently
 /// fixed at the same value, meaning that the active ratio can not presently trigger, or
 /// prevent, aging.
 pub const DEFAULT_ACTIVE_RATIO_MULTIPLIER: u64 = 0;
-zr::static_assert!(
-    DEFAULT_ACTIVE_RATIO_MULTIPLIER == bindings::PageQueues_kDefaultActiveRatioMultiplier
-);
 
 /// When holding the PageQueue lock, and performing an operation on an arbitrary number of pages,
 /// the "operation batch size" controls the number of pages for which the lock will be held before
@@ -3766,33 +3705,6 @@ pub unsafe extern "C" fn rust_page_queues_rotate_reclaim_queues(queues: &PageQue
     queues.rotate_reclaim_queues();
 }
 
-/// FFI wrapper for [`PageQueues::peek_isolate`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call with no `PageQueues` or VMO locks held by the current thread, and
-/// `out_backlink` is non-null, properly aligned, and valid for exclusive writes of a
-/// `PageQueuesVmoBacklink`. When this function returns `true` and `out_backlink.cow` is non-null,
-/// ownership of one strong reference count of `VmCowPages` is transferred to the caller.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_peek_isolate(
-    queues: &PageQueues,
-    lowest_queue: usize,
-    out_backlink: *mut PageQueuesVmoBacklink,
-) -> bool {
-    match queues.peek_isolate(lowest_queue) {
-        Some(b) => {
-            // SAFETY: Caller guarantees `out_backlink` is non-null, aligned, and valid for
-            // exclusive writes of `PageQueuesVmoBacklink`.
-            unsafe { out_backlink.write(b.into()) };
-            true
-        }
-        None => false,
-    }
-}
-
 /// FFI wrapper for [`PageQueues::queue_counts`].
 ///
 /// # Safety
@@ -3807,23 +3719,6 @@ pub unsafe extern "C" fn rust_page_queues_queue_counts(
     // SAFETY: Caller guarantees `out_counts` points to a valid `Counts`.
     unsafe {
         *(out_counts as *mut Counts) = counts;
-    }
-}
-
-/// FFI wrapper for [`PageQueues::get_active_inactive_counts`].
-///
-/// # Safety
-///
-/// `out_counts` must point to a valid writable `ActiveInactiveCounts`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_get_active_inactive_counts(
-    queues: &PageQueues,
-    out_counts: *mut c_void,
-) {
-    let counts = queues.get_active_inactive_counts();
-    // SAFETY: Caller guarantees `out_counts` points to a valid `ActiveInactiveCounts`.
-    unsafe {
-        *(out_counts as *mut ActiveInactiveCounts) = counts;
     }
 }
 
@@ -3974,45 +3869,6 @@ pub unsafe extern "C" fn rust_page_queues_debug_page_is_high_priority(
     let page_ptr = unsafe { VmPagePtr::from_ffi_unchecked(page.cast_mut()) };
     // SAFETY: Caller upholds `debug_page_is_high_priority` preconditions.
     unsafe { queues.debug_page_is_high_priority(page_ptr) }
-}
-
-/// FFI wrapper for [`PageQueues::start_threads`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues`,
-/// that this function is called at most once on `queues` with `queues.lock` not held by the
-/// current thread, and that `queues` remains pinned and valid until `stop_threads` or
-/// `PinnedDrop` completes.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_start_threads(
-    queues: &PageQueues,
-    min_mru_rotate_time: zx_duration_mono_t,
-    max_mru_rotate_time: zx_duration_mono_t,
-) {
-    // SAFETY: Caller upholds `start_threads` preconditions.
-    unsafe {
-        queues.start_threads(
-            DurationMono::from_nanos(min_mru_rotate_time),
-            DurationMono::from_nanos(max_mru_rotate_time),
-        );
-    }
-}
-
-/// FFI wrapper for [`PageQueues::set_active_ratio_multiplier`].
-///
-/// # Safety
-///
-/// The caller must ensure `queues` is a valid shared reference to an initialized `PageQueues` for
-/// the duration of this call, and that `queues.lock` is not held by the current thread.
-// SAFETY: Symbol name is prefixed and unique across the kernel link unit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_page_queues_set_active_ratio_multiplier(
-    queues: &PageQueues,
-    multiplier: u32,
-) {
-    queues.set_active_ratio_multiplier(multiplier);
 }
 
 // ------------------------------------------------------------------------------------------------
