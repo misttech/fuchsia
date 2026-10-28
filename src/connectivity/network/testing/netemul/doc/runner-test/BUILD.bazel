@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "client",
+    srcs = ["src/client.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "netemul_runner_test_driver",
+    crate_root = "src/client.rs",
+    edition = "2024",
+    visibility = ["//src/connectivity/network/testing/netemul/doc:__pkg__"],
+    deps = [
+        "//src/connectivity/network/testing/netemul/sync-manager/rust:lib",
+        "//src/lib/fuchsia",
+    ],
+)
+
+rustc_binary(
+    name = "server",
+    testonly = True,
+    srcs = ["src/server.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "netemul_runner_test_server",
+    crate_root = "src/server.rs",
+    edition = "2024",
+    visibility = ["//src/connectivity/network/testing/netemul/doc:__pkg__"],
+    deps = [
+        "//src/connectivity/network/testing/netemul/sync-manager/rust:lib",
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
