@@ -5,16 +5,13 @@
 # found in the LICENSE file.
 
 import os
-import sys
 
-# Add //build/rust to Python path so bindgen import works.
+from build.rust.bindgen import Bindgen
+
 FUCHSIA_DIR = os.environ.get(
     "FUCHSIA_DIR",
     os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."),
 )
-sys.path.append(os.path.join(FUCHSIA_DIR, "build", "rust"))
-
-from bindgen import Bindgen
 
 bindgen = Bindgen()
 
