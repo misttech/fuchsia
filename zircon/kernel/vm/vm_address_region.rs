@@ -158,7 +158,6 @@ impl From<VmAddressRegionOpChildren> for bindings::VmAddressRegionOpChildren {
     }
 }
 pub type RangeOpType = bindings::VmAddressRegion_RangeOpType;
-pub type UnmapOptions = bindings::VmMapping_UnmapOptions;
 
 /// Result of calling [`VmAddressRegion::create_vm_mapping`].
 pub struct MapResult {
@@ -536,15 +535,6 @@ impl VmAddressRegionOrMapping {
         unsafe { *self.state().life_cycle.get() }
     }
 
-    /// For a `VmMapping` the state is only modified either with the `object` lock held, or if
-    /// there is no `object`. Therefore it is safe to read the state if just the object lock is
-    /// held.
-    #[inline]
-    fn state_locked_object(&self, _token: &LockToken<'_, VmObjectLockClass>) -> LifeCycleState {
-        // SAFETY: The object lock is held.
-        unsafe { *self.state().life_cycle.get() }
-    }
-
     #[inline]
     pub(super) fn set_state_locked(
         &self,
@@ -614,6 +604,25 @@ impl VmAddressRegionOrMapping {
             // `kalloc::Box` to which no reference remains.
             unsafe { VmAddressRegion::recycle(NonNull::new_unchecked(region.cast())) }
         }
+    }
+}
+
+impl VmMapping {
+    pub(super) fn is_alive_locked_object(&self, token: &LockToken<'_, VmObjectLockClass>) -> bool {
+        (**self).state().canary.assert();
+        self.state_locked_object(token) == LifeCycleState::Alive
+    }
+
+    /// For a `VmMapping` the state is only modified either with the `object` lock held, or if
+    /// there is no `object`. Therefore it is safe to read the state if just the object lock is
+    /// held.
+    #[inline]
+    pub(super) fn state_locked_object(
+        &self,
+        _token: &LockToken<'_, VmObjectLockClass>,
+    ) -> LifeCycleState {
+        // SAFETY: The object lock is held.
+        unsafe { *(**self).state().life_cycle.get() }
     }
 }
 
@@ -1436,18 +1445,6 @@ pub unsafe extern "C" fn rust_vm_address_region_or_mapping_state_locked(
     // SAFETY: The aspace lock is held by the caller, or no other reference to `this` exists.
     let token = unsafe { LockToken::new() };
     this.state_locked(&token)
-}
-
-/// # Safety
-///
-/// `this` is the base of a `VmMapping` whose object lock is held.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_vm_address_region_or_mapping_state_locked_object(
-    this: &VmAddressRegionOrMapping,
-) -> LifeCycleState {
-    // SAFETY: The object lock is held by the caller.
-    let token = unsafe { LockToken::new() };
-    this.state_locked_object(&token)
 }
 
 /// # Safety

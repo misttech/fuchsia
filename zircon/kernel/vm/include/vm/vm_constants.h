@@ -68,6 +68,10 @@ constexpr size_t kVmMappingStateAlign = 8;
 constexpr size_t kVmMappingProtectionRangesCursorSize = 16;
 constexpr size_t kVmMappingProtectionRangesCursorAlign = 8;
 
+// Size and alignment for VmMapping::CurrentlyFaulting stored in C++ OpaqueStorage.
+constexpr size_t kVmMappingCurrentlyFaultingSize = 32;
+constexpr size_t kVmMappingCurrentlyFaultingAlign = 8;
+
 // Size and alignment for PageQueues state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP
 #if ZX_DEBUG_ASSERT_IMPLEMENTED

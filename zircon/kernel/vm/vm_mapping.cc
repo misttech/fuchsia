@@ -46,72 +46,24 @@ KCOUNTER(vm_mappings_merged, "vm.aspace.mapping.merged_neighbors")
 // This is expected to be stack allocated under the object lock and the object lock must not be
 // dropped over its lifetime.
 // Creating this object creates a contract where the caller will either update the mapping for this
-// location and call Success, or this object will automatically unmap the location if necessary.
+// location and call MappingUpdated, or this object will automatically unmap the location if
+// necessary.
 class VmMapping::CurrentlyFaulting {
  public:
   CurrentlyFaulting(VmMapping* mapping, uint64_t object_offset, uint64_t len)
-      TA_REQ(mapping->object_locked()->lock())
-      : mapping_(mapping), object_offset_(object_offset), len_(len) {
-    DEBUG_ASSERT(mapping->currently_faulting() == nullptr);
-    // CurrentlyFaulting is typically allocated on the stack and GCCs diagnostics can get confused
-    // and fail to realize that the destructor will clear the pointing, causing GCC to believe that
-    // there might be a dangling pointer.
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdangling-pointer"
-#endif
-    mapping->set_currently_faulting(this);
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
+      TA_REQ(mapping->object_locked()->lock()) {
+    rust_vm_mapping_currently_faulting_begin(&storage_, mapping, object_offset, len);
   }
-  ~CurrentlyFaulting() {
-    // If the caller did not call Success, and an unmap was skipped, then we must unmap the range
-    // ourselves. We only do the unmap here if a prior unmap was skipped to avoid needless unmaps
-    // due to transient errors such as needing to wait on a page request.
-    if (state_ == State::UnmapSkipped) {
-      vaddr_t base;
-      size_t new_len;
-      bool valid_range = mapping_->ObjectRangeToVaddrRange(object_offset_, len_, &base, &new_len);
-      ASSERT(valid_range);
-      ASSERT(new_len == len_);
-      zx_status_t status = mapping_->aspace()->arch_aspace().Unmap(
-          base, new_len / kPageSize, mapping_->aspace()->EnlargeArchUnmap());
-      ASSERT(status == ZX_OK);
-    }
-    mapping_->set_currently_faulting(nullptr);
-  }
-
-  // Called to say that the given range needs to be unmapped. This returns true if updating the
-  // range will be handled by the faulting thread and that the unmap can therefore be skipped.
-  // Returns false if the caller should unmap themselves.
-  bool UnmapRange(uint64_t object_offset, uint64_t len) {
-    DEBUG_ASSERT(state_ != State::Completed);
-    if (Intersects(object_offset, len, object_offset_, len_)) {
-      state_ = State::UnmapSkipped;
-      return true;
-    }
-    return false;
-  }
+  ~CurrentlyFaulting() { rust_vm_mapping_currently_faulting_end(&storage_); }
 
   // Called to indicate that the mapping for the fault location has been updated successfully. This
   // acts to cancel the unmap that would otherwise happen when this object goes out of scope.
-  void MappingUpdated() { state_ = State::Completed; }
+  void MappingUpdated() { rust_vm_mapping_currently_faulting_mapping_updated(&storage_); }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(CurrentlyFaulting);
 
  private:
-  // Reference back to the original mapping.
-  VmMapping* mapping_;
-  // The offset, in object space, of the page fault.
-  uint64_t object_offset_;
-  uint64_t len_;
-  enum class State {
-    NoUnmapNeeded,
-    UnmapSkipped,
-    Completed,
-  };
-  State state_ = State::NoUnmapNeeded;
+  OpaqueStorage<kVmMappingCurrentlyFaultingSize, kVmMappingCurrentlyFaultingAlign> storage_;
 };
 
 VmMapping::VmMapping(VmAddressRegion& parent, bool private_clone, vaddr_t base, size_t size,
@@ -164,8 +116,6 @@ VmMapping::AttributionCounts VmMapping::GetAttributedMemory() const {
   Guard<CriticalMutex> guard{lock()};
   return GetAttributedMemoryLocked(guard);
 }
-
-using ArchUnmapOptions = ArchVmAspaceInterface::ArchUnmapOptions;
 
 zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   AssertCanary();
@@ -332,154 +282,6 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   finish_mapping(left);
   finish_mapping(right);
   return ZX_OK;
-}
-
-bool VmMapping::ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* base,
-                                        uint64_t* virtual_len) const {
-  DEBUG_ASSERT(base);
-  DEBUG_ASSERT(virtual_len);
-  return rust_vm_mapping_object_range_to_vaddr_range(this, offset, len, base, virtual_len);
-}
-
-void VmMapping::AspaceUnmapLockedObject(uint64_t offset, uint64_t len, UnmapOptions options) const {
-  AssertCanary();
-
-  // NOTE: must be acquired with the vmo lock held, but doesn't need to take
-  // the address space lock, since it will not manipulate its location in the
-  // vmar tree. However, it must be held in the ALIVE state across this call.
-  //
-  // Avoids a race with DestroyLocked() since it removes ourself from the VMO's
-  // mapping list with the VMO lock held before dropping this state to DEAD. The
-  // VMO cant call back to us once we're out of their list.
-  DEBUG_ASSERT(get_state_locked_object() == LifeCycleState::ALIVE);
-
-  // The object pointer itself is not accessed in this method, and we do not hold the correct lock
-  // for it, but we know the object lock is held and so therefore the pointer is valid and will not
-  // be modified. Therefore it's correct to read it here for the purposes of an assert, but cannot
-  // be expressed nicely with regular annotations.
-  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_locked()); }();
-
-  // In the case of unmapping known instances of the zero page check if this range intersects with
-  // an in progress fault. If it does we can skip the unmap with the knowledge that the mapping will
-  // be updated later. This is safe since the zero page is, by definition, only mapped read only,
-  // and is never modified so delaying the update of the mapping cannot cause either any users to
-  // see incorrect data, or users to be able to modify an old mapping.
-  if ((options & UnmapOptions::OnlyHasZeroPages) && currently_faulting() &&
-      currently_faulting()->UnmapRange(offset, len)) {
-    return;
-  }
-
-  LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset(), size(), offset, len);
-
-  // See if there's an intersect.
-  vaddr_t base;
-  uint64_t new_len;
-  if (!ObjectRangeToVaddrRange(offset, len, &base, &new_len)) {
-    return;
-  }
-
-  // If this is a kernel mapping then we should not be removing mappings out of the arch aspace,
-  // unless this mapping has explicitly opted out of this check.
-  DEBUG_ASSERT(aspace()->is_user() || aspace()->is_guest_physical() ||
-               flags() & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING);
-
-  auto aspace_op = aspace()->EnlargeArchUnmap();
-  if (options & UnmapOptions::Harvest) {
-    aspace_op |= ArchUnmapOptions::Harvest;
-  }
-
-  zx_status_t status = aspace()->arch_aspace().Unmap(base, new_len / kPageSize, aspace_op);
-  ASSERT(status == ZX_OK);
-}
-
-void VmMapping::AspaceRemoveWriteLockedObject(uint64_t offset,
-                                              uint64_t len) const TA_NO_THREAD_SAFETY_ANALYSIS {
-  LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset(), size(), offset, len);
-
-  AssertCanary();
-
-  // NOTE: must be acquired with the vmo lock held, but doesn't need to take
-  // the address space lock, since it will not manipulate its location in the
-  // vmar tree. However, it must be held in the ALIVE state across this call.
-  //
-  // Avoids a race with DestroyLocked() since it removes ourself from the VMO's
-  // mapping list with the VMO lock held before dropping this state to DEAD. The
-  // VMO cant call back to us once we're out of their list.
-  DEBUG_ASSERT(get_state_locked_object() == LifeCycleState::ALIVE);
-
-  // The object pointer itself is not accessed in this method, and we do not hold the correct lock
-  // for it, but we know the object lock is held and so therefore the pointer is valid and will not
-  // be modified. Therefore it's correct to read it here for the purposes of an assert, but cannot
-  // be expressed nicely with regular annotations.
-  [&]() TA_NO_THREAD_SAFETY_ANALYSIS { DEBUG_ASSERT(object_locked()); }();
-
-  // If this doesn't support writing then nothing to be done, as we know we have no write mappings.
-  if (!(flags() & VMAR_FLAG_CAN_MAP_WRITE)) {
-    return;
-  }
-
-  // See if there's an intersect.
-  vaddr_t base;
-  uint64_t new_len;
-  if (!ObjectRangeToVaddrRange(offset, len, &base, &new_len)) {
-    return;
-  }
-
-  // If this is a kernel mapping then we should not be modify mappings in the arch aspace,
-  // unless this mapping has explicitly opted out of this check.
-  DEBUG_ASSERT_MSG(aspace()->is_user() || aspace()->is_guest_physical() ||
-                       flags() & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING,
-                   "region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64
-                   "\n",
-                   this, object_offset(), size(), offset, len);
-
-  zx_status_t status = EnumerateProtectionRangesLockedObject(
-      base, new_len, [this](vaddr_t region_base, size_t region_len, arch_mmu_flags_t mmu_flags) {
-        // If this range doesn't currently support being writable then we can skip.
-        if (!(mmu_flags & ARCH_MMU_FLAG_PERM_WRITE)) {
-          return ZX_ERR_NEXT;
-        }
-
-        // Build new mmu flags without writing.
-        mmu_flags &= ~(ARCH_MMU_FLAG_PERM_WRITE);
-
-        zx_status_t result = ProtectOrUnmap(aspace(), region_base, region_len, mmu_flags);
-        if (result == ZX_OK) {
-          return ZX_ERR_NEXT;
-        }
-        return result;
-      });
-  ASSERT(status == ZX_OK);
-}
-
-void VmMapping::AspaceDebugUnpinLockedObject(uint64_t offset, uint64_t len) const {
-  LTRACEF("region %p obj_offset %#" PRIx64 " size %zu, offset %#" PRIx64 " len %#" PRIx64 "\n",
-          this, object_offset(), size(), offset, len);
-
-  AssertCanary();
-
-  // NOTE: must be acquired with the vmo lock held, but doesn't need to take
-  // the address space lock, since it will not manipulate its location in the
-  // vmar tree. However, it must be held in the ALIVE state across this call.
-  //
-  // Avoids a race with DestroyLocked() since it removes ourself from the VMO's
-  // mapping list with the VMO lock held before dropping this state to DEAD. The
-  // VMO cant call back to us once we're out of their list.
-  DEBUG_ASSERT(get_state_locked_object() == LifeCycleState::ALIVE);
-
-  // See if there's an intersect.
-  vaddr_t base;
-  uint64_t new_len;
-  if (!ObjectRangeToVaddrRange(offset, len, &base, &new_len)) {
-    return;
-  }
-
-  // This unpin is not allowed for kernel mappings, unless the mapping has specifically opted out of
-  // this debug check due to it performing its own dynamic management.
-  DEBUG_ASSERT(aspace()->is_user() || aspace()->is_guest_physical() ||
-               flags() & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING);
 }
 
 namespace {
@@ -902,7 +704,8 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
 
   // Opportunistic pages are not considered in currently_faulting optimisation, as it is not
   // guaranteed the mappings will be updated.
-  CurrentlyFaulting currently_faulting(this, vmo_offset, num_required_pages * kPageSize);
+  __UNINITIALIZED CurrentlyFaulting currently_faulting(this, vmo_offset,
+                                                       num_required_pages * kPageSize);
 
   __UNINITIALIZED VmMappingCoalescer<coalescer_size> coalescer(
       this, va, range.mmu_flags, ArchVmAspace::ExistingEntryAction::Upgrade);

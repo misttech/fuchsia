@@ -176,6 +176,7 @@ kernel_bindgen_crate("vm-constants-rs") {
     "kRefCountedAdoptionValidator",
     "kVmAddressRegionState.*",
     "kVmMappingState.*",
+    "kVmMappingCurrentlyFaulting.*",
     "kVmCowPagesState.*",
     "kPhysicalPageProviderState.*",
     "kVmPageList.*",
