@@ -17,6 +17,5 @@ pub fn uid_procstat_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode!(IFREG, 0o222),
         );
     });
-    // TODO: Validate the mode bits are correct.
-    dir.into_node(fs, 0o777)
+    dir.into_node(fs, 0o555)
 }

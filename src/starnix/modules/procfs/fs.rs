@@ -7,11 +7,13 @@ use starnix_core::mm::PAGE_SIZE;
 use starnix_core::task::{CurrentTask, Task, TaskContainer};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{
-    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsStr, FsString,
+    CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNodeInfo, FsStr,
+    FsString,
 };
 use starnix_types::vfs::default_statfs;
-use starnix_uapi::auth::{PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS};
+use starnix_uapi::auth::{FsCred, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ_FSCREDS};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::{PROC_SUPER_MAGIC, error, gid_t, statfs};
 use std::fmt::Write;
@@ -131,7 +133,11 @@ impl ProcFs {
         let kernel = current_task.kernel();
         let fs = FileSystem::new(kernel, CacheMode::Uncached, proc_fs, options)?;
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, ProcDirectory::new(kernel, &fs));
+        fs.create_root_with_info(
+            root_ino,
+            ProcDirectory::new(kernel, &fs),
+            FsNodeInfo::new(mode!(IFDIR, 0o555), FsCred::root()),
+        );
         Ok(fs)
     }
 

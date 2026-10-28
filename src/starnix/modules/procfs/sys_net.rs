@@ -162,8 +162,7 @@ impl FsNodeOps for ProcSysNetIpv4Conf {
                     FILE_MODE,
                 );
             });
-            // TODO: Validate the mode bits are correct.
-            return Ok(dir.into_node(&fs, 0o777));
+            return Ok(dir.into_node(&fs, 0o555));
         }
         error!(ENOENT, "looking for {name}")
     }
@@ -222,8 +221,7 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
                     FILE_MODE,
                 );
             });
-            // TODO: Validate the mode bits are correct.
-            return Ok(dir.into_node(&fs, 0o777));
+            return Ok(dir.into_node(&fs, 0o555));
         }
         error!(ENOENT, "looking for {name}")
     }
@@ -337,8 +335,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
                     FILE_MODE,
                 );
             });
-            // TODO: Validate the mode bits are correct.
-            return Ok(dir.into_node(&fs, 0o777));
+            return Ok(dir.into_node(&fs, 0o555));
         }
         error!(ENOENT, "looking for {name}")
     }
@@ -397,8 +394,7 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
                     FILE_MODE,
                 );
             });
-            // TODO: Validate the mode bits are correct.
-            return Ok(dir.into_node(&fs, 0o777));
+            return Ok(dir.into_node(&fs, 0o555));
         }
         error!(ENOENT, "looking for {name}")
     }

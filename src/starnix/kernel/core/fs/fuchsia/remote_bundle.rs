@@ -15,7 +15,7 @@ use crate::vfs::{
     fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_seekable,
     fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
 };
-use anyhow::{Error, anyhow, ensure};
+use anyhow::{Error, anyhow};
 use ext4_metadata::{Metadata, Node, NodeInfo};
 use fidl_fuchsia_io as fio;
 use once_cell::sync::OnceCell;
@@ -100,10 +100,10 @@ impl RemoteBundle {
         };
 
         // Make sure the root node exists.
-        ensure!(
-            metadata.get(ext4_metadata::ROOT_INODE_NUM).is_some(),
-            "Root node does not exist in remote bundle"
-        );
+        let root_node = metadata
+            .get(ext4_metadata::ROOT_INODE_NUM)
+            .ok_or_else(|| anyhow!("Root node does not exist in remote bundle"))?;
+        let root_info = to_fs_node_info(root_node);
 
         if !rights.contains(fio::PERM_WRITABLE) {
             options.flags.fetch_or(FileSystemFlags::RDONLY, Ordering::Relaxed);
@@ -115,7 +115,7 @@ impl RemoteBundle {
             RemoteBundle { metadata, root, rights },
             options,
         )?;
-        fs.create_root(ext4_metadata::ROOT_INODE_NUM, DirectoryObject);
+        fs.create_root_with_info(ext4_metadata::ROOT_INODE_NUM, DirectoryObject, root_info);
         Ok(fs)
     }
 
@@ -597,6 +597,12 @@ mod test {
             .expect("new_fs failed");
             let ns = Namespace::new(fs);
             let root = ns.root();
+            {
+                let info = root.entry.node.info();
+                assert_eq!(info.mode, FileMode::from_bits(0o40755));
+                assert_eq!(info.uid, 49152); // These values come from the test image generated in
+                assert_eq!(info.gid, 0); // ext4_to_pkg.
+            }
             let mut context = LookupContext::new(SymlinkMode::NoFollow);
 
             let test_dir = root

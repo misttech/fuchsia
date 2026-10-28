@@ -675,7 +675,6 @@
                 // proc_net_test
                 "ProcNetSymlink.FileMode",
                 "ProcNetIfInet6.Format",
-                "ProcNetSymlinkTarget.FileMode",
                 "ProcNetSymlink.Contents",
                 "ProcSysNetIpv6.FilesExist",
                 "ProcSysNetIpv4Sack.Exists",

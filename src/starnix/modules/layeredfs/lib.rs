@@ -8,10 +8,11 @@ use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{
     CacheMode, DirEntry, DirectoryEntryType, DirentSink, FileHandle, FileObject, FileOps,
-    FileSystem, FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeOps, FsStr, FsString,
-    MountInfo, SeekTarget, ValueOrSize, WhatToMount, XattrOp, fileops_impl_directory,
-    fileops_impl_noop_sync, fs_node_impl_dir_readonly, unbounded_seek,
+    FileSystem, FileSystemHandle, FileSystemOps, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps,
+    FsStr, FsString, MountInfo, SeekTarget, StatxFlags, ValueOrSize, WhatToMount, XattrOp,
+    fileops_impl_directory, fileops_impl_noop_sync, fs_node_impl_dir_readonly, unbounded_seek,
 };
+use starnix_sync::{DynamicLockDepRwLock, LockDepReadGuard, LockDepWriteGuard};
 
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::{FileSystemFlags, MountpointFlags};
@@ -156,7 +157,8 @@ impl LayeredFs {
         )
         .expect("layeredfs constructed with valid options");
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, LayeredNodeOps { fs: layered_fs });
+        let root_info = layered_fs.base_fs.root().node.info().clone();
+        fs.create_root_with_info(root_ino, LayeredNodeOps { fs: layered_fs }, root_info);
         fs
     }
 }
@@ -220,6 +222,25 @@ impl FsNodeOps for LayeredNodeOps {
             let root = self.fs.base_fs.root();
             root.node.ops().lookup(root, current_task, name)
         }
+    }
+
+    fn fetch_and_refresh_info<'a>(
+        &self,
+        _node: &FsNode,
+        current_task: &CurrentTask,
+        info: &'a DynamicLockDepRwLock<FsNodeInfo>,
+        flags: StatxFlags,
+    ) -> Result<LockDepReadGuard<'a, FsNodeInfo>, Errno> {
+        let real_info = self
+            .fs
+            .base_fs
+            .root()
+            .node
+            .fetch_and_refresh_info_with_flags(current_task, flags)?
+            .clone();
+        let mut lock = info.write();
+        *lock = real_info;
+        Ok(LockDepWriteGuard::downgrade(lock))
     }
 
     fn get_xattr(

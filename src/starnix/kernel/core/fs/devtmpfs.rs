@@ -59,6 +59,7 @@ impl DevTmpFs {
     fn init_on_kthread(current_task: &CurrentTask) -> FileSystemHandle {
         let kernel = current_task.kernel();
         let fs = TmpFs::new_fs_with_name(kernel, "devtmpfs".into());
+        fs.root().node.update_info(|info| info.chmod(mode!(IFDIR, 0o755)));
         security::file_system_resolve_security(current_task, &fs)
             .expect("resolve devtmpfs security");
         let root = fs.root();

@@ -355,8 +355,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
     });
-    // TODO: Validate the mode bits are correct.
-    root_dir.into_node(fs, 0o777)
+    root_dir.into_node(fs, 0o555)
 }
 
 struct VerityRequireSignaturesFile;
@@ -423,8 +422,7 @@ pub fn net_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             );
         });
     });
-    // TODO: Validate the mode bits are correct.
-    dir.into_node(fs, 0o777)
+    dir.into_node(fs, 0o555)
 }
 
 struct KernelTaintedFile;

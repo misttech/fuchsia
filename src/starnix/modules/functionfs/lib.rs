@@ -462,7 +462,7 @@ impl FunctionFs {
         let fs = FileSystem::new(current_task.kernel(), CacheMode::Uncached, FunctionFs, options)?;
 
         let creds = FsCred { uid, gid };
-        let info = FsNodeInfo::new(mode!(IFDIR, 0o777), creds);
+        let info = FsNodeInfo::new(mode!(IFDIR, 0o755), creds);
         fs.create_root_with_info(
             ROOT_NODE_ID,
             FunctionFsRootDir::new(&current_task.kernel().inspect_node),

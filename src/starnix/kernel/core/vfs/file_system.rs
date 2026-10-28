@@ -327,7 +327,7 @@ impl FileSystem {
     /// This is a convenience function that creates a root node with the default
     /// directory mode and root credentials.
     pub fn create_root(self: &Arc<Self>, ino: ino_t, ops: impl Into<Box<dyn FsNodeOps>>) {
-        let info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
+        let info = FsNodeInfo::new(mode!(IFDIR, 0o755), FsCred::root());
         self.create_root_with_info(ino, ops, info);
     }
 

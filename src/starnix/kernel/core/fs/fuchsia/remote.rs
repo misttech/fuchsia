@@ -327,6 +327,18 @@ impl<'a, I: SyncIo> sync_io_client::Factory<I> for Factory<'a> {
         let dirty = info.attributes.is_none();
         let attrs = get_attributes(&info.attributes);
         let id = attrs.immutable_attributes.id.unwrap_or(fio::INO_UNKNOWN);
+        if let Some(mode) = attrs.mutable_attributes.mode {
+            let mode = FileMode::from_bits(mode);
+            if mode.is_dir() {
+                self.node_info.mode = mode;
+            }
+        }
+        if let Some(uid) = attrs.mutable_attributes.uid {
+            self.node_info.uid = uid;
+        }
+        if let Some(gid) = attrs.mutable_attributes.gid {
+            self.node_info.gid = gid;
+        }
         update_info_from_fidl(
             self.node_info,
             &attrs.mutable_attributes,
@@ -524,7 +536,12 @@ impl<I: SyncIo> RemoteFs<I> {
         };
 
         // The OnRepresentation response will return an initial set of `attrs`.
-        let mut node_info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
+        let default_mode = if root_rights.contains(fio::PERM_WRITABLE) {
+            mode!(IFDIR, 0o777)
+        } else {
+            mode!(IFDIR, 0o555)
+        };
+        let mut node_info = FsNodeInfo::new(default_mode, FsCred::root());
         let (remote_node, node_id) = root_io
             .open(
                 ".",
@@ -535,7 +552,10 @@ impl<I: SyncIo> RemoteFs<I> {
                 None,
                 NODE_INFO_ATTRIBUTES
                     | fio::NodeAttributesQuery::ID
-                    | fio::NodeAttributesQuery::ENCRYPTION_POLICY,
+                    | fio::NodeAttributesQuery::ENCRYPTION_POLICY
+                    | fio::NodeAttributesQuery::MODE
+                    | fio::NodeAttributesQuery::UID
+                    | fio::NodeAttributesQuery::GID,
                 Factory::new(&mut node_info, false),
             )
             .map_err(map_sync_io_client_error)?;

@@ -114,6 +114,25 @@ TEST(FsTest, DevTmpFsInitialDirectoryLinkCount) {
   EXPECT_GE(st.st_nlink, 4u);
 }
 
+TEST(FsTest, RootAndStandardMountPermissions) {
+  struct stat st = {};
+  ASSERT_THAT(stat("/", &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_EQ(st.st_mode & 07777u, 0755u);
+
+  ASSERT_THAT(stat("/dev", &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_EQ(st.st_mode & 07777u, 0755u);
+
+  ASSERT_THAT(stat("/proc", &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_EQ(st.st_mode & 07777u, 0555u);
+
+  ASSERT_THAT(stat("/sys", &st), SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_EQ(st.st_mode & static_cast<mode_t>(S_IWGRP | S_IWOTH), 0u);
+}
+
 TEST(FsTest, DirectoryLinkCountAndRmdirEmptiness) {
   test_helper::ScopedTempDir temp_dir;
   std::string parent = temp_dir.path();

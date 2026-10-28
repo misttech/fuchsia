@@ -89,14 +89,16 @@ impl ExtFilesystem {
         let pager =
             Arc::new(Pager::new(pager_vmo, parser.block_size().map_err(|e| errno!(EIO, e))?)?);
         let fs = Self { parser, pager };
-        let ops = ExtDirectory { inner: Arc::new(ExtNode::new(&fs, ROOT_INODE_NUM)?) };
+        let root_node = ExtNode::new(&fs, ROOT_INODE_NUM)?;
+        let root_info = fs_node_info_from_ext_node(&root_node);
+        let ops = ExtDirectory { inner: Arc::new(root_node) };
         let fs = FileSystem::new(
             current_task.kernel(),
             CacheMode::Cached(current_task.kernel().fs_cache_config()),
             fs,
             options,
         )?;
-        fs.create_root(ROOT_INODE_NUM as ino_t, ops);
+        fs.create_root_with_info(ROOT_INODE_NUM as ino_t, ops, root_info);
         Ok(fs)
     }
 }
@@ -161,15 +163,7 @@ impl FsNodeOps for ExtDirectory {
         let inode_num = ext_node.inode_num as ino_t;
         fs.get_or_create_node(inode_num, || {
             let entry_type = EntryType::from_u8(entry.e2d_type).map_err(|e| errno!(EIO, e))?;
-            let mode = FileMode::from_bits(ext_node.inode.e2di_mode.into());
-
-            let uid = get_uid_from_node(&ext_node);
-            let gid = get_gid_from_node(&ext_node);
-            let owner = FsCred { uid, gid };
-
-            let size = get_size_from_node(&ext_node, &mode);
-            let blocks = get_blocks_from_node(&ext_node);
-            let nlink = ext_node.inode.e2di_nlink.into();
+            let info = fs_node_info_from_ext_node(&ext_node);
 
             let ops: Box<dyn FsNodeOps> = match entry_type {
                 EntryType::RegularFile => Box::new(ExtFile::new(ext_node, name.to_owned())),
@@ -197,22 +191,23 @@ impl FsNodeOps for ExtDirectory {
                 }
             };
 
-            let child = FsNode::new_uncached(
-                inode_num,
-                ops,
-                &fs,
-                FsNodeInfo { mode, uid: owner.uid, gid: owner.gid, ..Default::default() },
-                FsNodeFlags::empty(),
-            );
-            child.update_info(|info| {
-                info.size = size as usize;
-                info.link_count = nlink;
-                info.blksize = DEFAULT_BYTES_PER_BLOCK;
-                info.blocks = blocks as usize;
-            });
+            let child = FsNode::new_uncached(inode_num, ops, &fs, info, FsNodeFlags::empty());
             Ok(child)
         })
     }
+}
+
+fn fs_node_info_from_ext_node(ext_node: &ExtNode) -> FsNodeInfo {
+    let mode = FileMode::from_bits(ext_node.inode.e2di_mode.into());
+    let uid = get_uid_from_node(ext_node);
+    let gid = get_gid_from_node(ext_node);
+    let owner = FsCred { uid, gid };
+    let mut info = FsNodeInfo::new(mode, owner);
+    info.size = get_size_from_node(ext_node, &mode) as usize;
+    info.blocks = get_blocks_from_node(ext_node) as usize;
+    info.blksize = DEFAULT_BYTES_PER_BLOCK;
+    info.link_count = ext_node.inode.e2di_nlink.into();
+    info
 }
 
 fn merge_low_high_16(low: u32, high: u32) -> u32 {

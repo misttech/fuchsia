@@ -47,8 +47,7 @@ pub fn pressure_directory(kernel: &Kernel, fs: &FileSystemHandle) -> Option<FsNo
         );
         dir.entry("io", StubPressureFile::new_node(StubPressureFileKind::IO), mode!(IFREG, 0o666));
     });
-    // TODO: Validate the mode bits are correct.
-    Some(dir.into_node(fs, 0o777))
+    Some(dir.into_node(fs, 0o555))
 }
 
 struct PsiProvider {

@@ -74,7 +74,7 @@ impl DebugFs {
                 );
             });
         });
-        dir.subdir("tracing", 0o644, |_| ());
+        dir.subdir("tracing", 0o755, |_| ());
 
         fs
     }

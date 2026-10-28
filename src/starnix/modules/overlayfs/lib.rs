@@ -1185,9 +1185,10 @@ impl OverlayStack {
         let mounter = current_task.current_creds().clone();
         let stack = Arc::new(OverlayStack { lower_fs, upper_fs, work, mounter });
         let root_node = OverlayNode::new(stack.clone(), Some(lower), Some(upper), None);
+        let root_info = root_node.main_entry().entry().node.info().clone();
         let fs = FileSystem::new(kernel, CacheMode::Uncached, OverlayFs { stack }, options)?;
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, OverlayNodeOps { node: root_node });
+        fs.create_root_with_info(root_ino, OverlayNodeOps { node: root_node }, root_info);
         Ok(fs)
     }
 
@@ -1198,21 +1199,22 @@ impl OverlayStack {
     ) -> Result<FileSystemHandle, Errno> {
         let kernel = current_task.kernel();
         let lower = ActiveEntry { entry: rootfs.root().clone(), mount: MountInfo::detached() };
+        let lower_info = lower.entry().node.fetch_and_refresh_info(current_task)?.clone();
 
         // Create upper and work directories in an invisible tmpfs.
         let invisible_tmp = TmpFs::new_fs(kernel);
-        let create_dir = |name: &FsStr| -> Result<ActiveEntry, Errno> {
-            let create_dir_node = |dir: &FsNodeHandle, mount: &MountInfo, name: &FsStr| {
-                let mode = mode!(IFDIR, 0o777);
-                dir.create_node(current_task, mount, name, mode, DeviceId::NONE, FsCred::root())
+        let create_dir =
+            |name: &FsStr, mode: FileMode, cred: FsCred| -> Result<ActiveEntry, Errno> {
+                let create_dir_node = |dir: &FsNodeHandle, mount: &MountInfo, name: &FsStr| {
+                    dir.create_node(current_task, mount, name, mode, DeviceId::NONE, cred)
+                };
+                let mount = MountInfo::detached();
+                let root = invisible_tmp.root();
+                let entry = root.create_entry(current_task, &mount, name, create_dir_node)?;
+                Ok(ActiveEntry { entry, mount })
             };
-            let mount = MountInfo::detached();
-            let root = invisible_tmp.root();
-            let entry = root.create_entry(current_task, &mount, name, create_dir_node)?;
-            Ok(ActiveEntry { entry, mount })
-        };
-        let upper = create_dir("upper".into())?;
-        let work = create_dir("work".into())?;
+        let upper = create_dir("upper".into(), lower_info.mode, lower_info.cred())?;
+        let work = create_dir("work".into(), mode!(IFDIR, 0o700), FsCred::root())?;
 
         let lower_fs = rootfs;
         let upper_fs = invisible_tmp;
@@ -1220,6 +1222,7 @@ impl OverlayStack {
         let mounter = Credentials::root();
         let stack = Arc::new(OverlayStack { lower_fs, upper_fs, work, mounter });
         let root_node = OverlayNode::new(stack.clone(), Some(lower), Some(upper), None);
+        let root_info = root_node.main_entry().entry().node.info().clone();
         let fs = FileSystem::new(
             kernel,
             CacheMode::Uncached,
@@ -1227,7 +1230,7 @@ impl OverlayStack {
             FileSystemOptions::default(),
         )?;
         let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, OverlayNodeOps { node: root_node });
+        fs.create_root_with_info(root_ino, OverlayNodeOps { node: root_node }, root_info);
         Ok(fs)
     }
 
@@ -1560,5 +1563,39 @@ mod test {
         })
         .await;
         fixture.close().await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_wrap_fs_in_writable_layer_preserves_root_mode() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let lower = TmpFs::new_fs_with_options(
+                kernel,
+                FileSystemOptions {
+                    params: MountParams::parse(b"mode=0755,uid=42,gid=84".into())
+                        .expect("parse params"),
+                    ..Default::default()
+                },
+            )
+            .expect("new_fs_with_options");
+            let overlay = OverlayStack::wrap_fs_in_writable_layer(current_task, lower)
+                .expect("wrap_fs_in_writable_layer");
+
+            let info = overlay.root().node.info();
+            assert_eq!(info.mode, mode!(IFDIR, 0o755));
+            assert_eq!(info.uid, 42);
+            assert_eq!(info.gid, 84);
+            drop(info);
+
+            let refreshed = overlay
+                .root()
+                .node
+                .fetch_and_refresh_info(current_task)
+                .expect("fetch_and_refresh_info");
+            assert_eq!(refreshed.mode, mode!(IFDIR, 0o755));
+            assert_eq!(refreshed.uid, 42);
+            assert_eq!(refreshed.gid, 84);
+        })
+        .await;
     }
 }

@@ -659,7 +659,7 @@ impl FsNodeOps for NsDirectory {
                 CallbackSymlinkNode::new(move || {
                     Ok(SymlinkTarget::Path(format!("{name}:[{id}]").into()))
                 }),
-                FsNodeInfo::new(mode!(IFLNK, 0o7777), task.real_fscred()),
+                FsNodeInfo::new(mode!(IFLNK, 0o777), task.real_fscred()),
             ))
         }
     }
