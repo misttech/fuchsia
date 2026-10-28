@@ -269,10 +269,55 @@ def has_bazel2gn_skip_comment(src_lines, call_lineno):
         idx -= 1
     return False
 
+
+TEST_OR_BENCH_CALLER_SEGMENTS = {
+    "test",
+    "tests",
+    "testing",
+    "bench",
+    "benchmarks",
+    "test_runners",
+    "stress",
+    "e2e",
+}
+TEST_OR_BENCH_CALLER_SUFFIXES = (
+    "_test",
+    "_tests",
+    "_bench",
+    "_benchmarks",
+    "_stress",
+)
+
+
+# Check whether a caller package path is a test, benchmark, stress-test, or test-runner package.
+def is_test_or_bench_caller_pkg(pkg):
+    parts = [seg for seg in pkg.strip("/").split("/") if seg]
+    return any(
+        seg in TEST_OR_BENCH_CALLER_SEGMENTS
+        or seg.endswith(TEST_OR_BENCH_CALLER_SUFFIXES)
+        for seg in parts
+    )
+
+
+# Check whether all external caller packages across subsystems are test/benchmark packages.
+def has_only_test_or_bench_rdeps(rdep_pkgs, pkg_path):
+    pkgs = [
+        p.strip("/")
+        for p in rdep_pkgs
+        if p.strip("/")
+        and p.strip("/") != pkg_path
+        and p.strip("/") != VG_ROOT
+        and not p.strip("/").startswith(VG_ROOT + "/")
+    ]
+    return bool(pkgs) and all(is_test_or_bench_caller_pkg(p) for p in pkgs)
+
+
 def recommend_visibility(rdep_pkgs, pkg_path, is_test_support=False):
     pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != pkg_path))
     narrow = recommend_narrow_visibility(pkgs, pkg_path)
     globally_used = is_globally_used_target(pkgs, pkg_path)
+    if is_test_support and len(get_distinct_areas(pkgs, pkg_path)) >= 2:
+        return ["//:__subpackages__"]
     if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs, pkg_path)
         distinct_areas = get_distinct_areas(pkgs, pkg_path)
@@ -285,8 +330,6 @@ def recommend_visibility(rdep_pkgs, pkg_path, is_test_support=False):
             return ["//:__subpackages__"]
         if len(rollup) <= len(narrow):
             return rollup
-    if is_test_support and len(get_distinct_areas(pkgs, pkg_path)) >= 2:
-        return ["//:__subpackages__"]
     return narrow
 
 def get_orig_gn_visibility_scopes(pkg_path):
@@ -934,6 +977,8 @@ BAZEL_GN_SYNCED_TEST_RULES = {
 
 BAZEL_NON_GN_SYNCED_RULES = {
     "cc_test",
+    "cml_shard",
+    "expect_includes",
     "fx_cc_test",
     "fx_packaged_binary",
     "fx_test_component",
@@ -1599,12 +1644,23 @@ for rel_path in sorted(candidate_files):
         is_shard_rule = func_name in ("cml_shard", "expect_includes")
         target_rdeps = per_target_rdeps.get(target_name, true_rdeps)
         distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
+        is_multi_area_test_bench_lib = (
+            not is_test_rule
+            and len(distinct_areas) >= 2
+            and has_only_test_or_bench_rdeps(target_rdeps, pkg_path)
+        )
         # Shared test-support targets may use broad visibility only when they are reused across
         # >= 2 areas, the same rule find_rdeps.sh uses to recommend ["//:__subpackages__"].
         # cml_shard/expect_includes targets are consumed through `.cml` includes rather than
         # BUILD deps, so their callers do not show up as rdeps; they keep broad visibility.
         allow_broad_test_vis = (
-            (is_testonly or is_test_support_pkg or is_test_rule) and len(distinct_areas) >= 2
+            (
+                is_testonly
+                or is_test_support_pkg
+                or is_test_rule
+                or is_multi_area_test_bench_lib
+            )
+            and len(distinct_areas) >= 2
         ) or is_shard_rule
 
         narrow_vis = recommend_narrow_visibility(target_rdeps, pkg_path)
@@ -1737,9 +1793,51 @@ for rel_path in sorted(candidate_files):
                     ),
                 })
 
+        # Flag shared multi-area test/benchmark support libraries that had unrestricted GN
+        # visibility at change_base but were narrowed to leaf caller packages, which breaks
+        # cross-tree and out-of-graph benchmark/test callers in CQ.
+        def check_narrow_shared_test_support_visibility():
+            if (
+                is_test_rule
+                or is_shard_rule
+                or not allow_broad_test_vis
+                or preserved_gn_vis
+                or target_name in orig_gn_vis_map
+                or len(distinct_areas) < 3
+                or not new_entries
+                or "//:__subpackages__" in vis_vals
+                or "//visibility:public" in vis_vals
+            ):
+                return False
+            msg = (
+                f"Target '{target_name}' is a shared test/benchmark support library used "
+                f"across {len(distinct_areas)} distinct areas ({len(target_rdeps)} caller "
+                f"packages) whose pre-migration `{pkg_path}/BUILD.gn` had unrestricted "
+                f"visibility, but narrows visibility to {len(entries)} package/subtree "
+                "entries, breaking cross-tree and out-of-graph benchmark/test callers in "
+                "CQ with 'Dependency not allowed'."
+            )
+            rem = (
+                f"Replace visibility on '{target_name}' with {json.dumps(rec_target_vis)} "
+                "(shared test/benchmark support libraries used across multiple areas use "
+                "repository-wide subpackage visibility) and re-run fx bazel2gn."
+            )
+            findings.append({
+                "source": "visibility_audit",
+                "category": "overly_narrow_global_visibility",
+                "severity": "error",
+                "file": rel_path,
+                "line": vis_kw.lineno,
+                "message": msg,
+                "remediation": rem,
+            })
+            return True
+
         # Allow 2-3 level area rollups whose entry count exceeds 15 due to expanded umbrella directories
         max_rollup_entries = max(15, len(area_rollup_vis))
         new_entries = [(val, lineno) for (val, lineno) in entries if val not in preexisting_vis]
+        if check_narrow_shared_test_support_visibility():
+            continue
         if len(new_entries) > max_rollup_entries and (is_globally_used or len(area_rollup_vis) < len(entries)):
             if is_globally_used:
                 findings.append({

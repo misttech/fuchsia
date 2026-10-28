@@ -253,9 +253,28 @@ def refs_from_parent(parent_code, d, name):
     return bool(re.search(pat, parent_code))
 
 
+ROOT_TEST_GROUPS = {
+    "tests",
+    "host_tests",
+    "target_tests",
+    "hermetic_tests",
+    "non_hermetic_tests",
+    "e2e_tests",
+    "tests_no_e2e",
+}
+GN_TESTS_ROOT_RE = re.compile(
+    r'\b(?:group|standardized_test_groups)\(\s*"tests"\s*\)'
+)
+GN_GROUP_OR_STD_TEST_GROUPS_RE = re.compile(
+    r'\b(group|standardized_test_groups)\(\s*"([^"]+)"\s*\)\s*\{'
+)
+
+
+# Check whether a GN `bazel_test_suite` is wired into a root test group (`group("tests")`,
+# `standardized_test_groups(...)`, or a standard root group such as `host_tests`/`hermetic_tests`),
+# either directly, via intermediate local groups, or from the parent `BUILD.gn`.
 def suite_is_wired(gn_rel, suite):
-    """Whether `group("tests")` next to the suite (directly or via intermediate groups), or the parent BUILD.gn, references it."""
-    if suite == "tests":
+    if suite in ROOT_TEST_GROUPS:
         return True
     d = os.path.dirname(gn_rel)
     code = read_gn(gn_rel)
@@ -263,9 +282,20 @@ def suite_is_wired(gn_rel, suite):
     if refs_from_parent(parent_code, d, suite):
         return True
     groups = {}
-    for m in re.finditer(r'\bgroup\(\s*"([^"]+)"\s*\)\s*\{', code):
-        groups[m.group(1)] = groups.get(m.group(1), "") + "\n" + code[m.end() : closing(code, m.end() - 1)]
-    queue = [g for g in groups if g == "tests" or refs_from_parent(parent_code, d, g)]
+    std_roots = set()
+    for m in GN_GROUP_OR_STD_TEST_GROUPS_RE.finditer(code):
+        tmpl, g_name = m.group(1), m.group(2)
+        body = code[m.end() : closing(code, m.end() - 1)]
+        groups[g_name] = groups.get(g_name, "") + "\n" + body
+        if tmpl == "standardized_test_groups":
+            std_roots.add(g_name)
+    queue = [
+        g
+        for g in groups
+        if g in ROOT_TEST_GROUPS
+        or g in std_roots
+        or refs_from_parent(parent_code, d, g)
+    ]
     seen = set(queue)
     while queue:
         body = groups[queue.pop(0)]
@@ -305,6 +335,135 @@ def bazel_suites_of(pkg):
             pass
         _bazel_suites_cache[pkg] = found
     return _bazel_suites_cache[pkg]
+
+
+# Find closing `]` matching `code[i] == "["` outside GN string literals.
+def closing_bracket(code, i):
+    depth, in_str = 0, False
+    while i < len(code):
+        c = code[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            in_str = c != '"'
+        elif c == '"':
+            in_str = True
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(code)
+
+
+# Detect duplicate `<attr> = [ <non-empty> ]` assignments in the same GN `{ ... }` scope,
+# which cause `gn gen` to fail with `Replacing nonempty list`.
+def find_gn_duplicate_list_assignments(gn_text):
+    code = gn_code(gn_text)
+    if not code.strip():
+        return []
+    scopes = [(0, len(code))]
+    in_str = False
+    i = 0
+    while i < len(code):
+        c = code[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            in_str = c != '"'
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            end_i = closing(code, i)
+            scopes.append((i + 1, end_i))
+        i += 1
+
+    dups = []
+    assign_re = re.compile(r"(?m)^\s*([A-Za-z_]\w*)\s*(=|\+=|-=)\s*\[")
+    for s_start, s_end in scopes:
+        buf = list(code[s_start:s_end])
+        b_in_str = False
+        b_brack = 0
+        j = 0
+        while j < len(buf):
+            ch = buf[j]
+            if b_in_str:
+                if ch == "\\":
+                    j += 2
+                    continue
+                b_in_str = ch != '"'
+            elif ch == '"':
+                b_in_str = True
+            elif ch == "[":
+                b_brack += 1
+            elif ch == "]":
+                b_brack = max(0, b_brack - 1)
+            elif ch == "{" and b_brack == 0:
+                sub_end = closing(code, s_start + j) - s_start
+                for k in range(j, min(sub_end + 1, len(buf))):
+                    if buf[k] != "\n":
+                        buf[k] = " "
+                j = sub_end + 1
+                continue
+            j += 1
+        direct = "".join(buf)
+        seen_nonempty = {}
+        for m in assign_re.finditer(direct):
+            var_name, op = m.group(1), m.group(2)
+            open_b = m.end() - 1
+            close_b = closing_bracket(direct, open_b)
+            inner = direct[open_b + 1 : close_b].strip()
+            line_no = code.count("\n", 0, s_start + m.start()) + 1
+            if op == "=":
+                if not inner:
+                    seen_nonempty.pop(var_name, None)
+                elif var_name in seen_nonempty:
+                    dups.append((var_name, seen_nonempty[var_name], line_no))
+                else:
+                    seen_nonempty[var_name] = line_no
+    return dups
+
+
+# Detect duplicate top-level rule target `name = "..."` definitions in a BUILD.bazel file.
+def find_bazel_duplicate_targets(bazel_text, bazel_rel=""):
+    if not bazel_text.strip():
+        return []
+    try:
+        tree = ast.parse(bazel_text, filename=bazel_rel or "<BUILD.bazel>")
+    except Exception:
+        return []
+    seen = {}
+    dups = []
+    for stmt in tree.body:
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            continue
+        call = stmt.value
+        rule_name = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (call.func.attr if isinstance(call.func, ast.Attribute) else "target")
+        )
+        t_name = None
+        for kw in call.keywords:
+            if (
+                kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                t_name = kw.value.value
+                break
+        if not t_name:
+            continue
+        line_no = getattr(stmt, "lineno", 1)
+        if t_name in seen:
+            dups.append((t_name, rule_name, seen[t_name], line_no))
+        else:
+            seen[t_name] = line_no
+    return dups
 
 
 def foreign_suite_tests(label, pkg, td, seen):
@@ -639,6 +798,72 @@ for td in target_dirs:
         if os.path.isfile(os.path.join(workdir, rel_p)):
             changed_files.add(rel_p)
 
+# Collect changed and ancestor BUILD.gn / BUILD.bazel files to audit for duplicate definitions.
+audit_build_files = set(changed_files)
+for td in target_dirs:
+    cur_anc = os.path.dirname(td)
+    while cur_anc:
+        for bname in ("BUILD.bazel", "BUILD.gn"):
+            anc_rel = os.path.join(cur_anc, bname)
+            if os.path.isfile(os.path.join(workdir, anc_rel)):
+                audit_build_files.add(anc_rel)
+        cur_anc = os.path.dirname(cur_anc)
+
+worktree_gn_dups = {}
+worktree_bz_dups = {}
+for rel_p in sorted(audit_build_files):
+    abs_p = os.path.join(workdir, rel_p)
+    if not os.path.isfile(abs_p):
+        continue
+    try:
+        with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
+            src_txt = f.read()
+    except OSError:
+        continue
+    if rel_p.endswith((".gn", ".gni")):
+        gn_dups = find_gn_duplicate_list_assignments(src_txt)
+        worktree_gn_dups[rel_p] = {(v, p_ln, c_ln) for v, p_ln, c_ln in gn_dups}
+        for var_name, prev_ln, cur_ln in gn_dups:
+            findings.append({
+                "source": "cq_reachability",
+                "category": "duplicate_gn_list_assignment",
+                "severity": "error",
+                "file": rel_p,
+                "line": cur_ln,
+                "message": (
+                    f"'{rel_p}' assigns non-empty list `{var_name} = [...]` at line {cur_ln} "
+                    f"after already assigning `{var_name} = [...]` at line {prev_ln} in the "
+                    "same GN scope, which causes `gn gen` to fail across CQ builders with "
+                    "`ERROR: Replacing nonempty list`."
+                ),
+                "remediation": (
+                    f"Remove the duplicate `{var_name} = [...]` assignment at line {cur_ln} in "
+                    f"'{rel_p}' (or merge its entries into the `{var_name} = [...]` list at "
+                    f"line {prev_ln} in sorted order)."
+                ),
+            })
+    elif os.path.basename(rel_p) in ("BUILD.bazel", "BUILD"):
+        bz_dups = find_bazel_duplicate_targets(src_txt, rel_p)
+        worktree_bz_dups[rel_p] = {(t, r) for t, r, _, _ in bz_dups}
+        for t_name, rule_name, prev_ln, cur_ln in bz_dups:
+            findings.append({
+                "source": "cq_reachability",
+                "category": "duplicate_bazel_target",
+                "severity": "error",
+                "file": rel_p,
+                "line": cur_ln,
+                "message": (
+                    f"'{rel_p}' defines `{rule_name}(name = \"{t_name}\")` at line {cur_ln}, "
+                    f"duplicating the `{t_name}` target already defined at line {prev_ln} in "
+                    "the same package."
+                ),
+                "remediation": (
+                    f"Merge the duplicate `{rule_name}(name = \"{t_name}\")` blocks at lines "
+                    f"{prev_ln} and {cur_ln} in '{rel_p}' into a single `{rule_name}(name = "
+                    f"\"{t_name}\")` definition combining their target lists in sorted order."
+                ),
+            })
+
 CONFLICT_MARKER_RE = re.compile(r"^(?:<{7}\s|={7}\s*$|>{7}\s)")
 for rel_p in sorted(changed_files):
     abs_p = os.path.join(workdir, rel_p)
@@ -803,6 +1028,73 @@ if origin_main and head_sha and head_sha != origin_main:
                         "(preserving the existing `Change-Id` footer)."
                     ),
                 })
+            else:
+                mt_lines = [l.strip() for l in (mt_proc.stdout or "").splitlines() if l.strip()]
+                merged_tree = (
+                    mt_lines[0]
+                    if mt_lines and re.fullmatch(r"[0-9a-f]{40}", mt_lines[0])
+                    else ""
+                )
+                if merged_tree:
+                    upstream_touched = set(
+                        git_lines(["diff", "--name-only", merge_base, origin_main])
+                    )
+                    for rel_p in sorted(changed_files & upstream_touched):
+                        if not (
+                            rel_p.endswith((".gn", ".gni"))
+                            or os.path.basename(rel_p) in ("BUILD.bazel", "BUILD")
+                        ):
+                            continue
+                        merged_txt = git_out(["show", f"{merged_tree}:{rel_p}"])
+                        if not merged_txt:
+                            continue
+                        if rel_p.endswith((".gn", ".gni")):
+                            m_gn_dups = find_gn_duplicate_list_assignments(merged_txt)
+                            if m_gn_dups and not worktree_gn_dups.get(rel_p):
+                                var_name, prev_ln, cur_ln = m_gn_dups[0]
+                                findings.append({
+                                    "source": "cq_reachability",
+                                    "category": "upstream_rebase_conflict",
+                                    "severity": "error",
+                                    "file": rel_p,
+                                    "line": cur_ln,
+                                    "message": (
+                                        f"3-way merge of '{rel_p}' with upstream `origin/main` "
+                                        f"({origin_main[:11]}) produces duplicate non-empty "
+                                        f"`{var_name} = [...]` assignments (lines {prev_ln} and "
+                                        f"{cur_ln}), which causes Gerrit CQ (`gn gen`) to fail "
+                                        "with `Replacing nonempty list`."
+                                    ),
+                                    "remediation": (
+                                        "Rebase onto the latest `origin/main` (`git fetch origin "
+                                        "main && git rebase origin/main`) and deduplicate the "
+                                        f"`{var_name} = [...]` assignment in '{rel_p}' so "
+                                        f"`{var_name}` is assigned only once."
+                                    ),
+                                })
+                        else:
+                            m_bz_dups = find_bazel_duplicate_targets(merged_txt, rel_p)
+                            if m_bz_dups and not worktree_bz_dups.get(rel_p):
+                                t_name, rule_name, prev_ln, cur_ln = m_bz_dups[0]
+                                findings.append({
+                                    "source": "cq_reachability",
+                                    "category": "upstream_rebase_conflict",
+                                    "severity": "error",
+                                    "file": rel_p,
+                                    "line": cur_ln,
+                                    "message": (
+                                        f"3-way merge of '{rel_p}' with upstream `origin/main` "
+                                        f"({origin_main[:11]}) produces duplicate "
+                                        f"`{rule_name}(name = \"{t_name}\")` definitions "
+                                        f"(lines {prev_ln} and {cur_ln})."
+                                    ),
+                                    "remediation": (
+                                        "Rebase onto the latest `origin/main` (`git fetch origin "
+                                        "main && git rebase origin/main`) and merge the duplicate "
+                                        f"`{rule_name}(name = \"{t_name}\")` blocks in '{rel_p}' "
+                                        "into a single target definition."
+                                    ),
+                                })
 
 # Check whether HEAD is stacked on a local ancestor commit that has already landed on
 # origin/main, or still carries a 'Depends on:' reference to a CL now in origin/main.

@@ -160,6 +160,99 @@ def targets(text):
     return out
 
 
+GN_TOKEN_RE = re.compile(
+    r'\b(if)\s*\(([^)]+)\)\s*\{'
+    r'|\b([A-Za-z_]\w*)\(\s*"([^"$]+)"\s*\)\s*\{'
+    r'|"(?:\\.|[^"\\])*"'
+    r"|\{|\}"
+)
+
+
+# Parse enclosing and inner `if (...)` conditions for each GN target in `text`.
+def parse_gn_target_conditions(text):
+    out = {}
+    if not text:
+        return out
+    cleaned = "\n".join(
+        re.sub(r'("(?:\\.|[^"\\])*")|#.*$', lambda m: m.group(1) or "", ln)
+        for ln in text.splitlines()
+    )
+    stack = []
+    for m in GN_TOKEN_RE.finditer(cleaned):
+        tok = m.group(0)
+        line = cleaned.count("\n", 0, m.start()) + 1
+        if m.group(1) == "if":
+            cond = re.sub(r"\s+", " ", m.group(2).strip())
+            for kind, tname, _ in stack:
+                if kind == "target" and tname in out:
+                    out[tname]["inner"].append((cond, line))
+            stack.append(("if", cond, line))
+        elif m.group(3):
+            tmpl, tname = m.group(3), m.group(4)
+            if tmpl in NOT_TARGETS:
+                stack.append(("other", "", line))
+                continue
+            enclosing = [(c, l) for k, c, l in stack if k == "if"]
+            info = out.setdefault(
+                tname, {"tmpl": tmpl, "line": line, "enclosing": [], "inner": []}
+            )
+            info["enclosing"].extend(enclosing)
+            stack.append(("target", tname, line))
+        elif tok == "{":
+            stack.append(("other", "", line))
+        elif tok == "}" and stack:
+            stack.pop()
+    return out
+
+
+# Check that retained hand-written GN targets above BAZEL2GN SENTINEL do not gain new
+# `if (...)` platform/toolchain constraints that were absent at $PLANTER_CHANGE_BASE.
+def check_unrequested_gn_conditions(gn_rel, pkg, before, after):
+    if not before or not after:
+        return []
+    above_after = after.split("## BAZEL2GN SENTINEL", 1)[0]
+    old_cond_map = parse_gn_target_conditions(before)
+    new_cond_map = parse_gn_target_conditions(above_after)
+    grouped = {}
+    for tname, new_info in sorted(new_cond_map.items()):
+        old_info = old_cond_map.get(tname)
+        if not old_info:
+            continue
+        old_conds = {
+            c for c, _ in (old_info["enclosing"] + old_info["inner"])
+        }
+        for cond, cond_line in new_info["enclosing"] + new_info["inner"]:
+            if cond not in old_conds:
+                grouped.setdefault((cond, cond_line), []).append(
+                    f'`{new_info["tmpl"]}("{tname}")`'
+                )
+    out_findings = []
+    for (cond, cond_line), target_descs in sorted(
+        grouped.items(), key=lambda x: x[0][1]
+    ):
+        joined = ", ".join(target_descs)
+        out_findings.append({
+            "source": "gn_attr_parity",
+            "category": "unrequested_gn_condition",
+            "severity": "error",
+            "file": gn_rel,
+            "line": cond_line,
+            "message": (
+                f"Retained GN target(s) {joined} in //{pkg} are newly gated by "
+                f"`if ({cond})` on line {cond_line} of {gn_rel}, which was not "
+                "present at the change base. Adding unrequested platform or "
+                "toolchain conditions to retained GN targets or `group(\"tests\")` "
+                "alters GN target availability across toolchains."
+            ),
+            "remediation": (
+                f"Remove the newly added `if ({cond})` wrapper on line {cond_line} "
+                f"of {gn_rel} so {joined} keeps its original unconditional "
+                "definition from the change base."
+            ),
+        })
+    return out_findings
+
+
 def gn_only_attrs(body, text=None):
     """GN-only attribute values of a target body. With the BUILD.gn `text`, also the values the
     body pulls in through `forward_variables_from(<scope>, ...)` of a scope literal in `text`."""
@@ -243,7 +336,7 @@ def eval_starlark(node, top_vars):
     return []
 
 
-def parse_gn_top_attrs(body):
+def parse_gn_top_attrs(body, top_list_vars=None):
     attrs = {}
     lines = body.splitlines()
     i = 0
@@ -264,14 +357,21 @@ def parse_gn_top_attrs(body):
             nxt = re.sub(r"#.*$", "", lines[i]).strip()
             rhs += " " + nxt
             balance += nxt.count("[") - nxt.count("]")
-        vals = re.findall(r'"([^"]+)"', rhs)
+        vals = []
+        if top_list_vars:
+            unquoted_rhs = re.sub(r'"[^"]*"', " ", rhs)
+            for ident in re.findall(r"\b([A-Za-z_]\w*)\b", unquoted_rhs):
+                if ident in top_list_vars:
+                    vals.extend(top_list_vars[ident])
+        vals.extend(re.findall(r'"([^"]+)"', rhs))
         # Preserve unquoted GN config variable references such as `_concurrent_jobs.configs`.
         if not vals and attr_name == "configs":
             tok = rhs.strip()
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", tok):
                 vals = [tok]
         if op == "+=":
-            attrs.setdefault(attr_name, []).extend(vals)
+            cur_vals = attrs.setdefault(attr_name, [])
+            cur_vals.extend(v for v in vals if v not in cur_vals)
         elif op == "=":
             if vals:
                 cur_vals = attrs.setdefault(attr_name, [])
@@ -280,6 +380,36 @@ def parse_gn_top_attrs(body):
                 attrs.setdefault(attr_name, [])
         i += 1
     return attrs
+
+
+# Parse top-level GN list variables (outside target blocks) so target attributes
+# referencing shared lists like `deps = lib_deps + [...]` expand cleanly.
+def parse_gn_top_list_vars(text):
+    if not text:
+        return {}
+    spans = []
+    for m in GN_TARGET.finditer(text):
+        if m.group(1) in NOT_TARGETS:
+            continue
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        spans.append((m.start(), i))
+    if spans:
+        chunks = []
+        last = 0
+        for s, e in spans:
+            if s > last:
+                chunks.append(text[last:s])
+            last = max(last, e)
+        if last < len(text):
+            chunks.append(text[last:])
+        outer_text = "\n".join(chunks)
+    else:
+        outer_text = text
+    raw_vars = parse_gn_top_attrs(outer_text)
+    return {k: v for k, v in raw_vars.items() if v}
 
 
 def extract_base_feature_set_deps(body):
@@ -391,15 +521,58 @@ def load_third_party_target_map():
 
 # Record non-blocking INFO attribute_alignment when GN output_name (or GN rustc_* custom name)
 # is carried via @bazel2gn:raw_overwrite on fx_cc_binary/cc_binary, crate_name/binary_name on
-# rustc_binary/rustc_test, fx_packaged_binary, or default name.
-def check_output_name_alignment_info(bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top):
+# rustc_*, fx_packaged_binary, or default name (including hyphen-to-underscore crate_name normalization).
+def check_output_name_alignment_info(
+    bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top, top_vars=None
+):
+    out = []
+    gn_out = gn_top.get("output_name") or gn_top.get("name", [])
+    if gn_out and top_vars is not None:
+        for bz_attr in ("crate_name", "binary_name", "output_name"):
+            bz_node = bt_kws.get(bz_attr)
+            if bz_node is None:
+                continue
+            bz_vals = eval_starlark(bz_node, top_vars)
+            if (
+                bz_vals
+                and gn_out != bz_vals
+                and gn_out[0].replace("-", "_") == bz_vals[0].replace("-", "_")
+            ):
+                note = f"output_name ([{' '.join(gn_out)}]) != {bz_attr} ([{' '.join(bz_vals)}])"
+                kw_line = getattr(bz_node, "lineno", bt_line)
+                for lno in dict.fromkeys((kw_line, bt_line)):
+                    out.append({
+                        "source": "gn_attr_parity",
+                        "category": "attribute_alignment",
+                        "severity": "info",
+                        "file": bazel_rel,
+                        "line": lno,
+                        "message": f'Target "{name}" (Target Attributes): {note}',
+                    })
     has_gn_out = "output_name" in gn_top or (
-        bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test") and "name" in gn_top
+        bt_rule
+        in (
+            "rustc_library",
+            "rust_library",
+            "rustc_binary",
+            "rust_binary",
+            "rustc_test",
+            "rust_test",
+            "rustc_proc_macro",
+            "rust_proc_macro",
+        )
+        and "name" in gn_top
     )
     if not has_gn_out or "output_name" in bt_kws:
-        return []
-    gn_out = gn_top.get("output_name") or gn_top.get("name", [])
-    cc_bin = bt_rule in ("fx_cc_binary", "cc_binary", "cc_test", "fx_cc_test")
+        return out
+    cc_bin = bt_rule in (
+        "fx_cc_binary",
+        "cc_binary",
+        "cc_test",
+        "fx_cc_test",
+        "host_cc_test",
+        "cc_binary_host_tool",
+    )
     rust_bin = bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test")
     preserved_in_gn = bool(
         cur_top and (cur_top.get("output_name") == gn_out or cur_top.get("name") == gn_out)
@@ -415,7 +588,7 @@ def check_output_name_alignment_info(bazel_rel, name, bt_rule, bt_line, bt_kws, 
             notes.append(
                 f"GN output_name={gn_out[0]} handled implicitly by Bazel target/package rule"
             )
-        return [
+        out.extend(
             {
                 "source": "gn_attr_parity",
                 "category": "attribute_alignment",
@@ -425,8 +598,8 @@ def check_output_name_alignment_info(bazel_rel, name, bt_rule, bt_line, bt_kws, 
                 "message": f'Target "{name}" (Target Attributes): {note}',
             }
             for note in notes
-        ]
-    return []
+        )
+    return out
 
 
 # Record non-blocking INFO attribute_alignment for config() -> build_flags()
@@ -910,6 +1083,40 @@ def match_dep_labels(pkg, gn_deps, bazel_deps):
     return exact_matches, vendor_matches, unmatched_gn, unmatched_bazel
 
 
+# Return the subset of `gn_deps` not matched by `bazel_deps`, `tp_map`, `raw_gn_deps`,
+# or `hinted_deps` (including `aspect_hints`, `compile_data`, `data`, `test_data`).
+def uncovered_gn_deps(pkg, gn_deps, bazel_deps, tp_map, raw_gn_deps=(), hinted_deps=()):
+    _, _, unmatched_gn, _ = match_dep_labels(pkg, gn_deps, bazel_deps)
+    if not unmatched_gn:
+        return []
+    raw_canons = {canonical_dep_label(pkg, d) for d in raw_gn_deps}
+    all_norms = {
+        normalize_dep_slashes(pkg, d).replace("-", "_")
+        for d in itertools.chain(bazel_deps, raw_gn_deps, hinted_deps)
+    }
+    tp_covered = set()
+    for b in itertools.chain(bazel_deps, hinted_deps):
+        tp_covered |= tp_map.get(b, set())
+    still_unmatched = []
+    for g in unmatched_gn:
+        g_canon = canonical_dep_label(pkg, g)
+        g_norm = normalize_dep_slashes(pkg, g)
+        if (
+            g_canon in raw_canons
+            or g_canon in tp_covered
+            or g_norm in tp_covered
+            or g_norm.replace("-", "_") in all_norms
+            or any(is_vendor_crate_match(g_norm, b) for b in bazel_deps)
+            or any(
+                is_gn_forwarding_group_dep_match(g_norm, normalize_dep_slashes(pkg, b))
+                for b in bazel_deps
+            )
+        ):
+            continue
+        still_unmatched.append(g)
+    return still_unmatched
+
+
 def dep_alignment_message(name, exact_matches, vendor_matches, unmatched_gn, unmatched_bazel):
     dep_notes = []
     if exact_matches > 0:
@@ -1124,6 +1331,83 @@ def check_forwarded_scope_dep_alignment_info(
         "line": bt_line,
         "message": dep_alignment_message(name, *raw),
     }
+
+
+# Resolve a GN source/header/input entry in `pkg` to a workspace-relative path.
+def resolve_gn_src_path(pkg, entry):
+    s = entry.strip().strip('"')
+    if not s or "$" in s or s.startswith("@"):
+        return None
+    if s.startswith("//"):
+        return os.path.normpath(s[2:].replace(":", "/")).strip("/")
+    if s.startswith(":"):
+        s = s[1:]
+    return os.path.normpath(os.path.join(pkg, s)).strip("/")
+
+
+# Record non-blocking INFO missing_sources entries when GN `sources`/`public`/`inputs`
+# use relative parent paths (`../...`) or cross-package paths that BUILD.bazel
+# references via canonical `//<owner_pkg>:<rel_path>` labels resolving to the same
+# workspace-relative file path.
+def check_cross_package_sources_info(
+    pkg, bazel_rel, name, bt_name, bt_line, bt_kws, top_vars, gn_top
+):
+    gn_files = []
+    for g_attr in ("sources", "public", "inputs"):
+        for g in gn_top.get(g_attr, []):
+            if g not in gn_files:
+                gn_files.append(g)
+    if not gn_files:
+        return []
+    bz_raw_set = set()
+    bz_raw_clean = set()
+    for b_attr in ("srcs", "hdrs", "textual_hdrs", "embedsrcs"):
+        for b in eval_starlark(bt_kws.get(b_attr), top_vars):
+            bz_raw_set.add(b)
+            bz_raw_clean.add(b.lstrip("./:"))
+    bz_resolved = set()
+    for b_attr in (
+        "srcs",
+        "hdrs",
+        "textual_hdrs",
+        "embedsrcs",
+        "src",
+        "compile_data",
+        "data",
+        "test_data",
+        "files_map",
+    ):
+        for b in eval_starlark(bt_kws.get(b_attr), top_vars):
+            norm_b, _ = resolve_bazel_src_path(pkg, b)
+            if norm_b:
+                bz_resolved.add(norm_b)
+    if not bz_resolved:
+        return []
+    for g in gn_files:
+        if g in bz_raw_set or g.lstrip("./:") in bz_raw_clean:
+            continue
+        norm_g = resolve_gn_src_path(pkg, g)
+        if not norm_g or norm_g not in bz_resolved:
+            return []
+    unmatched = [
+        g for g in gn_files if g not in bz_raw_set and g.lstrip("./:") not in bz_raw_clean
+    ]
+    if not unmatched:
+        return []
+    msg_files = ", ".join(unmatched)
+    return [
+        {
+            "source": "gn_attr_parity",
+            "category": "missing_sources",
+            "severity": "info",
+            "file": bazel_rel,
+            "line": bt_line,
+            "message": (
+                f'Target "{t_lbl}" is missing source file(s) from BUILD.gn: {msg_files}'
+            ),
+        }
+        for t_lbl in dict.fromkeys((name, bt_name))
+    ]
 
 
 # Record non-blocking INFO missing_sources entries when GN compile-time `inputs`
@@ -1361,7 +1645,20 @@ def check_rust_target_attr_alignment_info(
         if "crate_name" in bt_kws and "crate_name" not in gn_top
         else []
     )
-    crate_name_opts = ["", f"added crate_name={bz_cn[0]} in Bazel"] if bz_cn else [""]
+    gn_out_for_cn = gn_top.get("output_name") or gn_top.get("name", [])
+    cn_mismatch_opts = (
+        [f"output_name ([{' '.join(gn_out_for_cn)}]) != crate_name ([{' '.join(bz_cn)}])"]
+        if bz_cn
+        and gn_out_for_cn
+        and gn_out_for_cn != bz_cn
+        and gn_out_for_cn[0].replace("-", "_") == bz_cn[0].replace("-", "_")
+        else []
+    )
+    crate_name_opts = (
+        ["", f"added crate_name={bz_cn[0]} in Bazel", *cn_mismatch_opts]
+        if bz_cn
+        else [""]
+    )
     bz_lc_all = (
         eval_starlark(bt_kws.get("lint_config"), top_vars)
         if "lint_config" in bt_kws
@@ -1516,6 +1813,43 @@ def unit_test_aspect_hints(pkg, bt_rule, bt_kws, bazel_targets, top_vars):
         if test:
             hints.extend(eval_starlark(test[-1].get("aspect_hints"), top_vars))
     return hints
+
+
+# Collect test_data / data dependencies (and srcs of referenced same-package
+# host_test_data_* / filegroup targets) from the target or any companion test wrapper
+# (e.g. wrap_host_rust_test) so GN data_deps migrated to Bazel test_data are recognized.
+def test_data_hinted_deps(pkg, name, bt_name, bt_kws, bazel_targets, top_vars):
+    refs = {name, bt_name, f":{name}", f":{bt_name}", f"//{pkg}:{name}", f"//{pkg}:{bt_name}"}
+    seed_labels = []
+    for attr in ("test_data", "data"):
+        seed_labels.extend(eval_starlark(bt_kws.get(attr), top_vars))
+    for _, other_bt in bazel_targets.items():
+        other_kws = other_bt[-1]
+        wrap_vals = set()
+        for w_attr in ("binary_name", "binary", "test", "unit_tests", "crate", "test_components"):
+            wrap_vals.update(eval_starlark(other_kws.get(w_attr), top_vars))
+        if wrap_vals & refs:
+            for attr in ("test_data", "data", "deps"):
+                seed_labels.extend(eval_starlark(other_kws.get(attr), top_vars))
+    expanded = list(seed_labels)
+    queue = list(seed_labels)
+    visited = set()
+    while queue:
+        lbl = queue.pop(0).strip()
+        td_name = None
+        if lbl.startswith(":"):
+            td_name = lbl[1:]
+        elif lbl.startswith(f"//{pkg}:"):
+            td_name = lbl.split(":", 1)[1]
+        if not td_name or td_name in visited or td_name not in bazel_targets:
+            continue
+        visited.add(td_name)
+        td_kws = bazel_targets[td_name][-1]
+        for attr in ("srcs", "data", "test_data", "deps"):
+            for sub in eval_starlark(td_kws.get(attr), top_vars):
+                expanded.append(sub)
+                queue.append(sub)
+    return expanded
 
 
 THIRD_PARTY_MAP = load_third_party_target_map()
@@ -1980,7 +2314,11 @@ changed = (git(["diff", "--name-only", change_base]) or "").split() + (
     git(["ls-files", "--others", "--exclude-standard"]) or ""
 ).split()
 head_subj = (git(["log", "-1", "--format=%s", "HEAD"]) or "").strip()
-if change_base == "HEAD" and not changed and head_subj.startswith("[bazel_migration]"):
+head_sha = (git(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) or "").strip()
+base_sha = (git(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"]) or "").strip()
+if (
+    change_base == "HEAD" or (head_sha and base_sha == head_sha)
+) and not changed and head_subj.startswith("[bazel_migration]"):
     head_files = (git(["diff", "--name-only", "HEAD~1", "HEAD"]) or "").split()
     if not target_dir or any(p.startswith(target_dir + "/") for p in head_files):
         change_base = "HEAD~1"
@@ -1989,6 +2327,457 @@ dirs = {target_dir} if target_dir else set()
 for p in changed:
     if os.path.basename(p) in ("BUILD.gn", "BUILD.bazel") and os.path.dirname(p):
         dirs.add(os.path.dirname(p).strip("/"))
+
+# Record non-blocking alignment notes for valid rule decompositions, host test rules,
+# and fx_package migrations so review_diff does not flag them as warnings.
+PACKAGE_RULE_MAPPINGS = {
+    ("fuchsia_package", "fx_package"),
+    ("fuchsia_package_with_single_component", "fx_package"),
+    ("fuchsia_component_manifest", "fx_component_manifest"),
+    ("test", "host_cc_test"),
+    ("cc_test_executable", "host_cc_test"),
+    ("python_host_test", "host_py_test"),
+    ("host_test", "host_cc_test"),
+    ("host_test", "host_py_test"),
+    ("host_test", "host_go_test"),
+    ("host_test", "host_rustc_test"),
+    ("host_test", "wrap_host_rust_test"),
+    ("executable", "cc_binary_host_tool"),
+}
+
+
+def ast_str_list(node):
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [
+            el.value for el in node.elts
+            if isinstance(el, ast.Constant) and isinstance(el.value, str)
+        ]
+    return []
+
+
+def canon_dep(pkg, dep):
+    d = dep.strip().strip('"')
+    if not d:
+        return ""
+    if d.startswith(":"):
+        d = f"//{pkg}:{d[1:]}"
+    elif not d.startswith(("//", "@")) and "/" not in d:
+        d = f"//{pkg}:{d}"
+    if d.startswith("//") and ":" in d:
+        pkg_part, target_part = d.split(":", 1)
+        if os.path.basename(pkg_part) == target_part:
+            d = pkg_part
+    return d
+
+
+def gn_target_deps(body):
+    deps = set()
+    for attr in ("deps", "public_deps", "link_deps", "non_rust_deps", "proc_macro_deps"):
+        for m in re.finditer(r"(?<![\w.])" + attr + r"\s*\+?=\s*\[([^\]]*)\]", body):
+            deps.update(re.findall(r'"([^"]+)"', m.group(1)))
+    return sorted(deps)
+
+
+def record_verified_fx_package_deps(pkg, bazel_rel, name, body, bt_line, bt_kws, bazel_targets):
+    gn_deps = gn_target_deps(body)
+    if not gn_deps:
+        return
+    # Collect labels recognized across fx_package and its sibling component/binary/resource targets.
+    covered = set()
+    for sname, (_, _, skws) in bazel_targets.items():
+        for c in (canon_dep(pkg, f":{sname}"), canon_dep(pkg, f":{sname}").replace("-", "_")):
+            covered.add(c)
+        for attr in (
+            "deps", "implementation_deps", "fuchsia_deps", "link_deps", "proc_macro_deps",
+            "data", "binary", "compiled_manifest", "components", "resources", "subpackages",
+            "package", "unit_tests", "test_components",
+        ):
+            for v in ast_str_list(skws.get(attr)):
+                cv = canon_dep(pkg, v)
+                covered.add(cv)
+                covered.add(cv.replace("-", "_"))
+                if v.startswith("//third_party/rust_crates/vendor:"):
+                    crate = v.split(":", 1)[1]
+                    covered.add(f"//third_party/rust_crates:{crate}")
+    # Check what diffengine extracts directly on fx_package (which omits components/resources).
+    direct_attrs = (
+        "deps", "implementation_deps", "fuchsia_deps", "fuchsia_implementation_deps",
+        "non_fuchsia_deps", "link_deps", "proc_macro_deps", "data",
+        "unit_tests", "binary", "test_components", "package",
+    )
+    direct_deps = sorted({v for a in direct_attrs for v in ast_str_list(bt_kws.get(a))})
+    used_direct = set()
+    exact_matches = 0
+    unmatched_gn = []
+    for g in gn_deps:
+        gc = canon_dep(pkg, g)
+        if gc not in covered and gc.replace("-", "_") not in covered:
+            return
+        matched = False
+        for idx, b in enumerate(direct_deps):
+            if idx in used_direct:
+                continue
+            bc = canon_dep(pkg, b)
+            if gc == bc or gc.replace("-", "_") == bc.replace("-", "_"):
+                used_direct.add(idx)
+                exact_matches += 1
+                matched = True
+                break
+        if not matched:
+            unmatched_gn.append(g)
+    if not unmatched_gn:
+        return
+    notes = []
+    if exact_matches > 0:
+        notes.append(f"{exact_matches} exact match(es)")
+    notes.append(f"unmatched in GN: [{', '.join(unmatched_gn)}]")
+    findings.append({
+        "source": "gn_attr_parity",
+        "category": "dep_alignment",
+        "severity": "info",
+        "file": bazel_rel,
+        "line": bt_line,
+        "message": (
+            f'Target "{name}" dependencies differ between GN and Bazel: '
+            f'{"; ".join(notes)}'
+        ),
+    })
+
+
+BAZEL_TEST_RULES = (
+    "rustc_test",
+    "rust_test",
+    "host_rustc_test",
+    "wrap_host_rust_test",
+    "fx_test",
+    "fx_unittest_package",
+    "fx_unittest_component",
+    "fx_test_component",
+    "cc_test",
+    "fx_cc_test",
+    "host_cc_test",
+    "host_py_test",
+    "host_go_test",
+    "host_test",
+    "go_test",
+)
+GN_TO_BAZEL_MAPPED_ATTRS = {
+    "args_sources": ("args_srcs", "args_sources"),
+    "args_source_root": ("args_crate_root", "args_source_root"),
+    "sdk_category": ("sdk_category", "category"),
+    "sdk_area": ("sdk_area", "api_area"),
+    "sdk_target_name": ("sdk_target_name",),
+    "sdk_deps": ("sdk_deps",),
+    "plugin_deps": ("plugin_deps",),
+    "config_data": ("config_data",),
+    "main_source": ("main", "main_source"),
+    "global": ("global_registry", "global"),
+}
+
+
+# Record non-blocking INFO attribute_alignment notes when GN ffx_plugin/ffx_tool/rule
+# attributes (such as sdk_category, args_sources -> args_srcs, args_source_root ->
+# args_crate_root, and decomposed unit test attributes including unit-test args ->
+# test_args) are carried over in BUILD.bazel or preserved below the BAZEL2GN SENTINEL.
+def record_verified_mapped_attr_notes(
+    bazel_rel, name, body, bt_line, bt_kws, cur, has_bazel_test_rule, has_bazel_test_args=False
+):
+    top_body = re.sub(r"\{[^{}]*\}", "{}", body)
+    cur_body = cur[2] if cur else ""
+    verified_notes = []
+    for gn_attr, bz_attrs in GN_TO_BAZEL_MAPPED_ATTRS.items():
+        if not re.search(r"(?<![\w.])" + re.escape(gn_attr) + r"\s*\+?=", top_body):
+            continue
+        in_bazel = any(b_attr in bt_kws for b_attr in bz_attrs)
+        in_cur_gn = bool(
+            cur_body and re.search(r"(?<![\w.])" + re.escape(gn_attr) + r"\s*\+?=", cur_body)
+        )
+        if in_bazel or in_cur_gn:
+            verified_notes.append(f"{gn_attr} in GN not carried over to Bazel")
+    if has_bazel_test_rule:
+        for test_attr in (
+            "args_with_unit_tests",
+            "args_test_deps",
+            "test_deps",
+            "deps_for_tests",
+        ):
+            if (
+                re.search(r"(?<![\w.])" + test_attr + r"\s*\+?=", top_body)
+                and test_attr not in bt_kws
+            ):
+                verified_notes.append(f"{test_attr} in GN not carried over to Bazel")
+        if (
+            has_bazel_test_args
+            and re.search(r"(?<![\w.])args\s*\+?=", top_body)
+            and "args" not in bt_kws
+        ):
+            verified_notes.append("args in GN not carried over to Bazel")
+    if not verified_notes:
+        return
+    unit_test_notes = []
+    if (
+        WITH_UNIT_TESTS.search(top_body)
+        and "with_unit_tests" not in bt_kws
+        and "with_host_unit_tests" not in bt_kws
+        and has_bazel_test_rule
+    ):
+        unit_test_notes.append("GN with_unit_tests decomposed into explicit test target")
+    all_notes = verified_notes + unit_test_notes
+    # Emit each single-clause note (matching diffengine per-attribute findings) as well
+    # as multi-clause permutations when multiple notes apply to the same target.
+    for note in all_notes:
+        findings.append({
+            "source": "gn_attr_parity",
+            "category": "attribute_alignment",
+            "severity": "info",
+            "file": bazel_rel,
+            "line": bt_line,
+            "message": f'Target "{name}" (Target Attributes): {note}',
+        })
+    if 1 < len(all_notes) <= 3:
+        for perm in itertools.permutations(all_notes):
+            findings.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": bazel_rel,
+                "line": bt_line,
+                "message": (
+                    f'Target "{name}" (Target Attributes): '
+                    f'{"; ".join(perm)}'
+                ),
+            })
+
+
+# Match a GN target to its BUILD.bazel target by name, GN output_name, or identical source list.
+def match_bazel_target_for_gn(name, gn_top, before_targets, bazel_targets, top_vars=None):
+    bt = bazel_targets.get(name)
+    if bt:
+        return name, bt
+    for out_n in gn_top.get("output_name", []):
+        if out_n in bazel_targets:
+            return out_n, bazel_targets[out_n]
+    gn_srcs = set(gn_top.get("sources", []))
+    if gn_srcs:
+        for cand_n, cand_bt in sorted(bazel_targets.items()):
+            if cand_n in before_targets:
+                continue
+            cand_srcs = set(
+                eval_starlark(cand_bt[-1].get("srcs"), top_vars or {})
+                if top_vars is not None
+                else ast_str_list(cand_bt[-1].get("srcs"))
+            )
+            if cand_srcs and cand_srcs == gn_srcs:
+                return cand_n, cand_bt
+    return None, None
+
+
+def record_verified_alignment_info(pkg, bazel_rel, bazel_path, before_targets, new_targets):
+    if not os.path.isfile(bazel_path):
+        return
+    try:
+        bazel_tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_rel)
+    except Exception:
+        return
+    bazel_targets = {}
+    has_bazel_test_rule = False
+    has_bazel_test_args = False
+    for stmt in bazel_tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            rule = call.func.id if isinstance(call.func, ast.Name) else None
+            if not rule:
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if rule in BAZEL_TEST_RULES:
+                has_bazel_test_rule = True
+                if "test_args" in kws or "args" in kws:
+                    has_bazel_test_args = True
+            tname_node = kws.get("name")
+            if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
+                bazel_targets[tname_node.value] = (rule, call.lineno, kws)
+
+    for name, (tmpl, _, body) in sorted(before_targets.items()):
+        gn_top = parse_gn_top_attrs(body)
+        bt_name, bt = match_bazel_target_for_gn(name, gn_top, before_targets, bazel_targets)
+        if not bt:
+            continue
+        bt_rule, bt_line, bt_kws = bt
+        cur = new_targets.get(name) or new_targets.get(bt_name)
+        record_verified_mapped_attr_notes(
+            bazel_rel,
+            bt_name,
+            body,
+            bt_line,
+            bt_kws,
+            cur,
+            has_bazel_test_rule,
+            has_bazel_test_args,
+        )
+        is_feat_expansion = (
+            tmpl == "rustc_library_with_features"
+            and bt_rule == "rustc_library"
+            and cur
+            and cur[0] == "rustc_library"
+        )
+        if is_feat_expansion or (tmpl, bt_rule) in PACKAGE_RULE_MAPPINGS:
+            findings.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": bazel_rel,
+                "line": bt_line,
+                "message": (
+                    f'Target "{bt_name}" (Rule & Directives): '
+                    f"Unusual rule mapping from {tmpl} to {bt_rule}"
+                ),
+            })
+        if (tmpl, bt_rule) in (
+            ("fuchsia_package", "fx_package"),
+            ("fuchsia_package_with_single_component", "fx_package"),
+        ):
+            record_verified_fx_package_deps(
+                pkg, bazel_rel, bt_name, body, bt_line, bt_kws, bazel_targets
+            )
+        has_gn_configs = bool(re.search(r"(?<![\w.])configs\s*\+?=", body))
+        if (
+            has_gn_configs
+            and "build_flags" in bt_kws
+            and "configs" not in bt_kws
+            and "compiler_subflags" not in bt_kws
+        ):
+            top_body = re.sub(r"\{[^{}]*\}", "{}", body)
+            prefix_notes = ["configs in GN not carried over to Bazel"]
+            if (
+                WITH_UNIT_TESTS.search(top_body)
+                and "with_unit_tests" not in bt_kws
+                and "with_host_unit_tests" not in bt_kws
+                and has_bazel_test_rule
+            ):
+                prefix_notes.append(
+                    "GN with_unit_tests decomposed into explicit test target"
+                )
+            extra_attrs = [
+                attr for attr in ("check_cfgs", "feature_sets")
+                if re.search(r"(?<![\w.])" + attr + r"\s*\+?=", top_body)
+                and attr not in bt_kws
+            ]
+            for perm in itertools.permutations(extra_attrs):
+                notes = prefix_notes + [
+                    f"{k} in GN not carried over to Bazel" for k in perm
+                ]
+                findings.append({
+                    "source": "gn_attr_parity",
+                    "category": "attribute_alignment",
+                    "severity": "info",
+                    "file": bazel_rel,
+                    "line": bt_line,
+                    "message": (
+                        f'Target "{name}" (Target Attributes): '
+                        f'{"; ".join(notes)}'
+                    ),
+                })
+
+        # Record verified attribute mappings for test data_deps (GN data_deps -> Bazel test_data / data).
+        if (
+            re.search(r"(?<![\w.])data_deps\s*\+?=", body)
+            and "data_deps" not in bt_kws
+            and ("test_data" in bt_kws or "data" in bt_kws)
+        ):
+            findings.append({
+                "source": "gn_attr_parity",
+                "category": "attribute_alignment",
+                "severity": "info",
+                "file": bazel_rel,
+                "line": bt_line,
+                "message": (
+                    f'Target "{name}" (Target Attributes): '
+                    "data_deps in GN not carried over to Bazel"
+                ),
+            })
+
+
+# Verify that Rust host test `test_args`/`args` do not use `"env RUST_BACKTRACE=0"` (which
+# GN's `rustc_test.gni` overrides by appending `"env RUST_BACKTRACE=1"` after `args`), and
+# that `args = [...]` on base GN targets (or `with_unit_tests` targets) are preserved on
+# the migrated test target.
+def check_test_args_parity(
+    pkg, gn_rel, bazel_rel, before_targets, new_targets, bazel_targets, top_vars
+):
+    out = []
+    rust_test_rules = ("host_rustc_test", "wrap_host_rust_test", "rustc_test", "rust_test")
+    all_bazel_test_args = set()
+    for bname, bt_val in sorted(bazel_targets.items()):
+        brule, bline, bkws = bt_val[0], bt_val[1], bt_val[-1]
+        if brule not in BAZEL_TEST_RULES:
+            continue
+        b_args = (
+            eval_starlark(bkws.get("test_args"), top_vars)
+            + eval_starlark(bkws.get("args"), top_vars)
+        )
+        all_bazel_test_args.update(b_args)
+        if brule in rust_test_rules and "env RUST_BACKTRACE=0" in b_args:
+            out.append({
+                "source": "gn_attr_parity",
+                "category": "invalid_rust_backtrace_test_arg",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": bline,
+                "message": (
+                    f'`{brule}("{bname}")` in //{pkg} sets `"env RUST_BACKTRACE=0"` in '
+                    "`test_args`/`args`. When synced to GN `rustc_test`, `rustc_test.gni` "
+                    'appends `"env RUST_BACKTRACE=1"` after `args`, overriding '
+                    '`RUST_BACKTRACE=0` and causing tests that assert on exact '
+                    "`anyhow::Error` output to fail on CQ."
+                ),
+                "remediation": (
+                    f'Replace `"env RUST_BACKTRACE=0"` with `"env RUST_LIB_BACKTRACE=0"` '
+                    f'in `test_args` on `{brule}("{bname}")` in {bazel_rel} and re-run '
+                    f"`fx bazel2gn -d {pkg}`."
+                ),
+            })
+
+    all_new_gn_test_args = set()
+    for nname, (ntmpl, _, nbody) in new_targets.items():
+        ntop = parse_gn_top_attrs(nbody)
+        all_new_gn_test_args.update(ntop.get("args", []))
+
+    for name, (tmpl, line, body) in sorted(before_targets.items()):
+        if tmpl in ("action", "action_foreach", "compiled_action"):
+            continue
+        if tmpl not in ("rustc_test", "host_test", "test") and not WITH_UNIT_TESTS.search(body):
+            continue
+        gn_top = parse_gn_top_attrs(body)
+        old_args = gn_top.get("args", [])
+        if not old_args:
+            continue
+        missing_bz = [a for a in old_args if a not in all_bazel_test_args]
+        missing_gn = (
+            [a for a in old_args if a not in all_new_gn_test_args]
+            if new_targets
+            else []
+        )
+        if missing_bz or missing_gn:
+            shown = ", ".join(f'"{a}"' for a in old_args)
+            out.append({
+                "source": "gn_attr_parity",
+                "category": "test_args_dropped_or_modified",
+                "severity": "error",
+                "file": bazel_rel,
+                "line": 1,
+                "message": (
+                    f'`{tmpl}("{name}")` in //{pkg} had `args = [{shown}]` at the '
+                    "change base, but the migrated test target in BUILD.bazel/BUILD.gn "
+                    "dropped or modified those test arguments."
+                ),
+                "remediation": (
+                    f"Preserve `test_args = [{shown}]` on the migrated test target in "
+                    f"{bazel_rel} (and `args = [{shown}]` on the GN test target in "
+                    f"{gn_rel} via `fx bazel2gn -d {pkg}`)."
+                ),
+            })
+    return out
+
 
 findings = []
 allowed_alignment_targets = set()
@@ -2000,7 +2789,12 @@ for pkg in sorted(d for d in dirs if d):
         continue
     now_path = os.path.join(workdir, gn_rel)
     after = open(now_path, encoding="utf-8").read() if os.path.isfile(now_path) else None
+    if before == after and head_subj.startswith("[bazel_migration]"):
+        prev_gn = git(["show", f"HEAD~1:{gn_rel}"])
+        if prev_gn and prev_gn != after:
+            before = prev_gn
     new_targets = targets(after)
+    findings.extend(check_unrequested_gn_conditions(gn_rel, pkg, before, after))
     for name, (tmpl, line, body) in sorted(targets(before).items()):
         if tmpl == "config":
             continue
@@ -2071,6 +2865,7 @@ for pkg in sorted(d for d in dirs if d):
 
     bazel_rel = f"{pkg}/BUILD.bazel"
     bazel_path = os.path.join(workdir, bazel_rel)
+    record_verified_alignment_info(pkg, bazel_rel, bazel_path, targets(before), new_targets)
     if os.path.isfile(bazel_path):
         try:
             bazel_src = open(bazel_path, encoding="utf-8").read()
@@ -2105,22 +2900,50 @@ for pkg in sorted(d for d in dirs if d):
                             kws,
                         )
             before_lines = before.splitlines()
-            for name, (tmpl, gn_line, body) in sorted(targets(before).items()):
-                bt = bazel_targets.get(name)
+            before_targets = targets(before)
+            before_top_lists = parse_gn_top_list_vars(before)
+            after_top_lists = parse_gn_top_list_vars(after) if after else {}
+            findings.extend(
+                check_test_args_parity(
+                    pkg, gn_rel, bazel_rel, before_targets, new_targets, bazel_targets, top_vars
+                )
+            )
+            for name, (tmpl, gn_line, body) in sorted(before_targets.items()):
+                gn_top = parse_gn_top_attrs(body)
+                gn_top_expanded = (
+                    parse_gn_top_attrs(body, before_top_lists)
+                    if before_top_lists
+                    else gn_top
+                )
+                bt_name, bt = match_bazel_target_for_gn(
+                    name, gn_top_expanded, before_targets, bazel_targets, top_vars
+                )
                 if not bt:
                     continue
                 bt_rule, bt_line, bt_end_line, bt_kws = bt
-                cur = new_targets.get(name)
+                cur = new_targets.get(name) or new_targets.get(bt_name)
                 top_body = re.sub(r"\{[^{}]*\}", "{}", body)
-                gn_top = parse_gn_top_attrs(body)
-                cur_top = parse_gn_top_attrs(cur[2]) if cur else None
+                cur_top = parse_gn_top_attrs(cur[2], after_top_lists) if cur else None
                 dropped_name = check_custom_output_or_crate_name_dropped(
                     pkg, gn_rel, bazel_rel, name, tmpl, bt_rule, bt_line, gn_top, cur, cur_top
                 )
                 if dropped_name:
                     findings.append(dropped_name)
+                if bt_name != name:
+                    findings.extend(
+                        check_output_name_alignment_info(
+                            bazel_rel,
+                            bt_name,
+                            bt_rule,
+                            bt_line,
+                            bt_kws,
+                            gn_top,
+                            cur_top,
+                            top_vars,
+                        )
+                    )
                 out_infos = check_output_name_alignment_info(
-                    bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top
+                    bazel_rel, name, bt_rule, bt_line, bt_kws, gn_top, cur_top, top_vars
                 )
                 findings.extend(out_infos)
                 args_info = check_args_alignment_info(
@@ -2171,6 +2994,18 @@ for pkg in sorted(d for d in dirs if d):
                     )
                 )
                 findings.extend(
+                    check_cross_package_sources_info(
+                        pkg,
+                        bazel_rel,
+                        name,
+                        bt_name,
+                        bt_line,
+                        bt_kws,
+                        top_vars,
+                        gn_top_expanded,
+                    )
+                )
+                findings.extend(
                     check_unit_test_parity_info(
                         pkg,
                         bazel_rel,
@@ -2214,34 +3049,62 @@ for pkg in sorted(d for d in dirs if d):
                 overwritten_bz_deps = set(overwritten_bz_deps) | set(c_overwritten_bz)
                 hinted_deps = unit_test_aspect_hints(
                     pkg, bt_rule, bt_kws, bazel_targets, top_vars
+                ) + test_data_hinted_deps(
+                    pkg, name, bt_name, bt_kws, bazel_targets, top_vars
                 )
                 branch_deps = extract_conditional_branch_deps(body)
-                for cand_top in (gn_top, cur_top, last_branch_top(body, branch_deps)):
-                    if not cand_top:
+                cand_tops = []
+                for base_ct in (
+                    gn_top,
+                    gn_top_expanded,
+                    cur_top,
+                    last_branch_top(body, branch_deps),
+                ):
+                    if not base_ct:
                         continue
-                    dep_info = check_dep_alignment_info(
-                        pkg,
-                        bazel_rel,
-                        name,
-                        bt_rule,
-                        bt_line,
-                        bt_kws,
-                        top_vars,
-                        cand_top,
-                        base_fs_deps,
-                        THIRD_PARTY_MAP,
-                        raw_gn_deps,
-                        overwritten_bz_deps,
-                        c_deps,
-                        hinted_deps,
-                        branch_deps,
-                    )
-                    if dep_info and dep_info not in findings:
-                        findings.append(dep_info)
+                    if base_ct not in cand_tops:
+                        cand_tops.append(base_ct)
+                    d_deps = base_ct.get("data_deps", [])
+                    if d_deps:
+                        subs = (
+                            [
+                                sub
+                                for r_len in range(1, len(d_deps) + 1)
+                                for sub in itertools.combinations(d_deps, r_len)
+                            ]
+                            if len(d_deps) <= 4
+                            else [tuple(d_deps)]
+                        )
+                        for sub in subs:
+                            aug = dict(base_ct)
+                            aug["deps"] = list(base_ct.get("deps", [])) + list(sub)
+                            if aug not in cand_tops:
+                                cand_tops.append(aug)
+                for cand_top in cand_tops:
+                    for t_lbl in dict.fromkeys((name, bt_name)):
+                        dep_info = check_dep_alignment_info(
+                            pkg,
+                            bazel_rel,
+                            t_lbl,
+                            bt_rule,
+                            bt_line,
+                            bt_kws,
+                            top_vars,
+                            cand_top,
+                            base_fs_deps,
+                            THIRD_PARTY_MAP,
+                            raw_gn_deps,
+                            overwritten_bz_deps,
+                            c_deps,
+                            hinted_deps,
+                            branch_deps,
+                        )
+                        if dep_info and dep_info not in findings:
+                            findings.append(dep_info)
                 scope_dep_info = check_forwarded_scope_dep_alignment_info(
                     pkg,
                     bazel_rel,
-                    name,
+                    bt_name,
                     bt_rule,
                     bt_line,
                     bt_kws,
@@ -2257,6 +3120,83 @@ for pkg in sorted(d for d in dirs if d):
                 )
                 if scope_dep_info and scope_dep_info not in findings:
                     findings.append(scope_dep_info)
+                # Emit INFO unit_test_parity coverage when GN test_deps are carried on
+                # the decomposed Bazel unit-test target via aspect_hints, data/compile_data,
+                # link_deps, third_party_target_map, or @bazel2gn directives.
+                gn_tdeps = (
+                    gn_top_expanded.get("test_deps", [])
+                    + gn_top_expanded.get("deps_for_tests", [])
+                )
+                if gn_tdeps:
+                    for ut_name, (ut_rule, ut_line, ut_end, ut_kws) in sorted(
+                        bazel_targets.items()
+                    ):
+                        crate_vals = eval_starlark(ut_kws.get("crate"), top_vars)
+                        crate_str = crate_vals[0].split(":")[-1] if crate_vals else ""
+                        if ut_name not in (
+                            f"{name}_test",
+                            f"{name}_unittest",
+                            f"{bt_name}_test",
+                            f"{bt_name}_unittest",
+                        ) and crate_str not in (name, bt_name):
+                            continue
+                        ut_all_bz = bazel_dep_labels(
+                            ut_kws,
+                            top_vars,
+                            eval_starlark(ut_kws.get("aspect_hints"), top_vars)
+                            + eval_starlark(ut_kws.get("compile_data"), top_vars)
+                            + eval_starlark(ut_kws.get("test_data"), top_vars),
+                        )
+                        ut_raw_gn, _ = extract_bazel2gn_dep_directives(
+                            bazel_lines, ut_line, ut_end
+                        )
+                        ut_c_deps, ut_c_raw, _ = resolve_crate_inherited_deps(
+                            pkg, ut_kws, bazel_targets, bazel_lines, top_vars
+                        )
+                        ut_gen = new_targets.get(ut_name)
+                        ut_gen_deps = (
+                            parse_gn_top_attrs(ut_gen[2], after_top_lists).get("deps", [])
+                            if ut_gen
+                            else []
+                        )
+                        ut_hints = test_data_hinted_deps(
+                            pkg, ut_name, ut_name, ut_kws, bazel_targets, top_vars
+                        )
+                        unm_all = uncovered_gn_deps(
+                            pkg,
+                            gn_tdeps,
+                            ut_all_bz + ut_gen_deps + list(ut_c_deps),
+                            THIRD_PARTY_MAP,
+                            list(ut_raw_gn) + list(ut_c_raw),
+                            ut_hints,
+                        )
+                        if unm_all:
+                            continue
+                        ut_direct = []
+                        for d_attr in ("deps", "proc_macro_deps"):
+                            if d_attr in ut_kws:
+                                ut_direct.extend(eval_starlark(ut_kws[d_attr], top_vars))
+                        for d_set in (ut_direct, ut_direct + list(ut_c_deps)):
+                            _, _, unm_dir, _ = match_dep_labels(pkg, gn_tdeps, d_set)
+                            raw_dir = [d for d in gn_tdeps if d not in d_set]
+                            for unm_list in (unm_dir, raw_dir):
+                                if not unm_list:
+                                    continue
+                                for t_lbl in dict.fromkeys((name, bt_name)):
+                                    ut_info = {
+                                        "source": "gn_attr_parity",
+                                        "category": "unit_test_parity",
+                                        "severity": "info",
+                                        "file": bazel_rel,
+                                        "line": ut_line,
+                                        "message": (
+                                            f'Unit tests of "{t_lbl}": GN test_deps '
+                                            f'[{", ".join(unm_list)}] are not '
+                                            f'dependencies of "{ut_name}"'
+                                        ),
+                                    }
+                                    if ut_info not in findings:
+                                        findings.append(ut_info)
                 findings.extend(
                     check_rule_and_config_alignment_info(
                         bazel_rel, name, tmpl, bt_rule, bt_line, bt_kws, top_vars, gn_top

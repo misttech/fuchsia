@@ -569,23 +569,75 @@ if after.get("error") is not None:
 before, after = baseline["tests"], after["tests"]
 
 
+def package_of(lbl):
+    return lbl.split(":", 1)[0] if lbl.startswith("//") else ""
+
+
+# Normalize host test stems within a package so a GN rustc_library/rustc_binary
+# unit test (<crate>_lib_test / <bin>_bin_test, :lib_test / :bin_test) or
+# rustc_library_with_features test matches its decomposed Bazel host test
+# (<crate>_test, <pkg>_test, <base>-host-test) in the same package.
+def host_pkg_stems(t):
+    if t["os"] == "fuchsia":
+        return set()
+    pkg = package_of(t["source_label"] or t["label"])
+    if not pkg:
+        return set()
+    raw_tokens = []
+    name = t["name"]
+    if name.startswith("//"):
+        if ":" in name:
+            raw_tokens.append(name.split(":", 1)[1])
+    elif name:
+        raw_tokens.append(os.path.basename(name))
+    for l in (t["label"], t["source_label"]):
+        if l and ":" in l:
+            raw_tokens.append(l.split(":", 1)[1])
+    stems = set()
+    suffixes = (
+        "_lib_test",
+        "_bin_test",
+        "_instrumented_test",
+        "_host_test",
+        "_unittest",
+        "_unittests",
+        "_test",
+    )
+    generic = {"lib", "bin", "test", "tests", "unit", "unittest", "unittests"}
+    pkg_stem = os.path.basename(pkg).replace("-", "_")
+    for tok in raw_tokens:
+        norm = tok.replace("-", "_")
+        stem = norm
+        for sfx in suffixes:
+            if norm.endswith(sfx) and len(norm) > len(sfx):
+                stem = norm[: -len(sfx)]
+                break
+        if stem in generic:
+            if pkg_stem:
+                stems.add((t["os"], t["cpu"], pkg, pkg_stem))
+        elif stem:
+            stems.add((t["os"], t["cpu"], pkg, stem))
+            if stem.endswith(("_lib", "_bin")) and len(stem) > 4:
+                stems.add((t["os"], t["cpu"], pkg, stem[:-4]))
+    return stems
+
+
 def match_sets(tests):
     names = {(t["os"], t["cpu"], t["name"]) for t in tests}
     labels = {
         (t["os"], t["cpu"], l) for t in tests if t["os"] != "fuchsia" for l in (t["label"], t["source_label"]) if l
     }
-    return names, labels
+    pkg_stems = {s for t in tests for s in host_pkg_stems(t)}
+    return names, labels, pkg_stems
 
 
 def kept(t, sets):
-    names, labels = sets
+    names, labels, pkg_stems = sets
     if (t["os"], t["cpu"], t["name"]) in names:
         return True
-    return t["os"] != "fuchsia" and any((t["os"], t["cpu"], l) in labels for l in (t["label"], t["source_label"]) if l)
-
-
-def package_of(lbl):
-    return lbl.split(":", 1)[0] if lbl.startswith("//") else ""
+    if t["os"] != "fuchsia" and any((t["os"], t["cpu"], l) in labels for l in (t["label"], t["source_label"]) if l):
+        return True
+    return bool(host_pkg_stems(t) & pkg_stems)
 
 
 after_sets, before_sets = match_sets(after), match_sets(before)

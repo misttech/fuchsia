@@ -158,6 +158,8 @@ CONVERTIBLE_BAZEL_RULES = {
     "fuchsia_structured_config_rust_lib",
     "fx_component",
     "fx_component_manifest",
+    "ffx_plugin",
+    "ffx_tool",
 }
 if FX_COMPILED_MANIFEST_SUPPORTED:
     CONVERTIBLE_BAZEL_RULES.add("fx_compiled_manifest")
@@ -181,6 +183,8 @@ CONVERTIBLE_GN_TEMPLATES = {
     "python_library",
     "python_binary",
     "fidl",
+    "ffx_plugin",
+    "ffx_tool",
     "sdk_source_set",
     "sdk_static_library",
     "sdk_shared_library",
@@ -2581,6 +2585,7 @@ for pkg_dir in sorted(candidate_dirs):
             "//build/compiled_action.gni": ("compiled_action", "compiled_action_foreach"),
             "//build/dist/renamed_binary.gni": ("renamed_binary",),
             "//build/sdk/sdk_host_tool.gni": (
+                "sdk_host_tool",
                 "sdk_executable_host_tool",
                 "sdk_go_binary_host_tool",
                 "sdk_rustc_binary_host_tool",

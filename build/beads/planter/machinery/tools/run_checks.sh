@@ -142,6 +142,130 @@ else:
         target_dirs = [os.environ["PLANTER_TARGET_DIR"].strip()]
 
 
+# Match a package path against the //dir or //.../<suffix> path in a commit subject.
+def matches_subject_dir(pkg, sdir):
+    if not pkg or not sdir:
+        return False
+    if sdir.startswith(".../"):
+        suf = sdir[4:]
+        return bool(suf) and (pkg == suf or pkg.endswith("/" + suf))
+    return pkg == sdir
+
+
+# Check whether a [bazel_migration] HEAD commit belongs to the current task's
+# target_dirs rather than a stacked parent migration commit.
+def is_task_migration_head(wdir, head_sha, parent_sha, subj, tdirs):
+    if not head_sha or not parent_sha or not subj.startswith("[bazel_migration]"):
+        return False
+    env_dirs = os.environ.get("PLANTER_TARGET_DIRS", "").split()
+    if os.environ.get("PLANTER_TARGET_DIR", "").strip():
+        env_dirs.append(os.environ["PLANTER_TARGET_DIR"].strip())
+    check_dirs = []
+    for d in list(tdirs) + env_dirs:
+        nd = normalize_dir(d).strip("/")
+        if nd and nd not in check_dirs:
+            check_dirs.append(nd)
+            if nd.startswith("build/secondary/"):
+                ov = nd[len("build/secondary/"):]
+                if ov and ov not in check_dirs:
+                    check_dirs.append(ov)
+    if not check_dirs:
+        return True
+    head_files = [
+        f.strip()
+        for f in subprocess.check_output(
+            ["git", "-C", wdir, "diff", "--name-only", parent_sha, head_sha],
+            stderr=subprocess.DEVNULL, text=True,
+        ).splitlines()
+        if f.strip()
+    ]
+    head_pkgs = {
+        os.path.dirname(f)
+        for f in head_files
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD.gn", "BUILD")
+    }
+    head_bazel_pkgs = {
+        os.path.dirname(f)
+        for f in head_files
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD")
+    }
+    untracked_bazel_pkgs = {
+        os.path.dirname(f.strip())
+        for f in subprocess.check_output(
+            ["git", "-C", wdir, "ls-files", "--others", "--exclude-standard", "--"]
+            + check_dirs,
+            stderr=subprocess.DEVNULL, text=True,
+        ).splitlines()
+        if os.path.basename(f.strip()) in ("BUILD.bazel", "BUILD")
+    }
+    if untracked_bazel_pkgs and not (head_bazel_pkgs & set(check_dirs)):
+        return False
+    sdir = (
+        subj.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
+        if " //" in subj
+        else ""
+    )
+    subj_matches = bool(sdir) and any(matches_subject_dir(td, sdir) for td in check_dirs)
+    sdir_in_head = bool(sdir) and any(matches_subject_dir(hp, sdir) for hp in head_pkgs)
+    if sdir_in_head and not subj_matches and not (head_bazel_pkgs & set(check_dirs)):
+        return False
+    if head_pkgs:
+        return bool(head_pkgs & set(check_dirs)) or subj_matches
+    return (
+        any(f == td or f.startswith(td + "/") for td in check_dirs for f in head_files)
+        or subj_matches
+    )
+
+
+# Resolve the effective change base when HEAD is already the migration commit or was rebased.
+def resolve_effective_change_base(wdir, raw_base, tdirs):
+    try:
+        head = subprocess.check_output(
+            ["git", "-C", wdir, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        parent = subprocess.check_output(
+            ["git", "-C", wdir, "rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if not head or not parent:
+            return raw_base
+        subj = subprocess.check_output(
+            ["git", "-C", wdir, "log", "-1", "--format=%s", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        is_mig_head = is_task_migration_head(wdir, head, parent, subj, tdirs)
+        base_sha = subprocess.check_output(
+            ["git", "-C", wdir, "rev-parse", "--verify", "--quiet", f"{raw_base}^{{commit}}"],
+            stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+        if raw_base == "HEAD" or base_sha == head:
+            return "HEAD~1" if is_mig_head else raw_base
+        if base_sha and base_sha != parent and is_mig_head:
+            is_anc_parent = (
+                subprocess.run(
+                    ["git", "-C", wdir, "merge-base", "--is-ancestor", base_sha, parent],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                ).returncode
+                == 0
+            )
+            is_anc_head = (
+                subprocess.run(
+                    ["git", "-C", wdir, "merge-base", "--is-ancestor", base_sha, head],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                ).returncode
+                == 0
+            )
+            if is_anc_parent or not is_anc_head:
+                return "HEAD~1"
+    except Exception:
+        pass
+    return raw_base
+
+
+change_base = resolve_effective_change_base(workdir, change_base, target_dirs)
+
+
 def fmt_secs(secs):
     if secs < 60:
         return f"{secs:.1f}s"
@@ -1143,6 +1267,353 @@ def downgrade_check_cfg_diff_findings(findings):
                 f["severity"] = "INFO"
 
 
+# Check whether a pre-existing BUILD.bazel outside the migrated target directories was
+# only modified to register tests in test_suite(), export files via exports_files(), or
+# update target visibility allowlists, without dual-build migrating that package.
+_REG_ONLY_PKG_CACHE = {}
+
+
+def is_registration_only_bazel_pkg(pkg_dir):
+    pkg_dir = pkg_dir.strip("/")
+    if pkg_dir in _REG_ONLY_PKG_CACHE:
+        return _REG_ONLY_PKG_CACHE[pkg_dir]
+    if not pkg_dir or not workdir or pkg_dir in set(target_dirs):
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    if os.path.isfile(gn_path):
+        try:
+            if "BAZEL2GN SENTINEL" in open(gn_path, encoding="utf-8", errors="ignore").read():
+                _REG_ONLY_PKG_CACHE[pkg_dir] = False
+                return False
+        except OSError:
+            pass
+    bazel_rel = f"{pkg_dir}/BUILD.bazel"
+    bazel_path = os.path.join(workdir, bazel_rel)
+    if not os.path.isfile(bazel_path):
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    try:
+        cur_src = open(bazel_path, encoding="utf-8").read()
+    except OSError:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    prev_src = None
+    for ref in dict.fromkeys([change_base, "HEAD", "HEAD~1"]):
+        if not ref:
+            continue
+        try:
+            cand = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{ref}:{bazel_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            if cand == cur_src and ref != "HEAD~1":
+                continue
+            prev_src = cand
+            break
+        except Exception:
+            continue
+    if prev_src is None:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    try:
+        import ast
+
+        prev_tree = ast.parse(prev_src, filename=bazel_rel)
+        cur_tree = ast.parse(cur_src, filename=bazel_rel)
+    except Exception:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+
+    def strip_vis_dump(stmt):
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            return None
+        call = stmt.value
+        kept = [(kw.arg, ast.dump(kw.value)) for kw in call.keywords if kw.arg != "visibility"]
+        return (ast.dump(call.func), tuple(ast.dump(a) for a in call.args), tuple(kept))
+
+    prev_dumps = {ast.dump(s) for s in prev_tree.body}
+    prev_stripped = {d for d in (strip_vis_dump(s) for s in prev_tree.body) if d is not None}
+    for stmt in cur_tree.body:
+        if ast.dump(stmt) in prev_dumps:
+            continue
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            _REG_ONLY_PKG_CACHE[pkg_dir] = False
+            return False
+        call = stmt.value
+        fn = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
+        )
+        if (
+            fn in ("test_suite", "exports_files", "stamp_group", "filegroup")
+            or strip_vis_dump(stmt) in prev_stripped
+        ):
+            continue
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    _REG_ONLY_PKG_CACHE[pkg_dir] = True
+    return True
+
+
+GN_TO_BAZEL_ATTR_EQUIVALENTS = {
+    "args_sources": ("args_srcs", "args_sources"),
+    "args_source_root": ("args_crate_root", "args_source_root"),
+    "sources": ("srcs", "sources"),
+    "public": ("hdrs", "public"),
+    "configs": (
+        "copts",
+        "build_flags",
+        "disable_build_flags",
+        "lint_config",
+        "configs",
+        "compiler_subflags",
+    ),
+    "inputs": ("compile_data", "data", "srcs", "inputs"),
+    "non_rust_deps": ("data", "test_data", "non_rust_deps"),
+    "data_deps": ("data", "test_data", "data_deps"),
+    "features": ("crate_features", "features"),
+    "rustflags": ("rustc_flags", "build_flags", "rustflags"),
+    "source_root": ("crate_root", "source_root"),
+    "rustenv": ("rustc_env", "rustenv"),
+    "output_name": ("binary_name", "crate_name", "out", "output_name"),
+    "sdk_category": ("sdk_category", "category"),
+    "sdk_publishable": ("category", "sdk_publishable"),
+    "sdk_area": ("sdk_area", "api_area"),
+    "api": ("api_file_path", "api"),
+    "sdk_name": ("idk_name", "sdk_name"),
+    "sdk_headers_for_internal_use": ("hdrs_for_internal_use", "sdk_headers_for_internal_use"),
+    "outputs": ("outs", "tool_output_names", "dest_dir", "files_map", "outputs"),
+    "main_source": ("main", "main_source"),
+    "global": ("global_registry", "global"),
+    "check_cfgs": ("build_flags", "check_cfgs"),
+    "feature_sets": ("build_flags", "feature_sets"),
+}
+BAZEL_TEST_RULES = {
+    "rustc_test",
+    "rust_test",
+    "host_rustc_test",
+    "wrap_host_rust_test",
+    "fx_test",
+    "fx_unittest_package",
+    "fx_unittest_component",
+    "fx_test_component",
+    "cc_test",
+    "fx_cc_test",
+    "host_cc_test",
+    "host_py_test",
+    "host_go_test",
+    "host_test",
+    "go_test",
+}
+DECOMPOSED_GN_UNIT_TEST_ATTRS = {
+    "with_unit_tests",
+    "args_with_unit_tests",
+    "test_deps",
+    "args_test_deps",
+    "deps_for_tests",
+}
+
+
+# Verify whether a Target Attributes attribute_alignment finding only flags GN attributes
+# that are mapped in BUILD.bazel (e.g. args_sources -> args_srcs, sdk_category), preserved
+# below the BAZEL2GN SENTINEL in BUILD.gn, or decomposed into a Bazel test target.
+def is_verified_target_attributes_alignment(f):
+    import re
+
+    msg = f.get("message", "")
+    m = re.match(r'^Target "([^"]+)" \(Target Attributes\): (.+)$', msg)
+    if not m or not workdir:
+        return False
+    target_name = m.group(1)
+    notes = [n.strip() for n in m.group(2).split(";") if n.strip()]
+    if not notes:
+        return False
+    pkg_dir = os.path.dirname(str(f.get("file", ""))).strip("/")
+    bazel_path = os.path.join(workdir, pkg_dir, "BUILD.bazel")
+    if not os.path.isfile(bazel_path):
+        return False
+    try:
+        import ast
+
+        tree = ast.parse(open(bazel_path, encoding="utf-8").read(), filename=bazel_path)
+    except Exception:
+        return False
+    bt_rule = None
+    bt_kws = set()
+    has_bazel_test_rule = False
+    has_bazel_test_args = False
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            rule = call.func.id if isinstance(call.func, ast.Name) else None
+            if not rule:
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if rule in BAZEL_TEST_RULES:
+                has_bazel_test_rule = True
+                if "test_args" in kws or "args" in kws:
+                    has_bazel_test_args = True
+            tname = kws.get("name")
+            if (
+                isinstance(tname, ast.Constant)
+                and isinstance(tname.value, str)
+                and tname.value == target_name
+            ):
+                bt_rule = rule
+                bt_kws = set(kws.keys())
+    if not bt_rule:
+        return False
+    gen_gn_body = ""
+    gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    if os.path.isfile(gn_path):
+        try:
+            gn_cur = open(gn_path, encoding="utf-8", errors="ignore").read()
+            if "BAZEL2GN SENTINEL" in gn_cur:
+                gen_gn_body = gn_cur.split("BAZEL2GN SENTINEL", 1)[1]
+        except OSError:
+            pass
+    for note in notes:
+        if note == "GN with_unit_tests decomposed into explicit test target":
+            if not (has_bazel_test_rule or "with_unit_tests" in bt_kws or "with_host_unit_tests" in bt_kws):
+                return False
+            continue
+        if note == "GN Rust configs handled by toolchain defaults / lint_config":
+            continue
+        am = re.match(r"^([A-Za-z_]\w*) in GN not carried over to Bazel$", note)
+        if not am:
+            return False
+        gn_attr = am.group(1)
+        bz_equivs = GN_TO_BAZEL_ATTR_EQUIVALENTS.get(gn_attr, (gn_attr,))
+        in_bazel = gn_attr in bt_kws or any(b in bt_kws for b in bz_equivs)
+        in_gen_gn = bool(
+            gn_attr != "args"
+            and gen_gn_body
+            and re.search(r"(?<![\w.])" + re.escape(gn_attr) + r"\s*\+?=", gen_gn_body)
+        )
+        is_decomposed_test = (
+            (gn_attr in DECOMPOSED_GN_UNIT_TEST_ATTRS and has_bazel_test_rule)
+            or (gn_attr == "args" and has_bazel_test_args)
+        )
+        if not (in_bazel or in_gen_gn or is_decomposed_test):
+            return False
+    return True
+
+
+# Verify whether a review_diff unit_test_parity finding is already satisfied via
+# aspect_hints, data/test_data/compile_data, link_deps, @bazel2gn directives, or
+# the bazel2gn-generated GN unit test target below the BAZEL2GN SENTINEL.
+def is_verified_unit_test_parity(f):
+    import re
+
+    msg = f.get("message", "")
+    m = re.match(
+        r'^Unit tests of "([^"]+)": GN test_deps \[([^\]]+)\] '
+        r'are not dependencies of "([^"]+)"$',
+        msg,
+    )
+    if not m:
+        return False
+    missing_deps = [d.strip() for d in m.group(2).split(",") if d.strip()]
+    if not missing_deps:
+        return False
+    rel_file = str(f.get("file", ""))
+    pkg_dir = os.path.dirname(rel_file).strip("/")
+    bazel_path = os.path.join(workdir, rel_file)
+    bazel_text = ""
+    if os.path.isfile(bazel_path):
+        try:
+            bazel_text = open(bazel_path, encoding="utf-8", errors="ignore").read()
+        except OSError:
+            pass
+    gen_gn_body = ""
+    gn_path = os.path.join(workdir, pkg_dir, "BUILD.gn")
+    if os.path.isfile(gn_path):
+        try:
+            gn_cur = open(gn_path, encoding="utf-8", errors="ignore").read()
+            if "BAZEL2GN SENTINEL" in gn_cur:
+                gen_gn_body = gn_cur.split("BAZEL2GN SENTINEL", 1)[1]
+        except OSError:
+            pass
+    for dep in missing_deps:
+        base_dep = dep.split("(", 1)[0].strip()
+        if f'"{base_dep}"' not in bazel_text and f'"{base_dep}"' not in gen_gn_body:
+            return False
+    return True
+
+
+# Verify whether a review_diff missing_sources finding only flags GN relative parent
+# paths (`../...`) or cross-package paths that resolve to the same workspace-relative
+# file path as canonical `//<owner_pkg>:<rel_path>` labels on the Bazel target.
+def is_verified_cross_package_sources(f):
+    import re
+
+    msg = f.get("message", "")
+    m = re.match(
+        r'^Target "([^"]+)" is missing source file\(s\) from BUILD\.gn:\s*(.+)$',
+        msg.strip(),
+    )
+    if not m:
+        return False
+    missing_srcs = [s.strip() for s in m.group(2).split(",") if s.strip()]
+    if not missing_srcs:
+        return False
+    rel_file = str(f.get("file", ""))
+    pkg_dir = os.path.dirname(rel_file).strip("/")
+    bazel_path = os.path.join(workdir, rel_file)
+    if not os.path.isfile(bazel_path):
+        return False
+    try:
+        bazel_text = open(bazel_path, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        return False
+    bz_resolved = set()
+    for raw_lbl in re.findall(r'"([^"]+)"', bazel_text):
+        s = raw_lbl.strip()
+        if not s or "$" in s or s.startswith("@"):
+            continue
+        if s.startswith("//"):
+            norm_b = os.path.normpath(s[2:].replace(":", "/")).strip("/")
+        else:
+            norm_b = os.path.normpath(os.path.join(pkg_dir, s.lstrip(":"))).strip("/")
+        if norm_b:
+            bz_resolved.add(norm_b)
+    for g in missing_srcs:
+        if g.startswith("//"):
+            norm_g = os.path.normpath(g[2:].replace(":", "/")).strip("/")
+        else:
+            norm_g = os.path.normpath(os.path.join(pkg_dir, g.lstrip(":"))).strip("/")
+        if not norm_g or norm_g not in bz_resolved:
+            return False
+    return True
+
+
+# Check whether a review_diff finding is a verified false positive for mapped/decomposed
+# target attributes, cross-package source labels, unit_test_parity aspect_hints,
+# bazel_fuchsia_package wrappers, or unmigrated ancestor registration packages.
+def is_benign_review_diff_finding(f):
+    f_pkg = os.path.dirname(str(f.get("file", ""))).strip("/")
+    if f_pkg and is_registration_only_bazel_pkg(f_pkg):
+        return True
+    cat = f.get("category", "")
+    msg = f.get("message", "")
+    if cat == "missing_sources" and is_verified_cross_package_sources(f):
+        return True
+    if cat == "unit_test_parity" and is_verified_unit_test_parity(f):
+        return True
+    if cat == "attribute_alignment":
+        if is_verified_target_attributes_alignment(f):
+            return True
+        if (
+            "Unusual rule mapping from fuchsia_package" in msg
+            or "Unusual rule mapping from bazel_fuchsia_package" in msg
+        ):
+            return True
+    return False
+
+
 def run_review_diff(existing_findings):
     planter_bin = find_planter_bin()
     if not planter_bin or not workdir:
@@ -1176,6 +1647,8 @@ def run_review_diff(existing_findings):
             continue
         f["source"] = "review_diff"
         f["severity"] = normalize_severity(f["severity"])
+        if is_benign_review_diff_finding(f):
+            f["severity"] = "INFO"
         key = (f["category"], f["file"], f["line"], f["message"])
         if key in seen:
             continue

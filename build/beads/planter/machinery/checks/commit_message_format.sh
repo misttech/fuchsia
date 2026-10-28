@@ -68,6 +68,68 @@ def add(category, line, message, remediation, severity="warning"):
         "remediation": remediation,
     })
 
+raw_dirs = [
+    d.strip().strip("/")
+    for d in re.split(r"[\s,]+", target_dir)
+    if d.strip().strip("/")
+]
+# build/secondary/<dir> is GN's overlay for //<dir> and must not get Bazel files
+# (gn_secondary_tree): its code migrates to //<dir> (e.g. //third_party/<name>).
+dirs = [d[len("build/secondary/"):] if d.startswith("build/secondary/") else d for d in raw_dirs]
+check_dirs = list(dict.fromkeys(raw_dirs + dirs))
+
+# Match a package path against the //dir or //.../<suffix> path in a commit subject.
+def matches_subject_dir(pkg, sdir):
+    if not pkg or not sdir:
+        return False
+    if sdir.startswith(".../"):
+        suf = sdir[4:]
+        return bool(suf) and (pkg == suf or pkg.endswith("/" + suf))
+    return pkg == sdir
+
+
+# Verify that a [bazel_migration] HEAD commit belongs to this task's target
+# directories rather than a stacked parent migration commit.
+def is_task_migration_head(head_sha, parent_sha, subj):
+    if not head_sha or not parent_sha or not subj.startswith("[bazel_migration]"):
+        return False
+    if not check_dirs:
+        return True
+    head_files = [f for f in git("diff", "--name-only", parent_sha, head_sha).splitlines() if f]
+    head_pkgs = {
+        os.path.dirname(f)
+        for f in head_files
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD.gn", "BUILD")
+    }
+    head_bazel_pkgs = {
+        os.path.dirname(f)
+        for f in head_files
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD")
+    }
+    untracked_bazel_pkgs = {
+        os.path.dirname(f)
+        for f in git("ls-files", "--others", "--exclude-standard", "--", *check_dirs).splitlines()
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD")
+    }
+    if untracked_bazel_pkgs and not (head_bazel_pkgs & set(check_dirs)):
+        return False
+    sdir = (
+        subj.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
+        if " //" in subj
+        else ""
+    )
+    subj_matches = bool(sdir) and any(matches_subject_dir(td, sdir) for td in check_dirs)
+    sdir_in_head = bool(sdir) and any(matches_subject_dir(hp, sdir) for hp in head_pkgs)
+    if sdir_in_head and not subj_matches and not (head_bazel_pkgs & set(check_dirs)):
+        return False
+    if head_pkgs:
+        return bool(head_pkgs & set(check_dirs)) or subj_matches
+    return (
+        any(f == td or f.startswith(td + "/") for td in check_dirs for f in head_files)
+        or subj_matches
+    )
+
+
 head = resolve_rev("HEAD")
 base_rev = resolve_rev(base)
 # In a jj colocated checkout, git HEAD stays at @- while the working-copy
@@ -76,6 +138,11 @@ if head and base_rev and head == base_rev and os.path.isdir(os.path.join(workdir
     at_rev = resolve_rev("@")
     if at_rev and at_rev != base_rev and git("log", "-1", "--format=%B", at_rev).strip():
         head = at_rev
+
+parent_rev = git("rev-parse", "--verify", f"{head}~1^{{commit}}") if head else ""
+head_subj = git("log", "-1", "--format=%s", head) if head else ""
+if is_task_migration_head(head, parent_rev, head_subj) and (not base_rev or base_rev == head):
+    base_rev = parent_rev
 
 # Advance a pre-rebase or pre-amend base revision to HEAD~1 (or the origin/main
 # merge-base) so upstream commits pulled in by `git rebase origin/main` or prior
@@ -95,8 +162,7 @@ def advance_rebased_base(cur_head, cur_base):
     except Exception:
         is_anc = True
     if not is_anc:
-        parent_rev = git("rev-parse", "--verify", f"{cur_head}~1^{{commit}}")
-        if parent_rev:
+        if parent_rev and is_task_migration_head(cur_head, parent_rev, head_subj):
             return parent_rev
     mb = git("merge-base", cur_head, "origin/main")
     if not (mb and mb != cur_base and mb != cur_head):
@@ -118,14 +184,6 @@ if head and base_rev and head != base_rev:
     msg = git("log", "-1", "--format=%B", head)
     lines = msg.splitlines()
     subject = lines[0] if lines else ""
-    raw_dirs = [
-        d.strip().strip("/")
-        for d in re.split(r"[\s,]+", target_dir)
-        if d.strip().strip("/")
-    ]
-    # build/secondary/<dir> is GN's overlay for //<dir> and must not get Bazel files
-    # (gn_secondary_tree): its code migrates to //<dir> (e.g. //third_party/<name>).
-    dirs = [d[len("build/secondary/"):] if d.startswith("build/secondary/") else d for d in raw_dirs]
     changed = [f for f in git("diff", "--name-only", base_rev, head).splitlines() if f]
     changed_dirs = [
         d for d in dirs if any(f == d or f.startswith(d + "/") for f in changed)
@@ -180,27 +238,85 @@ if head and base_rev and head != base_rev:
                  + ", ".join(moved) + ".")
 
     non_leaf_common = [t for t in common if t not in leaves]
+
+    # Build a single-line commit subject <= 65 chars by abbreviating leading path segments when needed.
+    def abbreviate_subject_path(prefix, rel_dir, limit=65):
+        full = f"{prefix} //{rel_dir}"
+        if len(full) <= limit:
+            return full
+        segs = [s for s in rel_dir.split("/") if s]
+        for i in range(1, len(segs)):
+            cand = f"{prefix} //.../{'/'.join(segs[i:])}"
+            if len(cand) <= limit:
+                return cand
+        return f"{prefix} //.../{segs[-1]}" if segs else full
+
+    if non_leaf_common:
+        tag0 = non_leaf_common[0]
+        tagged_full = f"[bazel_migration][{tag0}] //{first}"
+        untagged_full = f"[bazel_migration] //{first}"
+        if len(tagged_full) <= 65:
+            pref_subj = tagged_full
+            alt_subj = ""
+        elif len(untagged_full) <= 65:
+            pref_subj = untagged_full
+            alt_subj = abbreviate_subject_path(f"[bazel_migration][{tag0}]", first)
+        else:
+            pref_subj = abbreviate_subject_path(f"[bazel_migration][{tag0}]", first)
+            alt_subj = abbreviate_subject_path("[bazel_migration]", first)
+    else:
+        pref_subj = abbreviate_subject_path("[bazel_migration]", first)
+        alt_subj = ""
+    alt_note = f" (or '{alt_subj}')" if alt_subj and alt_subj != pref_subj else ""
     subj_path = (
-        subject.split(" //", 1)[1].split(":", 1)[0].strip("/")
+        subject.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
         if " //" in subject
         else ""
     )
-    m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] //\S+$", subject)
-    m_none = re.match(r"^\[bazel_migration\] //\S+$", subject)
+    m_tag = re.match(r"^\[bazel_migration\]\[([A-Za-z0-9_.\-]+)\] //\S+(?<![.,;:])$", subject)
+    m_none = re.match(r"^\[bazel_migration\] //\S+(?<![.,;:])$", subject)
     if not changed and not git("status", "--porcelain", "--ignore-submodules=all"):
         add("commit_subject_empty_change", 1,
             "The change modifies no file versus its parent, so nothing is migrated and the "
             "'[bazel_migration] //<migrated dir>' subject is not required.",
             "Do not announce a migration that did not happen: keep a subject that describes the commit and "
             "report the blocker and the steps it needs first in the summary. Once the change migrates "
-            f"targets, use '[bazel_migration][<subsystem>] //{first}'. {hint}", severity="info")
+            f"targets, use '{pref_subj}'{alt_note}. {hint}", severity="info")
     elif not (m_tag or m_none):
         add("commit_subject_format", 1,
             f"Commit subject {subject!r} does not follow '[bazel_migration][<subsystem>] //<migrated dir>' "
-            "(or '[bazel_migration] //<migrated dir>' when there is no established subsystem).",
-            f"Use '[bazel_migration][<subsystem>] //{first}' with <subsystem> taken from the directory's git log "
-            "history (prefer the broader subsystem over a leaf directory or crate name); if the history has no "
-            f"recurring tag and no parent directory is a subsystem, use '[bazel_migration] //{first}'. {hint}")
+            "(or '[bazel_migration] //<migrated dir>' when there is no established subsystem, "
+            "without trailing punctuation).",
+            f"Use '{pref_subj}'{alt_note} on a single unwrapped line <= 65 characters (without a trailing period). "
+            "When adding `[<subsystem>]` would push the full `//<dir>` path over 65 characters, omit `[<subsystem>]` "
+            "or abbreviate leading path segments as `//.../<suffix>` rather than wrapping `//<dir>` onto the next line. "
+            f"{hint}", severity="error")
+    elif len(subject) > 65:
+        subj_tag = m_tag.group(1) if m_tag else (non_leaf_common[0] if non_leaf_common else "")
+        over_untagged = f"[bazel_migration] //{first}"
+        if len(over_untagged) <= 65:
+            over_pref = over_untagged
+            over_alt = (
+                abbreviate_subject_path(f"[bazel_migration][{subj_tag}]", first)
+                if subj_tag
+                else ""
+            )
+        elif subj_tag:
+            over_pref = abbreviate_subject_path(f"[bazel_migration][{subj_tag}]", first)
+            over_alt = abbreviate_subject_path("[bazel_migration]", first)
+        else:
+            over_pref = abbreviate_subject_path("[bazel_migration]", first)
+            over_alt = ""
+        over_alt_note = f" or `{over_alt}`" if over_alt and over_alt != over_pref else ""
+        add(
+            "commit_subject_format", 1,
+            f"Commit subject `{subject}` is {len(subject)} characters, exceeding the "
+            "65-character limit (which causes subject line wrapping/truncation).",
+            f"Use `{over_pref}`{over_alt_note} on a single unwrapped line <= 65 characters "
+            "(omit `[<subsystem>]` or abbreviate leading path segments as `//.../<suffix>` "
+            "instead of wrapping `//<dir>` onto the next line).",
+            severity="error",
+        )
     elif (
         len(dirs) == 1
         and subj_path
@@ -208,18 +324,14 @@ if head and base_rev and head != base_rev:
         and first.startswith(subj_path + "/")
         and f"{subj_path}/BUILD.bazel" not in changed
     ):
-        pref_subj = (
-            f"[bazel_migration][{non_leaf_common[0]}] //{first}"
-            if non_leaf_common and len(f"[bazel_migration][{non_leaf_common[0]}] //{first}") <= 65
-            else f"[bazel_migration] //{first}"
-        )
         add(
             "commit_subject_format",
             1,
             f"Commit subject `{subject}` names the parent directory `//{subj_path}` instead of "
             f"the migrated directory `//{first}`.",
-            f"Use `{pref_subj}` (omit `[<subsystem>]` when adding it would push the full "
-            f"`//{first}` subject over 65 characters).",
+            f"Use `{pref_subj}`{alt_note} (omit `[<subsystem>]` or abbreviate with `//.../` "
+            f"when adding `[<subsystem>]` would push the full `//{first}` subject over "
+            "65 characters).",
             severity="error",
         )
     elif (
@@ -228,9 +340,9 @@ if head and base_rev and head != base_rev:
         and m_tag.group(1).lower() not in dir_segments
     ):
         rec_subj = (
-            f"[bazel_migration][{non_leaf_common[0]}] //{first}"
+            abbreviate_subject_path(f"[bazel_migration][{non_leaf_common[0]}]", first)
             if non_leaf_common
-            else f"[bazel_migration] //{first}"
+            else abbreviate_subject_path("[bazel_migration]", first)
         )
         add(
             "commit_subject_sweep_tag",
@@ -245,7 +357,7 @@ if head and base_rev and head != base_rev:
             f"Commit subject tag [{m_tag.group(1)}] is just the leaf directory name, which may be too narrow to be "
             "a subsystem tag.",
             f"Keep it only if the history shows it is an established subsystem; otherwise, with no parent "
-            f"subsystem, use '[bazel_migration] //{first}'. {hint}")
+            f"subsystem, use '{abbreviate_subject_path('[bazel_migration]', first)}'. {hint}")
     elif (
         m_none
         and non_leaf_common
@@ -253,7 +365,7 @@ if head and base_rev and head != base_rev:
     ):
         add("commit_subject_missing_tag", 1,
             "Commit subject has no subsystem tag although the directory's git log uses one.",
-            f"Use '[bazel_migration][<subsystem>] //{first}'. {hint}")
+            f"Use '{pref_subj}'{alt_note}. {hint}")
 
     test_lines = [(i + 1, l) for i, l in enumerate(lines) if l.startswith("Test:")]
     for ln, l in test_lines:

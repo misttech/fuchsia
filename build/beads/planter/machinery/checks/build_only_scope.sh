@@ -27,7 +27,9 @@ set -euo pipefail
 #     GN build graph (`<build dir>/ninja_outputs.json` has no targets for that package), when
 #     modified solely to repair pre-existing compile bitrot (hard syntax, type, or removed-API
 #     errors, with no lint-suppression annotations)
-#   - OWNERS / README.md are NOT allowed implicitly; they are not needed for migration.
+#   - an existing `<pkg>/README.md` in a migrated package directory when every modified
+#     (`+`/`-`) line only updates a target label reference (`//<pkg>...`) to match the
+#     migrated BUILD.gn / BUILD.bazel targets; other README.md or OWNERS edits are not allowed.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -78,8 +80,64 @@ def git_lines(args):
 
 changed = set()
 # The task's change: everything since PLANTER_CHANGE_BASE ("HEAD~1" when HEAD is the task's own
-# commit, "HEAD" when HEAD is unrelated upstream history) plus untracked files.
+# commit, "HEAD" when HEAD is unrelated upstream history or a stacked parent commit) plus untracked files.
 change_base = os.environ.get("PLANTER_CHANGE_BASE", "").strip() or "HEAD"
+raw_tdirs = re.split(
+    r"[\s,]+",
+    (os.environ.get("PLANTER_TARGET_DIRS", "") or target_dir).strip(),
+)
+check_dirs = []
+for d in raw_tdirs:
+    nd = d.strip().strip("/")
+    if nd:
+        check_dirs.append(nd)
+        if nd.startswith("build/secondary/"):
+            check_dirs.append(nd[len("build/secondary/"):])
+head_subj = (git_lines(["log", "-1", "--format=%s", "HEAD"]) or [""])[0]
+if head_subj.startswith("[bazel_migration]"):
+    head_sha = (git_lines(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) or [""])[0]
+    parent_sha = (git_lines(["rev-parse", "--verify", "--quiet", "HEAD~1^{commit}"]) or [""])[0]
+    base_sha = (
+        git_lines(["rev-parse", "--verify", "--quiet", f"{change_base}^{{commit}}"]) or [""]
+    )[0]
+    head_files = git_lines(["diff", "--name-only", "HEAD~1", "HEAD"]) if parent_sha else []
+    head_pkgs = {
+        os.path.dirname(f)
+        for f in head_files
+        if os.path.basename(f) in ("BUILD.bazel", "BUILD.gn", "BUILD")
+    }
+    sdir = (
+        head_subj.split(" //", 1)[1].split(":", 1)[0].strip().rstrip(".").strip("/")
+        if " //" in head_subj
+        else ""
+    )
+    subj_matches = bool(sdir) and any(
+        (td == sdir[4:] or td.endswith("/" + sdir[4:]))
+        if sdir.startswith(".../")
+        else (sdir == td)
+        for td in check_dirs
+    )
+    is_task_head = not check_dirs or (
+        not (sdir and sdir in head_pkgs and not subj_matches)
+        and (
+            (bool(head_pkgs & set(check_dirs)) or subj_matches)
+            if head_pkgs
+            else (
+                any(f == td or f.startswith(td + "/") for td in check_dirs for f in head_files)
+                or subj_matches
+            )
+        )
+    )
+    if parent_sha and is_task_head and (change_base == "HEAD" or base_sha == head_sha):
+        change_base = "HEAD~1"
+    elif parent_sha and is_task_head and base_sha and base_sha != parent_sha:
+        rc = subprocess.run(
+            ["git", "-C", workdir, "merge-base", "--is-ancestor", base_sha, parent_sha],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        if rc == 0:
+            change_base = "HEAD~1"
 changed.update(git_lines(["diff", "--name-only", change_base]))
 changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 
@@ -196,11 +254,35 @@ def check_unbuilt_target_bitrot_fix(path: str, unbuilt_dirs: set):
 
 unbuilt_dirs = find_unbuilt_gn_packages()
 bitrot_fixed_dirs = set()
+
+
+# Check whether an existing README.md inside a migrated package directory only updates
+# target label references (`//<pkg>...`) to match the migrated BUILD.gn/BUILD.bazel targets.
+def is_package_readme_label_update(path: str) -> bool:
+    if path in added or os.path.basename(path) != "README.md":
+        return False
+    pkg = os.path.dirname(path).strip("/")
+    if not pkg or not os.path.isfile(os.path.join(workdir, pkg, "BUILD.bazel")):
+        return False
+    if f"{pkg}/BUILD.bazel" not in changed and f"{pkg}/BUILD.gn" not in changed:
+        return False
+    diff_lines = git_lines(["diff", "-U0", change_base, "--", path])
+    mod_lines = [
+        l[1:].strip()
+        for l in diff_lines
+        if (l.startswith("+") and not l.startswith("+++"))
+        or (l.startswith("-") and not l.startswith("---"))
+    ]
+    return bool(mod_lines) and all(f"//{pkg}" in l for l in mod_lines)
 findings = []
 
 # Emit findings for changed non-build files and unbuilt GN package scope notes.
 for path in sorted(changed):
-    if is_build_file(path) or is_new_test_manifest(path):
+    if (
+        is_build_file(path)
+        or is_new_test_manifest(path)
+        or is_package_readme_label_update(path)
+    ):
         continue
     bitrot_dir = check_unbuilt_target_bitrot_fix(path, unbuilt_dirs)
     if bitrot_dir is not None:

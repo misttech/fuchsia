@@ -1869,7 +1869,151 @@ for rel_path, full_path in bazel_files:
                 return ""
         return gn_target
 
+    # Check for redundant @bazel2gn:path_overwrite / @bazel2gn:raw_overwrite comments on
+    # targets that bazel2gn does not translate or on third-party labels already mapped in
+    # build/tools/bazel2gn/third_party_target_map.json.
+    untranslated_bazel2gn_rules = {
+        "cc_test",
+        "exports_files",
+        "filegroup",
+        "fx_package",
+        "fx_packaged_binary",
+        "fx_test",
+        "fx_test_component",
+        "fx_unittest_component",
+        "host_cc_test",
+        "host_py_test",
+        "host_shac_test",
+        "host_test",
+        "test_suite",
+        "wrap_host_rust_test",
+    }
+
+    def check_redundant_bazel2gn_overwrites() -> set[int]:
+        tp_map: dict[str, str] = {}
+        tp_path = os.path.join(
+            workdir, "build/tools/bazel2gn/third_party_target_map.json"
+        )
+        try:
+            with open(tp_path, encoding="utf-8") as tf:
+                raw_tp = json.load(tf)
+            if isinstance(raw_tp, dict):
+                tp_map = {str(k).strip(): str(v).strip() for k, v in raw_tp.items()}
+        except OSError:
+            pass
+
+        untranslated_spans: list[tuple[int, int, str, str, bool]] = []
+        for stmt in getattr(tree, "body", ()):
+            if not (
+                isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Call)
+                and isinstance(stmt.value.func, ast.Name)
+            ):
+                continue
+            rule_name = stmt.value.func.id
+            end_line = getattr(stmt, "end_lineno", stmt.lineno)
+            t_name = ""
+            for kw in stmt.value.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    t_name = kw.value.value
+                    break
+            is_skipped = False
+            idx = stmt.lineno - 2
+            while idx >= 0:
+                s_line = src_lines[idx].strip()
+                if not s_line:
+                    idx -= 1
+                    continue
+                if s_line.startswith("#"):
+                    if "@bazel2gn:skip" in s_line:
+                        is_skipped = True
+                    idx -= 1
+                    continue
+                break
+            if rule_name in untranslated_bazel2gn_rules or is_skipped:
+                untranslated_spans.append(
+                    (stmt.lineno, end_line, rule_name, t_name, is_skipped)
+                )
+
+        flagged: set[int] = set()
+        for lno, ltxt in enumerate(src_lines, 1):
+            ov_m = re.search(
+                r"#\s*@bazel2gn:(path_overwrite|raw_overwrite):(.+)$", ltxt
+            )
+            if not ov_m:
+                continue
+            if base_bazel_flat and re.sub(r"\s+", "", ltxt) in base_bazel_flat:
+                continue
+            directive = ov_m.group(1)
+            gn_spec_val = ov_m.group(2).strip()
+            po_match = re.match(
+                r'^\s*"([^"]+)"\s*,\s*#\s*@bazel2gn:path_overwrite:(.+)$', ltxt
+            )
+            bz_lbl = po_match.group(1).strip() if po_match else ""
+            gn_lbls = [
+                tok.strip().strip('"')
+                for tok in gn_spec_val.split('", "')
+                if tok.strip().strip('"')
+            ]
+            mapped_gn = tp_map.get(bz_lbl, "") if bz_lbl else ""
+            is_tp_mapped = (
+                directive == "path_overwrite"
+                and len(gn_lbls) == 1
+                and bool(mapped_gn)
+                and gn_lbls[0] == mapped_gn
+            )
+            enclosing = next(
+                (sp for sp in untranslated_spans if sp[0] <= lno <= sp[1]),
+                None,
+            )
+            if enclosing is None and not is_tp_mapped:
+                continue
+
+            reasons: list[str] = []
+            if enclosing is not None:
+                _, _, r_name, t_name, skipped = enclosing
+                tgt_desc = (
+                    f'`{r_name}(name = "{t_name}")`' if t_name else f"`{r_name}(...)`"
+                )
+                if skipped:
+                    reasons.append(f"{tgt_desc} is marked `# @bazel2gn:skip`")
+                else:
+                    reasons.append(f"`bazel2gn` does not translate `{r_name}` targets")
+            if is_tp_mapped:
+                reasons.append(
+                    "`build/tools/bazel2gn/third_party_target_map.json` already maps "
+                    f'`"{bz_lbl}"` to `"{mapped_gn}"`'
+                )
+
+            flagged.add(lno)
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "redundant_bazel2gn_overwrite",
+                "severity": "error",
+                "file": rel_path,
+                "line": lno,
+                "message": (
+                    f"Line {lno} of '{rel_path}' has a redundant "
+                    f"`# @bazel2gn:{directive}:{gn_spec_val}` annotation because "
+                    + " and ".join(reasons)
+                    + "."
+                ),
+                "remediation": (
+                    f"Remove the `# @bazel2gn:{directive}:{gn_spec_val}` comment on "
+                    f"line {lno} of '{rel_path}'."
+                ),
+            })
+        return flagged
+
+    redundant_overwrite_lines = check_redundant_bazel2gn_overwrites()
+
     for lineno, line_txt in enumerate(src_lines, 1):
+        if lineno in redundant_overwrite_lines:
+            continue
         po_m = re.match(r'^\s*"([^"]+)"\s*,\s*#\s*@bazel2gn:path_overwrite:(.+)$', line_txt)
         if not po_m:
             continue

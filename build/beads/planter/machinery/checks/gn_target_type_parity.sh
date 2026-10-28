@@ -105,6 +105,10 @@ GN_BAZEL_INPUT_TEMPLATES = {
     "bazel_input_file",
     "bazel_input_directory",
 }
+GN_PACKAGE_TEMPLATES = {
+    "fuchsia_package",
+    "fuchsia_package_with_single_component",
+}
 GN_CONVERTIBLE_SYMMETRY_TEMPLATES = {
     "static_library",
     "source_set",
@@ -115,6 +119,8 @@ GN_CONVERTIBLE_SYMMETRY_TEMPLATES = {
     "go_library",
     "python_library",
     "fidl",
+    "ffx_plugin",
+    "ffx_tool",
     "sdk_source_set",
     "sdk_static_library",
     "sdk_shared_library",
@@ -460,6 +466,96 @@ def alwayslink_finding(label, name, pkg, bazel_rel, rule, alwayslink, line, old_
     return None
 
 
+# Check whether a pre-existing BUILD.bazel outside the migrated target directories was
+# only modified to register tests in test_suite(), export files via exports_files(), or
+# update target visibility allowlists, without dual-build migrating that package.
+_REG_ONLY_PKG_CACHE = {}
+
+
+def is_registration_only_bazel_pkg(pkg_dir):
+    pkg_dir = pkg_dir.strip("/")
+    if pkg_dir in _REG_ONLY_PKG_CACHE:
+        return _REG_ONLY_PKG_CACHE[pkg_dir]
+    target_pkgs = {
+        d.strip().lstrip("/").rstrip("/")
+        for d in os.environ.get("PLANTER_TARGET_DIRS", "").split()
+        if d.strip()
+    }
+    if target_dir:
+        target_pkgs.add(target_dir)
+    if not pkg_dir or pkg_dir in target_pkgs:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    gn_rel = f"{pkg_dir}/BUILD.gn"
+    gn_cur = new_text(gn_rel)
+    if gn_cur and "BAZEL2GN SENTINEL" in gn_cur:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    bazel_rel = f"{pkg_dir}/BUILD.bazel"
+    cur_src = new_text(bazel_rel)
+    if not cur_src:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    prev_src = None
+    for ref in dict.fromkeys([change_base, "HEAD", "HEAD~1"]):
+        if not ref:
+            continue
+        try:
+            cand = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{ref}:{bazel_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            if cand == cur_src and ref != "HEAD~1":
+                continue
+            prev_src = cand
+            break
+        except Exception:
+            continue
+    if prev_src is None:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    try:
+        import ast
+
+        prev_tree = ast.parse(prev_src, filename=bazel_rel)
+        cur_tree = ast.parse(cur_src, filename=bazel_rel)
+    except Exception:
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+
+    def strip_vis_dump(stmt):
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            return None
+        call = stmt.value
+        kept = [(kw.arg, ast.dump(kw.value)) for kw in call.keywords if kw.arg != "visibility"]
+        return (ast.dump(call.func), tuple(ast.dump(a) for a in call.args), tuple(kept))
+
+    prev_dumps = {ast.dump(s) for s in prev_tree.body}
+    prev_stripped = {d for d in (strip_vis_dump(s) for s in prev_tree.body) if d is not None}
+    for stmt in cur_tree.body:
+        if ast.dump(stmt) in prev_dumps:
+            continue
+        if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+            _REG_ONLY_PKG_CACHE[pkg_dir] = False
+            return False
+        call = stmt.value
+        fn = (
+            call.func.id
+            if isinstance(call.func, ast.Name)
+            else (call.func.attr if isinstance(call.func, ast.Attribute) else "")
+        )
+        if (
+            fn in ("test_suite", "exports_files", "stamp_group", "filegroup")
+            or strip_vis_dump(stmt) in prev_stripped
+        ):
+            continue
+        _REG_ONLY_PKG_CACHE[pkg_dir] = False
+        return False
+    _REG_ONLY_PKG_CACHE[pkg_dir] = True
+    return True
+
+
 EXCLUDED_GLOBAL_DIRS = (
     "bundles/assembly",
     "build/bazel",
@@ -474,6 +570,8 @@ changed_set = set(changed_all)
 for p in changed_all:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
+        if d and is_registration_only_bazel_pkg(d):
+            continue
         if (
             d
             and d not in ("tools", "src", "sdk")
@@ -563,6 +661,15 @@ for pkg in sorted(candidate_dirs):
                 and new_types == {"group"}
                 and old_types <= GN_BAZEL_INPUT_TEMPLATES | {"group"}
             )
+            # Check whether a GN fuchsia_package or fuchsia_package_with_single_component
+            # was migrated to fx_package in BUILD.bazel while retaining a thin
+            # bazel_fuchsia_package wrapper (or forwarding group) in BUILD.gn.
+            is_fuchsia_package_conversion = (
+                bool(bazel_text)
+                and new_types <= {"bazel_fuchsia_package", "group"}
+                and old_types <= GN_PACKAGE_TEMPLATES | {"group"}
+                and any("bazel_fuchsia_package" in t for t, _ in new.values())
+            )
             # Check whether a rustc_library_with_features template expanded into explicit
             # rustc_library targets for the base target and all feature_sets variants.
             is_feature_set_expansion = False
@@ -631,6 +738,7 @@ for pkg in sorted(candidate_dirs):
                 or is_test_suite_conversion
                 or is_host_tool_conversion
                 or is_bazel_input_transition
+                or is_fuchsia_package_conversion
                 or is_feature_set_expansion
             ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))

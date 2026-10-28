@@ -767,6 +767,48 @@ is_test_pkg = (
     or "/testing/" in target_pkg
 )
 
+TEST_OR_BENCH_CALLER_SEGMENTS = {
+    "test",
+    "tests",
+    "testing",
+    "bench",
+    "benchmarks",
+    "test_runners",
+    "stress",
+    "e2e",
+}
+TEST_OR_BENCH_CALLER_SUFFIXES = (
+    "_test",
+    "_tests",
+    "_bench",
+    "_benchmarks",
+    "_stress",
+)
+
+
+# Check whether a caller package path is a test, benchmark, stress-test, or test-runner package.
+def is_test_or_bench_caller_pkg(pkg):
+    parts = [seg for seg in pkg.strip("/").split("/") if seg]
+    return any(
+        seg in TEST_OR_BENCH_CALLER_SEGMENTS
+        or seg.endswith(TEST_OR_BENCH_CALLER_SUFFIXES)
+        for seg in parts
+    )
+
+
+# Check whether all external caller packages across subsystems are test/benchmark packages.
+def has_only_test_or_bench_rdeps(rdep_pkgs):
+    pkgs = [
+        p.strip("/")
+        for p in rdep_pkgs
+        if p.strip("/")
+        and p.strip("/") != target_pkg
+        and p.strip("/") != VG_ROOT
+        and not p.strip("/").startswith(VG_ROOT + "/")
+    ]
+    return bool(pkgs) and all(is_test_or_bench_caller_pkg(p) for p in pkgs)
+
+
 def collapse_src_rollup_visibility(rdep_pkgs):
     raw_pkgs = sorted(set(p.strip("/") for p in rdep_pkgs if p.strip("/") and p.strip("/") != target_pkg))
     if not raw_pkgs:
@@ -944,6 +986,11 @@ def recommend_visibility(rdep_pkgs, is_test_support=False, target_name=None):
         preserved = get_preserved_gn_visibility(target_name, pkgs)
         if preserved:
             return preserved
+    is_shared_test_bench = is_test_support or (
+        target_name not in non_gn_synced_targets and has_only_test_or_bench_rdeps(pkgs)
+    )
+    if is_shared_test_bench and len(get_distinct_areas(pkgs)) >= 2:
+        return ["//:__subpackages__"]
     if globally_used or len(narrow) > 8:
         rollup = recommend_area_rollup_visibility(pkgs)
         distinct_areas = get_distinct_areas(pkgs)
@@ -956,8 +1003,6 @@ def recommend_visibility(rdep_pkgs, is_test_support=False, target_name=None):
             return ["//:__subpackages__"]
         if len(rollup) <= len(narrow):
             return rollup
-    if is_test_support and len(get_distinct_areas(pkgs)) >= 2:
-        return ["//:__subpackages__"]
     return narrow
 
 print(json.dumps({
