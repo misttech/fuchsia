@@ -472,7 +472,11 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
   if (std::holds_alternative<ShuttingDown>(state_)) {
     // We're already shutting down, so we can't configure the endpoints, no-op
     // succeed.
-    fdf::warn("Received configured = {}, but we're shutting down", configured);
+    if (configured) {
+      fdf::warn("Received configured = true, but we're shutting down");
+    } else {
+      fdf::debug("Received configured = false while shutting down");
+    }
     completer.Reply(zx::ok());
     return;
   }

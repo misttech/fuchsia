@@ -1155,6 +1155,31 @@ TEST_F(VsockUsbTest, TeardownRace) {
   driver_test().runtime().RunUntil([&]() { return shutdown_done->load(); });
 }
 
+// Verifies that SetConfigured(false) and SetConfigured(true) both reply ZX_OK
+// without configuring or disabling endpoints when the driver is shutting down.
+TEST_F(VsockUsbTest, SetConfiguredWhileShuttingDown) {
+  ConfigureDevice();
+
+  auto shutdown_done = std::make_shared<std::atomic<bool>>(false);
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    VsockUsbTestHelper::Shutdown(driver, [shutdown_done]() { shutdown_done->store(true); });
+  });
+
+  fidl::Result uncfg_res = function_client_->SetConfigured({{
+      .configured = false,
+      .speed = fdescriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(uncfg_res.is_ok()) << uncfg_res.error_value().FormatDescription();
+
+  fidl::Result cfg_res = function_client_->SetConfigured({{
+      .configured = true,
+      .speed = fdescriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(cfg_res.is_ok()) << cfg_res.error_value().FormatDescription();
+
+  driver_test().runtime().RunUntil([&]() { return shutdown_done->load(); });
+}
+
 // Tests that multiple concurrent or post-shutdown callbacks registered with Shutdown() are all
 // invoked reliably without dropping completers.
 TEST_F(VsockUsbTest, MultipleShutdownCallbacks) {
