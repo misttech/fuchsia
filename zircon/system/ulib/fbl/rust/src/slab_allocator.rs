@@ -785,7 +785,6 @@ mod tests {
     use core::cmp::min;
     use core::ptr::write;
     use core::sync::atomic::{AtomicUsize, Ordering};
-    use lock_api::RawMutex as _;
     use pin_init::stack_pin_init;
     extern crate alloc;
 

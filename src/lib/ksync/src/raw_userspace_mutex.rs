@@ -16,6 +16,9 @@ impl Default for RawMutex {
 }
 
 impl RawMutex {
+    #[allow(clippy::declare_interior_mutable_const)]
+    pub const INIT: Self = Self::const_init(core::ptr::null());
+
     pub const fn const_init(_class_id: *const core::ffi::c_void) -> Self {
         Self(<fuchsia_sync::RawMutex as lock_api::RawMutex>::INIT)
     }

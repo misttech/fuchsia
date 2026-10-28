@@ -45,7 +45,6 @@ rustc_library("fbl") {
   test_deps = [
     ":fbl-bindings",
     ":test_support",
-    "//third_party/rust_crates:lock_api",
   ]
   deps = [
     "fbl-macros",
