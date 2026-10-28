@@ -1046,6 +1046,11 @@ function _metrics-service {
 }
 
 function _send-signal-if-new-internal-user {
+  # Like the other functions that run in the background, redirect stdout and
+  # stderr away from the parent process, so that callers capturing fx's output
+  # (e.g. with `$(fx ...)`) don't have to wait for the signal to be sent.
+  exec 1>/dev/null
+  exec 2>/dev/null
   local base_dir="$(_get-metrics-config-dir)"
   local metrics_config_internal="${base_dir}/analytics-status-internal"
   # For internal new users, send a new user signal with only UUID

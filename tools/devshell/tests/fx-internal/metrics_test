@@ -760,4 +760,28 @@ EOF
   BT_EXPECT_FILE_CONTAINS_SUBSTRING "${metrics_log}" '"exit_status":"0"'
 }
 
+TEST_fx_does_not_wait_for_new_user_signal() {
+  # fx sends a "new_user" signal from the background for internal users who
+  # haven't opted in or out of analytics yet. Disable fx metrics instead of not
+  # configuring them at all, so that the signal gets logged.
+  set_up_environment "0" "N" "N" "1"
+  export HOSTNAME
+  # Reuse an existing analytics UUID instead of generating one with uuidgen.
+  echo "TESTUUID" >"${BT_TEMP_DIR}/Fuchsia/metrics/uuid"
+  local release curl_outcome
+  release="${BT_TEMP_DIR}/release"
+  curl_outcome="${BT_TEMP_DIR}/curl_outcome"
+  # Make sending the signal finish only once fx has returned.
+  wait_for_release_side_effect "${release}" "${curl_outcome}" \
+    >"${mycurl}.mock_side_effects"
+
+  # Like a caller capturing fx's output with $(fx ...), cat only exits once
+  # nothing keeps fx's stdout and stderr open.
+  ${fx} build 2>&1 | cat >/dev/null
+  touch "${release}"
+
+  BT_EXPECT wait_for_logged_event "new_user"
+  BT_EXPECT_FILE_CONTAINS "${curl_outcome}" "released"
+}
+
 BT_RUN_TESTS "$@"
