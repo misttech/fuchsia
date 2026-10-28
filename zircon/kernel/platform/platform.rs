@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod crashlog;
 pub mod debug;
 pub mod efi;
 pub mod efi_bootbyte;
@@ -10,7 +9,6 @@ pub mod efi_crashlog;
 mod efi_ffi;
 pub mod halt_helper;
 pub mod halt_token;
-pub mod mapped_crashlog;
 pub mod power;
 pub mod timer;
 

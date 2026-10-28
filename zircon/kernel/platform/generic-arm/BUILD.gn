@@ -4,18 +4,6 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//zircon/kernel/kernel_rust_mod.gni")
-
-kernel_rust_mod("generic-arm-rs") {
-  output_name = "generic_arm"
-  source_root = "platform.rs"
-  sources = [ "platform.rs" ]
-  deps = [
-    "//src/lib/lazy_init:lazy_init_rs",
-    "//src/lib/zr",
-  ]
-}
-
 source_set("generic-arm") {
   sources = [
     "dev-init.cc",
@@ -25,7 +13,6 @@ source_set("generic-arm") {
   ]
 
   deps = [
-    ":generic-arm-rs",
     "//sdk/lib/zbi-format",
     "//zircon/kernel/dev/hdcp/amlogic_s912",
     "//zircon/kernel/dev/hw_rng",
@@ -64,6 +51,7 @@ source_set("generic-arm") {
     "//zircon/kernel/platform:headers",
     "//zircon/kernel/vm",
     "//zircon/system/ulib/explicit-memory",
+    "//zircon/system/ulib/ram-crashlog",
     "//zircon/system/ulib/uart",
   ]
 }

@@ -21,7 +21,6 @@ kernel_rust_mod("generic-riscv64-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kprint",
-    "//src/lib/lazy_init:lazy_init_rs",
     "//src/lib/zr",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/debug",
@@ -35,11 +34,13 @@ source_set("generic-riscv64") {
   sources = [ "generic_riscv64_ffi.cc" ]
   deps = [
     ":generic-riscv64-rs",
+    "//src/lib/lazy_init",
     "//zircon/kernel/dev/interrupt/plic",
     "//zircon/kernel/dev/pdev/power",
     "//zircon/kernel/lib/topology",
     "//zircon/kernel/phys/handoff",
     "//zircon/kernel/platform:headers",
+    "//zircon/system/ulib/ram-crashlog",
   ]
 
   public_deps = [ "//zircon/system/ulib/affine" ]

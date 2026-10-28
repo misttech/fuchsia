@@ -4,27 +4,39 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <stddef.h>
+#include <kernel/ffi.h>
+#include <platform/crashlog.h>
 
-#include <efi/runtime-services.h>
-#include <efi/types.h>
-#include <efi/zircon.h>
-#include <ktl/type_traits.h>
-#include <platform/efi.h>
-#include <ram-crashlog/ram-crashlog.h>
+extern "C" {
 
-static_assert(sizeof(ram_crashlog_v1_t) == 72);
-static_assert(sizeof(recovered_ram_crashlog_t) == 40 && alignof(recovered_ram_crashlog_t) == 8);
-static_assert(offsetof(recovered_ram_crashlog_t, uptime) == 0);
-static_assert(offsetof(recovered_ram_crashlog_t, runtime) == 8);
-static_assert(offsetof(recovered_ram_crashlog_t, reason) == 16);
-static_assert(offsetof(recovered_ram_crashlog_t, payload_valid) == 20);
-static_assert(offsetof(recovered_ram_crashlog_t, payload) == 24);
-static_assert(offsetof(recovered_ram_crashlog_t, payload_len) == 32);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_platform_crashlog_has_non_trivial_impl() {
+  return PlatformCrashlog::HasNonTrivialImpl();
+}
 
-static_assert(sizeof(efi_guid) == 16 && alignof(efi_guid) == 4);
-static_assert(ktl::is_standard_layout_v<EfiServicesActivation>);
-static_assert(sizeof(EfiServicesActivation) == 16 && alignof(EfiServicesActivation) == 8);
-static_assert(ZIRCON_CRASHLOG_EFIATTR == 0x7);  // NOLINT(bugprone-signed-bitwise)
-static_assert(EFI_SUCCESS == 0);
-static_assert(EFI_NOT_FOUND == (EFI_ERROR_MASK | 14u));  // NOLINT(bugprone-signed-bitwise)
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE PlatformCrashlog::Interface* cpp_platform_crashlog_get() {
+  return &PlatformCrashlog::Get();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_platform_crashlog_enable_crashlog_uptime_updates(
+    PlatformCrashlog::Interface* crashlog, bool enabled) {
+  crashlog->EnableCrashlogUptimeUpdates(enabled);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE char* cpp_platform_crashlog_get_render_target(
+    PlatformCrashlog::Interface* crashlog, size_t* out_len) {
+  ktl::span<char> target = crashlog->GetRenderTarget();
+  *out_len = target.size();
+  return target.data();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_platform_crashlog_finalize(PlatformCrashlog::Interface* crashlog,
+                                                      zircon_crash_reason_t reason, size_t amt) {
+  crashlog->Finalize(reason, amt);
+}
+
+}  // extern "C"

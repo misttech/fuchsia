@@ -4,15 +4,16 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::userboot_init;
+use super::{VmoBuffer, userboot_init};
 use crate::object::HandleOwner;
 use crate::vm::vm_object::VmObject;
 use core::ffi::c_void;
+use core::marker::PhantomData;
 use core::mem::{MaybeUninit, take};
 use core::ops::Deref;
-use core::ptr::{drop_in_place, null_mut, slice_from_raw_parts_mut};
+use core::ptr::{NonNull, drop_in_place, from_mut, null_mut, slice_from_raw_parts_mut};
+use core::slice;
 use fbl::RefPtr;
-use libc::stdio::FILE;
 use zr::{slice_from_raw_parts, static_assert_size_and_align};
 use zx_types::ZX_MAX_NAME_LEN;
 
@@ -149,8 +150,57 @@ pub struct HandoffEnd {
 
 static_assert_size_and_align!(HandoffEnd, 176, 8);
 
-pub fn boot_options_show(defaults: bool, out: &FILE) {
-    // SAFETY: `out` points to a valid `FILE` for the duration of the call.
+#[repr(C)]
+pub struct File<'a> {
+    write: unsafe extern "C" fn(NonNull<c_void>, *const u8, usize) -> i32,
+    ptr: NonNull<c_void>,
+    _marker: PhantomData<&'a mut ()>,
+}
+
+static_assert_size_and_align!(File<'_>, 16, 8);
+
+impl<'a> File<'a> {
+    pub fn new(writer: &'a mut VmoBuffer) -> Self {
+        /// # Safety
+        ///
+        /// `ptr` must point to a valid `VmoBuffer` and `str` must be null or point to `len`
+        /// readable bytes.
+        unsafe extern "C" fn trampoline(ptr: NonNull<c_void>, str: *const u8, len: usize) -> i32 {
+            // SAFETY: `ptr` was created from `&mut VmoBuffer` in `File::new`. When `str` is
+            // non-null, `core::slice::from_raw_parts` preserves the valid C++ kernel pointer even
+            // when `len == 0` so `VmObjectPaged::Write`'s `is_kernel_address` check succeeds.
+            let (writer, slice) = unsafe {
+                let slice = if str.is_null() { &[] } else { slice::from_raw_parts(str, len) };
+                (&mut *ptr.as_ptr().cast::<VmoBuffer>(), slice)
+            };
+            writer.write(slice)
+        }
+
+        Self { write: trampoline, ptr: NonNull::from(writer).cast(), _marker: PhantomData }
+    }
+}
+
+pub struct PlatformCrashlog;
+
+impl PlatformCrashlog {
+    pub fn get() -> Self {
+        Self
+    }
+
+    pub fn recover(&self, tgt: Option<&mut File<'_>>) -> usize {
+        let ptr = tgt.map_or(null_mut(), from_mut);
+        // SAFETY: `ptr` is either null or points to a valid `File` for the duration of the call.
+        unsafe { cpp_platform_crashlog_recover(ptr) }
+    }
+
+    pub fn enable_crashlog_uptime_updates(&self, enabled: bool) {
+        // SAFETY: Enables crashlog uptime updates on the platform crashlog singleton.
+        unsafe { cpp_platform_crashlog_enable_uptime_updates(enabled) }
+    }
+}
+
+pub fn boot_options_show(defaults: bool, out: &mut File<'_>) {
+    // SAFETY: `out` points to a valid `File` for the duration of the call.
     unsafe { cpp_boot_options_show(defaults, out) }
 }
 
@@ -173,13 +223,15 @@ pub fn entropy_vmo_stream_size() -> u64 {
 }
 
 #[cfg(all(target_arch = "aarch64", debug_assertions))]
-pub fn arm64_print_midr_cpu_name(out: &FILE) {
-    // SAFETY: `out` points to a valid `FILE` for the duration of the call.
+pub fn arm64_print_midr_cpu_name(out: &mut File<'_>) {
+    // SAFETY: `out` points to a valid `File` for the duration of the call.
     unsafe { cpp_arm64_print_midr_cpu_name(out) }
 }
 
 unsafe extern "C" {
-    fn cpp_boot_options_show(defaults: bool, out: *const FILE);
+    fn cpp_platform_crashlog_recover(tgt: *mut File<'_>) -> usize;
+    fn cpp_platform_crashlog_enable_uptime_updates(enabled: bool);
+    fn cpp_boot_options_show(defaults: bool, out: *mut File<'_>);
     #[cfg(enable_entropy_collector_test)]
     fn cpp_entropy_was_lost() -> bool;
     #[cfg(enable_entropy_collector_test)]
@@ -187,7 +239,7 @@ unsafe extern "C" {
     #[cfg(enable_entropy_collector_test)]
     fn cpp_entropy_vmo_stream_size() -> usize;
     #[cfg(all(target_arch = "aarch64", debug_assertions))]
-    fn cpp_arm64_print_midr_cpu_name(out: *const FILE);
+    fn cpp_arm64_print_midr_cpu_name(out: *mut File<'_>);
 }
 
 /// FFI entry point launching the `userboot` process at the end of kernel boot handoff.

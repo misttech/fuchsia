@@ -15,7 +15,6 @@ pub mod interrupts;
 pub mod keyboard;
 pub mod memory;
 pub mod pic;
-pub mod platform;
 pub mod power;
 pub mod smbios;
 pub mod timer;

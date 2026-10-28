@@ -25,17 +25,13 @@ use crate::pdev_power::{
     PowerCpuState, PowerRebootFlags, power_cpu_off, power_get_cpu_state, power_reboot,
     power_shutdown,
 };
-use crate::platform_rs::crashlog::PlatformCrashlog;
-use crate::platform_rs::mapped_crashlog::MappedCrashlog;
 use crate::platform_rs::power::{PlatformHaltAction, ZirconCrashReason};
 use crate::{debuglog_rs as debuglog, persistent_debuglog_rs as persistent_debuglog, topology};
 use boot_options::BootOptions;
 use core::ffi::CStr;
-use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 use debug::{dprintf, tracef};
 use kprint::kprint;
-use lazy_init::{LazyInit, NoCheck};
 #[cfg(ktest)]
 use unittest as _;
 use zx_status::Status;
@@ -94,10 +90,12 @@ struct MemallocRange {
 unsafe extern "C" {
     fn cpp_jtrace_dump_current();
     fn cpp_jtrace_set_location(ptr: *mut u8, len: usize);
+    fn cpp_mapped_crashlog_bind(base: *mut u8, size: usize);
     fn cpp_phys_handoff_cpu_topology(count: &mut usize) -> *const zbi::TopologyNode;
     fn cpp_phys_handoff_memory(count: &mut usize) -> *const MemallocRange;
     fn cpp_phys_handoff_nvram(size: &mut usize) -> *mut u8;
     fn cpp_phys_handoff_platform_id(out: &mut zbi::PlatformId) -> bool;
+    fn cpp_platform_crashlog_has_non_trivial_impl() -> bool;
     fn cpp_pmm_checker_init_from_cmdline();
     fn cpp_pmm_init(ranges: *const MemallocRange, count: usize) -> Result<(), Status>;
     fn cpp_print_current_thread_backtrace();
@@ -111,10 +109,6 @@ fn panic_shell_start() {}
 
 static PANIC_STARTED: AtomicBool = AtomicBool::new(false);
 static HALTED: AtomicBool = AtomicBool::new(false);
-
-/// The platform's crashlog implementation, backed by the persistent RAM range
-/// that the Rust platform carves out for it.
-static MAPPED_CRASHLOG: LazyInit<MappedCrashlog, NoCheck> = LazyInit::uninit();
 
 /// Whether EFI services are expected on this platform.
 #[unsafe(no_mangle)]
@@ -498,7 +492,8 @@ fn allocate_persistent_ram(range: &'static mut [u8]) {
     // 2) Persistent debug logging.
     // 3) Persistent debug tracing.
     //
-    let has_non_trivial_crashlog = PlatformCrashlog::has_non_trivial_impl();
+    // SAFETY: takes no arguments; reads the crashlog interface's binding state.
+    let has_non_trivial_crashlog = unsafe { cpp_platform_crashlog_has_non_trivial_impl() };
     let PersistentRamPartitions { crashlog_size, pdlog_size, jtrace_size } =
         partition_persistent_ram(range.len(), has_non_trivial_crashlog, &PERSISTENT_RAM_BUDGET);
 
@@ -506,12 +501,10 @@ fn allocate_persistent_ram(range: &'static mut [u8]) {
     let (crashlog, leftover) = range.split_at_mut(crashlog_size);
     if crashlog_size > 0 {
         dprintf!(INFO, "Crashlog configured with {} bytes\n", crashlog_size);
-        // SAFETY: `allocate_persistent_ram` runs at most once during single-threaded early boot
-        // before `MAPPED_CRASHLOG` is read via `PlatformCrashlog::bind`.
-        unsafe {
-            let _ = Pin::static_ref(&MAPPED_CRASHLOG).init_pin(MappedCrashlog::new(crashlog));
-            let _ = PlatformCrashlog::bind(MAPPED_CRASHLOG.get_unchecked());
-        }
+        // SAFETY: `crashlog` is the head of the persistent RAM range, which
+        // stays mapped for the life of the kernel; the MappedCrashlog keeps
+        // using it and nothing here touches it again.
+        unsafe { cpp_mapped_crashlog_bind(crashlog.as_mut_ptr(), crashlog.len()) };
     }
 
     // Configure the persistent debuglog RAM (if we have any)

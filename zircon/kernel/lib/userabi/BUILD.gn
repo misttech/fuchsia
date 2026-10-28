@@ -38,7 +38,6 @@ kernel_rust_mod("userabi-rs") {
     "//src/lib/zr",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
-    "//zircon/kernel/lib/libc:rust",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
