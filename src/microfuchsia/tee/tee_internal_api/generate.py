@@ -4,14 +4,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
 from pathlib import Path
 
-# Add //build/rust to Python path so the bindgen import works.
-FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent.parent
-sys.path.append(str(FUCHSIA_DIR / "build" / "rust"))
+from build.rust.bindgen import Bindgen
 
-from bindgen import Bindgen
+FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent.parent
 
 TEE_INTERNAL_API_DIR = (
     FUCHSIA_DIR / "src" / "microfuchsia" / "tee" / "tee_internal_api"
