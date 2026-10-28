@@ -2,207 +2,229 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fdomain_fuchsia_audio_device as fadevice;
 use fdomain_fuchsia_hardware_audio as fhaudio;
 use ffx_command_error::{FfxContext, Result, bug, user_error};
 use fuchsia_audio_fdomain::dai::DaiFormat;
+use std::future::Future;
+use std::pin::Pin;
 use zx_status::Status;
 
-#[async_trait]
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 pub trait DeviceControl {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         dai_format: DaiFormat,
         element_id: Option<fadevice::ElementId>,
-    ) -> Result<()>;
+    ) -> BoxFuture<'a, Result<()>>;
 
-    async fn start(&self) -> Result<zx_types::zx_time_t>;
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>>;
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t>;
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>>;
 
-    async fn reset(&self) -> Result<()>;
+    fn reset(&self) -> BoxFuture<'_, Result<()>>;
 }
 
 pub struct HardwareCodec(pub fhaudio::CodecProxy);
 
-#[async_trait]
 impl DeviceControl for HardwareCodec {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         dai_format: DaiFormat,
         _element_id: Option<fadevice::ElementId>,
-    ) -> Result<()> {
-        let _ = self
-            .0
-            .set_dai_format(&dai_format.into())
-            .await
-            .bug_context("Failed to call SetDaiFormat")?
-            .map_err(Status::err_from_raw)
-            .user_message("failed to set DAI format")?;
-        Ok(())
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let _ = self
+                .0
+                .set_dai_format(&dai_format.into())
+                .await
+                .bug_context("Failed to call SetDaiFormat")?
+                .map_err(Status::err_from_raw)
+                .user_message("failed to set DAI format")?;
+            Ok(())
+        })
     }
 
-    async fn start(&self) -> Result<zx_types::zx_time_t> {
-        let start_time = self.0.start().await.bug_context("Failed to call Start")?;
-        Ok(start_time)
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move {
+            let start_time = self.0.start().await.bug_context("Failed to call Start")?;
+            Ok(start_time)
+        })
     }
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t> {
-        let stop_time = self.0.stop().await.bug_context("Failed to call Stop")?;
-        Ok(stop_time)
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move {
+            let stop_time = self.0.stop().await.bug_context("Failed to call Stop")?;
+            Ok(stop_time)
+        })
     }
 
-    async fn reset(&self) -> Result<()> {
-        let _ = self.0.reset().await.bug_context("Failed to call Reset")?;
-        Ok(())
+    fn reset(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let _ = self.0.reset().await.bug_context("Failed to call Reset")?;
+            Ok(())
+        })
     }
 }
 
 pub struct HardwareComposite(pub fhaudio::CompositeProxy);
 
-#[async_trait]
 impl DeviceControl for HardwareComposite {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         dai_format: DaiFormat,
         element_id: Option<fadevice::ElementId>,
-    ) -> Result<()> {
-        let element_id = element_id
-            .ok_or_else(|| user_error!("element ID is required for Composite devices"))?;
-        self.0
-            .set_dai_format(element_id, &dai_format.into())
-            .await
-            .bug_context("Failed to call SetDaiFormat")?
-            .map_err(|err| user_error!("failed to set DAI format: {:?}", err))?;
-        Ok(())
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let element_id = element_id
+                .ok_or_else(|| user_error!("element ID is required for Composite devices"))?;
+            self.0
+                .set_dai_format(element_id, &dai_format.into())
+                .await
+                .bug_context("Failed to call SetDaiFormat")?
+                .map_err(|err| user_error!("failed to set DAI format: {:?}", err))?;
+            Ok(())
+        })
     }
 
-    async fn start(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("start is not supported for Composite devices"))
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("start is not supported for Composite devices")) })
     }
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("stop is not supported for Composite devices"))
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("stop is not supported for Composite devices")) })
     }
 
-    async fn reset(&self) -> Result<()> {
-        let _ = self
-            .0
-            .reset()
-            .await
-            .bug_context("Failed to call Reset")?
-            .map_err(|err| user_error!("Failed to reset: {:?}", err))?;
-        Ok(())
+    fn reset(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let _ = self
+                .0
+                .reset()
+                .await
+                .bug_context("Failed to call Reset")?
+                .map_err(|err| user_error!("Failed to reset: {:?}", err))?;
+            Ok(())
+        })
     }
 }
 
 pub struct HardwareDai(#[allow(unused)] pub fhaudio::DaiProxy);
 
-#[async_trait]
 impl DeviceControl for HardwareDai {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         _dai_format: DaiFormat,
         _element_id: Option<fadevice::ElementId>,
-    ) -> Result<()> {
-        Err(user_error!("set dai-format is not supported for DAI devices"))
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move { Err(user_error!("set dai-format is not supported for DAI devices")) })
     }
 
-    async fn start(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("start is not supported for DAI devices"))
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("start is not supported for DAI devices")) })
     }
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("stop is not supported for DAI devices"))
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("stop is not supported for DAI devices")) })
     }
 
-    async fn reset(&self) -> Result<()> {
-        let _ = self.0.reset().await.bug_context("Failed to call Reset")?;
-        Ok(())
+    fn reset(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let _ = self.0.reset().await.bug_context("Failed to call Reset")?;
+            Ok(())
+        })
     }
 }
 
 pub struct HardwareStreamConfig(#[allow(unused)] pub fhaudio::StreamConfigProxy);
 
-#[async_trait]
 impl DeviceControl for HardwareStreamConfig {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         _dai_format: DaiFormat,
         _element_id: Option<fadevice::ElementId>,
-    ) -> Result<()> {
-        Err(user_error!("set dai-format is not supported for StreamConfig devices"))
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            Err(user_error!("set dai-format is not supported for StreamConfig devices"))
+        })
     }
 
-    async fn start(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("start is not supported for StreamConfig devices"))
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("start is not supported for StreamConfig devices")) })
     }
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t> {
-        Err(user_error!("stop is not supported for StreamConfig devices"))
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move { Err(user_error!("stop is not supported for StreamConfig devices")) })
     }
 
-    async fn reset(&self) -> Result<()> {
-        Err(user_error!("reset is not supported for StreamConfig devices"))
+    fn reset(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move { Err(user_error!("reset is not supported for StreamConfig devices")) })
     }
 }
 
 pub struct Registry(pub fadevice::ControlProxy);
 
-#[async_trait]
 impl DeviceControl for Registry {
-    async fn set_dai_format(
-        &self,
+    fn set_dai_format<'a>(
+        &'a self,
         dai_format: DaiFormat,
         element_id: Option<fadevice::ElementId>,
-    ) -> Result<()> {
-        let _ = self
-            .0
-            .set_dai_format(&fadevice::ControlSetDaiFormatRequest {
-                element_id,
-                dai_format: Some(dai_format.into()),
-                ..Default::default()
-            })
-            .await
-            .bug_context("Failed to call SetDaiFormat")?
-            .map_err(|err| user_error!("Failed to set DAI format: {:?}", err))?;
-        Ok(())
+    ) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let _ = self
+                .0
+                .set_dai_format(&fadevice::ControlSetDaiFormatRequest {
+                    element_id,
+                    dai_format: Some(dai_format.into()),
+                    ..Default::default()
+                })
+                .await
+                .bug_context("Failed to call SetDaiFormat")?
+                .map_err(|err| user_error!("Failed to set DAI format: {:?}", err))?;
+            Ok(())
+        })
     }
 
-    async fn start(&self) -> Result<zx_types::zx_time_t> {
-        let response = self
-            .0
-            .codec_start()
-            .await
-            .bug_context("Failed to call CodecStart")?
-            .map_err(|err| user_error!("Failed to start: {:?}", err))?;
-        let start_time = response
-            .start_time
-            .ok_or_else(|| bug!("CodecStart response is missing 'start_time'"))?;
-        Ok(start_time)
+    fn start(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move {
+            let response = self
+                .0
+                .codec_start()
+                .await
+                .bug_context("Failed to call CodecStart")?
+                .map_err(|err| user_error!("Failed to start: {:?}", err))?;
+            let start_time = response
+                .start_time
+                .ok_or_else(|| bug!("CodecStart response is missing 'start_time'"))?;
+            Ok(start_time)
+        })
     }
 
-    async fn stop(&self) -> Result<zx_types::zx_time_t> {
-        let response = self
-            .0
-            .codec_stop()
-            .await
-            .bug_context("Failed to call CodecStop")?
-            .map_err(|err| user_error!("Failed to stop: {:?}", err))?;
-        let stop_time =
-            response.stop_time.ok_or_else(|| bug!("CodecStop response is missing 'stop_time'"))?;
-        Ok(stop_time)
+    fn stop(&self) -> BoxFuture<'_, Result<zx_types::zx_time_t>> {
+        Box::pin(async move {
+            let response = self
+                .0
+                .codec_stop()
+                .await
+                .bug_context("Failed to call CodecStop")?
+                .map_err(|err| user_error!("Failed to stop: {:?}", err))?;
+            let stop_time = response
+                .stop_time
+                .ok_or_else(|| bug!("CodecStop response is missing 'stop_time'"))?;
+            Ok(stop_time)
+        })
     }
 
-    async fn reset(&self) -> Result<()> {
-        let _ = self
-            .0
-            .reset()
-            .await
-            .bug_context("Failed to call Reset")?
-            .map_err(|err| user_error!("Failed to reset: {:?}", err))?;
-        Ok(())
+    fn reset(&self) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let _ = self
+                .0
+                .reset()
+                .await
+                .bug_context("Failed to call Reset")?
+                .map_err(|err| user_error!("Failed to reset: {:?}", err))?;
+            Ok(())
+        })
     }
 }
 
