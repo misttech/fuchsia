@@ -362,7 +362,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 				}
 				if pkgSrv != nil {
 					if err := t.AddPackageRepository(client, pkgSrv.RepoURL, pkgSrv.BlobURL); err != nil {
-						return err
+						return fmt.Errorf("%s: %w", constants.PackageRepoSetupErrorMsg, err)
 					}
 					logger.Debugf(ctx, "added package repo to target %s", t.Nodename())
 				}
@@ -387,7 +387,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					repoName := "fuchsia-package-server"
 					pkgSrvPort, cleanupPkgServer, err := r.setupFFXPackageServer(ctx, t.GetFFX(), repoName)
 					if err != nil {
-						return err
+						return fmt.Errorf("%s: %w", constants.PackageRepoSetupErrorMsg, err)
 					}
 					defer cleanupPkgServer()
 					if pkgSrvPort != 0 {
@@ -399,11 +399,11 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 							}
 							return nil
 						}, nil); err != nil {
-							return err
+							return fmt.Errorf("%s: %w", constants.PackageRepoSetupErrorMsg, err)
 						}
 						cleanupForward, err := t.AddFFXPackageRepository(ctx, repoName, pkgSrvPort, forceFFXUSB)
 						if err != nil {
-							return err
+							return fmt.Errorf("%s: %w", constants.PackageRepoSetupErrorMsg, err)
 						}
 						defer cleanupForward()
 					}

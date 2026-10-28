@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
+	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
@@ -38,14 +39,19 @@ type MockTarget struct {
 	serialSocketPath string
 	sshClientFunc    func(attempt int) (*sshutil.Client, error)
 	sshClientCalls   int
+	addPkgRepoErr    error
+	addFFXPkgRepoErr error
 }
 
 func (m *MockTarget) TestConfig(expectsSSH bool) (any, error) { return nil, nil }
 func (m *MockTarget) AddFFXPackageRepository(ctx context.Context, pkgRepoName string, pkgSrvPort int, useForward bool) (func(), error) {
+	if m.addFFXPkgRepoErr != nil {
+		return nil, m.addFFXPkgRepoErr
+	}
 	return func() {}, nil
 }
 func (m *MockTarget) AddPackageRepository(client *sshutil.Client, repoURL, blobURL string) error {
-	return nil
+	return m.addPkgRepoErr
 }
 func (m *MockTarget) CaptureSerialLog(filename string) error { return nil }
 func (m *MockTarget) CaptureSyslog(client *sshutil.Client, filename string, pkgSrv *botanist.PackageServer) error {
@@ -235,29 +241,29 @@ func TestStartFFXMonitor(t *testing.T) {
 	}
 }
 
-func TestStartFFXMonitorShutdownWait(t *testing.T) {
-	newFFXTarget := func(t *testing.T, tmpDir, script string) *MockTarget {
-		t.Helper()
-		ffxPath := filepath.Join(tmpDir, "ffx")
-		if err := os.WriteFile(ffxPath, []byte(script), 0o755); err != nil {
-			t.Fatalf("failed to write mock ffx tool: %v", err)
-		}
-		sshPriv := filepath.Join(tmpDir, "ssh_priv")
-		sshPub := filepath.Join(tmpDir, "ssh_pub")
-		if err := os.WriteFile(sshPriv, []byte("PRIVATE KEY"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(sshPub, []byte("PUBLIC KEY"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		ffxInstance, err := ffxutil.NewFFXInstance(context.Background(), ffxPath, tmpDir, nil, "target", &ffxutil.SSHInfo{SshPriv: sshPriv, SshPub: sshPub}, tmpDir, ffxutil.UseFFXLegacy)
-		if err != nil {
-			t.Fatalf("failed to create ffx instance: %s", err)
-		}
-		ffxInstance.SetStdoutStderr(io.Discard, io.Discard)
-		return &MockTarget{ffx: &targets.FFXInstance{FFXInstance: ffxInstance}}
+func newFFXTarget(t *testing.T, tmpDir, script string) *MockTarget {
+	t.Helper()
+	ffxPath := filepath.Join(tmpDir, "ffx")
+	if err := os.WriteFile(ffxPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write mock ffx tool: %v", err)
 	}
+	sshPriv := filepath.Join(tmpDir, "ssh_priv")
+	sshPub := filepath.Join(tmpDir, "ssh_pub")
+	if err := os.WriteFile(sshPriv, []byte("PRIVATE KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sshPub, []byte("PUBLIC KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ffxInstance, err := ffxutil.NewFFXInstance(context.Background(), ffxPath, tmpDir, nil, "target", &ffxutil.SSHInfo{SshPriv: sshPriv, SshPub: sshPub}, tmpDir, ffxutil.UseFFXLegacy)
+	if err != nil {
+		t.Fatalf("failed to create ffx instance: %s", err)
+	}
+	ffxInstance.SetStdoutStderr(io.Discard, io.Discard)
+	return &MockTarget{ffx: &targets.FFXInstance{FFXInstance: ffxInstance}}
+}
 
+func TestStartFFXMonitorShutdownWait(t *testing.T) {
 	tests := []struct {
 		name               string
 		timeout            time.Duration
@@ -672,4 +678,101 @@ func TestExecuteSkipSetupPropagatesTestrunnerError(t *testing.T) {
 	if !strings.Contains(logBuf.String(), "testrunner with flags:") {
 		t.Errorf("expected debug log to contain testrunner flags, got: %s", logBuf.String())
 	}
+}
+
+func TestDispatchTestsWrapsPackageRepoSetupError(t *testing.T) {
+	t.Run("legacy AddPackageRepository failure", func(t *testing.T) {
+		repoErr := errors.New("connection reset by peer")
+		target := newFFXTarget(t, t.TempDir(), "#!/bin/sh\nexit 0\n")
+		target.addPkgRepoErr = repoErr
+		cmd := &RunCommand{
+			expectsSSH:        true,
+			productBundles:    "test-bundles",
+			productBundleName: "test-bundle-name",
+		}
+		pkgSrv := &botanist.PackageServer{
+			RepoURL: "http://localhost:8083/repository",
+			BlobURL: "http://localhost:8083/repository/blobs",
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		eg, egCtx := errgroup.WithContext(ctx)
+
+		cmd.dispatchTests(egCtx, cancel, eg, nil, []targets.FuchsiaTarget{target}, target, pkgSrv, "tests.json", make(botanist.Experiments))
+		err := eg.Wait()
+		if err == nil {
+			t.Fatal("expected dispatchTests to fail when AddPackageRepository returns an error")
+		}
+		wantPrefix := constants.PackageRepoSetupErrorMsg + ": "
+		if !strings.HasPrefix(err.Error(), wantPrefix) {
+			t.Errorf("dispatchTests error = %q, want prefix %q", err.Error(), wantPrefix)
+		}
+		if !errors.Is(err, repoErr) {
+			t.Errorf("expected error to wrap %v, got %v", repoErr, err)
+		}
+	})
+
+	t.Run("ffx setupFFXPackageServer failure", func(t *testing.T) {
+		t.Setenv(constants.PkgSrvPortKey, "invalid-port")
+		target := newFFXTarget(t, t.TempDir(), "#!/bin/sh\nexit 0\n")
+		cmd := &RunCommand{
+			expectsSSH:        true,
+			localRepo:         t.TempDir(),
+			productBundles:    "test-bundles",
+			productBundleName: "test-bundle-name",
+		}
+		experiments := botanist.GetExperiments([]string{string(botanist.UseFFXRepository)})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		eg, egCtx := errgroup.WithContext(ctx)
+
+		cmd.dispatchTests(egCtx, cancel, eg, nil, []targets.FuchsiaTarget{target}, target, nil, "tests.json", experiments)
+		err := eg.Wait()
+		if err == nil {
+			t.Fatal("expected dispatchTests to fail when setupFFXPackageServer returns an error")
+		}
+		wantPrefix := constants.PackageRepoSetupErrorMsg + ": "
+		if !strings.HasPrefix(err.Error(), wantPrefix) {
+			t.Errorf("dispatchTests error = %q, want prefix %q", err.Error(), wantPrefix)
+		}
+	})
+
+	t.Run("ffx AddFFXPackageRepository failure", func(t *testing.T) {
+		ffxScript := `#!/bin/sh
+case "$*" in
+  *"repository server list"*)
+    echo '{"ok":{"data":[{"name":"fuchsia-package-server"}]}}'
+    ;;
+esac
+`
+		repoErr := errors.New("failed to register ffx repository")
+		target := newFFXTarget(t, t.TempDir(), ffxScript)
+		target.addFFXPkgRepoErr = repoErr
+		cmd := &RunCommand{
+			expectsSSH:        true,
+			localRepo:         t.TempDir(),
+			productBundles:    "test-bundles",
+			productBundleName: "test-bundle-name",
+		}
+		experiments := botanist.GetExperiments([]string{string(botanist.UseFFXRepository)})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		eg, egCtx := errgroup.WithContext(ctx)
+
+		cmd.dispatchTests(egCtx, cancel, eg, nil, []targets.FuchsiaTarget{target}, target, nil, "tests.json", experiments)
+		err := eg.Wait()
+		if err == nil {
+			t.Fatal("expected dispatchTests to fail when AddFFXPackageRepository returns an error")
+		}
+		wantPrefix := constants.PackageRepoSetupErrorMsg + ": "
+		if !strings.HasPrefix(err.Error(), wantPrefix) {
+			t.Errorf("dispatchTests error = %q, want prefix %q", err.Error(), wantPrefix)
+		}
+		if !errors.Is(err, repoErr) {
+			t.Errorf("expected error to wrap %v, got %v", repoErr, err)
+		}
+	})
 }

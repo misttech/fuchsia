@@ -826,10 +826,6 @@ failure_mode_checks:
   string: "botanist ERROR: failed to start ssh session"
   log_types: ["swarmingOutputType"]
 
-- kind: "string_in_log"
-  string: "botanist ERROR: failed to derive $SSH_CONNECTION"
-  log_types: ["swarmingOutputType"]
-
 # For https://fxbug.dev/421926925
 - kind: "string_in_log"
   string: "launching monocle_wm#meta/escher_screensaver.cm"
