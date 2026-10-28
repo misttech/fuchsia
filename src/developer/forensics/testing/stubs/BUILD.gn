@@ -53,13 +53,13 @@ source_set("crash_reporter") {
   ]
 
   public_deps = [
-    ":fidl_server_hlcpp",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    ":fidl_server",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//zircon/system/ulib/zx",
   ]
 
   deps = [
-    "//sdk/lib/fit-promise",
+    "//sdk/lib/fit",
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
   ]

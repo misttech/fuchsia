@@ -40,18 +40,23 @@ class LastRebootTest : public UnitTestFixture {
  protected:
   void SetUpCrashReporterServer(std::unique_ptr<stubs::CrashReporterBase> crash_reporter_server) {
     crash_reporter_server_ = std::move(crash_reporter_server);
+    if (crash_reporter_server_) {
+      InjectServiceProvider(crash_reporter_server_.get());
+      services()->Connect(crash_reporter_ptr_.NewRequest(dispatcher()));
+    }
   }
 
   cobalt::Logger* Cobalt() { return &cobalt_; }
   RedactorBase* Redactor() { return &redactor_; }
 
-  fuchsia::feedback::CrashReporter* CrashReporter() { return crash_reporter_server_.get(); }
+  fuchsia::feedback::CrashReporter* CrashReporter() { return crash_reporter_ptr_.get(); }
 
  private:
   timekeeper::AsyncTestClock clock_;
   cobalt::Logger cobalt_;
   IdentityRedactor redactor_{inspect::BoolProperty()};
 
+  fuchsia::feedback::CrashReporterPtr crash_reporter_ptr_;
   std::unique_ptr<stubs::CrashReporterBase> crash_reporter_server_;
 };
 

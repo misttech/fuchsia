@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/last_reboot/reporter.h"
 
+#include <fuchsia/feedback/cpp/fidl.h>
 #include <lib/fpromise/result.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zx/time.h>
@@ -89,6 +90,10 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
  protected:
   void SetUpCrashReporterServer(std::unique_ptr<stubs::CrashReporterBase> server) {
     crash_reporter_server_ = std::move(server);
+    if (crash_reporter_server_) {
+      InjectServiceProvider(crash_reporter_server_.get());
+      services()->Connect(crash_reporter_ptr_.NewRequest(dispatcher()));
+    }
   }
 
   void SetUpRedactor(std::unique_ptr<RedactorBase> redactor) { redactor_ = std::move(redactor); }
@@ -118,7 +123,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   }
 
   void ReportOn(const feedback::RebootLog& reboot_log) {
-    Reporter reporter(dispatcher(), &cobalt_, redactor_.get(), crash_reporter_server_.get());
+    Reporter reporter(dispatcher(), &cobalt_, redactor_.get(), crash_reporter_ptr_.get());
     reporter.ReportOn(reboot_log, /*delay=*/zx::sec(0), SpontaneousRebootReason::kSpontaneous);
     RunLoopUntilIdle();
   }
@@ -126,6 +131,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   std::string zircon_reboot_log_path_;
   std::string graceful_shutdown_info_path_;
   std::string legacy_graceful_reboot_log_path_;
+  fuchsia::feedback::CrashReporterPtr crash_reporter_ptr_;
   std::unique_ptr<stubs::CrashReporterBase> crash_reporter_server_;
 
  private:

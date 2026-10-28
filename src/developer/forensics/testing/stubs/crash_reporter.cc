@@ -4,14 +4,16 @@
 
 #include "src/developer/forensics/testing/stubs/crash_reporter.h"
 
-#include <fuchsia/feedback/cpp/fidl.h>
-#include <lib/fpromise/result.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 #include <zircon/errors.h>
 
 #include <optional>
+#include <utility>
 
+#include "src/lib/fsl/vmo/sized_vmo.h"
 #include "src/lib/fsl/vmo/strings.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -54,45 +56,48 @@ CrashReporter::~CrashReporter() {
       << ErrorMessage("is fatal", ToString(is_fatal_), ToString(expectations_.is_fatal));
 }
 
-void CrashReporter::FileReport(fuchsia::feedback::CrashReport report, FileReportCallback callback) {
-  FX_CHECK(report.has_crash_signature());
-  FX_CHECK(report.has_attachments());
-  FX_CHECK(report.attachments().size() == 1u);
+void CrashReporter::FileReport(FileReportRequest& request, FileReportCompleter::Sync& completer) {
+  FX_CHECK(request.report().crash_signature().has_value());
+  FX_CHECK(request.report().attachments().has_value());
+  FX_CHECK(request.report().attachments()->size() == 1u);
 
-  crash_signature_ = report.crash_signature();
+  crash_signature_ = *request.report().crash_signature();
 
-  if (!fsl::StringFromVmo(report.attachments()[0].value, &reboot_log_)) {
+  fuchsia_feedback::Attachment& attachment = request.report().attachments()->at(0);
+  if (!fsl::StringFromVmo(
+          fsl::SizedVmo(std::move(attachment.value().vmo()), attachment.value().size()),
+          &reboot_log_)) {
     FX_LOGS(ERROR) << "error parsing feedback log VMO as string";
-    callback(fpromise::error(fuchsia::feedback::FilingError::INVALID_ARGS_ERROR));
+    completer.Reply(fit::error(fuchsia_feedback::FilingError::kInvalidArgsError));
     return;
   }
 
-  if (report.has_program_uptime()) {
-    uptime_ = zx::duration(report.program_uptime());
+  if (request.report().program_uptime().has_value()) {
+    uptime_ = zx::duration(*request.report().program_uptime());
   } else {
     uptime_ = std::nullopt;
   }
 
-  if (report.has_is_fatal()) {
-    is_fatal_ = report.is_fatal();
+  if (request.report().is_fatal().has_value()) {
+    is_fatal_ = *request.report().is_fatal();
   } else {
     is_fatal_ = std::nullopt;
   }
 
-  fuchsia::feedback::FileReportResults results;
-  results.set_result(fuchsia::feedback::FilingSuccess::REPORT_UPLOADED);
-  results.set_report_id("01234567890abcdef");
+  fuchsia_feedback::FileReportResults results;
+  results.result(fuchsia_feedback::FilingSuccess::kReportUploaded);
+  results.report_id("01234567890abcdef");
 
-  callback(fpromise::ok(std::move(results)));
+  completer.Reply(fit::ok(std::move(results)));
 }
 
-void CrashReporterAlwaysReturnsError::FileReport(fuchsia::feedback::CrashReport report,
-                                                 FileReportCallback callback) {
-  callback(::fpromise::error(fuchsia::feedback::FilingError::INVALID_ARGS_ERROR));
+void CrashReporterAlwaysReturnsError::FileReport(FileReportRequest& request,
+                                                 FileReportCompleter::Sync& completer) {
+  completer.Reply(fit::error(fuchsia_feedback::FilingError::kInvalidArgsError));
 }
 
-void CrashReporterNoFileExpected::FileReport(fuchsia::feedback::CrashReport report,
-                                             FileReportCallback callback) {
+void CrashReporterNoFileExpected::FileReport(FileReportRequest& request,
+                                             FileReportCompleter::Sync& completer) {
   FX_CHECK(false) << "No call to FileReport() expected";
 }
 

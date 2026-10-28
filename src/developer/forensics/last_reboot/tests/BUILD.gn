@@ -36,6 +36,7 @@ cc_test_executable("reporter_unittest_exe") {
   sources = [ "reporter_unittest.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fit-promise",
     "//src/developer/forensics/last_reboot:reporter",
