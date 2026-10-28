@@ -5,7 +5,6 @@
 use crate::analytics::PointOfFailure;
 use crate::helpers::rediscover_helper;
 use anyhow::{Context as _, Result};
-use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics_analytics::{ResultExt, mark_point_of_failure};
@@ -60,7 +59,6 @@ impl Drop for UdpFactory {
     }
 }
 
-#[async_trait]
 impl InterfaceFactoryBase<UdpNetworkInterface> for UdpFactory {
     async fn open(&mut self) -> Result<UdpNetworkInterface, InterfaceFactoryError> {
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);

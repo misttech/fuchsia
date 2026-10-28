@@ -29,9 +29,9 @@ use tokio::sync::mpsc::Sender;
 //
 
 #[derive(Debug)]
-pub struct FastbootProxy<T: AsyncRead + AsyncWrite + Unpin + Send> {
+pub struct FastbootProxy<T: AsyncRead + AsyncWrite + Unpin + Send, F: InterfaceFactory<T>> {
     interface: Option<T>,
-    interface_factory: Box<dyn InterfaceFactory<T> + Send>,
+    interface_factory: F,
     ctx: FastbootContext,
 }
 
@@ -47,7 +47,12 @@ fn handle_timeout_as_okay(
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootInterface for FastbootProxy<T> {}
+impl<T, F> FastbootInterface for FastbootProxy<T, F>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Debug + Send + 'static,
+    F: InterfaceFactory<T> + 'static,
+{
+}
 
 #[derive(Debug)]
 struct VariableListener(Sender<Variable>);
@@ -132,17 +137,13 @@ impl fastboot::UploadProgressListener for ProgressListener<'_> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootProxy<T> {
-    pub fn new(
-        _target_id: String,
-        interface: T,
-        interface_factory: impl InterfaceFactory<T> + Send + 'static,
-    ) -> Self {
-        Self {
-            interface: Some(interface),
-            interface_factory: Box::new(interface_factory),
-            ctx: FastbootContext::new(),
-        }
+impl<T, F> FastbootProxy<T, F>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
+    F: InterfaceFactory<T>,
+{
+    pub fn new(_target_id: String, interface: T, interface_factory: F) -> Self {
+        Self { interface: Some(interface), interface_factory, ctx: FastbootContext::new() }
     }
 
     async fn reconnect(&mut self) -> Result<(), crate::interface_factory::InterfaceFactoryError> {
@@ -279,7 +280,11 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
 }
 
 #[async_trait]
-impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProxy<T> {
+impl<T, F> Fastboot for FastbootProxy<T, F>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Debug + Send,
+    F: InterfaceFactory<T>,
+{
     async fn get_var(&mut self, name: &str) -> core::result::Result<String, FastbootError> {
         let command = Command::GetVar(ClientVariable::Oem(name.to_string()));
         match send(self.ctx.clone(), command.clone(), self.interface().await?).await {
@@ -693,7 +698,6 @@ mod test {
     #[derive(Default, Debug, Clone)]
     struct TestTransportFactory {}
 
-    #[async_trait]
     impl InterfaceFactoryBase<TestTransport> for TestTransportFactory {
         async fn open(&mut self) -> Result<TestTransport, InterfaceFactoryError> {
             Ok(TestTransport::new())
@@ -717,9 +721,9 @@ mod test {
         {
             let mut test_transport = TestTransport::new();
             test_transport.push(Reply::Okay("0.4\0\0".to_string()));
-            let mut fastboot_client = FastbootProxy::<TestTransport> {
+            let mut fastboot_client = FastbootProxy {
                 interface: Some(test_transport),
-                interface_factory: Box::new(TestTransportFactory {}),
+                interface_factory: TestTransportFactory {},
                 ctx: FastbootContext::new(),
             };
 
@@ -728,9 +732,9 @@ mod test {
         {
             let mut test_transport = TestTransport::new();
             test_transport.push(Reply::Fail("variable doesnt exist".to_string()));
-            let mut fastboot_client = FastbootProxy::<TestTransport> {
+            let mut fastboot_client = FastbootProxy {
                 interface: Some(test_transport),
-                interface_factory: Box::new(TestTransportFactory {}),
+                interface_factory: TestTransportFactory {},
                 ctx: FastbootContext::new(),
             };
 
@@ -739,9 +743,9 @@ mod test {
         {
             let mut test_transport = TestTransport::new();
             test_transport.push(Reply::Data(1234));
-            let mut fastboot_client = FastbootProxy::<TestTransport> {
+            let mut fastboot_client = FastbootProxy {
                 interface: Some(test_transport),
-                interface_factory: Box::new(TestTransportFactory {}),
+                interface_factory: TestTransportFactory {},
                 ctx: FastbootContext::new(),
             };
 
@@ -764,9 +768,9 @@ mod test {
             Reply::Info("name:ianthe".to_string()),
             Reply::Okay("Done".to_string()),
         ]);
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -794,9 +798,9 @@ mod test {
         let mut test_transport = TestTransport::new();
         test_transport
             .extend([Reply::Info("alt:kiriona".to_string()), Reply::Fail("Done".to_string())]);
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
         assert!(fastboot_client.get_all_vars(var_client).await.is_err());
@@ -817,9 +821,9 @@ mod test {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Info("info line 1".to_string()));
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -830,9 +834,9 @@ mod test {
     async fn test_oem_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("this command failed".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -844,9 +848,9 @@ mod test {
     async fn test_oem_bail_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -863,9 +867,9 @@ mod test {
     async fn test_erase_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -877,9 +881,9 @@ mod test {
     async fn test_erase_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not erase".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -891,9 +895,9 @@ mod test {
     async fn test_erase_bail_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -910,9 +914,9 @@ mod test {
     async fn test_boot_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -924,9 +928,9 @@ mod test {
     async fn test_boot_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not boot".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -939,9 +943,9 @@ mod test {
     async fn test_boot_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -958,9 +962,9 @@ mod test {
     async fn test_reboot_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -972,9 +976,9 @@ mod test {
     async fn test_reboot_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not reboot".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -986,9 +990,9 @@ mod test {
     async fn test_reboot_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1005,9 +1009,9 @@ mod test {
     async fn test_reboot_bootloader_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1024,9 +1028,9 @@ mod test {
     async fn test_reboot_bootloader_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not reboot bootloader".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1042,9 +1046,9 @@ mod test {
     async fn test_reboot_bootloader_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1065,9 +1069,9 @@ mod test {
     async fn test_continue_boot_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1079,9 +1083,9 @@ mod test {
     async fn test_continue_boot_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not continue boot".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1093,9 +1097,9 @@ mod test {
     async fn test_continue_boot_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1112,9 +1116,9 @@ mod test {
     async fn test_set_active_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Okay("done".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1126,9 +1130,9 @@ mod test {
     async fn test_set_active_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not set active".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1140,9 +1144,9 @@ mod test {
     async fn test_set_active_bail_unexpected_response() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Data(1234));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1169,9 +1173,9 @@ mod test {
             Reply::Okay("Done".to_string()), // Upload Done
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1188,9 +1192,9 @@ mod test {
     async fn test_get_staged_fail() -> Result<()> {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not get staged".to_string()));
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1220,9 +1224,9 @@ mod test {
             Reply::Data(4096),               // Download Response
             Reply::Okay("done".to_string()), // Download Okay
         ]);
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1259,9 +1263,9 @@ mod test {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not stage".to_string()));
 
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1299,9 +1303,9 @@ mod test {
             Reply::Okay("".to_string()), // Flash Ok
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1339,9 +1343,9 @@ mod test {
         let mut test_transport = TestTransport::new();
         test_transport.push(Reply::Fail("could not stage".to_string()));
 
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1369,9 +1373,9 @@ mod test {
             Reply::Okay("filled ok".to_string()), // Non-empty stream-fill ack
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: FastbootContext::new(),
         };
 
@@ -1405,9 +1409,9 @@ mod test {
         ]);
 
         let ctx = FastbootContext::new();
-        let mut fastboot_client = FastbootProxy::<TestTransport> {
+        let mut fastboot_client = FastbootProxy {
             interface: Some(test_transport),
-            interface_factory: Box::new(TestTransportFactory {}),
+            interface_factory: TestTransportFactory {},
             ctx: ctx.clone(),
         };
 

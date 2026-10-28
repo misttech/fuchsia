@@ -193,13 +193,13 @@ impl FastbootNetworkConnectionConfig {
 /// Creates a FastbootProxy over USB for a device with the given serial number
 async fn usb_proxy(
     serial_number: String,
-) -> Result<FastbootProxy<AsyncInterface>, ConnectionFactoryError> {
+) -> Result<FastbootProxy<AsyncInterface, UsbFactory>, ConnectionFactoryError> {
     let mut interface_factory = UsbFactory::new(serial_number.clone());
     let interface = interface_factory.open().await.map_err(|e| {
         ConnectionFactoryError::UsbInterfaceCreation { serial: serial_number.clone(), source: e }
     })?;
 
-    Ok(FastbootProxy::<AsyncInterface>::new(serial_number, interface, interface_factory))
+    Ok(FastbootProxy::new(serial_number, interface, interface_factory))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -214,7 +214,7 @@ async fn tcp_proxy(
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
 ) -> Result<
-    FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>,
+    FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>, TcpFactory>,
     ConnectionFactoryError,
 > {
     let mut factory = TcpFactory::new(
@@ -229,11 +229,7 @@ async fn tcp_proxy(
         .open()
         .await
         .map_err(|e| ConnectionFactoryError::TcpInterfaceCreation { addr: *addr, source: e })?;
-    Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
-        addr.to_string(),
-        interface,
-        factory,
-    ))
+    Ok(FastbootProxy::new(addr.to_string(), interface, factory))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,7 +243,7 @@ async fn udp_proxy(
     fastboot_device_file_path: Option<PathBuf>,
     addr: &SocketAddr,
     config: FastbootNetworkConnectionConfig,
-) -> Result<FastbootProxy<UdpNetworkInterface>, ConnectionFactoryError> {
+) -> Result<FastbootProxy<UdpNetworkInterface, UdpFactory>, ConnectionFactoryError> {
     let mut factory = UdpFactory::new(
         context,
         target_name,
@@ -260,7 +256,7 @@ async fn udp_proxy(
         .open()
         .await
         .map_err(|e| ConnectionFactoryError::UdpInterfaceCreation { addr: *addr, source: e })?;
-    Ok(FastbootProxy::<UdpNetworkInterface>::new(addr.to_string(), interface, factory))
+    Ok(FastbootProxy::new(addr.to_string(), interface, factory))
 }
 
 /// Creates a FastbootInterface based on the provided target state

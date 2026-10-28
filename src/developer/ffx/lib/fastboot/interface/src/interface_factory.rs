@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use futures::io::{AsyncRead, AsyncWrite};
+use std::future::Future;
 use std::net::SocketAddr;
 use thiserror::Error;
 
@@ -29,15 +29,13 @@ pub enum InterfaceFactoryError {
     ConnectionError(String, SocketAddr, u64),
 }
 
-#[async_trait]
 pub trait InterfaceFactoryBase<T: AsyncRead + AsyncWrite + Unpin + Send> {
-    async fn open(&mut self) -> Result<T, InterfaceFactoryError>;
-    async fn close(&self);
-    async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError>;
+    fn open(&mut self) -> impl Future<Output = Result<T, InterfaceFactoryError>> + Send;
+    fn close(&self) -> impl Future<Output = ()> + Send;
+    fn rediscover(&mut self) -> impl Future<Output = Result<(), InterfaceFactoryError>> + Send;
 }
 
-#[async_trait]
 pub trait InterfaceFactory<T: AsyncRead + AsyncWrite + Unpin + Send>:
-    std::fmt::Debug + InterfaceFactoryBase<T>
+    std::fmt::Debug + InterfaceFactoryBase<T> + Send
 {
 }

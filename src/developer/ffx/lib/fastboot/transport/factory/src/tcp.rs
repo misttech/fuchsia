@@ -5,7 +5,6 @@
 use crate::analytics::PointOfFailure;
 use crate::helpers::{rediscover_helper, verify_fastboot_live};
 use anyhow::{Context as _, Result};
-use async_trait::async_trait;
 use discovery::{FastbootConnectionState, TargetHandle, TargetState};
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics_analytics::{ResultExt, mark_point_of_failure};
@@ -62,7 +61,6 @@ impl Drop for TcpFactory {
     }
 }
 
-#[async_trait]
 impl InterfaceFactoryBase<TcpNetworkInterface<netext::MultithreadedTokioAsyncWrapper<TcpStream>>>
     for TcpFactory
 {

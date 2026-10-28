@@ -1226,12 +1226,10 @@ mod test {
     use std::io::{Seek, SeekFrom, Write};
     use tempfile::NamedTempFile;
     use tokio::sync::mpsc;
-    use async_trait::async_trait;
 
     #[derive(Default, Debug, Clone)]
     struct TestTransportFactory {}
 
-    #[async_trait]
     impl InterfaceFactoryBase<TestTransport> for TestTransportFactory {
         async fn open(&mut self) -> std::result::Result<TestTransport, InterfaceFactoryError> {
             Ok(TestTransport::new())
@@ -1565,11 +1563,8 @@ mod test {
             Reply::Okay("".to_owned()),          // Stream flash
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
-            "stream".to_string(),
-            test_transport,
-            TestTransportFactory {},
-        );
+        let mut fastboot_client =
+            FastbootProxy::new("stream".to_string(), test_transport, TestTransportFactory {});
 
         let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(3);
         use Event::*;
@@ -1661,11 +1656,8 @@ mod test {
             Reply::Okay("".to_owned()),          // Stream flash
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
-            "stream".to_string(),
-            test_transport,
-            TestTransportFactory {},
-        );
+        let mut fastboot_client =
+            FastbootProxy::new("stream".to_string(), test_transport, TestTransportFactory {});
 
         let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(3);
         use Event::*;
@@ -1739,11 +1731,8 @@ mod test {
             Reply::Fail("Download ack fail".to_owned()), // Download ack fails -> sends OnError
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
-            "stream".to_string(),
-            test_transport,
-            TestTransportFactory {},
-        );
+        let mut fastboot_client =
+            FastbootProxy::new("stream".to_string(), test_transport, TestTransportFactory {});
 
         let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(10);
         let result = streaming_flash_impl(
@@ -1831,11 +1820,8 @@ mod test {
             Reply::Okay("".to_owned()),
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
-            "stream".to_string(),
-            test_transport,
-            TestTransportFactory {},
-        );
+        let mut fastboot_client =
+            FastbootProxy::new("stream".to_string(), test_transport, TestTransportFactory {});
 
         let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(20);
         let mut resolver = TestResolver::new();
@@ -1922,11 +1908,8 @@ mod test {
             Reply::Okay("".to_owned()), // Stream flash
         ]);
 
-        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
-            "stream".to_string(),
-            test_transport,
-            TestTransportFactory {},
-        );
+        let mut fastboot_client =
+            FastbootProxy::new("stream".to_string(), test_transport, TestTransportFactory {});
 
         let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(10);
         streaming_flash_impl(

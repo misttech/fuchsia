@@ -5,7 +5,6 @@
 use crate::{Config, ManualTargets};
 
 use addr::{TargetAddrParseError, TargetIpAddr};
-use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::Fastboot;
 use ffx_fastboot_interface::fastboot_proxy::FastbootProxy;
@@ -265,16 +264,15 @@ where
 async fn tcp_proxy(
     addr: &SocketAddr,
 ) -> std::result::Result<
-    FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>,
+    FastbootProxy<
+        TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>,
+        OneshotTcpFactory,
+    >,
     crate::ManualTargetsError,
 > {
     let mut factory = OneshotTcpFactory::new(*addr);
     let interface = factory.open().await.map_err(crate::ManualTargetsError::InterfaceFactory)?;
-    Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
-        addr.to_string(),
-        interface,
-        factory,
-    ))
+    Ok(FastbootProxy::new(addr.to_string(), interface, factory))
 }
 
 #[derive(Debug, Clone)]
@@ -288,7 +286,6 @@ impl OneshotTcpFactory {
     }
 }
 
-#[async_trait]
 impl InterfaceFactoryBase<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>
     for OneshotTcpFactory
 {
