@@ -237,9 +237,20 @@ TBD: _What is the use of ____drivers_epitaphs_.yaml___?_
 
 TBD: _What is the use of ___problems.yaml___?_
 
-### Structure of_redirects.yaml
+### Structure of _redirects.yaml
 
-This file defines redirections to another page for a given URL.
+This file defines redirections to another page for a given URL. `doc-checker`
+verifies that each entry in `_redirects.yaml` meets the following rules:
+
+* `from` paths must be non-empty, start with `/`, resolve within the directory
+  containing the `_redirects.yaml` file, and no longer exist in the repository.
+
+* `from` paths cannot contain `#` anchors or `*` and `?` wildcards (`...`
+  suffix wildcards are supported).
+
+* `to` paths must be non-empty, cannot equal `from` or form an expanding
+  wildcard loop, and must resolve to valid existing targets in `/docs`,
+  `/reference`, or external URLs.
 
 ### Structure of _supported_cpu_architecture.yaml
 

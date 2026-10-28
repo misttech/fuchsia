@@ -358,8 +358,12 @@ impl DocCheck for LinkChecker {
                 .map(|err| errors.push(err))
                 .is_some();
 
-                let root_dir = self.root_dir.display().to_string();
-                match is_intree_link(&self.project, &root_dir, &self.docs_folder, &link_to_check) {
+                match is_intree_link(
+                    &self.project,
+                    &self.root_dir,
+                    &self.docs_folder,
+                    &link_to_check,
+                ) {
                     Ok(Some(in_tree_path)) => {
                         match do_in_tree_check(
                             &element.doc_line(),
@@ -591,16 +595,18 @@ pub(crate) fn do_check_link(
 /// Returns the relative path from the root_dir if the link it to a file in the fuchsia source tree.
 pub(crate) fn is_intree_link(
     project: &str,
-    root_dir: &str,
+    root_dir: impl AsRef<Path>,
     docs_folder: &Path,
     link_to_check: &str,
 ) -> Result<Option<PathBuf>> {
-    if link_to_check.starts_with(root_dir) {
-        let mut filepath = link_to_check.strip_prefix(root_dir).unwrap_or(link_to_check);
-        (filepath, _) = filepath.split_once('#').unwrap_or((filepath, ""));
-        // Split off the query parameters, if any
-        (filepath, _) = filepath.split_once('?').unwrap_or((filepath, ""));
-        return Ok(Some(PathBuf::from(filepath)));
+    let root_path = root_dir.as_ref();
+    let (mut filepath, _) = link_to_check.split_once('#').unwrap_or((link_to_check, ""));
+    // Split off the query parameters, if any
+    (filepath, _) = filepath.split_once('?').unwrap_or((filepath, ""));
+    if !root_path.as_os_str().is_empty()
+        && let Ok(stripped) = Path::new(filepath).strip_prefix(root_path)
+    {
+        return normalize_path(&Path::new("/").join(stripped)).map(Some);
     } else if link_to_check.starts_with(&format!("https://{}/{}", GERRIT_HOST, project)) {
         let uri: Uri = match link_to_check.parse::<Uri>() {
             Ok(uri) => uri,

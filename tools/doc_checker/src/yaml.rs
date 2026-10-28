@@ -21,7 +21,9 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_yaml::{Mapping, Value};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 mod toc_checker;
@@ -838,7 +840,6 @@ fn check_path(
     allow_fuchsia_src_links: bool,
     reference_prefix: &Path,
 ) -> Option<DocCheckError> {
-    let root_dir = root_path.display().to_string();
     match do_check_link(doc_line, path, project, allow_fuchsia_src_links) {
         Ok(Some(doc_error)) => return Some(doc_error),
         Err(e) => {
@@ -865,7 +866,7 @@ fn check_path(
         return None;
     }
 
-    match is_intree_link(project, &root_dir, docs_folder, path) {
+    match is_intree_link(project, root_path, docs_folder, path) {
         Ok(Some(in_tree_path)) => {
             // Handle in-tree paths that are not in the docs_folder.
             // Since this is a table of contents, all the entries need
@@ -934,31 +935,28 @@ fn check_yaml_link(
             doc_line.file_name.clone(),
             &format!("Error parsing link {}: {}", link, e),
         )),
-        Ok(None) => {
-            let root_dir_str = root_dir.display().to_string();
-            match is_intree_link(project, &root_dir_str, docs_folder, link) {
-                Ok(Some(in_tree_path)) => {
-                    do_in_tree_check(doc_line, root_dir, docs_folder, link, &in_tree_path).err()
-                }
-                Ok(None) if is_external_path(link) => {
-                    external_links.push(LinkReference {
-                        link: normalize_external_link(link),
-                        location: doc_line.clone(),
-                    });
-                    None
-                }
-                Ok(None) => Some(DocCheckError::new_error(
-                    doc_line.line_num,
-                    doc_line.file_name.clone(),
-                    &format!("invalid path {}", link),
-                )),
-                Err(e) => Some(DocCheckError::new_error(
-                    doc_line.line_num,
-                    doc_line.file_name.clone(),
-                    &format!("Error checking in-tree link {}: {}", link, e),
-                )),
+        Ok(None) => match is_intree_link(project, root_dir, docs_folder, link) {
+            Ok(Some(in_tree_path)) => {
+                do_in_tree_check(doc_line, root_dir, docs_folder, link, &in_tree_path).err()
             }
-        }
+            Ok(None) if is_external_path(link) => {
+                external_links.push(LinkReference {
+                    link: normalize_external_link(link),
+                    location: doc_line.clone(),
+                });
+                None
+            }
+            Ok(None) => Some(DocCheckError::new_error(
+                doc_line.line_num,
+                doc_line.file_name.clone(),
+                &format!("invalid path {}", link),
+            )),
+            Err(e) => Some(DocCheckError::new_error(
+                doc_line.line_num,
+                doc_line.file_name.clone(),
+                &format!("Error checking in-tree link {}: {}", link, e),
+            )),
+        },
     }
 }
 
@@ -1079,6 +1077,258 @@ fn check_deprecated_docs(
     }
 }
 
+fn rewrite_fuchsia_src_link<'a>(
+    link: &'a str,
+    docs_folder: &Path,
+    allow_fuchsia_src_links: bool,
+) -> Cow<'a, str> {
+    if link.starts_with("//") && !link.starts_with("///") {
+        Cow::Owned(format!("https:{link}"))
+    } else if allow_fuchsia_src_links
+        && (link == "/fuchsia-src" || link.starts_with("/fuchsia-src/"))
+    {
+        Cow::Owned(link.replacen("/fuchsia-src", &format!("/{}", docs_folder.display()), 1))
+    } else {
+        Cow::Borrowed(link)
+    }
+}
+
+fn expected_redirect_dir(root_dir: &Path, docs_folder: &Path, filename: &Path) -> PathBuf {
+    let rel_file = filename.strip_prefix(root_dir).unwrap_or(filename);
+    match rel_file.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() && parent != Path::new(".") => {
+            Path::new("/").join(parent)
+        }
+        _ => Path::new("/").join(docs_folder),
+    }
+}
+
+/// Validates the `from` path of a single `_redirects.yaml` entry.
+fn validate_redirect_from(
+    from: &str,
+    root_dir: &Path,
+    docs_folder: &Path,
+    allow_fuchsia_src_links: bool,
+    docs_prefix: &Path,
+    expected_from_dir: &Path,
+    doc_line: &DocLine,
+) -> Option<DocCheckError> {
+    let err = |msg: String| {
+        Some(DocCheckError::new_error(doc_line.line_num, doc_line.file_name.clone(), &msg))
+    };
+    if from.trim().is_empty() {
+        return err("Redirect 'from' path cannot be empty".to_string());
+    }
+    if !from.starts_with('/') {
+        return err(format!("Redirect 'from' path must start with '/': {from}"));
+    }
+    if from.contains('*') || from.contains('?') {
+        return err(format!(
+            "Wildcards ('*' or '?') are not supported in redirect 'from' path: {from}"
+        ));
+    }
+    if from.contains('#') {
+        return err(format!("Anchors ('#') are not supported in redirect 'from' path: {from}"));
+    }
+
+    let rewritten = rewrite_fuchsia_src_link(from, docs_folder, allow_fuchsia_src_links);
+    let from_str = rewritten.as_ref();
+    let is_dir = from_str.ends_with("...");
+    let base_from = if is_dir {
+        from_str.strip_suffix("...").unwrap_or(from_str).trim_end_matches('/')
+    } else {
+        from_str
+    };
+    if base_from.is_empty() {
+        return err(format!("invalid path {from}"));
+    }
+
+    let normalized_from = match normalize_path(Path::new(base_from)) {
+        Ok(p) => p,
+        Err(e) => return err(format!("Error checking path {from}: {e}")),
+    };
+
+    if !normalized_from.starts_with(docs_prefix) || normalized_from == docs_prefix {
+        return err(format!(
+            "Redirect 'from' path must start with '{}': {from}",
+            docs_prefix.display()
+        ));
+    }
+    if !normalized_from.starts_with(expected_from_dir)
+        || (!is_dir && normalized_from == expected_from_dir)
+    {
+        return err(format!(
+            "Redirect 'from' path '{from}' must be within the '{}' directory",
+            expected_from_dir.display(),
+        ));
+    }
+
+    let rel_from = normalized_from.strip_prefix("/").unwrap_or(normalized_from.as_path());
+    let abs_from = root_dir.join(rel_from);
+
+    let existing_path = if path_helper::exists(&abs_from) && !path_helper::is_dir(&abs_from) {
+        Some(abs_from)
+    } else if path_helper::exists(&abs_from) && path_helper::is_dir(&abs_from) {
+        [abs_from.join("README.md"), abs_from.join("index.md")]
+            .into_iter()
+            .find(|p| path_helper::exists(p))
+    } else if abs_from.extension().is_none() && path_helper::exists(&abs_from.with_extension("md"))
+    {
+        Some(abs_from.with_extension("md"))
+    } else if abs_from.file_name() == Some(OsStr::new("index.md"))
+        && path_helper::exists(&abs_from.with_file_name("README.md"))
+    {
+        Some(abs_from.with_file_name("README.md"))
+    } else {
+        None
+    };
+
+    existing_path.and_then(|p| {
+        err(format!("Redirect 'from' path '{from}' still exists in the repository at {p:?}"))
+    })
+}
+
+/// Validates the `to` path of a single `_redirects.yaml` entry.
+fn validate_redirect_to(
+    entry: &FromTo,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    allow_fuchsia_src_links: bool,
+    docs_prefix: &Path,
+    reference_prefix: &Path,
+    doc_line: &DocLine,
+) -> Option<DocCheckError> {
+    let err = |msg: String| {
+        Some(DocCheckError::new_error(doc_line.line_num, doc_line.file_name.clone(), &msg))
+    };
+    if entry.to.trim().is_empty() {
+        return err("Redirect 'to' path cannot be empty".to_string());
+    }
+    if entry.to.contains('*') || (!is_external_path(&entry.to) && entry.to.contains('?')) {
+        return err(format!(
+            "Wildcards ('*' or '?') are not supported in redirect 'to' path: {}",
+            entry.to
+        ));
+    }
+
+    let rewritten_from =
+        rewrite_fuchsia_src_link(&entry.from, docs_folder, allow_fuchsia_src_links);
+    let rewritten_to = rewrite_fuchsia_src_link(&entry.to, docs_folder, allow_fuchsia_src_links);
+    if !entry.from.trim().is_empty() && rewritten_from == rewritten_to {
+        return err(format!("Redirect 'from' and 'to' paths cannot be identical: {}", entry.to));
+    }
+
+    // Redirects ending with "..." redirect an entire directory subtree, so validate
+    // that the target directory exists rather than checking for a single markdown file.
+    if entry.to.ends_with("...") {
+        let link_to_check =
+            rewritten_to.strip_suffix("...").unwrap_or(&rewritten_to).trim_end_matches('/');
+        if link_to_check.is_empty() {
+            return err(format!("invalid path {}", entry.to));
+        }
+        if !entry.from.ends_with("...") {
+            return err(format!(
+                "Wildcard redirect 'to' path '{}' requires 'from' path '{}' to also end with '...'",
+                entry.to, entry.from
+            ));
+        }
+        let from_base = rewritten_from.strip_suffix("...").unwrap_or(&rewritten_from);
+        if rewritten_to.starts_with(from_base) {
+            return err(format!(
+                "Redirect from '{}' to '{}' creates an expanding path loop",
+                entry.from, entry.to
+            ));
+        }
+        match do_check_link(doc_line, link_to_check, project, allow_fuchsia_src_links) {
+            Ok(Some(e)) => return Some(e),
+            Err(e) => return err(e.to_string()),
+            Ok(None) => {}
+        }
+        return match is_intree_link(project, root_dir, docs_folder, link_to_check) {
+            Ok(Some(in_tree_path))
+                if link_to_check.starts_with("/reference")
+                    && in_tree_path.starts_with(reference_prefix) =>
+            {
+                None
+            }
+            Ok(Some(in_tree_path)) => {
+                if !in_tree_path.starts_with(docs_prefix) {
+                    return err(format!(
+                        "in-tree link to {} must be in '{}' or '{}' directory",
+                        entry.to,
+                        docs_prefix.display(),
+                        reference_prefix.display(),
+                    ));
+                }
+                let abs_path =
+                    root_dir.join(in_tree_path.strip_prefix("/").unwrap_or(in_tree_path.as_path()));
+                if !path_helper::exists(&abs_path) || !path_helper::is_dir(&abs_path) {
+                    err(format!("Directory: {abs_path:?} not found for wildcard redirect."))
+                } else {
+                    None
+                }
+            }
+            Ok(None) if is_external_path(link_to_check) => None,
+            Ok(None) => err(format!("invalid path {}", entry.to)),
+            Err(e) => err(format!("Error checking path {}: {e}", entry.to)),
+        };
+    }
+
+    check_path(
+        doc_line,
+        root_dir,
+        docs_folder,
+        project,
+        &rewritten_to,
+        allow_fuchsia_src_links,
+        reference_prefix,
+    )
+}
+
+/// Validates a single `from`/`to` entry in `_redirects.yaml`.
+fn validate_redirect_entry(
+    entry: &FromTo,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    filename: &Path,
+    allow_fuchsia_src_links: bool,
+    docs_prefix: &Path,
+    reference_prefix: &Path,
+    expected_from_dir: &Path,
+) -> Vec<DocCheckError> {
+    let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+    let mut errors = Vec::new();
+
+    if let Some(err) = validate_redirect_from(
+        &entry.from,
+        root_dir,
+        docs_folder,
+        allow_fuchsia_src_links,
+        docs_prefix,
+        expected_from_dir,
+        &doc_line,
+    ) {
+        errors.push(err);
+    }
+
+    if let Some(err) = validate_redirect_to(
+        entry,
+        root_dir,
+        docs_folder,
+        project,
+        allow_fuchsia_src_links,
+        docs_prefix,
+        reference_prefix,
+        &doc_line,
+    ) {
+        errors.push(err);
+    }
+
+    errors
+}
+
 fn check_redirects(
     root_dir: &Path,
     docs_folder: &Path,
@@ -1091,45 +1341,32 @@ fn check_redirects(
     let result = serde_yaml::from_value::<Redirects>(yaml_value.clone());
     match result {
         Ok(redirects) => {
+            let docs_prefix = PathBuf::from("/").join(docs_folder);
+            let expected_from_dir = expected_redirect_dir(root_dir, docs_folder, filename);
+            let mut seen_from = HashSet::new();
             let mut errors = vec![];
-            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+
             for r in redirects.redirects.unwrap_or_default() {
-                // Ignore wildcards ending with "..." as they are likely supported by devsite
-                // but fail file existence checks.
-                if r.to.ends_with("...") {
-                    let parts: Vec<&str> = r.to.split("...").collect();
-                    let dir_part = parts[0].trim_end_matches('/');
-                    if !dir_part.is_empty() {
-                        let root_dir_str = root_dir.display().to_string();
-                        if let Ok(Some(in_tree_path)) =
-                            is_intree_link(project, &root_dir_str, docs_folder, dir_part)
-                        {
-                            let abs_path = root_dir.join(
-                                in_tree_path.strip_prefix("/").unwrap_or_else(|_| &in_tree_path),
-                            );
-                            if !path_helper::exists(&abs_path) || !path_helper::is_dir(&abs_path) {
-                                errors.push(DocCheckError::new_error(
-                                    doc_line.line_num,
-                                    doc_line.file_name.clone(),
-                                    &format!(
-                                        "Directory: {:?} not found for wildcard redirect.",
-                                        abs_path
-                                    ),
-                                ));
-                            }
-                        }
-                    }
-                } else if let Some(e) = check_path(
-                    &doc_line,
+                let rewritten_from =
+                    rewrite_fuchsia_src_link(&r.from, docs_folder, allow_fuchsia_src_links);
+                if !r.from.trim().is_empty() && !seen_from.insert(rewritten_from.into_owned()) {
+                    errors.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!("Duplicate redirect 'from' path: {}", r.from),
+                    ));
+                }
+                errors.extend(validate_redirect_entry(
+                    &r,
                     root_dir,
                     docs_folder,
                     project,
-                    &r.to,
+                    filename,
                     allow_fuchsia_src_links,
+                    &docs_prefix,
                     reference_prefix,
-                ) {
-                    errors.push(e);
-                }
+                    &expected_from_dir,
+                ));
             }
             if errors.is_empty() { None } else { Some(errors) }
         }
@@ -2407,6 +2644,133 @@ redirects:
         assert_eq!(
             errors[1].message,
             "Directory: \"./docs/nonexistent-no-extension\" not found for wildcard redirect."
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_check_redirects_from_and_scope_validation() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let docs_folder = PathBuf::from("docs");
+        let project = "fuchsia";
+        let filename = PathBuf::from("docs/sub/_redirects.yaml");
+        let reference_prefix = PathBuf::from("/reference");
+
+        // 1. Valid subdirectory redirects (removed .md, extensionless, index.md in no_readme, and wildcard)
+        let valid_yaml: Value = serde_yaml::from_str(
+            r#"
+redirects:
+- from: /docs/sub/old_page.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old_extensionless
+  to: /docs/are-ok.md
+- from: /docs/sub/no_readme/index.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old_dir/...
+  to: /docs/concepts/...
+- from: /docs/sub/no_readme/...
+  to: /docs/are-ok.md
+            "#,
+        )?;
+        assert_eq!(
+            check_redirects(
+                &root_dir,
+                &docs_folder,
+                project,
+                &filename,
+                &valid_yaml,
+                false,
+                &reference_prefix,
+            ),
+            None
+        );
+
+        // 2. Invalid `from` and `to` cases
+        let invalid_yaml: Value = serde_yaml::from_str(
+            r#"
+redirects:
+- from: ""
+  to: /docs/are-ok.md
+- from: docs/sub/old.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old*.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old?.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old.md#section
+  to: /docs/are-ok.md
+- from: /src/old.md
+  to: /docs/are-ok.md
+- from: /docs/other/old.md
+  to: /docs/are-ok.md
+- from: /docs/sub/../other/old.md
+  to: /docs/are-ok.md
+- from: /docs/sub_other/old.md
+  to: /docs/are-ok.md
+- from: /docs/sub
+  to: /docs/are-ok.md
+- from: /docs/sub/are-ok.md
+  to: /docs/other-ok.md
+- from: /docs/sub/existing_dir
+  to: /docs/other-ok.md
+- from: /docs/sub/existing_dir/index.md
+  to: /docs/other-ok.md
+- from: /docs/sub/existing_dir/...
+  to: /docs/concepts/...
+- from: /docs/sub/old_dup.md
+  to: /docs/are-ok.md
+- from: /docs/sub/old_dup.md
+  to: /docs/other-ok.md
+- from: /docs/sub/old_self.md
+  to: /docs/sub/old_self.md
+- from: /docs/sub/old_empty_to.md
+  to: ""
+- from: /docs/sub/old_wild_to.md
+  to: /docs/are-ok*.md
+- from: /docs/sub/old_non_wild.md
+  to: /docs/concepts/...
+- from: /docs/sub/old_loop/...
+  to: /docs/sub/old_loop/nested/...
+            "#,
+        )?;
+
+        let errors = check_redirects(
+            &root_dir,
+            &docs_folder,
+            project,
+            &filename,
+            &invalid_yaml,
+            false,
+            &reference_prefix,
+        )
+        .expect("Expected redirect validation errors");
+        let messages: Vec<&str> = errors.iter().map(|e| e.message.as_str()).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "Redirect 'from' path cannot be empty",
+                "Redirect 'from' path must start with '/': docs/sub/old.md",
+                "Wildcards ('*' or '?') are not supported in redirect 'from' path: /docs/sub/old*.md",
+                "Wildcards ('*' or '?') are not supported in redirect 'from' path: /docs/sub/old?.md",
+                "Anchors ('#') are not supported in redirect 'from' path: /docs/sub/old.md#section",
+                "Redirect 'from' path must start with '/docs': /src/old.md",
+                "Redirect 'from' path '/docs/other/old.md' must be within the '/docs/sub' directory",
+                "Redirect 'from' path '/docs/sub/../other/old.md' must be within the '/docs/sub' directory",
+                "Redirect 'from' path '/docs/sub_other/old.md' must be within the '/docs/sub' directory",
+                "Redirect 'from' path '/docs/sub' must be within the '/docs/sub' directory",
+                "Redirect 'from' path '/docs/sub/are-ok.md' still exists in the repository at \"./docs/sub/are-ok.md\"",
+                "Redirect 'from' path '/docs/sub/existing_dir' still exists in the repository at \"./docs/sub/existing_dir/README.md\"",
+                "Redirect 'from' path '/docs/sub/existing_dir/index.md' still exists in the repository at \"./docs/sub/existing_dir/README.md\"",
+                "Redirect 'from' path '/docs/sub/existing_dir/...' still exists in the repository at \"./docs/sub/existing_dir/README.md\"",
+                "Duplicate redirect 'from' path: /docs/sub/old_dup.md",
+                "Redirect 'from' and 'to' paths cannot be identical: /docs/sub/old_self.md",
+                "Redirect 'to' path cannot be empty",
+                "Wildcards ('*' or '?') are not supported in redirect 'to' path: /docs/are-ok*.md",
+                "Wildcard redirect 'to' path '/docs/concepts/...' requires 'from' path '/docs/sub/old_non_wild.md' to also end with '...'",
+                "Redirect from '/docs/sub/old_loop/...' to '/docs/sub/old_loop/nested/...' creates an expanding path loop",
+            ]
         );
 
         Ok(())

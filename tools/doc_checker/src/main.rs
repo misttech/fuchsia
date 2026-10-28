@@ -70,8 +70,10 @@ pub(crate) mod mock_path_helper_module {
             // markdown files exist with a couple exceptions.
             || (path_str.ends_with(".md")
                 && (!path_str.ends_with("no_readme/README.md")
+                    && !path_str.ends_with("index.md")
                     && !path_str.ends_with("unused/README.md")
                     && !path_str.ends_with("missing.md")
+                    && !path_str.contains("/old")
                     && !path_str.ends_with("no-extension")))
             // OWNERS file exists.
             || path.ends_with("OWNERS")
