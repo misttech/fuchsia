@@ -3,17 +3,24 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -943,5 +950,223 @@ TEST(PipeTest, SpliceEofPipeToClosedSocket) {
   // Splicing from an empty pipe with no writers (EOF) returns 0 immediately without invoking
   // write() on the closed destination socket.
   EXPECT_EQ(splice(pipe.ReadSide().get(), nullptr, sock_wr.get(), nullptr, 16, 0), 0);
+}
+
+TEST(PipeTest, SpliceConcurrentWithReaderPreservesFifoWithoutDuplicates) {
+  constexpr int kNumMsgs = 64;
+  test_helper::ScopedPipe pipe_a;
+  test_helper::ScopedPipe pipe_b;
+
+  std::vector<std::string> expected;
+  expected.reserve(kNumMsgs);
+  for (int i = 0; i < kNumMsgs; ++i) {
+    char msg[5];
+    snprintf(msg, sizeof(msg), "M%03d", i);
+    expected.emplace_back(msg, 4);
+    ASSERT_EQ(SAFE_SYSCALL(write(pipe_a.WriteSide().get(), msg, 4)), 4);
+  }
+  pipe_a.WriteSide().reset();
+
+  int pipe_a_rd = pipe_a.ReadSide().get();
+  fbl::unique_fd pipe_b_wr = std::move(pipe_b.WriteSide());
+  std::thread splicer([pipe_a_rd, pipe_b_wr = std::move(pipe_b_wr)] mutable {
+    while (true) {
+      ssize_t n = SAFE_SYSCALL(splice(pipe_a_rd, nullptr, pipe_b_wr.get(), nullptr, 4, 0));
+      if (n <= 0) {
+        break;
+      }
+      EXPECT_EQ(n, 4);
+      if (n != 4) {
+        break;
+      }
+    }
+    pipe_b_wr.reset();
+  });
+
+  std::vector<std::string> direct_reads;
+  while (true) {
+    char buf[4];
+    ssize_t n = SAFE_SYSCALL(read(pipe_a.ReadSide().get(), buf, sizeof(buf)));
+    if (n <= 0) {
+      break;
+    }
+    EXPECT_EQ(n, 4);
+    if (n != 4) {
+      break;
+    }
+    direct_reads.emplace_back(buf, 4);
+  }
+
+  // Drain pipe_b before joining splicer in case pipe_b filled its pipe buffer capacity.
+  std::vector<std::string> spliced_reads;
+  while (true) {
+    char buf[4];
+    ssize_t n = SAFE_SYSCALL(read(pipe_b.ReadSide().get(), buf, sizeof(buf)));
+    if (n <= 0) {
+      break;
+    }
+    EXPECT_EQ(n, 4);
+    if (n != 4) {
+      break;
+    }
+    spliced_reads.emplace_back(buf, 4);
+  }
+  splicer.join();
+
+  for (size_t i = 1; i < direct_reads.size(); ++i) {
+    EXPECT_LT(direct_reads[i - 1], direct_reads[i]) << "at index " << i;
+  }
+  for (size_t i = 1; i < spliced_reads.size(); ++i) {
+    EXPECT_LT(spliced_reads[i - 1], spliced_reads[i]) << "at index " << i;
+  }
+
+  std::vector<std::string> all_reads = direct_reads;
+  all_reads.insert(all_reads.end(), spliced_reads.begin(), spliced_reads.end());
+  std::ranges::sort(all_reads);
+  EXPECT_EQ(all_reads, expected);
+}
+
+TEST(PipeTest, TeeConcurrentWithReaderPreservesFifo) {
+  constexpr int kNumMsgs = 64;
+  test_helper::ScopedPipe pipe_c;
+  test_helper::ScopedPipe pipe_d;
+
+  std::vector<std::string> expected;
+  expected.reserve(kNumMsgs);
+  for (int i = 0; i < kNumMsgs; ++i) {
+    char msg[5];
+    snprintf(msg, sizeof(msg), "T%03d", i);
+    expected.emplace_back(msg, 4);
+    ASSERT_EQ(SAFE_SYSCALL(write(pipe_c.WriteSide().get(), msg, 4)), 4);
+  }
+  pipe_c.WriteSide().reset();
+
+  int pipe_c_rd = pipe_c.ReadSide().get();
+  fbl::unique_fd pipe_d_wr = std::move(pipe_d.WriteSide());
+  std::thread tee_worker([pipe_c_rd, pipe_d_wr = std::move(pipe_d_wr)] mutable {
+    while (true) {
+      ssize_t n = SAFE_SYSCALL(tee(pipe_c_rd, pipe_d_wr.get(), 4, 0));
+      if (n <= 0) {
+        break;
+      }
+      EXPECT_EQ(n, 4);
+      if (n != 4) {
+        break;
+      }
+    }
+    pipe_d_wr.reset();
+  });
+
+  std::vector<std::string> c_reads;
+  while (true) {
+    char buf[4];
+    ssize_t n = SAFE_SYSCALL(read(pipe_c.ReadSide().get(), buf, sizeof(buf)));
+    if (n <= 0) {
+      break;
+    }
+    EXPECT_EQ(n, 4);
+    if (n != 4) {
+      break;
+    }
+    c_reads.emplace_back(buf, 4);
+  }
+
+  // Drain pipe_d before joining tee_worker so a worker blocked on a full pipe_d can wake up,
+  // observe EOF on pipe_c, and exit cleanly.
+  std::vector<std::string> d_reads;
+  while (true) {
+    char buf[4];
+    ssize_t n = SAFE_SYSCALL(read(pipe_d.ReadSide().get(), buf, sizeof(buf)));
+    if (n <= 0) {
+      break;
+    }
+    EXPECT_EQ(n, 4);
+    if (n != 4) {
+      break;
+    }
+    d_reads.emplace_back(buf, 4);
+  }
+  tee_worker.join();
+
+  EXPECT_EQ(c_reads, expected);
+  for (size_t i = 1; i < d_reads.size(); ++i) {
+    EXPECT_LE(d_reads[i - 1], d_reads[i]) << "at index " << i;
+  }
+}
+
+TEST(PipeTest, TeeBlockedOnFullDestWakesOnSourceEof) {
+  test_helper::ScopedPipe pipe_src;
+  test_helper::ScopedPipe pipe_dst;
+  SAFE_SYSCALL(fcntl(pipe_dst.WriteSide().get(), F_SETPIPE_SZ, 2 * getpagesize()));
+
+  ASSERT_EQ(SAFE_SYSCALL(write(pipe_src.WriteSide().get(), "U000", 4)), 4);
+  pipe_src.WriteSide().reset();
+
+  // Fill pipe_dst to capacity using non-blocking tee calls so the next blocking tee is
+  // guaranteed to sleep waiting for write space on pipe_dst.
+  size_t filled_bytes = 0;
+  while (true) {
+    ssize_t n = tee(pipe_src.ReadSide().get(), pipe_dst.WriteSide().get(), 4, SPLICE_F_NONBLOCK);
+    if (n == -1) {
+      ASSERT_EQ(errno, EAGAIN);
+      break;
+    }
+    ASSERT_EQ(n, 4);
+    filled_bytes += static_cast<size_t>(n);
+  }
+  ASSERT_GT(filled_bytes, 0u);
+
+  int pipe_src_rd = pipe_src.ReadSide().get();
+  fbl::unique_fd pipe_dst_wr = std::move(pipe_dst.WriteSide());
+  std::atomic<pid_t> worker_tid{0};
+  std::thread blocked_tee_worker(
+      [pipe_src_rd, pipe_dst_wr = std::move(pipe_dst_wr), &worker_tid] mutable {
+        worker_tid.store(static_cast<pid_t>(syscall(SYS_gettid)));
+        while (true) {
+          ssize_t n = SAFE_SYSCALL(tee(pipe_src_rd, pipe_dst_wr.get(), 4, 0));
+          if (n <= 0) {
+            break;
+          }
+          EXPECT_EQ(n, 4);
+          if (n != 4) {
+            break;
+          }
+        }
+        pipe_dst_wr.reset();
+      });
+
+  while (worker_tid.load() == 0) {
+    sched_yield();
+  }
+  // Deterministically wait until blocked_tee_worker is sleeping in tee() before draining pipe_src.
+  EXPECT_TRUE(test_helper::WaitForTaskState(getpid(), worker_tid.load(),
+                                            [](std::string_view s) { return s == "S"; }));
+
+  char buf[4];
+  ssize_t src_n = SAFE_SYSCALL(read(pipe_src.ReadSide().get(), buf, sizeof(buf)));
+  EXPECT_EQ(src_n, 4);
+  if (src_n == 4) {
+    EXPECT_EQ(std::string(buf, 4), "U000");
+  }
+  EXPECT_EQ(SAFE_SYSCALL(read(pipe_src.ReadSide().get(), buf, sizeof(buf))), 0);
+
+  size_t drained_bytes = 0;
+  while (true) {
+    ssize_t n = SAFE_SYSCALL(read(pipe_dst.ReadSide().get(), buf, sizeof(buf)));
+    if (n <= 0) {
+      break;
+    }
+    EXPECT_EQ(n, 4);
+    if (n != 4) {
+      break;
+    }
+    EXPECT_EQ(std::string(buf, 4), "U000");
+    drained_bytes += static_cast<size_t>(n);
+  }
+  blocked_tee_worker.join();
+
+  // Because pipe_src was drained to EOF before pipe_dst had write space, the blocked tee must
+  // return 0 after waking rather than duplicating another 4 bytes.
+  EXPECT_EQ(drained_bytes, filled_bytes);
 }
 }  // namespace

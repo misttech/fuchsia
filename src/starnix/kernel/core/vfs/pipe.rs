@@ -2945,12 +2945,12 @@ mod tests {
     }
 
     #[::fuchsia::test]
-    async fn test_tee_concurrent_with_reader_preserves_fifo_without_duplicates() {
+    async fn test_splice_pipes_concurrent_with_reader_preserves_fifo_without_duplicates() {
         spawn_kernel_and_run(async |current_task| {
             let kernel = current_task.kernel();
             register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
 
-            // 1. Concurrent `splice_pipes` (`consume_source = true`) and `read` on `pipe_a` must
+            // Concurrent `splice_pipes` (`consume_source = true`) and `read` on `pipe_a` must
             // partition messages across `pipe_a` and `pipe_b` in FIFO order without duplicates.
             let (pipe_a_out, pipe_a_in) = new_pipe(&current_task).unwrap();
             let (pipe_b_out, pipe_b_in) = new_pipe(&current_task).unwrap();
@@ -3024,11 +3024,21 @@ mod tests {
             combined.sort();
             let expected: Vec<String> = (0..NUM_MSGS).map(|i| format!("M{:03}", i)).collect();
             assert_eq!(combined, expected);
+        })
+        .await;
+    }
 
-            // 2. Concurrent `tee` (`consume_source = false`) and `read` on `pipe_c` must never
+    #[::fuchsia::test]
+    async fn test_tee_concurrent_with_reader_preserves_fifo() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // Concurrent `tee` (`consume_source = false`) and `read` on `pipe_c` must never
             // reorder messages into `pipe_d`.
             let (pipe_c_out, pipe_c_in) = new_pipe(&current_task).unwrap();
             let (pipe_d_out, pipe_d_in) = new_pipe(&current_task).unwrap();
+            const NUM_MSGS: usize = 64;
             for i in 0..NUM_MSGS {
                 let msg = format!("T{:03}", i);
                 assert_eq!(
@@ -3042,14 +3052,13 @@ mod tests {
             current_task.trigger_delayed_releaser();
 
             let pipe_c_out_clone = pipe_c_out.clone();
-            let pipe_d_in_clone = pipe_d_in.clone();
             let (tee_join, tee_req) = SpawnRequestBuilder::new()
                 .with_sync_closure(move |worker_task: &CurrentTask| {
                     loop {
                         let n = PipeFileObject::tee(
                             worker_task,
                             &pipe_c_out_clone,
-                            &pipe_d_in_clone,
+                            &pipe_d_in,
                             4,
                             false,
                         )
@@ -3058,6 +3067,8 @@ mod tests {
                             break;
                         }
                     }
+                    std::mem::drop(pipe_d_in);
+                    worker_task.trigger_delayed_releaser();
                 })
                 .build_with_sync_result();
             kernel.kthreads.spawner().spawn_from_request(tee_req);
@@ -3068,10 +3079,9 @@ mod tests {
                     break;
                 }
             }
-            tee_join().unwrap();
-            std::mem::drop(pipe_d_in);
-            current_task.trigger_delayed_releaser();
 
+            // Drain `pipe_d_out` before joining `worker_task` so a `tee` call blocked on a full
+            // `pipe_d` can wake, observe EOF on `pipe_c`, and close `pipe_d_in`.
             let mut teed_msgs = Vec::new();
             loop {
                 let mut buf = VecOutputBuffer::new(4);
@@ -3082,7 +3092,85 @@ mod tests {
                 assert_eq!(n, 4);
                 teed_msgs.push(String::from_utf8(buf.data().to_vec()).unwrap());
             }
+            tee_join().unwrap();
             assert!(teed_msgs.windows(2).all(|w| w[0] <= w[1]));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_tee_blocked_on_full_destination_wakes_on_source_eof() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
+
+            // Deterministic regression check for https://fxbug.dev/578116361: force blocking
+            // `tee` to fill the destination pipe and sleep on `PIPE_WRITE_SPACE_WAIT_KEY` before
+            // the source pipe is drained to EOF, then verify draining the destination wakes the
+            // worker and terminates cleanly.
+            const MSG_LEN: usize = 4;
+            let (full_source_out, full_source_in) = new_pipe(&current_task).unwrap();
+            let (full_dest_out, full_dest_in) = new_pipe(&current_task).unwrap();
+            let dest_capacity = (*PAGE_SIZE as usize) * 2;
+            assert_eq!(
+                full_dest_in.fcntl(&current_task, F_SETPIPE_SZ, dest_capacity as u64).unwrap(),
+                dest_capacity.into()
+            );
+            assert_eq!(
+                full_source_in.write(&current_task, &mut VecInputBuffer::new(b"T000")).unwrap(),
+                MSG_LEN
+            );
+            std::mem::drop(full_source_in);
+            current_task.trigger_delayed_releaser();
+
+            let full_dest_ops = full_dest_out.downcast_file::<PipeFileObject>().unwrap();
+            let full_source_out_clone = full_source_out.clone();
+            let (blocked_tee_join, blocked_tee_req) = SpawnRequestBuilder::new()
+                .with_sync_closure(move |worker_task: &CurrentTask| {
+                    loop {
+                        let count = PipeFileObject::tee(
+                            worker_task,
+                            &full_source_out_clone,
+                            &full_dest_in,
+                            MSG_LEN,
+                            false,
+                        )
+                        .unwrap();
+                        if count == 0 {
+                            break;
+                        }
+                    }
+                    std::mem::drop(full_dest_in);
+                    worker_task.trigger_delayed_releaser();
+                })
+                .build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(blocked_tee_req);
+
+            while full_dest_ops.pipe.lock().waiters.is_empty() {
+                std::thread::yield_now();
+            }
+
+            let mut source_buf = VecOutputBuffer::new(MSG_LEN);
+            assert_eq!(full_source_out.read(&current_task, &mut source_buf).unwrap(), MSG_LEN);
+            assert_eq!(source_buf.data(), b"T000");
+            assert_eq!(
+                full_source_out.read(&current_task, &mut VecOutputBuffer::new(MSG_LEN)).unwrap(),
+                0
+            );
+
+            let mut drained_bytes = 0;
+            loop {
+                let mut dest_buf = VecOutputBuffer::new(MSG_LEN);
+                let count = full_dest_out.read(&current_task, &mut dest_buf).unwrap();
+                if count == 0 {
+                    break;
+                }
+                assert_eq!(count, MSG_LEN);
+                assert_eq!(dest_buf.data(), b"T000");
+                drained_bytes += count;
+            }
+            blocked_tee_join().unwrap();
+            assert_eq!(drained_bytes, dest_capacity);
         })
         .await;
     }
