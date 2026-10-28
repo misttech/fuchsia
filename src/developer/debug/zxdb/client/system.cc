@@ -30,6 +30,7 @@
 #include "src/developer/debug/zxdb/client/system_observer.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
 #include "src/developer/debug/zxdb/client/thread_impl.h"
+#include "src/developer/debug/zxdb/client/tracepoint.h"
 #include "src/developer/debug/zxdb/common/join_callbacks.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
 #include "src/developer/debug/zxdb/expr/vector_register_format.h"
@@ -555,6 +556,66 @@ void System::DeleteAllFilters() {
   SyncFilters();
 }
 
+Tracepoint* System::CreateNewTracepoint() {
+  uint32_t id = next_tracepoint_id_++;
+  auto owning = std::make_unique<Tracepoint>(session(), id);
+  Tracepoint* to_return = owning.get();
+  tracepoints_[id] = std::move(owning);
+
+  for (auto& observer : observers_)
+    observer.DidCreateTracepoint(to_return);
+
+  return to_return;
+}
+
+void System::DeleteTracepoint(Tracepoint* tracepoint) {
+  auto found = tracepoints_.find(tracepoint->id());
+  if (found == tracepoints_.end())
+    return;
+
+  for (auto& observer : observers_)
+    observer.WillDestroyTracepoint(tracepoint);
+
+  tracepoints_.erase(found);
+}
+
+void System::DeleteAllTracepoints() {
+  while (!tracepoints_.empty()) {
+    DeleteTracepoint(tracepoints_.begin()->second.get());
+  }
+}
+
+std::vector<Tracepoint*> System::GetTracepoints() const {
+  std::vector<Tracepoint*> result;
+  result.reserve(tracepoints_.size());
+  for (const auto& [id, tp] : tracepoints_) {
+    result.push_back(tp.get());
+  }
+  return result;
+}
+
+Tracepoint* System::GetTracepointForBreakpoint(const Breakpoint* bp) const {
+  if (!bp)
+    return nullptr;
+  for (const auto& [id, tp] : tracepoints_) {
+    if (tp->breakpoint() == bp)
+      return tp.get();
+  }
+  return nullptr;
+}
+
+Tracepoint* System::GetTracepointForBreakpointId(uint32_t bp_id) const {
+  const BreakpointImpl* impl = BreakpointImplForId(bp_id);
+  if (!impl)
+    return nullptr;
+  return GetTracepointForBreakpoint(impl);
+}
+
+void System::NotifyTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) {
+  for (auto& observer : observers_)
+    observer.OnTracepointHit(tracepoint, hit);
+}
+
 void System::Pause(fit::callback<void()> on_paused) {
   debug_ipc::PauseRequest request;  // Unset process/thread means everything.
   session()->remote_api()->Pause(
@@ -631,6 +692,13 @@ void System::DidDisconnect() {
 }
 
 BreakpointImpl* System::BreakpointImplForId(uint32_t id) {
+  auto found = breakpoints_.find(id);
+  if (found == breakpoints_.end())
+    return nullptr;
+  return found->second.get();
+}
+
+const BreakpointImpl* System::BreakpointImplForId(uint32_t id) const {
   auto found = breakpoints_.find(id);
   if (found == breakpoints_.end())
     return nullptr;

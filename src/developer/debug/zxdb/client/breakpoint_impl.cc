@@ -277,8 +277,10 @@ void BreakpointImpl::SyncBackend(SetCallback cb) {
     // process startup).
     //
     // In any case, the callback still needs to be issued.
-    debug::MessageLoop::Current()->PostTask(FROM_HERE,
-                                            [cb = std::move(cb)]() mutable { cb(Err()); });
+    if (cb) {
+      debug::MessageLoop::Current()->PostTask(FROM_HERE,
+                                              [cb = std::move(cb)]() mutable { cb(Err()); });
+    }
   }
 }
 

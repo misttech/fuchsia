@@ -18,6 +18,7 @@
 #include "src/developer/debug/zxdb/client/arch_info.h"
 #include "src/developer/debug/zxdb/client/component_observer.h"
 #include "src/developer/debug/zxdb/client/session_observer.h"
+#include "src/developer/debug/zxdb/client/stop_info.h"
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/common/err.h"
 #include "src/developer/debug/zxdb/expr/abi.h"
@@ -43,6 +44,7 @@ class RemoteAPITest;
 class TargetObserver;
 class ThreadImpl;
 class ThreadObserver;
+class Tracepoint;
 
 enum class SessionConnectionType : uint32_t {
   kNetwork = 1,
@@ -227,6 +229,18 @@ class Session : public SettingStoreObserver {
   friend PendingConnection;
   friend RemoteAPIImpl;
   friend RemoteAPITest;
+
+  // Collects enabled tracepoints that match any of the hit breakpoints.
+  std::vector<fxl::WeakPtr<Tracepoint>> CollectMatchedTracepoints(
+      const std::vector<fxl::WeakPtr<Breakpoint>>& hit_breakpoints) const;
+
+  // Deletes one-shot breakpoints that were removed in the backend.
+  void DeleteHitOneShotBreakpoints(const std::vector<debug_ipc::BreakpointStats>& hit_breakpoints);
+
+  // Handles tracepoint hit processing, asynchronous frame capture, and thread resumption.
+  void HandleMatchedTracepoints(ThreadImpl* thread, const debug_ipc::NotifyException& notify,
+                                StopInfo info,
+                                std::vector<fxl::WeakPtr<Tracepoint>> matched_tracepoints);
 
   // Nonspecific callback type. Implemented by SessionDispatchCallback (with the type-specific
   // parameter pre-bound). The uint32_t is the transaction ID. If the error is set, the data will be

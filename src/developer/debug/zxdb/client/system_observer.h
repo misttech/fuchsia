@@ -14,6 +14,8 @@ class Filter;
 class Process;
 class Target;
 class SymbolServer;
+class Tracepoint;
+struct TracepointHitRecord;
 
 class SystemObserver {
  public:
@@ -26,6 +28,13 @@ class SystemObserver {
   // Called immediately after creation / before destruction of a breakpoint.
   virtual void DidCreateBreakpoint(Breakpoint* breakpoint) {}
   virtual void WillDestroyBreakpoint(Breakpoint* breakpoint) {}
+
+  // Called immediately after creation / before destruction of a tracepoint.
+  virtual void DidCreateTracepoint(Tracepoint* tracepoint) {}
+  virtual void WillDestroyTracepoint(Tracepoint* tracepoint) {}
+
+  // Called when a tracepoint is hit and its frame state has been captured.
+  virtual void OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) {}
 
   // Called immediately after creation / before destruction of a filter.
   virtual void DidCreateFilter(Filter* filter) {}

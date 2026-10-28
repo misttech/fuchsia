@@ -70,6 +70,7 @@ static_library("client") {
     "thread.h",
     "thread_controller.h",
     "thread_observer.h",
+    "tracepoint.h",
     "tracepoint_capture.h",
     "tracepoint_spec.h",
     "until_process_controller.h",
@@ -167,6 +168,7 @@ static_library("client") {
     "thread_controller.cc",
     "thread_impl.cc",
     "thread_impl.h",
+    "tracepoint.cc",
     "tracepoint_capture.cc",
     "until_process_controller.cc",
     "until_thread_controller.cc",
@@ -323,6 +325,7 @@ source_set("tests") {
     "thread_controller_unittest.cc",
     "thread_impl_unittest.cc",
     "tracepoint_capture_unittest.cc",
+    "tracepoint_unittest.cc",
     "until_thread_controller_unittest.cc",
   ]
 
