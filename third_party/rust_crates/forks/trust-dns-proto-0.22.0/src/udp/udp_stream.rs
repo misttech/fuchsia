@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use futures_util::stream::Stream;
 use futures_util::{future::Future, ready, TryFutureExt};
 use rand;
-use rand::distributions::{uniform::Uniform, Distribution};
+use rand::distr::{uniform::Uniform, Distribution};
 use tracing::{debug, warn};
 
 use crate::xfer::{BufDnsStreamHandle, SerialMessage, StreamReceiver};
@@ -240,8 +240,8 @@ impl<S: UdpSocket> Future for NextRandomUdpSocket<S> {
             //
             //    The dynamic port range defined by IANA consists of the 49152-65535
             //    range, and is meant for the selection of ephemeral ports.
-            let rand_port_range = Uniform::new_inclusive(49152_u16, u16::max_value());
-            let mut rand = rand::thread_rng();
+            let rand_port_range = Uniform::new_inclusive(49152_u16, u16::max_value()).unwrap();
+            let mut rand = rand::rng();
 
             for attempt in 0..10 {
                 let port = rand_port_range.sample(&mut rand);

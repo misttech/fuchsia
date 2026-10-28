@@ -1693,18 +1693,6 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
-group("rand-0.8") {
-  public_deps = [ ":rand-v0_8_4" ]
-
-  visibility = [ ":*" ]
-}
-
-group("rand-0.8.4") {
-  public_deps = [ ":rand-v0_8_4" ]
-
-  visibility = [ ":*" ]
-}
-
 group("rand") {
   public_deps = [ ":rand-v0_10_3" ]
 }
@@ -14889,7 +14877,7 @@ rustc_library("num-bigint-dig-v0_8_6") {
   deps += [ ":num-integer-v0_1_46" ]
   deps += [ ":num-iter-v0_1_45" ]
   deps += [ ":num-traits-v0_2_19" ]
-  deps += [ ":rand-v0_8_4" ]
+  deps += [ ":rand-v0_8_8" ]
   deps += [ ":smallvec-v1_16_2" ]
 
   rustenv = []
@@ -18153,55 +18141,41 @@ rustc_library("rand-v0_10_3") {
   applicable_licenses = [ ":rand-v0_10_3.license" ]
 }
 
-license("rand-v0_8_4.license") {
+license("rand-v0_8_8.license") {
   public_package_name = "rand"
   license_files = [
-    "//third_party/rust_crates/vendor/rand-0.8.4/COPYRIGHT",
-    "//third_party/rust_crates/vendor/rand-0.8.4/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rand-0.8.4/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/rand-0.8.8/COPYRIGHT",
+    "//third_party/rust_crates/vendor/rand-0.8.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/rand-0.8.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("rand-v0_8_4") {
+rustc_library("rand-v0_8_8") {
   crate_name = "rand"
-  source_root = "//third_party/rust_crates/vendor/rand-0.8.4/src/lib.rs"
-  output_name = "rand-3acdc77c21a3a508"
+  source_root = "//third_party/rust_crates/vendor/rand-0.8.8/src/lib.rs"
+  output_name = "rand-ac666498e27f4582"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":rand_chacha-v0_3_1" ]
   deps += [ ":rand_core-v0_6_4" ]
-  if (!false) {
-    deps += [ ":rand_chacha-v0_3_1" ]
-  }
-  if (false) {
-    deps += [ ":rand_hc-v0_3_2" ]
-  }
-  if (true) {
-    deps += [ ":libc-v0_2_190" ]
-  }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=3acdc77c21a3a508",
-    "-Cextra-filename=-3acdc77c21a3a508",
-    "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"getrandom\"",
-    "--cfg=feature=\"libc\"",
+    "-Cmetadata=ac666498e27f4582",
+    "-Cextra-filename=-ac666498e27f4582",
     "--cfg=feature=\"rand_chacha\"",
-    "--cfg=feature=\"rand_hc\"",
-    "--cfg=feature=\"std\"",
     "--cfg=feature=\"std_rng\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rand-v0_8_4.license" ]
+  applicable_licenses = [ ":rand-v0_8_8.license" ]
 }
 
 license("rand-v0_9_5.license") {
@@ -18269,7 +18243,6 @@ rustc_library("rand_chacha-v0_3_1") {
     "--cap-lints=allow",
     "-Cmetadata=fcec8b118d26a7b7",
     "-Cextra-filename=-fcec8b118d26a7b7",
-    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
@@ -18414,40 +18387,6 @@ rustc_library("rand_core-v0_9_5") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":rand_core-v0_9_5.license" ]
-}
-
-license("rand_hc-v0_3_2.license") {
-  public_package_name = "rand_hc"
-  license_files = [
-    "//third_party/rust_crates/vendor/rand_hc-0.3.2/COPYRIGHT",
-    "//third_party/rust_crates/vendor/rand_hc-0.3.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/rand_hc-0.3.2/LICENSE-MIT",
-  ]
-}
-
-rustc_library("rand_hc-v0_3_2") {
-  crate_name = "rand_hc"
-  source_root = "//third_party/rust_crates/vendor/rand_hc-0.3.2/src/lib.rs"
-  output_name = "rand_hc-6b2fab32bccfc8c5"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":rand_core-v0_6_4" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=6b2fab32bccfc8c5",
-    "-Cextra-filename=-6b2fab32bccfc8c5",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":rand_hc-v0_3_2.license" ]
 }
 
 license("rand_xorshift-v0_4_0.license") {
@@ -24743,7 +24682,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":idna-v0_2_3" ]
   deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":lazy_static-v1_5_1" ]
-  deps += [ ":rand-v0_8_4" ]
+  deps += [ ":rand-v0_10_3" ]
   deps += [ ":smallvec-v1_16_2" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":tinyvec-v1_13_3" ]

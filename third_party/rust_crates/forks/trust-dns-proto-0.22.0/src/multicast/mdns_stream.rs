@@ -16,7 +16,7 @@ use futures_util::stream::{Stream, StreamExt};
 use futures_util::{future, future::Future, ready, FutureExt, TryFutureExt};
 use lazy_static::lazy_static;
 use rand;
-use rand::distributions::{uniform::Uniform, Distribution};
+use rand::distr::{uniform::Uniform, Distribution};
 use socket2::{self, Socket};
 use tokio::net::UdpSocket;
 use tracing::{debug, trace};
@@ -383,8 +383,8 @@ impl Future for NextRandomUdpSocket {
             //
             //    The dynamic port range defined by IANA consists of the 49152-65535
             //    range, and is meant for the selection of ephemeral ports.
-            let rand_port_range = Uniform::new_inclusive(49152_u16, u16::max_value());
-            let mut rand = rand::thread_rng();
+            let rand_port_range = Uniform::new_inclusive(49152_u16, u16::max_value()).unwrap();
+            let mut rand = rand::rng();
 
             for attempt in 0..10 {
                 let port = rand_port_range.sample(&mut rand);

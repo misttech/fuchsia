@@ -2248,24 +2248,6 @@ alias(
 )
 
 alias(
-    name = "rand-0.8.4",
-    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rand_0_8-0.8.4",
-    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rand_0_8",
-    actual = "//third_party/rust_crates/vendor/rand-0.8.4:rand",
-    tags = ["manual"],
-)
-
-alias(
     name = "rand-0.10.3",
     actual = "//third_party/rust_crates/vendor/rand-0.10.3:rand",
     tags = ["manual"],

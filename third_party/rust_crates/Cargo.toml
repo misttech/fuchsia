@@ -196,7 +196,6 @@ proptest-derive = "0.8.0"
 prost = "0.14.4"
 prost-build = "0.14.4"
 rand = { version = "0.10.3", default-features = false }
-rand-0_8 = { package = "rand", version = "0.8.4" }
 rand_core = "0.10.1"
 rand_xorshift = "0.5.0"
 range-alloc = "0.1.5"
@@ -1007,9 +1006,6 @@ rustflags = ["--cfg=span_locations", "--cfg=wrap_proc_macro"]
 
 [gn.package.rand_chacha."0.3.1"]
 license_files = ["LICENSE-APACHE"]
-
-[gn.package.rand."0.8.4"]
-groups = [ { name = "rand-0.8", visibility = [ ":*" ] } ]
 
 [gn.package.rand."0.10.3".platform."cfg(not(kernel))"]
 deps = [

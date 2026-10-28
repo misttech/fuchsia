@@ -89,7 +89,7 @@ rust_library(
         "//third_party/rust_crates/vendor/idna-0.2.3:idna",
         "//third_party/rust_crates/vendor/ipnet-2.12.2:ipnet",
         "//third_party/rust_crates/vendor/lazy_static-1.5.1:lazy_static",
-        "//third_party/rust_crates/vendor/rand-0.8.4:rand",
+        "//third_party/rust_crates/vendor/rand-0.10.3:rand",
         "//third_party/rust_crates/vendor/smallvec-1.16.2:smallvec",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
         "//third_party/rust_crates/vendor/tinyvec-1.13.3:tinyvec",

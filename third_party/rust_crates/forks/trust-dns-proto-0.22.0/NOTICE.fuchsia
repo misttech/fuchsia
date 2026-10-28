@@ -1,0 +1,170 @@
+================================================================================
+The following files are covered by this license:
+  - src/error.rs
+  - src/https/error.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2020 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/https/https_client_stream.rs
+  - src/https/https_server.rs
+  - src/https/mod.rs
+  - src/https/request.rs
+  - src/https/response.rs
+  - src/multicast/mdns_client_stream.rs
+  - src/multicast/mdns_stream.rs
+  - src/multicast/mod.rs
+  - src/rr/domain/label.rs
+  - src/rr/domain/try_parse_ip.rs
+  - src/rr/domain/usage.rs
+  - src/rustls/tls_server.rs
+  - src/udp/udp_stream.rs
+  - src/xfer/dns_exchange.rs
+  - src/xfer/dns_handle.rs
+  - src/xfer/dns_multiplexer.rs
+  - src/xfer/dns_request.rs
+  - src/xfer/dns_response.rs
+  - src/xfer/serial_message.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2018 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/lib.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2017 Benjamin Fry <benjaminfry@me.com>
+// Copyright 2017 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/native_tls/mod.rs
+  - src/op/header.rs
+  - src/op/message.rs
+  - src/op/op_code.rs
+  - src/openssl/mod.rs
+  - src/openssl/tls_server.rs
+  - src/rr/rdata/csync.rs
+  - src/rr/rdata/hinfo.rs
+  - src/rr/rdata/svcb.rs
+  - src/rr/record_data.rs
+  - src/rr/record_type.rs
+  - src/rr/type_bit_map.rs
+  - src/rustls/mod.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2021 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/native_tls/tests.rs
+  - src/native_tls/tls_client_stream.rs
+  - src/native_tls/tls_stream.rs
+  - src/openssl/tls_client_stream.rs
+  - src/openssl/tls_stream.rs
+  - src/rr/dnssec/public_key.rs
+  - src/rustls/tests.rs
+  - src/rustls/tls_client_stream.rs
+  - src/rustls/tls_stream.rs
+  - src/tcp/tcp_client_stream.rs
+  - src/tcp/tcp_stream.rs
+  - src/udp/udp_client_stream.rs
+  - src/xfer/dnssec_dns_handle.rs
+  - src/xfer/retry_dns_handle.rs
+  - tests/openssl_tests.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2016 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/quic/mod.rs
+  - src/quic/quic_client_stream.rs
+  - src/quic/quic_config.rs
+  - src/quic/quic_server.rs
+  - src/quic/quic_stream.rs
+  - src/quic/tests.rs
+  - src/rr/dnssec/algorithm.rs
+  - src/rr/dnssec/digest_type.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2022 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/rr/dns_class.rs
+  - src/rr/dnssec/rdata/tsig.rs
+  - src/rr/domain/mod.rs
+  - src/rr/domain/name.rs
+  - src/rr/rdata/caa.rs
+  - src/rr/rdata/tlsa.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2017 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/rr/dnssec/ec_public_key.rs
+  - src/rr/dnssec/rsa_public_key.rs
+--------------------------------------------------------------------------------
+// Copyright 2017 Brian Smith <brian@briansmith.org>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/rr/rdata/naptr.rs
+  - src/rr/rr_set.rs
+--------------------------------------------------------------------------------
+// Copyright 2015-2019 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================
+
+================================================================================
+The following files are covered by this license:
+  - src/rr/rdata/openpgpkey.rs
+  - src/rr/rdata/sshfp.rs
+--------------------------------------------------------------------------------
+// Copyright 2019 Benjamin Fry <benjaminfry@me.com>
+//
+// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
+// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
+// http://opensource.org/licenses/MIT>, at your option. This file may not be
+================================================================================

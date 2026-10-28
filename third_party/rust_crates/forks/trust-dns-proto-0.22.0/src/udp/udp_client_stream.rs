@@ -137,10 +137,10 @@ impl<S: Send, MF: MessageFinalizer> Display for UdpClientStream<S, MF> {
 
 /// creates random query_id, each socket is unique, no need for global uniqueness
 fn random_query_id() -> u16 {
-    use rand::distributions::{Distribution, Standard};
-    let mut rand = rand::thread_rng();
+    use rand::distr::{Distribution, StandardUniform};
+    let mut rand = rand::rng();
 
-    Standard.sample(&mut rand)
+    StandardUniform.sample(&mut rand)
 }
 
 impl<S: UdpSocket + Send + 'static, MF: MessageFinalizer> DnsRequestSender
