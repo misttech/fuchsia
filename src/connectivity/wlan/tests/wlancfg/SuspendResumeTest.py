@@ -9,7 +9,6 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.fuchsia_device.fuchsia_device import FuchsiaDevice
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.utils import power
 from honeydew.utils.deadline import Deadline
 from legacy_access_point.access_point import setup_ap
@@ -57,30 +56,6 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             device.ffx.run_ssh_cmd(f"display-tweak panel --power {state}")
         except Exception as e:  # pylint: disable=broad-except
             logger.warning("Failed to power %s display panel: %s", state, e)
-
-    def _set_battery_manager_running(
-        self, device: FuchsiaDevice, running: bool
-    ) -> None:
-        """Start or stop `/core/battery_manager` around suspend.
-
-        On workbench configurations with a battery, `/core/battery_manager`
-        holds a `charging_block_suspension` wake lease that prevents SAG from
-        entering suspend if charger/fuel-gauge disconnect updates are not yet
-        propagated.
-        """
-        action = "start" if running else "stop"
-        logger.info(
-            "Running `ffx component %s /core/battery_manager` on %s...",
-            action,
-            device.device_name,
-        )
-        try:
-            device.ffx.run(
-                ["component", action, "/core/battery_manager"],
-                machine=ffx_types.MachineFormat.RAW,
-            )
-        except Exception as e:  # pylint: disable=broad-except
-            logger.warning("Failed to %s /core/battery_manager: %s", action, e)
 
     async def setup_class(self) -> None:
         await super().setup_class()
@@ -182,7 +157,6 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # On workbench, the display panel must be manually powered off
         # before suspend. Otherwise, the device will not suspend.
         self._set_display_power(self.dut, power_on=False)
-        self._set_battery_manager_running(self.dut, running=False)
         try:
             await power.suspend_resume(
                 self.dut,
@@ -193,7 +167,6 @@ class SuspendResumeConnectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             logger.error("Failed to execute suspend/resume: %s", err)
             raise
         finally:
-            self._set_battery_manager_running(self.dut, running=True)
             # On workbench, the display panel must be manually powered on after
             # resume.
             self._set_display_power(self.dut, power_on=True)
