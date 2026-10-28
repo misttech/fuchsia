@@ -7,7 +7,6 @@
 
 #include <fuchsia/math/cpp/fidl.h>
 #include <fuchsia/scenic/scheduling/cpp/fidl.h>
-#include <fuchsia/sysmem/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl_test_base.h>
@@ -110,11 +109,7 @@ class FakeFlatland : public fuchsia::ui::composition::testing::Allocator_TestBas
 
   struct BufferCollectionBinding {
     fuchsia::ui::composition::BufferCollectionExportToken export_token;
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
     fuchsia::sysmem2::BufferCollectionTokenHandle sysmem_token;
-#else
-    fuchsia::sysmem::BufferCollectionTokenHandle sysmem_token;
-#endif
 
     fuchsia::ui::composition::RegisterBufferCollectionUsage usage;
   };

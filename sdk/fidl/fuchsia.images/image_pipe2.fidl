@@ -87,7 +87,7 @@ closed protocol ImagePipe2 {
         buffer_collection_id uint32;
         buffer_collection_token client_end:fuchsia.sysmem2.BufferCollectionToken;
     });
-    @available(deprecated=13, note="use AddBufferCollection2")
+    @available(deprecated=13, removed=NEXT, note="use AddBufferCollection2")
     strict AddBufferCollection(resource struct {
         buffer_collection_id uint32;
         buffer_collection_token client_end:fuchsia.sysmem.BufferCollectionToken;

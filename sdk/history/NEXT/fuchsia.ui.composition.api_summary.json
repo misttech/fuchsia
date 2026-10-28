@@ -1363,12 +1363,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.ui.composition/RegisterBufferCollectionArgs.buffer_collection_token",
-        "ordinal": "2",
-        "type": "fuchsia.sysmem/BufferCollectionToken"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.ui.composition/RegisterBufferCollectionArgs.buffer_collection_token2",
         "ordinal": "5",
         "type": "fuchsia.sysmem2/BufferCollectionToken"

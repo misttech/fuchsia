@@ -6,6 +6,7 @@
 #include <lib/ui/scenic/cpp/testing/fake_flatland.h>
 #include <lib/ui/scenic/cpp/testing/fake_flatland_types.h>
 #include <zircon/assert.h>
+#include <zircon/availability.h>
 #include <zircon/types.h>
 
 #include <algorithm>  // For std::remove_if
@@ -84,10 +85,10 @@ void FakeFlatland::RegisterBufferCollection(
     RegisterBufferCollectionCallback callback) {
   auto [export_token_koid, _] = GetKoids(args.export_token());
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(25)
-  // Callers must not set both.
-  ZX_ASSERT(!args.has_buffer_collection_token2() || !args.has_buffer_collection_token());
   fuchsia::sysmem2::BufferCollectionTokenHandle sysmem_token;
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+  // Callers must set exactly one of buffer_collection_token2 or buffer_collection_token.
+  ZX_ASSERT(args.has_buffer_collection_token2() != args.has_buffer_collection_token());
   if (args.has_buffer_collection_token2()) {
     sysmem_token = std::move(*args.mutable_buffer_collection_token2());
   } else {
@@ -95,8 +96,8 @@ void FakeFlatland::RegisterBufferCollection(
         args.mutable_buffer_collection_token()->TakeChannel());
   }
 #else
-  fuchsia::sysmem::BufferCollectionTokenHandle sysmem_token;
-  sysmem_token = std::move(*args.mutable_buffer_collection_token());
+  ZX_ASSERT(args.has_buffer_collection_token2());
+  sysmem_token = std::move(*args.mutable_buffer_collection_token2());
 #endif
 
   auto [__, emplace_binding_success] = graph_bindings_.buffer_collections.emplace(
