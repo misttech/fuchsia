@@ -117,6 +117,47 @@ EXCLUDED_GLOBAL_DIRS = (
 dirs = list(target_dirs)
 changed = git_lines(["diff", "--name-only", change_base]) + git_lines(["ls-files", "--others", "--exclude-standard"])
 changed_set = set(changed)
+
+
+# Check whether an ancestor directory of a target_dir was only modified to wire tests
+# (test_suite in BUILD.bazel, bazel_test_suite or group("tests") in BUILD.gn) rather
+# than migrating non-test targets of its own.
+def _is_ancestor_test_wiring_only(d):
+    if d in target_dirs or not any(td.startswith(d + "/") for td in target_dirs):
+        return False
+    for fn in ("BUILD.bazel", "BUILD.gn"):
+        rel_f = f"{d}/{fn}"
+        if rel_f not in changed_set:
+            continue
+        diff_txt = "\n".join(git_lines(["diff", "-U0", change_base, "--", rel_f]))
+        for raw_ln in diff_txt.splitlines():
+            if not raw_ln.startswith(("+", "-")) or raw_ln.startswith(("+++", "---")):
+                continue
+            s = raw_ln[1:].strip()
+            if not s or s.startswith("#") or s in ("{", "}", "]", ")", "],", "),"):
+                continue
+            if fn == "BUILD.bazel":
+                if re.match(
+                    r'^(?:test_suite\s*\(|name\s*=\s*"(?:target_|host_)?tests"|'
+                    r"tests\s*=\s*\[|target_compatible_with\s*=|"
+                    r'"//[^"]+"[,]?$|load\()',
+                    s,
+                ):
+                    continue
+                return False
+            else:
+                if re.match(
+                    r'^(?:import\("//build/bazel/bazel_test_suite\.gni"\)|'
+                    r'bazel_test_suite\s*\(|group\(\s*"tests"\s*\)|'
+                    r"testonly\s*=\s*true|(?:deps|host_tests|target_tests)\s*\+?=\s*\[|"
+                    r'"[^"]+"[,]?$)',
+                    s,
+                ):
+                    continue
+                return False
+    return True
+
+
 for p in changed:
     if os.path.basename(p) in ("BUILD.bazel", "BUILD.gn"):
         d = os.path.dirname(p).strip("/")
@@ -124,7 +165,7 @@ for p in changed:
             d
             and d not in ("tools", "src", "sdk")
             and not any(d == ex or d.startswith(ex + "/") for ex in EXCLUDED_GLOBAL_DIRS)
-            and not (any(d == os.path.dirname(td) for td in target_dirs) and f"{d}/BUILD.bazel" not in changed_set)
+            and not _is_ancestor_test_wiring_only(d)
             and d not in dirs
         ):
             dirs.append(d)
@@ -160,8 +201,9 @@ for d in bazel_dirs:
         pass
 
 # Bazel tests exported to tests.json by GN `bazel_test_suite()` targets in the changed directories:
-# {"host_tests": [labels], "target_tests": [labels]}. Host tests are run with `fx bazel test`;
-# device tests (`fx_test`) cannot run under `bazel test` and are only built (bazel_build_fuchsia).
+# {"host_tests": [labels], "target_tests": [labels]}. Host tests defined in the changed packages
+# are run with `fx bazel test`; device tests (`fx_test`) cannot run under `bazel test` and are only
+# built (bazel_build_fuchsia).
 exported_tests = {"host_tests": [], "target_tests": []}
 for d in dirs:
     try:
@@ -180,6 +222,58 @@ for d in dirs:
             for label in re.findall(r'"(//[^"]+)"', lm.group(2)):
                 if label not in exported_tests[lm.group(1)]:
                     exported_tests[lm.group(1)].append(label)
+
+# Also collect Bazel host tests defined directly in the changed packages' BUILD.bazel files
+# (including tests wired into an ancestor BUILD.bazel `test_suite` rather than a local
+# `bazel_test_suite`), scoped to `bazel_dirs` so `bazel_test_host` does not run unrelated
+# sibling packages' tests from an ancestor `test_suite`.
+BAZEL_HOST_TEST_RULES = {
+    "host_rustc_test",
+    "wrap_host_rust_test",
+    "host_go_test",
+    "host_py_test",
+    "host_test",
+    "host_cc_test",
+    "host_shac_test",
+}
+host_test_targets = []
+for d in bazel_dirs:
+    try:
+        with open(os.path.join(workdir, d, "BUILD.bazel"), encoding="utf-8", errors="replace") as f:
+            bz_src = f.read()
+        bz_tree = ast.parse(bz_src)
+    except Exception:
+        continue
+    for node in ast.walk(bz_tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = (
+            node.func.id
+            if isinstance(node.func, ast.Name)
+            else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+        )
+        kws = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+        nm_node = kws.get("name")
+        if not (isinstance(nm_node, ast.Constant) and isinstance(nm_node.value, str)):
+            continue
+        tname = nm_node.value
+        if fn in BAZEL_HOST_TEST_RULES:
+            lbl = f"//{d}:{tname}"
+            if lbl not in host_test_targets:
+                host_test_targets.append(lbl)
+        elif fn in ("rustc_library", "rustc_binary", "rustc_proc_macro"):
+            w_host = kws.get("with_host_unit_tests")
+            w_ut = kws.get("with_unit_tests")
+            if (isinstance(w_host, ast.Constant) and w_host.value is True) or (
+                isinstance(w_ut, ast.Constant) and w_ut.value in ("host", "both")
+            ):
+                lbl = f"//{d}:{tname}_test"
+                if lbl not in host_test_targets:
+                    host_test_targets.append(lbl)
+for lbl in exported_tests["host_tests"]:
+    pkg_d = lbl[2:].split(":", 1)[0].strip("/") if lbl.startswith("//") else ""
+    if pkg_d in bazel_dirs and lbl not in host_test_targets:
+        host_test_targets.append(lbl)
 
 LINKED_TEMPLATES = {"executable", "test", "rustc_binary", "rustc_test", "loadable_module", "shared_library", "rustc_cdylib", "fuchsia_driver"}
 LIBRARY_TEMPLATES = {"rustc_library", "rustc_macro", "rustc_staticlib", "static_library", "source_set"}
@@ -566,8 +660,8 @@ if host_dirs:
         + gn_targets_override("host")
         + bazel_target_args(host_dirs),
     ))
-if exported_tests["host_tests"]:
-    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host", "--config=remote"] + gn_targets_override("host") + exported_tests["host_tests"]))
+if host_test_targets:
+    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host", "--config=remote"] + gn_targets_override("host") + host_test_targets))
 if exported_tests["host_tests"] or exported_tests["target_tests"]:
     steps.append(("bazel_tests_exported", None))  # Checks <build dir>/tests.json after gn_build.
 

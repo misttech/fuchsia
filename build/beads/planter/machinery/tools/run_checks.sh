@@ -656,8 +656,28 @@ def run_once(spec, target_dir):
     # Mirrors adapters.SubprocessToolExecutor.runCheckOnce.
     script = spec["script_file"]
     if not os.path.isabs(script):
-        cand = os.path.normpath(os.path.join(project_dir, "checks", script))
-        script = cand if os.path.exists(cand) else os.path.normpath(os.path.join(project_dir, script))
+        mroot = machinery_root()
+        for cand in (
+            os.path.normpath(os.path.join(mroot, "checks", script)),
+            os.path.normpath(os.path.join(project_dir, "checks", script)),
+            os.path.normpath(os.path.join(mroot, script)),
+            os.path.normpath(os.path.join(project_dir, script)),
+        ):
+            if os.path.exists(cand):
+                script = cand
+                break
+        else:
+            return [
+                new_finding(
+                    source=spec["name"],
+                    category="check_script_missing_in_pin",
+                    severity="INFO",
+                    message=(
+                        f"check script {json.dumps(spec['script_file'])} is not present "
+                        "in this pinned machinery snapshot; skipping."
+                    ),
+                )
+            ]
     path = os.environ.get("PATH", "")
     env = dict(os.environ)
     env.update(

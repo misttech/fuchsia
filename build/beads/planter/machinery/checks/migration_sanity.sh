@@ -1192,6 +1192,21 @@ for pkg_dir in sorted(candidate_dirs):
     for t in bazel_targets:
         if t["rule"] == "fx_unittest_package":
             packaged_binaries.update(t.get("unit_tests_refs", []))
+    # Treat host binaries wrapped by a pre-sentinel bazel_host_tool() target as
+    # Bazel-only packaged binaries so `# @bazel2gn:skip` on the underlying host
+    # binary in BUILD.bazel is allowed even when bazel_host_tool() uses a
+    # different GN target name.
+    if gn_info:
+        for hname, (htmpl, _, hbody) in gn_info["pre_targets"].items():
+            if htmpl == "bazel_host_tool":
+                packaged_binaries.add(hname)
+                m_bt = re.search(r'\bbazel_target\s*=\s*"([^"]+)"', hbody)
+                if m_bt:
+                    bt_lbl = m_bt.group(1).strip()
+                    if bt_lbl.startswith(":"):
+                        packaged_binaries.add(bt_lbl[1:])
+                    elif bt_lbl.startswith(f"//{pkg_dir}:"):
+                        packaged_binaries.add(bt_lbl[len(f"//{pkg_dir}:") :])
     converted_manifest_refs = {
         r
         for t in bazel_targets
@@ -5961,8 +5976,31 @@ def inspect_preexisting_collateral_pkg(pkg_dir):
                 changed_rules.add(rname)
 
     gn_modified = gn_rel in changed
-    is_collateral = not gn_modified and (
-        changed_rules <= {"test_suite", "exports_files", "package", "package_group"}
+    gn_abs = os.path.join(workdir, gn_rel)
+    gn_has_sentinel = False
+    if os.path.isfile(gn_abs):
+        try:
+            gn_has_sentinel = (
+                "BAZEL2GN SENTINEL"
+                in open(gn_abs, encoding="utf-8", errors="ignore").read()
+            )
+        except OSError:
+            pass
+    # A package outside target_dirs whose BUILD.gn has no BAZEL2GN SENTINEL and whose
+    # BUILD.bazel only updates test_suite/exports_files/package/filegroup/stamp_group
+    # or target visibility is a collateral registration package even when BUILD.gn is
+    # also edited to wire tests into group("tests") or bazel_test_suite().
+    collateral_rules = {
+        "test_suite",
+        "exports_files",
+        "package",
+        "package_group",
+        "filegroup",
+        "stamp_group",
+    }
+    is_collateral = (
+        changed_rules <= collateral_rules
+        and (not gn_modified or (pkg_dir not in set(target_dirs) and not gn_has_sentinel))
     )
     if not (cur_default_vis_line or unmodified_targets or is_collateral):
         return None
@@ -6075,7 +6113,7 @@ def record_preexisting_collateral_diff_info():
         if (
             info["is_collateral"]
             or (cat == "package_hygiene" and info["default_vis_line"])
-            or (tname and tname in info["unmodified_targets"] and not info["gn_modified"])
+            or (tname and tname in info["unmodified_targets"])
         ):
             add_info(
                 cat,
@@ -6393,6 +6431,146 @@ def check_preexisting_bazel_exports_and_targets(dirs_to_check):
 
 
 check_preexisting_bazel_exports_and_targets(candidate_dirs)
+
+
+# Extract same-package target names referenced in a GN target body.
+def _extract_same_pkg_gn_deps(body, pkg):
+    targets = []
+    for quoted in re.findall(r'"([^"]+)"', body):
+        label = quoted.split("(", 1)[0].strip()
+        if label.startswith(":"):
+            targets.append(label[1:])
+        elif label.startswith(f"//{pkg}:"):
+            targets.append(label[len(f"//{pkg}:") :])
+    return targets
+
+
+# Check a dual-build package for install_host_tools() or bazel_host_tool() kept above
+# the BAZEL2GN SENTINEL while bazel2gn still generates the host binary below it.
+def check_dual_built_host_tools(dirs):
+    host_bin_rules = ("rustc_binary", "go_binary", "executable", "cc_binary")
+    sentinel = "## BAZEL2GN SENTINEL"
+    for d in sorted(dirs):
+        gn_rel = os.path.join(d, "BUILD.gn")
+        bz_rel = os.path.join(d, "BUILD.bazel")
+        gn_abs = os.path.join(workdir, gn_rel)
+        bz_abs = os.path.join(workdir, bz_rel)
+        if not (os.path.isfile(gn_abs) and os.path.isfile(bz_abs)):
+            continue
+        gn_info = parse_gn_file(gn_abs)
+        if not gn_info or not gn_info["has_sentinel"]:
+            continue
+        generated_bins = {
+            bname: (btmpl, bline, bbody)
+            for bname, (btmpl, bline, bbody) in gn_info["post_targets"].items()
+            if btmpl in host_bin_rules
+        }
+        if not generated_bins:
+            continue
+
+        reported_bins = set()
+        # Check install_host_tools() above the sentinel referencing a generated binary.
+        for iname, (itmpl, iline, ibody) in gn_info["pre_targets"].items():
+            if itmpl != "install_host_tools":
+                continue
+            for dep_name in _extract_same_pkg_gn_deps(ibody, d):
+                if dep_name not in generated_bins:
+                    continue
+                gen_rule, gen_line, gen_body = generated_bins[dep_name]
+                reported_bins.add(dep_name)
+                m_out = re.search(r'\boutput_name\s*=\s*"([^"]+)"', gen_body)
+                m_inst_out = re.search(
+                    r'\boutputs\s*=\s*\[\s*"([^"]+)"', ibody, re.DOTALL
+                )
+                out_name = (
+                    (m_out.group(1) if m_out else None)
+                    or (m_inst_out.group(1) if m_inst_out else None)
+                    or dep_name
+                )
+                if gen_rule == "go_binary":
+                    out_path = f"{{{{BAZEL_TARGET_OUT_DIR}}}}/{dep_name}_/{dep_name}"
+                else:
+                    out_path = f"{{{{BAZEL_TARGET_OUT_DIR}}}}/{dep_name}"
+                out_attr = (
+                    f'output_name = "{out_name}" ' if out_name != dep_name else ""
+                )
+                msg = (
+                    f"`{gn_rel}` keeps `install_host_tools(\"{iname}\")` above "
+                    f"`{sentinel}` while `bazel2gn` generates "
+                    f"`{gen_rule}(\"{dep_name}\")` below the sentinel (line "
+                    f"{gen_line}). Host tools must be built in Bazel only and "
+                    "brought into GN via `bazel_host_tool` instead of syncing "
+                    "the binary with `bazel2gn`."
+                )
+                rem = (
+                    f"In `{gn_rel}`, replace `install_host_tools(\"{iname}\")` "
+                    "with `import(\"//build/bazel/bazel_host_tool.gni\")` and "
+                    f"`if (is_host) {{ bazel_host_tool(\"{dep_name}\") {{ "
+                    f'bazel_target = ":{dep_name}" '
+                    f'bazel_output_path = "{out_path}" '
+                    f"{out_attr}"
+                    f"install_host_tool = true }} }}` above `{sentinel}`, and "
+                    f'update any same-package group depending on `:{iname}` to '
+                    f'depend on `:{dep_name}($host_toolchain)` (or keep a '
+                    f'forwarding `group("{iname}")` if external callers '
+                    f"reference `:{iname}`). In `{bz_rel}`, place "
+                    "`# @bazel2gn:skip` on the line immediately above "
+                    f"`{dep_name}`, remove any inner `# @bazel2gn:*` attribute "
+                    f"comments inside `{dep_name}`, and re-run "
+                    f"`fx bazel2gn -d {d}` so `{dep_name}` is no longer "
+                    "generated below the sentinel."
+                )
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "dual_built_host_tool",
+                    "severity": "error",
+                    "file": gn_rel,
+                    "line": iline,
+                    "message": msg,
+                    "remediation": rem,
+                })
+
+        # Check bazel_host_tool() above the sentinel duplicating a generated binary.
+        for hname, (htmpl, hline, hbody) in gn_info["pre_targets"].items():
+            if htmpl != "bazel_host_tool":
+                continue
+            candidates = [hname]
+            m_bt = re.search(r'\bbazel_target\s*=\s*"([^"]+)"', hbody)
+            if m_bt:
+                bt_lbl = m_bt.group(1).strip()
+                if bt_lbl.startswith(":"):
+                    candidates.append(bt_lbl[1:])
+                elif bt_lbl.startswith(f"//{d}:"):
+                    candidates.append(bt_lbl[len(f"//{d}:") :])
+            for dep_name in candidates:
+                if dep_name in generated_bins and dep_name not in reported_bins:
+                    gen_rule, gen_line, _ = generated_bins[dep_name]
+                    reported_bins.add(dep_name)
+                    msg = (
+                        f"`{gn_rel}` defines `bazel_host_tool(\"{hname}\")` "
+                        f"above `{sentinel}` (line {hline}) while "
+                        f"`{gen_rule}(\"{dep_name}\")` is still generated "
+                        f"below `{sentinel}` (line {gen_line})."
+                    )
+                    rem = (
+                        f"In `{bz_rel}`, place `# @bazel2gn:skip` on the line "
+                        f"immediately above `{dep_name}`, remove any inner "
+                        f"`# @bazel2gn:*` attribute comments inside `{dep_name}`, "
+                        f"and re-run `fx bazel2gn -d {d}` so `{dep_name}` is not "
+                        f"generated below `{sentinel}` in `{gn_rel}`."
+                    )
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "dual_built_host_tool",
+                        "severity": "error",
+                        "file": gn_rel,
+                        "line": gen_line,
+                        "message": msg,
+                        "remediation": rem,
+                    })
+
+
+check_dual_built_host_tools(candidate_dirs)
 
 print(json.dumps(findings, indent=2))
 PYEOF

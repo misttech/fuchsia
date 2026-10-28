@@ -285,10 +285,9 @@ Bazel `Visibility error`, fix that dependency in this same change instead of sto
    the same rules as the target, point the depending BUILD.bazel at the new Bazel label, and
    repeat transitively. If an already-migrated dependency in `<path>/BUILD.bazel` rejects your
    target with a Bazel `Visibility error`, update its `visibility` in `<path>/BUILD.bazel` from
-   `find_rdeps <path>` (`per_target_recommended_visibility`); if `<path>/BUILD.gn` keeps
-   `visibility = [ ":*" ]` on that target behind a forwarding `group()` above the sentinel,
-   preserve GN visibility with `# @bazel2gn:raw_overwrite:[ ":*" ]` on the closing `],`,
-   otherwise run `fx bazel2gn -d <path>`.
+   `find_rdeps <path>` (`per_target_recommended_visibility`) and run `fx bazel2gn -d <path>`
+   (never use `# @bazel2gn:raw_overwrite` on `visibility` to get `":*"` or `//<dir>/*` in GN:
+   `bazel2gn` adds `":*"` to non-empty lists and maps `"//visibility:private"` to `[ ":*" ]`).
 3. **Only stop** if a required dependency cannot have a Bazel target at all: a GN-only construct
    with no Bazel mapping, or build-system/prebuilt internals (`//build/**`, `//prebuilt/**`,
    unmapped `//third_party/**`). Report the exact dependency chain.
@@ -466,11 +465,11 @@ From `$PLANTER_WORKDIR`:
    `git fetch origin main && git rebase origin/main` (keeping both `origin/main` and your
    entries sorted, then `git -c core.editor=true rebase --continue`); never edit unrelated
    `//build/**` or out-of-scope files to work around an upstream `origin/main` breakage.
-   If CQ failed with `no such package '<dep>': BUILD file not found` or `unmerged_parent_bazel_package_dep`
-   because `<dep>/BUILD.bazel` is only in an unmerged local ancestor commit (`HEAD~1`), fold it into `HEAD`
-   (`git reset --soft "$(git merge-base origin/main HEAD)" && git commit --amend`, removing the
-   folded `Depends on:` line, adding its `Bazel-Migration-Target:` footers, and listing its files
-   in `modified_files`). For fast compile feedback, run `fx bazel2gn -d <dir>` and
+   If CQ failed with `no such package '<dep>': BUILD file not found`, keep stacked parent commits
+   providing `<dep>/BUILD.bazel` in `origin/main..HEAD` when rebasing (never drop them with
+   `git rebase --onto origin/main HEAD~1` or fold stacked task commits into `HEAD`), or migrate
+   `//<dep>` in `HEAD` when `<dep>/BUILD.bazel` is missing from `HEAD`. For fast compile feedback,
+   run `fx bazel2gn -d <dir>` and
    `fx bazel build --config=fuchsia_platform //<dir>:all` (adding `-//<dir>:<name>_validate_ir_json`
    when needed). Fix BUILD files, never sources.
 2. Run runnable host/unit tests of touched directories (`fx bazel test --config=host //<dir>:<test>`).

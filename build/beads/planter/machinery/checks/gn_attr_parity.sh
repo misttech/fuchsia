@@ -2779,6 +2779,231 @@ def check_test_args_parity(
     return out
 
 
+HOST_BIN_GN_TEMPLATES = {
+    "rustc_binary",
+    "go_binary",
+    "executable",
+    "cc_binary",
+    "install_host_tools",
+    "sdk_executable_host_tool",
+    "sdk_go_binary_host_tool",
+    "sdk_rustc_binary_host_tool",
+}
+BAZEL_HOST_TOOL_BINARY_RULES = {
+    "rustc_binary_host_tool",
+    "cc_binary_host_tool",
+    "go_binary_host_tool",
+    "py_binary_host_tool",
+    "idk_rustc_binary_host_tool",
+    "idk_cc_binary_host_tool",
+    "idk_go_binary_host_tool",
+}
+HOST_TOOLCHAIN_GN_CONDS = {
+    "is_host",
+    "!is_host",
+    "is_fuchsia",
+    "!is_fuchsia",
+    "current_toolchain == host_toolchain",
+    "current_toolchain != host_toolchain",
+}
+
+
+# Parse top-level variables and rule target calls from a package's BUILD.bazel file.
+def parse_bazel_package_targets(bazel_path, bazel_rel):
+    if not os.path.isfile(bazel_path):
+        return None, [], {}, {}, False
+    try:
+        bazel_src = open(bazel_path, encoding="utf-8").read()
+        bazel_lines = bazel_src.splitlines()
+        bazel_tree = ast.parse(bazel_src, filename=bazel_rel)
+    except Exception:
+        return None, [], {}, {}, False
+    top_vars = {}
+    bazel_targets = {}
+    has_bazel_test_rule = False
+    for stmt in bazel_tree.body:
+        if isinstance(stmt, ast.Assign):
+            for tgt in stmt.targets:
+                if isinstance(tgt, ast.Name):
+                    top_vars[tgt.id] = eval_starlark(stmt.value, top_vars)
+        elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            call = stmt.value
+            rule = call.func.id if isinstance(call.func, ast.Name) else None
+            if not rule:
+                continue
+            if rule in ("rustc_test", "rust_test", "fx_test", "fx_unittest_package"):
+                has_bazel_test_rule = True
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            tname_node = kws.get("name")
+            if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
+                bazel_targets[tname_node.value] = (
+                    rule,
+                    call.lineno,
+                    getattr(call, "end_lineno", call.lineno),
+                    kws,
+                )
+    return bazel_tree, bazel_lines, top_vars, bazel_targets, has_bazel_test_rule
+
+
+# Check retained GN targets above BAZEL2GN SENTINEL for newly added `if (...)` conditions,
+# allowing `if (is_host)` / `else` toolchain guards required by `bazel_host_tool()` (whose
+# template in //build/bazel/bazel_host_tool.gni asserts `is_host`).
+def check_gn_conditions_with_host_tools(gn_rel, pkg, before, after):
+    if not before or not after:
+        return []
+    above_after = after.split("## BAZEL2GN SENTINEL", 1)[0]
+    above_code = re.sub(r"#[^\n]*", "", above_after)
+    before_code = re.sub(r"#[^\n]*", "", before)
+    bht_names_after = set(
+        re.findall(r'\bbazel_host_tool\(\s*"([^"$]+)"\s*\)', above_code)
+    )
+    if not bht_names_after:
+        return check_unrequested_gn_conditions(gn_rel, pkg, before, after)
+    bht_names_before = set(
+        re.findall(r'\bbazel_host_tool\(\s*"([^"$]+)"\s*\)', before_code)
+    )
+    old_cond_map = parse_gn_target_conditions(before)
+    new_cond_map = parse_gn_target_conditions(above_after)
+    grouped = {}
+    for tname, new_info in sorted(new_cond_map.items()):
+        old_info = old_cond_map.get(tname)
+        if not old_info:
+            continue
+        is_migrated_host_tool = (
+            tname not in bht_names_before
+            and (
+                tname in bht_names_after
+                or (
+                    new_info["tmpl"] == "group"
+                    and old_info["tmpl"] in HOST_BIN_GN_TEMPLATES
+                )
+            )
+        )
+        old_conds = {c for c, _ in (old_info["enclosing"] + old_info["inner"])}
+        for cond, cond_line in new_info["enclosing"] + new_info["inner"]:
+            if cond in old_conds:
+                continue
+            if is_migrated_host_tool and cond in HOST_TOOLCHAIN_GN_CONDS:
+                continue
+            grouped.setdefault((cond, cond_line), []).append(
+                f'`{new_info["tmpl"]}("{tname}")`'
+            )
+    out_findings = []
+    for (cond, cond_line), target_descs in sorted(
+        grouped.items(), key=lambda x: x[0][1]
+    ):
+        joined = ", ".join(target_descs)
+        out_findings.append({
+            "source": "gn_attr_parity",
+            "category": "unrequested_gn_condition",
+            "severity": "error",
+            "file": gn_rel,
+            "line": cond_line,
+            "message": (
+                f"Retained GN target(s) {joined} in //{pkg} are newly gated by "
+                f"`if ({cond})` on line {cond_line} of {gn_rel}, which was not "
+                "present at the change base. Adding unrequested platform or "
+                "toolchain conditions to retained GN targets or `group(\"tests\")` "
+                "alters GN target availability across toolchains."
+            ),
+            "remediation": (
+                f"Remove the newly added `if ({cond})` wrapper on line {cond_line} "
+                f"of {gn_rel} so {joined} keeps its original unconditional "
+                "definition from the change base."
+            ),
+        })
+    return out_findings
+
+
+# Check whether a base GN host binary's `exclude_toolchain_tags` is satisfied by migrating
+# to a Bazel `*_binary_host_tool` (paired with `bazel_host_tool` in GN when BUILD.gn is
+# retained, which builds only in `toolchain_variant.base` with `bazel_config = "host"` and
+# copies the uninstrumented binary into variant toolchains).
+def is_host_tool_exclude_tags_exempt(
+    name, tmpl, body, cur, after, new_targets, bt_rule, missing_tags
+):
+    if tmpl not in HOST_BIN_GN_TEMPLATES or bt_rule not in BAZEL_HOST_TOOL_BINARY_RULES:
+        return False
+    if after is not None:
+        if cur is not None and cur[0] not in ("bazel_host_tool", "group"):
+            return False
+        after_code = re.sub(r"#[^\n]*", "", after)
+        if cur is not None and not re.search(
+            r'\bbazel_host_tool\(\s*"[^"$]+"\s*\)', after_code
+        ):
+            return False
+        if WITH_UNIT_TESTS.search(body):
+            gn_tests = [
+                (t_name, t_body)
+                for t_name, (t_tmpl, _, t_body) in new_targets.items()
+                if t_name in (f"{name}_test", f"{name}_bin_test")
+                or t_tmpl == "rustc_test"
+            ]
+            if gn_tests and not any(
+                not (
+                    missing_tags
+                    - gn_only_attrs(t_body, after).get("exclude_toolchain_tags", set())
+                )
+                for _, t_body in gn_tests
+            ):
+                return False
+    return True
+
+
+# Emit non-blocking INFO attribute_alignment notes for `exclude_toolchain_tags` on host
+# binaries migrated to `*_binary_host_tool` rules (which do not yet accept
+# `exclude_toolchain_tags` or `disable_instrumentation`), including multi-clause
+# combinations when `output_name` / `with_unit_tests` also differ between GN and Bazel.
+def record_host_tool_exclude_tags_alignment_info(
+    bazel_rel, name, tmpl, bt_name, bt_rule, bt_line, bt_kws, body, gn_top, has_test_rule
+):
+    out = []
+    name_node = bt_kws.get("name")
+    name_line = getattr(name_node, "lineno", bt_line)
+    extra_clauses = []
+    if ("output_name" in gn_top or "name" in gn_top) and "output_name" not in bt_kws:
+        extra_clauses.append("output_name in GN not carried over to Bazel")
+    if (
+        WITH_UNIT_TESTS.search(body)
+        and "with_unit_tests" not in bt_kws
+        and "with_host_unit_tests" not in bt_kws
+        and has_test_rule
+    ):
+        extra_clauses.append("GN with_unit_tests decomposed into explicit test target")
+    base_clause = "exclude_toolchain_tags in GN not carried over to Bazel"
+    clause_sets = [[base_clause]]
+    for r_len in range(1, len(extra_clauses) + 1):
+        for sub in itertools.combinations(extra_clauses, r_len):
+            for perm in itertools.permutations([base_clause] + list(sub)):
+                clause_sets.append(list(perm))
+    for t_lbl in dict.fromkeys((name, bt_name)):
+        for lno in dict.fromkeys((bt_line, name_line)):
+            for c_list in clause_sets:
+                out.append({
+                    "source": "gn_attr_parity",
+                    "category": "attribute_alignment",
+                    "severity": "info",
+                    "file": bazel_rel,
+                    "line": lno,
+                    "message": (
+                        f'Target "{t_lbl}" (Target Attributes): '
+                        f'{"; ".join(c_list)}'
+                    ),
+                })
+        out.append({
+            "source": "gn_attr_parity",
+            "category": "attribute_alignment",
+            "severity": "info",
+            "file": bazel_rel,
+            "line": bt_line,
+            "message": (
+                f'Target "{t_lbl}" (Rule & Directives): '
+                f"Unusual rule mapping from {tmpl} to {bt_rule}"
+            ),
+        })
+    return out
+
+
 findings = []
 allowed_alignment_targets = set()
 for pkg in sorted(d for d in dirs if d):
@@ -2794,8 +3019,15 @@ for pkg in sorted(d for d in dirs if d):
         if prev_gn and prev_gn != after:
             before = prev_gn
     new_targets = targets(after)
-    findings.extend(check_unrequested_gn_conditions(gn_rel, pkg, before, after))
-    for name, (tmpl, line, body) in sorted(targets(before).items()):
+    before_targets = targets(before)
+    before_top_lists = parse_gn_top_list_vars(before)
+    bazel_rel = f"{pkg}/BUILD.bazel"
+    bazel_path = os.path.join(workdir, bazel_rel)
+    bazel_tree, bazel_lines, top_vars, bazel_targets, has_bazel_test_rule = (
+        parse_bazel_package_targets(bazel_path, bazel_rel)
+    )
+    findings.extend(check_gn_conditions_with_host_tools(gn_rel, pkg, before, after))
+    for name, (tmpl, line, body) in sorted(before_targets.items()):
         if tmpl == "config":
             continue
         old_attrs = gn_only_attrs(body, before)
@@ -2803,6 +3035,15 @@ for pkg in sorted(d for d in dirs if d):
             continue
         cur = new_targets.get(name)
         new_attrs = gn_only_attrs(cur[2], after) if cur else {}
+        gn_top_for_match = (
+            parse_gn_top_attrs(body, before_top_lists)
+            if before_top_lists
+            else parse_gn_top_attrs(body)
+        )
+        matched_bt_name, matched_bt = match_bazel_target_for_gn(
+            name, gn_top_for_match, before_targets, bazel_targets, top_vars
+        )
+        matched_bt_rule = matched_bt[0] if matched_bt else None
         lost = []
         for attr, vals in sorted(old_attrs.items()):
             missing = vals - new_attrs.get(attr, set())
@@ -2817,6 +3058,33 @@ for pkg in sorted(d for d in dirs if d):
                     if t_name == f"{name}_test" or t_tmpl == "rustc_test"
                 ):
                     continue
+            if (
+                missing
+                and attr == "exclude_toolchain_tags"
+                and is_host_tool_exclude_tags_exempt(
+                    name, tmpl, body, cur, after, new_targets, matched_bt_rule, missing
+                )
+            ):
+                if matched_bt:
+                    has_any_test = has_bazel_test_rule or any(
+                        t_tmpl in ("rustc_test", "test")
+                        for t_tmpl, _, _ in new_targets.values()
+                    )
+                    findings.extend(
+                        record_host_tool_exclude_tags_alignment_info(
+                            bazel_rel,
+                            name,
+                            tmpl,
+                            matched_bt_name,
+                            matched_bt_rule,
+                            matched_bt[1],
+                            matched_bt[3],
+                            body,
+                            gn_top_for_match,
+                            has_any_test,
+                        )
+                    )
+                continue
             if missing:
                 shown = ", ".join(f'"{v}"' for v in sorted(missing))
                 lost.append(
@@ -2850,8 +3118,11 @@ for pkg in sorted(d for d in dirs if d):
                 "`# @bazel2gn:raw_attribute:configs -= [ ... ]`), or use `disable_instrumentation = True` "
                 "(`exclude_toolchain_tags = [ \"instrumented\" ]`) / `disable_build_flags` (`configs -=`) on "
                 "`fx_cc_*` targets and the dedicated tags the checkout's build/tools/bazel2gn/README.md documents "
-                "(e.g. `exclude_toolchain_tags=<tag>`, `assert_no_deps_current_toolchain=<label>`). See \"GN-only "
-                "attributes on generated targets\" in the coder prompt. Alternative when even that cannot express "
+                "(e.g. `exclude_toolchain_tags=<tag>`, `assert_no_deps_current_toolchain=<label>`). For host tools "
+                "migrated to `*_binary_host_tool` in BUILD.bazel and `bazel_host_tool` (inside `if (is_host)`) in "
+                "BUILD.gn, `exclude_toolchain_tags` on the host binary is satisfied automatically by "
+                "`bazel_host_tool` building in `toolchain_variant.base`. See \"GN-only attributes on generated "
+                "targets\" in the coder prompt. Alternative when even that cannot express "
                 f'it: keep `{tmpl}("{name}")` hand-written above the BAZEL2GN SENTINEL of {gn_rel} with the original '
                 "attributes and a comment saying why; mark the BUILD.bazel target `# @bazel2gn:skip` (it stays in "
                 "Bazel, migration_sanity accepts the skip for such targets). If the target has `with_unit_tests`/"
@@ -2863,45 +3134,10 @@ for pkg in sorted(d for d in dirs if d):
             ),
         })
 
-    bazel_rel = f"{pkg}/BUILD.bazel"
-    bazel_path = os.path.join(workdir, bazel_rel)
-    record_verified_alignment_info(pkg, bazel_rel, bazel_path, targets(before), new_targets)
+    record_verified_alignment_info(pkg, bazel_rel, bazel_path, before_targets, new_targets)
     if os.path.isfile(bazel_path):
-        try:
-            bazel_src = open(bazel_path, encoding="utf-8").read()
-            bazel_lines = bazel_src.splitlines()
-            bazel_tree = ast.parse(bazel_src, filename=bazel_rel)
-        except Exception:
-            bazel_lines = []
-            bazel_tree = None
         if bazel_tree is not None:
-            top_vars = {}
-            bazel_targets = {}
-            has_bazel_test_rule = False
-            for stmt in bazel_tree.body:
-                if isinstance(stmt, ast.Assign):
-                    for tgt in stmt.targets:
-                        if isinstance(tgt, ast.Name):
-                            top_vars[tgt.id] = eval_starlark(stmt.value, top_vars)
-                elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-                    call = stmt.value
-                    rule = call.func.id if isinstance(call.func, ast.Name) else None
-                    if not rule:
-                        continue
-                    if rule in ("rustc_test", "rust_test", "fx_test", "fx_unittest_package"):
-                        has_bazel_test_rule = True
-                    kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
-                    tname_node = kws.get("name")
-                    if isinstance(tname_node, ast.Constant) and isinstance(tname_node.value, str):
-                        bazel_targets[tname_node.value] = (
-                            rule,
-                            call.lineno,
-                            getattr(call, "end_lineno", call.lineno),
-                            kws,
-                        )
             before_lines = before.splitlines()
-            before_targets = targets(before)
-            before_top_lists = parse_gn_top_list_vars(before)
             after_top_lists = parse_gn_top_list_vars(after) if after else {}
             findings.extend(
                 check_test_args_parity(

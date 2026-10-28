@@ -61,6 +61,7 @@ gn_file = os.path.join(workdir, target_pkg, "BUILD.gn")
 bazel_targets = []
 package_targets = set()
 non_gn_synced_targets = set()
+test_rule_targets = set()
 testonly_targets = set()
 alias_map = {}
 
@@ -141,6 +142,7 @@ if os.path.isfile(bazel_file):
                         package_targets.add(tname)
                     if func in BAZEL_NON_GN_SYNCED_RULES:
                         non_gn_synced_targets.add(tname)
+                        test_rule_targets.add(tname)
                     if has_bazel2gn_skip_comment(bazel_src_lines, node.lineno) and func not in (
                         "fx_package",
                         "fuchsia_package",
@@ -254,8 +256,10 @@ if os.path.isfile(gn_file):
             if m.group(1) in GN_PACKAGE_TEMPLATES:
                 package_targets.add(m.group(2))
         if bazel_targets:
-            above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
+            above_sentinel, below_sentinel = (
+                gn_src.split("BAZEL2GN SENTINEL", 1) if has_sentinel else (gn_src, "")
+            )
             env_target_dir = os.environ.get("PLANTER_TARGET_DIR", "").strip().strip("/")
             gn_forwarding_groups = extract_gn_forwarding_groups(above_sentinel)
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
@@ -273,6 +277,17 @@ if os.path.isfile(gn_file):
                     )
                 ) or (not has_sentinel and env_target_dir and target_pkg != env_target_dir):
                     gn_nonconvertible_targets.add(t)
+            below_synced_targets = {
+                m.group(2)
+                for m in re.finditer(
+                    r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)',
+                    below_sentinel,
+                    flags=re.MULTILINE,
+                )
+                if m.group(2) in bazel_targets
+            }
+            non_gn_synced_targets.difference_update(below_synced_targets)
+            package_targets.difference_update(below_synced_targets)
         else:
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
@@ -471,7 +486,11 @@ def owning_bazel_target(sub):
         return best
     if default_target and sub == default_target:
         primary = [
-            t for t in bazel_targets if t not in non_gn_synced_targets and t != "headers"
+            t
+            for t in bazel_targets
+            if t not in non_gn_synced_targets
+            and t not in test_rule_targets
+            and t != "headers"
         ]
         if len(primary) == 1:
             return primary[0]
@@ -492,8 +511,8 @@ def is_gn_only_target_ref(rel, caller_pkg, sub, owner, is_pkg_target):
         return True
     return False
 
-# Collect .gni templates that expand to dependency references on targets in target_pkg
-# so callers that import the .gni and invoke the template are recognized as GN rdeps.
+# Collect .gni templates and list variables that expand to dependency references on targets in
+# target_pkg so callers that import the .gni and invoke the template or variable are recognized as GN rdeps.
 def collect_gni_template_matches(files_list, label_re):
     out = {}
     for fp in sorted(set(files_list)):
@@ -511,9 +530,32 @@ def collect_gni_template_matches(files_list, label_re):
             flags=re.DOTALL,
         )
         t_names = set(re.findall(r'\btemplate\(\s*"([^"]+)"\s*\)', strp))
+        v_names = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", strp)) - {
+            "visibility",
+            "packages",
+        }
         m_list = list(label_re.finditer(strp))
-        if t_names and m_list:
-            out[f"//{g_rel}"] = (t_names, m_list)
+        if (t_names or v_names) and m_list:
+            out[f"//{g_rel}"] = (t_names, v_names, m_list)
+    if out:
+        gni_pat_args = [arg for lbl in sorted(out) for arg in ("-e", lbl)]
+        for repo in discover_git_repos():
+            if not os.path.exists(os.path.join(repo, ".git")):
+                continue
+            try:
+                proc = subprocess.run(
+                    ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings"]
+                    + gni_pat_args
+                    + ["--", "*BUILD.gn", "*.gni"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                for line in proc.stdout.splitlines():
+                    if line.strip():
+                        files_list.append(os.path.join(repo, line.strip()))
+            except Exception:
+                pass
     return out
 
 gni_template_map = collect_gni_template_matches(files, abs_label_re)
@@ -554,9 +596,11 @@ for fpath in sorted(set(files)):
 
     gni_call_matches = []
     if rel.endswith((".gn", ".gni")) and gni_template_map:
-        for gni_lbl, (t_names, m_list) in gni_template_map.items():
-            if f'"{gni_lbl}"' in stripped and any(
-                re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names
+        for gni_lbl, (t_names, v_names, m_list) in gni_template_map.items():
+            gni_base = os.path.basename(gni_lbl)
+            if (f'"{gni_lbl}"' in stripped or f'"{gni_base}"' in stripped) and (
+                any(re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names)
+                or any(re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names)
             ):
                 gni_call_matches.extend(m_list)
 

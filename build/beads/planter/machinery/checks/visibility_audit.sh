@@ -1007,7 +1007,9 @@ BAZEL_NON_GN_SYNCED_RULES = {
 
 
 # Map referenced GN/Bazel target labels to their owning BUILD.bazel target
-def owning_bazel_target(sub, bazel_targets, default_target="", non_gn_synced_targets=()):
+def owning_bazel_target(
+    sub, bazel_targets, default_target="", non_gn_synced_targets=(), test_rule_targets=()
+):
     """Maps a referenced label name to the Bazel target that defines or generates it.
 
     Handles exact matches, hyphen/underscore-normalized matches, generated
@@ -1031,7 +1033,11 @@ def owning_bazel_target(sub, bazel_targets, default_target="", non_gn_synced_tar
         return best
     if default_target and sub == default_target:
         primary = [
-            t for t in bazel_targets if t not in non_gn_synced_targets and t != "headers"
+            t
+            for t in bazel_targets
+            if t not in non_gn_synced_targets
+            and t not in test_rule_targets
+            and t != "headers"
         ]
         if len(primary) == 1:
             return primary[0]
@@ -1107,7 +1113,15 @@ def extract_gn_forwarding_groups(gn_text, bazel_targets, non_gn_synced_targets, 
     return forwarding
 
 
-def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map, orig_gn_vis_map=None):
+def compute_package_rdeps(
+    pkg_path,
+    bazel_targets,
+    package_targets,
+    non_gn_synced_targets,
+    alias_map,
+    orig_gn_vis_map=None,
+    test_rule_targets=(),
+):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
     gn_only_targets = {"tests", "benchmarks"}
@@ -1116,7 +1130,9 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
     # If a pre-sentinel GN target (such as a `group("<name>")` forwarding `expect_includes`)
     # has a same-named target in `BUILD.bazel` (such as `alias(name = "<name>", actual = "...")`),
     # GN callers of `:<name>` are real callers of the Bazel target and must not be filtered out.
-    def compute_gn_nonconvertible_targets(above_sentinel, bazel_targets, has_sentinel, fwd_groups):
+    def compute_gn_nonconvertible_targets(
+        above_sentinel, below_sentinel, bazel_targets, has_sentinel, fwd_groups
+    ):
         only_targets = {"tests", "benchmarks"}
         nonconv_targets = {"tests", "benchmarks"}
         for m in re.finditer(
@@ -1136,6 +1152,15 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                 )
             ) or (not has_sentinel and target_dir and pkg_path != target_dir and t not in bazel_targets):
                 nonconv_targets.add(t)
+        below_synced = {
+            m.group(2)
+            for m in re.finditer(
+                r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)',
+                below_sentinel,
+                flags=re.MULTILINE,
+            )
+            if m.group(2) in bazel_targets
+        }
         return only_targets, nonconv_targets, below_synced
 
     if os.path.isfile(gn_file):
@@ -1146,19 +1171,23 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                 if m.group(1) in GN_PACKAGE_TEMPLATES:
                     package_targets.add(m.group(2))
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
-            above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if has_sentinel else gn_src
+            above_sentinel, below_sentinel = (
+                gn_src.split("BAZEL2GN SENTINEL", 1) if has_sentinel else (gn_src, "")
+            )
             gn_forwarding_groups = extract_gn_forwarding_groups(
                 above_sentinel, bazel_targets, non_gn_synced_targets, package_targets
             )
-            gn_only_targets, gn_nonconvertible_targets = compute_gn_nonconvertible_targets(
-                above_sentinel, bazel_targets, has_sentinel, gn_forwarding_groups
-            )
             gn_only_targets, gn_nonconvertible_targets, below_synced_targets = (
                 compute_gn_nonconvertible_targets(
-                    above_sentinel, below_sentinel, bazel_targets, has_sentinel
+                    above_sentinel,
+                    below_sentinel,
+                    bazel_targets,
+                    has_sentinel,
+                    gn_forwarding_groups,
                 )
             )
             non_gn_synced_targets.difference_update(below_synced_targets)
+            package_targets.difference_update(below_synced_targets)
         except Exception:
             pass
 
@@ -1170,18 +1199,89 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
     per_target_direct_rdeps = {t: {} for t in bazel_targets}
     has_macro_injected_rdeps = False
 
-    # Collect .gni templates that expand to dependency references on targets in pkg_path
-    # so callers that import the .gni and invoke the template are recognized as GN rdeps.
+    # Collect .gni templates and list variables that expand to dependency references on targets in
+    # pkg_path so callers that import the .gni and invoke the template or variable are recognized as GN rdeps.
     def collect_gni_template_matches(p_path, label_re):
         out = {}
-        for fp, (_, strp) in file_cache.items():
+        for fp, (_, strp) in list(file_cache.items()):
             g_rel = os.path.relpath(fp, workdir)
             if not g_rel.endswith(".gni") or os.path.basename(g_rel) == "visibility.gni":
                 continue
             t_names = set(re.findall(r'\btemplate\(\s*"([^"]+)"\s*\)', strp))
+            v_names = set(re.findall(r"(?m)^\s*([A-Za-z_]\w*)\s*\+?=\s*\[", strp)) - {
+                "visibility",
+                "packages",
+                "target_tests",
+                "host_tests",
+            }
             m_list = list(label_re.finditer(strp))
-            if t_names and m_list:
-                out[f"//{g_rel}"] = (t_names, m_list)
+            if (t_names or v_names) and m_list:
+                out[f"//{g_rel}"] = (t_names, v_names, m_list)
+        if out:
+            gni_pat_args = [arg for lbl in sorted(out) for arg in ("-e", lbl)]
+            for repo in discover_git_repos():
+                if not os.path.exists(os.path.join(repo, ".git")):
+                    continue
+                for g_cmd, is_om in (
+                    (
+                        ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings"]
+                        + gni_pat_args
+                        + ["--", "*BUILD.gn", "*.gni"],
+                        False,
+                    ),
+                    (
+                        ["git", "-C", repo, "grep", "-l", "--fixed-strings"]
+                        + gni_pat_args
+                        + ["origin/main", "--", "*BUILD.gn", "*.gni"],
+                        True,
+                    ),
+                ):
+                    try:
+                        proc = subprocess.run(
+                            g_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                        )
+                        for line in proc.stdout.splitlines():
+                            s = line.strip()
+                            if not s:
+                                continue
+                            if is_om and s.startswith("origin/main:"):
+                                rel_l = s[len("origin/main:") :]
+                                abs_c = os.path.join(repo, rel_l)
+                                origin_main_sources[abs_c] = (repo, rel_l)
+                            else:
+                                abs_c = os.path.join(repo, s)
+                            if abs_c not in file_cache:
+                                parts_c = []
+                                if os.path.isfile(abs_c):
+                                    with open(abs_c, "r", encoding="utf-8", errors="ignore") as cf:
+                                        parts_c.append(cf.read())
+                                om_i = origin_main_sources.get(abs_c)
+                                if om_i:
+                                    try:
+                                        om_r = subprocess.check_output(
+                                            ["git", "-C", om_i[0], "show", f"origin/main:{om_i[1]}"],
+                                            stderr=subprocess.DEVNULL,
+                                            text=True,
+                                        )
+                                        if om_r and (not parts_c or om_r != parts_c[0]):
+                                            parts_c.append(om_r)
+                                    except Exception:
+                                        pass
+                                raw_c = "\n".join(parts_c)
+                                if raw_c:
+                                    nc = re.sub(r"#[^\n]*", "", raw_c)
+                                    st = re.sub(
+                                        r"\b(?:visibility|packages|target_tests|host_tests)\s*\+?=\s*\[[^\]]*\]",
+                                        "",
+                                        nc,
+                                        flags=re.DOTALL,
+                                    )
+                                    file_cache[abs_c] = (nc, st)
+                    except Exception:
+                        pass
         return out
 
     gni_template_map = collect_gni_template_matches(pkg_path, abs_label_re)
@@ -1216,7 +1316,11 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
             else None
         )
 
-        if f"//{pkg_path}" not in no_comments and (not rel_sub or rel_sub not in no_comments):
+        if (
+            f"//{pkg_path}" not in no_comments
+            and (not rel_sub or rel_sub not in no_comments)
+            and not any(g_lbl in no_comments for g_lbl in gni_template_map)
+        ):
             continue
 
         if os.path.basename(rel) == "visibility.gni":
@@ -1226,9 +1330,11 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
 
         gni_call_matches = []
         if rel.endswith((".gn", ".gni")) and gni_template_map:
-            for gni_lbl, (t_names, m_list) in gni_template_map.items():
-                if f'"{gni_lbl}"' in stripped and any(
-                    re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names
+            for gni_lbl, (t_names, v_names, m_list) in gni_template_map.items():
+                gni_base = os.path.basename(gni_lbl)
+                if (f'"{gni_lbl}"' in stripped or f'"{gni_base}"' in stripped) and (
+                    any(re.search(r"\b" + re.escape(tn) + r"\s*\(", stripped) for tn in t_names)
+                    or any(re.search(r"\b" + re.escape(vn) + r"\b", stripped) for vn in v_names)
                 ):
                     gni_call_matches.extend(m_list)
 
@@ -1268,7 +1374,11 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synce
                 sub == default_target and len(bazel_targets) == 1 and bazel_targets[0] in package_targets
             )
             owner = owning_bazel_target(
-                sub, bazel_targets, default_target, non_gn_synced_targets
+                sub,
+                bazel_targets,
+                default_target,
+                non_gn_synced_targets,
+                test_rule_targets,
             )
             if owner is None and sub == default_target and len(bazel_targets) == 1:
                 owner = bazel_targets[0]
@@ -1884,7 +1994,11 @@ for rel_path in sorted(candidate_files):
                 continue
             if val == "//visibility:private":
                 # Check redundant //visibility:private when package has no default_visibility.
-                if not has_pkg_default_vis:
+                # In a dual-build package with bazel2gn, a sole "//visibility:private" entry on a
+                # synced target emits `visibility = [ ":*" ]` in BUILD.gn (whereas omitting
+                # visibility leaves GN visibility unrestricted), so allow it when sole on a
+                # bazel2gn-synced target.
+                if not has_pkg_default_vis and not (is_gn_synced_target and len(entries) == 1):
                     findings.append({
                         "source": "visibility_audit",
                         "category": "redundant_private_visibility",
@@ -1893,11 +2007,12 @@ for rel_path in sorted(candidate_files):
                         "line": lineno,
                         "message": (
                             f"Target '{target_name}' specifies redundant "
-                            "`visibility = [\"//visibility:private\"]`, which is already the "
-                            "Bazel default when `default_visibility` is not set."
+                            "`\"//visibility:private\"` in `visibility` (which is already the "
+                            "Bazel default when `default_visibility` is not set, and `bazel2gn` "
+                            "automatically adds `\":*\"` to non-empty visibility lists)."
                         ),
                         "remediation": (
-                            f"Remove `visibility = [\"//visibility:private\"]` from '{target_name}' "
+                            f"Remove `\"//visibility:private\"` from `visibility` on '{target_name}' "
                             f"in '{rel_path}'."
                         ),
                     })

@@ -483,11 +483,9 @@ if head and base_rev and head != base_rev:
     if suites and test_lines and not any(names_suite(l, a, n) for _, l in test_lines for a, n in suites):
         a, n = suites[-1]
         add("test_footer_not_ancestor_suite", test_lines[0][0],
-            f"`Test:` footers run the migrated tests directly, but the ancestor `test_suite()` //{a}:{n} includes them.",
-            f"Prefer the higher-level suite, e.g. `Test: fx bazel test --config=host @//{a}:{n}`, or `fx test` on the "
-            "package directory (e.g. `Test: fx test --host //<pkg>`), which also runs "
-            "remaining GN tests. Use it only after verifying the new tests run as a result, and state the dependency "
-            "chain in the body before the footers.")
+            f"`Test:` footers run the migrated tests directly; the ancestor `test_suite()` //{a}:{n} also includes them.",
+            f"When all tests in `@{a}:{n}` pass, you may use `Test: fx bazel test --config=host @//{a}:{n}` (or keep `@//<dir>:<test>` when an unrelated test in `//{a}:{n}` fails on RBE).",
+            severity="info")
     if dirs and has_tests and not suites:
         add("migrated_tests_not_in_ancestor_suite", 1,
             "No ancestor BUILD.bazel `test_suite()` includes the migrated tests.",

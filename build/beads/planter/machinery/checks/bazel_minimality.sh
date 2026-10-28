@@ -1903,6 +1903,7 @@ for rel_path, full_path in bazel_files:
             pass
 
         untranslated_spans: list[tuple[int, int, str, str, bool]] = []
+        visibility_spans: list[tuple[int, int, str, str, bool]] = []
         for stmt in getattr(tree, "body", ()):
             if not (
                 isinstance(stmt, ast.Expr)
@@ -1913,6 +1914,7 @@ for rel_path, full_path in bazel_files:
             rule_name = stmt.value.func.id
             end_line = getattr(stmt, "end_lineno", stmt.lineno)
             t_name = ""
+            vis_kw_node = None
             for kw in stmt.value.keywords:
                 if (
                     kw.arg == "name"
@@ -1920,7 +1922,8 @@ for rel_path, full_path in bazel_files:
                     and isinstance(kw.value.value, str)
                 ):
                     t_name = kw.value.value
-                    break
+                elif kw.arg == "visibility":
+                    vis_kw_node = kw
             is_skipped = False
             idx = stmt.lineno - 2
             while idx >= 0:
@@ -1938,6 +1941,15 @@ for rel_path, full_path in bazel_files:
                 untranslated_spans.append(
                     (stmt.lineno, end_line, rule_name, t_name, is_skipped)
                 )
+            elif vis_kw_node is not None:
+                vis_end = getattr(vis_kw_node.value, "end_lineno", vis_kw_node.lineno)
+                is_empty_vis = (
+                    isinstance(vis_kw_node.value, ast.List)
+                    and len(vis_kw_node.value.elts) == 0
+                )
+                visibility_spans.append(
+                    (vis_kw_node.lineno, vis_end, rule_name, t_name, is_empty_vis)
+                )
 
         flagged: set[int] = set()
         for lno, ltxt in enumerate(src_lines, 1):
@@ -1950,6 +1962,74 @@ for rel_path, full_path in bazel_files:
                 continue
             directive = ov_m.group(1)
             gn_spec_val = ov_m.group(2).strip()
+            vis_enclosing = (
+                next(
+                    (sp for sp in visibility_spans if sp[0] <= lno <= sp[1]),
+                    None,
+                )
+                if directive == "raw_overwrite"
+                else None
+            )
+            if vis_enclosing is not None and not vis_enclosing[4]:
+                _, _, v_rule, v_tname, _ = vis_enclosing
+                vis_pats = [p.strip() for p in re.findall(r'"([^"]+)"', gn_spec_val)]
+                if (
+                    vis_pats
+                    and "*" not in vis_pats
+                    and "//*" not in vis_pats
+                    and not any(p.startswith("//build/sdk:") for p in vis_pats)
+                    and all(
+                        p in (":*", "./*")
+                        or bool(re.match(r"^//[^:*]+(?::\*|/\*)$", p))
+                        for p in vis_pats
+                    )
+                ):
+                    flagged.add(lno)
+                    bz_equiv: list[str] = []
+                    for vp in vis_pats:
+                        if vp == ":*":
+                            continue
+                        if vp == "./*":
+                            bz_equiv.append(":__subpackages__")
+                        elif vp.endswith(":*"):
+                            bz_equiv.append(vp[:-2] + ":__pkg__")
+                        elif vp.endswith("/*"):
+                            bz_equiv.append(vp[:-2] + ":__subpackages__")
+                    if not bz_equiv:
+                        vis_rem = (
+                            f"Remove `# @bazel2gn:raw_overwrite:{gn_spec_val}` on line {lno} "
+                            f"of '{rel_path}'. If `{v_rule}(name = \"{v_tname}\")` needs "
+                            '`visibility = [ ":*" ]` in BUILD.gn, set '
+                            '`visibility = ["//visibility:private"]` in BUILD.bazel (which '
+                            "`bazel2gn` converts to `[ \":*\" ]`), or omit `visibility` if "
+                            f"GN does not need `:*`, then re-run `fx bazel2gn -d {pkg_dir}`."
+                        )
+                    else:
+                        vis_rem = (
+                            f"Remove `# @bazel2gn:raw_overwrite:{gn_spec_val}` on line {lno} "
+                            f"of '{rel_path}' and set `visibility = {json.dumps(bz_equiv)}` "
+                            f"directly on `{v_rule}(name = \"{v_tname}\")` (`bazel2gn` "
+                            'automatically adds `":*"` to non-empty visibility lists and '
+                            "translates `:__pkg__` / `:__subpackages__` to `:*` / `/*`), "
+                            f"then re-run `fx bazel2gn -d {pkg_dir}`."
+                        )
+                    findings.append({
+                        "source": "bazel_minimality",
+                        "category": "redundant_bazel2gn_overwrite",
+                        "severity": "error",
+                        "file": rel_path,
+                        "line": lno,
+                        "message": (
+                            f"Line {lno} of '{rel_path}' uses unnecessary "
+                            f"`# @bazel2gn:raw_overwrite:{gn_spec_val}` on `visibility` of "
+                            f'`{v_rule}(name = "{v_tname}")`. `bazel2gn` automatically adds '
+                            '`":*"` to non-empty visibility lists, maps '
+                            '`"//visibility:private"` to `[ ":*" ]`, and converts '
+                            "`:__pkg__` / `:__subpackages__` entries directly to GN `:*` / `/*`."
+                        ),
+                        "remediation": vis_rem,
+                    })
+                    continue
             po_match = re.match(
                 r'^\s*"([^"]+)"\s*,\s*#\s*@bazel2gn:path_overwrite:(.+)$', ltxt
             )

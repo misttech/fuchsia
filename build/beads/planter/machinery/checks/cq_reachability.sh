@@ -1526,16 +1526,36 @@ def check_unmerged_parent_bazel_package_deps():
             })
 
 
-check_unmerged_parent_bazel_package_deps()
+# Disabled: stacked tasks with unlanded dependencies are uploaded as WIP and gated
+# by planter until their parent dependency CLs land. Folding HEAD~1 into HEAD
+# duplicates the parent CL's BUILD.bazel/BUILD.gn into the child CL and causes
+# guaranteed add/add merge conflicts when the parent CL lands (see
+# stacked_bazel_dependency_package below).
+# check_unmerged_parent_bazel_package_deps()
 
 # Check that every main-repo Bazel package referenced (directly or transitively)
 # in BUILD.bazel dependency attributes has a BUILD.bazel or BUILD file in the
 # checkout, and note when a dependency package is added or updated by an unmerged
-# stacked parent commit above origin/main (using 3-dot diff so commits on
-# origin/main ahead of effective_diff_base are not mistaken for stacked parents).
+# stacked parent commit above origin/main (using 3-dot diff against the task's
+# parent commit so stacked ancestor commits are distinguished from HEAD even when
+# PLANTER_CHANGE_BASE points to the base of the stack).
+task_parent_ref = (
+    "HEAD~1"
+    if (
+        parent_sha
+        and head_touches_target
+        and not (wt_touches_target and not head_touches_target)
+    )
+    else effective_diff_base
+)
+task_changed_files = (
+    (set(head_commit_files) | set(wt_changed_files))
+    if task_parent_ref == "HEAD~1"
+    else set(changed_files)
+)
 stacked_parent_files = (
-    set(git_lines(["diff", "--name-only", f"{origin_main}...{effective_diff_base}"]))
-    if origin_main and effective_diff_base and origin_main != effective_diff_base
+    set(git_lines(["diff", "--name-only", f"{origin_main}...{task_parent_ref}"]))
+    if origin_main and task_parent_ref and origin_main != task_parent_ref
     else set()
 )
 head_commit_msg = git_out(["log", "-1", "--format=%B", "HEAD"]) if head_sha else ""
@@ -1694,8 +1714,8 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
             )
             if (
                 origin_main
-                and f"{dep_pkg}/BUILD.bazel" not in changed_files
-                and f"{dep_pkg}/BUILD" not in changed_files
+                and f"{dep_pkg}/BUILD.bazel" not in task_changed_files
+                and f"{dep_pkg}/BUILD" not in task_changed_files
                 and in_stacked_parent
                 and dep_pkg not in reported_pkgs
             ):
@@ -1729,16 +1749,22 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                 })
             elif (
                 origin_main
-                and cur_pkg == td
-                and f"{dep_pkg}/BUILD.bazel" not in changed_files
-                and f"{dep_pkg}/BUILD" not in changed_files
+                and f"{dep_pkg}/BUILD.bazel" not in task_changed_files
+                and f"{dep_pkg}/BUILD" not in task_changed_files
                 and not in_stacked_parent
                 and dep_pkg not in reported_pkgs
                 and head_commit_msg
                 and (
-                    dep_pkg.replace("/", "-").replace("_", "-")
-                    in head_commit_msg.replace("_", "-")
-                    or f"//{dep_pkg}" in head_commit_msg
+                    re.search(
+                        r"(?<![A-Za-z0-9_-])"
+                        + re.escape(dep_pkg.replace("/", "-").replace("_", "-"))
+                        + r"(?![A-Za-z0-9_/-])",
+                        head_commit_msg.replace("_", "-"),
+                    )
+                    or re.search(
+                        r"//" + re.escape(dep_pkg) + r"(?![A-Za-z0-9_/-])",
+                        head_commit_msg,
+                    )
                 )
             ):
                 reported_pkgs.add(dep_pkg)
@@ -1763,8 +1789,8 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                     "remediation": rem,
                 })
             if dep_pkg not in visited_pkgs and (
-                f"{dep_pkg}/BUILD.bazel" in changed_files
-                or f"{dep_pkg}/BUILD" in changed_files
+                f"{dep_pkg}/BUILD.bazel" in task_changed_files
+                or f"{dep_pkg}/BUILD" in task_changed_files
                 or in_stacked_parent
             ):
                 visited_pkgs.add(dep_pkg)
@@ -1779,6 +1805,62 @@ def check_missing_bazel_dep_packages(bazel_rel, td, tree):
                         except Exception:
                             pass
                         break
+
+
+# Verify that any modified non-target BUILD.bazel (such as an ancestor test_suite
+# BUILD.bazel) does not reference a non-existent Bazel package in the worktree.
+def check_modified_ancestor_bazel_dep_packages():
+    target_set = set(target_dirs)
+    for rel_f in sorted(task_changed_files):
+        if os.path.basename(rel_f) not in ("BUILD.bazel", "BUILD"):
+            continue
+        pkg_d = os.path.dirname(rel_f).strip("/")
+        if pkg_d in target_set:
+            continue
+        full_f = os.path.join(workdir, rel_f)
+        if not os.path.isfile(full_f):
+            continue
+        try:
+            with open(full_f, "r", encoding="utf-8") as f:
+                anc_tree = ast.parse(f.read(), filename=rel_f)
+        except Exception:
+            continue
+        seen_missing = set()
+        for raw_label, ln in iter_pkg_dep_labels(anc_tree):
+            parsed = split_label(raw_label, pkg_d)
+            if not parsed:
+                continue
+            dep_pkg, _ = parsed
+            if (
+                not dep_pkg
+                or dep_pkg == pkg_d
+                or dep_pkg in seen_missing
+                or has_bazel_pkg_in_worktree(dep_pkg)
+            ):
+                continue
+            seen_missing.add(dep_pkg)
+            findings.append({
+                "source": "cq_reachability",
+                "category": "missing_bazel_dependency_package",
+                "severity": "error",
+                "file": rel_f,
+                "line": ln,
+                "message": (
+                    f"Dependency `{raw_label}` in '{rel_f}' references Bazel "
+                    f"package `//{dep_pkg}`, but neither '{dep_pkg}/BUILD.bazel' "
+                    f"nor '{dep_pkg}/BUILD' exists in the checkout, causing CQ "
+                    "`tests.json` generation (`bazel query`) to fail with "
+                    f"`no such package '{dep_pkg}': BUILD file not found`."
+                ),
+                "remediation": (
+                    f"Remove the stale `{raw_label}` entry from '{rel_f}', or "
+                    f"ensure '{dep_pkg}/BUILD.bazel' is present in the checkout "
+                    "(or in a stacked parent commit before `HEAD`)."
+                ),
+            })
+
+
+check_modified_ancestor_bazel_dep_packages()
 
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:
@@ -1936,6 +2018,45 @@ for td in target_dirs:
                 return True
         return False
 
+    # Check whether test target t_name of pkg_dir is run by a GN bazel_test_suite that is itself
+    # wired into a root test group (directly, or via Bazel test_suite targets such as an
+    # ancestor's aggregate `host_tests` suite exported by `bazel_test_suite("bazel_tests")`).
+    # This covers Bazel-only host tests (e.g. host tools bridged to GN with bazel_host_tool()
+    # instead of bazel2gn), which intentionally have no GN test target or group("tests").
+    def wired_via_bazel_test_suite(pkg_dir, t_name):
+        local_suites = bazel_suites_of(pkg_dir)
+
+        def expand(name, seen):
+            if name in seen:
+                return set()
+            seen.add(name)
+            if name not in local_suites:
+                return {name}
+            out = set()
+            for m in local_suites[name] or []:
+                ln = local_name(m, pkg_dir)
+                if ln is not None:
+                    out |= expand(ln, seen)
+            return out
+
+        for s_rel, s_name, _, _, labels in bazel_test_suites_for(pkg_dir):
+            if not suite_is_wired(s_rel, s_name):
+                continue
+            for label in labels:
+                m = label_target(label, pkg_dir)
+                if m is not None:
+                    found = {m}
+                elif re.match(r"^@{0,2}//", label.strip()):
+                    found = foreign_suite_tests(label, pkg_dir, pkg_dir, set())
+                else:
+                    continue
+                names = set()
+                for f_name in found:
+                    names |= expand(f_name, set())
+                if t_name in names:
+                    return True
+        return False
+
     def has_skip_above(lines, line_1based):
         idx = line_1based - 2
         while idx >= 0:
@@ -1973,16 +2094,47 @@ for td in target_dirs:
         has_now_tests_group = bool(
             gn_src and re.search(r'\bgroup\(\s*"tests"\s*\)\s*\{', gn_code(gn_src))
         )
-        if had_base_tests_group and gn_src and not has_now_tests_group:
+        all_tests_wired_in_anc_gn = bool(
+            test_targets
+            and not gn_tests_group_is_referenced(td)
+            and all(direct_gn_test_callers(td, tn) for tn, _, _, _ in test_targets)
+        )
+        # Bazel-only tests (no GN test target left in BUILD.gn) reached through a wired
+        # bazel_test_suite keep CI coverage, provided nothing still depends on `//td:tests`.
+        all_tests_wired_via_bazel_suite = bool(
+            test_targets
+            and not gn_tests_group_is_referenced(td)
+            and all(wired_via_bazel_test_suite(td, tn) for tn, _, _, _ in test_targets)
+        )
+        if (
+            had_base_tests_group
+            and gn_src
+            and not has_now_tests_group
+            and not all_tests_wired_in_anc_gn
+            and not all_tests_wired_via_bazel_suite
+        ):
+            anc_info = (
+                nearest_ancestor_test_suite(td, "target_tests")
+                or nearest_ancestor_test_suite(td, "host_tests")
+                or preferred_ancestor_area_suite(td, "target_tests")
+                or preferred_ancestor_area_suite(td, "host_tests")
+            )
+            suite_guidance = (
+                f"wire the migrated Bazel test targets into the ancestor `test_suite` "
+                f"`//{anc_info[0]}:{anc_info[1]}` in '{anc_info[0]}/BUILD.bazel'"
+                if anc_info
+                else f"wire the migrated Bazel test targets into `bazel_test_suite(\"bazel_tests\")` in '{gn_rel}'"
+            )
             msg_text = (
                 f"'{gn_rel}' defined `group(\"tests\")` at `{change_base}`, "
-                "but `group(\"tests\")` was removed during migration, dropping "
-                "CI build and test verification for the package."
+                "but `group(\"tests\")` was removed during migration while callers or "
+                "package tests still depend on it, dropping CI build and test verification."
             )
             rem_text = (
-                f"Restore `group(\"tests\") {{ testonly = true deps = [ \":bazel_tests\", ... ] }}` "
-                f"in '{gn_rel}' and wire the migrated Bazel test targets into "
-                "`bazel_test_suite(\"bazel_tests\")`."
+                f"Restore `group(\"tests\") {{ testonly = true deps = [ ... ] }}` "
+                f"in '{gn_rel}' (or wire the generated GN test target directly into the "
+                f"parent `BUILD.gn` `group(\"tests\")` when nothing references `//{td}:tests`) "
+                f"and {suite_guidance}."
             )
             findings.append({
                 "source": "cq_reachability",
@@ -2356,12 +2508,15 @@ for td in target_dirs:
                 )
             ):
                 continue
-        anc_suite_info = find_ancestor_bazel_test_suite(td, kind)
         gn_test_callers = direct_gn_test_callers(td, t_name)
         local_gn_tests_referenced = gn_tests_group_is_referenced(td)
         if not entries:
             if anc_suite_info is not None:
                 anc_pkg, anc_suite = anc_suite_info
+                req_vis = sorted(
+                    {f"//{anc_pkg}:__pkg__"}
+                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
+                )
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not wired "
                     f"into the existing ancestor `test_suite` `//{anc_pkg}:{anc_suite}` in "
@@ -2373,12 +2528,16 @@ for td in target_dirs:
                     f"Add `\"//{td}:{t_name}\"` (in sorted order) to "
                     f"`test_suite(name = \"{anc_suite}\", tests = [...])` in "
                     f"'{anc_pkg}/BUILD.bazel' and set "
-                    f"`visibility = [\"//{anc_pkg}:__pkg__\"]` on `:{t_name}` in "
+                    f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
                     f"'{bazel_rel}' (do not add a per-package `bazel_test_suite` in "
                     f"'{gn_rel}')."
                 )
             elif missing_anc_area is not None:
                 anc_pkg, anc_suite = missing_anc_area
+                req_vis = sorted(
+                    {f"//{anc_pkg}:__pkg__"}
+                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
+                )
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not exported "
                     f"through an ancestor `test_suite` in '{anc_pkg}/BUILD.bazel' and "
@@ -2391,7 +2550,7 @@ for td in target_dirs:
                     f"in '{anc_pkg}/BUILD.bazel', wire `\"//{anc_pkg}:{anc_suite}\"` into "
                     f"`bazel_test_suite(\"bazel_tests\") {{ {param} = [ \"//{anc_pkg}:{anc_suite}\" ] }}` "
                     f"(and `\":bazel_tests\"` into `group(\"tests\")`) in '{anc_pkg}/BUILD.gn', "
-                    f"and set `visibility = [\"//{anc_pkg}:__pkg__\"]` on `:{t_name}` in "
+                    f"and set `visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
                     f"'{bazel_rel}' (do not add a per-package `bazel_test_suite` in '{gn_rel}')."
                 )
             else:
@@ -2420,13 +2579,26 @@ for td in target_dirs:
             continue
         # Enforce wiring into an existing or newly created ancestor BUILD.bazel test_suite
         # instead of a new per-package bazel_test_suite in BUILD.gn.
+        handled_local_ancestor_suite = False
         if anc_suite_info is not None and not had_base_local_suite:
             anc_pkg, anc_suite = anc_suite_info
+            req_vis = sorted(
+                {f"//{anc_pkg}:__pkg__"}
+                | {f"//{c}:__pkg__" for c in gn_test_callers if c}
+            )
+            rm_local_desc = (
+                "remove the per-package `bazel_test_suite`, unreachable `group(\"tests\")`, "
+                "and unused `//build/bazel/bazel_test_suite.gni` import"
+                if (gn_test_callers and not local_gn_tests_referenced)
+                else "remove the per-package `bazel_test_suite` "
+                "(and unused `//build/bazel/bazel_test_suite.gni` import)"
+            )
             in_anc_suite = t_name in foreign_suite_tests(
                 f"//{anc_pkg}:{anc_suite}", anc_pkg, td, set()
             )
             local_entries = [e for e in entries if e[0] == gn_rel]
             if not in_anc_suite:
+                handled_local_ancestor_suite = True
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is exported "
                     f"via a per-package `bazel_test_suite` in '{gn_rel}' instead of "
@@ -2437,10 +2609,8 @@ for td in target_dirs:
                     f"Wire `\"//{td}:{t_name}\"` (in sorted order) into "
                     f"`test_suite(name = \"{anc_suite}\", tests = [...])` in "
                     f"'{anc_pkg}/BUILD.bazel', set "
-                    f"`visibility = [\"//{anc_pkg}:__pkg__\"]` on `:{t_name}` in "
-                    f"'{bazel_rel}', and remove the per-package `bazel_test_suite` "
-                    f"(and unused `//build/bazel/bazel_test_suite.gni` import) from "
-                    f"'{gn_rel}'."
+                    f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
+                    f"'{bazel_rel}', and {rm_local_desc} from '{gn_rel}'."
                 )
                 findings.append({
                     "source": "cq_reachability",
@@ -2452,6 +2622,7 @@ for td in target_dirs:
                     "remediation": rem_text,
                 })
             elif local_entries:
+                handled_local_ancestor_suite = True
                 local_rel, local_name_s, _, local_line = local_entries[0]
                 msg_text = (
                     f"`bazel_test_suite(\"{local_name_s}\")` in '{local_rel}' "
@@ -2474,7 +2645,12 @@ for td in target_dirs:
                     "remediation": rem_text,
                 })
         elif missing_anc_area is not None and any(e[0] == gn_rel for e in entries):
+            handled_local_ancestor_suite = True
             anc_pkg, anc_suite = missing_anc_area
+            req_vis = sorted(
+                {f"//{anc_pkg}:__pkg__"}
+                | {f"//{c}:__pkg__" for c in gn_test_callers if c}
+            )
             msg_text = (
                 f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is exported "
                 f"via a per-package `bazel_test_suite` in '{gn_rel}' instead of "
@@ -2487,7 +2663,7 @@ for td in target_dirs:
                 f"in '{anc_pkg}/BUILD.bazel', wire `\"//{anc_pkg}:{anc_suite}\"` into "
                 f"`bazel_test_suite(\"bazel_tests\") {{ {param} = [ \"//{anc_pkg}:{anc_suite}\" ] }}` "
                 f"(and `\":bazel_tests\"` into `group(\"tests\")`) in '{anc_pkg}/BUILD.gn', "
-                f"set `visibility = [\"//{anc_pkg}:__pkg__\"]` on `:{t_name}` in "
+                f"set `visibility = {json.dumps(req_vis)}` on `:{t_name}` in "
                 f"'{bazel_rel}', and remove the per-package `bazel_test_suite` "
                 f"(and unused `//build/bazel/bazel_test_suite.gni` import) from '{gn_rel}'."
             )
@@ -2501,62 +2677,6 @@ for td in target_dirs:
                 "remediation": rem_text,
             })
         for s_rel, s_name, s_param, s_line in entries:
-            if (
-                s_rel == gn_rel
-                and anc_suite_info
-                and not (
-                    base_gn_src
-                    and re.search(
-                        r'\bbazel_test_suite\(\s*"' + re.escape(s_name) + r'"\s*\)',
-                        base_gn_src,
-                    )
-                )
-            ):
-                anc_dir, anc_suite, anc_gn_suite = anc_suite_info
-                req_vis = sorted(
-                    {f"//{anc_dir}:__pkg__"}
-                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
-                )
-                if gn_test_callers and not local_gn_tests_referenced:
-                    caller_desc = ", ".join(f"'{c}/BUILD.gn'" for c in gn_test_callers)
-                    rm_group_desc = (
-                        f"Remove `bazel_test_suite(\"{s_name}\")`, `group(\"tests\")`, and "
-                        "`import(\"//build/bazel/bazel_test_suite.gni\")` above "
-                        f"`## BAZEL2GN SENTINEL` from '{gn_rel}'"
-                    )
-                    unreach_note = (
-                        f" (and nothing in the GN build graph depends on `//{td}:tests` or "
-                        f"`//{td}:{s_name}` because {caller_desc} depends directly on "
-                        f"`:{t_name}`, making `{s_name}` unreachable)"
-                    )
-                else:
-                    rm_group_desc = (
-                        f"Remove `bazel_test_suite(\"{s_name}\")` (along with "
-                        "`import(\"//build/bazel/bazel_test_suite.gni\")` and "
-                        f"`\":{s_name}\"` in `group(\"tests\")`) from '{gn_rel}'"
-                    )
-                    unreach_note = ""
-                findings.append({
-                    "source": "cq_reachability",
-                    "category": "redundant_local_bazel_test_suite",
-                    "severity": "error",
-                    "file": gn_rel,
-                    "line": s_line,
-                    "message": (
-                        f"Local `bazel_test_suite(\"{s_name}\")` in '{gn_rel}' exports "
-                        f"`//{td}:{t_name}`, which is unnecessary because ancestor "
-                        f"'{anc_dir}/BUILD.bazel' already defines `test_suite(name = \"{anc_suite}\")` "
-                        f"(exported to GN via `bazel_test_suite(\"{anc_gn_suite}\")` in "
-                        f"'{anc_dir}/BUILD.gn'){unreach_note}."
-                    ),
-                    "remediation": (
-                        f"{rm_group_desc}, add "
-                        f"`\"//{td}:{t_name}\"` to `test_suite(name = \"{anc_suite}\")` in "
-                        f"'{anc_dir}/BUILD.bazel', set "
-                        f"`visibility = {json.dumps(req_vis)}` on `:{t_name}` in '{bazel_rel}', "
-                        "and re-run `fx bazel2gn`."
-                    ),
-                })
             if s_param != param:
                 findings.append({
                     "source": "cq_reachability",
@@ -2572,7 +2692,8 @@ for td in target_dirs:
                     "remediation": f"Move `//{td}:{t_name}` (or its `test_suite`) from `{s_param}` to `{param}`.",
                 })
         local_suite_unwired_via_tests = bool(
-            gn_test_callers
+            not handled_local_ancestor_suite
+            and gn_test_callers
             and not local_gn_tests_referenced
             and all(
                 s_rel == gn_rel and not refs_from_parent(parent_gn_src, td, s_name)
