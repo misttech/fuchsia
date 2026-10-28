@@ -30,6 +30,7 @@ namespace zxdb {
 class Session;
 class Breakpoint;
 class Filter;
+class Tracepoint;
 
 class DebugAdapterServer;
 class DebugAdapterReader;
@@ -106,6 +107,8 @@ class DebugAdapterContext : public ThreadObserver,
 
   // SystemObserver implementation:
   void WillDestroyFilter(Filter* filter) override;
+  void OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) override;
+  void WillDestroyTracepoint(Tracepoint* tracepoint) override;
 
   Thread* GetThread(uint64_t koid);
 
@@ -157,6 +160,12 @@ class DebugAdapterContext : public ThreadObserver,
   void StoreFilter(Filter* filter);
   void DeleteAllFilters();
   const std::vector<Filter*>& filters() const { return filters_; }
+
+  void DeleteDapTracepoints();
+  std::map<int64_t, fxl::WeakPtr<Tracepoint>>& dap_tracepoints() { return dap_tracepoints_; }
+  const std::map<int64_t, fxl::WeakPtr<Tracepoint>>& dap_tracepoints() const {
+    return dap_tracepoints_;
+  }
 
   // Deinitializes the `AsyncBacktraceSubscription` for testing purposes.
   //
@@ -217,6 +226,9 @@ class DebugAdapterContext : public ThreadObserver,
 
   // Stores all data breakpoints (watchpoints) added by the debug adapter client.
   std::vector<fxl::WeakPtr<Breakpoint>> data_bps_;
+
+  // Stores all tracepoints added by the debug adapter client keyed by client ID.
+  std::map<int64_t, fxl::WeakPtr<Tracepoint>> dap_tracepoints_;
 
   // Stores all filters added by the debug adapter client.
   std::vector<Filter*> filters_;

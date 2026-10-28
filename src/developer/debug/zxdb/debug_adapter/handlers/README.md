@@ -1,4 +1,4 @@
-<!--* freshness: { reviewed: '2026-10-20' } *-->
+<!--* freshness: { reviewed: '2026-10-22' } *-->
 
 # Zxdb Debug Adapter Request Handlers (`zxdb/debug_adapter/handlers`)
 
@@ -37,6 +37,10 @@ Public headers group DAP request records and handlers into these areas:
   `request_function_breakpoint.h`, `request_data_breakpoint.h`):
   `zxdb::OnRequestBreakpoint`, `zxdb::OnRequestFunctionBreakpoint`,
   `zxdb::OnRequestDataBreakpointInfo`, and `zxdb::OnRequestSetDataBreakpoints`.
+- Non-stopping tracepoints (`request_tracepoint.h`):
+  `dap::ZxdbTracepointSpec`, `dap::ZxdbTracepointInfo`,
+  `dap::ZxdbSetTracepointsRequest`, `dap::ZxdbSetTracepointsResponse`,
+  `dap::ZxdbTracepointEvent`, and `zxdb::OnRequestZxdbSetTracepoints`.
 - Stack traces and async backtraces (`request_stacktrace.h`,
   `request_async_backtrace.h`): `dap::StackTraceRequestZxdb`,
   `zxdb::OnRequestStackTrace`, `dap::ZxdbAsyncBacktraceRequest`,
@@ -81,6 +85,9 @@ Handler implementations must preserve these invariants:
   `DebugAdapterContext::FrameforId` when present, and returns a DAP error if
   `OfflineCommandContext` reports any command errors.
 - `OnRequestEvaluate` accepts only requests where `req.context` equals `repl`.
+- `OnRequestZxdbSetTracepoints` reconciles tracepoints installed by the active
+  DAP connection, updating existing tracepoints in-place and deleting removed
+  ones while preserving user console tracepoints.
 - Per the DAP specification, handlers must send the command `Response` (such as
   `PauseResponse`) **before** any resulting `Event` (such as `StoppedEvent` or
   `ProcessStoppedEventZxdb`). Never emit events inside `debug_ipc` reply

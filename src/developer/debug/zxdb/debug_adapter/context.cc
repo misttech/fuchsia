@@ -19,6 +19,8 @@
 #include "src/developer/debug/zxdb/client/system.h"
 #include "src/developer/debug/zxdb/client/system_observer.h"
 #include "src/developer/debug/zxdb/client/thread.h"
+#include "src/developer/debug/zxdb/client/tracepoint.h"
+#include "src/developer/debug/zxdb/client/tracepoint_capture.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_async_backtrace.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_attach.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
@@ -37,9 +39,11 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_step_out.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_terminate.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_threads.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_tracepoint.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_variables.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_zxdb_detach.h"
 #include "src/developer/debug/zxdb/debug_adapter/server.h"
+#include "src/developer/debug/zxdb/debug_adapter/type_conversions.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace zxdb {
@@ -125,6 +129,7 @@ DebugAdapterContext::~DebugAdapterContext() {
   }
   DeleteAllBreakpoints();
   DeleteAllFilters();
+  DeleteDapTracepoints();
   session()->RemoveObserver(this);
 }
 
@@ -302,6 +307,11 @@ void DebugAdapterContext::Init() {
         DEBUG_LOG(DebugAdapter) << "ZxdbConsoleCommandRequest received";
         OnRequestZxdbConsoleCommand(this, req, std::move(callback));
       });
+
+  dap_->registerHandler([this](const dap::ZxdbSetTracepointsRequest& req) {
+    DEBUG_LOG(DebugAdapter) << "ZxdbSetTracepointsRequest received";
+    return OnRequestZxdbSetTracepoints(this, req);
+  });
 
   dap_->registerHandler([this](const dap::DisconnectRequest& req) {
     DEBUG_LOG(DebugAdapter) << "DisconnectRequest received";
@@ -879,6 +889,52 @@ void DebugAdapterContext::WillDestroyFilter(Filter* filter) {
   if (it != filters_.end()) {
     filters_.erase(it);
   }
+}
+
+void DebugAdapterContext::DeleteDapTracepoints() {
+  if (!session()) {
+    return;
+  }
+  auto tracepoints_to_delete = std::move(dap_tracepoints_);
+  dap_tracepoints_.clear();
+  for (const auto& [_, tp] : tracepoints_to_delete) {
+    if (tp) {
+      session()->system().DeleteTracepoint(tp.get());
+    }
+  }
+}
+
+void DebugAdapterContext::WillDestroyTracepoint(Tracepoint* tracepoint) {
+  for (auto it = dap_tracepoints_.begin(); it != dap_tracepoints_.end();) {
+    if (it->second.get() == tracepoint) {
+      it = dap_tracepoints_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void DebugAdapterContext::OnTracepointHit(Tracepoint* tracepoint, const TracepointHitRecord& hit) {
+  int64_t client_id = hit.tracepoint_id;
+  for (const auto& [cid, tp_ptr] : dap_tracepoints_) {
+    if (tracepoint && tp_ptr && tp_ptr.get() == tracepoint) {
+      client_id = cid;
+      break;
+    }
+  }
+
+  dap::ZxdbTracepointEvent event;
+  event.tracepoint_id = client_id;
+  event.location = hit.location;
+  event.hit_count = hit.hit_count;
+  event.max_hits = hit.max_hits;
+  event.auto_disabled = hit.auto_disabled;
+  event.truncated = hit.truncated;
+  event.thread_koid = hit.thread_koid;
+  event.dwell_ms = hit.dwell_ms;
+  event.capture = ToDapFrameCapture(hit.capture);
+
+  dap_->send(event);
 }
 
 }  // namespace zxdb

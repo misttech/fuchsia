@@ -48,12 +48,16 @@ static_library("debug_adapter") {
     "handlers/request_terminate.h",
     "handlers/request_threads.cc",
     "handlers/request_threads.h",
+    "handlers/request_tracepoint.cc",
+    "handlers/request_tracepoint.h",
     "handlers/request_variables.cc",
     "handlers/request_variables.h",
     "handlers/request_zxdb_detach.cc",
     "handlers/request_zxdb_detach.h",
     "server.cc",
     "server.h",
+    "type_conversions.cc",
+    "type_conversions.h",
   ]
 
   deps = []
@@ -89,6 +93,7 @@ source_set("tests") {
     "handlers/request_step_out_unittest.cc",
     "handlers/request_terminate_unittest.cc",
     "handlers/request_threads_unittest.cc",
+    "handlers/request_tracepoint_unittest.cc",
     "handlers/request_variables_unittest.cc",
     "handlers/request_zxdb_detach_unittest.cc",
     "server_unittest.cc",
