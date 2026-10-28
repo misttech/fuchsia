@@ -997,7 +997,7 @@ fn new_remote_fs_node_file(
     flags: OpenFlags,
 ) -> Result<FileHandle, Errno> {
     let fs = remote_null_fs(current_task)?;
-    let is_xattr_labeled = security::fs_is_xattr_labeled(fs.clone());
+    let is_xattr_labeled = security::fs_is_xattr_labeled(&fs);
     let mut query = MODE_ATTRIBUTES | NODE_INFO_ATTRIBUTES;
     if is_xattr_labeled {
         query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
@@ -1348,7 +1348,7 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 
-        if security::fs_is_xattr_labeled(fs.clone()) {
+        if security::fs_is_xattr_labeled(&fs) {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
 
@@ -1381,7 +1381,7 @@ impl<I: SyncIo> FsNodeOps for RemoteNode<I> {
             | fio::NodeAttributesQuery::VERITY_ENABLED
             | fio::NodeAttributesQuery::CASEFOLD;
 
-        if security::fs_is_xattr_labeled(fs.clone()) {
+        if security::fs_is_xattr_labeled(&fs) {
             query |= fio::NodeAttributesQuery::SELINUX_CONTEXT;
         }
 

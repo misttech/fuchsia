@@ -14,7 +14,7 @@ use super::{
     set_cached_sid,
 };
 use crate::task::CurrentTask;
-use crate::vfs::{DirEntryHandle, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp};
+use crate::vfs::{DirEntry, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp};
 use fuchsia_rcu::RcuReadScope;
 use selinux::policy::{AccessVector, FsUseType};
 use selinux::{
@@ -37,14 +37,16 @@ use syncio::zxio_node_attr_has_t;
 const SECURITY_SELINUX_XATTR_VALUE_MAX_SIZE: usize = 4096;
 
 /// Returns the relative path from the root of the file system containing this `DirEntry`.
-fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
+fn get_fs_relative_path(dir_entry: &DirEntry) -> FsString {
     let mut path_builder = PathBuilder::new();
 
     let scope = RcuReadScope::new();
-    let mut current_dir = dir_entry.clone();
+    let mut parent_holder;
+    let mut current_dir = dir_entry;
     while let Some(parent) = current_dir.parent() {
         path_builder.prepend_element(current_dir.local_name(&scope));
-        current_dir = parent;
+        parent_holder = parent;
+        current_dir = &parent_holder;
     }
     path_builder.build_absolute()
 }
@@ -80,12 +82,11 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // TODO: This ensures a correct class for nodes with a wrong `FileMode` at
     // creation, but should not really be required.
     let fs_node = dir_entry.node();
-    fs_node_ensure_class(fs_node)?;
+    let fs_node_class = fs_node_ensure_class(fs_node)?;
 
     // This hook is called every time an `FsNode` is linked to a `DirEntry`, so it is expected that
     // the `FsNode` may already have been labeled.
-    let label_class = fs_node.selinux_state().read();
-    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
+    if !matches!(fs_node.selinux_state().read().label, FsNodeLabel::Uninitialized) {
         return Ok(());
     }
 
@@ -93,14 +94,12 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     // the filesystem's labeling scheme. This allows nodes in per-process and per-task directories
     // in "proc" to inherit the task's label.
     let parent = dir_entry.parent();
-    if let Some(ref parent) = parent
+    if let Some(parent) = &parent
         && let Some(parent_node) = NonPrivateFsNode::new(&parent.node)
+        && let FsNodeLabel::FromTask { task_state } = &parent_node.selinux_state().read().label
     {
-        let parent_label = (*parent_node.selinux_state().read()).clone();
-        if let FsNodeLabel::FromTask { task_state } = &parent_label.label {
-            fs_node_set_label_with_task(fs_node, task_state);
-            return Ok(());
-        }
+        fs_node_set_label_with_task(fs_node, task_state);
+        return Ok(());
     }
 
     // Obtain labeling information for the `FileSystem`. If none has been resolved yet then queue the
@@ -219,8 +218,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
             }
         }
         FileSystemLabelingScheme::GenFsCon { .. } => {
-            let fs_type = fs_node.fs().name();
-            let fs_node_class = fs_node.selinux_state().read().class();
+            let fs_type = fs.name();
             let sub_path = get_fs_relative_path(dir_entry.as_dir_entry());
             security_server
                 .genfscon_label_for_fs_and_path(
@@ -445,13 +443,12 @@ pub(in crate::security) fn fs_node_init_on_create(
     // file-system implementation that supplied the security context inline when creating the node
     // remotely (see `dentry_init_security()`), which is only possible for xattr-labeled
     // file-systems.
-    let label_class = new_node.selinux_state().read();
-    if !matches!(label_class.label, FsNodeLabel::Uninitialized) {
+    if !matches!(new_node.selinux_state().read().label, FsNodeLabel::Uninitialized) {
         assert!(
             new_node.fs().security_state.state.supports_xattr(),
             "init_on_create() for {:?} with label {:?}",
             new_node,
-            *label_class
+            *new_node.selinux_state().read()
         );
         return Ok(None);
     }
@@ -583,8 +580,7 @@ fn may_create(
     let parent_sid = fs_node_effective_sid_and_class(parent).sid;
     let fs = parent.fs();
 
-    let audit_context =
-        &[current_task.into(), parent.into(), fs.as_ref().into(), Auditable::Name(name)];
+    let audit_context = &[current_task.into(), parent.into(), Auditable::Name(name)];
     check_permission(
         &permission_check,
         current_task,
@@ -1065,8 +1061,7 @@ pub(in crate::security) fn path_notify(
 
     let permission_check = build_permission_check(current_task, security_server);
     let current_sid = current_task_state(current_task).current_sid;
-    let fs = fs_node.fs();
-    let audit_context = [current_task.into(), fs_node.into(), fs.as_ref().into()];
+    let audit_context = [current_task.into(), fs_node.into()];
     // The "watch" permission is required to set any watch, regardless of the events in `mask`.
     check_permission(
         &permission_check,
@@ -1174,7 +1169,7 @@ pub(in crate::security) fn check_fs_node_setxattr_access(
 
     // Verify that the requested modification is permitted by the loaded policy.
     if security_server.is_enforcing() {
-        let audit_context = &[current_task.into(), fs_node.into(), fs.as_ref().into()];
+        let audit_context = &[current_task.into(), fs_node.into()];
         let audit_context = audit_context.into();
 
         let new_sid =

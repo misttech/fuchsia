@@ -375,7 +375,7 @@ impl From<SocketClass> for FsNodeClass {
     }
 }
 
-pub trait ClassPermission {
+pub trait ClassPermission: Copy {
     fn class(&self) -> KernelClass;
     fn id(&self) -> u8;
     #[inline]

@@ -8,6 +8,7 @@ use crate::{InitialSid, ReferenceInitialSid, SecurityId};
 use fuchsia_rcu::{RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
+use std::borrow::Cow;
 use std::num::NonZeroU32;
 
 // SAFETY: `SecurityContext` contains only plain data and heap-allocated slices that are safe to
@@ -122,14 +123,14 @@ impl SidTable {
         scope: &RcuReadScope,
         policy: &Policy,
         portable_sids: &mut PortableSidTable,
-        security_context: &SecurityContext,
+        security_context: Cow<'_, SecurityContext>,
     ) -> Result<SecurityId, SecurityContextError> {
-        if let Some(sid) = self.security_context_to_existing_sid(scope, security_context) {
+        if let Some(sid) = self.security_context_to_existing_sid(scope, &security_context) {
             return Ok(sid);
         }
-        policy.validate_security_context(security_context)?;
+        policy.validate_security_context(&security_context)?;
 
-        let serialized = policy.serialize_security_context(security_context);
+        let serialized = policy.serialize_security_context(&security_context);
         let sid = portable_sids.allocate_sid(serialized);
         let sid_index = sid.0.get() as usize;
 
@@ -142,12 +143,13 @@ impl SidTable {
         assert_eq!(sid_index, current_entries.len());
         let mut new_entries = Vec::with_capacity(current_entries.len() + 1);
         new_entries.extend_from_slice(current_entries);
+        let security_context = security_context.into_owned();
         new_entries.push(security_context.clone());
         self.entries.update(new_entries);
 
         // SAFETY: Caller guarantees exclusive writer access to this `SidTable`.
         unsafe {
-            self.context_to_sid.insert(scope, security_context.clone(), sid);
+            self.context_to_sid.insert(scope, security_context, sid);
         }
 
         Ok(sid)
@@ -220,7 +222,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &security_context,
+                Cow::Borrowed(&security_context),
             )
         }
         .unwrap();
@@ -239,7 +241,9 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &policy.parse_security_context(b"user0:object_r:type0:s0".into()).unwrap(),
+                Cow::Owned(
+                    policy.parse_security_context(b"user0:object_r:type0:s0".into()).unwrap(),
+                ),
             )
         };
         // SAFETY: Single-threaded test with exclusive access to `sid_table`.
@@ -248,9 +252,11 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &policy
-                    .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
-                    .unwrap(),
+                Cow::Owned(
+                    policy
+                        .parse_security_context(b"unconfined_u:unconfined_r:unconfined_t:s0".into())
+                        .unwrap(),
+                ),
             )
         };
         assert_ne!(sid1, sid2);
@@ -275,7 +281,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &security_context,
+                Cow::Borrowed(&security_context),
             )
         };
         // SAFETY: Single-threaded test with exclusive access to `sid_table`.
@@ -284,7 +290,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &redundant_range_context,
+                Cow::Borrowed(&redundant_range_context),
             )
         };
         assert_eq!(sid1, sid2);
@@ -302,7 +308,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &canonical_categories_context,
+                Cow::Borrowed(&canonical_categories_context),
             )
         }
         .unwrap();
@@ -312,7 +318,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &unnormalized_categories_context,
+                Cow::Borrowed(&unnormalized_categories_context),
             )
         }
         .unwrap();
@@ -339,7 +345,12 @@ mod tests {
                 let context = policy.parse_security_context(context_str.as_bytes().into()).unwrap();
                 // SAFETY: Single-threaded test with exclusive access to `sid_table`.
                 let sid = unsafe {
-                    sid_table.security_context_to_sid(&scope, &policy, &mut portable_sids, &context)
+                    sid_table.security_context_to_sid(
+                        &scope,
+                        &policy,
+                        &mut portable_sids,
+                        Cow::Borrowed(&context),
+                    )
                 }
                 .unwrap();
                 expected.push((context, sid));
@@ -370,7 +381,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &security_context,
+                Cow::Borrowed(&security_context),
             )
         }
         .unwrap();
@@ -393,7 +404,7 @@ mod tests {
                 &scope,
                 &policy,
                 &mut portable_sids,
-                &file_initial_security_context.clone(),
+                Cow::Borrowed(file_initial_security_context),
             )
         }
         .unwrap();
@@ -417,12 +428,22 @@ mod tests {
 
         // SAFETY: Single-threaded test with exclusive access to `sid_table`.
         let source_sid = unsafe {
-            sid_table.security_context_to_sid(&scope, &policy, &mut portable_sids, &source_context)
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                Cow::Borrowed(&source_context),
+            )
         }
         .unwrap();
         // SAFETY: Single-threaded test with exclusive access to `sid_table`.
         let target_sid = unsafe {
-            sid_table.security_context_to_sid(&scope, &policy, &mut portable_sids, &target_context)
+            sid_table.security_context_to_sid(
+                &scope,
+                &policy,
+                &mut portable_sids,
+                Cow::Borrowed(&target_context),
+            )
         }
         .unwrap();
 

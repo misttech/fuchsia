@@ -49,9 +49,9 @@ impl XpermsAccessDecision {
 }
 
 /// [`SecurityContext`] and [`FsUseType`] derived from an `fs_use_*` line of the policy.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FsUseLabelAndType {
-    pub context: SecurityContext,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FsUseLabelAndType<'a> {
+    pub context: &'a SecurityContext,
     pub use_type: FsUseType,
 }
 
@@ -143,23 +143,23 @@ impl Policy {
 
     /// If there is an `fs_use` statement for the given filesystem type, returns the associated
     /// [`SecurityContext`] and [`FsUseType`].
-    pub fn fs_use_label_and_type(&self, fs_type: NullessByteStr<'_>) -> Option<FsUseLabelAndType> {
+    pub fn fs_use_label_and_type(
+        &self,
+        fs_type: NullessByteStr<'_>,
+    ) -> Option<FsUseLabelAndType<'_>> {
         self.object_contexts()
             .fs_uses()
             .iter()
             .find(|fs_use| fs_use.fs_type() == fs_type.as_bytes())
             .map(|fs_use| FsUseLabelAndType {
-                context: fs_use.context().clone(),
+                context: fs_use.context(),
                 use_type: fs_use.behavior(),
             })
     }
 
     /// Returns an iterator over all `genfscon` [`GenfsConPath`] entries for the given filesystem
     /// type.
-    fn genfscon_find_all<'a>(
-        &'a self,
-        fs_type: &'a [u8],
-    ) -> impl Iterator<Item = &'a GenfsConPath> {
+    fn genfscon_find_all<'a>(&'a self, fs_type: &[u8]) -> impl Iterator<Item = &'a GenfsConPath> {
         self.generic_fs_contexts()
             .iter()
             .filter(move |entry| entry.fs_type() == fs_type)
@@ -175,7 +175,7 @@ impl Policy {
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
         class: Option<ClassId>,
-    ) -> Option<SecurityContext> {
+    ) -> Option<&SecurityContext> {
         // All contexts listed in the policy for the file system type.
         let fs_contexts = self.genfscon_find_all(fs_type.as_bytes());
 
@@ -197,19 +197,19 @@ impl Policy {
         // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
         let mut result: Option<&GenfsConPath> = None;
         let mut order_type = OrderType::Unknown;
-        let mut prev_path_bytes: Option<Vec<u8>> = None;
+        let mut prev_path_bytes: Option<&[u8]> = None;
         for fs_context in fs_contexts {
             // Determine the order type based on the first entries.
             let path = fs_context.partial_path();
             if order_type == OrderType::Unknown {
-                if let Some(prev) = &prev_path_bytes {
+                if let Some(prev) = prev_path_bytes {
                     if path.len() > prev.len() {
                         order_type = OrderType::Alphabetic;
-                    } else if path < prev.as_slice() {
+                    } else if path < prev {
                         order_type = OrderType::ByLength;
                     }
                 }
-                prev_path_bytes = Some(path.to_vec());
+                prev_path_bytes = Some(path);
             }
 
             // Check if the class matches.
@@ -245,7 +245,7 @@ impl Policy {
 
         // The returned SecurityContext must be valid with respect to the policy, since otherwise
         // we'd have rejected the policy load.
-        Some(result?.context().clone())
+        Some(result?.context())
     }
 
     /// Returns the [`SecurityContext`] that should be applied to a newly created SELinux object

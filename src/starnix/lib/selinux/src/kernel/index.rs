@@ -221,7 +221,7 @@ impl PolicyIndex {
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
         class: Option<KernelClass>,
-    ) -> Option<SecurityContext> {
+    ) -> Option<&SecurityContext> {
         let node_path = if class == Some(FileClass::LnkFile.into())
             && !self.policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
         {

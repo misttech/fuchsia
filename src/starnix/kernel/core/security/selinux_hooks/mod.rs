@@ -196,7 +196,7 @@ fn check_permission_and_xperms(
         xperms_kind,
         subject_sid,
         target_sid,
-        permission.clone(),
+        permission,
         xperm,
     );
 
@@ -215,7 +215,7 @@ fn check_permission_and_xperms(
         audit_decision(
             current_task,
             permission_check,
-            result.clone(),
+            result,
             subject_sid,
             target_sid,
             permission.into(),
@@ -265,8 +265,7 @@ fn has_fs_node_permissions(
 
     let target = fs_node_effective_sid_and_class(fs_node);
 
-    let fs = fs_node.fs();
-    let audit_context = [audit_context, fs_node.into(), fs.as_ref().into()];
+    let audit_context = [audit_context, fs_node.into()];
     for permission in permissions {
         check_permission(
             permission_check,
@@ -329,7 +328,7 @@ fn fs_node_effective_sid_and_class(fs_node: NonPrivateFsNode<'_>) -> FsNodeSidAn
 }
 
 /// Checks whether `source_sid` is allowed the specified `permission` on `target_sid`.
-fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+fn check_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     source_sid: SecurityId,
@@ -342,7 +341,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
     if is_internal_operation(current_task) {
         return Ok(());
     }
-    let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
+    let result = permission_check.has_permission(source_sid, target_sid, permission);
 
     if result.audit {
         if !result.permit() {
@@ -359,7 +358,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
         audit_decision(
             current_task,
             permission_check,
-            result.clone(),
+            result,
             source_sid,
             target_sid,
             permission.into(),
@@ -371,7 +370,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
 }
 
 /// Checks that `subject_sid` has the specified process `permission` on `self`.
-fn check_self_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+fn check_self_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
@@ -574,17 +573,13 @@ impl FsNodeState {
 
     pub(super) fn update(&self, new_label: FsNodeLabel, new_class: FsNodeClass) {
         let _lock = self.update_lock.lock();
-        let mut new_label_class = (*self.label.read()).clone();
-        new_label_class.label = new_label;
-        new_label_class.class = Some(new_class);
-        self.label.update(new_label_class);
+        self.label.update(FsNodeLabelAndClass { label: new_label, class: Some(new_class) });
     }
 
     pub(super) fn update_label(&self, new_label: FsNodeLabel) {
         let _lock = self.update_lock.lock();
-        let mut new_label_class = (*self.label.read()).clone();
-        new_label_class.label = new_label;
-        self.label.update(new_label_class);
+        let class = self.label.read().class;
+        self.label.update(FsNodeLabelAndClass { label: new_label, class });
     }
 
     pub(super) fn update_class(&self, new_class: FsNodeClass) {

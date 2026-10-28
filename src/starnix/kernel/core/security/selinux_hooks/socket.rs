@@ -288,7 +288,6 @@ pub(in crate::security) fn socket_accept(
     accepted_socket: NonPrivateSocketFile<'_>,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).current_sid;
-    let listening_security_state = (*listening_socket.node().selinux_state().read()).clone();
     has_socket_permission(
         &build_permission_check(current_task, security_server),
         current_task,
@@ -297,6 +296,7 @@ pub(in crate::security) fn socket_accept(
         CommonSocketPermission::Accept,
         current_task.into(),
     )?;
+    let listening_security_state = (*listening_socket.node().selinux_state().read()).clone();
     let _lock = accepted_socket.node().selinux_state().update_lock.lock();
     accepted_socket.node().selinux_state().label.update(listening_security_state);
     Ok(())

@@ -22,6 +22,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -220,6 +221,7 @@ impl SecurityServer {
             active_policy
                 .parsed
                 .parse_security_context(security_context)
+                .map(Cow::Owned)
                 .map_err(anyhow::Error::from)
         })
     }
@@ -443,20 +445,21 @@ impl SecurityServer {
         let scope = RcuReadScope::new();
         let active_policy = self.backend.expect_active_policy(&scope);
 
-        let mut resolve_sid = |context: &SecurityContext| -> Result<SecurityId, anyhow::Error> {
-            // SAFETY: `self.backend.portable_sids` is locked, ensuring exclusive writer access.
-            unsafe {
-                active_policy
-                    .sid_table
-                    .security_context_to_sid(
-                        &scope,
-                        &active_policy.parsed,
-                        &mut portable_sids,
-                        context,
-                    )
-                    .map_err(anyhow::Error::from)
-            }
-        };
+        let mut resolve_sid =
+            |context: Cow<'_, SecurityContext>| -> Result<SecurityId, anyhow::Error> {
+                // SAFETY: `self.backend.portable_sids` is locked, ensuring exclusive writer access.
+                unsafe {
+                    active_policy
+                        .sid_table
+                        .security_context_to_sid(
+                            &scope,
+                            &active_policy.parsed,
+                            &mut portable_sids,
+                            context,
+                        )
+                        .map_err(anyhow::Error::from)
+                }
+            };
 
         let mut sid_from_mount_option =
             |mount_option: &Option<Vec<u8>>| -> Result<Option<SecurityId>, anyhow::Error> {
@@ -464,7 +467,7 @@ impl SecurityServer {
                     return Ok(None);
                 };
                 let context = active_policy.parsed.parse_security_context(label.into())?;
-                resolve_sid(&context).map(Some)
+                resolve_sid(Cow::Owned(context)).map(Some)
             };
 
         let mount_sids = FileSystemMountSids {
@@ -487,7 +490,7 @@ impl SecurityServer {
             active_policy.parsed.fs_use_label_and_type(fs_type)
         {
             // There is an `fs_use` statement for this file-system type in the policy.
-            let fs_sid_from_policy = resolve_sid(&context)?;
+            let fs_sid_from_policy = resolve_sid(Cow::Borrowed(context))?;
             let fs_sid = mount_sids.fs_context.unwrap_or(fs_sid_from_policy);
             FileSystemLabel {
                 sid: fs_sid,
@@ -501,7 +504,7 @@ impl SecurityServer {
             active_policy.parsed.genfscon_label_for_fs_and_path(fs_type, ROOT_PATH.into(), None)
         {
             // There is a `genfscon` statement for this file-system type in the policy.
-            let genfscon_sid = resolve_sid(&context)?;
+            let genfscon_sid = resolve_sid(Cow::Borrowed(context))?;
             let fs_sid = mount_sids.fs_context.unwrap_or(genfscon_sid);
 
             // For relabeling to make sense with `genfscon` labeling they must ensure to persist the
@@ -548,6 +551,7 @@ impl SecurityServer {
             active_policy
                 .parsed
                 .genfscon_label_for_fs_and_path(fs_type, node_path.into(), class_id)
+                .map(Cow::Borrowed)
                 .ok_or_else(|| {
                     anyhow::anyhow!("Genfscon label requested for non-genfscon labeled filesystem")
                 })
@@ -660,12 +664,12 @@ impl SecurityServerBackend {
             let (source_context, target_context) =
                 active_policy.sid_table.sids_to_security_contexts(scope, source_sid, target_sid);
 
-            Ok(active_policy.parsed.compute_create_context(
+            Ok(Cow::Owned(active_policy.parsed.compute_create_context(
                 source_context,
                 target_context,
                 target_class,
                 name,
-            ))
+            )))
         })
         .context("computing new security context from policy")
     }
@@ -673,7 +677,10 @@ impl SecurityServerBackend {
     /// Helper for call-sites that need to compute a `SecurityContext` and assign a SID to it.
     fn compute_sid(
         &self,
-        compute_context: impl Fn(&RcuReadScope, &ActivePolicy) -> Result<SecurityContext, anyhow::Error>,
+        compute_context: impl for<'a> Fn(
+            &'a RcuReadScope,
+            &'a ActivePolicy,
+        ) -> Result<Cow<'a, SecurityContext>, anyhow::Error>,
     ) -> Result<SecurityId, anyhow::Error> {
         // Initially assume that the computed context will most likely already have a SID assigned,
         // so that the operation can be completed via RCU without taking any lock.
@@ -707,7 +714,7 @@ impl SecurityServerBackend {
                     &scope,
                     &current_policy.parsed,
                     &mut portable_sids,
-                    &context,
+                    context,
                 )
                 .map_err(anyhow::Error::from)
         }
@@ -997,7 +1004,7 @@ mod tests {
                         .load_policy(TESTS_BINARY_POLICY.to_vec())
                         .expect("policy reload succeeds");
                 }
-                Ok(context)
+                Ok(Cow::Owned(context))
             })
             .expect("compute_sid succeeds across policy reload");
 

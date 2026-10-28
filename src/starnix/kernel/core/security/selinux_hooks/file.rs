@@ -387,9 +387,7 @@ pub(in crate::security) fn file_mprotect(
             if let FsNodeClass::File(file_class) = class {
                 let subject_sid = current_task_state(current_task).current_sid;
                 let file_object = file.file();
-                let fs = node.fs();
-                let audit_context =
-                    [current_task.into(), file_object.into(), fs.as_ref().into(), node.into()];
+                let audit_context = [current_task.into(), file_object.into(), node.into()];
                 check_permission(
                     &build_permission_check(current_task, security_server),
                     current_task,

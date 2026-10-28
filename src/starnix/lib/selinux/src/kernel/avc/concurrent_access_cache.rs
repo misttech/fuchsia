@@ -126,7 +126,7 @@ impl
     ) {
         let source_sid = key.source_sid.0.get() as u64;
         let target_sid = key.target_sid.0.get() as u64;
-        let target_class = key.target_class.clone() as u8;
+        let target_class = key.target_class as u8;
 
         let allow_u32: u32 = value.allow.into();
         let allow = allow_u32 as u64;
@@ -331,7 +331,7 @@ impl
     ) {
         let source_sid = key.source_sid.0.get() as u64;
         let target_sid = key.target_sid.0.get() as u64;
-        let target_class = key.target_class.clone() as u8;
+        let target_class = key.target_class as u8;
         let value_sid = value.0.get() as u32;
 
         let u64_0 = source_sid | (target_sid << 32);

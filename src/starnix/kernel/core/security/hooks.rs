@@ -2426,7 +2426,7 @@ pub fn set_procattr(
 }
 
 /// Returns true if the file system persists labels in extended attributes.
-pub fn fs_is_xattr_labeled(fs: FileSystemHandle) -> bool {
+pub fn fs_is_xattr_labeled(fs: &FileSystem) -> bool {
     fs.security_state.state.supports_xattr()
 }
 

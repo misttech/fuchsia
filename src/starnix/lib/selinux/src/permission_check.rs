@@ -12,7 +12,7 @@ use std::num::NonZeroU32;
 pub use crate::kernel::PerThreadCache;
 
 /// Result of a permission lookup between two Security Contexts.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PermissionCheckResult {
     /// True if the specified permissions are granted by policy.
     pub granted: bool,
@@ -61,7 +61,7 @@ impl<'a> PermissionCheck<'a> {
     /// Returns whether the `source_sid` has the specified `permission` on `target_sid`.
     /// The result indicates both whether `permission` is `permit`ted, and whether the caller
     /// should `audit` log the query.
-    pub fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>(
+    pub fn has_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
         &self,
         source_sid: SecurityId,
         target_sid: SecurityId,
@@ -92,9 +92,7 @@ impl<'a> PermissionCheck<'a> {
     ///
     /// A denied request is audited if the base permission is `dontaudit` or the extended
     /// permission is `dontauditxperm`.
-    pub fn has_extended_permission<
-        P: ClassPermission + Into<KernelPermission> + Clone + 'static,
-    >(
+    pub fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + 'static>(
         &self,
         xperms_kind: XpermsKind,
         source_sid: SecurityId,

@@ -85,7 +85,7 @@ fn close_inaccessible_file_descriptors(
         .expect("kernel has security state because SELinux is enabled");
 
     let null_file_handle =
-        kernel_state.selinuxfs_null.get().expect("selinuxfs_init_null() has been called").clone();
+        kernel_state.selinuxfs_null.get().expect("selinuxfs_init_null() has been called");
 
     let audit_context = current_task.into();
     let source_sid = new_sid;
