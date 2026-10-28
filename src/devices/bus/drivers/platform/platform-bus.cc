@@ -156,7 +156,7 @@ uint8_t PowerStateToSuspendReason(fss::SystemPowerState power_state) {
 
 }  // anonymous namespace
 
-zx::result<zx::bti> PlatformBus::GetBti(uint32_t iommu_id, uint32_t bti_id,
+zx::result<zx::bti> PlatformBus::GetBti(uint32_t iommu_id, uint64_t bti_id,
                                         std::string_view dev_name) {
   auto iter = iommu_handles_.find(iommu_id);
   if (iter == iommu_handles_.end()) {

@@ -88,7 +88,7 @@ class PlatformBus : public fdf::DriverBase2,
   void GetInterruptControllerInfo(GetInterruptControllerInfoCompleter::Sync& completer) override;
   void GetSerialNumber(GetSerialNumberCompleter::Sync& completer) override;
 
-  zx::result<zx::bti> GetBti(uint32_t iommu_id, uint32_t bti_id, std::string_view name);
+  zx::result<zx::bti> GetBti(uint32_t iommu_id, uint64_t bti_id, std::string_view name);
 
   zx::result<> RegisterInterruptController(
       uint32_t id, fidl::ClientEnd<fuchsia_hardware_interrupt::Controller> controller);
@@ -215,7 +215,7 @@ class PlatformBus : public fdf::DriverBase2,
 
   std::map<uint32_t, std::vector<PendingInterruptRequest>> pending_interrupts_;
 
-  std::map<std::pair<uint32_t, uint32_t>, zx::bti> cached_btis_;
+  std::map<std::pair<uint32_t, uint64_t>, zx::bti> cached_btis_;
 
   fdf::OwnedChildNode sys_node_;
   fdf::OwnedChildNode platform_node_;

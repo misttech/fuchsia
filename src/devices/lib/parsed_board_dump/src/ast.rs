@@ -107,6 +107,8 @@ pub struct BtiResource {
     #[serde(default)]
     pub bti_id: Option<u32>,
     #[serde(default)]
+    pub bti_id_mask: Option<u32>,
+    #[serde(default)]
     pub name: Option<String>,
 }
 

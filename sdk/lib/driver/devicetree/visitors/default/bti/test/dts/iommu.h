@@ -16,7 +16,8 @@
 
 #define TEST_BTI_ID1 6
 #define TEST_BTI_ID2 3
-#define TEST_BTI_ID3 9
+#define TEST_BTI_ID3 0
+#define TEST_BTI_MASK3 0x1f
 
 #define TEST_BTI_ID2_NAME "device2"
 #define TEST_BTI_ID3_NAME "device3"

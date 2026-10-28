@@ -269,7 +269,9 @@ zx::result<zx::bti> PlatformDevice::GetBti(uint32_t index) const {
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  return bus_->GetBti(bti.iommu_id().value(), bti.bti_id().value(), name());
+  const uint64_t full_bti_id =
+      (static_cast<uint64_t>(bti.bti_id_mask().value_or(0)) << 32) | bti.bti_id().value();
+  return bus_->GetBti(bti.iommu_id().value(), full_bti_id, name());
 }
 
 zx::result<zx::resource> PlatformDevice::GetSmc(uint32_t index) const {

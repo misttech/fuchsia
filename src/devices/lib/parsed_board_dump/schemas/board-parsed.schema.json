@@ -246,6 +246,13 @@
                     ],
                     "description": "BTI client identifier."
                 },
+                "bti_id_mask": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "Optional 32-bit StreamID mask."
+                },
                 "name": {
                     "type": [
                         "string",

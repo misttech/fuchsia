@@ -502,6 +502,9 @@ inline void StringifyPbusNode(const fuchsia_hardware_platform_bus::Node& node,
       if (bti.bti_id()) {
         os << "      bti_id = " << *bti.bti_id() << "\n";
       }
+      if (bti.bti_id_mask()) {
+        os << "      bti_id_mask = 0x" << std::hex << *bti.bti_id_mask() << std::dec << "\n";
+      }
       if (bti.name()) {
         os << "      name = \"" << *bti.name() << "\"\n";
       }

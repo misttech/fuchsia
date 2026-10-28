@@ -86,6 +86,13 @@ type Bti = table {
     /// It is valid for this to be empty, however the resource will only be able
     /// to be retrieved using [`fuchsia.hardware.platform.device/GetBtiById`].
     3: name string:fuchsia.driver.framework.MAX_RESOURCE_NAME_LENGTH;
+    /// Optional 32-bit StreamID mask where each set (`1`) bit marks a masked
+    /// ("don't-care") StreamID bit position; a StreamID matches this BTI when it
+    /// equals `bti_id` in every bit position where `bti_id_mask` is `0`.
+    /// When omitted, defaults to `0` (matching only the single StreamID `bti_id`).
+    /// Placed in bits 63:32 (with `bti_id` in bits 31:0) of the 64-bit `bti_id`
+    /// passed to `zx_bti_create`.
+    4: bti_id_mask uint32;
 };
 
 /// Definition of a Secure Monitor Call (SMC), which allows calls to be made from the user space.

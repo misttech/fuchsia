@@ -19,7 +19,10 @@ sdk_source_set("bti") {
 
   sources = [ "bti.cc" ]
   public = [ "bti.h" ]
-  deps = [ "//sdk/lib/driver/logging/cpp" ]
+  deps = [
+    "//sdk/lib/driver/devicetree/visitors:common-types",
+    "//sdk/lib/driver/logging/cpp",
+  ]
 
   public_deps = [
     "//sdk/lib/driver/devicetree/manager:headers",

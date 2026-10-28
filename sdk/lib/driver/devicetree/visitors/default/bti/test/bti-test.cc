@@ -49,6 +49,7 @@ TEST(BtiVisitorTest, TestBtiProperty) {
   ASSERT_EQ(1lu, bti2->size());
   ASSERT_EQ(2u, *(*bti2)[0].iommu_id());
   ASSERT_EQ(uint32_t{TEST_BTI_ID2}, *(*bti2)[0].bti_id());
+  ASSERT_FALSE((*bti2)[0].bti_id_mask().has_value());
   ASSERT_EQ(TEST_BTI_ID2_NAME, *(*bti2)[0].name());
 
   auto bti3_nodes = bti_tester->GetPbusNodes("sample-bti-device3");
@@ -59,6 +60,7 @@ TEST(BtiVisitorTest, TestBtiProperty) {
   ASSERT_EQ(1lu, bti3->size());
   ASSERT_EQ(4u, *(*bti3)[0].iommu_id());
   ASSERT_EQ(uint32_t{TEST_BTI_ID3}, *(*bti3)[0].bti_id());
+  ASSERT_EQ(uint32_t{TEST_BTI_MASK3}, *(*bti3)[0].bti_id_mask());
   ASSERT_EQ(TEST_BTI_ID3_NAME, *(*bti3)[0].name());
 
   const auto& iommus = bti_tester->publisher()->GetIommus();

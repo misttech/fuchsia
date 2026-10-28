@@ -281,6 +281,9 @@ pub fn format_platform_bus_node(node: &PlatformBusNode) -> String {
         if let Some(bti_id) = bti.bti_id {
             out.push_str(&format!("      bti_id = {}\n", bti_id));
         }
+        if let Some(bti_id_mask) = bti.bti_id_mask {
+            out.push_str(&format!("      bti_id_mask = 0x{:x}\n", bti_id_mask));
+        }
         if let Some(n) = &bti.name {
             out.push_str(&format!("      name = \"{}\"\n", n));
         }
