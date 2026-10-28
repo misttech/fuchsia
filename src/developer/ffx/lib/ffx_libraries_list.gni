@@ -18,6 +18,7 @@ all_ffx_libraries = [
   "fastboot",
   "fastboot_file_discovery",
   "fho",
+  "futures",
   "gce",
   "isolate",
   "logging",
