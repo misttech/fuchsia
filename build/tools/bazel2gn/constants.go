@@ -118,7 +118,6 @@ var bazelRuleToGNTemplate = map[string]string{
 
 	// Host tools
 	"cc_binary_host_tool": "executable",
-	"ffx_tool":            "ffx_tool",
 	"ffx_plugin":          "ffx_plugin",
 	"go_binary_host_tool": "go_binary",
 
@@ -181,6 +180,11 @@ var bazelRuleToGNTemplate = map[string]string{
 	// Runtime data for Bazel host tests, so it's only consumed by the rules
 	// above.
 	"host_test_data_files": noGNEquivalent,
+
+	// `ffx_tool` and `idk_ffx_tool` targets are Bazel-only and reach GN via
+	// handwritten `bazel_ffx_tool()` / `bazel_host_tool()` wrappers when needed.
+	"ffx_tool":     noGNEquivalent,
+	"idk_ffx_tool": noGNEquivalent,
 }
 
 // attrsToOmitByRules stores a mapping from known Bazel rules to attributes to
@@ -495,7 +499,6 @@ var attrMapsByRules = map[string]map[string]string{
 	"fx_component":                       fxComponentAttrMap,
 
 	// Tools
-	"ffx_tool":   rustBinAttrMap,
 	"ffx_plugin": ffxPluginAttrMap,
 
 	// Others

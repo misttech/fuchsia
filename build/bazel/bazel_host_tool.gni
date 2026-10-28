@@ -28,6 +28,10 @@ _host_tools_dir = _temp.host_tools_dir
 #  install_host_tool: (bool, optional) if true, the binary will also be
 #     copied to the `host_tools_dir` - see //build/host.gni.
 #
+#  companion_files: (list of strings, optional) basenames of companion files
+#     in `{{BAZEL_TARGET_OUT_DIR}}` to copy alongside the binary into
+#     `root_out_dir` (and `host_tools_dir` when `install_host_tool` is true).
+#
 #  All other bazel_build_action() inputs *except* 'copy_outputs'
 #     are forwarded to bazel_build_action().  The template creates
 #     the 'copy_outputs' list itself.
@@ -39,6 +43,15 @@ template("bazel_host_tool") {
 
   assert(!defined(invoker.copy_outputs),
          "This template creates copy_outputs, don't provide it.")
+
+  if (defined(invoker.companion_files)) {
+    foreach(_companion_file, invoker.companion_files) {
+      assert(
+          _companion_file != "" &&
+              get_path_info(_companion_file, "file") == _companion_file,
+          "companion_files must be non-empty basenames, got ${_companion_file}.")
+    }
+  }
 
   if (defined(invoker.output_name)) {
     _output_name = invoker.output_name
@@ -57,6 +70,7 @@ template("bazel_host_tool") {
                                "output_name",
                                "bazel_output_path",
                                "install_host_tool",
+                               "companion_files",
 
                                # standard "deep-forwarded" params
                                "testonly",
@@ -96,6 +110,21 @@ template("bazel_host_tool") {
         },
       ]
 
+      _runtime_files = []
+      if (defined(invoker.companion_files)) {
+        foreach(_companion_file, invoker.companion_files) {
+          _companion_ninja =
+              rebase_path("${root_out_dir}/${_companion_file}", root_build_dir)
+          copy_outputs += [
+            {
+              bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
+              ninja = _companion_ninja
+            },
+          ]
+          _runtime_files += [ _companion_ninja ]
+        }
+      }
+
       # Add an additional copy in the host tools outdir if requested,
       if (defined(invoker.install_host_tool) && invoker.install_host_tool &&
           # but only in the "real" host toolchain.
@@ -111,6 +140,18 @@ template("bazel_host_tool") {
                                 root_build_dir)
           },
         ]
+
+        if (defined(invoker.companion_files)) {
+          foreach(_companion_file, invoker.companion_files) {
+            copy_outputs += [
+              {
+                bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_companion_file}"
+                ninja = rebase_path("${_host_tools_dir}/${_companion_file}",
+                                    root_build_dir)
+              },
+            ]
+          }
+        }
       }
 
       metadata = {
@@ -121,6 +162,9 @@ template("bazel_host_tool") {
             name = _output_name
             os = current_os
             path = rebase_path(_output_path, root_build_dir)
+            if (_runtime_files != []) {
+              runtime_files = _runtime_files
+            }
           },
         ]
       }
@@ -149,6 +193,11 @@ template("bazel_host_tool") {
                                "visibility",
                              ])
       sources = [ "${base_target_outdir}/${_output_name}" ]
+      if (defined(invoker.companion_files)) {
+        foreach(_companion_file, invoker.companion_files) {
+          sources += [ "${base_target_outdir}/${_companion_file}" ]
+        }
+      }
       outputs = [ "${root_out_dir}/{{source_file_part}}" ]
       deps = [ base_target ]
     }

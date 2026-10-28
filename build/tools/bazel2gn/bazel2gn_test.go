@@ -1104,10 +1104,15 @@ ffx_tool(
 	binary_name = "ffx-foo",
 	disable_instrumentation = True,
 	edition = "2024",
-	sdk_area = "Developer",
-	sdk_category = "partner",
-	sdk_deps = ["//sdk/lib/fdio"],
-	sdk_target_name = "sdk",
+	deps = [":ffx_foo"],
+)
+
+idk_ffx_tool(
+	name = "ffx_foo_partner_tool",
+	srcs = ["src/main.rs"],
+	category = "partner",
+	edition = "2024",
+	idk_name = "ffx-foo-partner",
 	deps = [":ffx_foo"],
 )`,
 			wantGN: `ffx_plugin("ffx_foo") {
@@ -1149,23 +1154,6 @@ ffx_tool(
 	version = "0.1.0"
 	deps = [
 		"//third_party/rust_crates:anyhow",
-	]
-}
-ffx_tool("ffx_foo_tool") {
-	sources = [
-		"src/main.rs",
-	]
-	output_name = "ffx-foo"
-	exclude_toolchain_tags = [ "instrumented" ]
-	edition = "2024"
-	sdk_area = "Developer"
-	sdk_category = "partner"
-	sdk_deps = [
-		"//sdk/lib/fdio",
-	]
-	sdk_target_name = "sdk"
-	deps = [
-		":ffx_foo",
 	]
 }`,
 		}, {

@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_host_tool.gni")
 import("//src/developer/ffx/build/ffx_tool.gni")
 
-assert(is_host, "bazel_host_tool() can only be called in a host toolchain.")
+assert(is_host, "bazel_ffx_tool() can only be called in a host toolchain.")
 
 group("efi") {
   public_deps = [
@@ -18,14 +17,7 @@ group("bin") {
   public_deps = [ ":ffx-efi_versioned" ]
 }
 
-group("tests") {
-  testonly = true
-  deps = [ ":ffx-efi_test" ]
-}
-
-bazel_host_tool("ffx-efi_bazel_unversioned") {
-  bazel_target = ":ffx-efi"
-  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi_unversioned"
+bazel_ffx_tool("ffx-efi") {
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -52,30 +44,3 @@ bazel_host_tool("ffx-efi_bazel_unversioned") {
 # rerun bazel2gn.
 
 import("//build/tools/bazel2gn/bazel_migration.gni")
-
-if (is_host) {
-  ffx_tool("ffx-efi") {
-    sources = [
-      "src/args.rs",
-      "src/efi_lib.rs",
-      "src/main.rs",
-    ]
-    source_root = "src/main.rs"
-    edition = "2024"
-    test_deps = [
-      "//src/lib/fuchsia",
-      "//third_party/rust_crates:tempfile",
-    ]
-    with_unit_tests = true
-    deps = [
-      "//build/sdk/meta:rust",
-      "//src/developer/ffx/lib/errors:lib",
-      "//src/developer/ffx/lib/fho:lib",
-      "//src/developer/ffx/lib/writer:lib",
-      "//src/lib/fuchsia-async",
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:argh",
-      "//third_party/rust_crates:fatfs",
-    ]
-  }
-}

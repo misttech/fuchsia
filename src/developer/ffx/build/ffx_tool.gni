@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/sdk/sdk_atom.gni")
@@ -10,6 +11,61 @@ import("//sdk/categories/compatibility.gni")
 import("//src/developer/ffx/build/ffx_action.gni")
 import("//src/developer/ffx/config.gni")
 import("//src/developer/ffx/lib/version/build/ffx_apply_version.gni")
+
+# Registers an in-tree standalone ffx subtool in the ffx subtool manifest
+# (`ffx_tools.json`, see `//src/developer/ffx:tool_manifest`).
+#
+# Shared by `ffx_tool` and `bazel_ffx_tool`.
+#
+# Parameters
+#
+#   output_name (required)
+#     Name of the versioned subtool binary installed in `host_tools_dir`.
+#
+#   sdk_category (optional)
+#     Subtool category. Defaults to `"internal"`, which marks subtools that
+#     are not in the IDK (see //src/developer/ffx/tests/cli-goldens).
+#
+#   testonly, visibility (optional)
+#     Usual GN meaning.
+#
+template("_ffx_tool_manifest_entry") {
+  group(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    _output_name = invoker.output_name
+    metadata = {
+      # LINT.IfChange(clidoc_subtool_manifest)
+
+      # this is a comment to remember to change clidoc.
+      # nested IfThisThenThat are not allowed.
+      # nor multiple files in the then clause.
+
+      # LINT.ThenChange(//tools/clidoc/src/ffx_doc.rs:clidoc_subtool_manifest)
+
+      # LINT.IfChange(subtool_manifest)
+      ffx_tool = [
+        {
+          name = _output_name
+          category = "internal"
+          if (defined(invoker.sdk_category)) {
+            category = invoker.sdk_category
+          }
+          executable =
+              rebase_path("$host_tools_dir/$_output_name", root_build_dir)
+          executable_metadata =
+              rebase_path("$host_tools_dir/${_output_name}.json",
+                          root_build_dir)
+        },
+      ]
+
+      # LINT.ThenChange(//src/developer/ffx/lib/fho/search/src/lib.rs:subtool_manifest)
+    }
+  }
+}
 
 # Defines an ffx-compatible subtool in the form of a rust binary target
 #
@@ -161,33 +217,9 @@ template("ffx_tool") {
   }
 
   # This is used to generate metadata about in-tree standalone ffx subtools.
-  group(tool_list_metadata_target) {
-    metadata = {
-      # LINT.IfChange(clidoc_subtool_manifest)
-
-      # this is a comment to remember to change clidoc.
-      # nested IfThisThenThat are not allowed.
-      # nor multiple files in the then clause.
-
-      # LINT.ThenChange(//tools/clidoc/src/ffx_doc.rs:clidoc_subtool_manifest)
-
-      # LINT.IfChange(subtool_manifest)
-      ffx_tool = [
-        {
-          name = output_name
-          category = "internal"
-          if (defined(invoker.sdk_category)) {
-            category = invoker.sdk_category
-          }
-          executable =
-              rebase_path("$host_tools_dir/$output_name", root_build_dir)
-          executable_metadata =
-              rebase_path("$host_tools_dir/$output_metadata", root_build_dir)
-        },
-      ]
-
-      # LINT.ThenChange(//src/developer/ffx/lib/fho/search/src/lib.rs:subtool_manifest)
-    }
+  _ffx_tool_manifest_entry(tool_list_metadata_target) {
+    forward_variables_from(invoker, [ "sdk_category" ])
+    output_name = output_name
   }
 
   # Install host tool and metadata as test data
@@ -289,5 +321,89 @@ template("ffx_tool") {
       # Host tools in the IDK can depend on SDK categories up to "host_tool".
       assert_no_deps += markers_partner_idk_host_tools_must_not_depend_on
     }
+  }
+}
+
+# Bridges a Bazel-defined `ffx_tool` or `idk_ffx_tool` target into the GN
+# build graph as a host tool and registers it in the ffx subtool manifest.
+#
+# The following targets will be produced:
+#
+#   `<target_name>`
+#     The unversioned binary (`<output_name>_unversioned`), for use by
+#     `ffx_action()`.
+#
+#   `<target_name>_versioned`
+#     The versioned binary (`<output_name>`) and its metadata
+#     (`<output_name>.json`), also installed in `host_tools_dir`.
+#
+#   `<target_name>_host_tool`
+#     Alias of `<target_name>_versioned`, for consistency with `ffx_tool`.
+#
+# Unlike `ffx_tool`, no `_test_data` target is produced: Bazel `ffx_tool`
+# already provides `<name>_test_data` for tests.
+#
+# Parameters
+#
+#   bazel_target (optional)
+#     The base Bazel `ffx_tool` target name (without `_versioned`).
+#     Defaults to `":${target_name}"`.
+#
+#   output_name (optional)
+#     Name of the output binary. Defaults to `target_name`.
+#
+#   sdk_category (optional)
+#     Subtool category recorded in `ffx_tools.json`. Defaults to `"internal"`.
+#
+#   deps, testonly, visibility (optional)
+#     Usual GN meaning.
+#
+template("bazel_ffx_tool") {
+  output_name = target_name
+  if (defined(invoker.output_name)) {
+    output_name = invoker.output_name
+  }
+  tool_list_metadata_target = "${output_name}-ffx-tool-metadata"
+
+  _bazel_target = ":${target_name}"
+  if (defined(invoker.bazel_target)) {
+    _bazel_target = invoker.bazel_target
+  }
+
+  _forwarded_args = [
+    "testonly",
+    "visibility",
+  ]
+
+  bazel_host_tool(target_name) {
+    forward_variables_from(invoker, _forwarded_args + [ "deps" ])
+    bazel_target = _bazel_target
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/${output_name}_unversioned"
+    output_name = "${output_name}_unversioned"
+  }
+
+  bazel_host_tool("${target_name}_versioned") {
+    forward_variables_from(invoker, _forwarded_args)
+    bazel_target = "${_bazel_target}_versioned"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/${output_name}"
+    output_name = output_name
+    companion_files = [ "${output_name}.json" ]
+    install_host_tool = true
+    deps = [ ":${tool_list_metadata_target}" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+  }
+
+  # `<target_name>_versioned` already installs the tool in `host_tools_dir`.
+  _versioned_target = ":${target_name}_versioned"
+  group("${target_name}_host_tool") {
+    forward_variables_from(invoker, _forwarded_args)
+    public_deps = [ _versioned_target ]
+  }
+
+  _ffx_tool_manifest_entry(tool_list_metadata_target) {
+    forward_variables_from(invoker, _forwarded_args + [ "sdk_category" ])
+    output_name = output_name
   }
 }

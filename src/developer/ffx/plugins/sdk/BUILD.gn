@@ -55,13 +55,3 @@ ffx_plugin("ffx_sdk") {
     "//third_party/rust_crates:serde",
   ]
 }
-ffx_tool("ffx_sdk_tool") {
-  sources = [ "src/main.rs" ]
-  output_name = "ffx-sdk"
-  edition = "2024"
-  deps = [
-    ":ffx_sdk",
-    "//src/developer/ffx/lib/fho:lib",
-    "//src/lib/fuchsia-async",
-  ]
-}
