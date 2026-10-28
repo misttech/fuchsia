@@ -22,7 +22,6 @@ test("fastboot-test") {
     "fastboot-test.cc",
     "fastboot-test.h",
     "flash-blob-test.cc",
-    "rust-test.cc",
   ]
   include_dirs = [
     "..",
@@ -31,7 +30,6 @@ test("fastboot-test") {
   deps = [
     ":utils",
     "..:lib",
-    "../rust:fastboot-c",
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_cpp_testing",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp_testing",

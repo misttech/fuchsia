@@ -17,7 +17,6 @@ group("tests") {
 
   deps = [
     "bootloader-message:tests",
-    "installer:tests",
     "recovery-ui:tests",
     "recovery-util:tests",
   ]

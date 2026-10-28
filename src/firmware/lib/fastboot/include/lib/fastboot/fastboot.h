@@ -27,9 +27,6 @@
 
 namespace fastboot {
 
-// The disk topology prefix that indicates a ramdisk.
-constexpr std::string_view kRamDiskString = "/ramdisk-";
-
 // The magic string that tells `flash gpt-meta` to initialize the default GPT.
 constexpr std::string_view kGptMetaDefault = "default";
 
@@ -64,7 +61,6 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> Continue(const std::string &command, Transport *transport);
   zx::result<> OemAddStagedBootloaderFile(const std::string &command, Transport *transport);
   zx::result<> OemInitPartitionTables(const std::string &command, Transport *transport);
-  zx::result<> OemInstallFromUsb(const std::string &command, Transport *transport);
   zx::result<> OemWipePartitionTables(const std::string &command, Transport *transport);
   zx::result<> OemInstallBlobImage(const std::string &command, Transport *transport);
   zx::result<> UpdateSuper(const std::string &command, Transport *transport);

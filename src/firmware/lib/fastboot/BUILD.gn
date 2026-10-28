@@ -29,7 +29,6 @@ source_set("lib") {
   public_configs = [ ":include" ]
   public_deps = [
     ":fastboot-base",
-    "rust:fastboot-c",
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_cpp",
@@ -53,8 +52,5 @@ source_set("lib") {
 
 group("tests") {
   testonly = true
-  deps = [
-    "rust:tests",
-    "test",
-  ]
+  deps = [ "test" ]
 }
