@@ -1,0 +1,72 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+test_suite(
+    name = "host_tests",
+    tests = [],  # Include all tests in the package.
+    visibility = ["//src/connectivity:__pkg__"],
+)
+
+# Common code for codegen binary and tests
+rustc_library(
+    name = "codegen_lib",
+    srcs = [
+        "src/codegen/common.rs",
+        "src/codegen/error.rs",
+        "src/codegen/lower.rs",
+        "src/codegen/raise.rs",
+        "src/codegen/toplevel.rs",
+        "src/codegen/types.rs",
+        "src/definition.rs",
+        "src/grammar.rs",
+        "src/lib.rs",
+        "src/parser.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:pest_derive",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:pest",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# Build the code generator
+rustc_binary(
+    name = "codegen",
+    srcs = ["src/main.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "at_command_gen",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/lib/at-commands:__pkg__"],
+    deps = [
+        ":codegen_lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:simplelog",
+    ],
+)
+
+host_rustc_test(
+    name = "codegen_parser_tests",
+    srcs = ["src/parser_tests.rs"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = "src/parser_tests.rs",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":codegen_lib"],
+)

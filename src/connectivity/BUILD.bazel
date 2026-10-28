@@ -19,5 +19,9 @@ test_suite(
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
-    tests = ["//src/connectivity/network:host_tests"],
+    tests = [
+        "//src/connectivity/lib/at-commands:host_tests",
+        "//src/connectivity/lib/at-commands/codegen:host_tests",
+        "//src/connectivity/network:host_tests",
+    ],
 )

@@ -1,0 +1,130 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# @bazel2gn:skip
+test_suite(
+    name = "host_tests",
+    tests = [],  # Include all tests in the package.
+    visibility = ["//src/connectivity:__pkg__"],
+)
+
+# Generate the rust sources using the code generator
+# @bazel2gn:skip
+genrule(
+    name = "generate_sources",
+    srcs = [
+        "definitions/example1.at",
+        "definitions/example2.at",
+        "definitions/hfp.at",
+    ],
+    outs = [
+        "src/generated/translate.rs",
+        "src/generated/types.rs",
+    ],
+    cmd = "$(location //src/connectivity/lib/at-commands/codegen) --quiet" +
+          " --output-types $(location src/generated/types.rs)" +
+          " --output-translate $(location src/generated/translate.rs)" +
+          " --input $(location definitions/example1.at)" +
+          " --input $(location definitions/example2.at)" +
+          " --input $(location definitions/hfp.at)",
+    tools = ["//src/connectivity/lib/at-commands/codegen"],
+)
+
+# Build the at command library from the generated sources
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lib.rs
+        "src/lowlevel/arguments.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/arguments.rs
+        "src/lowlevel/command.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/command.rs
+        "src/lowlevel/response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/response.rs
+        "src/lowlevel/write_to.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/write_to.rs
+        "src/parser/arguments_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/arguments_parser.rs
+        "src/parser/command_grammar.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/command_grammar.rs
+        "src/parser/command_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/command_parser.rs
+        "src/parser/common.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/common.rs
+        "src/parser/response_grammar.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/response_grammar.rs
+        "src/parser/response_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/response_parser.rs
+        "src/response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/response.rs
+        "src/serde.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/serde.rs
+        "src/translate_response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/translate_response.rs
+        "src/translate_util.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/translate_util.rs
+        ":src/generated/translate.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/generated/translate.rs
+        ":src/generated/types.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/generated/types.rs
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "at_commands",
+    crate_root = ":src/lib.rs",  # @bazel2gn:raw_overwrite:"$target_gen_dir/src/lib.rs"
+    data = [
+        ":generate_sources",
+    ],  # @bazel2gn:raw_overwrite:[ ":copy_sources", ":generate_sources" ]
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+        "//third_party/rust_crates/vendor:pest_derive",
+    ],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:__pkg__",
+        "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:__pkg__",
+        "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",
+    ],
+    deps = [
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:pest",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# Build the at command tests from the generated sources
+host_rustc_test(
+    name = "lib_tests",
+    srcs = [
+        "src/command_generated_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/command_generated_tests.rs
+        "src/lowlevel/arguments.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/arguments.rs
+        "src/lowlevel/command.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/command.rs
+        "src/lowlevel/command_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/command_tests.rs
+        "src/lowlevel/response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/response.rs
+        "src/lowlevel/response_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/response_tests.rs
+        "src/lowlevel/write_to.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/lowlevel/write_to.rs
+        "src/parser/arguments_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/arguments_parser.rs
+        "src/parser/command_grammar.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/command_grammar.rs
+        "src/parser/command_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/command_parser.rs
+        "src/parser/command_parser_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/command_parser_tests.rs
+        "src/parser/common.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/common.rs
+        "src/parser/response_grammar.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/response_grammar.rs
+        "src/parser/response_parser.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/response_parser.rs
+        "src/parser/response_parser_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/parser/response_parser_tests.rs
+        "src/response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/response.rs
+        "src/response_generated_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/response_generated_tests.rs
+        "src/serde.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/serde.rs
+        "src/serde_tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/serde_tests.rs
+        "src/tests.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/tests.rs
+        "src/translate_response.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/translate_response.rs
+        "src/translate_util.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/translate_util.rs
+        ":src/generated/translate.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/generated/translate.rs
+        ":src/generated/types.rs",  # @bazel2gn:path_overwrite:$target_gen_dir/src/generated/types.rs
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_root = ":src/tests.rs",  # @bazel2gn:raw_overwrite:"$target_gen_dir/src/tests.rs"
+    data = [
+        ":generate_sources",
+    ],  # @bazel2gn:raw_overwrite:[ ":copy_sources", ":generate_sources" ]
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+        "//third_party/rust_crates/vendor:pest_derive",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:pest",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
