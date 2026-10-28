@@ -16,6 +16,7 @@ import argparse
 import itertools
 import json
 import os
+import re
 import sys
 
 DECISIONS = {
@@ -98,6 +99,10 @@ def validate(payload):
     return payload
 
 
+def _longest_backtick_run(text):
+    return max((len(m) for m in re.findall(r"`+", text)), default=0)
+
+
 def _file_uri(file_path, workspace_root):
     full_path = os.path.join(workspace_root, file_path.lstrip("/"))
     return f"file:///{full_path.lstrip('/')}"
@@ -121,7 +126,12 @@ def _location_link(finding, workspace_root):
     first_line = snippet.splitlines()[0].strip()
     if "\n" in snippet:
         first_line = f"{first_line} ..."
-    return f"[**{label}** `{first_line}`]({target}#{anchor})"
+    # Use a longer backtick run than any in the snippet so it can't end the
+    # code span early.
+    ticks = "`" * (_longest_backtick_run(first_line) + 1)
+    if ticks == "`":
+        return f"[**{label}** `{first_line}`]({target}#{anchor})"
+    return f"[**{label}** {ticks} {first_line} {ticks}]({target}#{anchor})"
 
 
 def _render_rule(finding):
@@ -148,9 +158,11 @@ def _render_finding(finding, workspace_root):
     ]
     diff = finding.get("suggested_diff")
     if diff:
-        lines.extend(["", "  ```diff"])
+        # The fence must be longer than any backtick run in the diff.
+        fence = "`" * max(3, _longest_backtick_run(diff) + 1)
+        lines.extend(["", f"  {fence}diff"])
         lines.extend(f"  {line}" for line in diff.splitlines())
-        lines.append("  ```")
+        lines.append(f"  {fence}")
     lines.append("")
     return lines
 

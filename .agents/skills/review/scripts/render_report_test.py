@@ -92,6 +92,36 @@ Found one blocking issue.
             "## Code Review\n\n✅ **Approved** — All checks pass.\n",
         )
 
+    def test_backticks_in_snippet_and_diff(self):
+        payload = {
+            "decision": "approved_with_suggestions",
+            "findings": [
+                {
+                    "severity": "suggestion",
+                    "comment": "Fix the example.",
+                    "file_path": "docs/a.md",
+                    "line_start": 3,
+                    "code_snippet": "Run `fx build`.",
+                    "suggested_diff": "-```\n+```sh\n fx build\n ```",
+                },
+            ],
+        }
+        expected = """\
+- **#1** [**L3** `` Run `fx build`. ``](file:///repo/docs/a.md#L3)
+
+  **💡 Suggestion**: Fix the example.
+
+  ````diff
+  -```
+  +```sh
+   fx build
+   ```
+  ````
+"""
+        self.assertTrue(
+            render_report.render(payload, "/repo").endswith(expected)
+        )
+
     def test_invalid_decision(self):
         with self.assertRaises(render_report.ReportError):
             render_report.render({"decision": "lgtm"})

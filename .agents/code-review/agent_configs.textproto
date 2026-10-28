@@ -74,15 +74,28 @@ configs: {
 configs: {
   id: "fuchsia-driver-bind-devicetree"
   display_name: "Fuchsia Driver Bind & Devicetree"
-  description: "Driver .bind rules, devicetree node bindings, and devicetree schema conventions."
+  description: "Driver .bind rules and devicetree node bindings."
   tags: "code-review-agent"
   skills: "src/devices/skills/driver_bind_devicetree"
   skills: "src/devices/skills/driver_bind_find_instance_name"
-  skills: "src/devices/skills/devicetree_schema"
   include_filters: {
     project: "fuchsia"
     project: "vendor/google"
     path_regex: ".*\\.bind"
+    path_regex: ".*\\.dtsi?"
+  }
+}
+
+configs: {
+  id: "fuchsia-devicetree-schema"
+  display_name: "Fuchsia Devicetree Schema"
+  description: "Devicetree binding schema YAML files and devicetree source conventions."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/devicetree_schema"
+  include_filters: {
+    project: "fuchsia"
+    project: "vendor/google"
+    path_regex: "(.*/)?[^/]*devicetree[^/]*/.*\\.yaml"
     path_regex: ".*\\.dtsi?"
   }
 }
@@ -123,6 +136,9 @@ configs: {
   include_filters: {
     project: "fuchsia"
     project: "vendor/google"
+    # fuchsia paths.
+    path_regex: "src/(tests|testing)/end_to_end/.*\\.(py|gn|gni)"
+    # vendor/google paths.
     path_regex: "(tests/end_to_end|testing/lacewing)/.*\\.py"
   }
 }
@@ -137,6 +153,7 @@ configs: {
     project: "fuchsia"
     project: "vendor/google"
     path_regex: "docs/.*\\.md"
+    path_regex: "docs/.*\\.yaml"
   }
 }
 

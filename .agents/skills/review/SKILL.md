@@ -11,7 +11,8 @@ description: >
 # Fuchsia code review
 
 This skill reviews a Fuchsia change with the review skills listed in
-`.agents/code-review/agent_configs.textproto`, the same file the Gerrit CL
+`.agents/code-review/agent_configs.textproto` (fuchsia.git, plus the
+vendor/google copy for vendor/google changes), the same files the Gerrit CL
 Review Agent (`groupagent-fuchsia-review` / `groupagent-turquoise-review`)
 reads. Local and hosted reviews therefore load the same skills.
 
@@ -49,11 +50,17 @@ fuchsia-vendored-python .agents/skills/review/scripts/resolve_skills.py \
   --project="<fuchsia|vendor/google>"
 ```
 
+If `fuchsia-vendored-python` is not on `PATH`, use
+`prebuilt/third_party/python3/<host>/bin/python3` or any `python3` 3.9 or later;
+both scripts use only the standard library.
+
 - The output is a JSON array of `{"skill_path": ..., "files": [...]}`. Each
   entry is one review task.
-- For `vendor/google` changes, pass `--project=vendor/google`. The config lives
-  in fuchsia.git, so pass `--repo_root=<fuchsia.git root>` if you run the script
-  from elsewhere.
+- For `vendor/google` changes, pass `--project=vendor/google` and paths relative
+  to `vendor/google`. The script then also reads
+  `vendor/google/.agents/code-review/agent_configs.textproto` and resolves the
+  skills listed there relative to `vendor/google`. Pass
+  `--repo_root=<fuchsia.git root>` if you run the script outside the checkout.
 - Always add one more task, `general`, with no skill and all changed files. It
   stands in for the hosted agent's default reviewer and covers correctness,
   error handling, edge cases, tests, and the Fuchsia style of the surrounding
@@ -78,11 +85,15 @@ If `define_subagent` and `invoke_subagent` are available:
 1.  Wait for all of them. If a reviewer fails or its output file is missing or
     invalid, invoke it once more; if it fails again, leave it out and say so in
     the report summary.
-1.  Invoke one more `fuchsia_code_reviewer` for the `general` task with the
-    output file `<out_dir>/round2.json` and the paths of all first-round files.
-    Ask it to report only defects that are not already in those files.
+1.  Invoke one more, **new** `fuchsia_code_reviewer` (not a reused first-round
+    reviewer) for the `general` task with the output file
+    `<out_dir>/round2.json` and the paths of all first-round files. Ask it to
+    report only defects that are not already in those files.
 
-Otherwise, follow `references/reviewer.md` yourself once per task, in sequence.
+Otherwise, follow `references/reviewer.md` yourself once per task, in sequence,
+then do the round-2 `general` pass yourself (output `<out_dir>/round2.json`),
+reporting only defects not already in the first-round files. Reviewing your own
+change in the same session is not independent; say so in the report summary.
 
 ## Step 5: Merge, render, and present
 
@@ -93,11 +104,17 @@ Otherwise, follow `references/reviewer.md` yourself once per task, in sequence.
       there are none, or `not_applicable` if there were no tasks.
     - `summary`: one paragraph summarizing the findings. Name any reviewer that
       failed twice.
-    - `scope`: the reviewed target, for example ``Working copy (`@`)`` or
-      ``Commit `1a2b3c4d` ``.
+    - `scope`: the reviewed target, for example ``Commit `1a2b3c4d` `` or
+      ``Working copy (`@` in jj, `git diff HEAD` in git)``.
     - `agent_skills`: the union of all reviewers' `agent_skills`.
-    - `findings`: all findings concatenated. When several report the same defect
-      at the same location, keep only the most specific one.
+    - `reviewed_files`: the union of all reviewers' `reviewed_files`.
+    - `findings`: all findings concatenated, without duplicates. Treat findings
+      as duplicates when they have the same `file_path`, overlapping lines, and
+      the same defect (file-level findings with no location: same `file_path`
+      and defect). Keep the one from a skill task over `general`; between
+      skills, keep the one whose `rule_reference` cites the rule that is
+      violated; otherwise keep the more detailed comment. Never merge different
+      defects at the same line.
 1.  Render the report:
 
     ```bash
@@ -116,10 +133,12 @@ Otherwise, follow `references/reviewer.md` yourself once per task, in sequence.
 ## Notes
 
 - `agent_configs.textproto` matches like the hosted agent: `path_regex` must
-  match the whole repo-relative path, and an entry with no `project` applies to
-  every project. Entries without `skills` add nothing here; the `general` task
-  covers them.
+  match the whole repo-relative path, a file matching any `exclude_filters`
+  block is skipped, and an entry with no `project` applies to every project.
+  Entries without `skills` add nothing here; the `general` task covers them.
 - A skill without `/` resolves to `.agents/skills/<name>/SKILL.md`; a skill with
-  `/` resolves to `<fuchsia.git root>/<skill>/SKILL.md`. The script warns on
+  `/` resolves to `<fuchsia.git root>/<skill>/SKILL.md`. A skill that already
+  ends in `/SKILL.md` names the file itself. Skills from the vendor/google
+  config resolve the same way relative to `vendor/google`. The script warns on
   stderr if a resolved `SKILL.md` is missing.
 - Per-directory `AGENTIC_REVIEW` files are not read by this skill.

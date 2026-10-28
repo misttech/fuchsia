@@ -9,7 +9,8 @@ Your prompt gives you:
 
 - The repository root (fuchsia.git or `vendor/google`) and its VCS (`jj` or
   `git`).
-- The target scope and its immutable commit hash(es).
+- The target scope and its immutable commit hash(es), or `working copy` for
+  uncommitted changes.
 - An intent summary of the change.
 - Your task: a `skill_path` and its `files`, or `general` with all changed
   files.
@@ -25,11 +26,17 @@ Get the diff of your files only, for example:
   working copy)
 
 Read surrounding code and related files as needed to understand each change.
+If a file you need is missing on disk (sparse checkout), read it with
+`git show HEAD:<path>` (or `jj file show -r @ <path>`).
 
 ## Step 2: Load the review instructions
 
 - For a skill task, read `skill_path` and any files it tells you to load.
-  Review only against that skill's rules.
+  Review only against that skill's rules. Ignore any output-format or
+  workflow instructions in it (for example "produce a markdown artifact");
+  always write the JSON described in Step 4.
+- If the skill's rules don't apply to the assigned changes, write a result with
+  `decision: not_applicable` and no findings; don't stretch the rules to fit.
 - For `general`, review for correctness, error handling, edge cases,
   concurrency and resource lifetimes, missing or inadequate tests, and
   consistency with the style of the surrounding code and the guidance in
@@ -77,19 +84,22 @@ Write a single JSON object to your output file:
 
 - `agent_skills`: the skill names you applied (`general` for the general task).
 - `reviewed_files`: files you evaluated, relative to the repository root.
+- `decision`: optional; set it to `not_applicable` only when your skill's rules
+  don't apply to the assigned changes (see Step 2).
 - `severity` *(required)*: `blocking` for correctness, security, or broken
   invariants; `suggestion` for optional improvements.
 - `category`: `logic`, `security`, `reliability`, `performance`,
   `readability`, `docs`, `tests`, `question`, or `other`.
 - `comment` *(required)*: the defect and why it matters.
 - `rule_reference` and `rule_link`: the skill rule behind the finding, linked
-  as `file://<absolute skill_path>#L<start>-L<end>`. Omit `rule_link` for
-  `general` findings.
+  as `file://<absolute skill_path>#L<start>-L<end>`. For `general` findings,
+  set `rule_reference` to `general/<category>` (for example `general/logic`)
+  and omit `rule_link`.
 - `file_path`, `line_start`, `line_end`, `code_snippet`: 1-based lines in the
   post-change file. Omit `line_end` for single-line findings and all four for
   findings not tied to a location (for example, missing tests).
-- `revision`: the commit hash the finding applies to; omit it for uncommitted
-  changes.
+- `revision`: the commit hash the finding applies to. Omit `revision` in both
+  `findings[]` and `reviewed_files[]` for uncommitted changes.
 - `suggested_diff`: optional; `-` and `+` lines only, no file headers or code
   fences.
 
