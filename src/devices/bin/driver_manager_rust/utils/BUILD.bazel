@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "driver_manager_utils",
+    srcs = [
+        "src/dictionary_utils.rs",
+        "src/errors.rs",
+        "src/lib.rs",
+        "src/pkg_utils.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/devices/bin/driver_manager_rust:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_test(
+    name = "driver_manager_utils_test",
+    crate = ":driver_manager_utils",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/storage/lib/vfs/rust:vfs",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_unittest_package(
+    name = "driver-manager-utils-unittests",
+    unit_tests = [":driver_manager_utils_test"],
+    visibility = ["//src/devices/bin/driver_manager_rust:__pkg__"],
+)

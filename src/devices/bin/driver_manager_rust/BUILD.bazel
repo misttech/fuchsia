@@ -1,0 +1,14 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "target_tests",
+    tests = [
+        "//src/devices/bin/driver_manager_rust/firmware_crash:driver-manager-firmware-crash-unittests",
+        "//src/devices/bin/driver_manager_rust/types:driver-manager-types-unittests",
+        "//src/devices/bin/driver_manager_rust/utils:driver-manager-utils-unittests",
+    ],
+)

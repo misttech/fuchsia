@@ -1,0 +1,43 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "driver_manager_firmware_crash",
+    srcs = [
+        "src/firmware_crash_service.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    visibility = ["//src/devices/bin/driver_manager_rust:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.firmware.crash:fuchsia.firmware.crash_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "driver_manager_firmware_crash_test",
+    crate = ":driver_manager_firmware_crash",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "driver-manager-firmware-crash-unittests",
+    unit_tests = [":driver_manager_firmware_crash_test"],
+    visibility = ["//src/devices/bin/driver_manager_rust:__pkg__"],
+)
