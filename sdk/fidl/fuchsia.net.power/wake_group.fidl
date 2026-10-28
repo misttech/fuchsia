@@ -55,6 +55,14 @@ closed protocol WakeGroupProvider {
         ///
         /// Note that this corresponds to the behavior of
         /// [`fuchsia.starnix.runner/Manager.RegisterWakeWatcher`].
+        ///
+        /// To guarantee that data arriving while the client is asleep wakes it,
+        /// the client must assert [`WAITER_ASLEEP_SIGNAL`] before it drops any
+        /// wake lease (see
+        /// [`fuchsia.power.system/ActivityGovernor.AcquireWakeLease`]) or other
+        /// power broker lease that keeps the system from suspending. To stay
+        /// awake long enough to process that data, the client must acquire such
+        /// a lease of its own before asserting [`WAITER_AWAKE_SIGNAL`].
         wake_watcher zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.WAIT>;
     }) -> (@generated_name("CreateWakeGroupResponse") resource table {
         /// A token that is used both to identify this wake group when adding
@@ -63,8 +71,10 @@ closed protocol WakeGroupProvider {
         ///
         /// A signal of [`GROUP_WAKEUP_SIGNAL`] is raised to indicate that the
         /// client should wake up due to incoming data. For efficiency, the
-        /// netstack only newly asserts this when the client is asleep. How long
-        /// it remains asserted after wakeup is unspecified.
+        /// netstack only newly asserts this when the client is asleep. Once
+        /// asserted, it remains asserted until the netstack observes
+        /// [`WAITER_AWAKE_SIGNAL`] or closes the wake group. How long it
+        /// remains asserted after the client wakes is unspecified.
         ///
         /// Always present.
         1: token fuchsia.net.resources.WakeGroupToken;

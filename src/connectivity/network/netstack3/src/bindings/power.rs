@@ -23,6 +23,7 @@ pub(crate) use transmit_suspension_handler::TransmitSuspensionHandler;
 
 use crate::bindings::power::element::InternalLease;
 use crate::bindings::util::ResultExt;
+use crate::bindings::waker::WakeGroups;
 
 pub(crate) struct PowerWorker {
     work_stream: mpsc::UnboundedReceiver<SinkWork>,
@@ -38,7 +39,7 @@ impl PowerWorker {
         (this, PowerWorkerSink { work_sink, suspension_block })
     }
 
-    pub(crate) async fn run(self, suspend_enabled: bool) {
+    pub(crate) async fn run(self, suspend_enabled: bool, wake_groups: WakeGroups) {
         let stream = if suspend_enabled {
             futures::stream::unfold((), async |()| match open_suspension_blocker().await {
                 Ok(s) => Some((s, ())),
@@ -54,12 +55,13 @@ impl PowerWorker {
         } else {
             futures::stream::empty().right_stream()
         };
-        self.run_inner(stream).await
+        self.run_inner(stream, wake_groups).await
     }
 
     async fn run_inner(
         self,
         suspend_blocker_stream: impl Stream<Item = fpower_system::SuspendBlockerRequestStream>,
+        wake_groups: WakeGroups,
     ) {
         let Self { work_stream, suspension_control } = self;
 
@@ -99,6 +101,7 @@ impl PowerWorker {
 
         let mut worker_state = PowerWorkerInner {
             suspension_control,
+            wake_groups,
             state: SuspensionState::Active,
             lessors: Default::default(),
         };
@@ -196,6 +199,7 @@ async fn open_suspension_blocker()
 /// deep indentation.
 struct PowerWorkerInner {
     suspension_control: SuspensionBlockControl,
+    wake_groups: WakeGroups,
     state: SuspensionState,
     lessors: HashMap<InternalLessor, Option<InternalLease>>,
 }
@@ -222,7 +226,7 @@ impl PowerWorkerInner {
         impl Future<Output = ()> + use<>,
         (BadSuspensionStateError, fpower_system::SuspendBlockerBeforeSuspendResponder),
     > {
-        let Self { suspension_control, state, lessors } = self;
+        let Self { suspension_control, wake_groups, state, lessors } = self;
         match state {
             s @ SuspensionState::Suspended | s @ SuspensionState::PendingSuspension(_) => {
                 return Err((s.to_err(), responder));
@@ -235,11 +239,12 @@ impl PowerWorkerInner {
         for lease in lessors.values_mut() {
             *lease = None;
         }
-        Ok(suspension_control.suspend())
+        Ok(futures::future::join(suspension_control.suspend(), wake_groups.suspend())
+            .map(|((), ())| ()))
     }
 
     fn resume_requested(&mut self) -> Result<(), BadSuspensionStateError> {
-        let Self { suspension_control: _, state, lessors: _ } = self;
+        let Self { suspension_control: _, wake_groups: _, state, lessors: _ } = self;
         match state {
             s @ SuspensionState::PendingSuspension(_) | s @ SuspensionState::Active => {
                 return Err(s.to_err());
@@ -251,8 +256,9 @@ impl PowerWorkerInner {
     }
 
     fn resume(&mut self) {
-        let Self { suspension_control, state, lessors } = self;
+        let Self { suspension_control, wake_groups, state, lessors } = self;
         *state = SuspensionState::Active;
+        wake_groups.resume();
         // Allow suspension blocks to be acquired again.
         suspension_control.resume();
         // Reacquire all the leases.
@@ -262,7 +268,7 @@ impl PowerWorkerInner {
     }
 
     fn suspension_complete(&mut self) {
-        let Self { suspension_control: _, state, lessors: _ } = self;
+        let Self { suspension_control: _, wake_groups: _, state, lessors: _ } = self;
         let prev = std::mem::replace(state, SuspensionState::Suspended);
         match prev {
             SuspensionState::PendingSuspension(responder) => {
@@ -385,6 +391,9 @@ mod tests {
 
     use crate::bindings::power::element::InternalPowerElement;
     use crate::bindings::power::suspension_block::SuspensionGuard;
+    use crate::bindings::waker::testutils::{
+        TestWakeGroup, assert_wake_signal_clear, assert_wake_signal_set,
+    };
 
     struct FakeDeps {
         suspend_blocker_sink: mpsc::UnboundedSender<fpower_system::SuspendBlockerRequestStream>,
@@ -392,7 +401,7 @@ mod tests {
     }
 
     impl FakeDeps {
-        fn new() -> (Self, PowerWorkerSink, fasync::Task<()>) {
+        fn new(wake_groups: WakeGroups) -> (Self, PowerWorkerSink, fasync::Task<()>) {
             let (worker, sink) = PowerWorker::new();
             let (proxy, stream) =
                 fidl::endpoints::create_proxy_and_stream::<fpower_system::SuspendBlockerMarker>();
@@ -401,7 +410,7 @@ mod tests {
             let fake_deps = FakeDeps { suspend_blocker_sink, suspend_blocker: proxy };
             let task = fasync::Task::spawn(
                 worker
-                    .run_inner(suspend_blocker_stream)
+                    .run_inner(suspend_blocker_stream, wake_groups)
                     .map(|()| panic!("worker finished unexpectedly")),
             );
             (fake_deps, sink, task)
@@ -419,7 +428,7 @@ mod tests {
         _name: &str,
         f: F,
     ) {
-        let (fake_deps, sink, _task) = FakeDeps::new();
+        let (fake_deps, sink, _task) = FakeDeps::new(WakeGroups::default());
         f(fake_deps, sink).await;
     }
 
@@ -428,7 +437,7 @@ mod tests {
         f: F,
     ) {
         let mut executor = fasync::TestExecutor::new();
-        let (fake_deps, sink, _task) = FakeDeps::new();
+        let (fake_deps, sink, _task) = FakeDeps::new(WakeGroups::default());
         f(fake_deps, sink, &mut executor);
     }
 
@@ -496,6 +505,36 @@ mod tests {
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Pending);
         exec.run_singlethreaded(deps.suspend_blocker.after_resume()).expect("after resume");
         assert_eq!(exec.run_until_stalled(&mut fut), Poll::Ready(BinaryPowerLevel::On));
+    }
+
+    #[test]
+    fn wake_groups_follow_system_suspension() {
+        let mut exec = fasync::TestExecutor::new();
+        let wake_groups = WakeGroups::default();
+        let (deps, _sink, _task) = FakeDeps::new(wake_groups.clone());
+
+        let mut group = TestWakeGroup::new(&wake_groups, "test-group");
+        group.run_until_stalled(&mut exec);
+
+        // The system suspends while the client is still awake. BeforeSuspend
+        // waits for the wake group to acknowledge the suspension.
+        let mut before_suspend = pin!(deps.suspend_blocker.before_suspend());
+        assert_matches!(exec.run_until_stalled(&mut before_suspend), Poll::Pending);
+        group.run_until_stalled(&mut exec);
+        assert_matches!(exec.run_until_stalled(&mut before_suspend), Poll::Ready(Ok(())));
+
+        // The client falls asleep and data arrives while the system is
+        // suspended. The group doesn't act on either until the system resumes.
+        group.suspend_client();
+        group.notifier.notify();
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(group.token());
+
+        // Once the system resumes, the group finds its client asleep and
+        // wakes it for the data.
+        exec.run_singlethreaded(deps.suspend_blocker.after_resume()).expect("after resume");
+        group.run_until_stalled(&mut exec);
+        assert_wake_signal_set(group.token());
     }
 
     // Tests that receiving unexpected signals from PF still allows us to march

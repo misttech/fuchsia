@@ -1412,8 +1412,10 @@ impl NetstackSeed {
 
         // We don't need to join the power worker task, it should be resilient
         // to being dropped alongside the other level2 workers.
-        let _: fasync::JoinHandle<()> = level2_workers
-            .spawn(power_worker.run(netstack.ctx.bindings_ctx().config.suspend_enabled));
+        let _: fasync::JoinHandle<()> = level2_workers.spawn(power_worker.run(
+            netstack.ctx.bindings_ctx().config.suspend_enabled,
+            netstack.ctx.bindings_ctx().wake_groups.clone(),
+        ));
 
         netstack.add_default_rule::<Ipv4>().await;
         netstack.add_default_rule::<Ipv6>().await;
