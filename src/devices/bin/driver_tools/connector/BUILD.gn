@@ -15,10 +15,7 @@ template("driver_connector_lib") {
                            ])
     edition = "2024"
     with_unit_tests = true
-    deps = [
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:async-trait",
-    ]
+    deps = [ "//third_party/rust_crates:anyhow" ]
     if (defined(invoker.deps)) {
       deps += invoker.deps
     }
