@@ -123,7 +123,10 @@
             from: "#fxfs",
         },
         {
-            protocol: "fuchsia.fs.startup.Volumes",
+            protocol: [
+                "fuchsia.fs.startup.Volumes",
+                "fuchsia.fxfs.ProfileManager",
+            ],
             from: "#fxfs",
         },
         {

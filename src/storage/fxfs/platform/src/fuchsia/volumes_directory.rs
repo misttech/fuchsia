@@ -18,7 +18,8 @@ use fidl_fuchsia_fs_startup::{
     CheckOptions, CreateOptions, MountOptions, VolumeRequest, VolumeRequestStream,
 };
 use fidl_fuchsia_fxfs::{
-    self as ffxfs, DebugMarker, FileBackedVolumeProviderMarker, ProjectIdMarker,
+    self as ffxfs, DebugMarker, FileBackedVolumeProviderMarker, ProfileManagerRequest,
+    ProjectIdMarker,
 };
 use fidl_fuchsia_io as fio;
 use fs_inspect::{FsInspectTree, FsInspectVolume};
@@ -662,7 +663,7 @@ impl VolumesDirectory {
 
     /// Replays a profile if one exists, and only records if one does not exist.
     /// The given volume must be unlocked.
-    pub async fn replay_xor_record_profile(
+    pub async fn record_xor_replay_profile(
         self: &Arc<Self>,
         volume_name: String,
         identifier: fidl_fuchsia_fxfs::ProfileIdentifier,
@@ -712,7 +713,7 @@ impl VolumesDirectory {
         };
 
         if let Err(error) =
-            volume.volume().replay_xor_record_profile(new_profile_state(is_blob), opened_node).await
+            volume.volume().record_xor_replay_profile(new_profile_state(is_blob), opened_node).await
         {
             error!(
                 error:?,
@@ -730,6 +731,40 @@ impl VolumesDirectory {
         });
         *state = Some(ProfileState { task, profile_name, all_volumes: false });
         Ok(())
+    }
+
+    pub async fn handle_profile_request(
+        self: &Arc<Self>,
+        request: ProfileManagerRequest,
+    ) -> Result<(), fidl::Error> {
+        match request {
+            ProfileManagerRequest::Delete { responder, volume, profile } => responder
+                .send(self.delete_profile(&volume, &profile).await.map_err(zx::Status::into_raw)),
+            ProfileManagerRequest::RecordAndReplay {
+                responder,
+                volume,
+                profile,
+                duration_secs,
+            } => responder.send(
+                self.record_and_replay_profile(volume, profile, duration_secs)
+                    .await
+                    .map_err(zx::Status::into_raw),
+            ),
+            ProfileManagerRequest::RecordXorReplay {
+                responder,
+                volume,
+                identifier,
+                duration_secs,
+            } => responder.send(
+                self.record_xor_replay_profile(volume, identifier, duration_secs)
+                    .await
+                    .map_err(zx::Status::into_raw),
+            ),
+            ProfileManagerRequest::StopTasks { responder } => {
+                self.stop_profile_tasks().await;
+                responder.send(Ok(()))
+            }
+        }
     }
 
     /// Returns the directory node which can be used to provide connections for e.g. enumerating
@@ -1394,7 +1429,8 @@ mod tests {
     use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions, VolumeProxy};
     use fidl_fuchsia_fxfs as ffxfs;
     use fidl_fuchsia_fxfs::{
-        CryptRequest, DebugMarker, FxfsKey, KeyPurpose, ProfileIdentifier, WrappedKey,
+        CryptRequest, DebugMarker, FxfsKey, KeyPurpose, ProfileIdentifier, ProfileManagerMarker,
+        WrappedKey,
     };
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
@@ -3036,7 +3072,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_blob() {
+    async fn test_record_xor_replay_profile_blob() {
         use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
         use crate::fuchsia::pager::PagerBacked;
         use delivery_blob::CompressionMode;
@@ -3059,9 +3095,9 @@ mod tests {
 
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("blob".to_owned(), identifier, 600)
+                .record_xor_replay_profile("blob".to_owned(), identifier, 600)
                 .await
-                .expect("Starting replay_xor_record_profile recording");
+                .expect("Starting record_xor_replay_profile recording");
 
             // Trigger page faults by reading the VMO.
             let vmo = fixture.get_blob_vmo(hash).await;
@@ -3089,9 +3125,9 @@ mod tests {
             // Since the profile exists, it will replay it.
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("blob".to_owned(), identifier, 600)
+                .record_xor_replay_profile("blob".to_owned(), identifier, 600)
                 .await
-                .expect("Starting replay_xor_record_profile replay");
+                .expect("Starting record_xor_replay_profile replay");
 
             // Await all data being played back by checking that things have paged in.
             async {
@@ -3108,7 +3144,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_file() {
+    async fn test_record_xor_replay_profile_file() {
         use crate::fuchsia::file::FxFile;
         use crate::fuchsia::pager::PagerBacked;
 
@@ -3154,9 +3190,9 @@ mod tests {
             // New profile, should record.
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
-                .expect("Starting replay_xor_record_profile recording");
+                .expect("Starting record_xor_replay_profile recording");
 
             // Trigger page faults by reading the VMO.
             let file_proxy = open_file_checked(
@@ -3208,9 +3244,9 @@ mod tests {
 
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
-                .expect("Starting replay_xor_record_profile replay");
+                .expect("Starting record_xor_replay_profile replay");
 
             // Await all data being played back.
             async {
@@ -3227,7 +3263,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_unsupported_for_directory() {
+    async fn test_record_xor_replay_profile_unsupported_for_directory() {
         use crate::fuchsia::node::FxNode;
 
         let fixture = TestFixture::new_unencrypted().await;
@@ -3238,7 +3274,7 @@ mod tests {
 
             let err = volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
                 .expect_err("Expected NOT_SUPPORTED for directory");
             assert_eq!(err, zx::Status::NOT_SUPPORTED);
@@ -3248,7 +3284,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_fails_if_unlinked() {
+    async fn test_record_xor_replay_profile_fails_if_unlinked() {
         let fixture = TestFixture::new_unencrypted().await;
         let (file_proxy, object_id) = {
             let file_proxy = open_file_checked(
@@ -3287,7 +3323,7 @@ mod tests {
 
             let err = volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
                 .expect_err("Expected NOT_FOUND for unlinked file");
             assert_eq!(err, zx::Status::NOT_FOUND);
@@ -3297,7 +3333,7 @@ mod tests {
     }
 
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_fails_if_unlinked_while_open() {
+    async fn test_record_xor_replay_profile_fails_if_unlinked_while_open() {
         let fixture = TestFixture::new_unencrypted().await;
         let (file_proxy, object_id) = {
             let file_proxy = open_file_checked(
@@ -3337,7 +3373,7 @@ mod tests {
             // be purged along with the file once the last handle closes. Reject it.
             let err = volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
                 .expect_err("Expected NOT_FOUND for unlinked file that is still open");
             assert_eq!(err, zx::Status::NOT_FOUND);
@@ -3350,7 +3386,7 @@ mod tests {
     // A file that has been truncated may have a `Trim` graveyard entry while remaining perfectly
     // live. That must not be confused with the `Some` entry that marks an object for purging.
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_succeeds_after_truncate() {
+    async fn test_record_xor_replay_profile_succeeds_after_truncate() {
         let fixture = TestFixture::new_unencrypted().await;
         let file_proxy = open_file_checked(
             fixture.root(),
@@ -3381,7 +3417,7 @@ mod tests {
 
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
                 .expect("Profiling a live, recently truncated file should succeed");
 
@@ -3395,7 +3431,7 @@ mod tests {
     // Unlinking while a recording is in progress must not purge the file, because the recording
     // handle holds an open count. The purge should happen once the recording finishes.
     #[fuchsia::test(threads = 10)]
-    async fn test_replay_xor_record_profile_unlink_during_recording() {
+    async fn test_record_xor_replay_profile_unlink_during_recording() {
         let fixture = TestFixture::new_unencrypted().await;
         let file_proxy = open_file_checked(
             fixture.root(),
@@ -3427,9 +3463,9 @@ mod tests {
 
             volumes_directory
                 .clone()
-                .replay_xor_record_profile("vol".to_owned(), identifier, 600)
+                .record_xor_replay_profile("vol".to_owned(), identifier, 600)
                 .await
-                .expect("Starting replay_xor_record_profile recording");
+                .expect("Starting record_xor_replay_profile recording");
 
             // Unlink and close while the recording is active. The recording handle holds an open
             // count, so the tombstone must be deferred rather than run now.
@@ -3495,6 +3531,29 @@ mod tests {
             "Profile recording attribute should not outlive the object",
         );
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_handle_profile_request() {
+        let fixture = TestFixture::new().await;
+        {
+            let (proxy, mut stream) =
+                fidl::endpoints::create_proxy_and_stream::<ProfileManagerMarker>();
+            let volumes = fixture.volumes_directory().clone();
+            let scope = fasync::Scope::new();
+            scope.spawn(async move {
+                while let Some(req) = stream.try_next().await.unwrap() {
+                    volumes.handle_profile_request(req).await.unwrap();
+                }
+            });
+
+            proxy.stop_tasks().await.unwrap().unwrap();
+            assert!(proxy.delete("nonexistent_vol", "prof").await.unwrap().is_err());
+
+            drop(proxy);
+            scope.join().await;
+        }
         fixture.close().await;
     }
 

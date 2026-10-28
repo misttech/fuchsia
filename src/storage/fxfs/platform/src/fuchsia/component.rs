@@ -19,8 +19,8 @@ use fidl_fuchsia_fs_startup::{
     VolumesRequest, VolumesRequestStream,
 };
 use fidl_fuchsia_fxfs::{
-    DebugMarker, DebugRequestStream, VolumeInstallerMarker, VolumeInstallerRequest,
-    VolumeInstallerRequestStream,
+    DebugMarker, DebugRequestStream, ProfileManagerMarker, ProfileManagerRequestStream,
+    VolumeInstallerMarker, VolumeInstallerRequest, VolumeInstallerRequestStream,
 };
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_memory_attribution as fattribution;
@@ -220,6 +220,19 @@ impl Component {
                 async move {
                     if let Some(me) = weak.upgrade() {
                         let _ = me.handle_debug_requests(requests).await;
+                    }
+                }
+            }),
+        )?;
+
+        let weak = Arc::downgrade(&self);
+        svc_dir.add_entry(
+            ProfileManagerMarker::PROTOCOL_NAME,
+            vfs::service::host(move |requests| {
+                let weak = weak.clone();
+                async move {
+                    if let Some(me) = weak.upgrade() {
+                        let _ = me.handle_profile_requests(requests).await;
                     }
                 }
             }),
@@ -486,6 +499,25 @@ impl Component {
                 }
             };
             handle_debug_request(fs, volumes, request).await?;
+        }
+        Ok(())
+    }
+
+    /// Handles fuchsia.fxfs.ProfileManager requests for recording and replaying I/O profiles.
+    async fn handle_profile_requests(
+        &self,
+        mut stream: ProfileManagerRequestStream,
+    ) -> Result<(), Error> {
+        while let Some(request) = stream.try_next().await.context("Reading request")? {
+            let state = self.state.lock().await;
+            let volumes = match &*state {
+                State::ComponentStarted => {
+                    info!("Profile commands are not valid unless component is started.");
+                    bail!("Component not started");
+                }
+                State::Running(RunningState { volumes, .. }) => volumes.clone(),
+            };
+            volumes.handle_profile_request(request).await?;
         }
         Ok(())
     }

@@ -640,28 +640,6 @@ pub async fn handle_debug_request(
         DebugRequest::Compact { responder } => {
             responder.send(fs.journal().force_compact().await.map_err(map_to_raw_status))
         }
-        DebugRequest::DeleteProfile { responder, volume, profile } => responder
-            .send(volumes.delete_profile(&volume, &profile).await.map_err(Status::into_raw)),
-        DebugRequest::RecordAndReplayProfile { responder, volume, profile, duration_secs } => {
-            responder.send(
-                volumes
-                    .record_and_replay_profile(volume, profile, duration_secs)
-                    .await
-                    .map_err(Status::into_raw),
-            )
-        }
-        DebugRequest::ReplayXorRecordProfile { responder, volume, identifier, duration_secs } => {
-            responder.send(
-                volumes
-                    .replay_xor_record_profile(volume, identifier, duration_secs)
-                    .await
-                    .map_err(Status::into_raw),
-            )
-        }
-        DebugRequest::StopProfileTasks { responder } => {
-            volumes.stop_profile_tasks().await;
-            responder.send(Ok(()))
-        }
         DebugRequest::ClearCaches { responder } => {
             volumes.clear_caches().await;
             responder.send(Ok(()))
@@ -1214,9 +1192,7 @@ mod tests {
             });
 
             proxy.compact().await.unwrap().unwrap();
-            proxy.stop_profile_tasks().await.unwrap().unwrap();
             proxy.clear_caches().await.unwrap().unwrap();
-            assert!(proxy.delete_profile("nonexistent_vol", "prof").await.unwrap().is_err());
 
             drop(proxy);
             server_task.await;

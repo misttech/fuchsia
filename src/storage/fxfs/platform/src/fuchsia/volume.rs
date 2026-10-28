@@ -439,7 +439,7 @@ impl FxVolume {
     }
 
     /// Replays a profile if one exists, and only records if one does not exist.
-    pub async fn replay_xor_record_profile(
+    pub async fn record_xor_replay_profile(
         self: &Arc<Self>,
         mut state: Box<dyn ProfileState>,
         node: OpenedNode<dyn FxNode>,
@@ -1071,18 +1071,6 @@ impl FxVolume {
                     responder.send(Ok(()))?;
                 }
                 DebugRequest::Compact { responder } => {
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
-                }
-                DebugRequest::DeleteProfile { responder, .. } => {
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
-                }
-                DebugRequest::RecordAndReplayProfile { responder, .. } => {
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
-                }
-                DebugRequest::ReplayXorRecordProfile { responder, .. } => {
-                    responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
-                }
-                DebugRequest::StopProfileTasks { responder } => {
                     responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
                 }
             }

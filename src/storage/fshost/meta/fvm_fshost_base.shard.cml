@@ -96,6 +96,7 @@
             protocol: [
                 "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
+                "fuchsia.fxfs.ProfileManager",
                 "fuchsia.hardware.inlineencryption.Device",
                 "fuchsia.storage.block.Mapper",
                 "fuchsia.storage.mapping.MappingProvider",

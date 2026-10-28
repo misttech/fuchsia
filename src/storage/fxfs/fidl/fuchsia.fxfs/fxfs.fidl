@@ -303,16 +303,12 @@ type ProfileIdentifier = flexible union {
     2: blob_hash array<uint8, 32>;
 };
 
-/// This is an internal protocol for on-device debugging and testing only.
-/// See `ffx fxfs help` for more details.
+/// Controls recording, replaying, and managing Fxfs I/O profiles.
 @discoverable
-closed protocol Debug {
-    /// Forces a compaction.
-    strict Compact() -> () error zx.Status;
-
+closed protocol ProfileManager {
     /// Deletes a recorded profile from a volume. Fails if the volume isn't mounted or there is
     /// active profile recording or replay.
-    strict DeleteProfile(struct {
+    strict Delete(struct {
         volume fuchsia.io.Name;
         profile fuchsia.io.Name;
     }) -> () error zx.Status;
@@ -327,7 +323,7 @@ closed protocol Debug {
     /// where we don't explicitly know when the system has updated. By recording during replay and
     /// filtering objects without open events, Fxfs drops dead/replaced objects to refresh the
     /// profile.
-    strict RecordAndReplayProfile(struct {
+    strict RecordAndReplay(struct {
         volume fuchsia.io.Name:optional;
         profile fuchsia.io.Name;
         duration_secs uint32;
@@ -345,7 +341,7 @@ closed protocol Debug {
     /// since outside of the boot process objects may already be opened or cached in overlays like
     /// Starnix. The filtering is not needed here in any case since a method of refreshing the
     /// profile after an update is already provided.
-    strict ReplayXorRecordProfile(struct {
+    strict RecordXorReplay(struct {
         volume fuchsia.io.Name;
         identifier ProfileIdentifier;
         duration_secs uint32;
@@ -353,7 +349,15 @@ closed protocol Debug {
 
     /// Stops all profile recording and replay activity. Ongoing recordings are completed and
     /// persisted.
-    strict StopProfileTasks() -> () error zx.Status;
+    strict StopTasks() -> () error zx.Status;
+};
+
+/// This is an internal protocol for on-device debugging and testing only.
+/// See `ffx fxfs help` for more details.
+@discoverable
+closed protocol Debug {
+    /// Forces a compaction.
+    strict Compact() -> () error zx.Status;
 
     /// Clears the directory entry cache (dirent cache) and internal object store caches (including
     /// LSM tree object caches, layer file chunk caches, and non-permanent unwrapped keys). This

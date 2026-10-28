@@ -27,7 +27,10 @@ pub struct StorageTool {
     cmd: StorageCommand,
 
     #[with(deferred(moniker("/bootstrap/fshost/fxfs")))]
-    fxfs_proxy: fho::Deferred<fdomain_fuchsia_fxfs::DebugProxy>,
+    debug_proxy: fho::Deferred<fdomain_fuchsia_fxfs::DebugProxy>,
+
+    #[with(deferred(moniker("/bootstrap/fshost/fxfs")))]
+    profile_proxy: fho::Deferred<fdomain_fuchsia_fxfs::ProfileManagerProxy>,
 }
 
 impl FfxMain for StorageTool {
@@ -38,7 +41,7 @@ impl FfxMain for StorageTool {
     async fn main(self, writer: Self::Writer) -> Result<()> {
         match self.cmd.subcommand {
             StorageSubCommand::Fxfs(cmd) => {
-                fxfs::handle_cmd(cmd, writer, self.fxfs_proxy.await?).await
+                fxfs::handle_cmd(cmd, writer, self.debug_proxy, self.profile_proxy).await
             }
         }
     }

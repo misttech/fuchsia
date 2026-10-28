@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use argh::{ArgsInfo, FromArgs};
-use fdomain_fuchsia_fxfs::{DebugProxy, ProfileIdentifier};
+use fdomain_fuchsia_fxfs::{DebugProxy, ProfileIdentifier, ProfileManagerProxy};
 use ffx_writer::SimpleWriter;
-use fho::{Error, Result};
+use fho::{Deferred, Error, Result, return_user_error, user_error};
 use zx_status::Status;
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -104,65 +104,63 @@ pub struct FxfsCommand {
 pub async fn handle_cmd(
     cmd: FxfsCommand,
     _writer: SimpleWriter,
-    fxfs_proxy: DebugProxy,
+    debug_proxy: Deferred<DebugProxy>,
+    profile_proxy: Deferred<ProfileManagerProxy>,
 ) -> Result<()> {
     match cmd.subcommand {
         FxfsSubCommand::Compact(_) => {
-            fxfs_proxy
+            debug_proxy
+                .await?
                 .compact()
                 .await
-                .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::ExitWithCode(e))?;
+                .map_err(|e| user_error!(e))?
+                .map_err(Error::ExitWithCode)?;
         }
         FxfsSubCommand::DeleteProfile(args) => {
-            fxfs_proxy
-                .delete_profile(&args.volume, &args.profile)
+            profile_proxy
+                .await?
+                .delete(&args.volume, &args.profile)
                 .await
-                .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::ExitWithCode(e))?;
+                .map_err(|e| user_error!(e))?
+                .map_err(Error::ExitWithCode)?;
         }
         FxfsSubCommand::RecordAndReplayProfile(args) => {
-            fxfs_proxy
-                .record_and_replay_profile(
-                    args.volume.as_ref().map(|s| s.as_str()),
-                    &args.profile,
-                    args.duration_secs,
-                )
+            profile_proxy
+                .await?
+                .record_and_replay(args.volume.as_deref(), &args.profile, args.duration_secs)
                 .await
-                .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::User(Status::err_from_raw(e).into()))?;
+                .map_err(|e| user_error!(e))?
+                .map_err(|e| user_error!(Status::err_from_raw(e)))?;
         }
         FxfsSubCommand::ReplayXorRecordProfile(args) => {
             let identifier = if args.blob {
                 let mut array = [0u8; 32];
-                let bytes = hex::decode(&args.identifier)
-                    .map_err(|_| Error::User(anyhow::anyhow!("Invalid hex string")))?;
+                let bytes =
+                    hex::decode(&args.identifier).map_err(|_| user_error!("Invalid hex string"))?;
                 if bytes.len() != 32 {
-                    return Err(Error::User(anyhow::anyhow!(
-                        "Blob hash must be 32 bytes (64 hex characters)"
-                    )));
+                    return_user_error!("Blob hash must be 32 bytes (64 hex characters)");
                 }
                 array.copy_from_slice(&bytes);
                 ProfileIdentifier::BlobHash(array)
             } else {
-                let oid = args
-                    .identifier
-                    .parse::<u64>()
-                    .map_err(|_| Error::User(anyhow::anyhow!("Invalid object ID")))?;
+                let oid =
+                    args.identifier.parse::<u64>().map_err(|_| user_error!("Invalid object ID"))?;
                 ProfileIdentifier::ObjectId(oid)
             };
-            fxfs_proxy
-                .replay_xor_record_profile(&args.volume, &identifier, args.duration_secs)
+            profile_proxy
+                .await?
+                .record_xor_replay(&args.volume, &identifier, args.duration_secs)
                 .await
-                .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::User(Status::err_from_raw(e).into()))?;
+                .map_err(|e| user_error!(e))?
+                .map_err(|e| user_error!(Status::err_from_raw(e)))?;
         }
         FxfsSubCommand::StopProfile(_) => {
-            fxfs_proxy
-                .stop_profile_tasks()
+            profile_proxy
+                .await?
+                .stop_tasks()
                 .await
-                .map_err(|e| Error::User(e.into()))?
-                .map_err(|e| Error::ExitWithCode(e))?;
+                .map_err(|e| user_error!(e))?
+                .map_err(Error::ExitWithCode)?;
         }
     };
     Ok(())
