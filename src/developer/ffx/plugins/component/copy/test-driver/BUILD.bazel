@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@fuchsia_rules_common//packages:resources.bzl", "resource")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+resource(
+    name = "test_driver_file_under_64KB",
+    src = "resources/foo.txt",
+    dest = "resources/foo.txt",
+)
+
+resource(
+    name = "test_driver_file_over_64KB",
+    src = "resources/flower.jpeg",
+    dest = "resources/flower.jpeg",
+)
+
+fx_component_manifest(
+    name = "component-manifest",
+    component_name = "test-driver",
+    manifest = "meta/test_driver.cml",
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":component-manifest",
+    component_name = "test-driver",
+    deps = [
+        ":test_driver_file_over_64KB",
+        ":test_driver_file_under_64KB",
+    ],
+)
+
+fx_package(
+    name = "package",
+    package_name = "test-driver",
+    components = [":component"],
+)
