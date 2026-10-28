@@ -1,0 +1,52 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "artifact_cache",
+    srcs = [
+        "src/artifact.rs",
+        "src/artifact_cache.rs",
+        "src/build_api.rs",
+        "src/cipd.rs",
+        "src/gn_label.rs",
+        "src/lib.rs",
+        "src/mos.rs",
+    ],
+    crate_name = "assembly_artifact_cache",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/assembly/tools/mos_tool:__pkg__",
+        "//src/developer/ffx/plugins/product_bundle/bisect:__pkg__",
+        "//src/developer/ffx/plugins/product_bundle/create:__pkg__",
+    ],
+    deps = [
+        "//src/lib/assembly/config_schema",
+        "//src/lib/gcs",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:http-body-util",
+        "//third_party/rust_crates/vendor:hyper",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+host_rustc_test(
+    name = "artifact_cache_test",
+    crate = ":artifact_cache",
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+    ],
+)

@@ -1,0 +1,45 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "config_capabilities",
+    srcs = [
+        "src/config_capabilities.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "assembly_config_capabilities",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/lib/assembly:__subpackages__"],
+    deps = [
+        "//src/lib/assembly/util",
+        "//src/lib/fidl/rust/fidl",
+        "//src/sys/lib/cm_rust",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//tools/lib/cml",
+    ],
+)
+
+host_rustc_test(
+    name = "config_capabilities_test",
+    crate = ":config_capabilities",
+    visibility = ["//src/lib/assembly:__pkg__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
