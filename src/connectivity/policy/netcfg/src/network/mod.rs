@@ -70,6 +70,14 @@ impl NetworkId {
     }
 }
 
+pub(crate) fn is_default_candidate(
+    curr: &fidl_fuchsia_net_interfaces_ext::Properties<
+        fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+    >,
+) -> bool {
+    (curr.has_default_ipv4_route || curr.has_default_ipv6_route) && curr.online
+}
+
 // Using the interface's current v4/v6 default route properties and v4/v6 default route
 // properties provided through `fnet_interfaces_ext::Event::Changed`, determine
 // whether the interface gained or lost candidacy because of the event, or maintained
@@ -86,7 +94,7 @@ pub(crate) fn determine_interface_state_changed(
     let was_candidate = (prev.has_default_ipv4_route.unwrap_or(curr.has_default_ipv4_route)
         || prev.has_default_ipv6_route.unwrap_or(curr.has_default_ipv6_route))
         && prev.online.unwrap_or(curr.online);
-    let is_candidate = (curr.has_default_ipv4_route || curr.has_default_ipv6_route) && curr.online;
+    let is_candidate = is_default_candidate(curr);
     (is_candidate != was_candidate).then_some(is_candidate)
 }
 
@@ -1495,25 +1503,33 @@ impl NetpolNetworksService {
                     // Close the connection; the terminal item performs the cleanup.
                     client.close(Some(zx::Status::ALREADY_EXISTS));
                 } else {
-                    let network_id =
-                        if self.generations_by_connection.default_network(&id).unwrap_or_default()
-                            < self.current_generation.default_network
-                        {
-                            self.network_registry.default_network
-                        } else {
-                            None
-                        };
-                    if let Some(network_id) = network_id {
+                    let last_generation = self.generations_by_connection.default_network(&id);
+                    let response = match (self.network_registry.default_network, last_generation) {
+                        (_, Some(last)) if last >= self.current_generation.default_network => None,
+                        (Some(network_id), _) => {
+                            let token = self
+                                .tokens
+                                .ensure_token(NetworkTokenContents { network_id, is_default: true })
+                                .get()
+                                .duplicate()
+                                .context("could not duplicate token")?;
+                            Some(fnp_properties::NetworksWatchDefaultResponse::Network(token))
+                        }
+                        (None, Some(_)) => {
+                            Some(fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
+                                fnp_properties::Empty,
+                            ))
+                        }
+                        // Per Networks.WatchDefault FIDL, the initial call
+                        // (last_generation is None) blocks until a default
+                        // network is set rather than returning
+                        // NoDefaultNetwork.
+                        (None, None) => None,
+                    };
+                    if let Some(response) = response {
                         self.generations_by_connection
                             .set_default_network(id, self.current_generation);
-                        let token = self
-                            .tokens
-                            .ensure_token(NetworkTokenContents { network_id, is_default: true })
-                            .get()
-                            .duplicate()
-                            .context("could not duplicate token")?;
-                        responder
-                            .send(fnp_properties::NetworksWatchDefaultResponse::Network(token))?;
+                        responder.send(response)?;
                     } else {
                         client.responder = Some(responder);
                     }
@@ -3248,6 +3264,33 @@ mod tests {
             idle_watch_fut.await,
             Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
         );
+        let pw_closed_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(pw_closed_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+
+        // Idle Networks client calls watch_default() after default network
+        // loss and receives NoDefaultNetwork immediately, while a subsequent
+        // call blocks.
+        let idle_default_fut = networks_proxy.watch_default();
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!(
+            idle_default_fut.await,
+            Ok(fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(_))
+        );
+
+        let mut next_default_fut = networks_proxy.watch_default();
+        let req_event = service.select_next_some().await;
+        assert_eq!(
+            service.handle_event(req_event).await.expect("Failed to handle event"),
+            DelegatedNetworkUpdateResult::default()
+        );
+        assert_matches!((&mut next_default_fut).now_or_never(), None);
     }
 
     #[test_case(

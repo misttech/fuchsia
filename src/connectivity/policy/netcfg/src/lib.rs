@@ -2383,7 +2383,7 @@ impl<'a> NetCfg<'a> {
             }
             fnet_interfaces_ext::UpdateResult::Removed(
                 fnet_interfaces_ext::PropertiesAndState {
-                    properties: fnet_interfaces_ext::Properties { id, name, .. },
+                    properties: properties @ fnet_interfaces_ext::Properties { id, name, .. },
                     state: (),
                 },
             ) => {
@@ -2396,7 +2396,9 @@ impl<'a> NetCfg<'a> {
                         // TODO(https://fxbug.dev/498654191): Add locally provisioned networks to
                         // the network registry even when socket-proxy is absent.
                         if enable_socket_proxy {
-                            if provisioning.track_in_network_registry() {
+                            if provisioning.track_in_network_registry()
+                                && network::is_default_candidate(properties)
+                            {
                                 let network_id = network::NetworkId::fuchsia(*id);
                                 netpol_networks_service
                                     .update(network::NetworkRegistryUpdate::ChangeNetwork(
