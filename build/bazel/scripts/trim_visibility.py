@@ -59,8 +59,6 @@ To run this script's tests:
 $ fx test //build/bazel/scripts:trim_visibility_test
 """
 
-from __future__ import annotations
-
 import argparse
 import ast
 import concurrent.futures
