@@ -7,6 +7,7 @@ group("tests") {
 
   deps = [
     "debug_telemetry:tests",
+    "diagnostic_overlay:tests",
     "escher:tests",
     "focus_chain_provider:tests",
     "input-device-constants:tests",
