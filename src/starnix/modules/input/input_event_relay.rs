@@ -10,10 +10,10 @@ use crate::{
 // to any vendor in the USB spec.
 //
 // May not be zero, see below.
-const FUCHSIA_VENDOR_ID: u16 = 0xfc1a;
-const FUCHSIA_KEYBOARD_PRODUCT_ID: u16 = 0x1;
-const FUCHSIA_TOUCH_PRODUCT_ID: u16 = 0x2;
-const FUCHSIA_MOUSE_PRODUCT_ID: u16 = 0x3;
+pub(crate) const FUCHSIA_VENDOR_ID: u16 = 0xfc1a;
+pub(crate) const FUCHSIA_KEYBOARD_PRODUCT_ID: u16 = 0x1;
+pub(crate) const FUCHSIA_TOUCH_PRODUCT_ID: u16 = 0x2;
+pub(crate) const FUCHSIA_MOUSE_PRODUCT_ID: u16 = 0x3;
 
 // Touch, keyboard, and mouse input IDs should be distinct.
 // Per https://www.linuxjournal.com/article/6429, the bus type should be populated with a

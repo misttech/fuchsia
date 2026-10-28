@@ -39,6 +39,7 @@ rustc_library("input") {
   visibility = [ "//src/starnix/modules/*" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
     "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_rust",
@@ -58,6 +59,7 @@ rustc_library("input") {
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/input/event_conversion/app_event_conversion",
+    "//src/starnix/modules/input/event_conversion/input_report_event_conversion",
     "//third_party/rust_crates:bit-vec",
     "//third_party/rust_crates:crossbeam",
     "//third_party/rust_crates:futures",

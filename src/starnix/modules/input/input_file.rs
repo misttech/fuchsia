@@ -20,11 +20,12 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_SLOT, ABS_MT_TRACKING_ID, BTN_EXTRA,
-    BTN_LEFT, BTN_MIDDLE, BTN_MISC, BTN_RIGHT, BTN_SIDE, BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT,
-    INPUT_PROP_DIRECT, INPUT_PROP_POINTER, KEY_CNT, KEY_DOWN, KEY_LEFT, KEY_OK, KEY_POWER,
-    KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT, REL_CNT,
-    REL_HWHEEL, REL_WHEEL, REL_X, REL_Y, SW_CNT, errno, error, uapi,
+    ABS_CNT, ABS_MT_POSITION_X, ABS_MT_POSITION_Y, ABS_MT_PRESSURE, ABS_MT_SLOT,
+    ABS_MT_TOUCH_MAJOR, ABS_MT_TOUCH_MINOR, ABS_MT_TRACKING_ID, BTN_EXTRA, BTN_LEFT, BTN_MIDDLE,
+    BTN_MISC, BTN_RIGHT, BTN_SIDE, BTN_TOUCH, EV_CNT, FF_CNT, INPUT_PROP_CNT, INPUT_PROP_DIRECT,
+    INPUT_PROP_POINTER, KEY_CNT, KEY_DOWN, KEY_LEFT, KEY_OK, KEY_POWER, KEY_RIGHT, KEY_SLEEP,
+    KEY_UP, KEY_VOLUMEDOWN, KEY_VOLUMEUP, LED_CNT, MSC_CNT, REL_CNT, REL_HWHEEL, REL_WHEEL, REL_X,
+    REL_Y, SW_CNT, errno, error, uapi,
 };
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -242,19 +243,7 @@ impl InputFileStatus {
 pub struct InputFile {
     driver_version: u32,
     info: InputDeviceInfoHandle,
-    supported_event_types: BitSet<{ min_bytes(EV_CNT) }>,
-    supported_keys: BitSet<{ min_bytes(KEY_CNT) }>,
-    supported_position_attributes: BitSet<{ min_bytes(ABS_CNT) }>, // ABSolute position
-    supported_motion_attributes: BitSet<{ min_bytes(REL_CNT) }>,   // RELative motion
-    supported_switches: BitSet<{ min_bytes(SW_CNT) }>,
-    supported_leds: BitSet<{ min_bytes(LED_CNT) }>,
-    supported_haptics: BitSet<{ min_bytes(FF_CNT) }>, // 'F'orce 'F'eedback
-    supported_misc_features: BitSet<{ min_bytes(MSC_CNT) }>,
-    properties: BitSet<{ min_bytes(INPUT_PROP_CNT) }>,
-    mt_slot_axis_info: uapi::input_absinfo,
-    mt_tracking_id_axis_info: uapi::input_absinfo,
-    x_axis_info: uapi::input_absinfo,
-    y_axis_info: uapi::input_absinfo,
+    pub config: InputFileConfig,
     events: SegQueue<LinuxEventWithTraceId>,
     waiters: WaitQueue,
     // InputFile will be initialized with an InputFileStatus that holds Inspect data
@@ -284,8 +273,323 @@ impl LinuxEventWithTraceId {
 }
 
 /// Returns the minimum number of bytes required to store `n_bits` bits.
-const fn min_bytes(n_bits: u32) -> usize {
+pub const fn min_bytes(n_bits: u32) -> usize {
     ((n_bits as usize) + 7) / 8
+}
+
+/// Parses a Fuchsia `Axis` into Linux `uapi::input_absinfo`.
+pub fn parse_axis_info(axis: &fidl_fuchsia_input_report::Axis) -> uapi::input_absinfo {
+    let minimum = axis.range.min.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    let maximum = axis.range.max.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    let resolution = match axis.unit.type_ {
+        fidl_fuchsia_input_report::UnitType::Meters => {
+            // Linux evdev resolution is in units per mm (10^-3 m).
+            // resolution = 10^(-3 - exponent).
+            match (-3i32).checked_sub(axis.unit.exponent) {
+                Some(p) if (0..=9).contains(&p) => 10i32.pow(p as u32),
+                _ => 0,
+            }
+        }
+        _ => 0,
+    };
+    uapi::input_absinfo { minimum, maximum, resolution, ..Default::default() }
+}
+
+/// Dynamic configuration of capabilities and axis ranges for an [`InputFile`].
+#[derive(Clone, Debug)]
+pub struct InputFileConfig {
+    pub supported_event_types: BitSet<{ min_bytes(EV_CNT) }>,
+    pub supported_keys: BitSet<{ min_bytes(KEY_CNT) }>,
+    pub supported_position_attributes: BitSet<{ min_bytes(ABS_CNT) }>,
+    pub supported_motion_attributes: BitSet<{ min_bytes(REL_CNT) }>,
+    pub supported_switches: BitSet<{ min_bytes(SW_CNT) }>,
+    pub supported_leds: BitSet<{ min_bytes(LED_CNT) }>,
+    pub supported_haptics: BitSet<{ min_bytes(FF_CNT) }>,
+    pub supported_misc_features: BitSet<{ min_bytes(MSC_CNT) }>,
+    pub properties: BitSet<{ min_bytes(INPUT_PROP_CNT) }>,
+    pub mt_slot_axis_info: uapi::input_absinfo,
+    pub mt_tracking_id_axis_info: uapi::input_absinfo,
+    pub mt_pressure_axis_info: uapi::input_absinfo,
+    pub mt_touch_major_axis_info: uapi::input_absinfo,
+    pub mt_touch_minor_axis_info: uapi::input_absinfo,
+    pub x_axis_info: uapi::input_absinfo,
+    pub y_axis_info: uapi::input_absinfo,
+}
+
+fn absinfo_eq(a: &uapi::input_absinfo, b: &uapi::input_absinfo) -> bool {
+    a.value == b.value
+        && a.minimum == b.minimum
+        && a.maximum == b.maximum
+        && a.fuzz == b.fuzz
+        && a.flat == b.flat
+        && a.resolution == b.resolution
+}
+
+impl PartialEq for InputFileConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.supported_event_types == other.supported_event_types
+            && self.supported_keys == other.supported_keys
+            && self.supported_position_attributes == other.supported_position_attributes
+            && self.supported_motion_attributes == other.supported_motion_attributes
+            && self.supported_switches == other.supported_switches
+            && self.supported_leds == other.supported_leds
+            && self.supported_haptics == other.supported_haptics
+            && self.supported_misc_features == other.supported_misc_features
+            && self.properties == other.properties
+            && absinfo_eq(&self.mt_slot_axis_info, &other.mt_slot_axis_info)
+            && absinfo_eq(&self.mt_tracking_id_axis_info, &other.mt_tracking_id_axis_info)
+            && absinfo_eq(&self.mt_pressure_axis_info, &other.mt_pressure_axis_info)
+            && absinfo_eq(&self.mt_touch_major_axis_info, &other.mt_touch_major_axis_info)
+            && absinfo_eq(&self.mt_touch_minor_axis_info, &other.mt_touch_minor_axis_info)
+            && absinfo_eq(&self.x_axis_info, &other.x_axis_info)
+            && absinfo_eq(&self.y_axis_info, &other.y_axis_info)
+    }
+}
+
+impl Default for InputFileConfig {
+    fn default() -> Self {
+        Self {
+            supported_event_types: BitSet::new(),
+            supported_keys: BitSet::new(),
+            supported_position_attributes: BitSet::new(),
+            supported_motion_attributes: BitSet::new(),
+            supported_switches: BitSet::new(),
+            supported_leds: BitSet::new(),
+            supported_haptics: BitSet::new(),
+            supported_misc_features: BitSet::new(),
+            properties: BitSet::new(),
+            mt_slot_axis_info: uapi::input_absinfo::default(),
+            mt_tracking_id_axis_info: uapi::input_absinfo::default(),
+            mt_pressure_axis_info: uapi::input_absinfo::default(),
+            mt_touch_major_axis_info: uapi::input_absinfo::default(),
+            mt_touch_minor_axis_info: uapi::input_absinfo::default(),
+            x_axis_info: uapi::input_absinfo::default(),
+            y_axis_info: uapi::input_absinfo::default(),
+        }
+    }
+}
+
+impl InputFileConfig {
+    pub fn from_device_descriptor(
+        descriptor: &fidl_fuchsia_input_report::DeviceDescriptor,
+    ) -> Self {
+        let mut config = Self::default();
+
+        if let Some(touch) = &descriptor.touch {
+            config.supported_event_types.set(uapi::EV_ABS);
+            config.supported_event_types.set(uapi::EV_KEY);
+
+            let touch_type = touch.input.as_ref().and_then(|i| i.touch_type);
+            match touch_type {
+                Some(fidl_fuchsia_input_report::TouchType::Touchpad) => {
+                    config.properties.set(INPUT_PROP_POINTER);
+                    config.supported_keys.set(uapi::BTN_TOOL_FINGER);
+                }
+                _ => {
+                    config.properties.set(INPUT_PROP_DIRECT);
+                }
+            }
+
+            // Standard touch keys: only BTN_TOUCH unconditionally.
+            config.supported_keys.set(BTN_TOUCH);
+
+            // Multitouch and absolute coordinates matching touch_position_attributes().
+            config.supported_position_attributes = touch_position_attributes();
+
+            let mut max_contacts = 10;
+            if let Some(input) = &touch.input {
+                if let Some(contacts) = &input.contacts {
+                    if let Some(first) = contacts.first() {
+                        if let Some(x) = &first.position_x {
+                            config.x_axis_info = parse_axis_info(x);
+                        }
+                        if let Some(y) = &first.position_y {
+                            config.y_axis_info = parse_axis_info(y);
+                        }
+                        if let Some(pressure) = &first.pressure {
+                            config.supported_position_attributes.set(ABS_MT_PRESSURE);
+                            config.mt_pressure_axis_info = parse_axis_info(pressure);
+                        }
+                        match (&first.contact_width, &first.contact_height) {
+                            (Some(w), Some(h)) => {
+                                config.supported_position_attributes.set(ABS_MT_TOUCH_MAJOR);
+                                config.supported_position_attributes.set(ABS_MT_TOUCH_MINOR);
+                                if w.range.max >= h.range.max {
+                                    config.mt_touch_major_axis_info = parse_axis_info(w);
+                                    config.mt_touch_minor_axis_info = parse_axis_info(h);
+                                } else {
+                                    config.mt_touch_major_axis_info = parse_axis_info(h);
+                                    config.mt_touch_minor_axis_info = parse_axis_info(w);
+                                }
+                            }
+                            (Some(w), None) => {
+                                config.supported_position_attributes.set(ABS_MT_TOUCH_MAJOR);
+                                config.mt_touch_major_axis_info = parse_axis_info(w);
+                            }
+                            (None, Some(h)) => {
+                                config.supported_position_attributes.set(ABS_MT_TOUCH_MAJOR);
+                                config.mt_touch_major_axis_info = parse_axis_info(h);
+                            }
+                            (None, None) => {}
+                        }
+                    }
+                }
+                if let Some(contacts_limit) = input.max_contacts {
+                    if contacts_limit > 0 {
+                        max_contacts = contacts_limit;
+                    }
+                }
+                if let Some(buttons) = &input.buttons {
+                    for &button in buttons {
+                        if let Some(key) =
+                            starnix_modules_input_report_event_conversion::touch_button_to_linux_key(
+                                button,
+                            )
+                        {
+                            config.supported_keys.set(key);
+                        }
+                    }
+                }
+            }
+
+            config.mt_slot_axis_info = uapi::input_absinfo {
+                minimum: 0,
+                maximum: i32::try_from(
+                    max_contacts
+                        .min(fidl_fuchsia_input_report::TOUCH_MAX_CONTACTS)
+                        .saturating_sub(1),
+                )
+                .unwrap_or(i32::MAX),
+                ..Default::default()
+            };
+            config.mt_tracking_id_axis_info =
+                uapi::input_absinfo { minimum: 0, maximum: i32::MAX, ..Default::default() };
+        }
+
+        if let Some(keyboard) = &descriptor.keyboard {
+            config.supported_event_types.set(uapi::EV_KEY);
+
+            let mut has_keys = false;
+            if let Some(input) = &keyboard.input {
+                if let Some(keys3) = &input.keys3 {
+                    for key in keys3 {
+                        let keycode = starnix_modules_input_app_event_conversion::keymap::KEY_MAP
+                            .fuchsia_input_key_to_linux_keycode(*key);
+                        if keycode >= BTN_MISC && keycode < KEY_OK {
+                            continue;
+                        }
+                        if keycode != uapi::KEY_RESERVED && (keycode as usize) < KEY_CNT as usize {
+                            config.supported_keys.set(keycode);
+                            has_keys = true;
+                        }
+                    }
+                }
+            }
+            if !has_keys {
+                config.supported_keys |= keyboard_key_attributes();
+            }
+
+            if let Some(output) = &keyboard.output {
+                if let Some(leds) = &output.leds {
+                    for led in leds {
+                        let led_code = match led {
+                            fidl_fuchsia_input_report::LedType::NumLock => Some(uapi::LED_NUML),
+                            fidl_fuchsia_input_report::LedType::CapsLock => Some(uapi::LED_CAPSL),
+                            fidl_fuchsia_input_report::LedType::ScrollLock => {
+                                Some(uapi::LED_SCROLLL)
+                            }
+                            fidl_fuchsia_input_report::LedType::Compose => Some(uapi::LED_COMPOSE),
+                            fidl_fuchsia_input_report::LedType::Kana => Some(uapi::LED_KANA),
+                            _ => None,
+                        };
+                        if let Some(c) = led_code {
+                            config.supported_event_types.set(uapi::EV_LED);
+                            config.supported_leds.set(c);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(mouse) = &descriptor.mouse {
+            config.supported_event_types.set(uapi::EV_KEY);
+            config.supported_event_types.set(uapi::EV_REL);
+            if !config.properties.get(INPUT_PROP_DIRECT) {
+                config.properties.set(INPUT_PROP_POINTER);
+            }
+
+            let mut has_buttons = false;
+            let mut has_rel = false;
+            if let Some(input) = &mouse.input {
+                if let Some(buttons) = &input.buttons {
+                    for &button in buttons {
+                        if let Some(btn) =
+                            starnix_modules_input_report_event_conversion::mouse_button_to_linux_button(
+                                button,
+                            )
+                        {
+                            config.supported_keys.set(btn);
+                            has_buttons = true;
+                        }
+                    }
+                }
+                if input.movement_x.is_some() {
+                    config.supported_motion_attributes.set(REL_X);
+                    has_rel = true;
+                }
+                if input.movement_y.is_some() {
+                    config.supported_motion_attributes.set(REL_Y);
+                    has_rel = true;
+                }
+                if input.scroll_v.is_some() {
+                    config.supported_motion_attributes.set(REL_WHEEL);
+                    has_rel = true;
+                }
+                if input.scroll_h.is_some() {
+                    config.supported_motion_attributes.set(REL_HWHEEL);
+                    has_rel = true;
+                }
+                if input.scroll_v.is_some() || input.scroll_h.is_some() {
+                    config.supported_motion_attributes.set(REL_X);
+                    config.supported_motion_attributes.set(REL_Y);
+                }
+            }
+
+            if !has_buttons {
+                config.supported_keys |= mouse_key_attributes();
+            }
+
+            if !has_rel {
+                config.supported_motion_attributes |= mouse_motion_attributes();
+            }
+        }
+
+        if let Some(consumer_control) = &descriptor.consumer_control {
+            config.supported_event_types.set(uapi::EV_KEY);
+            let mut has_buttons = false;
+            if let Some(input) = &consumer_control.input {
+                if let Some(buttons) = &input.buttons {
+                    for button in buttons {
+                        if let Some(key) =
+                            starnix_modules_input_report_event_conversion::consumer_control_button_to_linux_key(
+                                *button,
+                            )
+                        {
+                            config.supported_keys.set(key);
+                            has_buttons = true;
+                        }
+                    }
+                }
+            }
+            if !has_buttons {
+                config.supported_keys.set(KEY_POWER);
+                config.supported_keys.set(KEY_VOLUMEUP);
+                config.supported_keys.set(KEY_VOLUMEDOWN);
+            }
+        }
+
+        config
+    }
 }
 
 /// Returns appropriate `INPUT_PROP`-erties for a keyboard device.
@@ -411,17 +715,10 @@ impl InputFile {
         // Fuchsia scales the position reported by the touch sensor to fit view coordinates.
         // Hence, the range of touch positions is exactly the same as the range of view
         // coordinates.
-        Self {
-            driver_version: Self::DRIVER_VERSION,
-            info,
+        let config = InputFileConfig {
             supported_event_types: BitSet::list([uapi::EV_ABS]),
             supported_keys: touch_key_attributes(),
             supported_position_attributes: touch_position_attributes(),
-            supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
-            supported_switches: BitSet::new(),          // None supported
-            supported_leds: BitSet::new(),              // None supported
-            supported_haptics: BitSet::new(),           // None supported
-            supported_misc_features: BitSet::new(),     // None supported
             properties: touch_properties(),
             mt_slot_axis_info: uapi::input_absinfo {
                 minimum: 0,
@@ -447,10 +744,9 @@ impl InputFile {
                 // Y position.
                 ..uapi::input_absinfo::default()
             },
-            events: SegQueue::new(),
-            waiters: WaitQueue::default(),
-            inspect_status: Some(InputFileStatus::new(node)),
-        }
+            ..Default::default()
+        };
+        Self::new_from_config(info, config, node)
     }
 
     /// Creates an `InputFile` instance suitable for emulating a keyboard.
@@ -459,26 +755,14 @@ impl InputFile {
     /// - `info`: input device information.
     /// - `node`: The inspect node for the parent device of "keyboard_input_file".
     pub fn new_keyboard(info: InputDeviceInfoHandle, node: &fuchsia_inspect::Node) -> Self {
-        Self {
-            driver_version: Self::DRIVER_VERSION,
-            info,
+        let config = InputFileConfig {
             supported_event_types: BitSet::list([uapi::EV_KEY]),
             supported_keys: keyboard_key_attributes(),
             supported_position_attributes: keyboard_position_attributes(),
-            supported_motion_attributes: BitSet::new(), // None supported, not a mouse.
-            supported_switches: BitSet::new(),          // None supported
-            supported_leds: BitSet::new(),              // None supported
-            supported_haptics: BitSet::new(),           // None supported
-            supported_misc_features: BitSet::new(),     // None supported
             properties: keyboard_properties(),
-            mt_slot_axis_info: uapi::input_absinfo::default(),
-            mt_tracking_id_axis_info: uapi::input_absinfo::default(),
-            x_axis_info: uapi::input_absinfo::default(),
-            y_axis_info: uapi::input_absinfo::default(),
-            events: SegQueue::new(),
-            waiters: WaitQueue::default(),
-            inspect_status: Some(InputFileStatus::new(node)),
-        }
+            ..Default::default()
+        };
+        Self::new_from_config(info, config, node)
     }
 
     /// Creates an `InputFile` instance suitable for emulating a mouse.
@@ -487,29 +771,44 @@ impl InputFile {
     /// - `info`: input device information.
     /// - `node`: The inspect node for the parent device of "mouse_input_file".
     pub fn new_mouse(info: InputDeviceInfoHandle, node: &fuchsia_inspect::Node) -> Self {
-        Self {
-            driver_version: Self::DRIVER_VERSION,
-            info,
+        let config = InputFileConfig {
             // Mice report relative motion via EV_REL and buttons via EV_KEY.
             // Absolute motion (EV_ABS) is not supported to avoid misclassification
             // as a touch digitizer by libinput/Android EventHub.
             supported_event_types: BitSet::list([uapi::EV_KEY, uapi::EV_REL]),
             supported_keys: mouse_key_attributes(),
-            supported_position_attributes: BitSet::new(), // Mice report relative motion, not absolute.
             supported_motion_attributes: mouse_motion_attributes(),
-            supported_switches: BitSet::new(), // None supported
-            supported_leds: BitSet::new(),     // None supported
-            supported_haptics: BitSet::new(),  // None supported
-            supported_misc_features: BitSet::new(), // None supported
             properties: mouse_properties(),
-            mt_slot_axis_info: uapi::input_absinfo::default(),
-            mt_tracking_id_axis_info: uapi::input_absinfo::default(),
-            x_axis_info: uapi::input_absinfo::default(),
-            y_axis_info: uapi::input_absinfo::default(),
+            ..Default::default()
+        };
+        Self::new_from_config(info, config, node)
+    }
+
+    /// Creates an `InputFile` instance from a pre-configured [`InputFileConfig`].
+    pub fn new_from_config(
+        info: InputDeviceInfoHandle,
+        config: InputFileConfig,
+        node: &fuchsia_inspect::Node,
+    ) -> Self {
+        Self {
+            driver_version: Self::DRIVER_VERSION,
+            info,
+            config,
             events: SegQueue::new(),
             waiters: WaitQueue::default(),
             inspect_status: Some(InputFileStatus::new(node)),
         }
+    }
+
+    /// Creates an `InputFile` instance by parsing a Fuchsia [`fidl_fuchsia_input_report::DeviceDescriptor`].
+    #[cfg(test)]
+    pub fn from_device_descriptor(
+        info: InputDeviceInfoHandle,
+        descriptor: &fidl_fuchsia_input_report::DeviceDescriptor,
+        node: &fuchsia_inspect::Node,
+    ) -> Self {
+        let config = InputFileConfig::from_device_descriptor(descriptor);
+        Self::new_from_config(info, config, node)
     }
 
     pub fn init_inspect_status(self: &Arc<Self>) {
@@ -573,6 +872,13 @@ pub(crate) const EVIOCGBIT_EV_FF_BASE: u32 = uapi::EVIOCGBIT_EV_FF & EVIOC_VAR_L
 pub(crate) const EVIOCGBIT_EV_MSC_BASE: u32 = uapi::EVIOCGBIT_EV_MSC & EVIOC_VAR_LEN_MASK;
 pub(crate) const EVIOCGBIT_EV_SND_BASE: u32 = uapi::EVIOCGBIT_EV_SND & EVIOC_VAR_LEN_MASK;
 
+pub(crate) const fn eviocgabs(axis: u32) -> u32 {
+    uapi::EVIOCGABS_X + axis
+}
+pub(crate) const EVIOCGABS_MT_PRESSURE: u32 = eviocgabs(uapi::ABS_MT_PRESSURE);
+pub(crate) const EVIOCGABS_MT_TOUCH_MAJOR: u32 = eviocgabs(uapi::ABS_MT_TOUCH_MAJOR);
+pub(crate) const EVIOCGABS_MT_TOUCH_MINOR: u32 = eviocgabs(uapi::ABS_MT_TOUCH_MINOR);
+
 impl FileOps for InputFile {
     fileops_impl_nonseekable!();
     fileops_impl_noop_sync!();
@@ -617,20 +923,36 @@ impl FileOps for InputFile {
                 Ok(SUCCESS)
             }
             uapi::EVIOCGABS_MT_SLOT => {
-                current_task.write_object(UserRef::new(user_addr), &self.mt_slot_axis_info)?;
+                current_task
+                    .write_object(UserRef::new(user_addr), &self.config.mt_slot_axis_info)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGABS_MT_TRACKING_ID => {
                 current_task
-                    .write_object(UserRef::new(user_addr), &self.mt_tracking_id_axis_info)?;
+                    .write_object(UserRef::new(user_addr), &self.config.mt_tracking_id_axis_info)?;
                 Ok(SUCCESS)
             }
-            uapi::EVIOCGABS_MT_POSITION_X => {
-                current_task.write_object(UserRef::new(user_addr), &self.x_axis_info)?;
+            uapi::EVIOCGABS_X | uapi::EVIOCGABS_MT_POSITION_X => {
+                current_task.write_object(UserRef::new(user_addr), &self.config.x_axis_info)?;
                 Ok(SUCCESS)
             }
-            uapi::EVIOCGABS_MT_POSITION_Y => {
-                current_task.write_object(UserRef::new(user_addr), &self.y_axis_info)?;
+            uapi::EVIOCGABS_Y | uapi::EVIOCGABS_MT_POSITION_Y => {
+                current_task.write_object(UserRef::new(user_addr), &self.config.y_axis_info)?;
+                Ok(SUCCESS)
+            }
+            EVIOCGABS_MT_PRESSURE => {
+                current_task
+                    .write_object(UserRef::new(user_addr), &self.config.mt_pressure_axis_info)?;
+                Ok(SUCCESS)
+            }
+            EVIOCGABS_MT_TOUCH_MAJOR => {
+                current_task
+                    .write_object(UserRef::new(user_addr), &self.config.mt_touch_major_axis_info)?;
+                Ok(SUCCESS)
+            }
+            EVIOCGABS_MT_TOUCH_MINOR => {
+                current_task
+                    .write_object(UserRef::new(user_addr), &self.config.mt_touch_minor_axis_info)?;
                 Ok(SUCCESS)
             }
             uapi::EVIOCGRAB => {
@@ -691,16 +1013,20 @@ impl FileOps for InputFile {
                 };
 
                 match request_with_params & EVIOC_VAR_LEN_MASK {
-                    EVIOCGBIT_0_BASE => write_bits(&self.supported_event_types.bytes),
-                    EVIOCGBIT_EV_KEY_BASE => write_bits(&self.supported_keys.bytes),
-                    EVIOCGBIT_EV_ABS_BASE => write_bits(&self.supported_position_attributes.bytes),
-                    EVIOCGBIT_EV_REL_BASE => write_bits(&self.supported_motion_attributes.bytes),
-                    EVIOCGBIT_EV_SW_BASE => write_bits(&self.supported_switches.bytes),
-                    EVIOCGBIT_EV_LED_BASE => write_bits(&self.supported_leds.bytes),
-                    EVIOCGBIT_EV_FF_BASE => write_bits(&self.supported_haptics.bytes),
-                    EVIOCGBIT_EV_MSC_BASE => write_bits(&self.supported_misc_features.bytes),
+                    EVIOCGBIT_0_BASE => write_bits(&self.config.supported_event_types.bytes),
+                    EVIOCGBIT_EV_KEY_BASE => write_bits(&self.config.supported_keys.bytes),
+                    EVIOCGBIT_EV_ABS_BASE => {
+                        write_bits(&self.config.supported_position_attributes.bytes)
+                    }
+                    EVIOCGBIT_EV_REL_BASE => {
+                        write_bits(&self.config.supported_motion_attributes.bytes)
+                    }
+                    EVIOCGBIT_EV_SW_BASE => write_bits(&self.config.supported_switches.bytes),
+                    EVIOCGBIT_EV_LED_BASE => write_bits(&self.config.supported_leds.bytes),
+                    EVIOCGBIT_EV_FF_BASE => write_bits(&self.config.supported_haptics.bytes),
+                    EVIOCGBIT_EV_MSC_BASE => write_bits(&self.config.supported_misc_features.bytes),
                     EVIOCGBIT_EV_SND_BASE => write_bits(&[]),
-                    EVIOCGPROP_BASE => write_bits(&self.properties.bytes),
+                    EVIOCGPROP_BASE => write_bits(&self.config.properties.bytes),
                     EVIOCGNAME_BASE => {
                         let name = self.info.lock().name.clone();
                         write_string(name.as_bytes())
@@ -901,6 +1227,7 @@ impl FileOps for ArcInputFile {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BitSet<const NUM_BYTES: usize> {
     bytes: [u8; NUM_BYTES],
 }
@@ -927,12 +1254,19 @@ impl<const NUM_BYTES: usize> BitSet<{ NUM_BYTES }> {
         self.bytes[byte] |= 1 << bit;
     }
 
-    #[cfg(test)]
     pub fn get(&self, bitnum: u32) -> bool {
         let bitnum = bitnum as usize;
         let byte = bitnum / 8;
         let bit = bitnum % 8;
         (self.bytes[byte] & (1 << bit)) != 0
+    }
+}
+
+impl<const NUM_BYTES: usize> std::ops::BitOrAssign for BitSet<{ NUM_BYTES }> {
+    fn bitor_assign(&mut self, rhs: Self) {
+        for i in 0..NUM_BYTES {
+            self.bytes[i] |= rhs.bytes[i];
+        }
     }
 }
 
@@ -955,30 +1289,30 @@ mod tests {
         );
 
         // Event types: EV_KEY
-        assert!(keyboard_file.supported_event_types.get(uapi::EV_KEY));
-        assert!(!keyboard_file.supported_event_types.get(uapi::EV_REL));
-        assert!(!keyboard_file.supported_event_types.get(uapi::EV_ABS));
+        assert!(keyboard_file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(!keyboard_file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(!keyboard_file.config.supported_event_types.get(uapi::EV_ABS));
 
         // Mapped Linux keys from KEY_MAP
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_A));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_Z));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_1));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_ENTER));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_SPACE));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_ESC));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_TAB));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_BACKSPACE));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTSHIFT));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTCTRL));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_LEFTALT));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_POWER));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_VOLUMEUP));
-        assert!(keyboard_file.supported_keys.get(uapi::KEY_VOLUMEDOWN));
-        assert!(keyboard_file.supported_keys.get(uapi::BTN_MISC));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_A));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_Z));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_1));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_ENTER));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_SPACE));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_ESC));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_TAB));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_BACKSPACE));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_LEFTSHIFT));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_LEFTCTRL));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_LEFTALT));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_POWER));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_VOLUMEUP));
+        assert!(keyboard_file.config.supported_keys.get(uapi::KEY_VOLUMEDOWN));
+        assert!(keyboard_file.config.supported_keys.get(uapi::BTN_MISC));
 
         // Properties: INPUT_PROP_DIRECT
-        assert!(keyboard_file.properties.get(uapi::INPUT_PROP_DIRECT));
-        assert!(!keyboard_file.properties.get(uapi::INPUT_PROP_POINTER));
+        assert!(keyboard_file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+        assert!(!keyboard_file.config.properties.get(uapi::INPUT_PROP_POINTER));
     }
 
     #[test]
@@ -1057,26 +1391,734 @@ mod tests {
         );
 
         // EV_KEY and EV_REL supported, EV_ABS not supported.
-        assert!(mouse_file.supported_event_types.get(uapi::EV_KEY));
-        assert!(mouse_file.supported_event_types.get(uapi::EV_REL));
-        assert!(!mouse_file.supported_event_types.get(uapi::EV_ABS));
+        assert!(mouse_file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(mouse_file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(!mouse_file.config.supported_event_types.get(uapi::EV_ABS));
 
         // Buttons supported: BTN_LEFT (BTN_MOUSE), BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA.
-        assert!(mouse_file.supported_keys.get(BTN_LEFT));
-        assert!(mouse_file.supported_keys.get(BTN_RIGHT));
-        assert!(mouse_file.supported_keys.get(BTN_MIDDLE));
-        assert!(mouse_file.supported_keys.get(BTN_SIDE));
-        assert!(mouse_file.supported_keys.get(BTN_EXTRA));
-        assert!(!mouse_file.supported_keys.get(BTN_TOUCH));
+        assert!(mouse_file.config.supported_keys.get(BTN_LEFT));
+        assert!(mouse_file.config.supported_keys.get(BTN_RIGHT));
+        assert!(mouse_file.config.supported_keys.get(BTN_MIDDLE));
+        assert!(mouse_file.config.supported_keys.get(BTN_SIDE));
+        assert!(mouse_file.config.supported_keys.get(BTN_EXTRA));
+        assert!(!mouse_file.config.supported_keys.get(BTN_TOUCH));
 
         // Relative motion: REL_X, REL_Y, REL_WHEEL, REL_HWHEEL.
-        assert!(mouse_file.supported_motion_attributes.get(REL_X));
-        assert!(mouse_file.supported_motion_attributes.get(REL_Y));
-        assert!(mouse_file.supported_motion_attributes.get(REL_WHEEL));
-        assert!(mouse_file.supported_motion_attributes.get(REL_HWHEEL));
+        assert!(mouse_file.config.supported_motion_attributes.get(REL_X));
+        assert!(mouse_file.config.supported_motion_attributes.get(REL_Y));
+        assert!(mouse_file.config.supported_motion_attributes.get(REL_WHEEL));
+        assert!(mouse_file.config.supported_motion_attributes.get(REL_HWHEEL));
 
         // Properties: INPUT_PROP_POINTER supported, INPUT_PROP_DIRECT not supported.
-        assert!(mouse_file.properties.get(INPUT_PROP_POINTER));
-        assert!(!mouse_file.properties.get(INPUT_PROP_DIRECT));
+        assert!(mouse_file.config.properties.get(INPUT_PROP_POINTER));
+        assert!(!mouse_file.config.properties.get(INPUT_PROP_DIRECT));
+    }
+
+    #[::fuchsia::test]
+    fn test_parse_axis_info() {
+        let axis_mm = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                exponent: -3,
+            },
+        };
+        let absinfo = parse_axis_info(&axis_mm);
+        assert_eq!(absinfo.minimum, 0);
+        assert_eq!(absinfo.maximum, 1080);
+        assert_eq!(absinfo.resolution, 1);
+
+        let axis_um = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: 0, max: 2400 },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                exponent: -6,
+            },
+        };
+        let absinfo_um = parse_axis_info(&axis_um);
+        assert_eq!(absinfo_um.minimum, 0);
+        assert_eq!(absinfo_um.maximum, 2400);
+        assert_eq!(absinfo_um.resolution, 1000);
+
+        let axis_none = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: -100, max: 100 },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::None,
+                exponent: 0,
+            },
+        };
+        let absinfo_none = parse_axis_info(&axis_none);
+        assert_eq!(absinfo_none.minimum, -100);
+        assert_eq!(absinfo_none.maximum, 100);
+        assert_eq!(absinfo_none.resolution, 0);
+
+        let axis_clamp = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: i64::MIN, max: i64::MAX },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::None,
+                exponent: 0,
+            },
+        };
+        let absinfo_clamp = parse_axis_info(&axis_clamp);
+        assert_eq!(absinfo_clamp.minimum, i32::MIN);
+        assert_eq!(absinfo_clamp.maximum, i32::MAX);
+
+        let axis_extreme_max = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                exponent: i32::MAX,
+            },
+        };
+        let absinfo_extreme_max = parse_axis_info(&axis_extreme_max);
+        assert_eq!(absinfo_extreme_max.resolution, 0);
+
+        let axis_extreme_min = fidl_fuchsia_input_report::Axis {
+            range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+            unit: fidl_fuchsia_input_report::Unit {
+                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                exponent: i32::MIN,
+            },
+        };
+        let absinfo_extreme_min = parse_axis_info(&axis_extreme_min);
+        assert_eq!(absinfo_extreme_min.resolution, 0);
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_touch_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    contacts: Some(vec![fidl_fuchsia_input_report::ContactInputDescriptor {
+                        position_x: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                exponent: -3,
+                            },
+                        }),
+                        position_y: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 2400 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                exponent: -3,
+                            },
+                        }),
+                        pressure: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 255 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        contact_width: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        contact_height: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        ..Default::default()
+                    }]),
+                    max_contacts: Some(5),
+                    touch_type: Some(fidl_fuchsia_input_report::TouchType::Touchscreen),
+                    buttons: Some(vec![fidl_fuchsia_input_report::TouchButton::Palm]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 0x18d1, product: 0x5678, version: 1 },
+            "test_touch".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_ABS));
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+        assert!(!file.config.properties.get(uapi::INPUT_PROP_POINTER));
+
+        assert_eq!(file.config.x_axis_info.minimum, 0);
+        assert_eq!(file.config.x_axis_info.maximum, 1080);
+        assert_eq!(file.config.x_axis_info.resolution, 1);
+
+        assert_eq!(file.config.y_axis_info.minimum, 0);
+        assert_eq!(file.config.y_axis_info.maximum, 2400);
+        assert_eq!(file.config.y_axis_info.resolution, 1);
+
+        assert_eq!(file.config.mt_slot_axis_info.minimum, 0);
+        assert_eq!(file.config.mt_slot_axis_info.maximum, 4);
+        assert_eq!(file.config.mt_tracking_id_axis_info.maximum, i32::MAX);
+
+        assert_eq!(file.config.mt_pressure_axis_info.maximum, 255);
+        assert_eq!(file.config.mt_touch_major_axis_info.maximum, 100);
+        assert_eq!(file.config.mt_touch_minor_axis_info.maximum, 100);
+
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_SLOT));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_TRACKING_ID));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_POSITION_X));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_POSITION_Y));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_PRESSURE));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_TOUCH_MAJOR));
+        assert!(file.config.supported_position_attributes.get(uapi::ABS_MT_TOUCH_MINOR));
+        assert!(!file.config.supported_position_attributes.get(uapi::ABS_X));
+        assert!(!file.config.supported_position_attributes.get(uapi::ABS_Y));
+
+        assert!(file.config.supported_keys.get(uapi::BTN_TOUCH));
+        assert!(file.config.supported_keys.get(uapi::KEY_SLEEP));
+        assert!(!file.config.supported_keys.get(uapi::KEY_UP));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_touch_descriptor_no_buttons() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    contacts: Some(vec![fidl_fuchsia_input_report::ContactInputDescriptor {
+                        position_x: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        position_y: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 2400 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        ..Default::default()
+                    }]),
+                    buttons: None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 0x18d1, product: 0x5678, version: 1 },
+            "test_touch_no_buttons".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_keys.get(uapi::BTN_TOUCH));
+        assert!(!file.config.supported_keys.get(uapi::KEY_SLEEP));
+        assert!(!file.config.supported_keys.get(uapi::KEY_UP));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_touchpad_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    contacts: Some(vec![fidl_fuchsia_input_report::ContactInputDescriptor {
+                        position_x: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 1920 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                exponent: -3,
+                            },
+                        }),
+                        position_y: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                exponent: -3,
+                            },
+                        }),
+                        ..Default::default()
+                    }]),
+                    max_contacts: Some(2),
+                    touch_type: Some(fidl_fuchsia_input_report::TouchType::Touchpad),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 0x18d1, product: 0x1234, version: 1 },
+            "test_touchpad".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_ABS));
+        assert!(file.config.properties.get(uapi::INPUT_PROP_POINTER));
+        assert!(!file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+        assert!(file.config.supported_keys.get(uapi::BTN_TOOL_FINGER));
+        assert_eq!(file.config.mt_slot_axis_info.maximum, 1);
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_keyboard_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            keyboard: Some(fidl_fuchsia_input_report::KeyboardDescriptor {
+                input: Some(fidl_fuchsia_input_report::KeyboardInputDescriptor {
+                    keys3: Some(vec![
+                        fidl_fuchsia_input::Key::A,
+                        fidl_fuchsia_input::Key::B,
+                        fidl_fuchsia_input::Key::Enter,
+                    ]),
+                    ..Default::default()
+                }),
+                output: Some(fidl_fuchsia_input_report::KeyboardOutputDescriptor {
+                    leds: Some(vec![fidl_fuchsia_input_report::LedType::CapsLock]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_keyboard".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(file.config.supported_event_types.get(uapi::EV_LED));
+        assert!(!file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+
+        assert!(file.config.supported_keys.get(uapi::KEY_A));
+        assert!(file.config.supported_keys.get(uapi::KEY_B));
+        assert!(file.config.supported_keys.get(uapi::KEY_ENTER));
+        assert!(file.config.supported_leds.get(uapi::LED_CAPSL));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_keyboard_descriptor_fallback_keys() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            keyboard: Some(fidl_fuchsia_input_report::KeyboardDescriptor {
+                input: Some(fidl_fuchsia_input_report::KeyboardInputDescriptor {
+                    keys3: None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_keyboard".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(!file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+
+        // When !has_keys, standard keycodes from KEY_MAP plus media keys should be set.
+        assert!(file.config.supported_keys.get(uapi::KEY_A));
+        assert!(file.config.supported_keys.get(uapi::KEY_Z));
+        assert!(file.config.supported_keys.get(uapi::KEY_ENTER));
+        assert!(file.config.supported_keys.get(uapi::KEY_POWER));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEUP));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEDOWN));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_keyboard_descriptor_unknown_led_does_not_set_ev_led() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            keyboard: Some(fidl_fuchsia_input_report::KeyboardDescriptor {
+                input: Some(fidl_fuchsia_input_report::KeyboardInputDescriptor {
+                    keys3: Some(vec![fidl_fuchsia_input::Key::A]),
+                    ..Default::default()
+                }),
+                output: Some(fidl_fuchsia_input_report::KeyboardOutputDescriptor {
+                    leds: Some(vec![
+                        fidl_fuchsia_input_report::LedType::from_primitive_allow_unknown(999),
+                    ]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_keyboard_unknown_led".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(!file.config.supported_event_types.get(uapi::EV_LED));
+        assert_eq!(file.config.supported_leds, BitSet::new());
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_mouse_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    movement_x: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -127, max: 127 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    movement_y: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -127, max: 127 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    scroll_v: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -1, max: 1 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_mouse".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(file.config.properties.get(uapi::INPUT_PROP_POINTER));
+
+        assert!(file.config.supported_keys.get(uapi::BTN_LEFT));
+        assert!(file.config.supported_keys.get(uapi::BTN_RIGHT));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_X));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_Y));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_WHEEL));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_mouse_descriptor_scroll_only() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    scroll_v: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -1, max: 1 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_mouse_scroll".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_X));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_Y));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_WHEEL));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_mouse_descriptor_with_buttons() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    buttons: Some(vec![1, 2]),
+                    movement_x: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -10, max: 10 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_mouse_buttons".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_keys.get(uapi::BTN_LEFT));
+        assert!(file.config.supported_keys.get(uapi::BTN_RIGHT));
+        assert!(!file.config.supported_keys.get(uapi::BTN_MIDDLE));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_mouse_descriptor_fallback_rel() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    movement_x: None,
+                    movement_y: None,
+                    scroll_v: None,
+                    scroll_h: None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_mouse".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        // When !has_rel on a standalone mouse, it falls back to standard relative axes.
+        assert!(file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_X));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_Y));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_WHEEL));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_HWHEEL));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_mouse_descriptor_absolute_coordinates() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    position_x: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: 0, max: 1920 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    position_y: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_abs_mouse".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        // Mice never report EV_ABS or BTN_TOUCH; even when position axes are
+        // present in the descriptor, mice fall back to relative motion (EV_REL).
+        assert!(!file.config.supported_event_types.get(uapi::EV_ABS));
+        assert!(file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(!file.config.supported_position_attributes.get(uapi::ABS_X));
+        assert!(!file.config.supported_position_attributes.get(uapi::ABS_Y));
+        assert!(!file.config.supported_keys.get(uapi::BTN_TOUCH));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_X));
+        assert!(file.config.supported_motion_attributes.get(uapi::REL_Y));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_composite_touch_and_mouse() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    contacts: Some(vec![fidl_fuchsia_input_report::ContactInputDescriptor {
+                        position_x: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        position_y: Some(fidl_fuchsia_input_report::Axis {
+                            range: fidl_fuchsia_input_report::Range { min: 0, max: 2400 },
+                            unit: fidl_fuchsia_input_report::Unit {
+                                type_: fidl_fuchsia_input_report::UnitType::None,
+                                exponent: 0,
+                            },
+                        }),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor {
+                input: Some(fidl_fuchsia_input_report::MouseInputDescriptor {
+                    position_x: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: 0, max: 500 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    movement_x: Some(fidl_fuchsia_input_report::Axis {
+                        range: fidl_fuchsia_input_report::Range { min: -10, max: 10 },
+                        unit: fidl_fuchsia_input_report::Unit {
+                            type_: fidl_fuchsia_input_report::UnitType::None,
+                            exponent: 0,
+                        },
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "composite".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        // Touch sets INPUT_PROP_DIRECT; mouse must NOT overwrite or add INPUT_PROP_POINTER.
+        assert!(file.config.properties.get(uapi::INPUT_PROP_DIRECT));
+        assert!(!file.config.properties.get(uapi::INPUT_PROP_POINTER));
+
+        // Touch axes (0..1080) must NOT be overwritten by mouse position_x (0..500).
+        assert_eq!(file.config.x_axis_info.maximum, 1080);
+        assert!(file.config.supported_event_types.get(uapi::EV_REL));
+        assert!(file.config.supported_event_types.get(uapi::EV_ABS));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_composite_touch_keyboard_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                    touch_type: Some(fidl_fuchsia_input_report::TouchType::Touchpad),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            keyboard: Some(fidl_fuchsia_input_report::KeyboardDescriptor {
+                input: Some(fidl_fuchsia_input_report::KeyboardInputDescriptor {
+                    keys3: None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "composite_touch_keyboard".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        // Touch keys (BTN_TOUCH, BTN_TOOL_FINGER) must not be overwritten by keyboard fallback keys.
+        assert!(file.config.supported_keys.get(uapi::BTN_TOUCH));
+        assert!(file.config.supported_keys.get(uapi::BTN_TOOL_FINGER));
+
+        // Keyboard fallback keys must also be present.
+        assert!(file.config.supported_keys.get(uapi::KEY_A));
+        assert!(file.config.supported_keys.get(uapi::KEY_Z));
+        assert!(file.config.supported_keys.get(uapi::KEY_ENTER));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_consumer_control_descriptor() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            consumer_control: Some(fidl_fuchsia_input_report::ConsumerControlDescriptor {
+                input: Some(fidl_fuchsia_input_report::ConsumerControlInputDescriptor {
+                    buttons: Some(vec![
+                        fidl_fuchsia_input_report::ConsumerControlButton::VolumeUp,
+                        fidl_fuchsia_input_report::ConsumerControlButton::VolumeDown,
+                        fidl_fuchsia_input_report::ConsumerControlButton::Power,
+                        fidl_fuchsia_input_report::ConsumerControlButton::Pause,
+                        fidl_fuchsia_input_report::ConsumerControlButton::MicMute,
+                    ]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_buttons".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEUP));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEDOWN));
+        assert!(file.config.supported_keys.get(uapi::KEY_POWER));
+        assert!(file.config.supported_keys.get(uapi::KEY_PAUSE));
+        assert!(file.config.supported_keys.get(uapi::KEY_MICMUTE));
+    }
+
+    #[::fuchsia::test]
+    fn test_input_file_from_consumer_control_descriptor_fallback() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+            consumer_control: Some(fidl_fuchsia_input_report::ConsumerControlDescriptor {
+                input: Some(fidl_fuchsia_input_report::ConsumerControlInputDescriptor {
+                    buttons: None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let info = InputDeviceInfo::new(
+            uapi::input_id { bustype: 3, vendor: 1, product: 2, version: 3 },
+            "test_buttons_fallback".to_string(),
+        );
+        let file = InputFile::from_device_descriptor(info, &descriptor, inspector.root());
+
+        assert!(file.config.supported_event_types.get(uapi::EV_KEY));
+        assert!(file.config.supported_keys.get(uapi::KEY_POWER));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEUP));
+        assert!(file.config.supported_keys.get(uapi::KEY_VOLUMEDOWN));
+        assert!(!file.config.supported_keys.get(uapi::KEY_PAUSE));
     }
 }

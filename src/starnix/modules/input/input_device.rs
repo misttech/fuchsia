@@ -3,7 +3,10 @@
 // found in the LICENSE file.
 
 use crate::InputFile;
-use crate::input_event_relay::OpenedFiles;
+use crate::input_event_relay::{
+    FUCHSIA_KEYBOARD_PRODUCT_ID, FUCHSIA_MOUSE_PRODUCT_ID, FUCHSIA_TOUCH_PRODUCT_ID,
+    FUCHSIA_VENDOR_ID, OpenedFiles,
+};
 use futures::FutureExt;
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
@@ -15,8 +18,8 @@ use starnix_sync::{InputDeviceFileNodesLock, InputDeviceInfoLock, LockDepMutex};
 use starnix_uapi::device_id::{DeviceId as StarnixDeviceId, INPUT_MAJOR};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::input_id;
 use starnix_uapi::open_flags::OpenFlags;
+use starnix_uapi::{input_id, uapi};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
@@ -30,6 +33,9 @@ enum InputDeviceId {
 
     // A mouse device.
     Mouse,
+
+    // Dynamic device configured from a DeviceDescriptor.
+    Descriptor(Arc<crate::input_file::InputFileConfig>),
 }
 
 /// An [`InputDeviceStatus`] is tied to an [`InputDeviceBinding`] and provides properties
@@ -195,6 +201,116 @@ impl InputDeviceInfo {
     }
 }
 
+/// Hardware device identification parsed from driver descriptors or platform device info.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DeviceInfo {
+    pub vendor_id: u32,
+    pub product_id: u32,
+    pub version: u32,
+    pub bus_type: u16,
+}
+
+impl DeviceInfo {
+    pub fn new(bus_type: u16, vendor_id: u32, product_id: u32, version: u32) -> Self {
+        Self { bus_type, vendor_id, product_id, version }
+    }
+}
+
+/// Parses device identification from a Fuchsia [`fidl_fuchsia_input_report::DeviceDescriptor`]
+/// and optional explicit [`DeviceInfo`].
+pub fn parse_device_info(
+    descriptor: &fidl_fuchsia_input_report::DeviceDescriptor,
+    device_info: Option<DeviceInfo>,
+) -> InputDeviceInfoHandle {
+    let desc_info = descriptor.device_information.as_ref();
+    let mut resolved_vendor = desc_info.and_then(|i| i.vendor_id).unwrap_or(0);
+    let mut resolved_product = desc_info.and_then(|i| i.product_id).unwrap_or(0);
+    let mut resolved_version = desc_info.and_then(|i| i.version).unwrap_or(0);
+    let mut resolved_bus_type = 0;
+
+    if let Some(info) = device_info {
+        if (info.vendor_id as u16) != 0 {
+            resolved_vendor = info.vendor_id;
+        }
+        if (info.product_id as u16) != 0 {
+            resolved_product = info.product_id;
+        }
+        if (info.version as u16) != 0 {
+            resolved_version = info.version;
+        }
+        if info.bus_type != 0 {
+            resolved_bus_type = info.bus_type;
+        }
+    }
+
+    let mut vendor_16 = (resolved_vendor & 0xFFFF) as u16;
+    let mut product_16 = (resolved_product & 0xFFFF) as u16;
+    let mut version_16 = (resolved_version & 0xFFFF) as u16;
+
+    if resolved_bus_type == 0 {
+        resolved_bus_type = if vendor_16 != 0 || product_16 != 0 {
+            uapi::BUS_USB as u16
+        } else {
+            uapi::BUS_VIRTUAL as u16
+        };
+    }
+
+    if vendor_16 == 0 && product_16 == 0 {
+        if descriptor.touch.is_some() {
+            vendor_16 = FUCHSIA_VENDOR_ID;
+            product_16 = FUCHSIA_TOUCH_PRODUCT_ID;
+        } else if descriptor.keyboard.is_some() {
+            vendor_16 = FUCHSIA_VENDOR_ID;
+            product_16 = FUCHSIA_KEYBOARD_PRODUCT_ID;
+            if version_16 == 0 {
+                version_16 = 1;
+            }
+        } else if descriptor.mouse.is_some() {
+            vendor_16 = FUCHSIA_VENDOR_ID;
+            product_16 = FUCHSIA_MOUSE_PRODUCT_ID;
+            if version_16 == 0 {
+                version_16 = 1;
+            }
+        } else if descriptor.consumer_control.is_some() {
+            vendor_16 = FUCHSIA_VENDOR_ID;
+            product_16 = FUCHSIA_KEYBOARD_PRODUCT_ID;
+            if version_16 == 0 {
+                version_16 = 1;
+            }
+        }
+    }
+
+    let default_name = if descriptor.touch.is_some() {
+        "starnix_touch"
+    } else if descriptor.keyboard.is_some() {
+        "starnix_keyboard"
+    } else if descriptor.mouse.is_some() {
+        "starnix_mouse"
+    } else if descriptor.consumer_control.is_some() {
+        "starnix_buttons"
+    } else {
+        "starnix_input"
+    };
+
+    let name = desc_info
+        .and_then(|i| i.product_name.as_ref())
+        .filter(|n| !n.is_empty())
+        .cloned()
+        .unwrap_or_else(|| default_name.to_string());
+
+    // Linux UAPI `struct input_id` uses 16-bit integers for vendor, product, and version,
+    // whereas Fuchsia `DeviceInformation` provides 32-bit values. Truncation to 16 bits
+    // is necessary due to this Linux UAPI limitation.
+    let input_id = uapi::input_id {
+        bustype: resolved_bus_type,
+        vendor: vendor_16,
+        product: product_16,
+        version: version_16,
+    };
+
+    InputDeviceInfo::new(input_id, name)
+}
+
 #[derive(Clone)]
 pub struct InputDevice {
     device_type: InputDeviceId,
@@ -248,6 +364,33 @@ impl InputDevice {
             open_files: Default::default(),
             inspect_status: InputDeviceStatus::new(node),
             info,
+        }
+    }
+
+    /// Creates an [`InputDevice`] dynamically from a Fuchsia [`fidl_fuchsia_input_report::DeviceDescriptor`]
+    /// and optional explicit [`DeviceInfo`].
+    pub fn from_device_descriptor(
+        descriptor: &fidl_fuchsia_input_report::DeviceDescriptor,
+        device_info: Option<DeviceInfo>,
+        node_name: &str,
+        inspect_node: &fuchsia_inspect::Node,
+    ) -> Self {
+        let info = parse_device_info(descriptor, device_info);
+        let config = crate::input_file::InputFileConfig::from_device_descriptor(descriptor);
+        let node = inspect_node.create_child(node_name);
+        InputDevice {
+            device_type: InputDeviceId::Descriptor(Arc::new(config)),
+            open_files: Default::default(),
+            inspect_status: InputDeviceStatus::new(node),
+            info,
+        }
+    }
+
+    /// Returns the parsed [`InputFileConfig`] if this is a descriptor-based device.
+    pub fn config(&self) -> Option<&crate::input_file::InputFileConfig> {
+        match &self.device_type {
+            InputDeviceId::Descriptor(config) => Some(config.as_ref()),
+            _ => None,
         }
     }
 
@@ -339,7 +482,7 @@ impl InputDevice {
     }
 
     pub fn open_internal(&self) -> Box<dyn FileOps> {
-        let input_file = match self.device_type {
+        let input_file = match &self.device_type {
             InputDeviceId::Touch(display_width, display_height) => {
                 let mut file_nodes = self.inspect_status.file_nodes.lock();
                 let child_node = self
@@ -348,8 +491,8 @@ impl InputDevice {
                     .create_child(format!("touch_file_{}", file_nodes.len()));
                 let file = Arc::new(InputFile::new_touch(
                     self.info.clone(),
-                    display_width,
-                    display_height,
+                    *display_width,
+                    *display_height,
                     &child_node,
                 ));
                 file_nodes.push(child_node);
@@ -372,6 +515,20 @@ impl InputDevice {
                     .node
                     .create_child(format!("mouse_file_{}", file_nodes.len()));
                 let file = Arc::new(InputFile::new_mouse(self.info.clone(), &child_node));
+                file_nodes.push(child_node);
+                file
+            }
+            InputDeviceId::Descriptor(config) => {
+                let mut file_nodes = self.inspect_status.file_nodes.lock();
+                let child_node = self
+                    .inspect_status
+                    .node
+                    .create_child(format!("descriptor_file_{}", file_nodes.len()));
+                let file = Arc::new(InputFile::new_from_config(
+                    self.info.clone(),
+                    (**config).clone(),
+                    &child_node,
+                ));
                 file_nodes.push(child_node);
                 file
             }
@@ -448,7 +605,7 @@ mod test {
     use starnix_types::time::timeval_from_time;
     use starnix_uapi::errors::EAGAIN;
     use starnix_uapi::uapi;
-    use starnix_uapi::user_address::UserAddress;
+    use starnix_uapi::user_address::{UserAddress, UserRef};
     use starnix_uapi::vfs::FdEvents;
 
     use test_case::test_case;
@@ -3653,5 +3810,292 @@ mod test {
             }
         })
         .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_from_device_descriptor_registration() {
+        spawn_kernel_and_run(async move |current_task| {
+            let kernel = current_task.kernel();
+            let inspector = fuchsia_inspect::Inspector::default();
+
+            let descriptor = fidl_fuchsia_input_report::DeviceDescriptor {
+                device_information: Some(fidl_fuchsia_input_report::DeviceInformation {
+                    vendor_id: Some(0x18d1),
+                    product_id: Some(0x2345),
+                    version: Some(1),
+                    product_name: Some("Pixel Touch".to_string()),
+                    ..Default::default()
+                }),
+                touch: Some(fidl_fuchsia_input_report::TouchDescriptor {
+                    input: Some(fidl_fuchsia_input_report::TouchInputDescriptor {
+                        contacts: Some(vec![fidl_fuchsia_input_report::ContactInputDescriptor {
+                            position_x: Some(fidl_fuchsia_input_report::Axis {
+                                range: fidl_fuchsia_input_report::Range { min: 0, max: 1080 },
+                                unit: fidl_fuchsia_input_report::Unit {
+                                    type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                    exponent: -3,
+                                },
+                            }),
+                            position_y: Some(fidl_fuchsia_input_report::Axis {
+                                range: fidl_fuchsia_input_report::Range { min: 0, max: 2400 },
+                                unit: fidl_fuchsia_input_report::Unit {
+                                    type_: fidl_fuchsia_input_report::UnitType::Meters,
+                                    exponent: -3,
+                                },
+                            }),
+                            pressure: Some(fidl_fuchsia_input_report::Axis {
+                                range: fidl_fuchsia_input_report::Range { min: 0, max: 255 },
+                                unit: fidl_fuchsia_input_report::Unit {
+                                    type_: fidl_fuchsia_input_report::UnitType::None,
+                                    exponent: 0,
+                                },
+                            }),
+                            contact_width: Some(fidl_fuchsia_input_report::Axis {
+                                range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+                                unit: fidl_fuchsia_input_report::Unit {
+                                    type_: fidl_fuchsia_input_report::UnitType::None,
+                                    exponent: 0,
+                                },
+                            }),
+                            contact_height: Some(fidl_fuchsia_input_report::Axis {
+                                range: fidl_fuchsia_input_report::Range { min: 0, max: 100 },
+                                unit: fidl_fuchsia_input_report::Unit {
+                                    type_: fidl_fuchsia_input_report::UnitType::None,
+                                    exponent: 0,
+                                },
+                            }),
+                            ..Default::default()
+                        }]),
+                        max_contacts: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            let device_info = DeviceInfo::new(uapi::BUS_I2C as u16, 0x18d1, 0x2345, 1);
+            let touch_device = InputDevice::from_device_descriptor(
+                &descriptor,
+                Some(device_info),
+                "touch_device",
+                &inspector.root(),
+            );
+
+            assert!(touch_device.config().is_some());
+            let config = touch_device.config().unwrap();
+            assert_eq!(config.x_axis_info.maximum, 1080);
+            assert_eq!(config.y_axis_info.maximum, 2400);
+            assert_eq!(config.mt_slot_axis_info.maximum, 9);
+
+            // Exercise open_test on the descriptor device and verify EVIOCGABS ioctls.
+            let touch_file =
+                touch_device.open_test(&current_task).expect("failed to open touch device");
+            let user_addr = map_memory(&current_task, UserAddress::default(), 4096);
+            let res_x = touch_file.ioctl(&current_task, uapi::EVIOCGABS_X, user_addr.into());
+            assert_eq!(res_x, Ok(SUCCESS));
+            let absinfo_x: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_x");
+            assert_eq!(absinfo_x.minimum, 0);
+            assert_eq!(absinfo_x.maximum, 1080);
+            assert_eq!(absinfo_x.resolution, 1);
+
+            let res_y = touch_file.ioctl(&current_task, uapi::EVIOCGABS_Y, user_addr.into());
+            assert_eq!(res_y, Ok(SUCCESS));
+            let absinfo_y: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_y");
+            assert_eq!(absinfo_y.minimum, 0);
+            assert_eq!(absinfo_y.maximum, 2400);
+            assert_eq!(absinfo_y.resolution, 1);
+
+            let res_slot =
+                touch_file.ioctl(&current_task, uapi::EVIOCGABS_MT_SLOT, user_addr.into());
+            assert_eq!(res_slot, Ok(SUCCESS));
+            let absinfo_slot: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_slot");
+            assert_eq!(absinfo_slot.minimum, 0);
+            assert_eq!(absinfo_slot.maximum, 9);
+
+            let res_tracking_id =
+                touch_file.ioctl(&current_task, uapi::EVIOCGABS_MT_TRACKING_ID, user_addr.into());
+            assert_eq!(res_tracking_id, Ok(SUCCESS));
+            let absinfo_tracking_id: uapi::input_absinfo = current_task
+                .read_object(UserRef::new(user_addr))
+                .expect("read absinfo_tracking_id");
+            assert_eq!(absinfo_tracking_id.minimum, 0);
+            assert_eq!(absinfo_tracking_id.maximum, i32::MAX);
+
+            let res_pressure = touch_file.ioctl(
+                &current_task,
+                crate::input_file::EVIOCGABS_MT_PRESSURE,
+                user_addr.into(),
+            );
+            assert_eq!(res_pressure, Ok(SUCCESS));
+            let absinfo_pressure: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_pressure");
+            assert_eq!(absinfo_pressure.maximum, 255);
+
+            let res_major = touch_file.ioctl(
+                &current_task,
+                crate::input_file::EVIOCGABS_MT_TOUCH_MAJOR,
+                user_addr.into(),
+            );
+            assert_eq!(res_major, Ok(SUCCESS));
+            let absinfo_major: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_major");
+            assert_eq!(absinfo_major.maximum, 100);
+
+            let res_minor = touch_file.ioctl(
+                &current_task,
+                crate::input_file::EVIOCGABS_MT_TOUCH_MINOR,
+                user_addr.into(),
+            );
+            assert_eq!(res_minor, Ok(SUCCESS));
+            let absinfo_minor: uapi::input_absinfo =
+                current_task.read_object(UserRef::new(user_addr)).expect("read absinfo_minor");
+            assert_eq!(absinfo_minor.maximum, 100);
+
+            let event_device =
+                touch_device.register(kernel, 8).expect("failed to register touch device");
+            assert_eq!(event_device.name(), "event8");
+
+            let root = &kernel.device_registry.objects.root;
+            let read_attr = |path: &str| -> String {
+                let node = root.lookup(path.into()).unwrap_or_else(|| panic!("missing {path}"));
+                let file_ops =
+                    node.create_file_ops(&current_task, OpenFlags::RDONLY).expect("open attr");
+                let file = starnix_core::testing::anon_test_file(
+                    &current_task,
+                    file_ops,
+                    OpenFlags::RDONLY,
+                );
+                let mut buf = VecOutputBuffer::new(64);
+                let bytes_read = file.read(&current_task, &mut buf).expect("read attr");
+                String::from_utf8(Vec::from(&buf.data()[..bytes_read])).expect("utf8 attr")
+            };
+
+            assert_eq!(read_attr("devices/virtual/input/input8/name"), "Pixel Touch\n");
+            assert_eq!(
+                read_attr("devices/virtual/input/input8/id/bustype"),
+                format!("{:04x}\n", uapi::BUS_I2C)
+            );
+            assert_eq!(read_attr("devices/virtual/input/input8/id/vendor"), "18d1\n");
+            assert_eq!(read_attr("devices/virtual/input/input8/id/product"), "2345\n");
+            assert_eq!(read_attr("devices/virtual/input/input8/id/version"), "0001\n");
+
+            InputDevice::unregister(&current_task, event_device);
+            assert!(root.lookup("devices/virtual/input/input8".into()).is_none());
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_parse_device_info_fallbacks() {
+        // 1. None descriptor info, None device_info: bus_type resolves to BUS_VIRTUAL
+        let empty_desc = fidl_fuchsia_input_report::DeviceDescriptor::default();
+        let handle = parse_device_info(&empty_desc, None);
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_VIRTUAL as u16);
+        assert_eq!(handle.lock().input_id.vendor, 0);
+        assert_eq!(handle.lock().input_id.product, 0);
+        assert_eq!(handle.lock().name, "starnix_input");
+
+        // 2. Default naming and ID precedence by descriptor type:
+        let touch_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            touch: Some(fidl_fuchsia_input_report::TouchDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&touch_desc, None);
+        assert_eq!(handle.lock().name, "starnix_touch");
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_VIRTUAL as u16);
+        assert_eq!(handle.lock().input_id.vendor, FUCHSIA_VENDOR_ID);
+        assert_eq!(handle.lock().input_id.product, FUCHSIA_TOUCH_PRODUCT_ID);
+
+        let kbd_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            keyboard: Some(fidl_fuchsia_input_report::KeyboardDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&kbd_desc, None);
+        assert_eq!(handle.lock().name, "starnix_keyboard");
+        assert_eq!(handle.lock().input_id.vendor, FUCHSIA_VENDOR_ID);
+        assert_eq!(handle.lock().input_id.product, FUCHSIA_KEYBOARD_PRODUCT_ID);
+
+        let mouse_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&mouse_desc, None);
+        assert_eq!(handle.lock().name, "starnix_mouse");
+        assert_eq!(handle.lock().input_id.vendor, FUCHSIA_VENDOR_ID);
+        assert_eq!(handle.lock().input_id.product, FUCHSIA_MOUSE_PRODUCT_ID);
+
+        let buttons_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            consumer_control: Some(fidl_fuchsia_input_report::ConsumerControlDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&buttons_desc, None);
+        assert_eq!(handle.lock().name, "starnix_buttons");
+        assert_eq!(handle.lock().input_id.vendor, FUCHSIA_VENDOR_ID);
+        assert_eq!(handle.lock().input_id.product, FUCHSIA_KEYBOARD_PRODUCT_ID);
+
+        // 3. Mouse before consumer control precedence:
+        let mouse_buttons_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor::default()),
+            consumer_control: Some(fidl_fuchsia_input_report::ConsumerControlDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&mouse_buttons_desc, None);
+        assert_eq!(handle.lock().name, "starnix_mouse");
+        assert_eq!(handle.lock().input_id.vendor, FUCHSIA_VENDOR_ID);
+        assert_eq!(handle.lock().input_id.product, FUCHSIA_MOUSE_PRODUCT_ID);
+
+        // 4. Fallback bus_type when vendor/product come from device_info with bus_type == 0:
+        let dev_info_vendor = DeviceInfo::new(0, 0x1234, 0, 0);
+        let handle = parse_device_info(&empty_desc, Some(dev_info_vendor));
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_USB as u16);
+        assert_eq!(handle.lock().input_id.vendor, 0x1234);
+
+        let dev_info_product = DeviceInfo::new(0, 0, 0x5678, 0);
+        let handle = parse_device_info(&empty_desc, Some(dev_info_product));
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_USB as u16);
+        assert_eq!(handle.lock().input_id.product, 0x5678);
+
+        // 5. Explicit bus_type in device_info is preserved:
+        let dev_info_i2c = DeviceInfo::new(uapi::BUS_I2C as u16, 0, 0, 0);
+        let handle = parse_device_info(&empty_desc, Some(dev_info_i2c));
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_I2C as u16);
+
+        // 6. 32-bit truncation: upper bits truncated to 0 don't select BUS_USB:
+        let dev_info_trunc = DeviceInfo::new(0, 0x10000, 0, 0);
+        let handle = parse_device_info(&empty_desc, Some(dev_info_trunc));
+        assert_eq!(handle.lock().input_id.bustype, uapi::BUS_VIRTUAL as u16);
+        assert_eq!(handle.lock().input_id.vendor, 0);
+
+        // 7. Empty product name falls back to default name:
+        let empty_name_desc = fidl_fuchsia_input_report::DeviceDescriptor {
+            device_information: Some(fidl_fuchsia_input_report::DeviceInformation {
+                product_name: Some("".to_string()),
+                ..Default::default()
+            }),
+            mouse: Some(fidl_fuchsia_input_report::MouseDescriptor::default()),
+            ..Default::default()
+        };
+        let handle = parse_device_info(&empty_name_desc, None);
+        assert_eq!(handle.lock().name, "starnix_mouse");
+
+        // 8. DeviceInfo with non-zero upper bits but zero lower 16 bits does not clobber valid descriptor values:
+        let desc_with_info = fidl_fuchsia_input_report::DeviceDescriptor {
+            device_information: Some(fidl_fuchsia_input_report::DeviceInformation {
+                vendor_id: Some(0x1234),
+                product_id: Some(0x5678),
+                version: Some(0x0001),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let dev_info_upper_bits_only = DeviceInfo::new(0, 0x10000, 0x20000, 0x30000);
+        let handle = parse_device_info(&desc_with_info, Some(dev_info_upper_bits_only));
+        assert_eq!(handle.lock().input_id.vendor, 0x1234);
+        assert_eq!(handle.lock().input_id.product, 0x5678);
+        assert_eq!(handle.lock().input_id.version, 0x0001);
     }
 }
