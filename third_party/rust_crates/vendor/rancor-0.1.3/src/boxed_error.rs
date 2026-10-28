@@ -19,7 +19,9 @@ struct ErrorWithTrace {
 impl fmt::Display for ErrorWithTrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.error)?;
-        write!(f, "trace: {}", self.trace)?;
+        if f.alternate() {
+            write!(f, "trace: {}", self.trace)?;
+        }
 
         Ok(())
     }
@@ -27,7 +29,7 @@ impl fmt::Display for ErrorWithTrace {
 
 impl error::Error for ErrorWithTrace {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.error.inner.source()
+        Some(&*self.error.inner)
     }
 }
 
@@ -36,6 +38,13 @@ impl error::Error for ErrorWithTrace {
 #[derive(Debug)]
 pub struct BoxedError {
     inner: ThinBox<dyn error::Error + Send + Sync + 'static>,
+}
+
+impl BoxedError {
+    /// Returns the inner error as a `dyn Error`.
+    pub fn inner(this: &Self) -> &(dyn error::Error + 'static) {
+        &*this.inner
+    }
 }
 
 impl fmt::Display for BoxedError {

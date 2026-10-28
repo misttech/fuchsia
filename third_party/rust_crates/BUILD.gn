@@ -5492,7 +5492,7 @@ rustc_library("bytecheck-v0_8_2") {
   deps = []
   deps += [ ":bytecheck_derive-v0_8_2($host_toolchain)" ]
   deps += [ ":ptr_meta-v0_3_1" ]
-  deps += [ ":rancor-v0_1_1" ]
+  deps += [ ":rancor-v0_1_3" ]
   deps += [ ":simdutf8-v0_1_5" ]
 
   rustenv = []
@@ -18073,15 +18073,15 @@ rustc_library("radix_trie-v0_3_0") {
   applicable_licenses = [ ":radix_trie-v0_3_0.license" ]
 }
 
-license("rancor-v0_1_1.license") {
+license("rancor-v0_1_3.license") {
   public_package_name = "rancor"
-  license_files = [ "//third_party/rust_crates/vendor/rancor-0.1.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/rancor-0.1.3/LICENSE" ]
 }
 
-rustc_library("rancor-v0_1_1") {
+rustc_library("rancor-v0_1_3") {
   crate_name = "rancor"
-  source_root = "//third_party/rust_crates/vendor/rancor-0.1.1/src/lib.rs"
-  output_name = "rancor-d51a574a9de8c0dd"
+  source_root = "//third_party/rust_crates/vendor/rancor-0.1.3/src/lib.rs"
+  output_name = "rancor-4888c0c5770f65ad"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18094,14 +18094,14 @@ rustc_library("rancor-v0_1_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d51a574a9de8c0dd",
-    "-Cextra-filename=-d51a574a9de8c0dd",
+    "-Cmetadata=4888c0c5770f65ad",
+    "-Cextra-filename=-4888c0c5770f65ad",
     "--cfg=feature=\"alloc\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rancor-v0_1_1.license" ]
+  applicable_licenses = [ ":rancor-v0_1_3.license" ]
 }
 
 license("rand-v0_10_3.license") {
@@ -19256,7 +19256,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":indexmap-v2_14_2" ]
   deps += [ ":munge-v0_4_7" ]
   deps += [ ":ptr_meta-v0_3_1" ]
-  deps += [ ":rancor-v0_1_1" ]
+  deps += [ ":rancor-v0_1_3" ]
   deps += [ ":rend-v0_5_4" ]
   deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]
   deps += [ ":tinyvec-v1_13_3" ]
