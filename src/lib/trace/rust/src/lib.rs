@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu_traits::RcuDroppable;
 #[cfg(not(fuchsia_api_level_at_least = "31"))]
 use fuchsia_runtime as _;
 use pin_project::pin_project;
@@ -101,7 +102,7 @@ pub enum BufferingMode {
 
 /// An identifier for flows and async spans.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RcuDroppable)]
 pub struct Id(u64);
 
 impl Id {
@@ -3165,5 +3166,11 @@ mod test {
     #[test]
     fn test_id_new() {
         assert_ne!(Id::new(), Id::new());
+    }
+
+    #[test]
+    fn test_id_rcu_droppable() {
+        fn assert_rcu_droppable<T: fuchsia_rcu_traits::RcuDroppable>() {}
+        assert_rcu_droppable::<Id>();
     }
 }

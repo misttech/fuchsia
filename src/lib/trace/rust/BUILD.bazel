@@ -16,6 +16,7 @@ rustc_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//sdk/rust/zx",
+        "//src/lib/fuchsia-rcu:fuchsia-rcu-traits",
         "//src/lib/fuchsia-runtime",
         "//third_party/rust_crates/vendor:libc",
         "//third_party/rust_crates/vendor:pin-project",
