@@ -54,7 +54,6 @@ host_test_data_files(
         ":simg2img_libcxx",
     ],
     dest_dir = "host_x64/test_data/storage/sparse",
-    visibility = ["//tools/emulator/emulatortest:__pkg__"],
 )
 
 rustc_library(
