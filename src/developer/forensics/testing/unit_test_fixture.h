@@ -59,12 +59,6 @@ class UnitTestFixture : public gtest::TestLoopFixture {
         std::move(name));
   }
 
-  template <typename ServiceProvider>
-    requires(requires(ServiceProvider* s) { s->GetHandler(); })
-  void InjectServiceProvider(ServiceProvider* service_provider, const char* name = nullptr) {
-    AddHandler(service_provider->GetHandler(), name);
-  }
-
   template <typename Protocol>
   void InjectServiceProvider(stubs::FidlServer<Protocol>* server) {
     InjectServiceProvider(server->GetService(dispatcher()),
