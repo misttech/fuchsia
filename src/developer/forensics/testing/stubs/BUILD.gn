@@ -142,17 +142,6 @@ source_set("fidl_server") {
   ]
 }
 
-source_set("fidl_server_hlcpp") {
-  testonly = true
-
-  sources = [ "fidl_server_hlcpp.h" ]
-
-  public_deps = [
-    "//sdk/lib/syslog/cpp",
-    "//src/lib/fxl",
-  ]
-}
-
 source_set("intl_provider") {
   testonly = true
 
