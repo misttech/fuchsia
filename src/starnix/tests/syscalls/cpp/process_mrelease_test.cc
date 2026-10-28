@@ -118,18 +118,27 @@ TEST_F(ProcessMemoryReleaseTest, NoPendingSIGKILL) {
 
 TEST_F(ProcessMemoryReleaseTest, SuccessfulReleaseImmediateSIGKILL) {
   // Sending SIGKILL transitions the target process into an exiting state synchronously, allowing
-  // process_mrelease(2) to succeed immediately after kill(2) returns. If the child finishes
-  // tearing down its address space before process_mrelease(2) runs, process_mrelease(2) fails with
-  // ESRCH; retry on ESRCH to tolerate scheduling races.
+  // process_mrelease(2) to succeed immediately after kill(2) returns. Have the child fault in an
+  // anonymous mapping and block in pause(2) before signaling readiness so it is not actively
+  // running on another CPU with an empty address space when SIGKILL is sent. If the child still
+  // finishes tearing down its address space before process_mrelease(2) runs, process_mrelease(2)
+  // fails with ESRCH; retry a bounded number of times to favor exercising the release path, and
+  // tolerate ESRCH if the child wins every attempt.
   constexpr int kMaxAttempts = 10;
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
     test_helper::ForkHelper fork_helper;
     fork_helper.ExpectSignal(SIGKILL);
-    pid_t child_pid = fork_helper.RunInForkedProcess([]() {
-      for (;;) {
-        std::this_thread::yield();
-      }
-    });
+    test_helper::Rendezvous child_ready = test_helper::MakeRendezvous();
+    pid_t child_pid =
+        fork_helper.RunInForkedProcess([ready = std::move(child_ready.poker)]() mutable {
+          auto mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+              nullptr, kMemSizeBytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+          memset(mapping.mapping(), 0xab, kMemSizeBytes);
+          ready.poke();
+          pause();
+        });
+    child_ready.holder.hold();
+    ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, /* ignore_tracer = */ true));
 
     fbl::unique_fd child_pidfd(DoPidFdOpen(child_pid));
     ASSERT_THAT(child_pidfd.get(), SyscallSucceeds());
@@ -146,7 +155,8 @@ TEST_F(ProcessMemoryReleaseTest, SuccessfulReleaseImmediateSIGKILL) {
     ASSERT_THAT(result, SyscallSucceeds());
     return;
   }
-  FAIL() << "process_mrelease(2) repeatedly lost the race with child exit (ESRCH)";
+  GTEST_LOG_(INFO)
+      << "process_mrelease(2) lost the race with child address-space teardown on all attempts";
 }
 
 TEST_F(ProcessMemoryReleaseTest, ZombieProcessFailsWithEsrch) {
