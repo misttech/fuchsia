@@ -240,7 +240,12 @@ impl LogsRepository {
         // Terminate the shared buffer first so that pending messages are processed before we
         // terminate all the containers.
         self.shared_buffer.terminate().await;
-        for container in self.mutable_state.lock().logs_data_store.values() {
+
+        // Avoid holding `mutable_state` across `container.terminate()`, which drains the ring
+        // buffer and can trigger `on_container_inactive`.
+        let containers: Vec<_> =
+            self.mutable_state.lock().logs_data_store.values().cloned().collect();
+        for container in containers {
             container.terminate();
         }
     }
@@ -270,7 +275,12 @@ impl LogsRepository {
     fn on_container_inactive(&self, identity: &ComponentIdentity) {
         let mut repo = self.mutable_state.lock();
         if !repo.is_live(identity) {
-            repo.remove(identity);
+            let container = repo.remove(identity);
+
+            // Drop the lock before dropping `container`, since `ContainerBuffer::drop` drains the
+            // ring buffer and may re-entrantly invoke `on_container_inactive` for other containers.
+            drop(repo);
+            drop(container);
         }
     }
 }
@@ -502,8 +512,9 @@ impl LogsRepositoryState {
         }
     }
 
-    pub fn remove(&mut self, identity: &ComponentIdentity) {
-        self.logs_data_store.remove(identity);
+    #[must_use]
+    pub fn remove(&mut self, identity: &ComponentIdentity) -> Option<Arc<LogsArtifactsContainer>> {
+        self.logs_data_store.remove(identity)
     }
 }
 
@@ -766,5 +777,103 @@ mod tests {
             hierarchy.get_child_by_path(&["log_sources", "foo"]).is_none(),
             "foo stats must be cleaned up after rollout"
         );
+    }
+
+    #[fuchsia::test]
+    async fn reentrant_on_container_inactive_during_drop() {
+        const CAPACITY: usize = 65536;
+        let inspector = Inspector::default();
+        let repo = LogsRepository::new(
+            create_ring_buffer(CAPACITY),
+            std::iter::empty(),
+            inspector.root(),
+            fasync::Scope::new(),
+        );
+
+        let identity_c1 = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./c1").unwrap(),
+            "fuchsia-pkg://c1",
+        ));
+        let identity_c2 = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./c2").unwrap(),
+            "fuchsia-pkg://c2",
+        ));
+        let identity_c3 = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./c3").unwrap(),
+            "fuchsia-pkg://c3",
+        ));
+
+        // Seed `c2` with a single message in the first chunk, then mark it stopped and drop our
+        // handle so `logs_data_store` holds the sole `Arc<LogsArtifactsContainer>` for `c2`.
+        let c2 = repo.get_log_container(Arc::clone(&identity_c2));
+        let c2_msg = make_message("c2", None, zx::BootInstant::from_nanos(1));
+        let mut active_len = 8 + c2_msg.bytes().len();
+        c2.ingest_message(c2_msg);
+        c2.mark_stopped();
+        drop(c2);
+
+        // Generate incompressible pseudo-random ASCII messages for `c3`.
+        let mut rng_state = 0x1234_5678_9abc_def0u64;
+        let mut next_incompressible_msg = |ts: i64| {
+            let text: String = (0..1000)
+                .map(|_| {
+                    rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    (b'!' + ((rng_state >> 32) % 94) as u8) as char
+                })
+                .collect();
+            make_message(&text, None, zx::BootInstant::from_nanos(ts))
+        };
+
+        let c3 = repo.get_log_container(Arc::clone(&identity_c3));
+        let mut ts = 2;
+
+        // Seal the first chunk (containing `c2`'s message) without evicting it yet.
+        loop {
+            let msg = next_incompressible_msg(ts);
+            ts += 1;
+            let record_bytes = 8 + msg.bytes().len();
+            c3.ingest_message(msg);
+            if active_len + record_bytes > CAPACITY {
+                active_len = record_bytes;
+                break;
+            }
+            active_len += record_bytes;
+        }
+        assert!(repo.mutable_state.lock().is_live(&identity_c2));
+
+        // Fill `active_chunk` right up to the 64 KiB boundary without sealing a second chunk yet.
+        loop {
+            let msg = next_incompressible_msg(ts);
+            let record_bytes = 8 + msg.bytes().len();
+            if active_len + record_bytes > CAPACITY {
+                // Stage one more message in `c3`'s IOBuffer ring buffer without draining it yet, so
+                // the next `drain_ring_buffer` call (inside `c1`'s `ContainerBuffer::terminate`)
+                // will seal `active_chunk`, evict `c2`'s chunk, and trigger `on_container_inactive`
+                // for `c2`.
+                let iob_c3 = c3.buffer().iob();
+                iob_c3.write(Default::default(), 0, msg.bytes()).unwrap();
+                break;
+            }
+            ts += 1;
+            c3.ingest_message(msg);
+            active_len += record_bytes;
+        }
+        assert!(repo.mutable_state.lock().is_live(&identity_c2));
+
+        // Place an inactive `c1` container in `logs_data_store` with `strong_count == 1`.
+        let c1 = repo.get_log_container(Arc::clone(&identity_c1));
+        c1.mark_stopped();
+        repo.mutable_state.lock().logs_data_store.insert(Arc::clone(&identity_c1), c1);
+
+        // Removing and dropping `c1` drains `c3`'s ring buffer write, evicting `c2` and
+        // re-entrantly invoking `on_container_inactive(&identity_c2)`.
+        repo.on_container_inactive(&identity_c1);
+
+        assert!(!repo.mutable_state.lock().logs_data_store.contains_key(&identity_c1));
+        assert!(!repo.mutable_state.lock().logs_data_store.contains_key(&identity_c2));
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert!(hierarchy.get_child_by_path(&["log_sources", "c1"]).is_none());
+        assert!(hierarchy.get_child_by_path(&["log_sources", "c2"]).is_none());
     }
 }

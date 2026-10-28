@@ -65,7 +65,10 @@ pub fn create_ring_buffer(capacity: usize) -> Buffer {
     let iob_capacity = (capacity * SPACE_THRESHOLD_NUMERATOR / SPACE_THRESHOLD_DENOMINATOR)
         .max(MAX_MESSAGE_SIZE)
         .next_multiple_of(page_size);
-    Buffer { reader: RingBuffer::create(iob_capacity), capacity: capacity.max(MAX_MESSAGE_SIZE) }
+    Buffer {
+        reader: RingBuffer::create(iob_capacity),
+        capacity: capacity.max(CHUNK_SIZE).max(MAX_MESSAGE_SIZE),
+    }
 }
 
 const IOB_PEER_CLOSED_KEY_BASE: u64 = 0x8000_0000_0000_0000;
@@ -1132,7 +1135,7 @@ mod tests {
     use fidl_fuchsia_diagnostics::StreamMode;
     use fuchsia_async as fasync;
     use fuchsia_async::TimeoutExt;
-    use fuchsia_inspect::Inspector;
+    use fuchsia_inspect::{Inspector, Node};
     use futures::FutureExt;
     use futures::channel::mpsc;
     use futures::future::OptionFuture;
@@ -1780,5 +1783,36 @@ mod tests {
         assert_eq!(slab.next_used(ids[1]), Some(ids[1]));
         assert_eq!(slab.next_used(ids[1] + 1), Some(ids[3]));
         assert_eq!(slab.next_used(ids[3] + 1), None);
+    }
+
+    #[fuchsia::test]
+    async fn small_capacity_incompressible_chunk() {
+        let buffer = SharedBuffer::new(
+            create_ring_buffer(0),
+            Box::new(|_| {}),
+            Default::default(),
+            &Node::default(),
+        );
+        let container = buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
+
+        // Push > 64 KiB (`CHUNK_SIZE`) of incompressible messages to force sealing an
+        // incompressible chunk when the requested capacity was smaller than `CHUNK_SIZE`.
+        let mut rng_state = 0x1234_5678_9abc_def0u64;
+        for ts in 0..70 {
+            let text: String = (0..1000)
+                .map(|_| {
+                    rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    (b'!' + ((rng_state >> 32) % 94) as u8) as char
+                })
+                .collect();
+            let msg = make_message(&text, None, zx::BootInstant::from_nanos(ts));
+            container.push_back(msg.bytes());
+        }
+
+        let cursor = pin!(container_cursor(&buffer, &container, StreamMode::Snapshot).unwrap());
+        let messages: Vec<_> = cursor.collect().await;
+        assert!(!messages.is_empty());
+
+        buffer.terminate().await;
     }
 }
