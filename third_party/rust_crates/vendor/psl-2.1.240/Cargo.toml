@@ -12,7 +12,7 @@
 [package]
 edition = "2018"
 name = "psl"
-version = "2.1.223"
+version = "2.1.240"
 authors = ["rushmorem <rushmore@webenchanter.com>"]
 build = false
 exclude = ["/tests"]

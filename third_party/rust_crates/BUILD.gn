@@ -2929,7 +2929,7 @@ rustc_library("addr-v0_15_6") {
 
   deps = []
   deps += [ ":psl-types-v2_0_11" ]
-  deps += [ ":psl-v2_1_223" ]
+  deps += [ ":psl-v2_1_240" ]
 
   rustenv = []
 
@@ -17721,15 +17721,15 @@ rustc_library("prost-types-v0_14_4") {
   applicable_licenses = [ ":prost-types-v0_14_4.license" ]
 }
 
-license("psl-v2_1_223.license") {
+license("psl-v2_1_240.license") {
   public_package_name = "psl"
-  license_files = [ "//third_party/rust_crates/vendor/psl-2.1.223/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/psl-2.1.240/LICENSE" ]
 }
 
-rustc_library("psl-v2_1_223") {
+rustc_library("psl-v2_1_240") {
   crate_name = "psl"
-  source_root = "//third_party/rust_crates/vendor/psl-2.1.223/src/lib.rs"
-  output_name = "psl-dff671dec9e9403e"
+  source_root = "//third_party/rust_crates/vendor/psl-2.1.240/src/lib.rs"
+  output_name = "psl-7a8b5b5f72400807"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17742,15 +17742,15 @@ rustc_library("psl-v2_1_223") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dff671dec9e9403e",
-    "-Cextra-filename=-dff671dec9e9403e",
+    "-Cmetadata=7a8b5b5f72400807",
+    "-Cextra-filename=-7a8b5b5f72400807",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"helpers\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":psl-v2_1_223.license" ]
+  applicable_licenses = [ ":psl-v2_1_240.license" ]
 }
 
 license("psl-types-v2_0_11.license") {
