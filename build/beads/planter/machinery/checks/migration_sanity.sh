@@ -80,6 +80,12 @@ set -euo pipefail
 #     package's BUILD.bazel already existed at PLANTER_CHANGE_BASE, flags pre-existing
 #     `exports_files(...)` entries (or their visibility scopes) and pre-existing named targets
 #     that were dropped when adding newly migrated targets to BUILD.bazel.
+# 13. test_component_not_test_root (error): a new `fx_test_component` that no `fx_package` lists
+#     in `test_components` (helper components use `fx_component(testonly = True)`), and
+#     skipped_test_helper_component (error): a skipped `fx_component` kept hand-written above the
+#     sentinel as a `fuchsia_test_component` without `test_type`.
+# 14. gcc_compiler_select (warning): a new `@rules_cc//cc/compiler:gcc` select() branch, which
+#     never matches because Fuchsia has no GCC toolchain in Bazel.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -6571,6 +6577,170 @@ def check_dual_built_host_tools(dirs):
 
 
 check_dual_built_host_tools(candidate_dirs)
+
+
+def check_helper_components_and_dead_selects(dirs):
+    """Flags component and select() patterns reviewers keep rejecting in migrations.
+
+    - test_component_not_test_root (error): a new `fx_test_component` that no `fx_package`
+      lists in `test_components`. `fx_test_component` marks the component `is_test`, which
+      `fx_package` only accepts for test roots, and bazel2gn never translates it, so a helper
+      component (mock, fake, test server) declared with it has no GN copy and no Bazel user.
+    - skipped_test_helper_component (error): an `fx_component` with `# @bazel2gn:skip` whose
+      hand-written GN copy above the sentinel is a `fuchsia_test_component` without
+      `test_type`. That GN template is only a `testonly` `fuchsia_component`, which bazel2gn
+      emits from `fx_component(testonly = True)`, so the skip and the GN copy are unnecessary.
+    - gcc_compiler_select (warning): a new `@rules_cc//cc/compiler:gcc` select() branch. Fuchsia
+      has no GCC toolchain in Bazel, so the branch is dead code.
+    """
+    target_re = re.compile(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)\s*\{', re.M)
+    for pkg_dir in sorted(dirs):
+        bazel_rel = os.path.join(pkg_dir, "BUILD.bazel")
+        bazel_abs = os.path.join(workdir, bazel_rel)
+        if not os.path.isfile(bazel_abs):
+            continue
+        try:
+            text = open(bazel_abs, encoding="utf-8").read()
+            tree = ast.parse(text, filename=bazel_rel)
+        except Exception:
+            continue
+        lines = text.splitlines()
+        try:
+            base_text = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{change_base}:{bazel_rel}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception:
+            base_text = ""
+        base_names = set(re.findall(r'^\s*name\s*=\s*"([^"]+)"', base_text, re.M))
+
+        gn_rel = os.path.join(pkg_dir, "BUILD.gn")
+        gn_pre = ""
+        try:
+            gn_pre = gn_hand_written_text(open(os.path.join(workdir, gn_rel), encoding="utf-8").read())
+        except Exception:
+            pass
+        gn_pre_targets = {}
+        for m in target_re.finditer(gn_pre):
+            body_end = find_closing_brace(gn_pre, m.end() - 1)
+            gn_pre_targets[m.group(2)] = (m.group(1), gn_pre[m.end() : body_end])
+
+        test_component_refs = set()
+        calls = []
+        top_level_vars = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name):
+                        top_level_vars[tgt.id] = node.value
+
+        def collect_label_names(expr, seen=()):
+            # Follows top-level list variables (`test_components = _TESTS + [...]`).
+            for sub in ast.walk(expr):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    test_component_refs.add(sub.value.rsplit(":", 1)[-1])
+                elif isinstance(sub, ast.Name) and sub.id in top_level_vars and sub.id not in seen:
+                    collect_label_names(top_level_vars[sub.id], seen + (sub.id,))
+
+        for node in tree.body:
+            if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+                continue
+            call = node.value
+            if not isinstance(call.func, ast.Name):
+                continue
+            kws = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if "test_components" in kws:
+                collect_label_names(kws["test_components"])
+            name = kws.get("name")
+            if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                calls.append((call.func.id, name.value, node.lineno, kws))
+
+        for rule, name, lineno, kws in calls:
+            ext_ref_args = ["-e", f"//{pkg_dir}:{name}"]
+            if name == os.path.basename(pkg_dir):
+                ext_ref_args += ["-e", f'"//{pkg_dir}"']
+            if (
+                rule == "fx_test_component"
+                and name not in base_names
+                and name not in test_component_refs
+                and not git_lines(
+                    ["grep", "-l", "--fixed-strings"] + ext_ref_args + ["--", "*BUILD.bazel"]
+                )
+            ):
+                findings.append({
+                    "source": "migration_sanity",
+                    "category": "test_component_not_test_root",
+                    "severity": "error",
+                    "file": bazel_rel,
+                    "line": lineno,
+                    "message": (
+                        f"`fx_test_component(name = \"{name}\")` is not listed in the `test_components` of "
+                        "any `fx_package`. `fx_test_component` marks a test root (`is_test`, only allowed "
+                        "in `fx_package(test_components)`) and bazel2gn never translates it, so a helper "
+                        "component packaged next to a test (mock service, fake, test server) gets no GN "
+                        "copy and cannot be used from Bazel either."
+                    ),
+                    "remediation": (
+                        f"Declare '{name}' with `fx_component(testonly = True, ...)` and `visibility` "
+                        "from find_rdeps, delete its hand-written GN copy above `## BAZEL2GN SENTINEL` in "
+                        f"'{gn_rel}', and run `fx bazel2gn -d {pkg_dir}`. A GN `fuchsia_test_component` "
+                        "without `test_type` is just a `testonly` `fuchsia_component`, which is what "
+                        "bazel2gn emits."
+                    ),
+                })
+            if rule == "fx_component" and has_skip_comment(lines, lineno):
+                gn_copy = gn_pre_targets.get(name)
+                if (
+                    gn_copy
+                    and gn_copy[0] == "fuchsia_test_component"
+                    and not re.search(r"\btest_type\s*=", gn_copy[1])
+                ):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "skipped_test_helper_component",
+                        "severity": "error",
+                        "file": bazel_rel,
+                        "line": lineno,
+                        "message": (
+                            f"`fx_component(name = \"{name}\")` is skipped with `# @bazel2gn:skip` and kept as "
+                            f"a hand-written `fuchsia_test_component(\"{name}\")` above the sentinel in "
+                            f"'{gn_rel}'. Without `test_type`, `fuchsia_test_component` is a `testonly` "
+                            "`fuchsia_component`, which bazel2gn emits from `fx_component(testonly = True)`."
+                        ),
+                        "remediation": (
+                            f"Remove `# @bazel2gn:skip` (and its reason comment) from '{name}', make sure it "
+                            "sets `testonly = True` and `visibility` from find_rdeps, delete "
+                            f"`fuchsia_test_component(\"{name}\")` above the sentinel in '{gn_rel}', and run "
+                            f"`fx bazel2gn -d {pkg_dir}`."
+                        ),
+                    })
+
+        if "@rules_cc//cc/compiler:gcc" not in base_text:
+            for idx, line in enumerate(lines, 1):
+                if "@rules_cc//cc/compiler:gcc" in line and not line.lstrip().startswith("#"):
+                    findings.append({
+                        "source": "migration_sanity",
+                        "category": "gcc_compiler_select",
+                        "severity": "warning",
+                        "file": bazel_rel,
+                        "line": idx,
+                        "message": (
+                            "`@rules_cc//cc/compiler:gcc` never matches in the Fuchsia Bazel build: there is "
+                            "no GCC toolchain in Bazel (the toolchain's compiler is `__bazel_compiler__`), so "
+                            "this select() branch is dead code. GN's GCC variants keep using the GN configs "
+                            "above the sentinel."
+                        ),
+                        "remediation": (
+                            "Drop the `@rules_cc//cc/compiler:gcc` branch and keep only the Clang flags. If "
+                            "GN needs GCC-specific configs, keep them above the sentinel or name them with "
+                            "`# @bazel2gn:raw_overwrite:` on the closing `],`."
+                        ),
+                    })
+                    break
+
+
+check_helper_components_and_dead_selects(candidate_dirs)
 
 print(json.dumps(findings, indent=2))
 PYEOF

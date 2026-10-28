@@ -27,7 +27,10 @@ checks and fix what they report.
    (`fx gn desc $(fx get-build-dir) //<dir>:<target> deps` shows resolved labels).
 2. Write BUILD.bazel, migrating dependencies without a Bazel build (below), then run
    `fx bazel2gn -d <dir>` for every dual-build directory with `bazel2gn`-convertible targets.
-3. Get each target's visibility from `find_rdeps` (`per_target_recommended_visibility`).
+3. Get each target's visibility from `find_rdeps` (`per_target_recommended_visibility`). A label
+   written inside a GN template in a `.gni` is checked in the BUILD.gn that invokes the template,
+   so grant visibility to that package, not to the `.gni`'s directory. `idk_cc_*` macros already
+   add `//sdk:__pkg__`; don't list it.
 4. Iterate with `run_checks.sh --skip-build` (seconds) plus targeted builds of what you touched,
    then finish with ONE full `run_checks.sh` (see "Verify, Then Run the Checks Once").
 5. Report with the CoderReport JSON.
@@ -39,6 +42,13 @@ Exception: if a migrated package had no targets in `<build dir>/ninja_outputs.js
 compile due to pre-existing source bitrot (hard syntax, type, or removed-API errors), apply the
 minimal compile fix in `<dir>/` (no lint-suppression annotations) and note it in the commit body
 and `summary`.
+
+Reviewers also reject these, which no check can fully catch:
+- Working around a check by hiding what it looks for (e.g. assembling a `"//:prebuilt/..."` label
+  with `%` formatting so `check_no_new_direct_prebuilts` misses it). Fix the cause, or keep the
+  code and report the conflict in `disputed_findings`.
+- Migrating dead code. If `find_rdeps` finds no callers for a target and `git log -S<name>` shows
+  its last user was removed, leave it unmigrated and propose deleting it in the `summary`.
 
 ## Migrating Fuchsia Packages & Components (`fx_package`)
 Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_component`,
@@ -69,6 +79,12 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
      where `binary_name` matches `bin/<elf_name>` in the `.cml`'s `program.binary` (GN
      `output_name` / `name`), and pass `deps = [":<n>_packaged_bin"]` to
      `fx_component(name = "<c>", compiled_manifest = ":<c>-manifest", component_name = "<comp_name>", deps = [...])`.
+   - **Helper components packaged next to a test** (mock services, fakes, test servers listed in
+     a test package's `deps`, not its `test_components`) are `fx_component(testonly = True)` with
+     `visibility` from `find_rdeps`, never `fx_test_component` (which marks a test root that only
+     `fx_package(test_components)` accepts and that bazel2gn never translates). A GN
+     `fuchsia_test_component` without `test_type` is only a `testonly` `fuchsia_component`, so let
+     bazel2gn generate it: no `# @bazel2gn:skip` and no hand-written copy above the sentinel.
 3. **`fx_package`, `BUILD.gn`, `bazel2gn`, and `//bundles/assembly` bridge cleanup**:
    - `bazel2gn` converts `fx_component` and `fx_component_manifest` (resolving same-package
      `fx_packaged_binary` deps in `fx_component`) and `fuchsia_structured_config_rust_lib`, so
@@ -311,6 +327,16 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 - **C/C++ library (`fx_cc_library`, `alwayslink`)**: use `fx_cc_library` from
    `//build/bazel/rules/cc:fx_cc_library.bzl` (not `@rules_cc` `cc_library`), with
    `alwayslink = True` for a GN `source_set()` and omitted for `static_library()`.
+- **Fuchsia-only C/C++**: a library or test whose sources use Zircon or FIDL messaging APIs
+   (`<lib/zx/...>`, `<zircon/syscalls.h>`, `fidl::Endpoints`, HLCPP bindings) without an
+   `#ifdef __Fuchsia__` guard sets `target_compatible_with = ["@platforms//os:fuchsia"]` (bazel2gn
+   wraps it in `if (is_fuchsia)`), consistently across sibling packages in the change. Fuchsia has
+   no GCC toolchain in Bazel, so never add `@rules_cc//cc/compiler:gcc` select() branches.
+- **`public_configs` / `configs` on `fx_cc_*` are GN-only**: `fx_cc_library` ignores them in
+   Bazel and only passes them to bazel2gn. When GN relied on a `public_configs` to change how
+   dependents compile (e.g. a header-only library whose dependents must disable a sanitizer),
+   Bazel dependents silently lose it. Say so in a comment on the target, naming the
+   `build_flags()` target Bazel dependents must set, and note it in the `summary`.
 - **GN target types**: with bazel2gn, every GN target keeps its template; keep a GN-only wrapper
    template above the sentinel when bazel2gn has no equivalent.
 - **C/C++ `copts` that are GN `configs`**: keep package-local `config(...)` above the sentinel,
@@ -326,7 +352,10 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    `rustc_test` or `host_rustc_test` has a generic `name` (e.g. `lib_test` or `bin_test` for
    `rustc_library(name = "lib", crate_name = "<crate>")`), set `crate_name = "<crate>_lib_test"`
    so bazel2gn emits `output_name = "<crate>_lib_test"` and avoids GN `Duplicate output file`
-   (`host_x64/lib_test`) collisions.
+   (`host_x64/lib_test`) collisions. A `rustc_test` with `crate = ":<lib>"` inherits `edition`
+   (don't repeat it), and rules_rust ignores its `crate_name`, so a `crate_name` kept only for
+   bazel2gn's `output_name` gets a comment saying what needs that name (e.g. the `.cml`'s
+   `program.binary`). Omit `crate_name` when it equals `name` with `-` replaced by `_`.
 - **GN-only attributes on generated targets**: a convertible target that sets
    `exclude_toolchain_tags`, `configs -=`, `disable_syslog_backend`, a `concurrent_jobs` pool,
    toolchain-qualified labels (`"<label>($current_toolchain)"` in `assert_no_deps`,
@@ -428,6 +457,9 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
    `"//sdk/lib/zxio",  # @bazel2gn:path_overwrite://sdk/lib/zxio:zxio_static`).
 2. **Same edge kinds**: bazel2gn emits C/C++ `deps` as GN `public_deps` and
    `implementation_deps` as GN `deps`. For Rust rules every dependency becomes a private GN dep.
+   A dependency whose headers a library's `hdrs` include goes in `deps`, even if GN listed it in
+   `deps`: `implementation_deps` builds the library itself but hides the include path from its
+   dependents.
    Rust rules only accept Rust targets in `deps`: list C/C++ libraries (e.g. `cc_library`,
    `fx_cc_library`, `cc_import`) in `link_deps`, which bazel2gn emits as GN `link_deps` (same
    semantics as GN `deps`). Moving a C/C++ label from GN `deps` to `link_deps` keeps the edge.
@@ -486,7 +518,9 @@ From `$PLANTER_WORKDIR`:
    anything after `run_checks.sh` passes so planter reuses the result.
 4. Record in `test_footers` (and any commit `Test:` footer) at most 3 lines: either
    `fx test //<dir>:<test>` or `fx bazel test|build --config=... @//<dir>:<test>` (plus optional
-   `fx host-tool shac check`); both forms are valid even when `tests.json` is empty.
+   `fx host-tool shac check`); both forms are valid even when `tests.json` is empty. Name every
+   migrated non-test target in one `fx bazel build` line per `--config` (presubmit doesn't build a
+   Bazel target whose users are all still in GN, so the footer is the reviewer's only evidence).
 5. List all files changed vs `$PLANTER_CHANGE_BASE` (`git diff --name-only "$PLANTER_CHANGE_BASE" HEAD`)
    in `modified_files` with paths relative to `$PLANTER_WORKDIR` (`<dir>/BUILD.bazel`, never
    `.jiri_root/worktrees/<name>/...` or host paths). Keep commit messages and `summary` ASCII-only

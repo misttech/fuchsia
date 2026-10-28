@@ -11,6 +11,9 @@ set -euo pipefail
 #      * crate_name = "<x>" when identical to target name (modulo '-' vs '_'), or
 #        on a crate unit-test rustc_test unless disambiguating the bazel2gn GN
 #        output_name (e.g. <lib_crate_name>_test)
+#      * edition on a rustc_test that sets `crate` (inherited from the crate); a
+#        kept `crate_name` next to `crate` needs a comment saying what needs the
+#        GN output_name (rustc_test_crate_name_missing_comment, warning)
 #      * version = "0.1.0" on first-party (in-tree) rustc_* targets
 #      * crate_root = "src/lib.rs" on rustc_library
 #      * crate_root = "src/main.rs" on rustc_binary
@@ -698,6 +701,68 @@ for rel_path, full_path in bazel_files:
                         "disambiguated GN `output_name`)."
                     ),
                 })
+        elif "crate_name" in k_map:
+            # A standalone rustc_test (no `crate`, no sibling library) already gets
+            # name.replace("-", "_") as its crate and GN output name in both builds.
+            c_name, c_line = k_map["crate_name"]
+            if c_name.replace("-", "_") == t_name.replace("-", "_") and not is_preexisting_target_attr(
+                r_name, t_name, f'crate_name="{c_name}"'
+            ):
+                findings.append({
+                    "source": "bazel_minimality",
+                    "category": "redundant_default_attribute",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": c_line,
+                    "message": (
+                        f"Target '{t_name}' (rustc_test) specifies `crate_name = \"{c_name}\"`, which is "
+                        "already the default derived from `name` (with `-` replaced by `_`) in both rules_rust "
+                        "and GN, so bazel2gn only emits a redundant `output_name`."
+                    ),
+                    "remediation": (
+                        f"Remove `crate_name` from `{t_name}` in '{rel_path}' and re-run "
+                        f"`fx bazel2gn -d {pkg_dir}`."
+                    ),
+                })
+        if "crate" in kw_names and "edition" in k_map and not is_preexisting_target_attr(r_name, t_name, "edition="):
+            ed_val, ed_line = k_map["edition"]
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "redundant_default_attribute",
+                "severity": "error",
+                "file": rel_path,
+                "line": ed_line,
+                "message": (
+                    f"Target '{t_name}' (rustc_test) sets `edition = \"{ed_val}\"` next to `crate`, but both "
+                    "rules_rust and bazel2gn take `edition` from the crate and ignore it on the test."
+                ),
+                "remediation": (
+                    f"Remove `edition` from `{t_name}` in '{rel_path}' (bazel2gn output does not change)."
+                ),
+            })
+        if (
+            "crate" in kw_names
+            and "crate_name" in k_map
+            and not preceding_comment_lines(k_map["crate_name"][1])
+            and not is_preexisting_target_attr(r_name, t_name, f'crate_name="{k_map["crate_name"][0]}"')
+        ):
+            c_name, c_line = k_map["crate_name"]
+            findings.append({
+                "source": "bazel_minimality",
+                "category": "rustc_test_crate_name_missing_comment",
+                "severity": "warning",
+                "file": rel_path,
+                "line": c_line,
+                "message": (
+                    f"Target '{t_name}' (rustc_test) sets `crate_name = \"{c_name}\"` next to `crate`. "
+                    "rules_rust ignores it there; it only sets the GN `output_name` bazel2gn emits, which "
+                    "readers can't tell from BUILD.bazel."
+                ),
+                "remediation": (
+                    f"Add a short comment above `crate_name` in `{t_name}` saying what needs the GN binary "
+                    f"name `{c_name}` (e.g. the `.cml` `program.binary`, or avoiding a `lib_test` collision)."
+                ),
+            })
 
     # Check that newly added rustc_test / rust_test / host_rustc_test targets do not use
     # `# @bazel2gn:raw_attribute:output_name = "<out_name>"`: naming the test target

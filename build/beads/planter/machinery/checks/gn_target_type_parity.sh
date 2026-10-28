@@ -37,7 +37,11 @@ set -euo pipefail
 #      leaving `@gn_targets//.../<pkg>` references under `build/bazel/` is an
 #      error). A pure single-target forwarding `group("<outer>")` whose sole
 #      same-package convertible target `:<inner>` has no external callers may
-#      also fold `:<inner>` directly into `<tmpl>("<outer>")`.
+#      also fold `:<inner>` directly into `<tmpl>("<outer>")`. A
+#      `fuchsia_test_component` without `test_type` may become a `testonly`
+#      `fuchsia_component` (what bazel2gn emits for `fx_component(testonly =
+#      True)`), because `//build/components/fuchsia_test_component.gni` only
+#      adds `testonly = true` and `test_type` metadata to `fuchsia_component`.
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -334,6 +338,17 @@ def call_end(code, open_paren):
                 return i + 1
         i += 1
     return len(code)
+
+
+def gn_target_body(text, tmpl, name):
+    """Returns the `{...}` body of `tmpl("name")` in GN `text` (comments blanked), or None."""
+    if not text:
+        return None
+    code = blank_comments(text)
+    m = re.search(r"\b" + re.escape(tmpl) + r'\(\s*"' + re.escape(name) + r'"\s*\)\s*\{', code)
+    if not m:
+        return None
+    return code[m.end() - 1 : call_end(code, m.end() - 1)]
 
 
 def gn_types(text):
@@ -733,6 +748,21 @@ for pkg in sorted(candidate_dirs):
                             ),
                         }
                     )
+            # Without `test_type`, `fuchsia_test_component` is a `testonly` `fuchsia_component`
+            # (//build/components/fuchsia_test_component.gni), which is what bazel2gn emits for
+            # `fx_component(testonly = True)`. Helper components packaged next to a test (mocks,
+            # fakes, servers) often use it, and keeping it as a hand-written GN target only to
+            # satisfy this check leaves the Bazel copy skipped or misdeclared.
+            is_test_component_unwrap = False
+            if old_types == {"fuchsia_test_component"} and new_types == {"fuchsia_component"}:
+                old_body = gn_target_body(before, "fuchsia_test_component", orig_name)
+                new_body = gn_target_body(after, "fuchsia_component", name)
+                is_test_component_unwrap = (
+                    old_body is not None
+                    and new_body is not None
+                    and not re.search(r"\btest_type\s*=", old_body)
+                    and re.search(r"\btestonly\s*=\s*true\b", new_body) is not None
+                )
             if new_types != old_types and not (
                 is_cc_test_executable_conversion
                 or is_test_suite_conversion
@@ -740,6 +770,7 @@ for pkg in sorted(candidate_dirs):
                 or is_bazel_input_transition
                 or is_fuchsia_package_conversion
                 or is_feature_set_expansion
+                or is_test_component_unwrap
             ):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:

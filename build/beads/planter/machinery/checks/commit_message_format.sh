@@ -1058,6 +1058,9 @@ if head and base_rev and head != base_rev:
         "fx_unittest_component",
     }
     synth_component_rules = {"fx_component_manifest", "fx_test_component"}
+    # Test entry points run through tests.json, so they need no `fx bazel build` footer.
+    test_like_rules = {"fx_unittest_package", "fx_test", "fx_test_package", "test_suite", "wrap_host_rust_test"}
+    test_like_bmt = set()
     ut_re = r'^\s*(with_unit_tests\s*=\s*"(host|both|fuchsia)"|with_unit_tests\s*=\s*True|with_host_unit_tests\s*=\s*True)'
     bmt_dirs = list(
         dict.fromkeys(
@@ -1161,6 +1164,8 @@ if head and base_rev and head != base_rev:
                 continue
             tname = n.group(1)
             lbl = f"//{d}:{tname}"
+            if rule in test_like_rules or rule.endswith("_test"):
+                test_like_bmt.add(lbl)
             if (
                 tname in kept_gn_targets
                 and has_bazel2gn_skip(btxt, m.start())
@@ -1307,6 +1312,54 @@ if head and base_rev and head != base_rev:
                     "footer block so every target migrated from GN in this "
                     "commit is recorded.",
                     severity="error",
+                )
+        # While a migrated target's only users are still in GN, presubmit compiles just its
+        # bazel2gn copy, so the Test: footers are the only record that the Bazel target builds.
+        if bmt_lines and test_lines:
+            test_text = "\n".join(l for _, l in test_lines)
+
+            def footer_covers(label):
+                pkg, _, name = label[2:].partition(":")
+                if re.search(r"@?//" + re.escape(pkg) + r":" + re.escape(name) + r"(?![\w.\-])", test_text):
+                    return True
+                if name == pkg.rsplit("/", 1)[-1] and re.search(
+                    r"@?//" + re.escape(pkg) + r"(?![\w./:\-])", test_text
+                ):
+                    return True
+                if re.search(r"@?//" + re.escape(pkg) + r":all\b", test_text):
+                    return True
+                parts = pkg.split("/")
+                return any(
+                    re.search(r"@?//" + re.escape("/".join(parts[:i])) + r"/\.\.\.", test_text)
+                    for i in range(1, len(parts) + 1)
+                )
+
+            uncovered = []
+            for _, l in bmt_lines:
+                val = l.split(":", 1)[1].strip()
+                if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val):
+                    continue
+                canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
+                if canon_val in excluded_bmt or canon_val in test_like_bmt:
+                    continue
+                if not footer_covers(canon_val):
+                    uncovered.append(canon_val)
+            if uncovered:
+                shown_labels = []
+                for lbl in uncovered:
+                    pkg, _, name = lbl.partition(":")
+                    shown_labels.append("@" + (pkg if name == pkg.rsplit("/", 1)[-1] else lbl))
+                shown = " ".join(shown_labels)
+                add(
+                    "test_footer_missing_migrated_target",
+                    test_lines[0][0],
+                    "The `Test:` footers do not build these migrated targets: "
+                    + ", ".join(f"`{lbl}`" for lbl in uncovered)
+                    + ". Reviewers read the footers to see what was verified in Bazel, and a target "
+                    "whose users are all still in GN is not built in Bazel by presubmit.",
+                    "Build them in one `fx bazel build` footer (split by `--config=fuchsia_platform` / "
+                    f"`--config=host`), e.g. `Test: fx bazel build --config=fuchsia_platform {shown}`, and "
+                    "record it only if it exited 0.",
                 )
 
         all_changed = set(changed) | {f for f in git("diff", "--name-only", base_rev).splitlines() if f}

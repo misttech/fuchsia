@@ -923,6 +923,73 @@ for fpath in sorted(matched_files):
     except Exception:
         pass
 
+
+GN_IMPORT_RE = re.compile(r'\bimport\(\s*"([^"]+\.gni)"\s*\)')
+_gni_importer_cache = {}
+
+
+def gni_importer_pkgs(gni_rel, depth=0):
+    """Returns the packages whose BUILD.gn imports `gni_rel` (directly or via other .gni files).
+
+    GN resolves labels inside a template, and checks their visibility, in the BUILD.gn that
+    invokes it, not in the directory of the .gni that defines it. So a dependency written in
+    `//a/b/foo.gni` and used from `//a/BUILD.gn` needs visibility for `//a`, not `//a/b`.
+    """
+    if gni_rel in _gni_importer_cache:
+        return _gni_importer_cache[gni_rel]
+    _gni_importer_cache[gni_rel] = set()
+    if depth > 3:
+        return set()
+    importers = set()
+    basename = os.path.basename(gni_rel)
+    for repo in discover_git_repos():
+        if not os.path.exists(os.path.join(repo, ".git")):
+            continue
+        try:
+            proc = subprocess.run(
+                ["git", "-C", repo, "grep", "--untracked", "-l", "--fixed-strings", "-e", basename,
+                 "--", "*BUILD.gn", "*.gni"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except OSError:
+            continue
+        for line in proc.stdout.splitlines():
+            imp_abs = os.path.join(repo, line.strip())
+            imp_rel = os.path.relpath(imp_abs, workdir)
+            try:
+                with open(imp_abs, "r", encoding="utf-8", errors="ignore") as f:
+                    imp_text = re.sub(r"#[^\n]*", "", f.read())
+            except OSError:
+                continue
+            for path in GN_IMPORT_RE.findall(imp_text):
+                if path.startswith("//"):
+                    resolved = path[2:]
+                else:
+                    resolved = os.path.normpath(os.path.join(os.path.dirname(imp_rel), path))
+                if resolved != gni_rel:
+                    continue
+                if imp_rel.endswith(".gni"):
+                    importers |= gni_importer_pkgs(imp_rel, depth + 1)
+                else:
+                    importers.add(os.path.dirname(imp_rel).strip("/"))
+    _gni_importer_cache[gni_rel] = importers
+    return importers
+
+
+def is_idk_generated_ref(sub, owner, idk_targets):
+    """Whether `sub` names an IDK atom target generated for the idk_* Bazel target `owner`.
+
+    `idk_cc_*` macros add `//sdk:__pkg__` to the visibility of the target and its `_idk` atom
+    automatically, and GN `sdk_*` templates only forward `visibility` to the library target,
+    not to the `<name>_sdk` atom. So references to `<name>_sdk` / `<name>_idk` (from
+    `//sdk/BUILD.gn` or `//sdk/atom_lists.bzl`) need no visibility entry on the Bazel target.
+    """
+    return bool(owner) and owner in idk_targets and sub != owner and sub.startswith(owner + "_") and (
+        sub.endswith(("_sdk", "_idk")) or "_sdk_" in sub or "_idk_" in sub
+    )
+
 # GN templates whose targets can be migrated or dual-built in BUILD.bazel and whose
 # reverse dependencies in BUILD.gn/BUILD.bazel require Bazel target visibility coverage.
 CONVERTIBLE_GN_TEMPLATES = {
@@ -1121,6 +1188,7 @@ def compute_package_rdeps(
     alias_map,
     orig_gn_vis_map=None,
     test_rule_targets=(),
+    idk_targets=(),
 ):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
@@ -1396,6 +1464,8 @@ def compute_package_rdeps(
             )
             if owner is None and sub == default_target and len(bazel_targets) == 1:
                 owner = bazel_targets[0]
+            if is_idk_generated_ref(sub, owner, idk_targets):
+                continue
             if is_gn_only_target_ref(
                 rel,
                 caller_pkg,
@@ -1415,12 +1485,24 @@ def compute_package_rdeps(
             )
             if caller_pkg.startswith("build/") and (rel.endswith(".bzl") or rel.endswith(".gni")) and "verification" not in os.path.basename(rel):
                 has_macro_injected_rdeps = True
-            true_rdep_packages.add(norm_caller)
-            if owner is not None:
-                per_target_rdeps[owner].add(norm_caller)
+            # GN checks a label written in a .gni in the BUILD.gn that imports it, so attribute
+            # references in non-build/ .gni files to the importing packages.
+            gni_importers = (
+                gni_importer_pkgs(rel)
+                if rel.endswith(".gni") and not caller_pkg.startswith("build/")
+                else set()
+            )
+            callers = sorted(gni_importers - {pkg_path}) if gni_importers else [norm_caller]
+            for caller in callers:
+                true_rdep_packages.add(caller)
+                if owner is None:
+                    continue
+                per_target_rdeps[owner].add(caller)
                 # GN and Bazel enforce visibility in the package whose BUILD file names the
-                # label (not in the .gni/.bzl that a template reference comes from).
-                if os.path.basename(rel) in ("BUILD.gn", "BUILD.bazel"):
+                # label (or imports the .gni whose template names it).
+                if gni_importers:
+                    per_target_direct_rdeps[owner].setdefault(caller, set()).add("gn")
+                elif os.path.basename(rel) in ("BUILD.gn", "BUILD.bazel"):
                     kind_bs = "gn" if rel.endswith(".gn") else "bazel"
                     per_target_direct_rdeps[owner].setdefault(caller_pkg, set()).add(kind_bs)
 
@@ -1653,6 +1735,7 @@ for rel_path in sorted(candidate_files):
     package_targets = set()
     non_gn_synced_targets = set()
     test_rule_targets = set()
+    idk_targets = set()
     bazel2gn_skipped_targets = set()
     alias_map = {}
     for node in tree.body:
@@ -1684,6 +1767,8 @@ for rel_path in sorted(candidate_files):
                 if func in BAZEL_NON_GN_SYNCED_RULES:
                     non_gn_synced_targets.add(tname)
                     test_rule_targets.add(tname)
+                if func.startswith("idk_"):
+                    idk_targets.add(tname)
                 if has_bazel2gn_skip_comment(src_lines, node.lineno):
                     bazel2gn_skipped_targets.add(tname)
                     if func not in ("fx_package", "fuchsia_package"):
@@ -1699,6 +1784,7 @@ for rel_path in sorted(candidate_files):
         alias_map,
         orig_gn_vis_map,
         test_rule_targets,
+        idk_targets,
     )
 
     # Check package-level default_visibility and report per-target visibility guidance
@@ -2171,6 +2257,21 @@ for rel_path in sorted(candidate_files):
                     "line": lineno,
                     "message": f"Target '{target_name}' includes redundant '{val}' in visibility. Same-package visibility is implicit in Bazel and added automatically by bazel2gn.",
                     "remediation": f"Remove '{val}' from visibility."
+                })
+            elif val == "//sdk:__pkg__" and func_name.startswith("idk_") and "sdk" not in target_rdeps:
+                findings.append({
+                    "source": "visibility_audit",
+                    "category": "redundant_idk_sdk_visibility",
+                    "severity": "error",
+                    "file": rel_path,
+                    "line": lineno,
+                    "message": (
+                        f"`{func_name}(name = \"{target_name}\")` lists '//sdk:__pkg__' in visibility, but "
+                        f"`{func_name}` already appends it to the target and its `_idk` atom, and nothing in "
+                        "//sdk depends on the library target itself in GN (GN `sdk_*` templates only forward "
+                        "`visibility` to the library, not to the `<name>_sdk` atom)."
+                    ),
+                    "remediation": f"Remove '//sdk:__pkg__' from the visibility of '{target_name}' and re-run fx bazel2gn.",
                 })
             elif val == "//:__subpackages__" and is_test_rule and not target_rdeps and not has_macro_injected_rdeps:
                 findings.append({
