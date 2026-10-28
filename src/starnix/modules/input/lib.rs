@@ -8,8 +8,10 @@ mod input_device;
 mod input_event_relay;
 mod input_file;
 
+pub mod test_injection;
 pub mod uinput;
 
 pub use input_device::*;
 pub use input_event_relay::*;
 pub use input_file::*;
+pub use test_injection::{InjectedDevice, InputDeviceRegistry};

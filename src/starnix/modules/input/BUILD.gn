@@ -25,6 +25,7 @@ rustc_library("input") {
     "input_event_relay.rs",
     "input_file.rs",
     "lib.rs",
+    "test_injection.rs",
     "uinput.rs",
   ]
 
@@ -39,6 +40,7 @@ rustc_library("input") {
   visibility = [ "//src/starnix/modules/*" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.input.injection:fuchsia.input.injection_rust",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
     "//sdk/fidl/fuchsia.ui.input3:fuchsia.ui.input3_rust",
@@ -50,6 +52,7 @@ rustc_library("input") {
     "//src/lib/collections/sorted-vec-map",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel/core",
