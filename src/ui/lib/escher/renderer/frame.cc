@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/renderer/frame.h"
 
+#include <lib/fit/defer.h>
+
 #ifdef OS_FUCHSIA
 #include <zircon/syscalls.h>
 #endif
@@ -48,10 +50,10 @@ Frame::Frame(impl::FrameManager* manager, escher::CommandBuffer::Type requested_
 Frame::~Frame() {
   // Why can we confidently state that if this DCHECK fires, it is because
   // EndFrame() was not called?  Because when EndFrame() submits the command
-  // buffer, it registers a closure that will only be called once the frame has
-  // finished rendering, and because this closure both:
-  // - refs the Frame, keeping it alive until the closure completes
-  // - sets the state to kReadyToBegin.
+  // buffer, it registers a deferred action on the command buffer's retirement
+  // closure that both:
+  // - refs the Frame, keeping it alive until the command buffer retires
+  // - sets the state to kReadyToBegin (even if queue submission fails).
   FX_DCHECK(state_ == State::kReadyToBegin)
       << "EndFrame() was not called - state_: " << static_cast<int>(state_);
 }
@@ -125,22 +127,22 @@ void Frame::EndFrame(const std::vector<SemaphorePtr>& semaphores,
   // Submit the final command buffer and register a callback to perform a
   // variety of bookkeeping and cleanup tasks.
   //
-  // NOTE: this closure refs this Frame via a FramePtr, guaranteeing that it
-  // will not be destroyed until the frame is finished rendering.
-  command_buffer_->Submit(
-      queue_, [client_callback{std::move(frame_retired_callback)}, this_frame = FramePtr(this)]() {
-        // Run the client-specified callback.
-        if (client_callback) {
-          client_callback();
-        }
-
-        // |this_frame| refs the frame until rendering is finished, and
-        // therefore keeps alive everything in |keep_alive_|.
-        this_frame->keep_alive_.clear();
-
-        // The frame is now ready for reuse or destruction.
-        this_frame->state_ = State::kReadyToBegin;
-      });
+  // NOTE: `this_frame` refs this Frame via a FramePtr in a deferred action,
+  // guaranteeing that the Frame (and everything in `keep_alive_`) will not be
+  // destroyed until the command buffer retires, and that `keep_alive_` is
+  // cleared and `state_` returns to kReadyToBegin even if queue submission
+  // fails and CommandBuffer::Retire() destroys the callback without invoking it.
+  command_buffer_->Submit(queue_, [client_callback = std::move(frame_retired_callback),
+                                   cleanup = fit::defer([this_frame = FramePtr(this)]() {
+                                     this_frame->keep_alive_.clear();
+                                     this_frame->state_ = State::kReadyToBegin;
+                                   })]() mutable {
+    // Run the client-specified callback.
+    if (client_callback) {
+      client_callback();
+    }
+    cleanup.call();
+  });
 
   command_buffer_ = nullptr;
   command_buffer_sequence_number_ = 0;

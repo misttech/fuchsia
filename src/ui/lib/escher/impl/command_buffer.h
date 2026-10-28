@@ -41,11 +41,13 @@ class CommandBuffer {
 
   vk::CommandBuffer vk() const { return command_buffer_; }
 
-  // Return true if successful.  The callback will be invoked by the owning
-  // `CommandBufferPool::Cleanup()` after all commands have finished executing
-  // on the GPU, the buffer has been returned to the pool, and the sequencer
-  // has been notified.  The callback may call `GetCommandBuffer()` and
-  // `Cleanup()` (a nested `Cleanup()` call returns false).
+  // Return true if successful.  If submission succeeds, the callback will be
+  // invoked by the owning `CommandBufferPool::Cleanup()` after all commands
+  // have finished executing on the GPU, the buffer has been returned to the
+  // pool, and the sequencer has been notified.  The callback may call
+  // `GetCommandBuffer()` and `Cleanup()` (a nested `Cleanup()` call returns
+  // false).  If submission fails, the callback is not invoked and is destroyed
+  // when `Retire()` cleans up the buffer.
   bool Submit(vk::Queue queue, CommandBufferFinishedCallback callback);
 
   // During Submit(), these semaphores will be added to the vk::SubmitInfo.
@@ -137,10 +139,11 @@ class CommandBuffer {
 
   // Called by `CommandBufferPool`, to attempt to reset the buffer for reuse.
   // Return false and do nothing if the buffer's submission fence is not ready.
-  // If successful, moves `callback_` into `out_callback` rather than running it
-  // directly, since the callback may trigger a re-entrant
-  // `CommandBufferPool::Cleanup()` call before the pool finishes retiring this
-  // buffer.
+  // If retirement succeeds for a successfully submitted buffer, moves
+  // `callback_` into `out_callback` rather than running it directly, since the
+  // callback may trigger a re-entrant `CommandBufferPool::Cleanup()` call
+  // before the pool finishes retiring this buffer. If submission failed, clears
+  // `callback_` without populating `out_callback`.
   bool Retire(CommandBufferFinishedCallback* out_callback);
 
   const vk::Device device_;

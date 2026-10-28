@@ -4,8 +4,11 @@
 
 #include "src/ui/lib/escher/vk/command_buffer.h"
 
+#include <lib/fit/defer.h>
+
 #include "src/ui/lib/escher/impl/command_buffer_pool.h"
 #include "src/ui/lib/escher/renderer/buffer_cache.h"
+#include "src/ui/lib/escher/renderer/frame.h"
 #include "src/ui/lib/escher/test/common/gtest_escher.h"
 #include "src/ui/lib/escher/test/vk/vulkan_tester.h"
 
@@ -650,6 +653,158 @@ VK_TEST_F(CommandBufferTest, ReentrantCleanupPreservesFifoOrder) {
 
   const std::vector<int> expected_order = {1, 2, 3};
   EXPECT_EQ(execution_order, expected_order);
+}
+
+// Verifies that when CommandBuffer::Submit() fails, Retire() cleans up the buffer and releases
+// captured resources without invoking the finished callback (https://fxbug.dev/519645546).
+VK_TEST_F(CommandBufferTest, FailedSubmitSkipsCallbackAndRecyclesResources) {
+  auto escher = test::GetEscher();
+  BufferCache buffer_cache(escher->GetWeakPtr());
+  impl::CommandBufferPool pool(
+      escher->vk_device(), escher->device()->vk_main_queue(),
+      escher->device()->vk_main_queue_family(), escher->command_buffer_sequencer(),
+      /*supports_graphics_and_compute=*/true, /*use_protected_memory=*/false);
+
+  BufferPtr host_buffer = buffer_cache.NewHostBuffer(256);
+  ASSERT_TRUE(host_buffer);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+
+  impl::CommandBuffer* first_cb = pool.GetCommandBuffer();
+  first_cb->KeepAlive(host_buffer);
+
+  bool failed_callback_ran = false;
+  bool captured_closure_destroyed = false;
+  EXPECT_FALSE(first_cb->Submit(vk::Queue(), [&, captured_buffer = std::move(host_buffer),
+                                              on_destroy = fit::defer([&]() {
+                                                captured_closure_destroyed = true;
+                                              })]() { failed_callback_ran = true; }));
+
+  // Submit() must retain `callback_` until Retire() rather than destroying it immediately.
+  EXPECT_FALSE(captured_closure_destroyed);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+
+  // Cleanup() retires `first_cb`, drops its callback without running it, and recycles
+  // `captured_buffer` into `buffer_cache`.
+  EXPECT_TRUE(pool.Cleanup());
+  EXPECT_FALSE(failed_callback_ran);
+  EXPECT_TRUE(captured_closure_destroyed);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 1u);
+
+  // Verify `first_cb` was reset and returned to `free_buffers_` with no stale callback retained.
+  impl::CommandBuffer* reused_cb = pool.GetCommandBuffer();
+  EXPECT_EQ(reused_cb, first_cb);
+  bool reused_callback_ran = false;
+  EXPECT_TRUE(reused_cb->Submit(pool.queue(), [&]() { reused_callback_ran = true; }));
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(pool.Cleanup());
+  EXPECT_FALSE(failed_callback_ran);
+  EXPECT_TRUE(reused_callback_ran);
+}
+
+// Verifies that when a command buffer fails Submit() behind an earlier pending buffer in the same
+// pool, its captured resources remain alive until the earlier buffer has retired.
+VK_TEST_F(CommandBufferTest, FailedSubmitRetainsCapturesUntilPriorPendingBuffersRetire) {
+  auto escher = test::GetEscher();
+  auto cb1 = CommandBuffer::NewForGraphics(escher, false);
+  auto cb2 = CommandBuffer::NewForGraphics(escher, false);
+
+  bool cb1_callback_ran = false;
+  bool cb2_callback_ran = false;
+  bool cb2_captures_destroyed = false;
+
+  // Fail submission of `cb2` while `cb1` is still unsubmitted at the front of `pending_buffers_`.
+  EXPECT_FALSE(cb2->Submit(vk::Queue(), [&, on_destroy = fit::defer([&]() {
+                                              cb2_captures_destroyed = true;
+                                            })]() { cb2_callback_ran = true; }));
+  EXPECT_FALSE(cb2_captures_destroyed);
+
+  // Because `cb1` has not retired yet, Cleanup() must not retire `cb2` or destroy its captures.
+  EXPECT_FALSE(escher->Cleanup());
+  EXPECT_FALSE(cb2_callback_ran);
+  EXPECT_FALSE(cb2_captures_destroyed);
+
+  // Once `cb1` is submitted and finishes, Cleanup() retires both `cb1` and `cb2` in FIFO order,
+  // running `cb1`'s callback and destroying `cb2`'s captures without invoking `cb2`'s callback.
+  EXPECT_TRUE(cb1->Submit([&]() {
+    cb1_callback_ran = true;
+    // `cb2` sits behind `cb1`, so `cb2`'s captures must still be alive while `cb1`'s callback runs.
+    EXPECT_FALSE(cb2_captures_destroyed);
+  }));
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(escher->Cleanup());
+  EXPECT_TRUE(cb1_callback_ran);
+  EXPECT_FALSE(cb2_callback_ran);
+  EXPECT_TRUE(cb2_captures_destroyed);
+}
+
+// Verifies that a failed submission on the transfer pool waiting on a semaphore from the graphics
+// pool does not run its completion callback when cleaned up.
+VK_TEST_F(CommandBufferTest, FailedSubmitWithWaitSemaphoreDoesNotRunCallback) {
+  auto escher = test::GetEscher();
+  auto sem = Semaphore::New(escher->vk_device());
+
+  auto graphics_cb = CommandBuffer::NewForGraphics(escher, false);
+  graphics_cb->AddSignalSemaphore(sem);
+
+  auto transfer_cb = CommandBuffer::NewForTransfer(escher);
+  transfer_cb->AddWaitSemaphore(sem, vk::PipelineStageFlagBits::eTransfer);
+
+  bool transfer_callback_ran = false;
+  EXPECT_FALSE(transfer_cb->Submit(vk::Queue(), [&]() { transfer_callback_ran = true; }));
+
+  // Even if Cleanup() runs before `graphics_cb` is submitted or completed, `transfer_cb`'s
+  // callback must not be invoked.
+  EXPECT_FALSE(escher->Cleanup());
+  EXPECT_FALSE(transfer_callback_ran);
+
+  // Submit and retire `graphics_cb` so all pending buffers are cleaned up, and verify that
+  // `transfer_cb`'s callback still never ran.
+  bool graphics_callback_ran = false;
+  EXPECT_TRUE(graphics_cb->Submit([&]() { graphics_callback_ran = true; }));
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(escher->Cleanup());
+  EXPECT_TRUE(graphics_callback_ran);
+  EXPECT_FALSE(transfer_callback_ran);
+}
+
+// Verifies that Frame::EndFrame() skips `frame_retired_callback` on a failed submission while still
+// resetting Frame's internal state and releasing `keep_alive_` resources upon retirement.
+VK_TEST_F(CommandBufferTest, FrameEndFrameFailedSubmitSkipsCallbackAndCleansUpFrame) {
+  auto escher = test::GetEscher();
+  BufferCache buffer_cache(escher->GetWeakPtr());
+  BufferPtr host_buffer = buffer_cache.NewHostBuffer(256);
+  ASSERT_TRUE(host_buffer);
+
+  bool frame_retired_callback_ran = false;
+  {
+    auto frame = escher->NewFrame("test_frame", 0, /*enable_gpu_logging=*/false);
+    // Submit a valid partial frame first and allocate a uniform buffer so `frame` has in-flight
+    // resources in `keep_alive_` when EndFrame() is called.
+    frame->AllocateUniform(64, 16);
+    frame->SubmitPartialFrame(SemaphorePtr());
+
+    frame->cmds()->KeepAlive(host_buffer);
+    host_buffer = nullptr;
+    EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+
+    // Force the final submission in EndFrame() to fail, and skip immediate Cleanup() so `frame`
+    // leaves scope while the command buffers are still unretired.
+    SetQueueForTest(frame, vk::Queue());
+    frame->EndFrame(
+        SemaphorePtr(), [&]() { frame_retired_callback_ran = true; },
+        /*skip_escher_cleanup=*/true);
+  }
+
+  // Until Cleanup() retires the command buffers, `this_frame` inside the failed command buffer's
+  // deferred cleanup action keeps `Frame` and its `keep_alive_` resources alive, and `host_buffer`
+  // is not recycled into `buffer_cache`.
+  EXPECT_FALSE(frame_retired_callback_ran);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 0u);
+
+  EXPECT_VK_SUCCESS(escher->vk_device().waitIdle());
+  EXPECT_TRUE(escher->Cleanup());
+  EXPECT_FALSE(frame_retired_callback_ran);
+  EXPECT_EQ(buffer_cache.free_buffer_count(), 1u);
 }
 
 }  // namespace

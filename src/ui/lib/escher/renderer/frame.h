@@ -42,16 +42,18 @@ class Frame : public Resource {
   // finished.
   void SubmitPartialFrame(const SemaphorePtr& partial_frame_done);
 
-  // Submit the frame's final CommandBuffer.  When it is finished, |frame_done| will be signaled and
-  // |frame_retired_callback| will be invoked; the latter occurs when the command-buffer is cleaned
-  // up in Escher::Cleanup(), perhaps more than a millisecond later.
+  // Submit the frame's final CommandBuffer.  When it is finished, `frame_done` will be signaled and
+  // `frame_retired_callback` will be invoked; the latter occurs when the command-buffer is cleaned
+  // up in Escher::Cleanup(), perhaps more than a millisecond later.  If submitting the final
+  // CommandBuffer fails, `frame_retired_callback` is not invoked.
   void EndFrame(const SemaphorePtr& frame_done, FrameRetiredCallback frame_retired_callback,
                 bool skip_escher_cleanup = false);
 
   // Submit the frame's final CommandBuffer.  When it is finished, all of the semaphores in the
-  // vector |semaphores| will signaled and |frame_retired_callback| will be invoked; the latter
-  // occurs when the the command-buffer is cleaned up in Escher::Cleanup(), perhaps more than a
-  // millisecond later.
+  // vector `semaphores` will be signaled and `frame_retired_callback` will be invoked; the latter
+  // occurs when the command-buffer is cleaned up in Escher::Cleanup(), perhaps more than a
+  // millisecond later.  If submitting the final CommandBuffer fails, `frame_retired_callback` is
+  // not invoked.
   void EndFrame(const std::vector<SemaphorePtr>& semaphores,
                 FrameRetiredCallback frame_retired_callback, bool skip_escher_cleanup = false);
 
@@ -88,6 +90,8 @@ class Frame : public Resource {
   bool use_protected_memory() const { return use_protected_memory_; }
 
  private:
+  friend class VulkanTester;
+
   // These resources will be retained until the current frame is finished
   // running on the GPU.
   void KeepAlive(ResourcePtr resource);
