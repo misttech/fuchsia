@@ -39,7 +39,7 @@ _CANONICAL_IN_TREE_IDK_REPO_NAME = "fuchsia_in_tree_idk+"
 _CANONICAL_RULES_FUCHSIA_REPO_NAME = "rules_fuchsia+"
 
 # LINT.IfChange(bazel_vendor_dir)
-_DEFAULT_BAZEL_VENDOR_DIR = "third_party/bazel_vendor"
+_DEFAULT_BAZEL_VENDOR_DIR = "third_party/bazel_vendor/fuchsia_in_tree"
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
 
 # LINT.IfChange(bazel_registry_dir)

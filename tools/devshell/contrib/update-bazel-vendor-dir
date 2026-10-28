@@ -109,7 +109,7 @@ readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registries/bcr.baz
 "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}"/build/bazel/scripts/update_bazel_vendor_dir.py \
     --workspace="$(fx-get-bazel-workspace)" \
     --bazel="$(fx-get-bazel)" \
-    --bazel-vendor-dir="${BAZEL_VENDOR_DIR}" \
+    --bazel-vendor-dir="${BAZEL_VENDOR_DIR}/fuchsia_in_tree" \
     --bazel-registry-dir="${BAZEL_REGISTRY_DIR}" \
     --repo='@@bazel_features+' \
     --repo='@@bazel_skylib+' \

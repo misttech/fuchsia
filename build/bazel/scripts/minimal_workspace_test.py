@@ -23,7 +23,11 @@ class MainTests(unittest.TestCase):
 
             # Create mock source directory tree expected by minimal_workspace
             (
-                fuchsia_dir / "third_party" / "bazel_vendor" / "bazel_skylib+"
+                fuchsia_dir
+                / "third_party"
+                / "bazel_vendor"
+                / "fuchsia_in_tree"
+                / "bazel_skylib+"
             ).mkdir(parents=True)
             (fuchsia_dir / "LICENSE").touch()
 

@@ -136,7 +136,7 @@ template("generate_fuchsia_bazel_sdk") {
 #
 #    bazel_vendor_dir: (optional)
 #       Path to the Bazel vendor directory to use. Defaults to
-#       //third_party/bazel_vendor
+#       //third_party/bazel_vendor/fuchsia_in_tree
 #
 #    bazel_registry_dir: (optional)
 #       Path to the Bazel registry directory to use. Defaults to
@@ -219,7 +219,7 @@ template("run_fuchsia_bazel_sdk_tests") {
     _bazel_vendor_dir = invoker.bazel_vendor_dir
   } else {
     # LINT.IfChange(bazel_vendor_dir)
-    _bazel_vendor_dir = "//third_party/bazel_vendor"
+    _bazel_vendor_dir = "//third_party/bazel_vendor/fuchsia_in_tree"
     # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
   }
   if (defined(invoker.bazel_registry_dir)) {

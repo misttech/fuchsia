@@ -13,7 +13,7 @@
                     "prebuilt/third_party/fonts/robotomono",
                     "prebuilt/third_party/fonts/robotoslab",
                     "prebuilt/third_party/zoneinfo",
-                    "third_party/bazel_vendor/bazel_tools+remote_coverage_tools_extension+remote_coverage_tools",
+                    "third_party/bazel_vendor/fuchsia_in_tree/bazel_tools+remote_coverage_tools_extension+remote_coverage_tools",
                     "third_party/openthread",
                     "third_party/perfetto",
                     "third_party/pylibs/astroid",

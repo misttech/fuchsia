@@ -5,8 +5,8 @@
                 "bug": "b/514317894",
                 "description": "Missing required field 'License' | Missing required field 'Security Critical'",
                 "paths": [
-                    "third_party/bazel_vendor/apple_support+",
-                    "third_party/bazel_vendor/rules_kotlin+",
+                    "third_party/bazel_vendor/fuchsia_in_tree/apple_support+",
+                    "third_party/bazel_vendor/fuchsia_in_tree/rules_kotlin+",
                     "third_party/crashpad",
                     "third_party/mesa-migrating",
                     "tools/bazel-docgen/third_party/stardoc",

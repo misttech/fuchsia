@@ -21,7 +21,7 @@ common --downloader_config=build/bazel/config/no_downloads_allowed.config
 
 # Use specific vendor directory to pick the content of repository dependencies.
 # LINT.IfChange(bazel_vendor_dir)
-common --vendor_dir=third_party/bazel_vendor
+common --vendor_dir=third_party/bazel_vendor/fuchsia_in_tree
 # LINT.ThenChange(
 #     //build/bazel_sdk/tests/scripts/generate_bazel_launcher.py:bazel_vendor_dir,
 #     //build/bazel/bazel_fuchsia_sdk.gni:bazel_vendor_dir,

@@ -4432,7 +4432,7 @@ def _resolve_defs_bzl_label(mod_label):
     repo_name = repo_part.lstrip("@")
     if repo_name:
         defs_abs = os.path.join(
-            workdir, "third_party", "bazel_vendor", f"{repo_name}+", pkg_path, "defs.bzl"
+            workdir, "third_party", "bazel_vendor", "fuchsia_in_tree", f"{repo_name}+", pkg_path, "defs.bzl"
         )
         canonical_pkg = f"@{repo_name}//{pkg_path}" if pkg_path else f"@{repo_name}//"
     else:
