@@ -241,7 +241,7 @@ bool cpu_suspend_one_wakes_another() {
 //
 // Note, this test only exercises the resume path that reinitializes the CPU's interrupt state on
 // platforms where suspending a CPU may power it down.
-bool cpu_suspend_sync_exec() {
+[[maybe_unused]] bool cpu_suspend_sync_exec() {
   BEGIN_TEST;
 
   constexpr zx_duration_mono_t kTimeout = ZX_SEC(10);
@@ -387,7 +387,8 @@ UNITTEST_START_TESTCASE(platform_suspend_tests)
 UNITTEST("cpu_suspend_not_supported", cpu_suspend_not_supported)
 UNITTEST("cpu_suspend_pending_ipi", cpu_suspend_pending_ipi)
 UNITTEST("cpu_suspend_one_wakes_another", cpu_suspend_one_wakes_another)
-UNITTEST("cpu_suspend_sync_exec", cpu_suspend_sync_exec)
+// TODO(https://fxbug.dev/578943720): Re-enable once lockup_detector OOPS on Sorrel is resolved.
+// UNITTEST("cpu_suspend_sync_exec", cpu_suspend_sync_exec)
 UNITTEST("system_suspend_not_supported", system_suspend_not_supported)
 UNITTEST("system_suspend_pending_ipi", system_suspend_pending_ipi)
 UNITTEST_END_TESTCASE(platform_suspend_tests, "platform_suspend_tests", "platform suspend tests")
