@@ -4,13 +4,13 @@
 
 use crate::reply::Reply;
 
-use async_trait::async_trait;
 use chrono::Duration;
 use command::Command;
 use fuchsia_async::TimeoutExt;
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::lock::{Mutex, MutexLockFuture};
 use futures::{AsyncReadExt, AsyncWriteExt};
+use std::future::Future;
 use std::io::Read;
 use std::sync::Arc;
 use thiserror::Error;
@@ -125,11 +125,12 @@ pub enum UploadError {
     UnexpectedReply { reply: Reply },
 }
 
-#[async_trait]
 pub trait InfoListener {
-    async fn on_info(&self, info: String) -> Result<(), ReadError> {
-        log::info!("Fastboot Info: \"{}\"", info);
-        Ok(())
+    fn on_info(&self, info: String) -> impl Future<Output = Result<(), ReadError>> + Send {
+        async move {
+            log::info!("Fastboot Info: \"{}\"", info);
+            Ok(())
+        }
     }
 }
 
@@ -137,12 +138,15 @@ pub trait InfoListener {
 pub struct LogInfoListener;
 impl InfoListener for LogInfoListener {}
 
-#[async_trait]
 pub trait UploadProgressListener {
-    async fn on_started(&self, size: usize) -> Result<(), UploadError>;
-    async fn on_progress(&self, bytes_written: u64) -> Result<(), UploadError>;
-    async fn on_error(&self, error: &UploadError) -> Result<(), UploadError>;
-    async fn on_finished(&self) -> Result<(), UploadError>;
+    fn on_started(&self, size: usize) -> impl Future<Output = Result<(), UploadError>> + Send;
+    fn on_progress(
+        &self,
+        bytes_written: u64,
+    ) -> impl Future<Output = Result<(), UploadError>> + Send;
+    fn on_error(&self, error: &UploadError)
+    -> impl Future<Output = Result<(), UploadError>> + Send;
+    fn on_finished(&self) -> impl Future<Output = Result<(), UploadError>> + Send;
 }
 
 async fn read_from_interface<T: AsyncRead + Unpin>(interface: &mut T) -> Result<Reply, ReadError> {
@@ -636,7 +640,6 @@ mod test {
         event_queue: Arc<Mutex<Vec<UploadEvent>>>,
     }
 
-    #[async_trait]
     impl UploadProgressListener for PushEventsUploadProgressListener {
         async fn on_started(&self, size: usize) -> Result<(), UploadError> {
             let mut queue = self.event_queue.lock().await;

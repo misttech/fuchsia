@@ -50,7 +50,6 @@ if (is_host) {
     ]
     crate_name = "fastboot"
     edition = "2024"
-    proc_macro_deps = [ "//third_party/rust_crates:async-trait" ]
     test_deps = [ "//src/lib/fuchsia" ]
     visibility = [
       ":*",

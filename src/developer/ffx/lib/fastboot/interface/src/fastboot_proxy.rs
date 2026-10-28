@@ -63,7 +63,6 @@ impl VariableListener {
     }
 }
 
-#[async_trait]
 impl fastboot::InfoListener for VariableListener {
     async fn on_info(&self, info: String) -> Result<(), fastboot::ReadError> {
         if let Some((name, val)) = info.split_once(':') {
@@ -90,7 +89,6 @@ impl<'a> ProgressListener<'a> {
     }
 }
 
-#[async_trait]
 impl fastboot::UploadProgressListener for ProgressListener<'_> {
     async fn on_started(&self, size: usize) -> Result<(), fastboot::UploadError> {
         let size = size.try_into().map_err(|e| {

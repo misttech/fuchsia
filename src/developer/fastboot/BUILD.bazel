@@ -17,9 +17,6 @@ rustc_library(
     ],
     crate_name = "fastboot",
     edition = "2024",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor:async-trait",
-    ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
     test_deps = [
         "//src/lib/fuchsia",
