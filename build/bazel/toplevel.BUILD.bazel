@@ -263,3 +263,13 @@ license(
     license_text = "LICENSE",
     visibility = ["//visibility:public"],
 )
+
+# libdivide is a header-only library, used by the 32-bit arm Starnix vDSO.
+filegroup(
+    name = "libdivide_headers",
+    srcs = [
+        "third_party/github.com/ridiculousfish/libdivide/include/libdivide.h",
+        "third_party/github.com/ridiculousfish/libdivide/src/libdivide.h",
+    ],
+    visibility = ["//src/starnix/kernel/vdso:__pkg__"],
+)

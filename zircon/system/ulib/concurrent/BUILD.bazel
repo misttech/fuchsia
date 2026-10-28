@@ -31,7 +31,13 @@ fx_cc_library_headers(
         "include/lib/concurrent/seqlock_payload.h",
     ],
     visibility = ["//zircon/kernel/lib/kconcurrent:__pkg__"],
-    deps = ["//sdk/lib/stdcompat"],
+    deps = [
+        "//sdk/lib/stdcompat",
+        # Needed when building for Linux (e.g. the Starnix vDSO), whose sysroot
+        # has no <zircon/assert.h>. GN gets it from the Fuchsia sysroot.
+        # @bazel2gn:skip
+        "//sdk/lib/zircon-assert",
+    ],
 )
 
 # seqlock_usermode_fuchsia.cc must not be built into the kernel, which also

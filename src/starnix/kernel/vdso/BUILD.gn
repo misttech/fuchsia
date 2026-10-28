@@ -6,6 +6,7 @@ import("//build/dist/resource.gni")
 import("//src/starnix/build/args.gni")
 import("//src/starnix/kernel/starnix.gni")
 
+# LINT.IfChange(vdso_config)
 config("vdso_config") {
   cflags = [ "-fPIC" ]
   ldflags = [
@@ -29,6 +30,8 @@ config("vdso_config") {
     "-Wl,--version-script," + rebase_path(vdso_version_script, root_build_dir),
   ]
 }
+
+# LINT.ThenChange(//src/starnix/kernel/vdso/BUILD.bazel:vdso_config)
 
 loadable_module("vdso_lib") {
   sources = [

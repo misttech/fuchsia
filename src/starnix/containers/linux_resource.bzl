@@ -11,7 +11,7 @@ load(
     "package_resources_providers",
 )
 
-visibility(["//src/starnix/containers/..."])
+visibility(["//src/starnix/..."])
 
 # The CPUs that have a //build/bazel/platforms:linux_starnix_${cpu} platform
 # for a Fuchsia target CPU, using Fuchsia CPU names.

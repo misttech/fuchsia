@@ -26,6 +26,7 @@ cc_library(
         "zircon/processargs.h",
         "zircon/rights.h",
         "zircon/syscalls.h",
+        "zircon/syscalls/clock.h",
         "zircon/syscalls/debug.h",
         "zircon/syscalls/exception.h",
         "zircon/syscalls/iob.h",

@@ -21,10 +21,10 @@ cc_library(
     includes = [
         "include",
     ],
-    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = [
         "//src:__subpackages__",
         "//vendor/google:__subpackages__",
         "//zircon:__subpackages__",
     ],
+    deps = ["//sdk/lib/zircon-assert"],
 )

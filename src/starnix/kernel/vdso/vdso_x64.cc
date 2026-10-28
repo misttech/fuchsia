@@ -45,8 +45,14 @@ extern "C" __EXPORT int __vdso_gettimeofday(struct timeval* tv, struct timezone*
   return gettimeofday_impl(tv, tz);
 }
 
-extern "C" __EXPORT __WEAK_ALIAS("__vdso_gettimeofday") int gettimeofday(struct timeval* tv,
-                                                                         struct timezone* tz);
+// Redeclare gettimeofday() with the C library's own type, since the type of its
+// timezone argument differs between C libraries (struct timezone* in bionic,
+// void* in glibc 2.31 and later). Both are pointers, so the alias is still
+// ABI-compatible with __vdso_gettimeofday().
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wattribute-alias"
+extern "C" __EXPORT __WEAK_ALIAS("__vdso_gettimeofday") decltype(gettimeofday) gettimeofday;
+#pragma clang diagnostic pop
 
 extern "C" __EXPORT time_t __vdso_time(time_t* t) {
   int ret = syscall(__NR_time, reinterpret_cast<intptr_t>(t), 0, 0);

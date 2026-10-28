@@ -2,9 +2,78 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
+load("//build/bazel/config/derived:compilation_modes.bzl", "is_debug")
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
+load("//src/starnix/containers:linux_resource.bzl", "linux_resource")
 
 package(default_applicable_licenses = ["//:license"])
+
+# Hand-maintained in BUILD.gn above the sentinel.
+# @bazel2gn:skip
+extra_linker_flags(
+    name = "vdso_linker_inputs",
+    link_inputs = [
+        "vdso.ld",
+    ] + select({
+        "@platforms//cpu:arm": ["vdso_arm.map"],
+        "@platforms//cpu:arm64": ["vdso_arm64.map"],
+        "@platforms//cpu:riscv64": ["vdso_riscv64.map"],
+        "@platforms//cpu:x86_64": ["vdso_x64.map"],
+        "//conditions:default": [],
+    }),
+)
+
+# LINT.IfChange(vdso_config)
+# Hand-maintained in BUILD.gn above the sentinel.
+# @bazel2gn:skip
+build_flags(
+    name = "vdso_config",
+    cflags = ["-fPIC"],
+    # Use a custom linker script to ensure only one PT_LOAD header.
+    ldflags = [
+        "-shared",
+        # Make sure libc is not linked into the vDSO. Header-only use is OK.
+        "-nostdlib",
+        "-Wl,--hash-style=both",
+        "-Wl,-T,src/starnix/kernel/vdso/vdso.ld",
+    ] + select({
+        "@platforms//cpu:arm": ["-Wl,--version-script,src/starnix/kernel/vdso/vdso_arm.map"],
+        "@platforms//cpu:arm64": ["-Wl,--version-script,src/starnix/kernel/vdso/vdso_arm64.map"],
+        "@platforms//cpu:riscv64": ["-Wl,--version-script,src/starnix/kernel/vdso/vdso_riscv64.map"],
+        "@platforms//cpu:x86_64": ["-Wl,--version-script,src/starnix/kernel/vdso/vdso_x64.map"],
+        # vdso_calculate_utc also uses these flags and is built for Fuchsia on
+        # every CPU; the version script only matters when linking vdso_lib.
+        "//conditions:default": [],
+    }),
+    subflags = [":vdso_linker_inputs"] + (
+        # TODO(https://fxbug.dev/378658421): Disable lto on arm32 because it doesn't compile
+        [] if is_debug else select({
+            "@platforms//cpu:arm": ["//build/config/lto:no-lto"],
+            "//conditions:default": [],
+        })
+    ),
+)
+# LINT.ThenChange(//src/starnix/kernel/vdso/BUILD.gn:vdso_config)
+
+# The arm-specific flags of the GN //src/starnix/toolchain/config:bionic
+# config, which applies to everything built in the bionic_arm toolchain that
+# GN uses for the arch32 vDSO. The linux_starnix_arm Bazel platform does not
+# add them.
+# @bazel2gn:skip
+build_flags(
+    name = "vdso_arch32_config",
+    cflags = select({
+        "@platforms//cpu:arm": ["-fasynchronous-unwind-tables"],
+        "//conditions:default": [],
+    }),
+    subflags = select({
+        "@platforms//cpu:arm": ["//build/config/arm"],
+        "//conditions:default": [],
+    }),
+)
 
 fx_cc_library(
     name = "vdso_calculate_utc",
@@ -12,6 +81,11 @@ fx_cc_library(
         "vdso_calculate_time.h",
         "vdso_calculate_utc.cc",
         "vdso_platform.h",
+    ],
+    # @bazel2gn:skip
+    build_flags = [
+        ":vdso_arch32_config",
+        ":vdso_config",
     ],
     configs = [":vdso_config"],  # @bazel2gn:raw_overwrite:[ ":vdso_config" ]
     implementation_deps = [
@@ -22,4 +96,73 @@ fx_cc_library(
     ],
     visibility = ["//src/starnix/tests/vdso:__pkg__"],
     alwayslink = True,
+)
+
+# Hand-maintained in BUILD.gn above the sentinel while GN consumers remain.
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "vdso_lib",
+    srcs = [
+        "vdso_calculate_time.h",
+        "vdso_common.cc",
+        "vdso_common.h",
+        "vdso_platform.h",
+    ] + select({
+        "@platforms//cpu:arm": [
+            "vdso_arm.cc",
+            "vdso_arm_eabi.cc",
+            "//:libdivide_headers",
+        ],
+        "@platforms//cpu:arm64": ["vdso_arm64.cc"],
+        "@platforms//cpu:riscv64": ["vdso_riscv64.cc"],
+        "@platforms//cpu:x86_64": ["vdso_x64.cc"],
+    }),
+    build_flags = [
+        ":vdso_arch32_config",
+        ":vdso_config",
+    ],
+    # By default, Linux host libraries statically link libc++. Since this
+    # library specifies nostdlib this option is unused and generates a warning.
+    disable_build_flags = ["//build/config/linux:implicit-host-libs"],
+    disable_instrumentation = True,
+    linkopts = [
+        # Match the DT_SONAME of the GN loadable_module("vdso_lib") output.
+        "-Wl,-soname,libvdso.so",
+    ],
+    linkshared = True,
+    tags = ["manual"],
+    # The vDSO is a Linux binary. Use :vdso_data to build it for the Linux
+    # platform(s) matching the current Fuchsia target.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":vdso_calculate_utc",
+        "//zircon/kernel/lib/fasttime:headers",
+        "//zircon/system/public",
+        "//zircon/system/ulib/affine",
+    ],
+)
+
+# Builds vdso_lib for the Starnix Linux platform with the same CPU as the
+# Fuchsia target (linux_starnix_$cpu). On arm64, also builds the 32-bit arm
+# vDSO used by Starnix's arch32 support (linux_starnix_arm), like the
+# $bionic_linux_arch32_toolchain dependency in GN.
+# Hand-maintained in BUILD.gn above the sentinel while GN consumers remain.
+# @bazel2gn:skip
+linux_resource(
+    name = "vdso_data",
+    src = ":vdso_lib",
+    arch32_dest = "data/libvdso_arch32.so",
+    arch32_src = select({
+        "@platforms//cpu:arm64": ":vdso_lib",
+        "//conditions:default": None,
+    }),
+    dest = "data/libvdso.so",
+)
+
+# Hand-maintained in BUILD.gn above the sentinel while GN consumers remain.
+# @bazel2gn:skip
+alias(
+    name = "vdso",
+    actual = ":vdso_data",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
 )
