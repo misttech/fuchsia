@@ -18,7 +18,7 @@ package_info(
     name = "package_info",
     package_name = "zstd-sys",
     package_url = "",
-    package_version = "2.0.16+zstd.1.5.7",
+    package_version = "2.1.2+zstd.1.5.7",
 )
 
 rust_library(
@@ -64,7 +64,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.0.16+zstd.1.5.7",
+    version = "2.1.2+zstd.1.5.7",
     deps = [
         "//third_party/rust_crates/forks/libc-0.2.190:libc",
     ],

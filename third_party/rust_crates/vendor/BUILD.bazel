@@ -3706,25 +3706,25 @@ alias(
 )
 
 alias(
-    name = "zstd-0.13.3",
-    actual = "//third_party/rust_crates/vendor/zstd-0.13.3:zstd",
+    name = "zstd-0.14.3",
+    actual = "//third_party/rust_crates/vendor/zstd-0.14.3:zstd",
     tags = ["manual"],
 )
 
 alias(
     name = "zstd",
-    actual = "//third_party/rust_crates/vendor/zstd-0.13.3:zstd",
+    actual = "//third_party/rust_crates/vendor/zstd-0.14.3:zstd",
     tags = ["manual"],
 )
 
 alias(
-    name = "zstd-safe-7.2.4",
-    actual = "//third_party/rust_crates/vendor/zstd-safe-7.2.4:zstd_safe",
+    name = "zstd-safe-8.2.0",
+    actual = "//third_party/rust_crates/vendor/zstd-safe-8.2.0:zstd_safe",
     tags = ["manual"],
 )
 
 alias(
     name = "zstd-safe",
-    actual = "//third_party/rust_crates/vendor/zstd-safe-7.2.4:zstd_safe",
+    actual = "//third_party/rust_crates/vendor/zstd-safe-8.2.0:zstd_safe",
     tags = ["manual"],
 )

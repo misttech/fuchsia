@@ -2886,19 +2886,19 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("zstd") {
-  public_deps = [ ":zstd-v0_13_3" ]
+  public_deps = [ ":zstd-v0_14_3" ]
 }
 
-group("zstd-0.13.3") {
-  public_deps = [ ":zstd-v0_13_3" ]
+group("zstd-0.14.3") {
+  public_deps = [ ":zstd-v0_14_3" ]
 }
 
 group("zstd-safe") {
-  public_deps = [ ":zstd-safe-v7_2_4" ]
+  public_deps = [ ":zstd-safe-v8_2_0" ]
 }
 
-group("zstd-safe-7.2.4") {
-  public_deps = [ ":zstd-safe-v7_2_4" ]
+group("zstd-safe-8.2.0") {
+  public_deps = [ ":zstd-safe-v8_2_0" ]
 }
 
 group("mock-omaha-server.mock-omaha-server") {
@@ -27492,29 +27492,29 @@ rustc_library("zmij-v1_0_21") {
   applicable_licenses = [ ":zmij-v1_0_21.license" ]
 }
 
-license("zstd-v0_13_3.license") {
+license("zstd-v0_14_3.license") {
   public_package_name = "zstd"
-  license_files = [ "//third_party/rust_crates/vendor/zstd-0.13.3/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/zstd-0.14.3/LICENSE" ]
 }
 
-rustc_library("zstd-v0_13_3") {
+rustc_library("zstd-v0_14_3") {
   crate_name = "zstd"
-  source_root = "//third_party/rust_crates/vendor/zstd-0.13.3/src/lib.rs"
-  output_name = "zstd-ee0340550aed463e"
+  source_root = "//third_party/rust_crates/vendor/zstd-0.14.3/src/lib.rs"
+  output_name = "zstd-36c90f48d41d453f"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zstd-safe-v7_2_4" ]
+  deps += [ ":zstd-safe-v8_2_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ee0340550aed463e",
-    "-Cextra-filename=-ee0340550aed463e",
+    "-Cmetadata=36c90f48d41d453f",
+    "-Cextra-filename=-36c90f48d41d453f",
     "--cfg=feature=\"arrays\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"legacy\"",
@@ -27523,36 +27523,32 @@ rustc_library("zstd-v0_13_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zstd-v0_13_3.license" ]
+  applicable_licenses = [ ":zstd-v0_14_3.license" ]
 }
 
-license("zstd-safe-v7_2_4.license") {
+license("zstd-safe-v8_2_0.license") {
   public_package_name = "zstd_safe"
-  license_files = [
-    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE",
-    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE.Apache-2.0",
-    "//third_party/rust_crates/vendor/zstd-safe-7.2.4/LICENSE.Mit",
-  ]
+  license_files = [ "//third_party/rust_crates/vendor/zstd-safe-8.2.0/LICENSE" ]
 }
 
-rustc_library("zstd-safe-v7_2_4") {
+rustc_library("zstd-safe-v8_2_0") {
   crate_name = "zstd_safe"
-  source_root = "//third_party/rust_crates/vendor/zstd-safe-7.2.4/src/lib.rs"
-  output_name = "zstd_safe-faffe229c81514e4"
+  source_root = "//third_party/rust_crates/vendor/zstd-safe-8.2.0/src/lib.rs"
+  output_name = "zstd_safe-7946a1c0bd533e4d"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zstd-sys-v2_0_16+zstd_1_5_7" ]
+  deps += [ ":zstd-sys-v2_1_2+zstd_1_5_7" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=faffe229c81514e4",
-    "-Cextra-filename=-faffe229c81514e4",
+    "-Cmetadata=7946a1c0bd533e4d",
+    "-Cextra-filename=-7946a1c0bd533e4d",
     "--cfg=feature=\"arrays\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"legacy\"",
@@ -27562,13 +27558,13 @@ rustc_library("zstd-safe-v7_2_4") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":zstd-safe-v7_2_4.license" ]
+  applicable_licenses = [ ":zstd-safe-v8_2_0.license" ]
 }
 
-rustc_library("zstd-sys-v2_0_16+zstd_1_5_7") {
+rustc_library("zstd-sys-v2_1_2+zstd_1_5_7") {
   crate_name = "zstd_sys"
   source_root = "//third_party/rust_crates/forks/zstd-sys/src/lib.rs"
-  output_name = "zstd_sys-66b1706dcab3102"
+  output_name = "zstd_sys-da47f2e2ce65da20"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -27581,8 +27577,8 @@ rustc_library("zstd-sys-v2_0_16+zstd_1_5_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=66b1706dcab3102",
-    "-Cextra-filename=-66b1706dcab3102",
+    "-Cmetadata=da47f2e2ce65da20",
+    "-Cextra-filename=-da47f2e2ce65da20",
     "--cfg=feature=\"legacy\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"zdict_builder\"",

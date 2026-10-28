@@ -284,8 +284,8 @@ winnow = "1.0.4"
 xml = "1.4.0"
 zerocopy = { version = "0.8.61", features = ["derive", "simd"] }
 zerotrie = { version = "0.2.5", features = ["alloc"] }
-zstd = "0.13.3"
-zstd-safe = "7.2.4"
+zstd = "0.14.3"
+zstd-safe = "8.2.0"
 # keep-sorted end
 
 # Kernel dependencies
@@ -1479,14 +1479,14 @@ env_vars = [ "CARGO_PKG_VERSION=9.0.5" ]
 [gn.package.zmij."1.0.21"]
 rustflags = []
 
-[gn.package.zstd-safe."7.2.4"]
+[gn.package.zstd-safe."8.2.0"]
 rustflags = []
 
 # Note that the zstd version we use on Fuchsia doesn't match the current zstd/zstd-safe crate,
 # however we do not rely on any new or experimental features outside of the existing APIs these
 # crates provide. When we do update the zstd/zstd-safe crates, we should ensure that we update the
 # zstd version pinned in the integration repo via the fuchsia/third_party/flower file accordingly.
-[gn.package.zstd-sys."2.0.16+zstd.1.5.7"]
+[gn.package.zstd-sys."2.1.2+zstd.1.5.7"]
 rustflags = []
 # It is a fork:
 uses_fuchsia_license = true
