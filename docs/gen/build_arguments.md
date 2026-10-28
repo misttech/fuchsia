@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:787
+From //build/config/BUILDCONFIG.gn:788
 
 ### allowed_test_device_types
 
@@ -1695,6 +1695,16 @@ Note: setting lint levels in source takes precedence over this.
 **Current value (from the default):** `false`
 
 From //build/rust/config.gni:77
+
+### cmpct_debug
+
+Enable cmpctmalloc debug fills (free fill 0x77, alloc fill 0x99, padding
+fill 0x55) to detect use-after-free and heap corruption.
+Force-enabled on riscv64 to track https://fxbug.dev/404291515.
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/switch/BUILD.gn:33
 
 ### cobalt_environment
 
@@ -4004,7 +4014,7 @@ configuration / Rust custom target definition.
 
 **Current value (from the default):** `["//build/config:cpu_baseline"]`
 
-From //zircon/kernel/switch/BUILD.gn:33
+From //zircon/kernel/switch/BUILD.gn:38
 
 ### experimental_mem_enabled
 
@@ -4090,7 +4100,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:545
+From //build/config/BUILDCONFIG.gn:546
 
 ### fat_lto_objects
 
@@ -5171,7 +5181,7 @@ Each element of the list is one variant, which is a scope defining:
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:300
+From //build/config/BUILDCONFIG.gn:301
 
 ### link_rbe_check
 
@@ -8832,7 +8842,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:777
+From //build/config/BUILDCONFIG.gn:778
 
 ### select_variant_canonical
 
@@ -8842,7 +8852,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:782
+From //build/config/BUILDCONFIG.gn:783
 
 ### select_variant_shortcuts
 
@@ -8919,7 +8929,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:552
+From //build/config/BUILDCONFIG.gn:553
 
 ### skip_buildtools_check
 
@@ -9196,7 +9206,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:964
+From //build/config/BUILDCONFIG.gn:965
 
 ### truncate_build_info_commit_date
 
@@ -9659,7 +9669,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:981
+From //build/config/BUILDCONFIG.gn:982
 
 ### zircon_tracelog
 
