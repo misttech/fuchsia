@@ -1,3 +1,4 @@
-curtisgalloway@google.com
-hansens@google.com
-puneetha@google.com
+include /src/devices/usb/OWNERS
+
+jerrychou@google.com
+jpavankumar@google.com
