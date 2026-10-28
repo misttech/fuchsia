@@ -1,0 +1,13 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+# LINT.IfChange
+# NOTE: `bin`, `httpsdate_time_source_integration_test`, and
+# `httpsdate-time-source-integration-tests` remain in BUILD.gn until
+# `//src/diagnostics/archivist:archivist-for-embedding-bundle` and
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`
+# are migrated to Bazel.
+# LINT.ThenChange(BUILD.gn)

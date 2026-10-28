@@ -5,6 +5,13 @@
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
+# LINT.IfChange
+
+# NOTE: `bin`, `httpsdate_time_source_integration_test`, and
+# `httpsdate-time-source-integration-tests` remain in BUILD.gn until
+# `//src/diagnostics/archivist:archivist-for-embedding-bundle` and
+# `//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component`
+# are migrated to Bazel.
 rustc_test("bin") {
   name = "httpsdate_time_source_tests"
   edition = "2024"
@@ -49,3 +56,4 @@ group("tests") {
   testonly = true
   deps = [ ":httpsdate-time-source-integration-tests" ]
 }
+# LINT.ThenChange(BUILD.bazel)
