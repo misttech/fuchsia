@@ -11,13 +11,27 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
+#include <vm/page.h>
+#include <vm/pinned_vm_object.h>
+
 extern "C" {
 
-zx_status_t cpp_arm_smmu_sleep_relative(zx_duration_t delay_ns);
-
 #if defined(ARM_SMMU_HOST_TEST)
+zx_status_t cpp_arm_smmu_sleep_relative(zx_duration_t delay_ns);
 void cpp_arm_smmu_clean_dcache_range(uintptr_t start, size_t len);
 void cpp_arm_smmu_on_pte_write(const uint64_t* slot, uint64_t new_val, uint32_t level);
+void cpp_arm_smmu_on_table_zero(uintptr_t table_vaddr, size_t len);
+zx_status_t cpp_arm_smmu_pmm_alloc_page(uint32_t alloc_flags, vm_page_t** out_page);
+void cpp_arm_smmu_pmm_free_page(vm_page_t* page);
+vm_page_t* cpp_arm_smmu_paddr_to_vm_page(paddr_t pa);
+paddr_t cpp_arm_smmu_vm_page_paddr(const vm_page_t* page);
+uintptr_t cpp_arm_smmu_paddr_to_physmap(paddr_t pa);
+paddr_t cpp_arm_smmu_physmap_to_paddr(uintptr_t vaddr);
+uint64_t cpp_arm_smmu_pinned_vmo_offset(const PinnedVmObject* pinned_vmo);
+uint64_t cpp_arm_smmu_pinned_vmo_size(const PinnedVmObject* pinned_vmo);
+zx_status_t cpp_arm_smmu_pinned_vmo_lookup_contiguous(const PinnedVmObject* pinned_vmo,
+                                                      uint64_t offset, size_t size,
+                                                      paddr_t* out_paddr);
 #endif  // defined(ARM_SMMU_HOST_TEST)
 
 }  // extern "C"

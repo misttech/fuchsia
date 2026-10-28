@@ -126,5 +126,9 @@ TEST(SmmuModeStringTest, Validation) {
   EXPECT_FALSE(ValidateSmmuModeString("invalid_segment,0x1234=passthru"));  // Bad segment first
 }
 
+extern "C" bool rust_arm_smmu_common_smoke_test();
+
+TEST(SmmuModeStringTest, RustCommonSmokeTest) { EXPECT_TRUE(rust_arm_smmu_common_smoke_test()); }
+
 }  // namespace
 }  // namespace arm_smmu

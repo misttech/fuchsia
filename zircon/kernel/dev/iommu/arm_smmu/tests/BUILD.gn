@@ -5,7 +5,32 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/components.gni")
+import("//build/rust/rustc_staticlib.gni")
 import("//build/test.gni")
+
+rustc_staticlib("arm_smmu_host_rs") {
+  edition = "2024"
+  source_root = "host_lib.rs"
+  sources = [
+    "../common/constants.rs",
+    "../common/device_aspace.rs",
+    "../common/env.rs",
+    "../common/mod.rs",
+    "../common/page_cache.rs",
+    "../common/smmu_mode.rs",
+    "../common/translation_table.rs",
+    "../common/vmsav8_64.rs",
+    "../mod.rs",
+    "host_lib.rs",
+  ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/kalloc",
+    "//src/lib/zr",
+    "//zircon/system/ulib/fbl/rust:fbl",
+    "//zircon/system/ulib/region-alloc/rust:region-alloc",
+  ]
+}
 
 cc_test_executable("arm_smmu_tests_binary") {
   # Tests
@@ -40,6 +65,7 @@ cc_test_executable("arm_smmu_tests_binary") {
   defines = [ "ARM_SMMU_HOST_TEST=1" ]
 
   deps = [
+    ":arm_smmu_host_rs",
     "//sdk/lib/zbi-format",
     "//sdk/lib/zircon-assert",
     "//zircon/system/ulib/fbl",

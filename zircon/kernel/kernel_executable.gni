@@ -104,6 +104,7 @@ template("kernel_executable") {
     crate_root = sources[0]
     rustflags = [
       "--edition=2024",
+      "--cfg=is_kernel",
 
       # Disambiguate rustc's intermediate object filenames across kernel
       # executables that share crate name and source root.

@@ -202,6 +202,10 @@ pub mod arm_gicv2;
 pub mod arm_gicv3;
 
 #[cfg(target_arch = "aarch64")]
+#[path = "dev/iommu/arm_smmu/mod.rs"]
+pub mod arm_smmu;
+
+#[cfg(target_arch = "aarch64")]
 #[path = "dev/power/iris/iris.rs"]
 pub mod power_iris;
 
