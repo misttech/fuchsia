@@ -1,38 +1,49 @@
 # Migration Package Selection
 
+**Batching multiple cohesive packages into one CL is the default**: To reduce
+the total number of CLs generated per person, lower reviewer burden, and preserve
+CQ capacity, always aim to batch multiple cohesive packages (up to 5) into a
+single CL whenever they share the same area and target type and match the
+[Grouping Rules](#grouping-rules). Migrating only a single package in a CL is a
+fallback reserved for when no other cohesive ready packages can be grouped with it,
+or when the user explicitly requests migrating a single package (e.g., "migrate
+one package").
+
 Select the **migration packages** one at a time:
 1. Select the first **migration package** from the top of the **control table** and claim its ownership (steps 1 to 3).
 2. After a package is added to the **migration packages**, also add the [packages that have to be migrated together](#packages-that-have-to-be-migrated-together) with it (step 4).
-3. While the number of **migration packages** is below the **migration package count**, select another package and claim its ownership (steps 5, 2, 3 and 4). If the **migration package count** is 5 or less, the package must be able to be migrated in the same CL as the **migration packages** according to the [Grouping Rules](#grouping-rules). If it is more than 5, any package can be selected, because the **migration packages** are split into several **migration groups** in step 8.
+3. While the number of **migration packages** is below the **migration package count** (which defaults to 5 for batching by default, or up to the requested count if specified):
+   * Select another package and claim its ownership (steps 5, 2, 3 and 4).
+   * If the **migration package count** is 5 or less, the package must be able to be migrated in the same CL as the **migration packages** according to the [Grouping Rules](#grouping-rules). Greedily search the **control table** for ready packages in the same area and target type that form a cohesive unit with the selected packages.
+   * If it is more than 5, any package can be selected, because the **migration packages** are split into several **migration groups** in step 8.
 4. Stop selecting when the number of **migration packages** reaches the **migration package count**, no more package can be selected, or a [selection failure](#selection-failures) happens. Then run steps 6 and 7 for each **migration package**, and step 8 to split the **migration packages** into **migration groups**.
 
 The **migration package count** is checked only before selecting a new package. After a new package and the packages that have to be migrated together with it are added, the number of **migration packages** may exceed the **migration package count**; this is expected.
-
-Migrating only the first **migration package** in one CL is the default and is expected when no other package can be grouped with it. If the **migration package count** is 5 or less, do not add a package to the CL only to reach the **migration package count**.
 
 If there is a **migration directory**, follow [Directory Selection](#directory-selection) instead of steps 1 to 5, and then run steps 6 and 7 for each **migration package**, and step 8.
 
 ## Directory Selection
 
-Select all the packages under the **migration directory** as the **migration packages**. A package is under the **migration directory** if its directory is the **migration directory** itself or one of its subdirectories, compared by whole path components (e.g., for the **migration directory** `src/lib/foo`, `src/lib/foo` and `src/lib/foo/bar` are under it, but `src/lib/foobar` is not).
+Select packages under the **migration directory** as the **migration packages**. A package is under the **migration directory** if its directory is the **migration directory** itself or one of its subdirectories, compared by whole path components (e.g., for the **migration directory** `src/lib/foo`, `src/lib/foo` and `src/lib/foo/bar` are under it, but `src/lib/foobar` is not).
 
 1. Use the "gsheets" skill: In the **control table**, find all the rows whose package is under the **migration directory**.
    * If the **control table** link cannot be resolved or the sheet cannot be read, fail the Migration Package Selection step with the reason: "Failed to read the control table."
    * If no row is found, fail the Migration Package Selection step with the reason: "No package under `<migration directory>` is found in the control table."
 2. From these rows, take the rows where the "Migration Status" column is "ready_for_migration" and the "Owner" column is empty as the candidate packages. Skip the other rows (e.g., packages that are already migrated, in progress, blocked, or owned by another user).
    * If there is no candidate package, fail the Migration Package Selection step with the reason: "No package under `<migration directory>` is ready for migration."
-3. If there are more than 10 candidate packages, confirm with the user before claiming any of them, because all of them are migrated in this run. Tell the user the **migration directory**, the total number of candidate packages, and their directories, and ask whether to proceed with the migration of all of them.
-   * If the user confirms, continue to the next step.
+3. If the user specified a package count in the prompt (e.g., "migrate the next 3 targets in `<migration directory>`"), limit the candidate packages to at most that count. Otherwise, if there are more than 10 candidate packages, confirm with the user before claiming any of them, telling the user the **migration directory**, the total number of candidate packages, and their directories, and ask whether to proceed with the migration of all of them.
+   * If the user confirms (or candidate packages <= 10, or a count was specified), continue to the next step.
    * Otherwise, fail the Migration Package Selection step with the reason: "The user canceled the migration of `<migration directory>`."
 4. For each candidate package, from the top of the **control table**, claim its ownership and check for an existing migration CL as described in [Claim migration ownership](#2-claim-migration-ownership) and [Check for an existing migration CL](#3-check-for-an-existing-migration-cl).
    * If it's dropped in [Claim migration ownership](#2-claim-migration-ownership) or [Check for an existing migration CL](#3-check-for-an-existing-migration-cl), skip it and continue with the next candidate package, instead of going to [Select the next package](#5-select-the-next-package).
    * If it's added to the **migration packages**, continue with the next candidate package, instead of going to [Add the packages that have to be migrated together](#4-add-the-packages-that-have-to-be-migrated-together).
    * If a [selection failure](#selection-failures) happens, handle it as described there.
+   * If a specific package count was requested and the number of claimed **migration packages** reaches that count, stop claiming and continue to step 5.
 5. When all the candidate packages are handled:
    * If no **migration package** has been selected, fail the Migration Package Selection step with the reason: "No migration package is found under `<migration directory>`."
    * Otherwise, continue to [Check the Buganizer Tickets](#6-check-the-buganizer-tickets).
 
-In Directory Selection, the **migration package count**, [Add the packages that have to be migrated together](#4-add-the-packages-that-have-to-be-migrated-together) and [Select the next package](#5-select-the-next-package) do not apply: all the packages under the **migration directory** that can be claimed are migrated, and no package outside the **migration directory** is added. If there are more than 5 **migration packages**, they are split into **migration groups** in step 8.
+In Directory Selection, all candidate packages under the **migration directory** (up to the requested count, if specified) are batched together: if there are 5 or fewer **migration packages**, they are kept in a single **migration group** and migrated in ONE CL. If there are more than 5 **migration packages**, they are split into **migration groups** of up to 5 cohesive packages in step 8.
 
 ## Grouping Rules
 
@@ -113,8 +124,8 @@ When all of them, including the packages added transitively, are handled, contin
 * If no **migration package** has been selected yet, refer to [Find the first package](#1-find-the-first-package) to find another package for the migration.
 * If the number of **migration packages** has reached the **migration package count**, continue to the next step.
 * Otherwise, use the "gsheets" skill: In the **control table**, find the rows where the "Migration Status" column is "ready_for_migration", the "Owner" column is empty, and the row is not already one of the **migration packages**.
-   * If the **migration package count** is 5 or less, from the top, find the first of these rows that can be grouped with the **migration packages** according to the [Grouping Rules](#grouping-rules).
-   * If the **migration package count** is more than 5, take the first of these rows from the top. It does not need to be able to be grouped with the **migration packages**; it is put into a **migration group** in step 8.
+   * If the **migration package count** is 5 or less (including the default batching behavior), greedily search the rows from top to bottom to find rows that can be grouped with the **migration packages** according to the [Grouping Rules](#grouping-rules) (matching Pattern A, B, C, or D). Pick the first such row.
+   * If the **migration package count** is more than 5, take the first of these rows from the top. It does not need to be able to be grouped with the **migration packages**; it will be partitioned into **migration groups** in step 8.
    * If the **control table** cannot be read, it's a [selection failure](#selection-failures) with the reason: "Failed to read the control table."
    * If such a row is found, it's the candidate package. Refer to [Claim migration ownership](#2-claim-migration-ownership) to claim it.
    * If no such row is found, stop selecting packages and continue to the next step with the **migration packages** selected so far.
@@ -137,8 +148,8 @@ Use the "gsheets" skill: In the **control table**, change "Migration Status" of 
 
 Each **migration group** is migrated by one Planter task and uploaded as one CL. Every **migration package** is in exactly one **migration group**.
 
-* If there are 5 or fewer **migration packages**, or the **migration package count** is 5 or less and there is no **migration directory**, all the **migration packages** form one **migration group**.
-* Otherwise, split the **migration packages** according to the [Grouping Rules](#grouping-rules):
+* If there are 5 or fewer **migration packages**, all the **migration packages** form **one migration group** (migrated together in a single CL).
+* Otherwise, split the **migration packages** according to the [Grouping Rules](#grouping-rules) into as few migration groups as possible:
   1. Start a new **migration group** with the first **migration package**, in the order they were selected, that is not in a **migration group** yet. Add the [packages that have to be migrated together](#packages-that-have-to-be-migrated-together) with it that are **migration packages**, transitively.
   2. In the order they were selected, add each **migration package** that is not in a **migration group** yet and can be grouped with the packages of this **migration group** according to the [Grouping Rules](#grouping-rules), together with the **migration packages** that have to be migrated together with it, while the **migration group** has fewer than 5 packages.
   3. Repeat from 1 until every **migration package** is in a **migration group**. A **migration package** that cannot be grouped with any other package forms a **migration group** by itself.
