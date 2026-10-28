@@ -33,8 +33,21 @@ for i in range(len(args)):
         log_level = args[i + 1]
 
 if target and log_dir:
-    h = hashlib.sha256(target.encode("utf-8")).hexdigest()[:16]
-    meta_path = os.path.join(log_dir, f"ffx_uart_{h}.json")
+    if socket_path:
+        meta_path = os.path.splitext(socket_path)[0] + ".json"
+        base = os.path.basename(meta_path)
+        h = (
+            base[len("ffx_uart_") : -len(".json")]
+            if base.startswith("ffx_uart_") and base.endswith(".json")
+            else hashlib.sha256(target.encode("utf-8")).hexdigest()[:16]
+        )
+    else:
+        try:
+            canon = os.path.realpath(target)
+        except Exception:
+            canon = target
+        h = hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
+        meta_path = os.path.join(log_dir, f"ffx_uart_{h}.json")
     pid = os.fork()
     if pid == 0:
         devnull = os.open(os.devnull, os.O_RDWR)

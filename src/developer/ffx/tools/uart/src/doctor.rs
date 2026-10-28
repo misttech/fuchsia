@@ -6,19 +6,30 @@
 
 use crate::driver::SOCKET_PROBE_TIMEOUT;
 use crate::metadata::{
-    CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UART_FILE_PREFIX,
-    UNIX_SOCKET_EXTENSION, canonicalize_target, get_shared_uart_path, get_target_id, is_target_id,
+    CONTROL_SOCKET_EXTENSION, ConnectionMetadata, ConnectionStatus, DaemonMetrics,
+    METADATA_FILE_EXTENSION, UART_FILE_PREFIX, UNIX_SOCKET_EXTENSION, canonicalize_target,
+    get_shared_uart_path, get_target_id, is_target_id,
 };
-use crate::sys::is_driver_running;
+use crate::sys::{
+    DaemonLiveness, check_daemon_liveness, is_driver_running, read_metrics_from_control_socket,
+};
 use ffx_config::EnvironmentContext;
 use fho::Result;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
+use std::num::NonZeroU32;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use tokio::net::UnixStream;
+
+/// Threshold in milliseconds of read inactivity after a write before a connected
+/// UART session is considered stalled.
+const STALL_THRESHOLD_MS: u64 = 5000;
+
+/// Conversion factor from milliseconds to seconds.
+const MS_PER_SECOND: f64 = 1000.0;
 
 /// Outcome of a single diagnostic check executed by `ffx uart doctor`.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -43,6 +54,22 @@ pub enum FixType {
     DeleteMetadataFiles {
         /// The 16-character hex target IDs whose files should be removed.
         target_ids: Vec<String>,
+    },
+    /// Terminate an unresponsive daemon process and clean up its metadata files.
+    KillDaemon {
+        /// Process ID of the unresponsive daemon.
+        pid: u32,
+        /// The 16-character hex target ID associated with the daemon.
+        target_id: String,
+    },
+    /// Terminate any stale daemon for `stale_target_id`, clean up its files, and reconnect to `target_path`.
+    RestartConnection {
+        /// The 16-character hex target ID of the stale connection.
+        stale_target_id: String,
+        /// The target serial path to reconnect to.
+        target_path: String,
+        /// Optional baud rate to use when reconnecting.
+        baud: Option<NonZeroU32>,
     },
     /// Terminate a process holding an exclusive lock on `port_path` and clean up stale metadata.
     KillDriverLockingPort {
@@ -366,6 +393,41 @@ impl DiagnosticCheck for MetadataCheck {
     }
 }
 
+/// Verifies that recorded daemon processes are alive and responsive on their control sockets.
+#[derive(Debug)]
+pub struct ProcessCheck;
+
+impl DiagnosticCheck for ProcessCheck {
+    fn name(&self) -> &'static str {
+        "Process Liveness & Conflict Detection"
+    }
+
+    async fn diagnose(
+        &self,
+        context: &EnvironmentContext,
+        target: Option<&str>,
+    ) -> Result<CheckStatus> {
+        for (path, target_id, meta) in matching_metadata_entries(context, target) {
+            let control_socket = path.with_extension("control");
+            match check_daemon_liveness(meta.pid, &control_socket).await {
+                DaemonLiveness::Unresponsive => {
+                    return Ok(CheckStatus::Failure {
+                        message: format!(
+                            "Daemon PID {} for target '{}' is UNRESPONSIVE via control socket",
+                            meta.pid, meta.target
+                        ),
+                        fix_type: Some(FixType::KillDaemon { pid: meta.pid, target_id }),
+                    });
+                }
+                // Dead PIDs in metadata files are already reported by MetadataCheck.
+                DaemonLiveness::Dead | DaemonLiveness::Alive => {}
+            }
+        }
+
+        Ok(CheckStatus::Success)
+    }
+}
+
 /// Detects when a serial character device is exclusively locked by an external or stale process.
 #[derive(Debug)]
 pub struct PortLockCheck;
@@ -493,6 +555,93 @@ impl DiagnosticCheck for PortLockCheck {
 
         for (t, active_daemon_pid) in targets_to_check {
             if let Some(failure) = Self::check_port_lock(PathBuf::from(&t), active_daemon_pid) {
+                return Ok(failure);
+            }
+        }
+
+        Ok(CheckStatus::Success)
+    }
+}
+
+/// Inspects daemon metrics for repeated handshake failures or read stalls after writes.
+#[derive(Debug)]
+pub struct StallCheck;
+
+impl StallCheck {
+    fn evaluate_metrics(
+        target_id: String,
+        meta: ConnectionMetadata,
+        metrics: &DaemonMetrics,
+    ) -> Option<CheckStatus> {
+        match meta.status {
+            ConnectionStatus::Connecting if metrics.handshake_failures > 0 => {
+                Some(CheckStatus::Failure {
+                    message: format!(
+                        "Connection to target '{}' is stuck in connecting state ({} handshake failures).",
+                        meta.target, metrics.handshake_failures
+                    ),
+                    fix_type: Some(FixType::RestartConnection {
+                        stale_target_id: target_id,
+                        target_path: meta.target,
+                        baud: meta.baud,
+                    }),
+                })
+            }
+            ConnectionStatus::Connected => {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let last_read = metrics.last_read_timestamp_ms;
+                let last_write = metrics.last_write_timestamp_ms;
+                let stall_ref = if last_read == 0 && last_write > 0 {
+                    Some(last_write)
+                } else if last_write > last_read {
+                    Some(last_read)
+                } else {
+                    None
+                }?;
+                let elapsed_ms = now_ms.saturating_sub(stall_ref);
+                if elapsed_ms <= STALL_THRESHOLD_MS {
+                    return None;
+                }
+                let elapsed_secs = elapsed_ms as f64 / MS_PER_SECOND;
+                Some(CheckStatus::Failure {
+                    message: format!(
+                        "Connection to target '{}' appears to be stalled (no response received for {:.1}s after write activity).\n    To diagnose, inspect target serial driver and fdomain-uart-driver logs.",
+                        meta.target, elapsed_secs
+                    ),
+                    fix_type: Some(FixType::RestartConnection {
+                        stale_target_id: target_id,
+                        target_path: meta.target,
+                        baud: meta.baud,
+                    }),
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
+impl DiagnosticCheck for StallCheck {
+    fn name(&self) -> &'static str {
+        "Connection Health & Stall Detection"
+    }
+
+    async fn diagnose(
+        &self,
+        context: &EnvironmentContext,
+        target: Option<&str>,
+    ) -> Result<CheckStatus> {
+        for (path, target_id, meta) in matching_metadata_entries(context, target) {
+            if !is_driver_running(meta.pid) {
+                continue;
+            }
+            let control_socket_path = path.with_extension("control");
+            let Some(metrics) = read_metrics_from_control_socket(&control_socket_path).await else {
+                continue;
+            };
+            if let Some(failure) = Self::evaluate_metrics(target_id, meta, &metrics) {
                 return Ok(failure);
             }
         }

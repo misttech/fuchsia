@@ -1075,6 +1075,8 @@ async fn test_is_pty_target_virtual_socket_detection() {
 fn setup_mock_connection_fixture(
     shared_data_dir: &Path,
     target: &str,
+    last_read_timestamp_ms: u64,
+    last_write_timestamp_ms: u64,
 ) -> (std::process::Child, PathBuf) {
     fs::create_dir_all(shared_data_dir).unwrap();
     let target_id = get_target_id(&canonicalize_target(target));
@@ -1095,6 +1097,32 @@ fn setup_mock_connection_fixture(
 
     let socket_path = shared_data_dir.join(format!("ffx_uart_{}.sock", target_id));
     bind_unlistened_socket(&socket_path);
+    let control_listener =
+        std::os::unix::net::UnixListener::bind(socket_path.with_extension("control")).unwrap();
+
+    let metrics_json = serde_json::to_string(&DaemonMetrics {
+        checksum_errors: 0,
+        retransmissions: 0,
+        active_protocol: UartProtocol::ResendSP,
+        estimated_rtt_ms: 0,
+        connection_drops: 0,
+        handshake_failures: 0,
+        last_read_timestamp_ms,
+        last_write_timestamp_ms,
+        outgoing_queue_len: 0,
+        last_target_error: None,
+    })
+    .unwrap();
+
+    let _mock_server = std::thread::spawn(move || {
+        for _ in 0..2 {
+            if let Ok((mut stream, _)) = control_listener.accept() {
+                let _ = stream.write_all(metrics_json.as_bytes());
+            } else {
+                break;
+            }
+        }
+    });
 
     (child, meta_path)
 }
@@ -1105,7 +1133,7 @@ async fn test_doctor_no_issues() {
     let target = "/emu:test-target-healthy";
     let _guard = DaemonCleanupGuard::new(&env, target);
     let (mut child, _meta_path) =
-        setup_mock_connection_fixture(&temp_path.path().join("ffx_uart"), target);
+        setup_mock_connection_fixture(&temp_path.path().join("ffx_uart"), target, 0, 0);
 
     let tool = DoctorTool { cmd: DoctorCommand { fix: false }, context: env.context.clone() };
     let buffers = TestBuffers::default();
@@ -1633,6 +1661,79 @@ async fn test_doctor_target_specifier_without_healthy_metadata() {
     let writer_fix = ffx_writer::SimpleWriter::new_test(&buffers_fix);
     tool_fix.main(writer_fix).await.unwrap();
     assert!(!orphan_sock.exists(), "Orphaned socket should be removed by --fix");
+}
+
+fn setup_stalled_connection_fixture(
+    shared_data_dir: &Path,
+    target: &str,
+) -> (std::process::Child, PathBuf) {
+    let now =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
+            as u64;
+    setup_mock_connection_fixture(
+        shared_data_dir,
+        target,
+        now.saturating_sub(10000),
+        now.saturating_sub(6000),
+    )
+}
+
+#[fuchsia::test]
+async fn test_doctor_stall_no_fix() {
+    let (env, temp_path) = create_test_env("test_doctor_stall_no_fix");
+    let target = "/emu:test-target-stall";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+    let (mut child, meta_path) =
+        setup_stalled_connection_fixture(&temp_path.path().join("ffx_uart"), target);
+
+    let tool = DoctorTool { cmd: DoctorCommand { fix: false }, context: env.context.clone() };
+    let buffers = TestBuffers::default();
+    let writer = ffx_writer::SimpleWriter::new_test(&buffers);
+
+    let res = tool.main(writer).await;
+    assert!(res.is_err());
+    let output = buffers.stdout.into_string();
+    assert!(
+        output.contains("Connection Health & Stall Detection"),
+        "Should run StallCheck, output: {}",
+        output
+    );
+    assert!(output.contains("appears to be stalled"), "Should report stall, output: {}", output);
+    assert!(meta_path.exists(), "Metadata file should not be deleted without --fix");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[fuchsia::test]
+async fn test_doctor_stall_with_fix() {
+    let (env, temp_path) = create_test_env("test_doctor_stall_with_fix");
+    let target = "/emu:test-target-stall-fix";
+    let _guard = DaemonCleanupGuard::new(&env, target);
+    let (mut child, meta_path) =
+        setup_stalled_connection_fixture(&temp_path.path().join("ffx_uart"), target);
+
+    let tool_fix = DoctorTool { cmd: DoctorCommand { fix: true }, context: env.context.clone() };
+    let buffers_fix = TestBuffers::default();
+    let writer_fix = ffx_writer::SimpleWriter::new_test(&buffers_fix);
+
+    tool_fix.main(writer_fix).await.unwrap();
+    let output_fix = buffers_fix.stdout.into_string();
+    assert!(
+        output_fix.contains("appears to be stalled"),
+        "Should report stall, output: {}",
+        output_fix
+    );
+    assert!(
+        output_fix.contains("Reconnecting to target path"),
+        "Should trigger reconnect: {}",
+        output_fix
+    );
+    assert!(output_fix.contains("Connect called"), "Should call connect: {}", output_fix);
+    assert!(meta_path.exists(), "Metadata file should exist (recreated by reconnect)");
+
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[fuchsia::test]

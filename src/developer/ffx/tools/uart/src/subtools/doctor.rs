@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::args::DoctorCommand;
+use crate::args::{ConnectCommand, DoctorCommand};
 use crate::doctor::{
-    CheckStatus, ConnectionExistsCheck, DiagnosticCheck, FixType, MetadataCheck,
-    PortLockCheck, has_live_connection, uart_file_path,
+    CheckStatus, ConnectionExistsCheck, DiagnosticCheck, FixType, MetadataCheck, PortLockCheck,
+    ProcessCheck, StallCheck, has_live_connection, uart_file_path,
 };
 use crate::metadata::{
     CONTROL_SOCKET_EXTENSION, ConnectionMetadata, METADATA_FILE_EXTENSION, UNIX_SOCKET_EXTENSION,
     canonicalize_target, find_active_connection, get_shared_uart_path, get_target_id, is_target_id,
 };
+use crate::subtools::ConnectTool;
 use crate::sys::{get_peer_pid, is_driver_running};
 use ffx_config::EnvironmentContext;
 use ffx_writer::{SimpleWriter, ToolIO};
@@ -159,6 +160,26 @@ impl DoctorTool {
                 }
                 Ok(outcome)
             }
+            FixType::KillDaemon { pid, target_id } => {
+                crate::driver::terminate_process(pid).await?;
+                self.terminate_and_delete_files_for_target_id(&target_id).await?;
+                Ok(FixOutcome::Repaired)
+            }
+            FixType::RestartConnection { stale_target_id, target_path, baud } => {
+                self.terminate_and_delete_files_for_target_id(&stale_target_id).await?;
+
+                writer.print(format!("Reconnecting to target path '{}'...\n", target_path))?;
+                let connect_cmd = ConnectCommand {
+                    baud,
+                    socket: None,
+                    reconnect: false,
+                    protocol: Some("resend".to_string()),
+                    no_retry: false,
+                };
+                let connect_tool = ConnectTool { cmd: connect_cmd, context: self.context.clone() };
+                connect_tool.connect(target_path, writer).await?;
+                Ok(FixOutcome::Repaired)
+            }
             FixType::KillDriverLockingPort { pid, port_path } => {
                 crate::driver::terminate_process(pid).await?;
                 let canonical = canonicalize_target(&port_path.to_string_lossy());
@@ -221,7 +242,9 @@ impl DoctorTool {
 
         self.run_check(ConnectionExistsCheck, target_str, &mut counts, writer).await?;
         self.run_check(MetadataCheck, target_str, &mut counts, writer).await?;
+        self.run_check(ProcessCheck, target_str, &mut counts, writer).await?;
         self.run_check(PortLockCheck, target_str, &mut counts, writer).await?;
+        self.run_check(StallCheck, target_str, &mut counts, writer).await?;
 
         let DoctorCounts { issues_found, issues_repaired, issues_cleared } = counts;
         let cleared_msg = if issues_cleared > 0 {
