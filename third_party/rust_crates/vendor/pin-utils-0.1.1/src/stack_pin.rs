@@ -1,5 +1,10 @@
 /// Pins a value on the stack.
 ///
+/// Can safely pin values that are not `Unpin` by taking ownership.
+///
+/// **Note:** Since Rust 1.68, this macro is soft-deprecated in favor of
+/// [`pin!`](core::pin::pin) macro in the standard library.
+///
 /// # Example
 ///
 /// ```rust
@@ -19,7 +24,7 @@ macro_rules! pin_mut {
         // ever again.
         #[allow(unused_mut)]
         let mut $x = unsafe {
-            $crate::core_reexport::pin::Pin::new_unchecked(&mut $x)
+            $crate::__private::Pin::new_unchecked(&mut $x)
         };
     )* }
 }

@@ -13420,7 +13420,7 @@ rustc_library("loom-v0_7_2") {
   deps = []
   deps += [ ":cfg-if-v1_0_5" ]
   deps += [ ":generator-v0_8_10" ]
-  deps += [ ":pin-utils-v0_1_0" ]
+  deps += [ ":pin-utils-v0_1_1" ]
   deps += [ ":scoped-tls-v1_0_1" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_151" ]
@@ -16612,18 +16612,18 @@ rustc_library("pin-project-lite-v0_2_17") {
   applicable_licenses = [ ":pin-project-lite-v0_2_17.license" ]
 }
 
-license("pin-utils-v0_1_0.license") {
+license("pin-utils-v0_1_1.license") {
   public_package_name = "pin_utils"
   license_files = [
-    "//third_party/rust_crates/vendor/pin-utils-0.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pin-utils-0.1.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pin-utils-0.1.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pin-utils-0.1.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("pin-utils-v0_1_0") {
+rustc_library("pin-utils-v0_1_1") {
   crate_name = "pin_utils"
-  source_root = "//third_party/rust_crates/vendor/pin-utils-0.1.0/src/lib.rs"
-  output_name = "pin_utils-f6d0191654b565d6"
+  source_root = "//third_party/rust_crates/vendor/pin-utils-0.1.1/src/lib.rs"
+  output_name = "pin_utils-cd3e82b42228e490"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -16635,13 +16635,13 @@ rustc_library("pin-utils-v0_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f6d0191654b565d6",
-    "-Cextra-filename=-f6d0191654b565d6",
+    "-Cmetadata=cd3e82b42228e490",
+    "-Cextra-filename=-cd3e82b42228e490",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pin-utils-v0_1_0.license" ]
+  applicable_licenses = [ ":pin-utils-v0_1_1.license" ]
 }
 
 license("pin-weak-v1_1_0.license") {
