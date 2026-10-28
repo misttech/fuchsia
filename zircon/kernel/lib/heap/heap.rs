@@ -6,6 +6,9 @@
 
 //! Kernel heap bindings and debug console command.
 
+#[path = "cmpctmalloc/mod.rs"]
+mod cmpctmalloc;
+
 use core::ptr::NonNull;
 use heap_bindings as bindings;
 
@@ -43,44 +46,33 @@ pub fn profile_track_free(cookie: u32, size: usize) {
 /// Returns `(total_bytes, free_bytes)`, where `total_bytes` is the total size of the heap (the sum
 /// of all pages allocated from the PMM) and `free_bytes` is the free portion.
 pub fn get_info() -> (usize, usize) {
-    let mut total_bytes = 0;
-    let mut free_bytes = 0;
-    // SAFETY: Passing valid, aligned, non-aliasing mutable pointers to local stack variables.
-    unsafe { bindings::cpp_heap_get_info(&mut total_bytes, &mut free_bytes) };
-    (total_bytes, free_bytes)
+    let info = cmpctmalloc::cmpct_get_info();
+    (info.used_bytes + info.cached_bytes, info.free_bytes)
 }
 
 /// Kernel console `heap` command implementation.
 #[cfg(console_enabled)]
 mod console {
-    use super::bindings;
+    use super::{bindings, cmpctmalloc};
     use crate::console::{CMD_AVAIL_ALWAYS, CMD_FLAG_PANIC, CmdArgs, static_command};
-    use bitflags::bitflags;
+    use cmpctmalloc::CmpctDumpOptions;
     use core::ffi::c_int;
     use core::sync::atomic::{AtomicBool, Ordering};
     use kprint::kprintln;
 
-    bitflags! {
-        /// Options controlling `heap_dump` output.
-        #[repr(transparent)]
-        #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-        struct CmpctDumpOptions: u32 {
-            /// Standard dump output.
-            const NONE = bindings::CmpctDumpOptions_None;
-            /// Dump called at panic time; avoids blocking locks.
-            const PANIC_TIME = bindings::CmpctDumpOptions_PanicTime;
-            /// Include verbose free-block details.
-            const VERBOSE = bindings::CmpctDumpOptions_Verbose;
-        }
-    }
-
     /// Whether per-callsite heap statistics collection is enabled at build time.
     const HEAP_COLLECT_STATS: bool = bindings::HEAP_COLLECT_STATS != 0;
 
-    /// Dumps heap diagnostics using `options`.
-    fn heap_dump(options: CmpctDumpOptions) {
-        // SAFETY: `cpp_heap_dump` dumps heap state using the provided option flags.
-        unsafe { bindings::cpp_heap_dump(options.bits()) }
+    /// Dumps heap state to the console.
+    ///
+    /// # Safety
+    ///
+    /// If `options` includes [`CmpctDumpOptions::PANIC_TIME`], the caller must ensure that all
+    /// other CPUs are halted in a kernel panic with no concurrent mutation of `THE_HEAP`.
+    /// Otherwise, the caller must ensure that `TheHeapLock` is not held on the current thread.
+    unsafe fn heap_dump(options: CmpctDumpOptions) {
+        // SAFETY: Caller upholds the safety requirements of `cmpct_dump`.
+        unsafe { cmpctmalloc::cmpct_dump(options) };
     }
 
     /// Dumps collected per-callsite heap statistics.
@@ -89,10 +81,15 @@ mod console {
         unsafe { bindings::cpp_heap_dump_stats() }
     }
 
-    /// Runs the internal heap self-test.
-    fn heap_test() {
-        // SAFETY: `cpp_heap_test` runs the heap self-test.
-        unsafe { bindings::cpp_heap_test() }
+    /// Runs internal heap self-tests from the console.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the heap has been initialized and `TheHeapLock` is not held on
+    /// the current thread.
+    unsafe fn heap_test() {
+        // SAFETY: Caller upholds the safety requirements of `cmpct_test`.
+        unsafe { cmpctmalloc::cmpct_test() };
     }
 
     unsafe extern "C" {
@@ -118,8 +115,12 @@ mod console {
     ///
     /// # Safety
     ///
-    /// `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc` initialized
-    /// `CmdArgs` entries for the duration of the call.
+    /// - `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc`
+    ///   initialized `CmdArgs` entries for the duration of the call.
+    /// - The kernel heap must be initialized and `TheHeapLock` must not be held on the current
+    ///   thread.
+    /// - If `flags` includes `CMD_FLAG_PANIC`, all other CPUs must be halted in a kernel panic
+    ///   with no concurrent heap operations.
     unsafe extern "C" fn cmd_heap(argc: c_int, argv: *const CmdArgs, flags: u32) -> c_int {
         if argc <= 0 || argv.is_null() {
             return -1;
@@ -164,11 +165,15 @@ mod console {
                 }
             }
 
-            heap_dump(options);
+            // SAFETY: `PANIC_TIME` is only set when `CMD_FLAG_PANIC` is present (all other CPUs
+            // halted in a panic), and `TheHeapLock` is not held here.
+            unsafe { heap_dump(options) };
         } else if HEAP_COLLECT_STATS && subcmd == "stats" {
             dump_stats();
         } else if (flags & CMD_FLAG_PANIC) == 0 && subcmd == "test" {
-            heap_test();
+            // SAFETY: `heap_test` is only invoked from the non-panic interactive console when the
+            // heap is initialized and `TheHeapLock` is not held.
+            unsafe { heap_test() };
         } else if (flags & CMD_FLAG_PANIC) == 0 && subcmd == "trace" {
             let heap_trace = toggle_heap_trace();
             kprintln!("heap trace is now {:s}", if heap_trace { "on" } else { "off" });

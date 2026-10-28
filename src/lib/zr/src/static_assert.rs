@@ -12,6 +12,9 @@ macro_rules! static_assert {
             ASSERT
         } as usize] = [];
     };
+    ($x:expr, $($arg:tt)+) => {
+        const _: () = assert!($x, $($arg)+);
+    };
 }
 
 /// Compile-time assertion that a type's size is <= `max_size` and alignment == `expected_align`.

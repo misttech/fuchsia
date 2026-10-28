@@ -56,6 +56,7 @@ if (is_kernel) {
       "vmo_ffi.rs",
     ]
     deps = [
+      "asan:asan-rs",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//src/lib/kprint",

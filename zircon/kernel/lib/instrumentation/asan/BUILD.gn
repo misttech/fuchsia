@@ -6,6 +6,17 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
+
+if (is_kernel) {
+  kernel_rust_mod("asan-rs") {
+    sources = [
+      "asan.rs",
+      "asan_ffi.rs",
+    ]
+    deps = [ "//src/lib/zr" ]
+  }
+}
 
 # 1 shadow byte covers 2^3 bytes.
 asan_mapping_scale = 3

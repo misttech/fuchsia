@@ -7,31 +7,20 @@
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_library.gni")
 
-# Conventional names for paging configurations, as codified in
-# <lib/arch/$zircon_cpu/paging-traits.h>.
-#
-# TODO(travisg, joshuaseaton): Let's enumerate all of the other 4KiB paging
-# configurations that the kernel is currently happy with.
-supported_paging_configurations_by_cpu = {
-  x64 = [ "4level" ]
-  arm64 = [ "4k-48bit" ]
-  riscv64 = [ "sv39" ]
-}
-
-if (is_host) {
-  # In the host toolchain, of interest only to testing (where no MMUs are
-  # harmed), we limit the supported configurations to the x86 4-level paging.
-  supported_paging_configurations = [ "4level" ]
-} else {
-  supported_paging_configurations =
-      supported_paging_configurations_by_cpu[current_cpu]
-}
-
 # A specific choice of paging configuration, necessarily one of
 # `supported_paging_configurations`.
 if (is_host) {
-  paging_configuration = "4level"  # Per the testing policy above.
+  # In the host toolchain, of interest only to testing (where no MMUs are
+  # harmed), we limit the supported configurations to the x86 4-level paging.
+  paging_configuration = "4level"
 } else {
+  supported_paging_configurations_by_cpu = {
+    x64 = [ "4level" ]
+    arm64 = [ "4k-48bit" ]
+    riscv64 = [ "sv39" ]
+  }
+  supported_paging_configurations =
+      supported_paging_configurations_by_cpu[current_cpu]
   if (current_cpu == "x64") {
     paging_configuration = "4level"
   } else if (current_cpu == "arm64") {

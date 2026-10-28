@@ -6,6 +6,8 @@
 
 //! Kernel instrumentation runtime support.
 
+#[path = "asan/asan.rs"]
+pub mod asan;
 pub mod debugdata;
 mod instrumentation_ffi;
 pub mod kernel_mapped_vmo;

@@ -30,11 +30,6 @@ void* calloc(size_t count, size_t size) __MALLOC __ALLOC_SIZE(1, 2);
 void free(void* ptr);
 void sized_free(void* ptr, size_t s);
 
-// Gets stats about the heap.
-// |total_bytes| is the total size of the heap (the sum of all pages allocated
-// from the PMM), |free_bytes| is the free portion.
-void heap_get_info(size_t* total_bytes, size_t* free_bytes);
-
 // called once at kernel initialization
 void heap_init(void);
 

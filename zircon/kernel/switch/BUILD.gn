@@ -27,6 +27,11 @@ declare_args() {
   # memory profile.
   kernel_memory_profiler = false
 
+  # Enable cmpctmalloc debug fills (free fill 0x77, alloc fill 0x99, padding
+  # fill 0x55) to detect use-after-free and heap corruption.
+  # Force-enabled on riscv64 to track https://fxbug.dev/404291515.
+  cmpct_debug = zircon_cpu == "riscv64"
+
   # **NOTE: _For experimental use only._** This gives a list of
   # compiler_config() labels to include first in the kernel's compilation
   # configuration / Rust custom target definition.
@@ -263,6 +268,9 @@ variant("kernel_config") {
   if (console_enable_history) {
     rustflags += [ "--cfg=feature=\"console_enable_history\"" ]
   }
+  if (cmpct_debug) {
+    rustflags += [ "--cfg=feature=\"cmpct_debug\"" ]
+  }
   if (experimental_continuous_per_vmo_attribution_enabled) {
     rustflags += [
       "--cfg=feature=\"experimental_continuous_per_vmo_attribution_enabled\"",
@@ -290,6 +298,17 @@ variant("kernel_config") {
         "ENABLE_ENTROPY_COLLECTOR_TEST",
       ] != kernel_extra_defines) {
     rustflags += [ "--cfg=enable_entropy_collector_test" ]
+  }
+
+  if (kernel_extra_defines + [
+        "HEAP_ENABLE_TESTS=1",
+        "HEAP_ENABLE_TESTS",
+      ] -
+      [
+        "HEAP_ENABLE_TESTS=1",
+        "HEAP_ENABLE_TESTS",
+      ] != kernel_extra_defines) {
+    rustflags += [ "--cfg=feature=\"heap_enable_tests\"" ]
   }
 
   if (kernel_no_userabi) {

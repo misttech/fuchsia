@@ -18,7 +18,7 @@ void* PageManager::AllocatePages(size_t num_pages) {
   ZX_ASSERT(
       Block::RangeIsCleanFilled(block.contents.get(), block.contents.get() + block.size_bytes));
   char* ptr = block.contents.get();
-  ZX_ASSERT(IsPageRounded(ptr));
+  ZX_ASSERT(IsPageRounded(reinterpret_cast<uintptr_t>(ptr)));
   blocks_.insert({ptr, std::move(block)});
   return ptr;
 }
@@ -29,7 +29,8 @@ void PageManager::FreePages(void* p, size_t num_pages) {
   }
 
   char* ptr = static_cast<char*>(p);
-  ZX_ASSERT_MSG(IsPageRounded(ptr), "address %p is not page aligned", ptr);
+  ZX_ASSERT_MSG(IsPageRounded(reinterpret_cast<uintptr_t>(ptr)), "address %p is not page aligned",
+                ptr);
 
   // lower_bound(ptr) points to the block in which |ptr| lives.
   BlockMap::iterator it = blocks_.lower_bound(ptr);

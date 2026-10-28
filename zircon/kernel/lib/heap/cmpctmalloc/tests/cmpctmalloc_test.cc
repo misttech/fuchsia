@@ -8,7 +8,9 @@
 
 #include <lib/fit/defer.h>
 #include <lib/heap.h>
+#include <lib/heap_internal.h>
 #include <lib/page/size.h>
+#include <lib/zircon-internal/align.h>
 #include <math.h>
 
 #include <algorithm>

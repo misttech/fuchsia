@@ -70,7 +70,7 @@ extern "C" bool asan_entire_region_is_poisoned(uintptr_t address, size_t size);
 
 // Returns number of bytes to add to heap allocations of |size| for a redzone, to detect out-of
 // bounds accesses. (Rounds up the size to an ASAN granule)
-size_t asan_heap_redzone_size(size_t size);
+extern "C" size_t asan_heap_redzone_size(size_t size);
 
 // Adds the virtual region defined by [start, start+size) to the regions
 // instrumented by asan. After calling this function, users can call

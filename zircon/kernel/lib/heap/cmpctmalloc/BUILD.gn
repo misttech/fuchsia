@@ -5,37 +5,64 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_staticlib.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
-  headers = [ "lib/cmpctmalloc.h" ]
+  headers = [
+    "lib/cmpctmalloc.h",
+    "lib/cmpctmalloc_ffi.h",
+  ]
   public_deps = [
-    # <lib/cmpctmalloc.h> has `#include
-    # <lib/zircon-internal/thread_annotations.h>`.
-    "//zircon/system/ulib/zircon-internal",
-
     # <lib/cmpctmalloc.h> has `#include <fbl/enum_bits.h>'.
     "//zircon/system/ulib/fbl",
   ]
 }
 
 source_set("cmpctmalloc") {
-  sources = [ "cmpctmalloc.cc" ]
-  deps = [
-    "//zircon/kernel/lib/heap:headers.internal",
-    "//zircon/kernel/lib/page",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/pretty",
-  ]
   public_deps = [ ":headers" ]
 
   if (is_host) {
-    configs += [ "//build/config/fuchsia:enable_zircon_asserts" ]
-  } else if (is_kernel) {
-    deps += [
-      "//zircon/kernel/lib/counters",
+    deps = [ ":cmpctmalloc-userspace-rs" ]
+  }
+}
 
-      # TODO(https://fxbug.dev/42128324): Remove headers when possible.
-      "//zircon/kernel/lib/instrumentation:headers",
+if (is_kernel) {
+  kernel_rust_mod("cmpctmalloc-rs") {
+    sources = [
+      "cmpctmalloc.rs",
+      "cmpctmalloc_ffi.rs",
+      "mod.rs",
+    ]
+    deps = [
+      "//src/lib/kprint",
+      "//src/lib/ksync",
+      "//src/lib/zr",
+      "//third_party/rust_crates:bitflags",
+      "//zircon/kernel/lib/counters",
+      "//zircon/kernel/lib/debug",
+      "//zircon/kernel/lib/instrumentation/asan:asan-rs",
+      "//zircon/kernel/lib/ktrace:ktrace-rs",
+      "//zircon/kernel/lib/page:page-rs",
+      "//zircon/system/ulib/pretty/rust:pretty",
+    ]
+  }
+} else {
+  rustc_staticlib("cmpctmalloc-userspace-rs") {
+    edition = "2024"
+    source_root = "mod.rs"
+    sources = [
+      "cmpctmalloc.rs",
+      "cmpctmalloc_ffi.rs",
+      "mod.rs",
+    ]
+    features = [ "userspace" ]
+    configs += [ "//build/config/rust:debug_assertions" ]
+    deps = [
+      "//src/lib/ksync",
+      "//src/lib/zr",
+      "//third_party/rust_crates:bitflags",
+      "//zircon/kernel/lib/page:page-rs",
     ]
   }
 }

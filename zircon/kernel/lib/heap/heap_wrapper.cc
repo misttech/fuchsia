@@ -302,8 +302,6 @@ __NO_INLINE void sized_free(void* ptr, size_t s) {
   cmpct_sized_free(ptr, s);
 }
 
-static void heap_dump(CmpctDumpOptions options) { cmpct_dump(options); }
-
 void get_heap_profile(const void** ptr, size_t* size) {
   DEBUG_ASSERT(ptr);
   DEBUG_ASSERT(size);
@@ -343,17 +341,6 @@ void profile_track_free(uint32_t handle, size_t size) {
   }
 #endif
 }
-
-void heap_get_info(size_t* total_bytes, size_t* free_bytes) {
-  size_t used_bytes;
-  size_t cached_bytes;
-  cmpct_get_info(&used_bytes, free_bytes, &cached_bytes);
-  if (total_bytes) {
-    *total_bytes = used_bytes + cached_bytes;
-  }
-}
-
-static void heap_test() { cmpct_test(); }
 
 void* heap_page_alloc(size_t pages) {
   DEBUG_ASSERT(pages > 0);
@@ -434,10 +421,6 @@ void heap_report_alloc_failure(size_t size) {
 
 extern "C" {
 
-void cpp_heap_dump(CmpctDumpOptions options) { heap_dump(options); }
-
 void cpp_heap_dump_stats() { dump_stats(); }
-
-void cpp_heap_test() { heap_test(); }
 
 }  // extern "C"

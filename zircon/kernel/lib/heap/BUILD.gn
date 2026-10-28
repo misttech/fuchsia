@@ -47,27 +47,19 @@ kernel_bindgen_crate("heap-bindings") {
     "//zircon/kernel/*",
   ]
   headers = [ "include/lib/heap_ffi.h" ]
-  non_rust_deps = [
-    ":heap",
-    "cmpctmalloc:headers",
-  ]
+  non_rust_deps = [ ":heap" ]
   output_name = "heap_bindings.rs"
   cpp = true
 
   notice_year = 2026
   function_allowlist = [
     "cpp_get_heap_profile",
-    "cpp_heap_get_info",
     "cpp_profile_track_alloc",
     "cpp_profile_track_free",
-    "cpp_heap_dump",
     "cpp_heap_dump_stats",
-    "cpp_heap_test",
   ]
-  type_allowlist = [ "CmpctDumpOptions" ]
   var_allowlist = [ "HEAP_COLLECT_STATS" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  expect_lints = [ "non_upper_case_globals" ]
 
   edition = "2024"
   raw_lines = [ "#![no_std]" ]
@@ -77,13 +69,17 @@ kernel_rust_mod("heap-rs") {
   sources = [ "heap.rs" ]
   deps = [
     ":heap-bindings",
-    "//third_party/rust_crates:bitflags",
+    "cmpctmalloc:cmpctmalloc-rs",
     "//zircon/kernel/lib/virtual_alloc:virtual_alloc-rs",
   ]
 }
 
 group("tests") {
   testonly = true
+  deps = [
+    "cmpctmalloc:tests",
+    "profile:tests",
+  ]
 }
 
 group("kernel-tests") {

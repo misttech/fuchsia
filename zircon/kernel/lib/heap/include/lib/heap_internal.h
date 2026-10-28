@@ -7,14 +7,19 @@
 #ifndef ZIRCON_KERNEL_LIB_HEAP_INCLUDE_LIB_HEAP_INTERNAL_H_
 #define ZIRCON_KERNEL_LIB_HEAP_INCLUDE_LIB_HEAP_INTERNAL_H_
 
-#include <lib/cmpctmalloc.h>
 #include <stddef.h>
-#include <sys/types.h>
 #include <zircon/compiler.h>
 
-// internal apis used by the heap implementation to get/return pages to the VM
-void* heap_page_alloc(size_t pages) TA_REQ(TheHeapLock::Get());
-void heap_page_free(void* ptr, size_t pages) TA_REQ(TheHeapLock::Get());
-void heap_report_alloc_failure(size_t size) TA_EXCL(TheHeapLock::Get());
+__BEGIN_CDECLS
+
+// Internal APIs used by the heap implementation to get/return pages to the VM.
+// `heap_page_alloc` and `heap_page_free` must be called with `TheHeapLock` held.
+void* heap_page_alloc(size_t pages);
+void heap_page_free(void* ptr, size_t pages);
+
+// Reports an allocation failure to the PMM; must be called without `TheHeapLock` held.
+void heap_report_alloc_failure(size_t size);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_HEAP_INCLUDE_LIB_HEAP_INTERNAL_H_
