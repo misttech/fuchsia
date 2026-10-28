@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_mobly_test.gni")
 import("//src/connectivity/policy/tests/e2e/test_lists.gni")
-import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 
 assert(is_host,
        "Network policy end-to-end tests only supported for host testing")
 
-antlion_host_test("dhcpv4_duplicate_address_test") {
+python_mobly_test("dhcpv4_duplicate_address_test") {
   main_source =
       "//src/connectivity/policy/tests/e2e/Dhcpv4DuplicateAddressTest.py"
   libraries = [
@@ -17,12 +17,12 @@ antlion_host_test("dhcpv4_duplicate_address_test") {
   ]
 }
 
-antlion_host_test("dhcpv4_interop_basic_test") {
+python_mobly_test("dhcpv4_interop_basic_test") {
   main_source = "//src/connectivity/policy/tests/e2e/Dhcpv4InteropBasicTest.py"
   libraries = [ "//src/connectivity/policy/tests/e2e/dhcp_testing" ]
 }
 
-antlion_host_test("dhcpv4_interop_combinatorial_options_test") {
+python_mobly_test("dhcpv4_interop_combinatorial_options_test") {
   main_source = "//src/connectivity/policy/tests/e2e/Dhcpv4InteropCombinatorialOptionsTest.py"
   libraries = [ "//src/connectivity/policy/tests/e2e/dhcp_testing" ]
 }
