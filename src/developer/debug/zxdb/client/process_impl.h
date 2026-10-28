@@ -14,6 +14,7 @@
 #include "src/developer/debug/zxdb/client/memory_dump.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/target_impl.h"
+#include "src/developer/debug/zxdb/common/address_range.h"
 #include "src/developer/debug/zxdb/expr/expr_language.h"
 #include "src/developer/debug/zxdb/symbols/process_symbols.h"
 #include "src/lib/fxl/macros.h"
@@ -107,6 +108,9 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   void PostTask(fit::callback<void()> callback) override;
   unwinder::Error ReadBytes(uint64_t addr, uint64_t size, void* dst) override;
 
+  // Clears any memory blocks cached by |FetchMemoryRanges|.
+  void ClearCachedMemory() { cached_memory_.clear(); }
+
  private:
   enum {
     kUnloaded,
@@ -136,6 +140,13 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   // Updates modules with empty names to reflect the name of the process binary. By convention,
   // the dynamic loader will set the main binary to have a blank name.
   void FixupEmptyModuleNames(std::vector<debug_ipc::Module>& modules) const;
+
+  // Returns true if |range| is completely contained within a single cached memory block.
+  bool IsRangeCached(const AddressRange& range) const;
+
+  // Filters out cached or empty ranges and coalesces overlapping or adjacent ranges.
+  std::vector<AddressRange> CoalesceUncachedRanges(
+      const std::vector<std::pair<uint64_t, uint32_t>>& ranges) const;
 
   TargetImpl* const target_;  // The target owns |this|.
   const uint64_t koid_;

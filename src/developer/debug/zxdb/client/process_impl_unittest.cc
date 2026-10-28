@@ -86,8 +86,6 @@ class ProcessImplTest : public RemoteAPITest {
   ProcessSink* sink_;  // Owned by the session.
 };
 
-}  // namespace
-
 // Tests that the correct threads are resumed after the modules are loaded.
 TEST_F(ProcessImplTest, OnModules) {
   constexpr uint64_t kProcessKoid = 1234;
@@ -550,5 +548,173 @@ TEST_F(ProcessImplTest, PauseLoadsModulesWhenEmpty) {
   EXPECT_TRUE(paused_again);
   EXPECT_EQ(1, sink()->modules_count());
 }
+
+TEST_F(ProcessImplTest, ReadBytesEmptyCacheReturnsError) {
+  constexpr uint64_t kProcessKoid = 1234;
+  Process* process = InjectProcess(kProcessKoid);
+  ASSERT_TRUE(process);
+  ProcessImpl* process_impl = session().system().ProcessImplFromKoid(process->GetKoid());
+  ASSERT_TRUE(process_impl);
+
+  uint64_t value = 0xdeadbeefULL;
+  unwinder::Error err = process_impl->ReadBytes(0x1000, sizeof(value), &value);
+  EXPECT_TRUE(err.has_err());
+  EXPECT_EQ(0xdeadbeefULL, value);
+}
+
+TEST_F(ProcessImplTest, FetchMemoryRangesSkipsCachedMultiFrameUnwind) {
+  constexpr uint64_t kProcessKoid = 1234;
+  constexpr uint64_t kStackBase = 0x100000;
+  constexpr uint32_t kInitialPrefetchSize = 8192;
+  constexpr size_t kNumFrames = 15;
+  constexpr size_t kRegsPerFrame = 4;
+  constexpr uint64_t kFrameStride = 64;
+
+  Process* process = InjectProcess(kProcessKoid);
+  ASSERT_TRUE(process);
+  ProcessImpl* process_impl = session().system().ProcessImplFromKoid(process->GetKoid());
+  ASSERT_TRUE(process_impl);
+
+  // Populate an 8 KiB stack buffer with distinct 64-bit register values for 15 frames.
+  std::vector<uint8_t> stack_data(kInitialPrefetchSize, 0);
+  for (size_t frame = 0; frame < kNumFrames; ++frame) {
+    for (size_t reg = 0; reg < kRegsPerFrame; ++reg) {
+      uint64_t expected_val = 0xabcd0000ULL + (frame << 8U) + reg;
+      size_t offset = (frame * kFrameStride) + (reg * sizeof(uint64_t));
+      memcpy(&stack_data[offset], &expected_val, sizeof(expected_val));
+    }
+  }
+  sink()->AddMemory(kStackBase, std::move(stack_data));
+  sink()->ResetReadMemoryMetrics();
+
+  // Perform the initial 8 KiB stack prefetch that AsyncUnwindLoop::Unwind issues at frame 0.
+  bool prefetch_done = false;
+  process_impl->FetchMemoryRanges({{kStackBase, kInitialPrefetchSize}},
+                                  [&prefetch_done]() { prefetch_done = true; });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(prefetch_done);
+  EXPECT_EQ(1UL, sink()->read_memory_count());
+  EXPECT_EQ(kInitialPrefetchSize, sink()->read_memory_total_bytes());
+
+  // Simulate 15 frames of CfiParser::AsyncStep fetching 4 saved 8-byte registers per frame.
+  // Because all 60 register slots fall inside the cached 8 KiB prefetch, zero additional
+  // ReadMemory RPCs should be sent over the wire.
+  for (size_t frame = 0; frame < kNumFrames; ++frame) {
+    uint64_t frame_base = kStackBase + (frame * kFrameStride);
+    std::vector<std::pair<uint64_t, uint32_t>> frame_ranges;
+    frame_ranges.reserve(kRegsPerFrame);
+    for (size_t reg = 0; reg < kRegsPerFrame; ++reg) {
+      frame_ranges.emplace_back(frame_base + (reg * sizeof(uint64_t)), sizeof(uint64_t));
+    }
+
+    bool step_done = false;
+    process_impl->FetchMemoryRanges(std::move(frame_ranges), [&step_done]() { step_done = true; });
+    loop().RunUntilNoTasks();
+    EXPECT_TRUE(step_done);
+
+    for (size_t reg = 0; reg < kRegsPerFrame; ++reg) {
+      uint64_t actual_val = 0;
+      unwinder::Error err = process_impl->ReadBytes(frame_base + (reg * sizeof(uint64_t)),
+                                                    sizeof(actual_val), &actual_val);
+      ASSERT_TRUE(err.ok()) << err.msg();
+      EXPECT_EQ(0xabcd0000ULL + (frame << 8U) + reg, actual_val);
+    }
+  }
+
+  EXPECT_EQ(1UL, sink()->read_memory_count());
+  EXPECT_EQ(kInitialPrefetchSize, sink()->read_memory_total_bytes());
+}
+
+TEST_F(ProcessImplTest, FetchMemoryRangesCoalescesStarnixRestrictedRegisters) {
+  constexpr uint64_t kProcessKoid = 1234;
+  constexpr uint64_t kRestrictedStateAddr = 0x500000;
+  constexpr size_t kNumRegisters = 33;  // x0..x30, sp, pc in ARM64 restricted_return_loop
+  constexpr uint32_t kRegSize = 8;
+
+  Process* process = InjectProcess(kProcessKoid);
+  ASSERT_TRUE(process);
+  ProcessImpl* process_impl = session().system().ProcessImplFromKoid(process->GetKoid());
+  ASSERT_TRUE(process_impl);
+
+  std::vector<uint8_t> state_bytes(kNumRegisters * kRegSize, 0);
+  for (size_t i = 0; i < kNumRegisters; ++i) {
+    uint64_t val = 0x90000000ULL + i;
+    memcpy(&state_bytes[i * kRegSize], &val, sizeof(val));
+  }
+  sink()->AddMemory(kRestrictedStateAddr, std::move(state_bytes));
+  sink()->ResetReadMemoryMetrics();
+
+  // Construct 33 already-sorted adjacent 8-byte ranges, matching CfiParser::AsyncStep iterating
+  // over std::map<RegisterID, RegisterLocation> for restricted_return_loop.
+  std::vector<std::pair<uint64_t, uint32_t>> ranges;
+  ranges.reserve(kNumRegisters);
+  for (size_t i = 0; i < kNumRegisters; ++i) {
+    ranges.emplace_back(kRestrictedStateAddr + (i * kRegSize), kRegSize);
+  }
+
+  bool done = false;
+  process_impl->FetchMemoryRanges(std::move(ranges), [&done]() { done = true; });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(done);
+
+  // All 33 adjacent 8-byte ranges must coalesce into a single 264-byte ReadMemory request.
+  ASSERT_EQ(1UL, sink()->read_memory_count());
+  EXPECT_EQ(kRestrictedStateAddr, sink()->read_memory_requests()[0].address);
+  EXPECT_EQ(kNumRegisters * kRegSize, sink()->read_memory_requests()[0].size);
+  EXPECT_EQ(kNumRegisters * kRegSize, sink()->read_memory_total_bytes());
+
+  for (size_t i = 0; i < kNumRegisters; ++i) {
+    uint64_t val = 0;
+    ASSERT_TRUE(
+        process_impl->ReadBytes(kRestrictedStateAddr + (i * kRegSize), kRegSize, &val).ok());
+    EXPECT_EQ(0x90000000ULL + i, val);
+  }
+}
+
+TEST_F(ProcessImplTest, FetchMemoryRangesCoalescesOverlappingAndInvalidatesOnContinue) {
+  constexpr uint64_t kProcessKoid = 1234;
+  constexpr uint64_t kThreadKoid = 5678;
+
+  Process* process = InjectProcess(kProcessKoid);
+  ASSERT_TRUE(process);
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+  ASSERT_TRUE(thread);
+  ProcessImpl* process_impl = session().system().ProcessImplFromKoid(process->GetKoid());
+  ASSERT_TRUE(process_impl);
+
+  sink()->AddMemory(0x2000, std::vector<uint8_t>(32, 0x11));
+  sink()->AddMemory(0x4000, std::vector<uint8_t>(16, 0x22));
+  sink()->ResetReadMemoryMetrics();
+
+  // Pass unsorted, overlapping, adjacent, zero-length, and overflowing ranges across two disjoint
+  // regions.
+  std::vector<std::pair<uint64_t, uint32_t>> ranges = {
+      {0x4008, 8}, {0x2008, 16}, {0x2000, 0}, {std::numeric_limits<uint64_t>::max() - 3, 8},
+      {0x4000, 8}, {0x2000, 12}, {0x2018, 8},
+  };
+
+  bool done = false;
+  process_impl->FetchMemoryRanges(std::move(ranges), [&done]() { done = true; });
+  loop().RunUntilNoTasks();
+  EXPECT_TRUE(done);
+
+  ASSERT_EQ(2UL, sink()->read_memory_count());
+  EXPECT_EQ(0x2000UL, sink()->read_memory_requests()[0].address);
+  EXPECT_EQ(32U, sink()->read_memory_requests()[0].size);
+  EXPECT_EQ(0x4000UL, sink()->read_memory_requests()[1].address);
+  EXPECT_EQ(16U, sink()->read_memory_requests()[1].size);
+
+  uint64_t val = 0;
+  EXPECT_TRUE(process_impl->ReadBytes(0x2010, sizeof(val), &val).ok());
+  EXPECT_EQ(0x1111111111111111ULL, val);
+
+  // Continuing the process must invalidate the unwinder memory cache.
+  process->Continue(false);
+  loop().RunUntilNoTasks();
+
+  EXPECT_TRUE(process_impl->ReadBytes(0x2010, sizeof(val), &val).has_err());
+}
+
+}  // namespace
 
 }  // namespace zxdb

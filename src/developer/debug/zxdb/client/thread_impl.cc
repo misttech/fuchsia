@@ -220,6 +220,8 @@ void ThreadImpl::ResumeFromAsyncThreadController(std::optional<debug_ipc::Except
 }
 
 void ThreadImpl::JumpTo(uint64_t new_address, fit::callback<void(const Err&)> cb) {
+  process_->ClearCachedMemory();
+
   // The register to set.
   debug_ipc::WriteRegistersRequest request;
   request.id = {.process = process_->GetKoid(), .thread = koid_};
@@ -265,6 +267,8 @@ void ThreadImpl::NotifyControllerDone(ThreadController* controller) {
 }
 
 void ThreadImpl::StepInstructions(uint64_t count) {
+  process_->ClearCachedMemory();
+
   debug_ipc::ResumeRequest request;
   request.ids.push_back({.process = process_->GetKoid(), .thread = koid_});
   request.how = debug_ipc::ResumeRequest::How::kStepInstruction;
@@ -716,6 +720,7 @@ void ThreadImpl::SyncAsyncTasks(fit::callback<void(const Err&, const Frame* fram
 }
 
 void ThreadImpl::ClearState() {
+  process_->ClearCachedMemory();
   current_stop_info_ = std::nullopt;
   state_ = std::nullopt;
   blocked_reason_ = debug_ipc::ThreadRecord::BlockedReason::kNotBlocked;

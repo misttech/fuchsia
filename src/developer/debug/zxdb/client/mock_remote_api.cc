@@ -108,6 +108,8 @@ void MockRemoteAPI::Resume(const debug_ipc::ResumeRequest& request,
 
 void MockRemoteAPI::ReadMemory(const debug_ipc::ReadMemoryRequest& request,
                                fit::callback<void(const Err&, debug_ipc::ReadMemoryReply)> cb) {
+  read_memory_requests_.push_back(request);
+  read_memory_total_bytes_ += request.size;
   std::vector<uint8_t> result = memory_.ReadMemory(request.address, request.size);
   debug::MessageLoop::Current()->PostTask(FROM_HERE, [request, result, cb = std::move(cb)] mutable {
     debug_ipc::ReadMemoryReply reply;
@@ -118,8 +120,8 @@ void MockRemoteAPI::ReadMemory(const debug_ipc::ReadMemoryRequest& request,
     auto& block = reply.blocks[0];
 
     block.address = request.address;
-    block.valid = request.size > 0;
-    block.size = request.size;
+    block.valid = request.size > 0 && !result.empty();
+    block.size = block.valid ? static_cast<uint32_t>(result.size()) : request.size;
     if (block.valid) {
       block.data = std::move(result);
     }

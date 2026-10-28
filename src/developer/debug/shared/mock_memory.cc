@@ -17,13 +17,23 @@ std::vector<uint8_t> MockMemory::ReadMemory(uint64_t address, uint32_t size) con
   if (found == mem_.end())
     return {};
 
-  size_t offset = address - found->first;
-
-  uint32_t size_to_return = std::min(size, static_cast<uint32_t>(found->second.size() - offset));
   std::vector<uint8_t> subset;
-  if (size_to_return) {
-    subset.resize(size_to_return);
-    memcpy(subset.data(), &found->second[offset], size_to_return);
+  while (size > 0 && found != mem_.end()) {
+    if (address < found->first || address >= found->first + found->second.size())
+      break;
+
+    size_t offset = address - found->first;
+    uint32_t size_to_return = std::min(size, static_cast<uint32_t>(found->second.size() - offset));
+    if (size_to_return == 0)
+      break;
+
+    size_t prev_size = subset.size();
+    subset.resize(prev_size + size_to_return);
+    memcpy(&subset[prev_size], &found->second[offset], size_to_return);
+
+    address += size_to_return;
+    size -= size_to_return;
+    ++found;
   }
   return subset;
 }

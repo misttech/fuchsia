@@ -61,6 +61,16 @@ class MockRemoteAPI : public RemoteAPI {
   // Sets a memory value that will be returned when requested.
   void AddMemory(uint64_t address, std::vector<uint8_t> data);
 
+  size_t read_memory_count() const { return read_memory_requests_.size(); }
+  uint64_t read_memory_total_bytes() const { return read_memory_total_bytes_; }
+  const std::vector<debug_ipc::ReadMemoryRequest>& read_memory_requests() const {
+    return read_memory_requests_;
+  }
+  void ResetReadMemoryMetrics() {
+    read_memory_requests_.clear();
+    read_memory_total_bytes_ = 0;
+  }
+
   // Sets the register reply for a given category.
   void SetRegisterCategory(debug::RegisterCategory cat, std::vector<debug::RegisterValue> regs);
 
@@ -128,6 +138,8 @@ class MockRemoteAPI : public RemoteAPI {
   debug_ipc::AddOrChangeBreakpointRequest last_breakpoint_add_;
   debug_ipc::ResumeRequest last_resume_;
   debug_ipc::WriteRegistersRequest last_write_registers_;
+  std::vector<debug_ipc::ReadMemoryRequest> read_memory_requests_;
+  uint64_t read_memory_total_bytes_ = 0;
   debug::MockMemory memory_;
 };
 
