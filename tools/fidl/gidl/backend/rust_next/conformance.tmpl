@@ -70,7 +70,7 @@ use {
             chunks: Vec::from(chunks!{{ .Bytes }}),
             handles: vec!{{ .HandleValues }},
         };
-        let {{ .ValueVar }}: {{ .ValueType }} = buffer.into_decoded::<{{ .WireValueType }}>().unwrap().take();
+        let {{ .ValueVar }}: {{ .ValueType }} = buffer.into_decoded::<{{ .WireValueType }}>().unwrap().into_natural();
         {{ .EqualityCheck }}
         {{- if .UnusedHandles }}
         let unused_handles = select_raw_handle_infos(&handle_defs, &{{ .UnusedHandles }});
@@ -117,7 +117,7 @@ use {
 
         match buffer.into_decoded::<{{ .WireValueType }}>() {
             Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
-            Ok(value) => panic!("unexpected successful decoding to: {:?}", value.take()),
+            Ok(value) => panic!("unexpected successful decoding to: {:?}", value.into_natural()),
         }
 
         {{- if .HandleDefs }}

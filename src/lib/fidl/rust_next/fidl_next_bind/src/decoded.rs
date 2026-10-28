@@ -26,7 +26,7 @@ impl<M: Method, T: Transport> Request<M, T> {
         M::Request:
             Wire + for<'de> IntoNatural<Natural: FromWire<<M::Request as Wire>::Narrowed<'de>>>,
     {
-        self.decoded.take()
+        self.decoded.into_natural()
     }
 
     /// Returns the payload of the request as a wire type.

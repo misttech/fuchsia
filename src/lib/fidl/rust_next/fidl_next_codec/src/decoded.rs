@@ -150,7 +150,7 @@ impl<T: ?Sized, D> Decoded<T, D> {
     /// convert it to the default natural type.
     ///
     /// This consumes the `Decoded`.
-    pub fn take(self) -> T::Natural
+    pub fn into_natural(self) -> T::Natural
     where
         T: Wire + IntoNatural,
         T::Natural: for<'de> FromWire<T::Narrowed<'de>>,

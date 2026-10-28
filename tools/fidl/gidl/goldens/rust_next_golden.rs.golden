@@ -361,7 +361,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenBoolStruct = buffer.into_decoded::<test_conformance::wire::GoldenBoolStruct>().unwrap().take();
+        let _value: test_conformance::GoldenBoolStruct = buffer.into_decoded::<test_conformance::wire::GoldenBoolStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenBoolStruct { v: true });
 
     }
@@ -376,7 +376,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenIntStruct = buffer.into_decoded::<test_conformance::wire::GoldenIntStruct>().unwrap().take();
+        let _value: test_conformance::GoldenIntStruct = buffer.into_decoded::<test_conformance::wire::GoldenIntStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenIntStruct { v: 1i16 });
 
     }
@@ -391,7 +391,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenUintStruct = buffer.into_decoded::<test_conformance::wire::GoldenUintStruct>().unwrap().take();
+        let _value: test_conformance::GoldenUintStruct = buffer.into_decoded::<test_conformance::wire::GoldenUintStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenUintStruct { v: 1u16 });
 
     }
@@ -406,7 +406,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenFloatStruct = buffer.into_decoded::<test_conformance::wire::GoldenFloatStruct>().unwrap().take();
+        let _value: test_conformance::GoldenFloatStruct = buffer.into_decoded::<test_conformance::wire::GoldenFloatStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenFloatStruct { v: 0f32 });
 
     }
@@ -421,7 +421,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenDoubleStruct = buffer.into_decoded::<test_conformance::wire::GoldenDoubleStruct>().unwrap().take();
+        let _value: test_conformance::GoldenDoubleStruct = buffer.into_decoded::<test_conformance::wire::GoldenDoubleStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenDoubleStruct { v: 0f64 });
 
     }
@@ -438,7 +438,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenStringStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenStringStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenStringStruct { v: String::from("abcd") });
 
     }
@@ -455,7 +455,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStringStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStringStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableStringStruct { v: Some(String::from("abcd")) });
 
     }
@@ -471,7 +471,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStringStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableStringStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStringStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableStringStruct { v: None });
 
     }
@@ -486,7 +486,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenEnumStruct = buffer.into_decoded::<test_conformance::wire::GoldenEnumStruct>().unwrap().take();
+        let _value: test_conformance::GoldenEnumStruct = buffer.into_decoded::<test_conformance::wire::GoldenEnumStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenEnumStruct { v: test_conformance::GoldenEnum::try_from(1u16).unwrap() });
 
     }
@@ -501,7 +501,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenBitsStruct = buffer.into_decoded::<test_conformance::wire::GoldenBitsStruct>().unwrap().take();
+        let _value: test_conformance::GoldenBitsStruct = buffer.into_decoded::<test_conformance::wire::GoldenBitsStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenBitsStruct { v: test_conformance::GoldenBits::from_bits_retain(1u16) });
 
     }
@@ -518,7 +518,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenTableStruct = buffer.into_decoded::<test_conformance::wire::GoldenTableStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenTableStruct = buffer.into_decoded::<test_conformance::wire::GoldenTableStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { v: Some(1i16), ..Default::default() } });
 
     }
@@ -534,7 +534,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenUnionStruct>().unwrap().take();
+        let _value: test_conformance::GoldenUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenUnionStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenUnionStruct { v: test_conformance::GoldenUnion::V(1i16) });
 
     }
@@ -550,7 +550,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableUnionStruct>().unwrap().take();
+        let _value: test_conformance::GoldenNullableUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableUnionStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableUnionStruct { v: Some(Box::new(test_conformance::GoldenUnion::V(1i16))) });
 
     }
@@ -566,7 +566,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableUnionStruct>().unwrap().take();
+        let _value: test_conformance::GoldenNullableUnionStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableUnionStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableUnionStruct { v: None });
 
     }
@@ -581,7 +581,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenByteArrayStruct = buffer.into_decoded::<test_conformance::wire::GoldenByteArrayStruct>().unwrap().take();
+        let _value: test_conformance::GoldenByteArrayStruct = buffer.into_decoded::<test_conformance::wire::GoldenByteArrayStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenByteArrayStruct { v: [1u8, 2u8, 3u8, 4u8] });
 
     }
@@ -596,7 +596,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenStructArrayStruct = buffer.into_decoded::<test_conformance::wire::GoldenStructArrayStruct>().unwrap().take();
+        let _value: test_conformance::GoldenStructArrayStruct = buffer.into_decoded::<test_conformance::wire::GoldenStructArrayStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenStructArrayStruct { v: [test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] });
 
     }
@@ -614,7 +614,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenByteVectorStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenByteVectorStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenByteVectorStruct { v: vec![1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8, 1u8, 2u8, 3u8, 4u8] });
 
     }
@@ -631,7 +631,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableByteVectorStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableByteVectorStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableByteVectorStruct { v: Some(vec![1u8, 2u8, 3u8, 4u8]) });
 
     }
@@ -647,7 +647,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableByteVectorStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableByteVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableByteVectorStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableByteVectorStruct { v: None });
 
     }
@@ -664,7 +664,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenStructVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenStructVectorStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenStructVectorStruct = buffer.into_decoded::<test_conformance::wire::GoldenStructVectorStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenStructVectorStruct { v: vec![test_conformance::GoldenIntStruct { v: 1i16 }, test_conformance::GoldenIntStruct { v: 2i16 }] });
 
     }
@@ -680,7 +680,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableStruct { v: Some(Box::new(test_conformance::GoldenBoolStruct { v: true })) });
 
     }
@@ -695,7 +695,7 @@ HandleDef{
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenNullableStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableStruct { v: None });
 
     }
@@ -721,7 +721,7 @@ HandleDef{
             handles: vec![
 copy_handle(&handle_defs[0]),],
         };
-        let _value: test_conformance::GoldenHandleBasicRightsStruct = buffer.into_decoded::<test_conformance::wire::GoldenHandleBasicRightsStruct>().unwrap().take();
+        let _value: test_conformance::GoldenHandleBasicRightsStruct = buffer.into_decoded::<test_conformance::wire::GoldenHandleBasicRightsStruct>().unwrap().into_natural();
         
     }
 
@@ -746,7 +746,7 @@ HandleDef{
             handles: vec![
 copy_handle(&handle_defs[0]),],
         };
-        let _value: test_conformance::GoldenNullableHandleStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableHandleStruct>().unwrap().take();
+        let _value: test_conformance::GoldenNullableHandleStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableHandleStruct>().unwrap().into_natural();
         assert_eq!(_value.v.as_ref().unwrap().basic_info().unwrap().koid.raw_koid(), _handle_koids[0]);
 
     }
@@ -761,7 +761,7 @@ copy_handle(&handle_defs[0]),],
             handles: vec![
 ],
         };
-        let _value: test_conformance::GoldenNullableHandleStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableHandleStruct>().unwrap().take();
+        let _value: test_conformance::GoldenNullableHandleStruct = buffer.into_decoded::<test_conformance::wire::GoldenNullableHandleStruct>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenNullableHandleStruct { v: None });
 
     }
@@ -790,7 +790,7 @@ HandleDef{
             handles: vec![
 copy_handle(&handle_defs[0]),],
         };
-        let _value: test_conformance::GoldenTableStruct = buffer.into_decoded::<test_conformance::wire::GoldenTableStruct<'static>>().unwrap().take();
+        let _value: test_conformance::GoldenTableStruct = buffer.into_decoded::<test_conformance::wire::GoldenTableStruct<'static>>().unwrap().into_natural();
         assert_eq!(_value, test_conformance::GoldenTableStruct { v: test_conformance::GoldenTable { ..Default::default() } });
 
         let unused_handles = select_raw_handle_infos(&handle_defs, &[
@@ -832,7 +832,7 @@ copy_handle(&handle_defs[0]),],
 
         match buffer.into_decoded::<test_conformance::wire::GoldenStringStruct<'static>>() {
             Err(err) => assert_matches!(err, DecodeError::InvalidOptionalSize(_) | DecodeError::RequiredValueAbsent),
-            Ok(value) => panic!("unexpected successful decoding to: {:?}", value.take()),
+            Ok(value) => panic!("unexpected successful decoding to: {:?}", value.into_natural()),
         }
 
     }

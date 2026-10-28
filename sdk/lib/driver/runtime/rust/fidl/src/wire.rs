@@ -366,7 +366,7 @@ mod tests {
         let decoded = decoder.into_decoded::<DriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), handle_raw.get());
 
-        let handle = decoded.take();
+        let handle = decoded.into_natural();
         let roundtripped_raw = unsafe { handle.channel.driver_handle().get_raw() };
         assert_eq!(roundtripped_raw, handle_raw);
     }
@@ -397,7 +397,7 @@ mod tests {
         let decoded = decoder.into_decoded::<OptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), Some(handle_raw.get()));
 
-        let handle = decoded.take();
+        let handle = decoded.into_natural();
         let roundtripped_raw = unsafe { handle.unwrap().channel.driver_handle().get_raw() };
         assert_eq!(roundtripped_raw, handle_raw);
     }
@@ -418,7 +418,7 @@ mod tests {
         let decoded = decoder.into_decoded::<OptionalDriverChannel>().unwrap();
         assert_eq!(decoded.as_raw_handle(), None);
 
-        let handle = decoded.take();
+        let handle = decoded.into_natural();
         assert!(handle.is_none());
     }
 }

@@ -180,7 +180,7 @@ two_way_futures! {
         <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).into_natural()
     },
 
     // `foo().encode()?.await`
@@ -198,7 +198,7 @@ two_way_futures! {
         <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).into_natural()
     },
 
     // `foo().send().await`
@@ -230,7 +230,7 @@ two_way_futures! {
         <<M::Response as Response>::Payload as IntoNatural>::Natural: for<'de> FromWire<<<M::Response as Response>::Payload as Wire>::Narrowed<'de>>,
     ]
     {
-        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).take()
+        is_decode_buffer => |state| Response::into_payload(state.unwrap_decode_buffer().into_decoded::<M::Response>()?).into_natural()
     },
 
     // `foo().recv_buffer().await`
