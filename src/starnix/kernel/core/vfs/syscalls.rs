@@ -2430,13 +2430,13 @@ pub fn sys_epoll_ctl(
     Ok(())
 }
 
-// Backend for sys_epoll_pwait and sys_epoll_pwait2 that takes an already-decoded deadline.
+// Backend for sys_epoll_pwait and sys_epoll_pwait2 that takes an already-decoded timeout.
 fn do_epoll_pwait(
     current_task: &mut CurrentTask,
     epfd: FdNumber,
     events: UserRef<EpollEvent>,
     unvalidated_max_events: i32,
-    deadline: zx::MonotonicInstant,
+    timeout: zx::MonotonicDuration,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
     let file = current_task.get_file(epfd)?;
@@ -2455,10 +2455,13 @@ fn do_epoll_pwait(
         .mm()?
         .check_plausible(events.addr(), max_events * std::mem::size_of::<EpollEvent>())?;
 
-    let wait = |current_task: &CurrentTask| -> Result<Vec<EpollEvent>, Errno> {
-        let active_events = epoll_file.wait(current_task, max_events, deadline)?;
-        if active_events.is_empty() && deadline == zx::MonotonicInstant::ZERO {
-            // A zero deadline never blocks, so nothing checked for pending signals.
+    let wait = |current_task: &CurrentTask| -> Result<_, Errno> {
+        // Only compute the deadline if the wait blocks: waits that find events ready, the common
+        // case for busy event loops, do not read the clock.
+        let active_events = epoll_file
+            .wait_with_lazy_deadline(current_task, max_events, || epoll_deadline(timeout))?;
+        if active_events.is_empty() && timeout == zx::MonotonicDuration::ZERO {
+            // A zero timeout never blocks, so nothing checked for pending signals.
             check_wait_not_interrupted(current_task)?;
         }
         Ok(active_events)
@@ -2478,9 +2481,12 @@ fn do_epoll_pwait(
 ///
 /// A zero timeout yields `zx::MonotonicInstant::ZERO`, a deadline that has already passed, so that
 /// non-blocking waits neither read the clock nor take the blocking path of `Waiter::wait_until`.
+/// An infinite timeout yields `zx::MonotonicInstant::INFINITE` without reading the clock either.
 fn epoll_deadline(timeout: zx::MonotonicDuration) -> zx::MonotonicInstant {
     if timeout == zx::MonotonicDuration::ZERO {
         zx::MonotonicInstant::ZERO
+    } else if timeout == zx::MonotonicDuration::INFINITE {
+        zx::MonotonicInstant::INFINITE
     } else {
         zx::MonotonicInstant::after(timeout)
     }
@@ -2494,8 +2500,8 @@ pub fn sys_epoll_pwait(
     timeout: i32,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
-    let deadline = epoll_deadline(duration_from_poll_timeout(timeout)?);
-    do_epoll_pwait(current_task, epfd, events, max_events, deadline, user_sigmask)
+    let timeout = duration_from_poll_timeout(timeout)?;
+    do_epoll_pwait(current_task, epfd, events, max_events, timeout, user_sigmask)
 }
 
 pub fn sys_epoll_pwait2(
@@ -2506,13 +2512,13 @@ pub fn sys_epoll_pwait2(
     user_timespec: TimeSpecPtr,
     user_sigmask: UserRef<SigSet>,
 ) -> Result<usize, Errno> {
-    let deadline = if user_timespec.is_null() {
-        zx::MonotonicInstant::INFINITE
+    let timeout = if user_timespec.is_null() {
+        zx::MonotonicDuration::INFINITE
     } else {
         let timespec = current_task.read_multi_arch_object(user_timespec)?;
-        epoll_deadline(duration_from_timespec(timespec)?)
+        duration_from_timespec(timespec)?
     };
-    do_epoll_pwait(current_task, epfd, events, max_events, deadline, user_sigmask)
+    do_epoll_pwait(current_task, epfd, events, max_events, timeout, user_sigmask)
 }
 
 /// Returns whether a wait until `deadline` would time out right away.

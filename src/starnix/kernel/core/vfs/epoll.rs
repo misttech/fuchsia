@@ -11,6 +11,7 @@ use crate::vfs::{
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 use starnix_logging::log_warn;
 use starnix_sync::{EpollStateLock, EpollWaitableStateLock, LockDepMutex, allow_subclass};
 use starnix_uapi::error;
@@ -24,6 +25,16 @@ use std::sync::Arc;
 /// Maximum depth of epoll instances monitoring one another.
 /// From https://man7.org/linux/man-pages/man2/epoll_ctl.2.html
 const MAX_NESTED_DEPTH: u32 = 5;
+
+/// The number of events that `EpollFileObject::wait` collects and returns without allocating:
+/// the `max_events` of Android's Looper.
+const INLINE_EVENTS: usize = 16;
+
+/// The events returned by `EpollFileObject::wait`.
+pub type EpollEventVec = SmallVec<[EpollEvent; INLINE_EVENTS]>;
+
+/// The ready items collected by `EpollFileObject::wait`.
+type ReadyItemVec = SmallVec<[ReadyItem; INLINE_EVENTS]>;
 
 /// WaitObject represents a FileHandle that is being waited upon.
 /// The `data` field is a user defined quantity passed in
@@ -292,7 +303,7 @@ impl EpollFileObject {
     fn process_triggered_events(
         &self,
         current_task: &CurrentTask,
-        pending_list: &mut Vec<ReadyItem>,
+        pending_list: &mut ReadyItemVec,
         max_events: usize,
     ) -> Result<(), Errno> {
         let mut state = self.state.lock();
@@ -328,18 +339,20 @@ impl EpollFileObject {
         Ok(())
     }
 
-    /// Waits until an event exists in `pending_list` or until `timeout` has
-    /// been reached.
+    /// Waits until an event exists in `pending_list` or until the deadline returned by `deadline`
+    /// has been reached. `deadline` is only called if the wait may block.
     fn wait_until_pending_event(
         &self,
         current_task: &CurrentTask,
+        pending_list: &mut ReadyItemVec,
         max_events: usize,
-        mut wait_deadline: zx::MonotonicInstant,
-    ) -> Result<Vec<ReadyItem>, Errno> {
-        let mut pending_list = Vec::new();
+        deadline: impl FnOnce() -> zx::MonotonicInstant,
+    ) -> Result<(), Errno> {
+        let mut compute_deadline = Some(deadline);
+        let mut wait_deadline = zx::MonotonicInstant::ZERO;
 
         loop {
-            self.process_triggered_events(current_task, &mut pending_list, max_events)?;
+            self.process_triggered_events(current_task, pending_list, max_events)?;
 
             if pending_list.len() == max_events {
                 break; // No input events or output list full, nothing more we can do.
@@ -350,6 +363,10 @@ impl EpollFileObject {
                 // immediately, in case there are more events available, but the next loop should
                 // wait with a 0 timeout to prevent further blocking.
                 wait_deadline = zx::MonotonicInstant::ZERO;
+            } else if let Some(compute_deadline) = compute_deadline.take() {
+                // Only compute the deadline once the wait may block, so that waits that find
+                // events right away do not read the clock.
+                wait_deadline = compute_deadline();
             }
 
             // Loop back to check if there are more items in the Waiter's queue. Every wait_until()
@@ -385,7 +402,7 @@ impl EpollFileObject {
             }
         }
 
-        Ok(pending_list)
+        Ok(())
     }
 
     /// Blocking wait on all waited upon events with a timeout.
@@ -394,10 +411,21 @@ impl EpollFileObject {
         current_task: &CurrentTask,
         max_events: usize,
         deadline: zx::MonotonicInstant,
-    ) -> Result<Vec<EpollEvent>, Errno> {
+    ) -> Result<EpollEventVec, Errno> {
+        self.wait_with_lazy_deadline(current_task, max_events, || deadline)
+    }
+
+    /// Like `wait`, but only calls `deadline` to get the deadline if the wait has to block, so
+    /// that waits finding events ready do not compute it.
+    pub fn wait_with_lazy_deadline(
+        &self,
+        current_task: &CurrentTask,
+        max_events: usize,
+        deadline: impl FnOnce() -> zx::MonotonicInstant,
+    ) -> Result<EpollEventVec, Errno> {
         {
             let mut state = self.state.lock();
-            let recheck_list = std::mem::take(&mut state.recheck_list);
+            let mut recheck_list = std::mem::take(&mut state.recheck_list);
             for key in &recheck_list {
                 let wait_object = state.wait_objects.get_mut(key).unwrap();
                 wait_object.deactivate_wakeup_source(current_task);
@@ -411,17 +439,39 @@ impl EpollFileObject {
                     return Err(err);
                 }
             }
+            // Hand the emptied buffer back, so that adding the events returned by this wait to the
+            // list below does not allocate a new one.
+            if state.recheck_list.is_empty() {
+                recheck_list.clear();
+                state.recheck_list = recheck_list;
+            }
         }
 
-        let pending_list = self.wait_until_pending_event(current_task, max_events, deadline)?;
+        let mut pending_list = ReadyItemVec::new();
+        self.wait_until_pending_event(current_task, &mut pending_list, max_events, deadline)?;
 
         // Process the pending list and add processed ReadyItem
         // entries to the rearm_list for the next wait.
-        let mut result = vec![];
+        let mut result = EpollEventVec::with_capacity(pending_list.len());
+        // An item can be pending more than once, and is only reported once. Look for repeats by
+        // scanning the earlier items while the list fits inline, which is cheaper than allocating
+        // a set, and with a set beyond that.
+        let scan_for_repeats = pending_list.len() <= INLINE_EVENTS;
+        let mut seen_keys = FxHashSet::default();
+        if !scan_for_repeats {
+            seen_keys.reserve(pending_list.len());
+        }
         let mut state = self.state.lock();
         let state = &mut *state;
-        let mut seen = FxHashSet::with_capacity_and_hasher(pending_list.len(), Default::default());
-        for pending_event in pending_list.iter().filter(|e| seen.insert(e.key)) {
+        for (index, pending_event) in pending_list.iter().enumerate() {
+            let repeated = if scan_for_repeats {
+                pending_list[..index].iter().any(|earlier| earlier.key == pending_event.key)
+            } else {
+                !seen_keys.insert(pending_event.key)
+            };
+            if repeated {
+                continue;
+            }
             // The wait could have been deleted by here,
             // so ignore the None case.
             let Some(wait) = state.wait_objects.get_mut(&pending_event.key) else { continue };
@@ -1294,6 +1344,57 @@ mod tests {
             let events = epoll_file.wait(&current_task, 10, zx::MonotonicInstant::ZERO).unwrap();
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].data(), 2);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_wait_reports_repeated_pending_items_once() {
+        // An item can be pending more than once, e.g. when it is triggered again before a wait
+        // processes it. A wait must report it once, whether the pending list is short enough to be
+        // scanned for repeats or long enough to use a set.
+        spawn_kernel_and_run(async |current_task| {
+            for num_files in [1, 2, INLINE_EVENTS + 1] {
+                let epoll_file_handle = EpollFileObject::new_file(&current_task);
+                let epoll_file = epoll_file_handle.downcast_file::<EpollFileObject>().unwrap();
+                let files: Vec<_> = (0..num_files)
+                    .map(|data| {
+                        let file = anon_test_file(
+                            &current_task,
+                            Box::new(ControlledEventsFile::new(FdEvents::POLLIN)),
+                            OpenFlags::RDWR,
+                        );
+                        epoll_file
+                            .add(
+                                &current_task,
+                                &file,
+                                &epoll_file_handle,
+                                EpollEvent::new(FdEvents::POLLIN, data as u64),
+                            )
+                            .unwrap();
+                        file
+                    })
+                    .collect();
+
+                // Adding the ready files queued each of them once: queue them all again.
+                {
+                    let mut waitable_state = epoll_file.waitable_state.lock();
+                    for file in &files {
+                        waitable_state.trigger_list.push_back(ReadyItem {
+                            key: file.id.as_epoll_key().into(),
+                            events: FdEvents::POLLIN,
+                        });
+                    }
+                }
+
+                let events = epoll_file
+                    .wait(&current_task, 2 * num_files, zx::MonotonicInstant::ZERO)
+                    .unwrap();
+                let mut data: Vec<u64> = events.iter().map(|event| event.data()).collect();
+                data.sort();
+                assert_eq!(data, (0..num_files as u64).collect::<Vec<_>>());
+                assert_eq!(epoll_file.state.lock().recheck_list.len(), num_files);
+            }
         })
         .await;
     }

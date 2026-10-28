@@ -487,9 +487,10 @@ impl PortWaiter {
     }
 
     fn wake_immediately(&self, events: FdEvents, handler: EventHandler) {
-        let callback = WaitCallback::EventHandler(handler);
-        let key = self.register_callback(callback);
-        self.queue_events(&key, WaitEvents::Fd(events));
+        // Equivalent to registering `handler` and queueing `events` for it, without inserting the
+        // callback in `callbacks` only to remove it right away.
+        handler.handle(events);
+        self.notify();
     }
 
     /// Establish an asynchronous wait for the signals on the given Zircon handle (not to be
