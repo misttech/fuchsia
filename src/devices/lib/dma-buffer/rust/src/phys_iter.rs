@@ -21,8 +21,8 @@ pub struct PhysIter<'a> {
     max_length: usize,
     chunk_size: usize,
     merge: bool,
-    chunk_mask: zx_paddr_t,
     chunk_index: usize,
+    offset_in_chunk: usize,
     current: Option<(zx_paddr_t, usize)>,
     iterated_bytes: usize,
 }
@@ -33,7 +33,8 @@ impl<'a> PhysIter<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if `chunk_list` is empty or `buf_length == 0`.
+    /// Panics if `chunk_list` is empty, `buf_length == 0`, or
+    /// `chunk_list.len() > 1 && vmo_offset >= system_get_page_size() as usize`.
     pub fn new(chunk_list: &'a [zx_paddr_t], vmo_offset: usize, buf_length: usize) -> Self {
         Self::new_with_options(
             chunk_list,
@@ -50,8 +51,8 @@ impl<'a> PhysIter<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if `chunk_list` is empty, `buf_length == 0`, or `chunk_size` is not a non-zero power
-    /// of two.
+    /// Panics if `chunk_list` is empty, `buf_length == 0`, `chunk_size` is not a non-zero power
+    /// of two, or `chunk_list.len() > 1 && vmo_offset >= chunk_size`.
     pub fn new_with_options(
         chunk_list: &'a [zx_paddr_t],
         chunk_size: usize,
@@ -63,9 +64,12 @@ impl<'a> PhysIter<'a> {
         assert!(!chunk_list.is_empty(), "chunk_list must not be empty");
         assert!(buf_length > 0, "buf_length must be greater than 0");
         assert!(chunk_size.is_power_of_two(), "chunk_size must be a power of 2");
+        assert!(
+            chunk_list.len() == 1 || vmo_offset < chunk_size,
+            "vmo_offset must be less than chunk_size when chunk_list has multiple entries"
+        );
 
         let max_length = if max_length == 0 { usize::MAX } else { max_length };
-        let chunk_mask = !(chunk_size - 1);
 
         let mut iter = Self {
             chunk_list,
@@ -73,37 +77,31 @@ impl<'a> PhysIter<'a> {
             max_length,
             chunk_size,
             merge,
-            chunk_mask,
             chunk_index: 0,
+            offset_in_chunk: vmo_offset,
             current: None,
             iterated_bytes: 0,
         };
         let first_addr = chunk_list[0] + vmo_offset;
-        let first_size = iter.boundary_truncate(first_addr);
+        let first_size = iter.boundary_truncate();
         iter.current = Some((first_addr, first_size));
         iter
     }
 
-    fn chunk_base(&self, addr: zx_paddr_t) -> zx_paddr_t {
-        addr & self.chunk_mask
-    }
-
-    fn boundary_truncate(&self, addr: zx_paddr_t) -> usize {
+    fn boundary_truncate(&self) -> usize {
         let end_of_buffer = self.buf_length - self.iterated_bytes;
         if self.chunk_list.len() == 1 {
             return self.max_length.min(end_of_buffer);
         }
 
-        let next_chunk = self.chunk_base(addr) + self.chunk_size;
-        let mut end_of_chunk = next_chunk - addr;
+        let mut end_of_chunk = self.chunk_size - self.offset_in_chunk;
 
         if self.merge {
             let mut idx = self.chunk_index;
             while end_of_chunk < self.max_length
                 && end_of_chunk < end_of_buffer
                 && idx + 1 < self.chunk_list.len()
-                && self.chunk_base(self.chunk_list[idx]) + self.chunk_size
-                    == self.chunk_list[idx + 1]
+                && self.chunk_list[idx] + self.chunk_size == self.chunk_list[idx + 1]
             {
                 end_of_chunk += self.chunk_size;
                 idx += 1;
@@ -130,19 +128,13 @@ impl Iterator for PhysIter<'_> {
         let next_addr = if self.chunk_list.len() == 1 {
             cur_addr + cur_size
         } else {
-            let cur_chunk = self.chunk_base(cur_addr);
-            let end_addr = cur_addr + cur_size;
-            let next_chunk = self.chunk_base(end_addr);
-
-            if cur_chunk != next_chunk {
-                self.chunk_index += (next_chunk - cur_chunk) / self.chunk_size;
-                self.chunk_base(self.chunk_list[self.chunk_index]) + (end_addr & !self.chunk_mask)
-            } else {
-                cur_addr + cur_size
-            }
+            let next_offset = self.offset_in_chunk + cur_size;
+            self.chunk_index += next_offset / self.chunk_size;
+            self.offset_in_chunk = next_offset % self.chunk_size;
+            self.chunk_list[self.chunk_index] + self.offset_in_chunk
         };
 
-        let next_size = self.boundary_truncate(next_addr);
+        let next_size = self.boundary_truncate();
         self.current = Some((next_addr, next_size));
         Some(item)
     }
@@ -374,6 +366,36 @@ mod tests {
         true,
         &[(HALF_PAGE, 3 * HALF_PAGE)];
         "zx_bti_compress_contiguous_merge"
+    )]
+    #[test_case(
+        &[0x22_0000, 0x35_0000],
+        0x10_0000,
+        0xf_8000,
+        0x1_0000,
+        0x1_0000,
+        true,
+        &[(0x31_8000, 0x8000), (0x35_0000, 0x8000)];
+        "page_aligned_large_chunks_non_contiguous"
+    )]
+    #[test_case(
+        &[0x22_0000, 0x32_0000],
+        0x10_0000,
+        0xf_8000,
+        0x1_0000,
+        0x1_0000,
+        true,
+        &[(0x31_8000, 0x1_0000)];
+        "page_aligned_large_chunks_contiguous_merge"
+    )]
+    #[test_case(
+        &[0x22_0000, 0x35_0000],
+        0x10_0000,
+        0xd_8000,
+        0x3_0000,
+        0x1_0000,
+        true,
+        &[(0x2f_8000, 0x1_0000), (0x30_8000, 0x1_0000), (0x31_8000, 0x8000), (0x35_0000, 0x8000)];
+        "page_aligned_large_chunks_multi_step_across_boundary"
     )]
     fn test_phys_iter(
         chunk_list: &[zx_paddr_t],

@@ -143,9 +143,9 @@ impl TransferManager {
             data_direction,
         };
         let page_size = zx::system_get_page_size() as u64;
-        // We have to pin a region that is aligned to `contiguity`.
+        // `zx_bti_pin` requires the pinned region's offset and length to be page-aligned.
         let contiguity = self.minimum_contiguity;
-        let aligned_vmo_offset = round_down(vmo_offset, contiguity);
+        let aligned_vmo_offset = round_down(vmo_offset, page_size);
         let end = (vmo_offset + length).next_multiple_of(page_size);
         let aligned_length = end - aligned_vmo_offset;
 
@@ -178,9 +178,13 @@ impl TransferManager {
                 vmo.op_range(zx::VmoOp::CACHE_CLEAN, vmo_offset, length)?;
             }
         };
+        // When `contiguity` is `u64::MAX` (not a power of two), `paddrs.len() == 1` covers the
+        // entire pinned range; pass `page_size` to satisfy `PhysIter`'s power-of-two requirement.
+        let phys_iter_chunk_size =
+            if contiguity.is_power_of_two() { contiguity as usize } else { page_size as usize };
         let contig_ranges = PhysIter::new_with_options(
             &paddrs[..],
-            contiguity as usize,
+            phys_iter_chunk_size,
             (vmo_offset - aligned_vmo_offset) as usize,
             length as usize,
             TransferBytes::MAX_BYTES,
@@ -200,8 +204,9 @@ impl TransferManager {
     /// Prepares read transfer descriptors pointing to pre-pinned physical addresses.
     ///
     /// Unlike [`Self::prepare_transfer`], this function does not pin the VMO via BTI. Instead, it
-    /// uses the pre-pinned physical addresses of `buffer` (which must have granularity matching
-    /// [`Self::minimum_contiguity`]), and sets `pmt: None` on the returned [`Transfer`].
+    /// uses the pre-pinned physical addresses of `buffer` (which must have a power-of-two
+    /// contiguity granularity not exceeding [`Self::minimum_contiguity`]), and sets `pmt: None` on
+    /// the returned [`Transfer`].
     ///
     /// The caller is responsible for ensuring that `buffer` remains pinned and its physical
     /// addresses remain valid for the entire duration of the transfer until completion.
@@ -225,11 +230,20 @@ impl TransferManager {
             .ok_or(zx::Status::INVALID_ARGS)?;
 
         let paddrs = buffer.paddrs().ok_or(zx::Status::INVALID_ARGS)?;
-        if buffer.contiguity() != Some(self.minimum_contiguity) {
+        let Some(contiguity) = buffer.contiguity() else {
+            return Err(zx::Status::INVALID_ARGS);
+        };
+        // `PinnedBufferAllocator` clamps `contiguity` down to `chunk_size` (at least `page_size`)
+        // when the BTI's `minimum_contiguity` exceeds `chunk_size` (such as `u64::MAX`).
+        let page_size = zx::system_get_page_size() as u64;
+        if !contiguity.is_power_of_two()
+            || contiguity < std::cmp::min(self.minimum_contiguity, page_size)
+            || contiguity > self.minimum_contiguity
+        {
             return Err(zx::Status::INVALID_ARGS);
         }
         let vmo = buffer.vmo().ok_or(zx::Status::INVALID_ARGS)?;
-        let contiguity = self.minimum_contiguity as usize;
+        let contiguity = contiguity as usize;
         let offset = vmo_offset % contiguity;
         if paddrs.len() < (offset + length).div_ceil(contiguity) {
             return Err(zx::Status::INVALID_ARGS);
@@ -1138,6 +1152,107 @@ mod tests {
             )
             .expect_err("prepare_transfer with out-of-range DUN should fail");
         assert_eq!(err, zx::Status::OUT_OF_RANGE);
+        unsafe {
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
+    }
+
+    #[fuchsia::test]
+    fn u64_max_minimum_contiguity_transfers() {
+        let (mut manager, fake_bti) = setup();
+        Arc::get_mut(&mut manager).unwrap().minimum_contiguity = u64::MAX;
+        assert_eq!(manager.minimum_contiguity(), u64::MAX);
+
+        // 1. Direct transfer with non-zero VMO offset (512) within a single page.
+        fake_bti.set_paddrs(&[0x22_0000]);
+        let vmo = Arc::new(zx::Vmo::create(4096).unwrap());
+        let transfer = manager
+            .prepare_transfer(
+                0,
+                vmo.clone(),
+                512,
+                7,
+                2,
+                Direction::Read,
+                TransferOptions::default(),
+            )
+            .expect("prepare_transfer with u64::MAX contiguity failed");
+        assert!(transfer.pmt.is_some());
+        validate_tdl_entry(
+            &manager,
+            0,
+            CommandQueueTDLEntry::single_buffer(
+                Direction::Read,
+                7,
+                NonZeroU16::try_from(2).unwrap(),
+                0x22_0000 + 512,
+                false,
+                None,
+            )
+            .unwrap(),
+        );
+        unsafe {
+            transfer.unpin();
+        }
+
+        // 2. Pre-pinned multi-chunk transfer with u64::MAX contiguity clamped to chunk_size.
+        let page_size = zx::system_get_page_size() as usize;
+        fake_bti.set_paddrs(&[0x22_0000, 0x35_0000]);
+        let source = BufferSource::new(2 * page_size);
+        let allocator = Arc::new(PinnedBufferAllocator::with_chunk_size(
+            MMC_BLOCK_SIZE as usize,
+            source,
+            fake_bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            u64::MAX,
+            page_size,
+        ));
+        let buffer = allocator.allocate_buffer_sync_owned(page_size + 512);
+        assert_eq!(buffer.range(), 0..(page_size + 512));
+        let pre_pinned_transfer = manager
+            .prepare_read_transfer_pre_pinned(1, &buffer, 20, TransferOptions::default())
+            .expect("prepare_read_transfer_pre_pinned with u64::MAX contiguity failed");
+        assert!(pre_pinned_transfer.pmt.is_none());
+        let descriptors_per_slot =
+            page_size / std::mem::size_of::<CommandQueueTransferDescriptor>();
+        validate_extra_transfer_descriptors(
+            &manager,
+            descriptors_per_slot,
+            &[
+                CommandQueueTransferDescriptor::transfer(
+                    0x22_0000,
+                    TransferBytes::try_from(page_size).unwrap(),
+                    false,
+                ),
+                CommandQueueTransferDescriptor::transfer(
+                    0x35_0000,
+                    TransferBytes::try_from(512).unwrap(),
+                    true,
+                ),
+            ],
+        );
+        drop(buffer);
+
+        // 3. Pre-pinned non-zero-offset transfer within a page-aligned chunk.
+        let _pad = allocator.allocate_buffer_sync_owned(512);
+        let offset_buffer = allocator.allocate_buffer_sync_owned(512);
+        assert_eq!(offset_buffer.range(), 512..1024);
+        let offset_transfer = manager
+            .prepare_read_transfer_pre_pinned(2, &offset_buffer, 30, TransferOptions::default())
+            .expect("prepare_read_transfer_pre_pinned at offset failed");
+        assert!(offset_transfer.pmt.is_none());
+        validate_tdl_entry(
+            &manager,
+            2,
+            CommandQueueTDLEntry::single_buffer(
+                Direction::Read,
+                30,
+                NonZeroU16::MIN,
+                0x22_0000 + 512,
+                false,
+                None,
+            )
+            .unwrap(),
+        );
         unsafe {
             Arc::try_unwrap(manager).unwrap().unpin_buffers();
         }

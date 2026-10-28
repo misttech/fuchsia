@@ -80,7 +80,8 @@ impl PinnedBufferAllocator {
     /// Creates a new `PinnedBufferAllocator` with default chunk size (1 MiB).
     ///
     /// `contiguity` specifies the minimum physical address contiguity (in bytes) required by the
-    /// hardware/BTI, which determines the granularity of entries in [`paddrs`](Self::paddrs).
+    /// hardware/BTI, which determines the granularity of entries in [`paddrs`](Self::paddrs)
+    /// (clamped to `DEFAULT_PIN_CHUNK_SIZE` when `contiguity` exceeds the chunk size).
     pub fn new(block_size: usize, source: BufferSource, bti: zx::Bti, contiguity: u64) -> Self {
         Self::with_chunk_size(block_size, source, bti, contiguity, DEFAULT_PIN_CHUNK_SIZE)
     }
@@ -88,7 +89,8 @@ impl PinnedBufferAllocator {
     /// Creates a new `PinnedBufferAllocator` with a custom `chunk_size`.
     ///
     /// `contiguity` specifies the minimum physical address contiguity (in bytes) required by the
-    /// hardware/BTI, which determines the granularity of entries in [`paddrs`](Self::paddrs).
+    /// hardware/BTI, which determines the granularity of entries in [`paddrs`](Self::paddrs)
+    /// (clamped to `chunk_size` when `contiguity` exceeds `chunk_size`).
     pub fn with_chunk_size(
         block_size: usize,
         source: BufferSource,
@@ -98,10 +100,11 @@ impl PinnedBufferAllocator {
     ) -> Self {
         assert!(!source.is_trusted(), "PinnedBufferAllocator cannot use a trusted buffer source");
         assert!(chunk_size.is_power_of_two());
-        assert!(chunk_size >= contiguity as usize);
-        assert!(chunk_size % contiguity as usize == 0);
+        let contiguity = std::cmp::min(contiguity, chunk_size as u64);
+        let contiguity_usize = contiguity as usize;
+        assert!(chunk_size.is_multiple_of(contiguity_usize));
         let num_chunks = source.size().div_ceil(chunk_size);
-        let total_paddrs = source.size().div_ceil(contiguity as usize);
+        let total_paddrs = source.size().div_ceil(contiguity_usize);
         let mut paddrs = Vec::with_capacity(total_paddrs);
         for _ in 0..total_paddrs {
             paddrs.push(UnsafeCell::new(0));
@@ -532,5 +535,25 @@ mod tests {
         let (left, right) = buf_ref.split_at(512);
         assert_eq!(left.len(), 512);
         assert_eq!(right.len(), 512);
+    }
+
+    #[fuchsia::test]
+    async fn test_u64_max_contiguity_clamped_to_chunk_size() {
+        let fake_bti = FakeBti::create().expect("failed to create fake BTI");
+        fake_bti.set_paddrs(&[0x22_0000, 0x35_0000]);
+        let source = BufferSource::new(8192);
+        let allocator = PinnedBufferAllocator::with_chunk_size(
+            512,
+            source,
+            fake_bti.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
+            u64::MAX,
+            4096,
+        );
+        assert_eq!(allocator.contiguity(), 4096);
+
+        let buf = allocator.allocate_buffer(8192).await;
+        assert_eq!(buf.range(), 0..8192);
+        assert_eq!(buf.contiguity(), Some(4096));
+        assert_eq!(buf.paddrs(), Some(&[0x22_0000, 0x35_0000][..]));
     }
 }

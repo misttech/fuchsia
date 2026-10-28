@@ -544,7 +544,43 @@ const auto kCases = testing::Values(
           /* merge       */ true,
           /* loop_ct     */ 1,
           /* want_addr   */ (zx_paddr_t[]){kHalfPage},
-          /* want_size   */ (size_t[]){3 * kHalfPage}));
+          /* want_size   */ (size_t[]){3 * kHalfPage}),
+
+    Param(/* test_desc   */ "PageAlignedLargeChunksNonContiguous",
+          /* chunk_list  */ (zx_paddr_t[]){0x220000, 0x350000},
+          /* chunk_count */ 2,
+          /* chunk_size  */ 0x100000,
+          /* vmo_offset  */ 0xf8000,
+          /* buf_length  */ 0x10000,
+          /* max_length  */ 0x10000,
+          /* merge       */ true,
+          /* loop_ct     */ 2,
+          /* want_addr   */ (zx_paddr_t[]){0x318000, 0x350000},
+          /* want_size   */ (size_t[]){0x8000, 0x8000}),
+
+    Param(/* test_desc   */ "PageAlignedLargeChunksContiguousMerge",
+          /* chunk_list  */ (zx_paddr_t[]){0x220000, 0x320000},
+          /* chunk_count */ 2,
+          /* chunk_size  */ 0x100000,
+          /* vmo_offset  */ 0xf8000,
+          /* buf_length  */ 0x10000,
+          /* max_length  */ 0x10000,
+          /* merge       */ true,
+          /* loop_ct     */ 1,
+          /* want_addr   */ (zx_paddr_t[]){0x318000},
+          /* want_size   */ (size_t[]){0x10000}),
+
+    Param(/* test_desc   */ "PageAlignedLargeChunksMultiStepAcrossBoundary",
+          /* chunk_list  */ (zx_paddr_t[]){0x220000, 0x350000},
+          /* chunk_count */ 2,
+          /* chunk_size  */ 0x100000,
+          /* vmo_offset  */ 0xd8000,
+          /* buf_length  */ 0x30000,
+          /* max_length  */ 0x10000,
+          /* merge       */ true,
+          /* loop_ct     */ 4,
+          /* want_addr   */ (zx_paddr_t[]){0x2f8000, 0x308000, 0x318000, 0x350000},
+          /* want_size   */ (size_t[]){0x10000, 0x10000, 0x8000, 0x8000}));
 
 // clang-format on
 
