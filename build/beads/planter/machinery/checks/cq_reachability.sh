@@ -2031,6 +2031,14 @@ for td in target_dirs:
 
     # Return sorted ancestor GN package directories whose BUILD.gn references pkg_dir:target_name
     # directly outside bazel_test_suite(...).
+    # Visibility a test wired into an ancestor test_suite needs: only the package of that
+    # test_suite. GN files that list the test (group("tests") in an ancestor BUILD.gn) refer to
+    # the GN target, and bazel_test_suite builds the Bazel test as a top-level target, so neither
+    # is a Bazel rdep; naming their packages would conflict with visibility_audit
+    # (false_positive_rdep_visibility).
+    def ancestor_suite_visibility(anc_pkg):
+        return [f"//{anc_pkg}:__pkg__"]
+
     def direct_gn_test_callers(pkg_dir, target_name):
         callers = []
         anc = os.path.dirname(pkg_dir)
@@ -2589,10 +2597,7 @@ for td in target_dirs:
         if not entries:
             if anc_suite_info is not None:
                 anc_pkg, anc_suite = anc_suite_info
-                req_vis = sorted(
-                    {f"//{anc_pkg}:__pkg__"}
-                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
-                )
+                req_vis = ancestor_suite_visibility(anc_pkg)
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not wired "
                     f"into the existing ancestor `test_suite` `//{anc_pkg}:{anc_suite}` in "
@@ -2610,10 +2615,7 @@ for td in target_dirs:
                 )
             elif missing_anc_area is not None:
                 anc_pkg, anc_suite = missing_anc_area
-                req_vis = sorted(
-                    {f"//{anc_pkg}:__pkg__"}
-                    | {f"//{c}:__pkg__" for c in gn_test_callers if c}
-                )
+                req_vis = ancestor_suite_visibility(anc_pkg)
                 msg_text = (
                     f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is not exported "
                     f"through an ancestor `test_suite` in '{anc_pkg}/BUILD.bazel' and "
@@ -2658,10 +2660,7 @@ for td in target_dirs:
         handled_local_ancestor_suite = False
         if anc_suite_info is not None and not had_base_local_suite:
             anc_pkg, anc_suite = anc_suite_info
-            req_vis = sorted(
-                {f"//{anc_pkg}:__pkg__"}
-                | {f"//{c}:__pkg__" for c in gn_test_callers if c}
-            )
+            req_vis = ancestor_suite_visibility(anc_pkg)
             rm_local_desc = (
                 "remove the per-package `bazel_test_suite`, unreachable `group(\"tests\")`, "
                 "and unused `//build/bazel/bazel_test_suite.gni` import"
@@ -2723,10 +2722,7 @@ for td in target_dirs:
         elif missing_anc_area is not None and any(e[0] == gn_rel for e in entries):
             handled_local_ancestor_suite = True
             anc_pkg, anc_suite = missing_anc_area
-            req_vis = sorted(
-                {f"//{anc_pkg}:__pkg__"}
-                | {f"//{c}:__pkg__" for c in gn_test_callers if c}
-            )
+            req_vis = ancestor_suite_visibility(anc_pkg)
             msg_text = (
                 f"Bazel test ':{t_name}' ({rule_name}) in '{bazel_rel}' is exported "
                 f"via a per-package `bazel_test_suite` in '{gn_rel}' instead of "
