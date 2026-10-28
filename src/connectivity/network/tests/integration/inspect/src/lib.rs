@@ -207,6 +207,10 @@ async fn inspect_tcp_sockets<I: Ip>(name: &str, socket_state: TcpSocketState) {
     // NB: The sockets are keyed by an opaque debug identifier; get that here.
     let sockets = data.get_child("Sockets").unwrap();
     let sock_name = assert_matches!(&sockets.children[..], [socket] => socket.name.clone());
+    assert!(
+        Regex::new(r"^TcpSocketId\([0-9]+\)$").unwrap().is_match(&sock_name),
+        "unexpected socket name: {sock_name}",
+    );
 
     match (I::VERSION, socket_state) {
         (IpVersion::V4, TcpSocketState::Unbound) => {
@@ -781,6 +785,15 @@ async fn inspect_datagram_sockets<I: TestIpExt>(
     // NB: The sockets are keyed by an opaque debug identifier.
     let sockets = data.get_child("Sockets").unwrap();
     let sock_name = assert_matches!(&sockets.children[..], [socket] => socket.name.clone());
+    let expected_name_regex = match proto {
+        fposix_socket::DatagramSocketProtocol::Udp => {
+            Regex::new(r"^UdpSocketId\([0-9]+\)$").unwrap()
+        }
+        fposix_socket::DatagramSocketProtocol::IcmpEcho => {
+            Regex::new(r"^IcmpSocketId\([0-9]+\)$").unwrap()
+        }
+    };
+    assert!(expected_name_regex.is_match(&sock_name), "unexpected socket name: {sock_name}");
     match proto {
         fposix_socket::DatagramSocketProtocol::Udp => {
             diagnostics_assertions::assert_data_tree!(data, "root": contains {
@@ -916,6 +929,10 @@ async fn inspect_raw_ip_sockets<I: TestIpExt>(name: &str) {
     // NB: The sockets are keyed by an opaque debug identifier.
     let sockets = data.get_child("Sockets").unwrap();
     let sock_name = assert_matches!(&sockets.children[..], [socket] => socket.name.clone());
+    assert!(
+        Regex::new(r"^RawIpSocketId\([0-9]+\)$").unwrap().is_match(&sock_name),
+        "unexpected socket name: {sock_name}",
+    );
     diagnostics_assertions::assert_data_tree!(data, "root": contains {
         Sockets: {
             sock_name => {
@@ -962,6 +979,10 @@ async fn inspect_device_sockets(name: &str) {
     // NB: The sockets are keyed by an opaque debug identifier.
     let sockets = data.get_child("Sockets").unwrap();
     let sock_name = assert_matches!(&sockets.children[..], [socket] => socket.name.clone());
+    assert!(
+        Regex::new(r"^DeviceSocketId\([0-9]+\)$").unwrap().is_match(&sock_name),
+        "unexpected socket name: {sock_name}",
+    );
     diagnostics_assertions::assert_data_tree!(data, "root": contains {
         Sockets: {
             sock_name => {
@@ -3706,7 +3727,7 @@ async fn inspect_conntrack_nat_state(name: &str) {
     // Expect the NAT configuration to report the dynamically assigned IP address
     // that it is using to masquerade the forwarded connection.
     let weak_address_id_regex =
-        Regex::new(r"WeakAddressId\([0-9]+:0x[0-9a-fA-F]+ => 192\.168\.0\.1/24\)").unwrap();
+        Regex::new(r"WeakAddressId\([0-9]+ => 192\.168\.0\.1/24\)").unwrap();
     diagnostics_assertions::assert_data_tree!(data, "root": {
         "Filtering State": {
             "IPv4": {
