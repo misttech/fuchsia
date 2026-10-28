@@ -476,4 +476,36 @@ TEST_F(EndpointHarness, UnbindAfterDeviceStateDropped) {
   loop.Shutdown();
 }
 
+TEST_F(EndpointHarness, XhciEndpointIndexMasksReservedBits) {
+  // Valid endpoint addresses without reserved bits.
+  EXPECT_EQ(XhciEndpointIndex(0x00), 0u);
+  EXPECT_EQ(XhciEndpointIndex(0x01), 1u);
+  EXPECT_EQ(XhciEndpointIndex(0x81), 2u);
+  EXPECT_EQ(XhciEndpointIndex(0x0F), 29u);
+  EXPECT_EQ(XhciEndpointIndex(0x8F), 30u);
+
+  // Endpoint addresses with reserved bits 4-6 (0x70) set must mask to the 4-bit endpoint number
+  // and never exceed the legal maximum index of 30 or underflow on endpoint 0.
+  EXPECT_EQ(XhciEndpointIndex(0xFF), 30u);
+  EXPECT_EQ(XhciEndpointIndex(0x7F), 29u);
+  EXPECT_EQ(XhciEndpointIndex(0xA1), 2u);
+  EXPECT_EQ(XhciEndpointIndex(0x21), 1u);
+  EXPECT_EQ(XhciEndpointIndex(0x10), 0u);
+  EXPECT_EQ(XhciEndpointIndex(0x70), 0u);
+  EXPECT_EQ(XhciEndpointIndex(0x80), 0u);
+  EXPECT_EQ(XhciEndpointIndex(0xF0), 0u);
+
+  for (uint16_t raw = 0; raw <= 0xFF; ++raw) {
+    uint8_t addr = static_cast<uint8_t>(raw);
+    uint8_t idx = XhciEndpointIndex(addr);
+    EXPECT_LE(idx, 30u);
+    if ((addr & 0x0F) == 0) {
+      EXPECT_EQ(idx, 0u);
+    } else {
+      EXPECT_GE(idx, 1u);
+      EXPECT_EQ(idx, XhciEndpointIndex(addr & 0x8F));
+    }
+  }
+}
+
 }  // namespace usb_xhci

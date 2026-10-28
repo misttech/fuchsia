@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_XHCI_XHCI_ENDPOINT_H_
 #define SRC_DEVICES_USB_DRIVERS_XHCI_XHCI_ENDPOINT_H_
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fuchsia/hardware/usb/request/c/banjo.h>
 #include <lib/sync/cpp/completion.h>
@@ -21,10 +22,12 @@
 namespace usb_xhci {
 
 inline uint8_t XhciEndpointIndex(uint8_t ep_address) {
-  if (ep_address == 0)
+  uint8_t ep_num = ep_address & fuchsia_hardware_usb_descriptor::kEndpointNumberMask;
+  if (ep_num == 0) {
     return 0;
-  uint8_t index = static_cast<uint8_t>(
-      2 * (ep_address & ~fuchsia_hardware_usb_descriptor::kEndpointDirectionMask));
+  }
+
+  uint8_t index = static_cast<uint8_t>(2 * ep_num);
   if ((ep_address & fuchsia_hardware_usb_descriptor::kEndpointDirectionMask) ==
       fidl::ToUnderlying(fuchsia_hardware_usb_descriptor::EndpointDirection::kOut))
     index--;
