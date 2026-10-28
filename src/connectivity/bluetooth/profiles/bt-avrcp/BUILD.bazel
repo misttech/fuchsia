@@ -2,9 +2,149 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/bt-avrcp.core_shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/browse_controller_service.rs",
+        "src/controller_service.rs",
+        "src/main.rs",
+        "src/metrics/mod.rs",
+        "src/packets/browsing/change_path.rs",
+        "src/packets/browsing/get_folder_items.rs",
+        "src/packets/browsing/get_item_attributes.rs",
+        "src/packets/browsing/get_total_items.rs",
+        "src/packets/browsing/mod.rs",
+        "src/packets/browsing/set_addressed_player.rs",
+        "src/packets/browsing/set_browsed_player.rs",
+        "src/packets/continuation.rs",
+        "src/packets/get_capabilities.rs",
+        "src/packets/get_element_attributes.rs",
+        "src/packets/get_play_status.rs",
+        "src/packets/inform_battery_status.rs",
+        "src/packets/mod.rs",
+        "src/packets/notification.rs",
+        "src/packets/play_item.rs",
+        "src/packets/player_application_settings/get_attribute_text.rs",
+        "src/packets/player_application_settings/get_current_settings.rs",
+        "src/packets/player_application_settings/get_value_text.rs",
+        "src/packets/player_application_settings/list_settings.rs",
+        "src/packets/player_application_settings/mod.rs",
+        "src/packets/player_application_settings/set_current_settings.rs",
+        "src/packets/rejected.rs",
+        "src/packets/set_absolute_volume.rs",
+        "src/peer/controller.rs",
+        "src/peer/handlers/browse_channel.rs",
+        "src/peer/handlers/decoders.rs",
+        "src/peer/handlers/mod.rs",
+        "src/peer/inspect.rs",
+        "src/peer/mod.rs",
+        "src/peer/tasks/mod.rs",
+        "src/peer/tasks/notification_stream.rs",
+        "src/peer_manager/inspect.rs",
+        "src/peer_manager/mod.rs",
+        "src/peer_manager/target_delegate.rs",
+        "src/profile.rs",
+        "src/service.rs",
+        "src/types.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_avrcp",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:derivative"],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.avrcp:fuchsia.bluetooth.avrcp_rust",
+        "//sdk/fidl/fuchsia.bluetooth.avrcp.test:fuchsia.bluetooth.avrcp.test_rust",
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/bt-avctp",
+        "//src/connectivity/bluetooth/lib/bt-metrics",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/connectivity/bluetooth/lib/profile-client",
+        "//src/lib/diagnostics/inspect/contrib/rust",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-runtime",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_avrcp",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-avrcp",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-avrcp.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-avrcp",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/tests/bt-avrcp-integration-tests:__pkg__",
+        "//src/connectivity/bluetooth/tests/bt-manifest-integration-tests:__pkg__",
+    ],
+    deps = [":bin_packaged_bin"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "bt_avrcp_bin_test"
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+# tests various errors connecting to a peer and produces error logs
+fx_unittest_package(
+    name = "bt-avrcp-tests",
+    max_log_severity = "ERROR",
+    unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

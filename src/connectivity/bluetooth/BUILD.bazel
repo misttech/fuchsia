@@ -28,6 +28,7 @@ test_suite(
         "//src/connectivity/bluetooth/lib/packet-encoding:packet-encoding-tests",
         "//src/connectivity/bluetooth/lib/profile-client:profile-client-tests",
         "//src/connectivity/bluetooth/lib/vigil:vigil-tests",
+        "//src/connectivity/bluetooth/profiles/bt-avrcp:bt-avrcp-tests",
         "//src/connectivity/bluetooth/profiles/bt-avrcp-target:bt-avrcp-target-tests",
         "//src/connectivity/bluetooth/profiles/bt-map-mce:bt-map-mce-unittests",
         "//src/connectivity/bluetooth/profiles/bt-peripheral-hub:bt-peripheral-hub-tests",
