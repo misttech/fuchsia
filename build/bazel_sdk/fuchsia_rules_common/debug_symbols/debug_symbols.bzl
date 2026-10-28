@@ -330,6 +330,8 @@ def _merge_unstripped_binaries_infos(*targets_or_providers):
 # A map of rule kind strings to tuples of attribute names for possible dependencies.
 # Used by _get_target_deps_from_attributes() below.
 _KNOWN_RULE_KINDS_TO_DEP_ATTR_NAMES = {
+    "_cc_response_file_internal": (),
+    "_final_cc_build_flags": (),
     "filegroup": ("data", "deps", "srcs"),
     "cc_binary": ("data", "deps", "srcs", "additional_linker_inputs", "dynamic_dep", "link_extra_libs", "malloc", "reexport_deps", "win_def_file"),
     "cc_import": ("data", "deps", "hdrs", "interface_library", "objects", "pic_objects", "pic_static_library", "shared_library", "static_library"),
@@ -489,7 +491,7 @@ def _fuchsia_collect_all_debug_symbols_infos_aspect_impl(target, ctx):
     return FuchsiaCollectedDebugSymbolsInfo(
         collected_symbols = depset(
             direct = [target[FuchsiaDebugSymbolInfo]] if FuchsiaDebugSymbolInfo in target else [],
-            transitive = [t[FuchsiaCollectedDebugSymbolsInfo].collected_symbols for t in get_target_deps_from_attributes(
+            transitive = [t[FuchsiaCollectedDebugSymbolsInfo].collected_symbols for t in _get_target_deps_from_attributes(
                 ctx.rule.attr,
                 ctx.rule.kind,
             ) if FuchsiaCollectedDebugSymbolsInfo in t],

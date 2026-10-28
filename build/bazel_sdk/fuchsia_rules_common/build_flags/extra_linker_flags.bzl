@@ -17,7 +17,17 @@ def _extra_linker_flags_impl(ctx):
             ldflags = list(ctx.attr.ldflags),
             link_inputs = list(ctx.files.link_inputs),
             link_deps = [dep[CcInfo] for dep in ctx.attr.link_deps],
+            link_deps_runfiles = [
+                dep[DefaultInfo].default_runfiles
+                for dep in ctx.attr.link_deps
+                if DefaultInfo in dep and dep[DefaultInfo].default_runfiles != None
+            ],
             executable_link_deps = [dep[CcInfo] for dep in ctx.attr.executable_link_deps],
+            executable_link_deps_runfiles = [
+                dep[DefaultInfo].default_runfiles
+                for dep in ctx.attr.executable_link_deps
+                if DefaultInfo in dep and dep[DefaultInfo].default_runfiles != None
+            ],
         ),
     ]
 

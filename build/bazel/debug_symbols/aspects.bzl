@@ -10,6 +10,11 @@ load(
     "FuchsiaProductConfigInfo",
     "FuchsiaProductInputBundleInfo",
 )
+load(
+    "@fuchsia_rules_common//build_flags:providers.bzl",
+    "BuildFlagsInfo",
+    "BuildFlagsListInfo",
+)
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
 load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaUnstrippedBinariesInfo", "FuchsiaUnstrippedBinaryInfo")
@@ -72,6 +77,9 @@ DebugSymbolManifestInfo = provider(
                       "their Fuchsia destination path, if available.",
         "prebuilt_packages": "A depset of PrebuiltPackageManifestEntryInfo",
         "prebuilt_containers": "A depset of PrebuiltContainerManifestEntryInfo",
+        "executable_link_dep_infos": "A depset of DebugSymbolManifestInfo from extra_linker_flags(executable_link_deps). " +
+                                     "Kept separate from the fields above until _final_cc_build_flags promotes them into " +
+                                     "entries/unstripped_binaries when target_type == 'cxx_executable' (ignored for 'cxx_shared_library').",
     },
 )
 
@@ -223,11 +231,44 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
         # will end up here.
         pass
 
-    dep_infos = [
-        dep[DebugSymbolManifestInfo]
-        for dep in get_target_deps_from_attributes(aspect_ctx.rule.attr)
-        if DebugSymbolManifestInfo in dep
-    ]
+    executable_link_dep_infos = []
+    attr = aspect_ctx.rule.attr
+    if kind == "extra_linker_flags":
+        dep_infos = [
+            dep[DebugSymbolManifestInfo]
+            for dep in attr.link_deps
+            if DebugSymbolManifestInfo in dep
+        ]
+        executable_link_dep_infos = [
+            dep[DebugSymbolManifestInfo]
+            for dep in attr.executable_link_deps
+            if DebugSymbolManifestInfo in dep
+        ]
+    elif kind == "_final_cc_build_flags":
+        # Mirror `_final_cc_build_flags_impl` in `cc.bzl`:
+        # - `cxx_common` (`fx_cc_library`) does not link `link_deps` or
+        #   `executable_link_deps`.
+        # - `cxx_shared_library` and `cxx_executable` link `link_deps` from
+        #   active (non-disabled) `build_flags` in `BuildFlagsListInfo.infos`.
+        # - Only `cxx_executable` links `executable_link_deps`.
+        dep_infos = []
+        if attr.target_type != "cxx_common":
+            active_labels = [info.label for info in target[BuildFlagsListInfo].infos]
+            active_deps = [
+                dep[DebugSymbolManifestInfo]
+                for dep in attr.build_flags
+                if DebugSymbolManifestInfo in dep and BuildFlagsInfo in dep and dep[BuildFlagsInfo].label in active_labels
+            ]
+            dep_infos.extend(active_deps)
+            if attr.target_type == "cxx_executable":
+                for info in active_deps:
+                    dep_infos.extend(info.executable_link_dep_infos.to_list())
+    else:
+        dep_infos = [
+            dep[DebugSymbolManifestInfo]
+            for dep in get_target_deps_from_attributes(attr)
+            if DebugSymbolManifestInfo in dep
+        ]
 
     unstripped_binaries = [
         entry.debug
@@ -241,6 +282,7 @@ def _collect_debug_symbols_manifest_aspect_impl(target, aspect_ctx):
         dest_paths = depset(dest_paths, transitive = [info.dest_paths for info in dep_infos]),
         prebuilt_packages = depset(prebuilt_packages, transitive = [info.prebuilt_packages for info in dep_infos]),
         prebuilt_containers = depset(prebuilt_containers, transitive = [info.prebuilt_containers for info in dep_infos]),
+        executable_link_dep_infos = depset(executable_link_dep_infos, transitive = [info.executable_link_dep_infos for info in dep_infos]),
     )]
 
 collect_debug_symbols_manifest_aspect = aspect(

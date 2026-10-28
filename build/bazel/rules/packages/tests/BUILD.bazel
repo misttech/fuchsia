@@ -4,6 +4,9 @@
 
 """Tests for the platform Bazel package and device test rules."""
 
+load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
 load("@fuchsia_rules_common//packages:resources.bzl", "resource")
 load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
 load(
@@ -455,6 +458,9 @@ filegroup(
         ":example_zxtest_unittest_package",
         ":gn_visibility_pattern_matches_test",
         ":verify_example_compiled_manifest_paths",
+        ":verify_example_disabled_extra_linker_flags_unstripped_binaries",
+        ":verify_example_extra_linker_flags_shared_lib_unstripped_binaries",
+        ":verify_example_extra_linker_flags_unstripped_binaries",
         ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
@@ -1045,4 +1051,136 @@ analysis_failure_test(
     name = "example_component_with_compiled_manifest_failure_test",
     expected_message = "_FxComponentManifestSourcesInfo",
     target_under_test = ":example_component_with_compiled_manifest",
+)
+
+# Tests that shared libraries injected via `extra_linker_flags` (including when
+# nested under `build_flags(subflags = [...])` and
+# `compiler_build_flags(compiler_subflags = [...])`) propagate debug symbols to
+# `FuchsiaTestInfo.unstripped_binaries`, that `executable_link_deps` is ignored
+# for `fx_cc_binary(linkshared = True)` while `link_deps` is included, and that
+# `disable_build_flags` suppresses them.
+extra_linker_flags(
+    name = "example_extra_linker_flags",
+    testonly = True,
+    executable_link_deps = ["//sdk/lib/fdio"],
+)
+
+build_flags(
+    name = "example_extra_linker_flags_subflags",
+    testonly = True,
+    subflags = [":example_extra_linker_flags"],
+)
+
+compiler_build_flags(
+    name = "example_extra_linker_flags_wrapper",
+    testonly = True,
+    compiler_subflags = [":example_extra_linker_flags_subflags"],
+)
+
+alias(
+    name = "example_extra_linker_flags_alias",
+    testonly = True,
+    actual = ":example_extra_linker_flags_wrapper",
+)
+
+fx_cc_binary(
+    name = "example_extra_linker_flags_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    build_flags = [":example_extra_linker_flags_alias"],
+    tags = ["manual"],
+)
+
+fx_unittest_package(
+    name = "example_extra_linker_flags_unittest_package",
+    package_name = "fx-extra-linker-flags-unittest-package-example",
+    unit_tests = [":example_extra_linker_flags_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_extra_linker_flags_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_extra_linker_flags_bin",
+        "libfdio.so",
+    ],
+    test = ":example_extra_linker_flags_unittest_package",
+)
+
+extra_linker_flags(
+    name = "example_shared_lib_extra_linker_flags",
+    testonly = True,
+    link_deps = ["//sdk/lib/fdio"],
+)
+
+fx_cc_binary(
+    name = "libexample_shared_with_extra_linker_flags.so",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    build_flags = [
+        ":example_extra_linker_flags_wrapper",
+        ":example_shared_lib_extra_linker_flags",
+    ],
+    linkshared = True,
+    tags = ["manual"],
+)
+
+fx_cc_binary(
+    name = "example_shared_lib_host_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    data = [":libexample_shared_with_extra_linker_flags.so"],
+    tags = ["manual"],
+)
+
+fx_unittest_package(
+    name = "example_extra_linker_flags_shared_lib_unittest_package",
+    package_name = "fx-extra-linker-flags-shared-lib-unittest-package-example",
+    unit_tests = [":example_shared_lib_host_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_extra_linker_flags_shared_lib_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_shared_lib_host_bin",
+        "libexample_shared_with_extra_linker_flags.so",
+        "libfdio.so",
+    ],
+    test = ":example_extra_linker_flags_shared_lib_unittest_package",
+)
+
+fx_cc_binary(
+    name = "libexample_shared_with_exec_only_extra_linker_flags.so",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    build_flags = [":example_extra_linker_flags_wrapper"],
+    linkshared = True,
+    tags = ["manual"],
+)
+
+fx_cc_binary(
+    name = "example_disabled_extra_linker_flags_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    build_flags = [":example_extra_linker_flags_wrapper"],
+    data = [":libexample_shared_with_exec_only_extra_linker_flags.so"],
+    disable_build_flags = [":example_extra_linker_flags_wrapper"],
+    tags = ["manual"],
+)
+
+fx_unittest_package(
+    name = "example_disabled_extra_linker_flags_unittest_package",
+    package_name = "fx-disabled-extra-linker-flags-unittest-package-example",
+    unit_tests = [":example_disabled_extra_linker_flags_bin"],
+)
+
+verify_fx_test_unstripped_binaries(
+    name = "verify_example_disabled_extra_linker_flags_unstripped_binaries",
+    testonly = True,
+    expected_basenames = [
+        "example_disabled_extra_linker_flags_bin",
+        "libexample_shared_with_exec_only_extra_linker_flags.so",
+    ],
+    test = ":example_disabled_extra_linker_flags_unittest_package",
 )

@@ -41,7 +41,9 @@ def _build_flags_info_init(
         lib_dirs = [],
         link_inputs = [],
         link_deps = [],
+        link_deps_runfiles = [],
         executable_link_deps = [],
+        executable_link_deps_runfiles = [],
         rustenv = [],
         rustflags = []):
     # Consistency check for rustenv list.
@@ -61,7 +63,9 @@ def _build_flags_info_init(
         "lib_dirs": _check_list(lib_dirs, "lib_dirs"),
         "link_inputs": _check_list(link_inputs, "link_inputs"),
         "link_deps": _check_list(link_deps, "link_deps"),
+        "link_deps_runfiles": _check_list(link_deps_runfiles, "link_deps_runfiles"),
         "executable_link_deps": _check_list(executable_link_deps, "executable_link_deps"),
+        "executable_link_deps_runfiles": _check_list(executable_link_deps_runfiles, "executable_link_deps_runfiles"),
         "rustenv": rustenv,
         "rustflags": _check_list(rustflags, "rustflags"),
     }
@@ -80,7 +84,9 @@ BuildFlagsInfo, _ = provider(
         "lib_dirs": "(list[string]) A list of library search directories, relative to the workspace root.",
         "link_inputs": "(list[File]) A list of additional input files required by linker actions.",
         "link_deps": "(list[CcInfo]) A list of C++ library dependencies (CcInfo providers) to link into all dependent linking targets (executables and shared libraries).",
+        "link_deps_runfiles": "(list[runfiles]) A list of default_runfiles from link_deps targets.",
         "executable_link_deps": "(list[CcInfo]) A list of C++ library dependencies (CcInfo providers) to link into dependent executable targets only.",
+        "executable_link_deps_runfiles": "(list[runfiles]) A list of default_runfiles from executable_link_deps targets.",
         "rustenv": "(list[string]) A list of strings in the format 'VARNAME=VARVALUE'.",
         "rustflags": "(list[string]) A list of Rust compiler flags.",
     },

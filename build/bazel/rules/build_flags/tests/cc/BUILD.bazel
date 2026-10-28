@@ -212,14 +212,27 @@ build_flags_cc_binary_host_test(
     build_flags = [":flags_includes_lib_dirs_and_link_inputs"],
 )
 
+# A library with `defines = ["SHOULD_NOT_BE_DEFINED"]` in its compilation
+# context. `fx_cc_binary_test.cc` fails to compile if `SHOULD_NOT_BE_DEFINED`
+# is defined, verifying that `extra_linker_flags` (`link_deps` and
+# `executable_link_deps`) only propagates `CcInfo.linking_context` and never
+# leaks `CcInfo.compilation_context`.
+fx_cc_library(
+    name = "fx_cc_library_for_link_deps_test",
+    srcs = ["fx_cc_library_for_test.cc"],
+    build_flags = [":fx_cc_library_flags"],
+    defines = ["SHOULD_NOT_BE_DEFINED"],
+)
+
 extra_linker_flags(
     name = "flags_link_deps",
-    link_deps = [":fx_cc_library_for_test"],
+    link_deps = [":fx_cc_library_for_link_deps_test"],
 )
 
 # Notice: Unlike fx_cc_binary_test_bin above, this target does NOT set
 # deps = [":fx_cc_library_for_test"] manually on the binary; the library is
-# automatically linked via flags_link_deps!
+# automatically linked via flags_link_deps without propagating its
+# compilation_context!
 build_flags_cc_binary_host_test(
     name = "check_extra_linker_flags_link_deps",
     srcs = ["fx_cc_binary_test.cc"],
@@ -247,7 +260,7 @@ build_flags_cc_binary_host_test(
 
 extra_linker_flags(
     name = "flags_executable_link_deps",
-    executable_link_deps = [":fx_cc_library_for_test"],
+    executable_link_deps = [":fx_cc_library_for_link_deps_test"],
 )
 
 # Notice: Like check_extra_linker_flags_link_deps, this executable binary

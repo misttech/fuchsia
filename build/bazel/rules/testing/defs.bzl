@@ -10,6 +10,11 @@ load(
     "collect_component_manifests_aspect",
 )
 load("//build/bazel/aspects:runner.bzl", "FuchsiaRunnerShardInfo")
+load(
+    "//build/bazel/debug_symbols:aspects.bzl",
+    "DebugSymbolManifestInfo",
+    "collect_debug_symbols_manifest_aspect",
+)
 load("//build/bazel/rules/testing:fx_test.bzl", "FuchsiaTestInfo")
 
 def _verify_file_path_impl(ctx):
@@ -124,6 +129,18 @@ def _verify_fx_test_unstripped_binaries_impl(ctx):
                 actual,
             ),
         )
+    packaged_dest_basenames = sorted([
+        unstripped_file.basename
+        for unstripped_file, _ in ctx.attr.test[DebugSymbolManifestInfo].dest_paths.to_list()
+        if not unstripped_file.owner.repo_name
+    ])
+    if packaged_dest_basenames != expected:
+        fail(
+            "Expected packaged FuchsiaUnstrippedBinariesInfo dest_paths basenames {}, got {}.".format(
+                expected,
+                packaged_dest_basenames,
+            ),
+        )
     default_files = {f: True for f in ctx.attr.test[DefaultInfo].files.to_list()}
     missing = [f.short_path for f in unstripped_files if f not in default_files]
     if missing:
@@ -136,11 +153,12 @@ def _verify_fx_test_unstripped_binaries_impl(ctx):
     return []
 
 verify_fx_test_unstripped_binaries = rule(
-    doc = "Verifies `FuchsiaTestInfo.unstripped_binaries` and `DefaultInfo.files` of an `fx_test()` target.",
+    doc = "Verifies `FuchsiaTestInfo.unstripped_binaries`, packaged `dest_paths`, and `DefaultInfo.files` of an `fx_test()` target.",
     implementation = _verify_fx_test_unstripped_binaries_impl,
     attrs = {
         "test": attr.label(
             providers = [FuchsiaTestInfo],
+            aspects = [collect_debug_symbols_manifest_aspect],
             mandatory = True,
         ),
         "expected_basenames": attr.string_list(

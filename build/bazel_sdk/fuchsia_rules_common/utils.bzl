@@ -57,6 +57,10 @@ def stub_executable(ctx):
 
     return executable_file
 
+_IGNORED_ATTR_NAMES = (
+    "disable_build_flags",
+)
+
 def get_target_deps_from_attributes(rule_attr, rule_kind = None, known_rule_kinds = {}):
     """Return all dependencies from a given target context during analysis.
 
@@ -71,13 +75,15 @@ def get_target_deps_from_attributes(rule_attr, rule_kind = None, known_rule_kind
         target.
     """
     attr_names = known_rule_kinds.get(rule_kind)
-    if not attr_names:
+    if attr_names == None:
         # For unknown rule kinds, parse all attributes and filter
         # those that are Targets or lists of Targets to the result.
         attr_names = dir(rule_attr)
 
     result = []
     for attr_name in attr_names:
+        if attr_name in _IGNORED_ATTR_NAMES:
+            continue
         attr_value = getattr(rule_attr, attr_name, None)
         if not attr_value:
             continue

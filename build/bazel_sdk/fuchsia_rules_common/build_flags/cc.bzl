@@ -113,23 +113,35 @@ def _final_cc_build_flags_impl(ctx):
             for info in final_infos
             for cc_info in info.link_deps
         ]
+        runfiles_list = [
+            rf
+            for info in final_infos
+            for rf in info.link_deps_runfiles
+        ]
         if ctx.attr.target_type == "cxx_executable":
             cc_infos.extend([
                 cc_info
                 for info in final_infos
                 for cc_info in info.executable_link_deps
             ])
+            runfiles_list.extend([
+                rf
+                for info in final_infos
+                for rf in info.executable_link_deps_runfiles
+            ])
         merged_cc_info = cc_common.merge_cc_infos(
             direct_cc_infos = cc_infos,
             cc_infos = cc_infos,
         )
         cc_info = CcInfo(linking_context = merged_cc_info.linking_context)
+        runfiles = ctx.runfiles().merge_all(runfiles_list)
     else:
         link_inputs = depset()
         cc_info = CcInfo()
+        runfiles = ctx.runfiles()
 
     return [
-        DefaultInfo(files = link_inputs),
+        DefaultInfo(files = link_inputs, runfiles = runfiles),
         BuildFlagsListInfo(infos = final_infos),
         cc_info,
     ]
