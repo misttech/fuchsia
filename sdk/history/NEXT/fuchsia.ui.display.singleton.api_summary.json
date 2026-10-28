@@ -52,6 +52,48 @@
         "name": "fuchsia.ui.display.singleton/Metrics"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.display.singleton/VsyncSource.OnVsync",
+        "strictness": "strict",
+        "ordinal": "7383582838513538120",
+        "direction": "event",
+        "request": "fuchsia.ui.display.singleton/VsyncSourceOnVsyncRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.display.singleton/VsyncSource.SetVsyncEnabled",
+        "strictness": "strict",
+        "ordinal": "6533229100042951474",
+        "direction": "one_way",
+        "request": "fuchsia.ui.display.singleton/VsyncSourceSetVsyncEnabledRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.ui.display.singleton/VsyncSource",
+        "openness": "closed",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.display.singleton/VsyncSourceOnVsyncRequest.timestamp",
+        "ordinal": "1",
+        "type": "int64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.display.singleton/VsyncSourceOnVsyncRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.display.singleton/VsyncSourceSetVsyncEnabledRequest.enabled",
+        "ordinal": "1",
+        "type": "bool"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.display.singleton/VsyncSourceSetVsyncEnabledRequest"
+    },
+    {
         "kind": "library",
         "name": "fuchsia.ui.display.singleton"
     }
