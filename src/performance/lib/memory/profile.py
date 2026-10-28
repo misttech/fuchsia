@@ -19,6 +19,7 @@ def capture(
     principal_groups: Mapping[str, str] | None = None,
     board_memory: int = 2 * 1024**3,
     buckets_metrics: str | None = None,
+    abridged: bool = False,
 ) -> metrics.Report:
     """Captures kernel and user space memory metrics using `ffx profile memory`.
     See documentation at
@@ -35,6 +36,8 @@ def capture(
       buckets_metrics: For each bucket matching this regular expression
         a metric labelled "Memory/Bucket/{bucket_name}/CommittedBytes" is
         returned. When not set, none is returned.
+      abridged: If True, triggers a fast abridged memory capture via
+        `ffx profile memory components --buckets --abridged`.
 
     Returns:
       metrics.Report containing two sets of memory measurements:
@@ -45,19 +48,30 @@ def capture(
     """
     principal_groups = principal_groups or {}
 
-    component_profile = json.loads(
-        dut.ffx.run(
-            [
-                "--machine",
-                "json",
-                "profile",
-                "memory",
-                "--buckets",
-                "--backend",
-                "memory_monitor_2",
-            ],
-        )
+    ffx_args = (
+        [
+            "--machine",
+            "json",
+            "-c",
+            "ffx_profile_memory_components=true",
+            "profile",
+            "memory",
+            "components",
+            "--buckets",
+            "--abridged",
+        ]
+        if abridged
+        else [
+            "--machine",
+            "json",
+            "profile",
+            "memory",
+            "--buckets",
+            "--backend",
+            "memory_monitor_2",
+        ]
     )
+    component_profile = json.loads(dut.ffx.run(ffx_args))
     structured = process_component_profile(
         principal_groups, buckets_metrics, component_profile, board_memory
     )
@@ -104,7 +118,7 @@ def process_component_profile(
     """
     results: list[metrics.TestCaseResult] = []
 
-    component_digest = component_profile["ComponentDigest"]
+    component_digest = _extract_component_digest(component_profile)
     if buckets_metrics:
         for bucket in component_digest["digest"]["buckets"]:
             if re.match(buckets_metrics, bucket["name"]):
@@ -268,13 +282,25 @@ def _simplify_principals(principals: metrics.JSON) -> list[metrics.JSON]:
     return [_simplify_principal(b) for b in principals]
 
 
+def _extract_component_digest(component_profile: Any) -> dict[str, Any]:
+    if not isinstance(component_profile, dict):
+        raise ValueError
+    if "ComponentDigest" in component_profile:
+        digest = component_profile["ComponentDigest"]
+    elif "Summary" in component_profile:
+        digest = component_profile["Summary"]
+    else:
+        raise KeyError("Expected 'ComponentDigest' or 'Summary'")
+    if not isinstance(digest, dict):
+        raise ValueError
+    return digest
+
+
 def _simplify_digest(component_profile: metrics.JSON) -> metrics.JSON:
     result = {}
 
     if isinstance(component_profile, dict):
-        digest = component_profile["ComponentDigest"]
-        if not isinstance(digest, dict):
-            raise ValueError
+        digest = _extract_component_digest(component_profile)
         result = digest | {
             "principals": _simplify_principals(digest["principals"])
         }

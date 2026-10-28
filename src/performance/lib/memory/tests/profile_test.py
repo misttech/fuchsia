@@ -104,6 +104,56 @@ class ProfileTest(unittest.TestCase):
             ],
         )
 
+    def test_capture_abridged(self) -> None:
+        abridged_output = MM2_OUTPUT.replace(
+            '"ComponentDigest":', '"Summary":', 1
+        )
+
+        def ffx_run_fake_implementation(args: list[str]) -> str:
+            self.assertEqual(
+                args,
+                [
+                    "--machine",
+                    "json",
+                    "-c",
+                    "ffx_profile_memory_components=true",
+                    "profile",
+                    "memory",
+                    "components",
+                    "--buckets",
+                    "--abridged",
+                ],
+            )
+            return abridged_output
+
+        dut = Mock()
+        dut.ffx.run.side_effect = ffx_run_fake_implementation
+        report = profile.capture(
+            dut,
+            principal_groups={"fxfs": "*/fxfs"},
+            board_memory=8 * 1024**3,
+            abridged=True,
+        )
+
+        self.assertEqual(
+            report.structured,
+            [
+                metrics.TestCaseResult(
+                    label="Memory/Principal/fxfs/PrivatePopulated",
+                    unit=metrics.Unit.bytes,
+                    values=(32927744,),
+                    doc="Total populated bytes for private uncompressed memory "
+                    "VMOs: fxfs",
+                ),
+                metrics.TestCaseResult(
+                    label="Memory/System/FuchsiaOSPopulatedBytes",
+                    unit=metrics.Unit.bytes,
+                    values=(1187840,),
+                    doc="Fuchsia OS Populated Memory",
+                ),
+            ],
+        )
+
     def test_capture_and_compute_metrics(self) -> None:
         def ffx_run_fake_implementation(args: list[str]) -> str:
             backend = args[args.index("--backend") + 1]
