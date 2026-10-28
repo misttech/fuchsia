@@ -12,7 +12,6 @@ go_library(
     name = "starlark",
     srcs = [
         "debug.go",
-        "empty.s",
         "eval.go",
         "hashtable.go",
         "int.go",

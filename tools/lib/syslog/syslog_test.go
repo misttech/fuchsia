@@ -118,7 +118,7 @@ func runWithTimeout(t *testing.T, f func() error, failureMessage string) error {
 		return err
 	case <-time.After(testTimeout):
 		pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
-		t.Fatalf(failureMessage)
+		t.Fatal(failureMessage)
 	}
 	return nil
 }

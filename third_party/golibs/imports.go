@@ -19,8 +19,6 @@ import (
 	_ "github.com/kr/fs"
 	_ "github.com/kr/pretty"
 	_ "github.com/pkg/sftp"
-	_ "github.com/spdx/tools-golang/spdx/common"
-	_ "github.com/spdx/tools-golang/spdx/v2_2"
 	_ "github.com/spf13/pflag"
 	_ "github.com/theupdateframework/go-tuf"
 	_ "github.com/theupdateframework/go-tuf/data"

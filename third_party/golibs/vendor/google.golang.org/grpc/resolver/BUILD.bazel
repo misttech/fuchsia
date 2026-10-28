@@ -20,7 +20,8 @@ go_library(
     deps = [
         "//third_party/golibs/vendor/google.golang.org/grpc/attributes",
         "//third_party/golibs/vendor/google.golang.org/grpc/credentials",
-        "//third_party/golibs/vendor/google.golang.org/grpc/internal/pretty",
+        "//third_party/golibs/vendor/google.golang.org/grpc/experimental/stats",
+        "//third_party/golibs/vendor/google.golang.org/grpc/internal",
         "//third_party/golibs/vendor/google.golang.org/grpc/serviceconfig",
     ],
 )

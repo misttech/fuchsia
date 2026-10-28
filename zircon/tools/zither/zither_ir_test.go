@@ -152,7 +152,7 @@ const G int32 = 2;
 		}
 
 		if diff := cmp.Diff(expectedDepOrder, seenByCallback); diff != "" {
-			t.Errorf(diff)
+			t.Error(diff)
 		}
 	}
 
@@ -175,7 +175,7 @@ const G int32 = 2;
 		}
 
 		if diff := cmp.Diff(expectedDepOrder, seenByCallback); diff != "" {
-			t.Errorf(diff)
+			t.Error(diff)
 		}
 	}
 }

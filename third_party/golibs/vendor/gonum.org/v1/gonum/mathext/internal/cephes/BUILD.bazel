@@ -13,6 +13,7 @@ go_library(
     srcs = [
         "cephes.go",
         "doc.go",
+        "hyp2f1.go",
         "igam.go",
         "igami.go",
         "incbeta.go",
@@ -20,6 +21,7 @@ go_library(
         "lanczos.go",
         "ndtri.go",
         "polevl.go",
+        "psi.go",
         "unity.go",
         "zeta.go",
     ],

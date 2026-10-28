@@ -67,9 +67,9 @@ func (p *Producer) Ok(test bool, description string) {
 func (p *Producer) YAML(input []byte) {
 	// Chomp empty lines from the end of the document.
 	content := strings.TrimSuffix(string(input), "\n")
-	p.writeln(p.indent("---"))
-	p.writeln(p.indent(content))
-	p.writeln(p.indent("..."))
+	p.writeln("%s", p.indent("---"))
+	p.writeln("%s", p.indent(content))
+	p.writeln("%s", p.indent("..."))
 }
 
 // Todo returns a new Producer that prints TODO directives.

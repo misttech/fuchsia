@@ -12,6 +12,7 @@ go_library(
     name = "stats",
     srcs = [
         "handlers.go",
+        "metrics.go",
         "stats.go",
     ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/grpc/stats",

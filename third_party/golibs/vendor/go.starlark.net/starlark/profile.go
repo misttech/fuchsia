@@ -12,18 +12,24 @@ package starlark
 // indicate the start and end of each "span" or time interval. A leaf
 // function (whether Go or Starlark) has a single span. A function that
 // calls another function has spans for each interval in which it is the
-// top of the stack. (A LOAD instruction also ends a span.)
+// top of the stack: Call ends the caller's span, if it has one, before
+// pushing the callee's frame, and resumes it after popping that frame.
+// The caller may be a Starlark function or a built-in calling back into
+// Starlark. A LOAD instruction ends the current frame's span during the
+// call to Thread.Load; callbacks from Load on the same thread find no
+// span to end, so they do not resume one.
 //
 // At the start of a span, the interpreter records the current time in
-// the thread's topmost frame. At the end of the span, it obtains the
-// time again and subtracts the span start time. The difference is added
-// to an accumulator variable in the thread. If the accumulator exceeds
-// some fixed quantum (10ms, say), the profiler records the current call
-// stack and sends it to the profiler goroutine, along with the number
-// of quanta, which are subtracted. For example, if the accumulator
-// holds 3ms and then a completed span adds 25ms to it, its value is 28ms,
-// which exceeeds 10ms. The profiler records a stack with the value 20ms
-// (2 quanta), and the accumulator is left with 8ms.
+// the thread's topmost frame (zero means the frame has no open span).
+// At the end of the span, it obtains the time again and subtracts the
+// span start time. The difference is added to an accumulator variable
+// in the thread. If the accumulator exceeds some fixed quantum (10ms,
+// say), the profiler records the current call stack and sends it to the
+// profiler goroutine, along with the number of quanta, which are
+// subtracted. For example, if the accumulator holds 3ms and then a
+// completed span adds 25ms to it, its value is 28ms, which exceeds 10ms.
+// The profiler records a stack with the value 20ms (2 quanta), and the
+// accumulator is left with 8ms.
 //
 // The profiler goroutine converts the stacks into the pprof format and
 // emits a gzip-compressed protocol message to the designated output
@@ -83,7 +89,7 @@ import (
 //
 // StartProfile must not be called concurrently with Starlark execution.
 func StartProfile(w io.Writer) error {
-	if !atomic.CompareAndSwapUint32(&profiler.on, 0, 1) {
+	if !profiler.on.CompareAndSwap(false, true) {
 		return fmt.Errorf("profiler already running")
 	}
 
@@ -113,14 +119,14 @@ func StopProfile() error {
 
 	profiler.done = nil
 	profiler.events = nil
-	atomic.StoreUint32(&profiler.on, 0)
+	profiler.on.Store(false)
 
 	return err
 }
 
 // globals
 var profiler struct {
-	on     uint32          // nonzero => profiler running
+	on     atomic.Bool     // true => profiler running
 	events chan *profEvent // profile events from interpreter threads
 	done   chan error      // indicates profiler goroutine is ready
 }
@@ -128,6 +134,9 @@ var profiler struct {
 func (thread *Thread) beginProfSpan() {
 	if profiler.events == nil {
 		return // profiling not enabled
+	}
+	if len(thread.stack) == 0 {
+		return // no caller
 	}
 
 	thread.frameAt(0).spanStart = nanotime()
@@ -137,15 +146,29 @@ func (thread *Thread) beginProfSpan() {
 // which trade space and time for greater precision.
 const quantum = 10 * time.Millisecond
 
-func (thread *Thread) endProfSpan() {
+// endProfSpan ends the span of the topmost frame, if it has one,
+// and reports whether it did.
+func (thread *Thread) endProfSpan() bool {
 	if profiler.events == nil {
-		return // profiling not enabled
+		return false // profiling not enabled
+	}
+	if len(thread.stack) == 0 {
+		return false // no caller
+	}
+
+	// A span that has already ended (for example, by a LOAD whose
+	// Load function calls back into Starlark on the same thread)
+	// must not be counted again.
+	top := thread.frameAt(0)
+	if top.spanStart == 0 {
+		return false
 	}
 
 	// Add the span to the thread's accumulator.
-	thread.proftime += time.Duration(nanotime() - thread.frameAt(0).spanStart)
+	thread.proftime += time.Duration(nanotime() - top.spanStart)
+	top.spanStart = 0
 	if thread.proftime < quantum {
-		return
+		return true
 	}
 
 	// Only record complete quanta.
@@ -169,6 +192,7 @@ func (thread *Thread) endProfSpan() {
 	}
 
 	profiler.events <- ev
+	return true
 }
 
 type profEvent struct {
@@ -298,7 +322,7 @@ func profile(w io.Writer) {
 		// TODO(adonovan): fix: try making this cleaner by treating
 		// each bytecode segment as a Profile.Mapping.
 		pcAddr := fnAddr
-		if _, ok := fr.fn.(*Function); ok {
+		if is[*Function](fr.fn) {
 			pcAddr = (pcAddr << 16) ^ uintptr(fr.pc)
 		}
 
@@ -357,28 +381,39 @@ func profile(w io.Writer) {
 	profiler.done <- err
 }
 
-// nanotime returns the time in nanoseconds since epoch.
-// It is implemented by runtime.nanotime using the linkname hack;
-// runtime.nanotime is defined for all OSs/ARCHS and uses the
-// monotonic system clock, which there is no portable way to access.
-// Should that function ever go away, these alternatives exist:
+// nanotime returns the time in nanoseconds since process start.
 //
-// 	// POSIX only. REALTIME not MONOTONIC. 17ns.
-// 	var tv syscall.Timeval
-// 	syscall.Gettimeofday(&tv) // can't fail
-// 	return tv.Nano()
+// This approach, described at
+// https://github.com/golang/go/issues/61765#issuecomment-1672090302,
+// is fast, monotonic, and portable, and avoids the previous
+// dependence on runtime.nanotime using the (unsafe) linkname hack.
+// In particular, time.Since does less work than time.Now.
 //
-// 	// Portable. REALTIME not MONOTONIC. 46ns.
-// 	return time.Now().Nanoseconds()
+// Rejected approaches:
 //
-//      // POSIX only. Adds a dependency.
+//	Using the linkname hack to unsafely access runtime.nanotime.
+//	See #546 and golang/go#67401.
+//
+//	// POSIX only. REALTIME not MONOTONIC. 17ns.
+//	var tv syscall.Timeval
+//	syscall.Gettimeofday(&tv) // can't fail
+//	return tv.Nano()
+//
+//	// Portable. REALTIME not MONOTONIC. 46ns.
+//	return time.Now().Nanoseconds()
+//
+//	// POSIX only. Adds a dependency.
 //	import "golang.org/x/sys/unix"
 //	var ts unix.Timespec
-// 	unix.ClockGettime(CLOCK_MONOTONIC, &ts) // can't fail
+//	unix.ClockGettime(CLOCK_MONOTONIC, &ts) // can't fail
 //	return unix.TimespecToNsec(ts)
-//
-//go:linkname nanotime runtime.nanotime
-func nanotime() int64
+func nanotime() int64 {
+	return time.Since(processStart).Nanoseconds()
+}
+
+// processStart is set one nanosecond in the past so that nanotime
+// never returns zero, which frame.spanStart reserves to mean no span.
+var processStart = time.Now().Add(-time.Nanosecond)
 
 // profFuncAddr returns the canonical "address"
 // of a Callable for use by the profiler.
@@ -391,8 +426,8 @@ func profFuncAddr(fn Callable) uintptr {
 	}
 
 	// User-defined callable types are typically of
-	// of kind pointer-to-struct. Handle them specially.
-	if v := reflect.ValueOf(fn); v.Type().Kind() == reflect.Ptr {
+	// kind pointer-to-struct. Handle them specially.
+	if v := reflect.ValueOf(fn); v.Type().Kind() == reflect.Pointer {
 		return v.Pointer()
 	}
 

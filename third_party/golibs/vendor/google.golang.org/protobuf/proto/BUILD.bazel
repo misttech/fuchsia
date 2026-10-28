@@ -26,6 +26,7 @@ go_library(
         "reset.go",
         "size.go",
         "size_gen.go",
+        "wrapperopaque.go",
         "wrappers.go",
     ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/protobuf/proto",

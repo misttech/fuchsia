@@ -13,6 +13,7 @@ go_library(
     srcs = [
         "diff.go",
         "diffmatchpatch.go",
+        "index.go",
         "match.go",
         "mathutil.go",
         "operation_string.go",

@@ -835,7 +835,7 @@ func TestGenArgs(t *testing.T) {
 // in `subset` is the same as their relative ordering in `set`.
 func assertSubset(t *testing.T, subset, set []string, orderMatters bool, allowDuplicates bool) {
 	if isSub, msg := isSubset(subset, set, orderMatters, allowDuplicates); !isSub {
-		t.Fatalf(msg)
+		t.Fatal(msg)
 	}
 }
 

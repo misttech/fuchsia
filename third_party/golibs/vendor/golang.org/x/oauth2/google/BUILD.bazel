@@ -12,7 +12,6 @@ go_library(
     name = "google",
     srcs = [
         "appengine.go",
-        "appengine_gen2_flex.go",
         "default.go",
         "doc.go",
         "error.go",
@@ -27,7 +26,9 @@ go_library(
         "//third_party/golibs/vendor/cloud.google.com/go/compute/metadata",
         "//third_party/golibs/vendor/golang.org/x/oauth2",
         "//third_party/golibs/vendor/golang.org/x/oauth2/authhandler",
-        "//third_party/golibs/vendor/golang.org/x/oauth2/google/internal/externalaccount",
+        "//third_party/golibs/vendor/golang.org/x/oauth2/google/externalaccount",
+        "//third_party/golibs/vendor/golang.org/x/oauth2/google/internal/externalaccountauthorizeduser",
+        "//third_party/golibs/vendor/golang.org/x/oauth2/google/internal/impersonate",
         "//third_party/golibs/vendor/golang.org/x/oauth2/internal",
         "//third_party/golibs/vendor/golang.org/x/oauth2/jws",
         "//third_party/golibs/vendor/golang.org/x/oauth2/jwt",

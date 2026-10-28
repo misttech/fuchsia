@@ -9,13 +9,13 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"math/bits"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
-	"unsafe"
 
 	"go.starlark.net/internal/compile"
 	"go.starlark.net/internal/spell"
@@ -59,11 +59,11 @@ type Thread struct {
 	Steps, maxSteps uint64
 
 	// cancelReason records the reason from the first call to Cancel.
-	cancelReason *string
+	cancelReason atomic.Pointer[string]
 
 	// locals holds arbitrary "thread-local" Go values belonging to the client.
 	// They are accessible to the client but not to any Starlark program.
-	locals map[string]interface{}
+	locals map[string]any
 
 	// proftime holds the accumulated execution time since the last profile event.
 	proftime time.Duration
@@ -88,7 +88,7 @@ func (thread *Thread) SetMaxExecutionSteps(max uint64) {
 // Unlike most methods of Thread, it is safe to call Uncancel from any
 // goroutine, even if the thread is actively executing.
 func (thread *Thread) Uncancel() {
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&thread.cancelReason)), nil)
+	thread.cancelReason.Store(nil)
 }
 
 // Cancel causes execution of Starlark code in the specified thread to
@@ -102,20 +102,20 @@ func (thread *Thread) Uncancel() {
 // goroutine, even if the thread is actively executing.
 func (thread *Thread) Cancel(reason string) {
 	// Atomically set cancelReason, preserving earlier reason if any.
-	atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(&thread.cancelReason)), nil, unsafe.Pointer(&reason))
+	thread.cancelReason.CompareAndSwap(nil, &reason)
 }
 
 // SetLocal sets the thread-local value associated with the specified key.
 // It must not be called after execution begins.
-func (thread *Thread) SetLocal(key string, value interface{}) {
+func (thread *Thread) SetLocal(key string, value any) {
 	if thread.locals == nil {
-		thread.locals = make(map[string]interface{})
+		thread.locals = make(map[string]any)
 	}
 	thread.locals[key] = value
 }
 
 // Local returns the thread-local value associated with the specified key.
-func (thread *Thread) Local(key string) interface{} {
+func (thread *Thread) Local(key string) any {
 	return thread.locals[key]
 }
 
@@ -189,7 +189,7 @@ type frame struct {
 	callable  Callable // current function (or toplevel) or built-in
 	pc        uint32   // program counter (Starlark frames only)
 	locals    []Value  // local variables (Starlark frames only)
-	spanStart int64    // start time of current profiler span
+	spanStart int64    // start time of current profiler span, or 0 if none
 }
 
 // Position returns the source position of the current point of execution in this frame.
@@ -325,8 +325,10 @@ func (prog *Program) Write(out io.Writer) error {
 }
 
 // ExecFile calls [ExecFileOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
-func ExecFile(thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
+//
+// Deprecated: use [ExecFileOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
+func ExecFile(thread *Thread, filename string, src any, predeclared StringDict) (StringDict, error) {
 	return ExecFileOptions(syntax.LegacyFileOptions(), thread, filename, src, predeclared)
 }
 
@@ -347,7 +349,7 @@ func ExecFile(thread *Thread, filename string, src interface{}, predeclared Stri
 //
 // If ExecFileOptions fails during evaluation, it returns an *EvalError
 // containing a backtrace.
-func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
+func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, src any, predeclared StringDict) (StringDict, error) {
 	// Parse, resolve, and compile a Starlark source file.
 	_, mod, err := SourceProgramOptions(opts, filename, src, predeclared.Has)
 	if err != nil {
@@ -360,8 +362,10 @@ func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, 
 }
 
 // SourceProgram calls [SourceProgramOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
-func SourceProgram(filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
+//
+// Deprecated: use [SourceProgramOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
+func SourceProgram(filename string, src any, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
 	return SourceProgramOptions(syntax.LegacyFileOptions(), filename, src, isPredeclared)
 }
 
@@ -374,7 +378,7 @@ func SourceProgram(filename string, src interface{}, isPredeclared func(string) 
 // a pre-declared identifier of the current module.
 // Its typical value is predeclared.Has,
 // where predeclared is a StringDict of pre-declared values.
-func SourceProgramOptions(opts *syntax.FileOptions, filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
+func SourceProgramOptions(opts *syntax.FileOptions, filename string, src any, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
 	f, err := opts.Parse(filename, src, 0)
 	if err != nil {
 		return nil, nil, err
@@ -430,7 +434,7 @@ func CompiledProgram(in io.Reader) (*Program, error) {
 // executes the toplevel code of the specified program,
 // and returns a new, unfrozen dictionary of the globals.
 func (prog *Program) Init(thread *Thread, predeclared StringDict) (StringDict, error) {
-	toplevel := makeToplevelFunction(prog.compiled, predeclared)
+	toplevel := makeToplevelFunction(prog, predeclared)
 
 	_, err := Call(thread, toplevel, nil, nil)
 
@@ -469,7 +473,7 @@ func ExecREPLChunk(f *syntax.File, thread *Thread, globals StringDict) error {
 
 	// -- variant of Program.Init --
 
-	toplevel := makeToplevelFunction(prog.compiled, predeclared)
+	toplevel := makeToplevelFunction(prog, predeclared)
 
 	// Initialize module globals from parameter.
 	for i, id := range prog.compiled.Globals {
@@ -490,10 +494,10 @@ func ExecREPLChunk(f *syntax.File, thread *Thread, globals StringDict) error {
 	return err
 }
 
-func makeToplevelFunction(prog *compile.Program, predeclared StringDict) *Function {
+func makeToplevelFunction(prog *Program, predeclared StringDict) *Function {
 	// Create the Starlark value denoted by each program constant c.
-	constants := make([]Value, len(prog.Constants))
-	for i, c := range prog.Constants {
+	constants := make([]Value, len(prog.compiled.Constants))
+	for i, c := range prog.compiled.Constants {
 		var v Value
 		switch c := c.(type) {
 		case int64:
@@ -513,19 +517,21 @@ func makeToplevelFunction(prog *compile.Program, predeclared StringDict) *Functi
 	}
 
 	return &Function{
-		funcode: prog.Toplevel,
-		module: &module{
+		funcode: prog.compiled.Toplevel,
+		module: &Module{
 			program:     prog,
 			predeclared: predeclared,
-			globals:     make([]Value, len(prog.Globals)),
+			globals:     make([]Value, len(prog.compiled.Globals)),
 			constants:   constants,
 		},
 	}
 }
 
 // Eval calls [EvalOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
-func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
+//
+// Deprecated: use [EvalOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
+func Eval(thread *Thread, filename string, src any, env StringDict) (Value, error) {
 	return EvalOptions(syntax.LegacyFileOptions(), thread, filename, src, env)
 }
 
@@ -539,7 +545,7 @@ func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Val
 //
 // If EvalOptions fails during evaluation, it returns an *EvalError
 // containing a backtrace.
-func EvalOptions(opts *syntax.FileOptions, thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
+func EvalOptions(opts *syntax.FileOptions, thread *Thread, filename string, src any, env StringDict) (Value, error) {
 	expr, err := opts.ParseExpr(filename, src, 0)
 	if err != nil {
 		return nil, err
@@ -552,7 +558,9 @@ func EvalOptions(opts *syntax.FileOptions, thread *Thread, filename string, src 
 }
 
 // EvalExpr calls [EvalExprOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [EvalExprOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func EvalExpr(thread *Thread, expr syntax.Expr, env StringDict) (Value, error) {
 	return EvalExprOptions(syntax.LegacyFileOptions(), thread, expr, env)
 }
@@ -578,14 +586,16 @@ func EvalExprOptions(opts *syntax.FileOptions, thread *Thread, expr syntax.Expr,
 }
 
 // ExprFunc calls [ExprFuncOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
-func ExprFunc(filename string, src interface{}, env StringDict) (*Function, error) {
+//
+// Deprecated: use [ExprFuncOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
+func ExprFunc(filename string, src any, env StringDict) (*Function, error) {
 	return ExprFuncOptions(syntax.LegacyFileOptions(), filename, src, env)
 }
 
 // ExprFunc returns a no-argument function
 // that evaluates the expression whose source is src.
-func ExprFuncOptions(options *syntax.FileOptions, filename string, src interface{}, env StringDict) (*Function, error) {
+func ExprFuncOptions(options *syntax.FileOptions, filename string, src any, env StringDict) (*Function, error) {
 	expr, err := options.ParseExpr(filename, src, 0)
 	if err != nil {
 		return nil, err
@@ -601,7 +611,8 @@ func makeExprFunc(opts *syntax.FileOptions, expr syntax.Expr, env StringDict) (*
 		return nil, err
 	}
 
-	return makeToplevelFunction(compile.Expr(opts, expr, "<expr>", locals), env), nil
+	prog := compile.Expr(opts, expr, "<expr>", locals)
+	return makeToplevelFunction(&Program{prog}, env), nil
 }
 
 // The following functions are primitive operations of the byte code interpreter.
@@ -654,7 +665,7 @@ func getAttr(x Value, name string) (Value, error) {
 func setField(x Value, name string, y Value) error {
 	if x, ok := x.(HasSetField); ok {
 		err := x.SetField(name, y)
-		if _, ok := err.(NoSuchAttrError); ok {
+		if is[NoSuchAttrError](err) {
 			// No such field: check spelling.
 			if n := spell.Nearest(name, x.AttrNames()); n != "" {
 				err = fmt.Errorf("%s (did you mean .%s?)", err, n)
@@ -761,6 +772,10 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 		switch x := x.(type) {
 		case String:
 			if y, ok := y.(String); ok {
+				return x + y, nil
+			}
+		case Bytes:
+			if y, ok := y.(Bytes); ok {
 				return x + y, nil
 			}
 		case Int:
@@ -1021,57 +1036,14 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 
 	case syntax.IN:
 		switch y := y.(type) {
-		case *List:
-			for _, elem := range y.elems {
-				if eq, err := Equal(elem, x); err != nil {
-					return nil, err
-				} else if eq {
-					return True, nil
-				}
-			}
-			return False, nil
-		case Tuple:
-			for _, elem := range y {
-				if eq, err := Equal(elem, x); err != nil {
-					return nil, err
-				} else if eq {
-					return True, nil
-				}
-			}
-			return False, nil
+		case Container: // List, Tuple, Set, String, Bytes, rangeValue etc.
+			found, err := y.Has(x)
+			return Bool(found), err
 		case Mapping: // e.g. dict
 			// Ignore error from Get as we cannot distinguish true
 			// errors (value cycle, type error) from "key not found".
 			_, found, _ := y.Get(x)
 			return Bool(found), nil
-		case *Set:
-			ok, err := y.Has(x)
-			return Bool(ok), err
-		case String:
-			needle, ok := x.(String)
-			if !ok {
-				return nil, fmt.Errorf("'in <string>' requires string as left operand, not %s", x.Type())
-			}
-			return Bool(strings.Contains(string(y), string(needle))), nil
-		case Bytes:
-			switch needle := x.(type) {
-			case Bytes:
-				return Bool(strings.Contains(string(y), string(needle))), nil
-			case Int:
-				var b byte
-				if err := AsInt(needle, &b); err != nil {
-					return nil, fmt.Errorf("int in bytes: %s", err)
-				}
-				return Bool(strings.IndexByte(string(y), b) >= 0), nil
-			default:
-				return nil, fmt.Errorf("'in bytes' requires bytes or int as left operand, not %s", x.Type())
-			}
-		case rangeValue:
-			i, err := NumberToInt(x)
-			if err != nil {
-				return nil, fmt.Errorf("'in <range>' requires integer as left operand, not %s", x.Type())
-			}
-			return Bool(y.contains(i)), nil
 		}
 
 	case syntax.PIPE:
@@ -1182,8 +1154,8 @@ func tupleRepeat(elems Tuple, n Int) (Tuple, error) {
 		return nil, nil
 	}
 	// Inv: i > 0, len > 0
-	sz := len(elems) * i
-	if sz < 0 || sz >= maxAlloc { // sz < 0 => overflow
+	of, sz := bits.Mul(uint(len(elems)), uint(i))
+	if of != 0 || sz >= maxAlloc { // of != 0 => overflow
 		// Don't print sz.
 		return nil, fmt.Errorf("excessive repeat (%d * %d elements)", len(elems), i)
 	}
@@ -1214,8 +1186,8 @@ func stringRepeat(s String, n Int) (String, error) {
 		return "", nil
 	}
 	// Inv: i > 0, len > 0
-	sz := len(s) * i
-	if sz < 0 || sz >= maxAlloc { // sz < 0 => overflow
+	of, sz := bits.Mul(uint(len(s)), uint(i))
+	if of != 0 || sz >= maxAlloc { // of != 0 => overflow
 		// Don't print sz.
 		return "", fmt.Errorf("excessive repeat (%d * %d elements)", len(s), i)
 	}
@@ -1247,6 +1219,11 @@ func Call(thread *Thread, fn Value, args Tuple, kwargs []Tuple) (Value, error) {
 		}
 	}
 
+	// End the caller's span, whether the caller is
+	// a Starlark function or a built-in calling back into Starlark.
+	// If the caller has no span (as during LOAD), don't start one on return.
+	resume := thread.endProfSpan()
+
 	thread.stack = append(thread.stack, fr) // push
 
 	fr.callable = c
@@ -1265,6 +1242,10 @@ func Call(thread *Thread, fn Value, args Tuple, kwargs []Tuple) (Value, error) {
 		*fr = frame{}
 
 		thread.stack = thread.stack[:len(thread.stack)-1] // pop
+
+		if resume {
+			thread.beginProfSpan() // resume the caller's span
+		}
 	}()
 
 	result, err := c.CallInternal(thread, args, kwargs)
@@ -1275,10 +1256,8 @@ func Call(thread *Thread, fn Value, args Tuple, kwargs []Tuple) (Value, error) {
 	}
 
 	// Always return an EvalError with an accurate frame.
-	if err != nil {
-		if _, ok := err.(*EvalError); !ok {
-			err = thread.evalError(err)
-		}
+	if err != nil && !is[*EvalError](err) {
+		err = thread.evalError(err)
 	}
 
 	return result, err
@@ -1429,7 +1408,7 @@ func setArgs(locals []Value, fn *Function, args Tuple, kwargs []Tuple) error {
 		return nil
 	}
 
-	cond := func(x bool, y, z interface{}) interface{} {
+	cond := func(x bool, y, z any) any {
 		if x {
 			return y
 		}
@@ -1517,7 +1496,7 @@ func setArgs(locals []Value, fn *Function, args Tuple, kwargs []Tuple) error {
 		for ; i < nparams; i++ {
 			if locals[i] == nil {
 				dflt := fn.defaults[i-m]
-				if _, ok := dflt.(mandatory); ok {
+				if is[mandatory](dflt) {
 					missing = append(missing, paramIdents[i].Name)
 					continue
 				}

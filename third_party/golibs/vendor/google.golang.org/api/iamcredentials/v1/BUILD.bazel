@@ -15,6 +15,7 @@ go_library(
     importpath = "google.golang.org/api/iamcredentials/v1",
     visibility = ["//visibility:public"],
     deps = [
+        "//third_party/golibs/vendor/github.com/googleapis/gax-go/v2/internallog",
         "//third_party/golibs/vendor/google.golang.org/api/googleapi",
         "//third_party/golibs/vendor/google.golang.org/api/internal",
         "//third_party/golibs/vendor/google.golang.org/api/internal/gensupport",

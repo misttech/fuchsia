@@ -1122,7 +1122,7 @@ func (t *FFXTester) RemoveAllEmptyOutputDirs() error {
 			errs = append(errs, fmt.Sprintf("%v", err))
 		}
 	}
-	return fmt.Errorf(strings.Join(errs, "; "))
+	return errors.New(strings.Join(errs, "; "))
 }
 
 func (t *FFXTester) Close() error {

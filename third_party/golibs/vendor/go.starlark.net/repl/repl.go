@@ -27,7 +27,9 @@ import (
 var interrupted = make(chan os.Signal, 1)
 
 // REPL calls [REPLOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [REPLOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func REPL(thread *starlark.Thread, globals starlark.StringDict) {
 	REPLOptions(syntax.LegacyFileOptions(), thread, globals)
 }
@@ -121,6 +123,9 @@ func rep(opts *syntax.FileOptions, rl *readline.Instance, thread *starlark.Threa
 			return nil
 		}
 
+		// store the result in "_" variable to hold the value of last expression, similar to Python REPL
+		globals["_"] = v
+
 		// print
 		if v != starlark.None {
 			fmt.Println(v)
@@ -153,7 +158,9 @@ func PrintError(err error) {
 }
 
 // MakeLoad calls [MakeLoadOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [MakeLoadOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func MakeLoad() func(thread *starlark.Thread, module string) (starlark.StringDict, error) {
 	return MakeLoadOptions(syntax.LegacyFileOptions())
 }

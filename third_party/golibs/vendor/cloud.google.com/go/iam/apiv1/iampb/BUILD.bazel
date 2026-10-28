@@ -12,8 +12,10 @@ go_library(
     name = "iampb",
     srcs = [
         "iam_policy.pb.go",
+        "iam_policy_grpc.pb.go",
         "options.pb.go",
         "policy.pb.go",
+        "resource_policy_member.pb.go",
     ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/cloud.google.com/go/iam/apiv1/iampb",
     importpath = "cloud.google.com/go/iam/apiv1/iampb",

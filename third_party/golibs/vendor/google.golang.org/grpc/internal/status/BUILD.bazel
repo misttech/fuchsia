@@ -15,9 +15,10 @@ go_library(
     importpath = "google.golang.org/grpc/internal/status",
     visibility = ["//third_party/golibs/vendor/google.golang.org/grpc:__subpackages__"],
     deps = [
-        "//third_party/golibs/vendor/github.com/golang/protobuf/proto",
-        "//third_party/golibs/vendor/github.com/golang/protobuf/ptypes",
         "//third_party/golibs/vendor/google.golang.org/genproto/googleapis/rpc/status",
         "//third_party/golibs/vendor/google.golang.org/grpc/codes",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/proto",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/protoadapt",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/types/known/anypb",
     ],
 )

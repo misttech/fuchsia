@@ -16,6 +16,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/golibs/vendor/github.com/googleapis/gax-go/v2:gax-go",
+        "//third_party/golibs/vendor/github.com/googleapis/gax-go/v2/internallog",
         "//third_party/golibs/vendor/google.golang.org/api/googleapi",
         "//third_party/golibs/vendor/google.golang.org/api/internal",
         "//third_party/golibs/vendor/google.golang.org/api/internal/gensupport",

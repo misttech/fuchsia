@@ -77,8 +77,8 @@ func TestCallDepth(t *testing.T) {
 	logger := NewLogger(DebugLevel, color.NewColor(color.ColorAuto), outBuffer, errBuffer, prefix)
 	logger.SetFlags(Ldate | Lshortfile)
 
-	logger.Infof(infoLog)
-	logger.Errorf(errLog)
+	logger.Infof("%s", infoLog)
+	logger.Errorf("%s", errLog)
 
 	outBytes, errBytes := outBuffer.Bytes(), errBuffer.Bytes()
 
@@ -112,8 +112,8 @@ func TestCustomPrefix(t *testing.T) {
 	logger := NewLogger(DebugLevel, color.NewColor(color.ColorAuto), outBuffer, errBuffer, &counterPrefixer{})
 	logger.SetFlags(Ldate | Lshortfile)
 
-	logger.Infof(infoLog)
-	logger.Errorf(errLog)
+	logger.Infof("%s", infoLog)
+	logger.Errorf("%s", errLog)
 
 	outBytes, errBytes := outBuffer.Bytes(), errBuffer.Bytes()
 

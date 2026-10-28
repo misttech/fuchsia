@@ -10,9 +10,16 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "encoding",
-    srcs = ["encoding.go"],
+    srcs = [
+        "encoding.go",
+        "encoding_v2.go",
+    ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/grpc/encoding",
     importpath = "google.golang.org/grpc/encoding",
     visibility = ["//visibility:public"],
-    deps = ["//third_party/golibs/vendor/google.golang.org/grpc/internal/grpcutil"],
+    deps = [
+        "//third_party/golibs/vendor/google.golang.org/grpc/encoding/internal",
+        "//third_party/golibs/vendor/google.golang.org/grpc/internal/grpcutil",
+        "//third_party/golibs/vendor/google.golang.org/grpc/mem",
+    ],
 )

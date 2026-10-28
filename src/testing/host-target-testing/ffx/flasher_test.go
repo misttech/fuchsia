@@ -60,7 +60,7 @@ func TestDefault(t *testing.T) {
 	result := createAndRunFlasher(t, func(t *testing.T, flasher *Flasher) {})
 	expected_result := "target flash --timeout-rate 1 --min-timeout-secs 600 --manifest dir/flash.json"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
-		t.Fatalf("target flash result mismatched: " + result)
+		t.Fatalf("target flash result mismatched: %s", result)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestSSHKeys(t *testing.T) {
 	result = strings.Join(segs[:len(segs)-3], " ")
 	expected_result := "target flash --timeout-rate 1 --min-timeout-secs 600 --authorized-keys"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
-		t.Fatalf("target flash result mismatched: " + result)
+		t.Fatalf("target flash result mismatched: %s", result)
 	}
 }
 
@@ -83,6 +83,6 @@ func TestDiscoveryTimeout(t *testing.T) {
 	})
 	expected_result := "-c discovery.timeout=12000 target flash --timeout-rate 1 --min-timeout-secs 600 --manifest dir/flash.json"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
-		t.Fatalf("target flash result mismatched: " + result)
+		t.Fatalf("target flash result mismatched: %s", result)
 	}
 }

@@ -18,12 +18,13 @@ go_library(
         "editions.go",
         "proto.go",
     ],
-    embedsrcs = ["editions_defaults.binpb"],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/protobuf/reflect/protodesc",
     importpath = "google.golang.org/protobuf/reflect/protodesc",
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/golibs/vendor/google.golang.org/protobuf/encoding/protowire",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/internal/editiondefaults",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/internal/editionssupport",
         "//third_party/golibs/vendor/google.golang.org/protobuf/internal/encoding/defval",
         "//third_party/golibs/vendor/google.golang.org/protobuf/internal/errors",
         "//third_party/golibs/vendor/google.golang.org/protobuf/internal/filedesc",
@@ -35,5 +36,6 @@ go_library(
         "//third_party/golibs/vendor/google.golang.org/protobuf/reflect/protoreflect",
         "//third_party/golibs/vendor/google.golang.org/protobuf/reflect/protoregistry",
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/descriptorpb",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/types/gofeaturespb",
     ],
 )

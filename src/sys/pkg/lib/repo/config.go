@@ -60,7 +60,7 @@ func (t RepositoryStorageType) MarshalJSON() ([]byte, error) {
 	case Ephemeral:
 		s = "ephemeral"
 	default:
-		return []byte{}, fmt.Errorf("unknown repository storage type: %q", t)
+		return []byte{}, fmt.Errorf("unknown repository storage type: %d", t)
 	}
 	return json.Marshal(s)
 }

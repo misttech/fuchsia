@@ -16,6 +16,37 @@ import sys
 
 from gen_library_metadata import FUCHSIA_MODULE, get_sources
 
+# Some in-tree Go packages are imported via bare, non-module import paths (i.e.,
+# paths not under FUCHSIA_MODULE). These packages are placed in the vendor
+# directory, but since Go 1.23 (as declared in //third_party/golibs/go.mod),
+# every vendored package must be listed in vendor/modules.txt under a module
+# that is required by go.mod. To satisfy this, such packages are attributed to a
+# synthetic module that is appended to both files.
+#
+# This is only permitted for the following known users, identified by a path
+# component of the package's source files:
+#
+#  * Cobalt (//third_party/cobalt) imports its own packages as e.g. "config",
+#    "privacy", and "yamlpb".
+#  * Zither's Go backend generates bindings packages named after the FIDL
+#    library (e.g. "zbi"), and its golden tests compile them with a main package
+#    named after its build directory.
+NON_MODULE_PACKAGE_PATH_COMPONENTS = [
+    os.sep + os.path.join("third_party", "cobalt") + os.sep,
+    os.sep + "zither" + os.sep,
+]
+NON_MODULE_SYNTHETIC_MODULE = "fuchsia.local/non-module-packages"
+NON_MODULE_SYNTHETIC_MODULE_VERSION = "v0.0.0"
+
+
+def go_mod_version(go_mod: str) -> str:
+    """Returns the version in the `go` directive of the given go.mod contents."""
+    for line in go_mod.splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] == "go":
+            return fields[1]
+    raise ValueError("go.mod has no `go` directive")
+
 
 # rmtree manually removes all subdirectories and files instead of using
 # shutil.rmtree, to avoid registering spurious reads on stale
@@ -189,13 +220,9 @@ def main() -> int:
     # Symlink interprets path against the current working directory, so use
     # absolute path for consistency.
     abs_golibs_dir = os.path.abspath(args.golibs_dir)
-    for src in ["go.mod", "go.sum"]:
-        os.symlink(
-            os.path.join(abs_golibs_dir, src), os.path.join(gopath_src, src)
-        )
     os.symlink(
-        os.path.join(os.path.join(abs_golibs_dir, "vendor"), "modules.txt"),
-        os.path.join(dst_vendor, "modules.txt"),
+        os.path.join(abs_golibs_dir, "go.sum"),
+        os.path.join(gopath_src, "go.sum"),
     )
 
     if args.package:
@@ -223,6 +250,7 @@ def main() -> int:
         )
     )
 
+    non_module_packages = set()
     linked = set()
     # Create a GOPATH for the packages dependency tree.
     for dst, src in sorted(files_to_link):
@@ -233,10 +261,12 @@ def main() -> int:
 
         # If the destination is part of the "main module", strip off the
         # module path. Otherwise, put it in the vendor directory.
+        is_vendored = False
         if dst.startswith(FUCHSIA_MODULE):
             dst = os.path.relpath(dst, FUCHSIA_MODULE)
         else:
             dst = os.path.join("vendor", dst)
+            is_vendored = True
 
         if dst.endswith("/..."):
             # When a directory and all its subdirectories must be made available, map
@@ -254,6 +284,19 @@ def main() -> int:
             dst = dst.replace("/.../", "/")
         else:
             raise ValueError(f"Invalid go_dep entry: {dst=}, {src=}")
+
+        if is_vendored and not src.startswith(abs_golibs_dir + os.sep):
+            pkg = os.path.relpath(
+                dst if os.path.isdir(src) else os.path.dirname(dst), "vendor"
+            )
+            if not any(c in src for c in NON_MODULE_PACKAGE_PATH_COMPONENTS):
+                raise ValueError(
+                    f"Go package {pkg} ({src}) is "
+                    f"neither part of the {FUCHSIA_MODULE} module nor vendored "
+                    "in //third_party/golibs. Give it an import path under "
+                    f"{FUCHSIA_MODULE}."
+                )
+            non_module_packages.add(pkg)
 
         dstdir = os.path.join(gopath_src, dst)
 
@@ -300,6 +343,34 @@ def main() -> int:
                 # Hardlinking may fail, for example if `src` is in a
                 # separate filesystem on a mounted device.
                 shutil.copyfile(src, dstdir)
+
+    go_mod_src = os.path.join(abs_golibs_dir, "go.mod")
+    go_mod_dst = os.path.join(gopath_src, "go.mod")
+    modules_txt_src = os.path.join(abs_golibs_dir, "vendor", "modules.txt")
+    modules_txt_dst = os.path.join(dst_vendor, "modules.txt")
+    if non_module_packages:
+        # See NON_MODULE_SYNTHETIC_MODULE.
+        with open(go_mod_src) as f:
+            go_mod = f.read()
+        with open(go_mod_dst, "w") as f:
+            f.write(go_mod)
+            f.write(
+                f"\nrequire {NON_MODULE_SYNTHETIC_MODULE} "
+                f"{NON_MODULE_SYNTHETIC_MODULE_VERSION}\n"
+            )
+        with open(modules_txt_src) as f:
+            modules_txt = f.read()
+        with open(modules_txt_dst, "w") as f:
+            f.write(modules_txt)
+            f.write(
+                f"# {NON_MODULE_SYNTHETIC_MODULE} {NON_MODULE_SYNTHETIC_MODULE_VERSION}\n"
+                f"## explicit; go {go_mod_version(go_mod)}\n"
+            )
+            for pkg in sorted(non_module_packages):
+                f.write(f"{pkg}\n")
+    else:
+        os.symlink(go_mod_src, go_mod_dst)
+        os.symlink(modules_txt_src, modules_txt_dst)
 
     cflags = []
     if args.sysroot:

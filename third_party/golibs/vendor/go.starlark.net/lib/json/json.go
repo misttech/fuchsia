@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 //
 //	json = module(
 //	   encode,
+//	   encode_indent,
 //	   decode,
 //	   indent,
 //	)
@@ -54,6 +56,10 @@ import (
 // (e.g. it implements both Iterable and HasFields), the first case takes precedence.
 // Encoding any other value yields an error.
 //
+// def encode_indent(x, *, prefix="", indent="\t"):
+//
+// Equivalent to json.indent(json.encode(x), prefix=prefix, indent=indent).
+//
 // def decode(x[, default]):
 //
 // The decode function has one required positional parameter, a JSON string.
@@ -76,9 +82,10 @@ import (
 var Module = &starlarkstruct.Module{
 	Name: "json",
 	Members: starlark.StringDict{
-		"encode": starlark.NewBuiltin("json.encode", encode),
-		"decode": starlark.NewBuiltin("json.decode", decode),
-		"indent": starlark.NewBuiltin("json.indent", indent),
+		"encode":        starlark.NewBuiltin("json.encode", encode),
+		"encode_indent": starlark.NewBuiltin("json.encode_indent", encodeIndent),
+		"decode":        starlark.NewBuiltin("json.decode", decode),
+		"indent":        starlark.NewBuiltin("json.indent", indent),
 	},
 }
 
@@ -147,7 +154,8 @@ func encode(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, k
 			if !isFinite(float64(x)) {
 				return fmt.Errorf("cannot encode non-finite float %v", x)
 			}
-			fmt.Fprintf(buf, "%g", x) // always contains a decimal point
+			// Float.String always contains a decimal point. (%g does not!)
+			buf.WriteString(x.String())
 
 		case starlark.String:
 			quote(string(x))
@@ -232,10 +240,31 @@ func encode(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, k
 	return starlark.String(buf.String()), nil
 }
 
-func pointer(i interface{}) unsafe.Pointer {
+func encodeIndent(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	prefix, indent := "", "\t" // keyword-only
+	if err := starlark.UnpackArgs(b.Name(), nil, kwargs,
+		"prefix?", &prefix,
+		"indent?", &indent,
+	); err != nil {
+		return nil, err
+	}
+	// Rely on encode() to parse the positional parameter (since the signature matches); use our b so
+	// error messages are attributed to json.encode_indent.
+	str, err := encode(thread, b, args, nil)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(str.(starlark.String)), prefix, indent); err != nil {
+		return nil, fmt.Errorf("%s: %v", b.Name(), err)
+	}
+	return starlark.String(buf.String()), nil
+}
+
+func pointer(i any) unsafe.Pointer {
 	v := reflect.ValueOf(i)
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Chan, reflect.Map, reflect.UnsafePointer, reflect.Slice:
+	case reflect.Pointer, reflect.Chan, reflect.Map, reflect.UnsafePointer, reflect.Slice:
 		// TODO(adonovan): use v.Pointer() when we drop go1.17.
 		return unsafe.Pointer(v.Pointer())
 	default:
@@ -244,13 +273,7 @@ func pointer(i interface{}) unsafe.Pointer {
 }
 
 func pathContains(path []unsafe.Pointer, item unsafe.Pointer) bool {
-	for _, p := range path {
-		if p == item {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(path, item)
 }
 
 // isPrintableASCII reports whether s contains only printable ASCII.
@@ -314,7 +337,7 @@ func decode(thread *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, k
 	// a distinguished, private failure type prevents the possibility of
 	// json.decode with "default" becoming abused as a try-catch mechanism.
 	type failure string
-	fail := func(format string, args ...interface{}) {
+	fail := func(format string, args ...any) {
 		panic(failure(fmt.Sprintf(format, args...)))
 	}
 

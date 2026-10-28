@@ -13,6 +13,7 @@ go_library(
     srcs = [
         "balancer.go",
         "conn_state_evaluator.go",
+        "subconn.go",
     ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/grpc/balancer",
     importpath = "google.golang.org/grpc/balancer",
@@ -21,7 +22,10 @@ go_library(
         "//third_party/golibs/vendor/google.golang.org/grpc/channelz",
         "//third_party/golibs/vendor/google.golang.org/grpc/connectivity",
         "//third_party/golibs/vendor/google.golang.org/grpc/credentials",
+        "//third_party/golibs/vendor/google.golang.org/grpc/experimental/stats",
+        "//third_party/golibs/vendor/google.golang.org/grpc/grpclog",
         "//third_party/golibs/vendor/google.golang.org/grpc/internal",
+        "//third_party/golibs/vendor/google.golang.org/grpc/internal/envconfig",
         "//third_party/golibs/vendor/google.golang.org/grpc/metadata",
         "//third_party/golibs/vendor/google.golang.org/grpc/resolver",
         "//third_party/golibs/vendor/google.golang.org/grpc/serviceconfig",

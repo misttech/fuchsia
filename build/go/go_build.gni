@@ -299,7 +299,12 @@ template("go_build") {
       }
     }
 
-    inputs = []
+    # build.py reads these when synthesizing go.mod and vendor/modules.txt for
+    # non-module packages (see NON_MODULE_PACKAGE_PATH_COMPONENTS in build.py).
+    inputs = [
+      "//third_party/golibs/go.mod",
+      "//third_party/golibs/vendor/modules.txt",
+    ]
 
     # Add needed arguments for the buildidtool. We should add the stamp file
     # output by buildidtool to the list of outputs for this action but because

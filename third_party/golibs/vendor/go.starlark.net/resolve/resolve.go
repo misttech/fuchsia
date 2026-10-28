@@ -94,23 +94,29 @@ import (
 const debug = false
 const doesnt = "this Starlark dialect does not "
 
-// global options
-// These features are either not standard Starlark (yet), or deprecated
-// features of the BUILD language, so we put them behind flags.
+// Global options: these features are either not standard Starlark
+// (yet), or deprecated features of the BUILD language, so we put them
+// behind flags.
 //
 // Deprecated: use an explicit [syntax.FileOptions] argument instead,
-// as it avoids all the usual problems of global variables.
+// as it avoids all the usual problems of global variables,
+// and permits finer control.
+//
+// For example The legacy AllowGlobalReassign flag controls three
+// FileOptions: the availability of 'while' loops at all; the use of
+// if/for/while constructs at top level; and the ability to reassign
+// a global variable.
 var (
-	AllowSet            = false // allow the 'set' built-in
-	AllowGlobalReassign = false // allow reassignment to top-level names; also, allow if/for/while at top-level
-	AllowRecursion      = false // allow while statements and recursive functions
+	AllowGlobalReassign = false // allow reassignment to top-level names; while loops; and if/for/while at top-level
+	AllowRecursion      = false // allow recursive functions
 	LoadBindsGlobally   = false // load creates global not file-local bindings (deprecated)
 
 	// obsolete flags for features that are now standard. No effect.
-	AllowNestedDef = true
-	AllowLambda    = true
-	AllowFloat     = true
 	AllowBitwise   = true
+	AllowFloat     = true
+	AllowLambda    = true
+	AllowNestedDef = true
+	AllowSet       = true
 )
 
 // File resolves the specified file and records information about the
@@ -155,7 +161,9 @@ func REPLChunk(file *syntax.File, isGlobal, isPredeclared, isUniversal func(name
 }
 
 // Expr calls [ExprOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [ExprOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func Expr(expr syntax.Expr, isPredeclared, isUniversal func(name string) bool) ([]*Binding, error) {
 	return ExprOptions(syntax.LegacyFileOptions(), expr, isPredeclared, isUniversal)
 }
@@ -228,7 +236,7 @@ type resolver struct {
 	// isGlobal may be nil.
 	isGlobal, isPredeclared, isUniversal func(name string) bool
 
-	loops   int // number of enclosing for/while loops
+	loops   int // number of enclosing for/while loops in current function (or file, if top-level)
 	ifstmts int // number of enclosing if statements loops
 
 	errors ErrorList
@@ -293,7 +301,7 @@ func (b *block) String() string {
 	return "file block"
 }
 
-func (r *resolver) errorf(posn syntax.Position, format string, args ...interface{}) {
+func (r *resolver) errorf(posn syntax.Position, format string, args ...any) {
 	r.errors = append(r.errors, Error{posn, fmt.Sprintf(format, args...)})
 }
 
@@ -820,6 +828,10 @@ func (r *resolver) function(function *Function, pos syntax.Position) {
 	b := &block{function: function}
 	r.push(b)
 
+	// Save the current loop count and reset it for the new function
+	outerLoops := r.loops
+	r.loops = 0
+
 	var seenOptional bool
 	var star *syntax.UnaryExpr // * or *args param
 	var starStar *syntax.Ident // **kwargs ident
@@ -902,6 +914,9 @@ func (r *resolver) function(function *Function, pos syntax.Position) {
 
 	// Leave function block.
 	r.pop()
+
+	// Restore the outer loop count
+	r.loops = outerLoops
 
 	// References within the function body to globals are not
 	// resolved until the end of the module.

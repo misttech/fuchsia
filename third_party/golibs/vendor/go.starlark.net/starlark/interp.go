@@ -5,8 +5,7 @@ package starlark
 import (
 	"fmt"
 	"os"
-	"sync/atomic"
-	"unsafe"
+	"slices"
 
 	"go.starlark.net/internal/compile"
 	"go.starlark.net/internal/spell"
@@ -24,7 +23,17 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
 	// but allows CALL to avoid a copy.
 
 	f := fn.funcode
-	if !f.Prog.Recursion {
+	if f.Prog.Recursion {
+		// prevent stack overflow
+		//
+		// Each CallInternal recursion (via Call) uses ~1.4KB,
+		// but the stack limit is on the order of 1GB, so a
+		// maximum of about 700K recursive calls is possible.
+		// Limit it to much less here.
+		if len(thread.stack) > 100_000 {
+			return nil, fmt.Errorf("Starlark stack overflow")
+		}
+	} else {
 		// detect recursion
 		for _, fr := range thread.stack[:len(thread.stack)-1] {
 			// We look for the same function code,
@@ -60,6 +69,14 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
 		return nil, thread.evalError(err)
 	}
 
+	// Check cancellation and increment steps on entry.
+	// (Needed for recursive CALLs.)
+	if thread.checkSteps() {
+		if err := thread.checkStepsSlow(); err != nil {
+			return nil, err
+		}
+	}
+
 	fr.locals = locals
 
 	if vmdebug {
@@ -77,6 +94,10 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
 	// TODO(adonovan): add static check that beneath this point
 	// - there is exactly one return statement
 	// - there is no redefinition of 'err'.
+	// (Replacing "break loop" with explicit returns duplicates the defer
+	// epilogue at ~30 sites, adding 3.5KB of code for +0.8% geomean time;
+	// avoiding non-breaking assignments to err removes the loop-header PHI
+	// spill of err, but had no measurable runtime effect.)
 
 	var iterstack []Iterator // stack of active iterators
 
@@ -97,19 +118,6 @@ func (fn *Function) CallInternal(thread *Thread, args Tuple, kwargs []Tuple) (Va
 	code := f.Code
 loop:
 	for {
-		thread.Steps++
-		if thread.Steps >= thread.maxSteps {
-			if thread.OnMaxSteps != nil {
-				thread.OnMaxSteps(thread)
-			} else {
-				thread.Cancel("too many steps")
-			}
-		}
-		if reason := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&thread.cancelReason))); reason != nil {
-			err = fmt.Errorf("Starlark computation cancelled: %s", *(*string)(reason))
-			break loop
-		}
-
 		fr.pc = pc
 
 		op := compile.Opcode(code[pc])
@@ -279,6 +287,12 @@ loop:
 			sp++
 
 		case compile.JMP:
+			// On back edge, check cancellation and step count.
+			if arg < pc && thread.checkSteps() {
+				if err = thread.checkStepsSlow(); err != nil {
+					break loop
+				}
+			}
 			pc = arg
 
 		case compile.CALL, compile.CALL_VAR, compile.CALL_KW, compile.CALL_VAR_KW:
@@ -300,7 +314,7 @@ loop:
 				kvpairs = make([]Tuple, 0, nkvpairs)
 				kvpairsAlloc := make(Tuple, 2*nkvpairs) // allocate a single backing array
 				sp -= 2 * nkvpairs
-				for i := 0; i < nkvpairs; i++ {
+				for i := range nkvpairs {
 					pair := kvpairsAlloc[:2:2]
 					kvpairsAlloc = kvpairsAlloc[2:]
 					pair[0] = stack[sp+2*i]   // name
@@ -317,7 +331,7 @@ loop:
 				}
 				items := dict.Items()
 				for _, item := range items {
-					if _, ok := item[0].(String); !ok {
+					if !is[String](item[0]) {
 						err = fmt.Errorf("keywords must be strings, not %s", item[0].Type())
 						break loop
 					}
@@ -338,8 +352,8 @@ loop:
 				// Copy positional arguments into a new array,
 				// unless the callee is another Starlark function,
 				// in which case it can be trusted not to mutate them.
-				if _, ok := stack[sp-1].(*Function); !ok || args != nil {
-					positional = append(Tuple(nil), positional...)
+				if !is[*Function](stack[sp-1]) || args != nil {
+					positional = slices.Clone(positional)
 				}
 			}
 			if args != nil {
@@ -363,9 +377,7 @@ loop:
 					function, positional, kvpairs, f.Position(fr.pc))
 			}
 
-			thread.endProfSpan()
 			z, err2 := Call(thread, function, positional, kvpairs)
-			thread.beginProfSpan()
 			if err2 != nil {
 				err = err2
 				break loop
@@ -374,6 +386,13 @@ loop:
 				fmt.Printf("Resuming %s @ %s\n", f.Name, f.Position(0))
 			}
 			stack[sp-1] = z
+
+			// Check whether callee cancelled the thread.
+			if thread.checkSteps() {
+				if err = thread.checkStepsSlow(); err != nil {
+					break loop
+				}
+			}
 
 		case compile.ITERPUSH:
 			x := stack[sp-1]
@@ -501,12 +520,13 @@ loop:
 				i++
 			}
 			var dummy Value
-			if iter.Next(&dummy) {
+			tooMany := iter.Next(&dummy)
+			iter.Done()
+			if tooMany {
 				// NB: Len may return -1 here in obscure cases.
 				err = fmt.Errorf("too many values to unpack (got %d, want %d)", Len(iterable), n)
 				break loop
 			}
-			iter.Done()
 			if i < n {
 				err = fmt.Errorf("too few values to unpack (got %d, want %d)", i, n)
 				break loop
@@ -514,6 +534,12 @@ loop:
 
 		case compile.CJMP:
 			if stack[sp-1].Truth() {
+				// On back edge, check cancellation and increment step count.
+				if arg < pc && thread.checkSteps() {
+					if err = thread.checkStepsSlow(); err != nil {
+						break loop
+					}
+				}
 				pc = arg
 			}
 			sp--
@@ -541,7 +567,7 @@ loop:
 		case compile.MAKEFUNC:
 			funcode := f.Prog.Functions[arg]
 			tuple := stack[sp-1].(Tuple)
-			n := len(tuple) - len(funcode.Freevars)
+			n := len(tuple) - len(funcode.FreeVars)
 			defaults := tuple[:n:n]
 			freevars := tuple[n:]
 			stack[sp-1] = &Function{
@@ -572,7 +598,7 @@ loop:
 				break loop
 			}
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				from := string(stack[sp-1-i].(String))
 				v, ok := dict[from]
 				if !ok {
@@ -583,6 +609,13 @@ loop:
 					break loop
 				}
 				stack[sp-1-i] = v
+			}
+
+			// Check whether Load callback cancelled the thread.
+			if thread.checkSteps() {
+				if err = thread.checkStepsSlow(); err != nil {
+					break loop
+				}
 			}
 
 		case compile.SETLOCAL:
@@ -622,7 +655,7 @@ loop:
 		case compile.FREECELL:
 			v := fn.freevars[arg].(*cell).v
 			if v == nil {
-				err = fmt.Errorf("local variable %s referenced before assignment", f.Freevars[arg].Name)
+				err = fmt.Errorf("local variable %s referenced before assignment", f.FreeVars[arg].Name)
 				break loop
 			}
 			stack[sp] = v
@@ -658,6 +691,33 @@ loop:
 	}
 	// (deferred cleanup runs here)
 	return result, err
+}
+
+const stepCost = 10 // empirical average number of instructions per back-edge or call
+
+// checkSteps increments the thread's step counter and reports whether
+// the thread has exceeded its step limit or been cancelled.
+//
+// It is designed to be inlinable.
+func (thread *Thread) checkSteps() bool {
+	thread.Steps += stepCost
+	return thread.Steps >= thread.maxSteps ||
+		thread.cancelReason.Load() != nil
+}
+
+// (non-inlineable)
+func (thread *Thread) checkStepsSlow() error {
+	if thread.Steps >= thread.maxSteps {
+		if thread.OnMaxSteps != nil {
+			thread.OnMaxSteps(thread)
+		} else {
+			thread.Cancel("too many steps")
+		}
+	}
+	if reason := thread.cancelReason.Load(); reason != nil {
+		return fmt.Errorf("Starlark computation cancelled: %s", *reason)
+	}
+	return nil
 }
 
 type wrappedError struct {

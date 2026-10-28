@@ -10,12 +10,18 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "protogen",
-    srcs = ["protogen.go"],
+    srcs = [
+        "protogen.go",
+        "protogen_apilevel.go",
+        "protogen_opaque.go",
+    ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/protobuf/compiler/protogen",
     importpath = "google.golang.org/protobuf/compiler/protogen",
     visibility = ["//visibility:public"],
     deps = [
         "//third_party/golibs/vendor/google.golang.org/protobuf/encoding/prototext",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/internal/editiondefaults",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/internal/filedesc",
         "//third_party/golibs/vendor/google.golang.org/protobuf/internal/genid",
         "//third_party/golibs/vendor/google.golang.org/protobuf/internal/strs",
         "//third_party/golibs/vendor/google.golang.org/protobuf/proto",
@@ -24,6 +30,7 @@ go_library(
         "//third_party/golibs/vendor/google.golang.org/protobuf/reflect/protoregistry",
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/descriptorpb",
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/dynamicpb",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/types/gofeaturespb",
         "//third_party/golibs/vendor/google.golang.org/protobuf/types/pluginpb",
     ],
 )

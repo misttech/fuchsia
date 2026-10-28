@@ -14,4 +14,5 @@ go_library(
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/grpc/metadata",
     importpath = "google.golang.org/grpc/metadata",
     visibility = ["//visibility:public"],
+    deps = ["//third_party/golibs/vendor/google.golang.org/grpc/internal"],
 )

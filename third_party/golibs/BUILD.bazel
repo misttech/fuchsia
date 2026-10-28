@@ -8,10 +8,7 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "golibs",
-    srcs = [
-        "imports.go",
-        "petal_imports.go",
-    ],
+    srcs = ["imports.go"],
     importpath = "go.fuchsia.dev/fuchsia/third_party/golibs",
     visibility = ["//visibility:public"],
     deps = [
@@ -27,8 +24,6 @@ go_library(
         "//third_party/golibs/vendor/github.com/kr/fs",
         "//third_party/golibs/vendor/github.com/kr/pretty",
         "//third_party/golibs/vendor/github.com/pkg/sftp",
-        "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/common",
-        "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/v2_2",
         "//third_party/golibs/vendor/github.com/spf13/pflag",
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf",
         "//third_party/golibs/vendor/github.com/theupdateframework/go-tuf/data",
@@ -123,16 +118,6 @@ alias(
 alias(
     name = "github.com/pkg/sftp",
     actual = "//third_party/golibs/vendor/github.com/pkg/sftp",
-)
-
-alias(
-    name = "github.com/spdx/tools-golang/spdx/common",
-    actual = "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/common",
-)
-
-alias(
-    name = "github.com/spdx/tools-golang/spdx/v2_2",
-    actual = "//third_party/golibs/vendor/github.com/spdx/tools-golang/spdx/v2_2",
 )
 
 alias(

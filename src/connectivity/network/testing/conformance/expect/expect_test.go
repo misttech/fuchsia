@@ -14,7 +14,7 @@ import (
 func TestExpectExists(t *testing.T) {
 	cmd := exec.Command(EXPECT_HOST_PATH, "-v")
 	outputBytes, err := cmd.CombinedOutput()
-	t.Logf(string(outputBytes))
+	t.Log(string(outputBytes))
 
 	if err != nil {
 		t.Errorf(
@@ -28,7 +28,7 @@ func TestExpectExists(t *testing.T) {
 		// exists on our PATH but is simply in a different location.
 		cmd := exec.Command("command", "-v", "expect")
 		outputBytes, err := cmd.CombinedOutput()
-		t.Logf(string(outputBytes))
+		t.Log(string(outputBytes))
 
 		if err != nil {
 			t.Errorf(

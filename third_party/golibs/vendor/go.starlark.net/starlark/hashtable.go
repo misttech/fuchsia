@@ -6,8 +6,9 @@ package starlark
 
 import (
 	"fmt"
+	"hash/maphash"
 	"math/big"
-	_ "unsafe" // for go:linkname hack
+	"os"
 )
 
 // hashtable is used to represent Starlark dict and set values.
@@ -168,7 +169,7 @@ func (ht *hashtable) grow() {
 	ht.tailLink = &ht.head
 	ht.len = 0
 	for e := oldhead; e != nil; e = e.next {
-		ht.insert(e.key, e.value)
+		ht.insert(e.key, e.value) // can't fail
 	}
 	ht.bucket0[0] = bucket{} // clear out unused initial bucket
 }
@@ -364,26 +365,26 @@ func (ht *hashtable) addAll(other *hashtable) error {
 
 // dump is provided as an aid to debugging.
 func (ht *hashtable) dump() {
-	fmt.Printf("hashtable %p len=%d head=%p tailLink=%p",
+	fmt.Fprintf(os.Stderr, "hashtable %p len=%d head=%p tailLink=%p",
 		ht, ht.len, ht.head, ht.tailLink)
 	if ht.tailLink != nil {
-		fmt.Printf(" *tailLink=%p", *ht.tailLink)
+		fmt.Fprintf(os.Stderr, " *tailLink=%p", *ht.tailLink)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 	for j := range ht.table {
-		fmt.Printf("bucket chain %d\n", j)
+		fmt.Fprintf(os.Stderr, "bucket chain %d\n", j)
 		for p := &ht.table[j]; p != nil; p = p.next {
-			fmt.Printf("bucket %p\n", p)
+			fmt.Fprintf(os.Stderr, "bucket %p\n", p)
 			for i := range p.entries {
 				e := &p.entries[i]
-				fmt.Printf("\tentry %d @ %p hash=%d key=%v value=%v\n",
+				fmt.Fprintf(os.Stderr, "\tentry %d @ %p hash=%d key=%v value=%v\n",
 					i, e, e.hash, e.key, e.value)
-				fmt.Printf("\t\tnext=%p &next=%p prev=%p",
+				fmt.Fprintf(os.Stderr, "\t\tnext=%p &next=%p prev=%p",
 					e.next, &e.next, e.prevLink)
 				if e.prevLink != nil {
-					fmt.Printf(" *prev=%p", *e.prevLink)
+					fmt.Fprintf(os.Stderr, " *prev=%p", *e.prevLink)
 				}
-				fmt.Println()
+				fmt.Fprintln(os.Stderr)
 			}
 		}
 	}
@@ -416,20 +417,28 @@ func (it *keyIterator) Done() {
 	}
 }
 
-// TODO(adonovan): use go1.19's maphash.String.
+// entries is a go1.23 iterator over the entries of the hash table.
+func (ht *hashtable) entries(yield func(k, v Value) bool) {
+	if !ht.frozen {
+		ht.itercount++
+		defer func() { ht.itercount-- }()
+	}
+	for e := ht.head; e != nil && yield(e.key, e.value); e = e.next {
+	}
+}
+
+var seed = maphash.MakeSeed()
 
 // hashString computes the hash of s.
 func hashString(s string) uint32 {
 	if len(s) >= 12 {
 		// Call the Go runtime's optimized hash implementation,
-		// which uses the AESENC instruction on amd64 machines.
-		return uint32(goStringHash(s, 0))
+		// which uses the AES instructions on amd64 and arm64 machines.
+		h := maphash.String(seed, s)
+		return uint32(h>>32) ^ uint32(h)
 	}
 	return softHashString(s)
 }
-
-//go:linkname goStringHash runtime.stringHash
-func goStringHash(s string, seed uintptr) uintptr
 
 // softHashString computes the 32-bit FNV-1a hash of s in software.
 func softHashString(s string) uint32 {

@@ -15,7 +15,9 @@ go_library(
     importpath = "google.golang.org/grpc/encoding/proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//third_party/golibs/vendor/github.com/golang/protobuf/proto",
         "//third_party/golibs/vendor/google.golang.org/grpc/encoding",
+        "//third_party/golibs/vendor/google.golang.org/grpc/mem",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/proto",
+        "//third_party/golibs/vendor/google.golang.org/protobuf/protoadapt",
     ],
 )

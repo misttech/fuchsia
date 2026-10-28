@@ -102,8 +102,24 @@ else
   $GO get
 fi
 
+# Match the `go` directive to the prebuilt toolchain's language version. This
+# sets the language version (and GODEBUG defaults) of all in-tree Go code built
+# by GN; Bazel always builds at the toolchain's language version.
+GO_LANG_VERSION=$("$GO" env GOVERSION | sed -E 's/^go([0-9]+\.[0-9]+).*$/\1/')
+$GO mod edit -go="${GO_LANG_VERSION}.0"
+
 $GO mod tidy
 $GO mod vendor
+
+# Remove any upstream Bazel files copied by `go mod vendor` so Gazelle
+# generates clean BUILD.bazel files from the vendored .go sources.
+find vendor -type f \( \
+  -name 'BUILD' -o \
+  -name 'BUILD.bazel' -o \
+  -name 'MODULE.bazel' -o \
+  -name 'WORKSPACE*' -o \
+  -name '*.bzl' \
+\) -delete
 
 "$FUCHSIA_DIR/scripts/fuchsia-vendored-python" update_sources.py \
   --build-file='BUILD.gn' \

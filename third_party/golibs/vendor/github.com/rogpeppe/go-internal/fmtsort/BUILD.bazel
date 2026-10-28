@@ -12,7 +12,6 @@ go_library(
     name = "fmtsort",
     srcs = [
         "mapelem.go",
-        "mapelem_1.11.go",
         "sort.go",
     ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/github.com/rogpeppe/go-internal/fmtsort",

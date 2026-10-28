@@ -10,11 +10,16 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "internaloption",
-    srcs = ["internaloption.go"],
+    srcs = [
+        "internaloption.go",
+        "unsaferesolver.go",
+    ],
     importmap = "go.fuchsia.dev/fuchsia/third_party/golibs/vendor/google.golang.org/api/option/internaloption",
     importpath = "google.golang.org/api/option/internaloption",
     visibility = ["//visibility:public"],
     deps = [
+        "//third_party/golibs/vendor/cloud.google.com/go/auth",
+        "//third_party/golibs/vendor/github.com/googleapis/gax-go/v2/internallog",
         "//third_party/golibs/vendor/golang.org/x/oauth2/google",
         "//third_party/golibs/vendor/google.golang.org/api/internal",
         "//third_party/golibs/vendor/google.golang.org/api/option",

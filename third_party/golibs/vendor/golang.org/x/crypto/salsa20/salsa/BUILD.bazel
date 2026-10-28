@@ -15,6 +15,7 @@ go_library(
         "salsa208.go",
         "salsa20_amd64.go",
         "salsa20_amd64.s",
+        "salsa20_loong64.s",
         "salsa20_noasm.go",
         "salsa20_ref.go",
     ],

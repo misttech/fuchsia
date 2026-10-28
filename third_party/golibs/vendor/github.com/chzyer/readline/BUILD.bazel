@@ -29,7 +29,7 @@ go_library(
         "term.go",
         "term_bsd.go",
         "term_linux.go",
-        "term_solaris.go",
+        "term_nosyscall6.go",
         "term_unix.go",
         "term_windows.go",
         "terminal.go",
@@ -43,6 +43,9 @@ go_library(
     importpath = "github.com/chzyer/readline",
     visibility = ["//visibility:public"],
     deps = select({
+        "@io_bazel_rules_go//go/platform:aix": [
+            "//third_party/golibs/vendor/golang.org/x/sys/unix",
+        ],
         "@io_bazel_rules_go//go/platform:solaris": [
             "//third_party/golibs/vendor/golang.org/x/sys/unix",
         ],
