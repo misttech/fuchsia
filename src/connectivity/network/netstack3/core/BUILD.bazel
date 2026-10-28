@@ -1,8 +1,16 @@
-# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("//build/bazel/config/derived:compilation_modes.bzl", "is_debug")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+load(":assert_no_deps.bzl", "assert_no_deps_tags")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -10,20 +18,356 @@ package(default_applicable_licenses = ["//:license"])
 # The loom crate documentation recommends compiling with optimizations since
 # the number of iterations can be large enough to make tests unreasonably slow
 # otherwise.
+# @bazel2gn:skip
 build_flags(
     name = "loom",
-    rustflags = [
-        "--cfg=loom",
-        "-Copt-level=2",
-    ],
+    rustflags = ["--cfg=loom"],
+    subflags = ["//build/config:optimize_moderate"],
     visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
 )
 # LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:loom)
 
 # LINT.IfChange(benchmark)
+# @bazel2gn:skip
 build_flags(
     name = "benchmark",
     rustflags = ["--cfg=benchmark"],
-    visibility = ["//src/connectivity/network/netstack3/core:__subpackages__"],
+    visibility = ["//src/connectivity/network/netstack3:__subpackages__"],
 )
 # LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:benchmark)
+
+# LINT.IfChange(no_lock_order)
+# Disable lock ordering to speed-up compilation.
+# @bazel2gn:skip
+build_flags(
+    name = "no_lock_order",
+    rustflags = ["--cfg=no_lock_order"],
+)
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:no_lock_order)
+
+# LINT.IfChange(no_lock_order_except_debug_device)
+# Only re-enabled lock order checks for debug non-host configurations.
+#
+# Keeping it disabled for host builds makes it easier to spot
+# conditional compilation problems when building a debug image.
+# @bazel2gn:skip
+build_flags(
+    name = "no_lock_order_except_debug_device",
+    rustflags = select({
+        "//build/bazel/platforms:is_host_os": ["--cfg=no_lock_order"],
+        "//conditions:default": [],
+    }) if is_debug else ["--cfg=no_lock_order"],
+)
+# LINT.ThenChange(//src/connectivity/network/netstack3/core/BUILD.gn:no_lock_order_except_debug_device)
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = [
+        "benchmark",
+        "loom",
+        "no_lock_order",
+        "test",
+    ],
+    features = [
+        "instrumented",
+        "testutils",
+    ],
+)
+
+_COMMON_SRCS = [
+    "src/api.rs",
+    "src/context.rs",
+    "src/counters.rs",
+    "src/device/base.rs",
+    "src/device/blackhole.rs",
+    "src/device/ethernet.rs",
+    "src/device/loopback.rs",
+    "src/device/pure_ip.rs",
+    "src/device/socket.rs",
+    "src/filter/integration.rs",
+    "src/ip/base.rs",
+    "src/ip/device.rs",
+    "src/ip/multicast_forwarding.rs",
+    "src/ip/raw.rs",
+    "src/lib.rs",
+    "src/lock_ordering.rs",
+    "src/marker.rs",
+    "src/state.rs",
+    "src/testutil.rs",
+    "src/time.rs",
+    "src/transport.rs",
+    "src/transport/integration.rs",
+]
+
+_COMMON_BUILD_FLAGS = [
+    ":check_cfg_flags",
+    "//build/config/rust/lints:deny_unused_results",
+    "//src/connectivity/network/netstack3:netstack3_configs",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_PROC_MACRO_DEPS = [
+    "//src/connectivity/network/netstack3/core/macros:netstack3-macros",
+    "//third_party/rust_crates/vendor:derivative",
+]
+
+# @bazel2gn:transformer=deps
+_COMMON_DEPS = [
+    "//src/connectivity/lib/net-types",
+    "//src/connectivity/lib/packet-formats",
+    "//src/connectivity/network/netstack3/core/hashmap",
+    "//src/connectivity/network/netstack3/core/lock-order",
+    "//src/lib/network/packet",
+    "//third_party/rust_crates/vendor:assert_matches",
+    "//third_party/rust_crates/vendor:log",
+]
+
+# @bazel2gn:transformer=deps
+_TESTUTILS_DEPS = [
+    "//third_party/rust_crates/vendor:zerocopy",
+]
+
+# @bazel2gn:transformer=deps
+_ALL_CORE_CRATES = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base",
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented",
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-loom",
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-benchmarks",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-instrumented",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-loom",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-benchmarks",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-instrumented",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-loom",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-testutils",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-instrumented",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-loom",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-benchmarks",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-instrumented",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-loom",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-testutils",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-instrumented",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-loom",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-instrumented",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-loom",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-benchmarks",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-instrumented",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-loom",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-testutils",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-benchmarks",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-loom",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-benchmarks",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-instrumented",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-loom",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-testutils",
+]
+
+# @bazel2gn:transformer=deps
+_CORE_DEPS = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp",
+]
+
+# @bazel2gn:transformer=deps
+_INSTRUMENTED_CORE_DEPS = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-instrumented",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-instrumented",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-instrumented",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-instrumented",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-instrumented",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-instrumented",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-instrumented",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-instrumented",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-instrumented",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-instrumented",
+]
+
+# @bazel2gn:transformer=deps
+_TESTUTILS_CORE_DEPS = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-testutils",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-testutils",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-testutils",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-testutils",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-testutils",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-testutils",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-testutils",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-testutils",
+]
+
+# @bazel2gn:transformer=deps
+_BENCHMARKS_CORE_DEPS = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-benchmarks",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-benchmarks",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-benchmarks",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-benchmarks",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-benchmarks",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-benchmarks",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-testutils",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-benchmarks",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-testutils",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-benchmarks",
+]
+
+# @bazel2gn:transformer=deps
+_LOOM_CORE_DEPS = [
+    "//src/connectivity/network/netstack3/core/base:netstack3-base-loom",
+    "//src/connectivity/network/netstack3/core/datagram:netstack3-datagram-loom",
+    "//src/connectivity/network/netstack3/core/device:netstack3-device-loom",
+    "//src/connectivity/network/netstack3/core/filter:netstack3-filter-loom",
+    "//src/connectivity/network/netstack3/core/icmp_echo:netstack3-icmp-echo-loom",
+    "//src/connectivity/network/netstack3/core/ip:netstack3-ip-loom",
+    "//src/connectivity/network/netstack3/core/sync:netstack3-sync-loom",
+    "//src/connectivity/network/netstack3/core/tcp:netstack3-tcp-loom",
+    "//src/connectivity/network/netstack3/core/trace:netstack3-trace-loom",
+    "//src/connectivity/network/netstack3/core/udp:netstack3-udp-loom",
+]
+
+# @bazel2gn:raw_attribute:assert_no_deps = _ALL_CORE_CRATES - _CORE_DEPS
+rustc_library(
+    name = "netstack3-core",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [":no_lock_order"],
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    # Guard against bad crate variants.
+    tags = assert_no_deps_tags(_ALL_CORE_CRATES, _CORE_DEPS),  # @bazel2gn:skip
+    visibility = ["//src/connectivity/network/netstack3:__pkg__"],
+    deps = _COMMON_DEPS + _CORE_DEPS,
+)
+
+# A variant of the netstack3-core library that has additional
+# instrumentation that is useful for debugging and testing.
+# @bazel2gn:raw_attribute:assert_no_deps = _ALL_CORE_CRATES - _INSTRUMENTED_CORE_DEPS
+rustc_library(
+    name = "netstack3-core-instrumented",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [":no_lock_order_except_debug_device"],
+    crate_features = ["instrumented"],
+    crate_name = "netstack3_core",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    # Guard against bad crate variants.
+    tags = assert_no_deps_tags(_ALL_CORE_CRATES, _INSTRUMENTED_CORE_DEPS),  # @bazel2gn:skip
+    visibility = ["//src/connectivity/network/netstack3:__pkg__"],
+    deps = _COMMON_DEPS + _INSTRUMENTED_CORE_DEPS,
+)
+
+# A variant of the netstack3-core library that exposes test utilities.
+# @bazel2gn:raw_attribute:assert_no_deps = _ALL_CORE_CRATES - _TESTUTILS_CORE_DEPS
+rustc_library(
+    name = "netstack3-core-testutils",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [":no_lock_order"],
+    crate_features = [
+        "instrumented",
+        "testutils",
+    ],
+    crate_name = "netstack3_core",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    # Guard against bad crate variants.
+    tags = assert_no_deps_tags(_ALL_CORE_CRATES, _TESTUTILS_CORE_DEPS),  # @bazel2gn:skip
+    visibility = ["//src/connectivity/network/netstack3:__subpackages__"],
+    deps = _COMMON_DEPS + _TESTUTILS_DEPS + _TESTUTILS_CORE_DEPS,
+)
+
+# A variant of the netstack3-core library that is built for running
+# benchmarks.
+# @bazel2gn:raw_attribute:assert_no_deps = _ALL_CORE_CRATES - _BENCHMARKS_CORE_DEPS
+rustc_library(
+    name = "netstack3-core-benchmarks",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [
+        ":benchmark",
+        ":no_lock_order",
+    ],
+    crate_features = ["testutils"],
+    crate_name = "netstack3_core",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    # Guard against bad crate variants.
+    tags = assert_no_deps_tags(_ALL_CORE_CRATES, _BENCHMARKS_CORE_DEPS),  # @bazel2gn:skip
+    visibility = ["//src/connectivity/network/netstack3/bench:__pkg__"],
+    deps = _COMMON_DEPS + _TESTUTILS_DEPS + _BENCHMARKS_CORE_DEPS,
+)
+
+# A variant of the netstack3-core library that is built for running loom
+# tests, by using instrumented loom-provided types for all
+# synchronization.
+# @bazel2gn:raw_attribute:assert_no_deps = _ALL_CORE_CRATES - _LOOM_CORE_DEPS
+rustc_library(
+    name = "netstack3-core-loom",
+    testonly = True,
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [
+        ":loom",
+        ":no_lock_order",
+    ],
+    crate_features = [
+        "instrumented",
+        "testutils",
+    ],
+    crate_name = "netstack3_core",
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    # Guard against bad crate variants.
+    tags = assert_no_deps_tags(_ALL_CORE_CRATES, _LOOM_CORE_DEPS),  # @bazel2gn:skip
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/connectivity/network/netstack3/core/tests:__pkg__"],
+    deps = _COMMON_DEPS + _TESTUTILS_DEPS + _LOOM_CORE_DEPS,
+)
+
+# Cannot attach to `:netstack3-core-instrumented` via `crate` because unit tests
+# require `-testutils` variants of core subcrates.
+rustc_test(
+    name = "netstack3-core-instrumented_test",
+    srcs = _COMMON_SRCS,
+    build_flags = _COMMON_BUILD_FLAGS + [":no_lock_order_except_debug_device"],
+    crate_features = ["instrumented"],
+    edition = "2024",
+    proc_macro_deps = _COMMON_PROC_MACRO_DEPS,
+    deps = _COMMON_DEPS + _TESTUTILS_DEPS + _TESTUTILS_CORE_DEPS,
+)
+
+wrap_host_rust_test(
+    name = "netstack3-core-host-test",
+    binary_name = "netstack3-core-instrumented_test",
+    visibility = ["//src/connectivity/network:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "netstack3-core-test-package",
+    package_name = "netstack3-core-test",
+    unit_tests = [":netstack3-core-instrumented_test"],
+    visibility = ["//src/connectivity/network:__pkg__"],
+)

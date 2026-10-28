@@ -55,6 +55,7 @@ test_suite(
     tests = [
         "//src/connectivity/network/dhcpv6/core:dhcpv6-core-test",
         "//src/connectivity/network/lib/netfilter:netfilter-tests",
+        "//src/connectivity/network/netstack3/core:netstack3-core-test-package",
     ],
     visibility = ["//src/connectivity:__pkg__"],
 )
@@ -64,6 +65,9 @@ test_suite(
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    tests = ["//src/connectivity/network/dhcpv6/core:core_host_test"],
+    tests = [
+        "//src/connectivity/network/dhcpv6/core:core_host_test",
+        "//src/connectivity/network/netstack3/core:netstack3-core-host-test",
+    ],
     visibility = ["//src/connectivity:__pkg__"],
 )
