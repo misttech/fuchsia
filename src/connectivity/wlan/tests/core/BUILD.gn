@@ -6,12 +6,11 @@ import("//build/host.gni")
 import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/host_test_data.gni")
-import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 import("./test_lists.gni")
 
 assert(is_host, "WLAN end-to-end tests only supported for host testing")
 
-antlion_host_test("create_ap_iface_with_null_mac_test") {
+python_mobly_test("create_ap_iface_with_null_mac_test") {
   main_source = "CreateApIfaceWithNullMacTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -19,7 +18,7 @@ antlion_host_test("create_ap_iface_with_null_mac_test") {
   ]
 }
 
-antlion_host_test("create_ap_iface_with_particular_mac_test") {
+python_mobly_test("create_ap_iface_with_particular_mac_test") {
   main_source = "CreateApIfaceWithParticularMacTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -27,7 +26,7 @@ antlion_host_test("create_ap_iface_with_particular_mac_test") {
   ]
 }
 
-antlion_host_test("create_client_iface_with_null_mac_test") {
+python_mobly_test("create_client_iface_with_null_mac_test") {
   main_source = "CreateClientIfaceWithNullMacTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -35,7 +34,7 @@ antlion_host_test("create_client_iface_with_null_mac_test") {
   ]
 }
 
-antlion_host_test("create_client_iface_with_particular_mac_test") {
+python_mobly_test("create_client_iface_with_particular_mac_test") {
   main_source = "CreateClientIfaceWithParticularMacTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -43,7 +42,7 @@ antlion_host_test("create_client_iface_with_particular_mac_test") {
   ]
 }
 
-antlion_host_test("create_client_iface_with_invalid_mac_test") {
+python_mobly_test("create_client_iface_with_invalid_mac_test") {
   main_source = "CreateClientIfaceWithInvalidMacTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -51,7 +50,7 @@ antlion_host_test("create_client_iface_with_invalid_mac_test") {
   ]
 }
 
-antlion_host_test("country_code_test") {
+python_mobly_test("country_code_test") {
   main_source = "CountryCodeTest.py"
   libraries = [
     "//src/testing/end_to_end/honeydew",
@@ -60,7 +59,7 @@ antlion_host_test("country_code_test") {
   ]
 }
 
-antlion_host_test("connect_to_ap_test") {
+python_mobly_test("connect_to_ap_test") {
   main_source = "ConnectToApTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -73,7 +72,7 @@ antlion_host_test("connect_to_ap_test") {
   ]
 }
 
-antlion_host_test("association_rejection_test") {
+python_mobly_test("association_rejection_test") {
   main_source = "AssociationRejectionTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -86,7 +85,7 @@ antlion_host_test("association_rejection_test") {
   ]
 }
 
-antlion_host_test("firmware_power_modes_test") {
+python_mobly_test("firmware_power_modes_test") {
   main_source = "FirmwarePowerModesTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -100,7 +99,7 @@ antlion_host_test("firmware_power_modes_test") {
   ]
 }
 
-antlion_host_test("phy_existence_test") {
+python_mobly_test("phy_existence_test") {
   main_source = "PhyExistenceTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -108,7 +107,7 @@ antlion_host_test("phy_existence_test") {
   ]
 }
 
-antlion_host_test("phy_reset_test") {
+python_mobly_test("phy_reset_test") {
   main_source = "PhyResetTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -116,7 +115,7 @@ antlion_host_test("phy_reset_test") {
   ]
 }
 
-antlion_host_test("roam_request_test") {
+python_mobly_test("roam_request_test") {
   main_source = "RoamRequestTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -131,7 +130,7 @@ antlion_host_test("roam_request_test") {
 
 # Excludes the expected fail permutations, which take significantly longer to
 # run.
-antlion_host_test("roam_request_test_should_succeed") {
+python_mobly_test("roam_request_test_should_succeed") {
   main_source = "RoamRequestTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -146,7 +145,7 @@ antlion_host_test("roam_request_test_should_succeed") {
   timeout_secs = 400
 }
 
-antlion_host_test("sar_setting_test") {
+python_mobly_test("sar_setting_test") {
   main_source = "SARSettingTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -158,7 +157,7 @@ antlion_host_test("sar_setting_test") {
   ]
 }
 
-antlion_host_test("wlan_scan_test") {
+python_mobly_test("wlan_scan_test") {
   main_source = "WlanScanTest.py"
   libraries = [
     "//src/connectivity/wlan/tests/common",
@@ -172,7 +171,7 @@ antlion_host_test("wlan_scan_test") {
   ]
 }
 
-antlion_host_test("wlan_driver_restart_test") {
+python_mobly_test("wlan_driver_restart_test") {
   main_source = "WlanDriverRestartTest.py"
   libraries = [
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
@@ -180,7 +179,7 @@ antlion_host_test("wlan_driver_restart_test") {
   ]
 }
 
-antlion_host_test("throughput_test") {
+python_mobly_test("throughput_test") {
   main_source = "ThroughputTest.py"
   environments = wlan_ap_iperf_envs
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
@@ -197,7 +196,7 @@ antlion_host_test("throughput_test") {
   ]
 }
 
-antlion_host_test("phy_compliance_ac_test") {
+python_mobly_test("phy_compliance_ac_test") {
   main_source = "WlanPhyCompliance11ACTest.py"
   libraries = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
@@ -212,7 +211,7 @@ antlion_host_test("phy_compliance_ac_test") {
   ]
 }
 
-antlion_host_test("phy_compliance_n_test") {
+python_mobly_test("phy_compliance_n_test") {
   main_source = "WlanPhyCompliance11NTest.py"
   libraries = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
@@ -227,7 +226,7 @@ antlion_host_test("phy_compliance_n_test") {
   ]
 }
 
-antlion_host_test("phy_compliance_abg_test") {
+python_mobly_test("phy_compliance_abg_test") {
   main_source = "WlanPhyComplianceABGTest.py"
   libraries = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_host_test_data",
@@ -242,9 +241,9 @@ antlion_host_test("phy_compliance_abg_test") {
   ]
 }
 
-antlion_host_test("rvr_test_2g_tx") {
+python_mobly_test("rvr_test_2g_tx") {
   main_source = "WlanRvrTest.py"
-  test_params = "rvr_settings.yaml"
+  params_source = "rvr_settings.yaml"
   test_cases = [ "test_rvr_11n_2g_20mhz_wpa2_tx_ipv4" ]
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
   libraries = [
@@ -262,9 +261,9 @@ antlion_host_test("rvr_test_2g_tx") {
   ]
 }
 
-antlion_host_test("rvr_test_2g_rx") {
+python_mobly_test("rvr_test_2g_rx") {
   main_source = "WlanRvrTest.py"
-  test_params = "rvr_settings.yaml"
+  params_source = "rvr_settings.yaml"
   test_cases = [ "test_rvr_11n_2g_20mhz_wpa2_rx_ipv4" ]
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
   libraries = [
@@ -282,9 +281,9 @@ antlion_host_test("rvr_test_2g_rx") {
   ]
 }
 
-antlion_host_test("rvr_test_5g_tx") {
+python_mobly_test("rvr_test_5g_tx") {
   main_source = "WlanRvrTest.py"
-  test_params = "rvr_settings.yaml"
+  params_source = "rvr_settings.yaml"
   test_cases = [ "test_rvr_11ac_5g_80mhz_wpa2_tx_ipv4" ]
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
   libraries = [
@@ -302,9 +301,9 @@ antlion_host_test("rvr_test_5g_tx") {
   ]
 }
 
-antlion_host_test("rvr_test_5g_rx") {
+python_mobly_test("rvr_test_5g_rx") {
   main_source = "WlanRvrTest.py"
-  test_params = "rvr_settings.yaml"
+  params_source = "rvr_settings.yaml"
   test_cases = [ "test_rvr_11ac_5g_80mhz_wpa2_rx_ipv4" ]
   package_deps = [ "//third_party/iperf:iperf3_pkg" ]
   libraries = [
