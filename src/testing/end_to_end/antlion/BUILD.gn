@@ -37,9 +37,6 @@ python_library("antlion") {
   sources = [
     "__init__.py",
     "controllers/__init__.py",
-    "controllers/pdu.py",
-    "controllers/pdu_lib/__init__.py",
-    "controllers/pdu_lib/synaccess/__init__.py",
   ]
   library_deps = [
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_python",

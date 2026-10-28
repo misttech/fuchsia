@@ -13,7 +13,6 @@ from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.controllers import pdu
 from honeydew.affordances.connectivity.netstack.errors import (
     HoneydewNetstackError,
 )
@@ -113,7 +112,7 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     Testbed Requirement:
     * One ACTS compatible device (dut)
     * One Whirlwind Access Point
-    * One PduDevice
+    * One PowerSwitch (e.g. DMC or PowerSwitchUsingSynaccess)
     """
 
     async def pre_run(self) -> None:
@@ -179,11 +178,6 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.log = logging.getLogger()
         await self.dut.wlan_policy.set_country_code(
             KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
-        )
-
-        self.pdu_devices = await self.register_controller(
-            pdu,
-            required=False,
         )
 
         if not self.openwrt_ap and not self.access_point:
@@ -464,7 +458,7 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         "OpenWrt AP power cycling is not supported. (b/520236968)"
                     )
                 elif self.access_point:
-                    self.access_point.hard_power_cycle(self.pdu_devices)
+                    self.access_point.hard_power_cycle()
             self.log.info(
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
                 f"{DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds():.0f} seconds."

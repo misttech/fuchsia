@@ -49,6 +49,13 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
             )
             or []
         )
+        for ap in self.access_points:
+            switch, outlet = self._lookup_power_switch_from_config(
+                device_config=ap.config,
+                device_name=ap.nodename,
+            )
+            if switch is not None:
+                ap.set_power_switch(power_switch=switch, outlet=outlet)
         self.openwrt_aps = (
             await self.register_controller(
                 openwrt_access_point,
@@ -133,6 +140,18 @@ class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         await super().teardown_test()
 
     async def teardown_class(self) -> None:
+        for ap in self.access_points:
+            switch, outlet = self._lookup_power_switch_from_config(
+                device_config=ap.config,
+                device_name=ap.nodename,
+            )
+            if switch is not None:
+                try:
+                    switch.power_on(outlet=outlet)
+                except Exception as e:
+                    logging.warning(
+                        f"Failed to power on power switch for {ap.identifier}: {e}"
+                    )
         self._download_ap_logs(self.log_path)
         await super().teardown_class()
 

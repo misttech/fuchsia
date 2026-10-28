@@ -9,9 +9,8 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, FrozenSet
+from typing import Any, FrozenSet, Protocol
 
-from antlion.controllers.pdu import PduDevice, get_pdu_port_for_device
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.ap_get_interface import ApInterfaces
@@ -57,6 +56,16 @@ MOBLY_CONTROLLER_CONFIG_NAME: str = "AccessPoint"
 
 class Error(Exception):
     """Error raised when there is a problem with the access point."""
+
+
+class PowerSwitch(Protocol):
+    """Protocol for a power switch capable of toggling power on an outlet."""
+
+    def power_off(self, outlet: int | None = None) -> None:
+        """Turns off power at the specified outlet."""
+
+    def power_on(self, outlet: int | None = None) -> None:
+        """Turns on power at the specified outlet."""
 
 
 @dataclass
@@ -132,7 +141,10 @@ class AccessPoint:
                 logger.PrefixLoggerAdapter.EXTRA_KEY_LOG_PREFIX: f"[Access Point|{self.ssh_settings.hostname}]",
             },
         )
-        self.device_pdu_config = c.get(dict, "PduDevice", None)
+        self.config: ControllerConfig = config
+        self.nodename: str | None = c.get(str, "nodename", None)
+        self._power_switch: PowerSwitch | None = None
+        self._power_switch_outlet: int | None = None
         self.identifier = self.ssh_settings.hostname
 
         subnet = MapValidator(c.get(dict, "ap_subnet", {}))
@@ -729,40 +741,43 @@ class AccessPoint:
             self.ssh, interface, addr_type=addr_type, timeout_sec=timeout_sec
         )
 
-    def hard_power_cycle(
+    def set_power_switch(
         self,
-        pdus: list[PduDevice],
+        power_switch: PowerSwitch,
+        outlet: int | None = None,
     ) -> None:
+        """Sets the power switch used for hard power cycling this access point."""
+        self._power_switch = power_switch
+        self._power_switch_outlet = outlet
+
+    def hard_power_cycle(self) -> None:
         """Kills, then restores power to AccessPoint, verifying it goes down and
         comes back online cleanly.
 
-        Args:
-            pdus: PDUs in the testbed
         Raise:
-            Error, if no PduDevice is provided in AccessPoint config.
+            Error, if no power switch is provided in AccessPoint config.
             ConnectionError, if AccessPoint fails to go offline or come back.
         """
-        if not self.device_pdu_config:
-            raise Error("No PduDevice provided in AccessPoint config.")
+        if self._power_switch is None:
+            raise Error(
+                "No power switch (power_switch_hw/power_switch_impl or DMC nodename) provided in AccessPoint config."
+            )
 
         self._journalctl_cmd.save_and_reset()
 
         self.log.info("Power cycling")
-        ap_pdu, ap_pdu_port = get_pdu_port_for_device(
-            self.device_pdu_config, pdus
-        )
 
         self.log.info("Killing power")
-        ap_pdu.off(ap_pdu_port)
+        self._power_switch.power_off(self._power_switch_outlet)
+        try:
+            self.log.info("Verifying AccessPoint is unreachable.")
+            self.ssh_provider.wait_until_unreachable()
+            self.log.info("AccessPoint is unreachable as expected.")
 
-        self.log.info("Verifying AccessPoint is unreachable.")
-        self.ssh_provider.wait_until_unreachable()
-        self.log.info("AccessPoint is unreachable as expected.")
-
-        self._aps.clear()
-
-        self.log.info("Restoring power")
-        ap_pdu.on(ap_pdu_port)
+            self._aps.clear()
+        finally:
+            self.log.info("Restoring power")
+            self._power_switch.power_on(self._power_switch_outlet)
 
         self.log.info("Waiting for AccessPoint to become available via SSH.")
         self.ssh_provider.wait_until_reachable()

@@ -9,6 +9,7 @@ import logging
 import os
 import pathlib
 import typing
+from collections.abc import Mapping
 from typing import Any, Dict, ParamSpec, TypeVar, Union
 
 import fuchsia_async_extension
@@ -555,11 +556,34 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
     def _lookup_power_switch(
         self, fx_device: fuchsia_device.FuchsiaDevice
     ) -> tuple[power_switch.PowerSwitch | None, int | None]:
+        """Returns the power switch and outlet to use for the given device."""
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",
             identifier_key="name",
             identifier_value=fx_device.device_name,
         )
+        return self._lookup_power_switch_from_config(
+            device_config=device_config,
+            device_name=fx_device.device_name,
+        )
+
+    def _lookup_power_switch_from_config(
+        self,
+        device_config: Mapping[str, object],
+        device_name: str | None,
+    ) -> tuple[power_switch.PowerSwitch | None, int | None]:
+        """Returns the power switch and outlet to use for a device config.
+
+        Selected in this order:
+          1. The switch described by `power_switch_hw` + `power_switch_impl`
+             in the local testbed config, when both are present.
+          2. DMC (`PowerSwitchUsingDmc`), for devices power cycled in Fuchsia
+             infra (when `DMC_PATH` is set in the environment and `device_name`
+             is provided).
+
+        Returns:
+            The power switch and its outlet, or `(None, None)` if none apply.
+        """
         power_switch_hw = typing.cast(
             dict[str, str], device_config.get("power_switch_hw", {})
         )
@@ -578,10 +602,10 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 power_switch_class(**power_switch_hw),
                 power_switch_outlet,
             )
-        elif power_switch_using_dmc.DMC_PATH_KEY in os.environ:
+        elif power_switch_using_dmc.DMC_PATH_KEY in os.environ and device_name:
             return (
                 power_switch_using_dmc.PowerSwitchUsingDmc(
-                    device_name=fx_device.device_name,
+                    device_name=device_name,
                 ),
                 None,
             )

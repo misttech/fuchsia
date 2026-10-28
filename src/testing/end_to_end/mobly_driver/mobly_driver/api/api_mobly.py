@@ -157,12 +157,7 @@ def new_testbed_config(
                           "host": "192.168.42.11",
                           "user": "root",
                           "identity_file": "/etc/botanist/keys/chrome_os_testing_rsa"
-                        },
-                        "PduDevice" : {
-                          "device": synaccess.np02b,
-                          "host": "192.168.42.33",
-                          "port": 1
-                        },
+                        }
                       }
                     ]
                   },
