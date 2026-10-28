@@ -1644,14 +1644,9 @@ mod tests {
     }
 
     fn too_many_bytes_vectored() -> Vec<ChannelIoSlice<'static>> {
-        static BACKING_BYTES: std::sync::LazyLock<Vec<Vec<u8>>> = std::sync::LazyLock::new(|| {
-            let mut backing = vec![];
-            while backing.len() <= sys::ZX_CHANNEL_MAX_MSG_BYTES as usize {
-                backing.push(vec![b'l'; 8192]);
-            }
-            backing
-        });
-        BACKING_BYTES.iter().map(|v| ChannelIoSlice::new(&*v)).collect()
+        static CHUNK: [u8; 8192] = [b'l'; 8192];
+        let num_slices = (sys::ZX_CHANNEL_MAX_MSG_BYTES as usize / CHUNK.len()) + 1;
+        vec![ChannelIoSlice::new(&CHUNK); num_slices]
     }
 
     fn too_many_handles() -> Vec<NullableHandle> {
