@@ -4,49 +4,64 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import base64
 import logging
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
-from enum import StrEnum, unique
+from enum import IntEnum, StrEnum, unique
 from typing import Protocol
 
-from antlion.controllers import pdu
-from mobly import signals
-from mobly.logger import PrefixLoggerAdapter
+from honeydew.auxiliary_devices.power_switch import power_switch
+from honeydew.utils import http_utils
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class PduDevice(pdu.PduDevice):
-    """Implementation of pure abstract PduDevice object for the Synaccess np02b
+class PowerSwitchSynaccessError(power_switch.PowerSwitchError):
+    """Custom exception class for raising Synaccess PDU related errors."""
+
+
+@unique
+class PowerState(IntEnum):
+    OFF = 0
+    ON = 1
+
+
+class PowerSwitchUsingSynaccess(power_switch.PowerSwitch):
+    """Implementation of PowerSwitch object for the Synaccess np02b
     Pdu.
-
-    TODO(http://b/318877544): Replace with NP02B
     """
 
     def __init__(
-        self, host: str, username: str | None, password: str | None
+        self,
+        host: str,
+        username: str | None = None,
+        password: str | None = None,
     ) -> None:
         username = username or "admin"  # default username
         password = password or "admin"  # default password
-        super().__init__(host, username, password)
+        self._host = host
         self.np02b = NP02B(host, username, password)
 
-    def on_all(self) -> None:
-        for i in range(len(self.np02b)):
-            self.np02b.port(i).set(pdu.PowerState.ON)
+    def power_on(self, outlet: int | None = None) -> None:
+        if outlet is None:
+            raise PowerSwitchSynaccessError(
+                "Outlet number must be specified for Synaccess PDU operation."
+            )
+        try:
+            self.np02b.port(outlet).set(PowerState.ON)
+        except Exception as err:
+            raise PowerSwitchSynaccessError(err) from err
 
-    def off_all(self) -> None:
-        for i in range(len(self.np02b)):
-            self.np02b.port(i).set(pdu.PowerState.OFF)
-
-    def on(self, outlet: int) -> None:
-        self.np02b.port(outlet).set(pdu.PowerState.ON)
-
-    def off(self, outlet: int) -> None:
-        self.np02b.port(outlet).set(pdu.PowerState.OFF)
-
-    def reboot(self, outlet: int) -> None:
-        self.np02b.port(outlet).reboot()
+    def power_off(self, outlet: int | None = None) -> None:
+        if outlet is None:
+            raise PowerSwitchSynaccessError(
+                "Outlet number must be specified for Synaccess PDU operation."
+            )
+        try:
+            self.np02b.port(outlet).set(PowerState.OFF)
+        except Exception as err:
+            raise PowerSwitchSynaccessError(err) from err
 
     def status(self) -> dict[str, bool]:
         """Returns the status of the np02b outlets.
@@ -56,20 +71,12 @@ class PduDevice(pdu.PduDevice):
             false.
         """
         return {
-            "1": self.np02b.port(1).status() is pdu.PowerState.ON,
-            "2": self.np02b.port(2).status() is pdu.PowerState.ON,
+            "1": self.np02b.port(1).status() is PowerState.ON,
+            "2": self.np02b.port(2).status() is PowerState.ON,
         }
 
-    def close(self) -> None:
-        """Ensure connection to device is closed.
 
-        In this implementation, this shouldn't be necessary, but could be in
-        others that open on creation.
-        """
-        return
-
-
-class NP02B(pdu.PDU):
+class NP02B:
     """Controller for a Synaccess netBooter NP-02B.
 
     See https://www.synaccess-net.com/np-02b
@@ -78,30 +85,27 @@ class NP02B(pdu.PDU):
     def __init__(self, host: str, username: str, password: str) -> None:
         self.client = Client(host, username, password)
 
-    def port(self, index: int) -> pdu.Port:
+    def port(self, index: int) -> Port:
         return Port(self.client, index)
 
     def __len__(self) -> int:
         return 2
 
 
-class ParsePDUResponseError(signals.TestError):
+class ParsePDUResponseError(PowerSwitchSynaccessError):
     """Error when the PDU returns an unexpected response."""
 
 
 class Client:
     def __init__(self, host: str, user: str, password: str) -> None:
         self._url = f"http://{host}/cmd.cgi"
-
-        password_manager = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-        password_manager.add_password(None, host, user, password)
-        auth_handler = urllib.request.HTTPBasicAuthHandler(password_manager)
-        self._opener = urllib.request.build_opener(auth_handler)
-
-        self.log = PrefixLoggerAdapter(
-            logging.getLogger(),
-            {PrefixLoggerAdapter.EXTRA_KEY_LOG_PREFIX: f"[pdu | {host}]"},
-        )
+        credentials = base64.b64encode(
+            f"{user}:{password}".encode("utf-8")
+        ).decode("utf-8")
+        self._headers = {
+            "Authorization": f"Basic {credentials}",
+        }
+        self.log = _LOGGER
 
     def request(self, command: Command) -> Response:
         cmd = command.code()
@@ -112,8 +116,11 @@ class Client:
         url = f"{self._url}?{urllib.parse.quote_plus(cmd)}"
         self.log.debug(f"Sending request {url}")
 
-        with self._opener.open(url) as res:
-            body = res.read().decode("utf-8")
+        body = http_utils.send_http_request(
+            url,
+            headers=self._headers,
+            parse_json=False,
+        )
 
         self.log.debug(f"Received response: {body}")
 
@@ -138,10 +145,10 @@ class Client:
         return Response(status_code, power_status)
 
 
-class Port(pdu.Port):
+class Port:
     def __init__(self, client: Client, port: int) -> None:
-        if port == 0:
-            raise TypeError("Invalid port index 0: ports are 1-indexed")
+        if port <= 0:
+            raise TypeError(f"Invalid port index {port}: ports are 1-indexed")
         if port > 2:
             raise TypeError(
                 f"Invalid port index {port}: NP-02B only has 2 ports"
@@ -150,7 +157,7 @@ class Port(pdu.Port):
         self.client = client
         self.port = port
 
-    def status(self) -> pdu.PowerState:
+    def status(self) -> PowerState:
         resp = self.client.request(StatusCommand())
         if resp.status != StatusCode.OK:
             raise ParsePDUResponseError(
@@ -162,7 +169,7 @@ class Port(pdu.Port):
             )
         return resp.power.state(self.port)
 
-    def set(self, state: pdu.PowerState) -> None:
+    def set(self, state: PowerState) -> None:
         """Set the power state for this port on the PDU.
 
         Args:
@@ -208,19 +215,19 @@ class PowerStatus:
     """State of all ports"""
 
     def __init__(self, states: str) -> None:
-        self.states: list[pdu.PowerState] = []
+        self.states: list[PowerState] = []
         for state in states:
-            self.states.insert(0, pdu.PowerState(int(state)))
+            self.states.insert(0, PowerState(int(state)))
 
     def ports(self) -> int:
         return len(self.states)
 
-    def state(self, port: int) -> pdu.PowerState:
+    def state(self, port: int) -> PowerState:
         return self.states[port - 1]
 
 
 class SetCommand(Command):
-    def __init__(self, port: int, state: pdu.PowerState) -> None:
+    def __init__(self, port: int, state: PowerState) -> None:
         self.port = port
         self.state = state
 

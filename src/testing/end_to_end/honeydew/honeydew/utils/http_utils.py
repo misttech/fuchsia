@@ -10,7 +10,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal, overload
 
 from honeydew import errors
 from honeydew.utils import decorators
@@ -23,6 +23,36 @@ _DEFAULTS: dict[str, int] = {
 }
 
 
+@overload
+def send_http_request(
+    url: str,
+    data: dict[str, Any] | None = None,
+    headers: dict[str, Any] | None = None,
+    timeout: float | None = None,
+    attempts: int = _DEFAULTS["ATTEMPTS"],
+    interval: int = _DEFAULTS["INTERVAL"],
+    exceptions_to_skip: Iterable[type[Exception]] | None = None,
+    verify_ssl: bool = True,
+    parse_json: Literal[True] = True,
+) -> dict[str, Any]:
+    ...
+
+
+@overload
+def send_http_request(
+    url: str,
+    data: dict[str, Any] | None = None,
+    headers: dict[str, Any] | None = None,
+    timeout: float | None = None,
+    attempts: int = _DEFAULTS["ATTEMPTS"],
+    interval: int = _DEFAULTS["INTERVAL"],
+    exceptions_to_skip: Iterable[type[Exception]] | None = None,
+    verify_ssl: bool = True,
+    parse_json: Literal[False] = ...,
+) -> str:
+    ...
+
+
 @decorators.liveness_check
 def send_http_request(
     url: str,
@@ -33,8 +63,9 @@ def send_http_request(
     interval: int = _DEFAULTS["INTERVAL"],
     exceptions_to_skip: Iterable[type[Exception]] | None = None,
     verify_ssl: bool = True,
-) -> dict[str, Any]:
-    """Send HTTP request and returns the string response.
+    parse_json: bool = True,
+) -> dict[str, Any] | str:
+    """Send HTTP request and returns the string or JSON dict response.
 
     This method encodes data dict arg into utf-8 bytes and sets "Content-Type"
     in headers dict arg to "application/json; charset=utf-8".
@@ -50,8 +81,10 @@ def send_http_request(
         exceptions_to_skip: Any non fatal HTTP exceptions for which retry will
             not be attempted.
         verify_ssl: Whether to verify the SSL certificate of the server.
+        parse_json: Whether to parse the HTTP response body as JSON.
     Returns:
-        Returns the HTTP response received after converting into a dict.
+        Returns the HTTP response received after converting into a dict when
+        parse_json is True, or the raw string response when parse_json is False.
 
     Raises:
         errors.HttpRequestError: In case of failures.
@@ -95,14 +128,16 @@ def send_http_request(
             _LOGGER.debug(
                 "HTTP response received from url=%s is '%s'", url, response_body
             )
-            return json.loads(response_body)
+            if parse_json:
+                return json.loads(response_body)
+            return response_body
         except (
             ConnectionError,
             urllib.error.URLError,
         ) as err:
             for exception_to_skip in exceptions_to_skip:
                 if isinstance(err, exception_to_skip):
-                    return {}
+                    return {} if parse_json else ""
 
             err_msg: str = (
                 f"Send the HTTP request to url={url} with "

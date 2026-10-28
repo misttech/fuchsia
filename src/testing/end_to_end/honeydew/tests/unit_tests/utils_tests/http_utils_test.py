@@ -149,6 +149,24 @@ class HttpUtilsTests(unittest.TestCase):
 
         mock_urlopen.assert_called_once()
 
+    @mock.patch.object(urllib.request, "urlopen", autospec=True)
+    def test_send_http_request_raw_response(
+        self, mock_urlopen: mock.Mock
+    ) -> None:
+        """Test case for http_utils.send_http_request() with parse_json=False."""
+        urlopen_return_value = mock.MagicMock()
+        urlopen_return_value.read.return_value = b"$A0,01"
+        urlopen_return_value.__enter__.return_value = urlopen_return_value
+        mock_urlopen.return_value = urlopen_return_value
+
+        result: str = http_utils.send_http_request(
+            url=_PARAMS["url"],
+            parse_json=False,
+        )
+
+        self.assertEqual(result, "$A0,01")
+        mock_urlopen.assert_called_once()
+
     @mock.patch.object(
         urllib.request,
         "urlopen",
