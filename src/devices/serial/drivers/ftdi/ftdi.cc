@@ -117,7 +117,7 @@ void FtdiDevice::WriteComplete(usb_request_t* request) {
     return;
   }
 
-  std::optional<WriteContext> write_context;
+  std::optional<WriteContext> completed_write;
 
   {
     fbl::AutoLock lock(&mutex_);
@@ -138,7 +138,7 @@ void FtdiDevice::WriteComplete(usb_request_t* request) {
 
     if (!write_context_->data.empty()) {
       // There is more data to write, refill the request and queue it up to be sent.
-      write_context_->data = QueueWriteRequest(write_context->data, std::move(req));
+      write_context_->data = QueueWriteRequest(write_context_->data, std::move(req));
       return;
     }
 
@@ -147,13 +147,13 @@ void FtdiDevice::WriteComplete(usb_request_t* request) {
     if (write_context_->pending_requests == 0) {
       // All requests have been completed, possibly with errors. Swap out the completer so that we
       // can reply after releasing the lock.
-      write_context_.swap(write_context);
+      write_context_.swap(completed_write);
     }
   }
 
-  if (write_context) {
+  if (completed_write) {
     fdf::Arena arena('FTDI');
-    write_context->Complete(arena);
+    completed_write->Complete(arena);
   }
 }
 

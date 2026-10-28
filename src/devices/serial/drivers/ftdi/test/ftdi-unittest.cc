@@ -262,5 +262,49 @@ TEST_F(FtdiDeviceTest, RequestLengthIsBytesCopied) {
   EXPECT_OK(write_status);
 }
 
+TEST_F(FtdiDeviceTest, WriteCompleteRefillsRemainingData) {
+  constexpr size_t kLargeWriteSize = (kWriteReqCount + 1) * kUsbBufSize + 808;
+  std::vector<uint8_t> write_data(kLargeWriteSize);
+  for (size_t i = 0; i < write_data.size(); i++) {
+    write_data[i] = static_cast<uint8_t>((i * 31) + 7);
+  }
+
+  zx_status_t write_status = ZX_ERR_INTERNAL;
+  std::thread writer(
+      [&]() { write_status = device_->Write(write_data.data(), write_data.size()); });
+
+  mock_ddk::GetDriverRuntime()->RunUntil(
+      [&]() { return fake_usb_.bulk_out_request_count() == kWriteReqCount; },
+      zx::duration::infinite());
+
+  std::vector<uint8_t> sent_data;
+  size_t total_requests = 0;
+
+  while (fake_usb_.bulk_out_request_count() > 0) {
+    std::vector<FakeUsb::QueuedRequest> requests = fake_usb_.TakeBulkOutRequests();
+    total_requests += requests.size();
+
+    for (FakeUsb::QueuedRequest& queued : requests) {
+      usb_request_t* request = queued.request;
+      const size_t expected_length =
+          std::min<size_t>(write_data.size() - sent_data.size(), request->size);
+      EXPECT_LE(request->header.length, request->size);
+      EXPECT_EQ(request->header.length, expected_length);
+
+      const size_t offset = sent_data.size();
+      sent_data.resize(offset + expected_length);
+      EXPECT_EQ(usb_request_copy_from(request, sent_data.data() + offset, expected_length, 0),
+                static_cast<ssize_t>(expected_length));
+
+      usb_request_complete(request, ZX_OK, request->header.length, &queued.complete_cb);
+    }
+  }
+
+  writer.join();
+  EXPECT_OK(write_status);
+  EXPECT_EQ(sent_data, write_data);
+  EXPECT_EQ(total_requests, kWriteReqCount + 2);
+}
+
 }  // namespace
 }  // namespace ftdi_serial
