@@ -14,6 +14,7 @@ pub const EROFS_MAGIC: u32 = 0xE0F5E1E2;
 pub const SUPERBLOCK_OFFSET: u64 = 1024;
 pub const INODE_SLOT_SIZE: u64 = 32;
 pub const DIRENT_SIZE: usize = std::mem::size_of::<Dirent>();
+pub const MAX_BLOCK_SIZE: usize = 4096;
 
 /// The on-disk format of an erofs superblock.
 #[derive(Debug, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]

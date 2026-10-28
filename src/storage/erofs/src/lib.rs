@@ -8,8 +8,8 @@ use bitflags::bitflags;
 use crc::{CRC_32_ISCSI, Crc};
 use std::sync::Arc;
 use thiserror::Error;
-use zerocopy::IntoBytes;
 use zerocopy::byteorder::little_endian::U32 as LEU32;
+use zerocopy::{FromBytes, IntoBytes};
 
 pub mod readers;
 use readers::{Reader, ReaderError, ReaderExt};
@@ -430,6 +430,53 @@ pub struct DirectoryEntry {
     pub nid: u64,
     pub file_type: FileType,
     pub name: String,
+}
+
+/// Zero-copy view over a single directory block's dirent array and packed filenames.
+struct DirBlock<'a> {
+    data: &'a [u8],
+    dirents: &'a [format::Dirent],
+}
+
+impl<'a> DirBlock<'a> {
+    fn parse(data: &'a [u8]) -> Result<Self, ParsingError> {
+        // `format::Dirent` derives `zerocopy::Unaligned` (alignment 1), so casting from `&[u8]`
+        // cannot fail due to alignment.
+        let (dirent0, _) = format::Dirent::ref_from_prefix(data)
+            .map_err(|_| ParsingError::InvalidDirectoryEntry)?;
+        let nameoff0 = dirent0.nameoff.get() as usize;
+        if nameoff0 < format::DIRENT_SIZE || nameoff0 >= data.len() {
+            return Err(ParsingError::InvalidDirectoryEntry);
+        }
+        let entry_count = nameoff0 / format::DIRENT_SIZE;
+        let dirents_raw = data
+            .get(..entry_count * format::DIRENT_SIZE)
+            .ok_or(ParsingError::InvalidDirectoryEntry)?;
+        let dirents = <[format::Dirent]>::ref_from_bytes(dirents_raw)
+            .map_err(|_| ParsingError::InvalidDirectoryEntry)?;
+        Ok(Self { data, dirents })
+    }
+
+    fn entry_count(&self) -> usize {
+        self.dirents.len()
+    }
+
+    fn dirent(&self, index: usize) -> &'a format::Dirent {
+        &self.dirents[index]
+    }
+
+    fn entry_name_bytes(&self, index: usize) -> Result<&'a [u8], ParsingError> {
+        let entry_count = self.dirents.len();
+        let nameoff = self.dirents[index].nameoff.get() as usize;
+        if index + 1 == entry_count {
+            // The last entry's name ends at the end of the block or is null-terminated.
+            let name_data = self.data.get(nameoff..).ok_or(ParsingError::InvalidDirectoryEntry)?;
+            Ok(name_data.split(|&x| x == 0).next().unwrap())
+        } else {
+            let nameoff_next = self.dirents[index + 1].nameoff.get() as usize;
+            self.data.get(nameoff..nameoff_next).ok_or(ParsingError::InvalidDirectoryEntry)
+        }
+    }
 }
 
 /// A file node in the EROFS image.
@@ -1071,39 +1118,25 @@ impl ErofsFilesystem {
         let block_size_usize: usize = block_size as usize;
         let mut entries_filled = 0;
         let mut current_entry_index = 0;
-        let mut block_data = vec![0u8; block_size_usize];
+        let mut block_buf = [0u8; format::MAX_BLOCK_SIZE];
+        let block_slice = &mut block_buf[..block_size_usize];
 
         for block in 0.. {
             let base_offset = block * block_size;
-            let bytes_read = self.read_node_range(&node.0, base_offset, &mut block_data)?;
+            let bytes_read = self.read_node_range(&node.0, base_offset, block_slice)?;
             if bytes_read < format::DIRENT_SIZE {
                 // We must be done if there wasn't enough data left for another dirent.
                 return Ok(entries_filled);
             }
-            block_data[bytes_read..].fill(0);
 
-            // Get the first dirent in the block to calculate the number of entries.
-            let (dirent0, _) = zerocopy::Ref::<&[u8], format::Dirent>::from_prefix(&block_data)
-                .map_err(|_| ParsingError::InvalidDirectoryEntry)?;
-            let nameoff0 = dirent0.nameoff.get() as usize;
-            if nameoff0 < format::DIRENT_SIZE || nameoff0 >= block_size_usize {
-                return Err(ParsingError::InvalidDirectoryEntry.into());
-            }
-            let entry_count = nameoff0 / format::DIRENT_SIZE;
+            let dir_block = DirBlock::parse(&block_slice[..bytes_read])?;
+            let entry_count = dir_block.entry_count();
 
             // Check if the offset we want is even in this block.
             if current_entry_index + entry_count <= entry_offset {
                 current_entry_index += entry_count;
                 continue;
             }
-
-            // Get all the dirents and make sure the nameoffs won't cause out of bounds errors.
-            let dirents_raw = block_data
-                .get(..entry_count * format::DIRENT_SIZE)
-                .ok_or(ParsingError::InvalidDirectoryEntry)?;
-            let dirents: &[format::Dirent] =
-                &*zerocopy::Ref::<&[u8], [format::Dirent]>::from_bytes(dirents_raw)
-                    .map_err(|_| ParsingError::InvalidDirectoryEntry)?;
 
             let block_entry_offset = entry_offset - current_entry_index;
             let space = entries.len() - entries_filled;
@@ -1113,28 +1146,14 @@ impl ErofsFilesystem {
             );
 
             for i in block_entry_offset..block_entry_end {
-                let last_entry = i + 1 == entry_count;
-                let nameoff = dirents[i].nameoff.get() as usize;
-
-                let name_bytes = if last_entry {
-                    // For the last entry, it ends at the end of the block or is null-terminated.
-                    // Since block_data is padded with nulls, we can just split by 0.
-                    let name_data =
-                        block_data.get(nameoff..).ok_or(ParsingError::InvalidDirectoryEntry)?;
-                    name_data.split(|&x| x == 0).next().unwrap()
-                } else {
-                    let nameoff_next = dirents[i + 1].nameoff.get() as usize;
-                    block_data
-                        .get(nameoff..nameoff_next)
-                        .ok_or(ParsingError::InvalidDirectoryEntry)?
-                };
-
+                let dirent = dir_block.dirent(i);
+                let name_bytes = dir_block.entry_name_bytes(i)?;
                 let name = std::str::from_utf8(name_bytes)
                     .map_err(|e| ParsingError::InvalidDirectoryEntryName(e))?
                     .to_string();
                 entries[entries_filled] = DirectoryEntry {
-                    nid: dirents[i].nid.get(),
-                    file_type: dirents[i].file_type.try_into()?,
+                    nid: dirent.nid.get(),
+                    file_type: dirent.file_type.try_into()?,
                     name,
                 };
                 entries_filled += 1;
@@ -1153,21 +1172,73 @@ impl ErofsFilesystem {
 
     /// Looks up a node by name in a directory.
     pub fn lookup(&self, dir: &DirectoryNode, name: &str) -> Result<Option<Node>, ErofsError> {
-        let mut entry_offset = 0;
-        let mut buffer = vec![DirectoryEntry::default(); 16];
+        let block_size = self.block_size();
+        let total_blocks = dir.size().div_ceil(block_size);
+        if total_blocks == 0 {
+            return Ok(None);
+        }
 
-        loop {
-            let filled = self.read_directory(dir, entry_offset, &mut buffer)?;
-            for i in 0..filled {
-                if buffer[i].name == name {
-                    let node = self.node(buffer[i].nid)?;
-                    return Ok(Some(node));
+        let target = name.as_bytes();
+        let mut block_buf = [0u8; format::MAX_BLOCK_SIZE];
+        let block_slice = &mut block_buf[..block_size as usize];
+
+        let mut low_block = 0u64;
+        let mut high_block = total_blocks;
+        while low_block < high_block {
+            let mid_block = low_block + (high_block - low_block) / 2;
+            let base_offset = mid_block * block_size;
+            let bytes_read = self.read_node_range(&dir.0, base_offset, block_slice)?;
+            if bytes_read < format::DIRENT_SIZE {
+                return Err(ParsingError::InvalidDirectoryEntry.into());
+            }
+            let dir_block = DirBlock::parse(&block_slice[..bytes_read])?;
+            let entry_count = dir_block.entry_count();
+
+            let first_name = dir_block.entry_name_bytes(0)?;
+            match target.cmp(first_name) {
+                std::cmp::Ordering::Less => {
+                    high_block = mid_block;
+                    continue;
+                }
+                std::cmp::Ordering::Equal => {
+                    return Ok(Some(self.node(dir_block.dirent(0).nid.get())?));
+                }
+                std::cmp::Ordering::Greater => {}
+            }
+
+            if entry_count == 1 {
+                low_block = mid_block + 1;
+                continue;
+            }
+
+            let last_idx = entry_count - 1;
+            let last_name = dir_block.entry_name_bytes(last_idx)?;
+            match target.cmp(last_name) {
+                std::cmp::Ordering::Greater => {
+                    low_block = mid_block + 1;
+                    continue;
+                }
+                std::cmp::Ordering::Equal => {
+                    return Ok(Some(self.node(dir_block.dirent(last_idx).nid.get())?));
+                }
+                std::cmp::Ordering::Less => {}
+            }
+
+            // `first_name < target < last_name`: binary search within `1..last_idx` of this block.
+            let mut low = 1usize;
+            let mut high = last_idx;
+            while low < high {
+                let mid = low + (high - low) / 2;
+                let mid_name = dir_block.entry_name_bytes(mid)?;
+                match target.cmp(mid_name) {
+                    std::cmp::Ordering::Less => high = mid,
+                    std::cmp::Ordering::Greater => low = mid + 1,
+                    std::cmp::Ordering::Equal => {
+                        return Ok(Some(self.node(dir_block.dirent(mid).nid.get())?));
+                    }
                 }
             }
-            if filled < buffer.len() {
-                break;
-            }
-            entry_offset += filled;
+            return Ok(None);
         }
 
         Ok(None)
@@ -2636,5 +2707,53 @@ mod tests {
         assert!(iter.next().unwrap().is_err());
         // Iterator MUST be fused now: subsequent next() calls MUST return None
         assert!(iter.next().is_none());
+    }
+
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
+    #[fuchsia::test]
+    fn test_lookup_large_dir_binary_search(file: &str) {
+        let runfiles = load_image(file);
+        let reader = Arc::new(VecReader::new(runfiles));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
+        let root_node = fs.root_node();
+
+        let Node::Directory(large_dir) =
+            fs.lookup(&root_node, "large_dir").unwrap().expect("large_dir not found")
+        else {
+            panic!("Expected directory node");
+        };
+
+        // Collect all entries via read_directory and verify lookup finds each one with matching nid.
+        let mut all_entries = Vec::new();
+        let mut entry_offset = 0;
+        let mut buffer = vec![DirectoryEntry::default(); 64];
+        loop {
+            let filled = fs.read_directory(&large_dir, entry_offset, &mut buffer).unwrap();
+            all_entries.extend_from_slice(&buffer[..filled]);
+            if filled < buffer.len() {
+                break;
+            }
+            entry_offset += filled;
+        }
+        assert!(all_entries.len() > 20);
+
+        for entry in &all_entries {
+            let found = fs
+                .lookup(&large_dir, &entry.name)
+                .expect("lookup failed")
+                .unwrap_or_else(|| panic!("missing entry '{}'", entry.name));
+            assert_eq!(found.nid(), entry.nid);
+        }
+
+        // Verify negative lookups: before first entry ("."), between entries, and after last entry.
+        assert!(fs.lookup(&large_dir, "").unwrap().is_none());
+        assert!(fs.lookup(&large_dir, "-").unwrap().is_none());
+        assert!(fs.lookup(&large_dir, "file_number_0").unwrap().is_none());
+        assert!(fs.lookup(&large_dir, "file_number_10a").unwrap().is_none());
+        assert!(fs.lookup(&large_dir, "file_number_99999").unwrap().is_none());
+        assert!(fs.lookup(&large_dir, "zzzzzzzz").unwrap().is_none());
     }
 }
