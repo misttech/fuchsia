@@ -10,6 +10,7 @@ python_library("wlanix_testing") {
     "__init__.py",
     "fidl_servers.py",
     "nl80211.py",
+    "sched_scan_utils.py",
   ]
   library_deps = [
     "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_python",

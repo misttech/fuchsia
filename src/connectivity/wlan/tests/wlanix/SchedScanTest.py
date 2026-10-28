@@ -47,76 +47,25 @@ from wlanix_testing import (
     NL80211_ATTR_IFINDEX,
     NL80211_ATTR_SCAN_FREQUENCIES,
     NL80211_ATTR_SCAN_SSIDS,
-    NL80211_ATTR_SCHED_SCAN_INTERVAL,
     NL80211_ATTR_SCHED_SCAN_MATCH,
     NL80211_ATTR_SCHED_SCAN_PLANS,
     NL80211_BSS_INFORMATION_ELEMENTS,
     NL80211_CMD_GET_SCAN,
     NL80211_CMD_SCHED_SCAN_RESULTS,
-    NL80211_CMD_START_SCHED_SCAN,
     NL80211_CMD_STOP_SCHED_SCAN,
-    NL80211_SCHED_SCAN_MATCH_ATTR_RSSI,
-    NL80211_SCHED_SCAN_MATCH_ATTR_SSID,
     NL80211_SCHED_SCAN_PLAN_INTERVAL,
     NL80211_SCHED_SCAN_PLAN_ITERATIONS,
     build_nla,
     parse_netlink_attributes,
 )
+from wlanix_testing.sched_scan_utils import (
+    build_match_set,
+    build_start_sched_scan_payload,
+)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SCHED_SCAN_INTERVAL_MS = 5000
 DEFAULT_MATCH_TIMEOUT_SEC = 15.0
-
-
-def build_match_set(
-    ssid: str | bytes,
-    rssi: int | None = None,
-    index: int = 1,
-) -> bytes:
-    """Builds an NLA structure for a single match set entry containing SSID and optional RSSI threshold."""
-    ssid_bytes = ssid.encode("ascii") if isinstance(ssid, str) else ssid
-    ssid_attr = build_nla(NL80211_SCHED_SCAN_MATCH_ATTR_SSID, ssid_bytes)
-    rssi_attr = (
-        build_nla(NL80211_SCHED_SCAN_MATCH_ATTR_RSSI, struct.pack("<i", rssi))
-        if rssi is not None
-        else b""
-    )
-    return build_nla(index, ssid_attr + rssi_attr)
-
-
-def build_start_sched_scan_payload(
-    iface_index: int,
-    match_attr: bytes | None = None,
-    interval_ms: int | None = DEFAULT_SCHED_SCAN_INTERVAL_MS,
-    scan_ssids_attr: bytes | None = None,
-    freqs_attr: bytes | None = None,
-    plans_attr: bytes | None = None,
-) -> list[int]:
-    """Constructs the NL80211_CMD_START_SCHED_SCAN payload list with specified attributes."""
-    payload = [
-        NL80211_CMD_START_SCHED_SCAN,  # Command
-        0x01,  # Version
-        0x00,
-        0x00,  # Reserved
-        *list(build_nla(NL80211_ATTR_IFINDEX, struct.pack("<I", iface_index))),
-    ]
-    if interval_ms is not None:
-        payload.extend(
-            build_nla(
-                NL80211_ATTR_SCHED_SCAN_INTERVAL,
-                struct.pack("<I", interval_ms),
-            )
-        )
-    if match_attr is not None:
-        payload.extend(match_attr)
-    if scan_ssids_attr is not None:
-        payload.extend(scan_ssids_attr)
-    if freqs_attr is not None:
-        payload.extend(freqs_attr)
-    if plans_attr is not None:
-        payload.extend(plans_attr)
-    return payload
 
 
 class SchedScanTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
