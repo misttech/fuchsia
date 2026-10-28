@@ -560,6 +560,8 @@ def check_output_name_alignment_info(
             "rust_test",
             "rustc_proc_macro",
             "rust_proc_macro",
+            "fidl_library",
+            "zither_fidl_library",
         )
         and "name" in gn_top
     )
@@ -573,7 +575,7 @@ def check_output_name_alignment_info(
         "host_cc_test",
         "cc_binary_host_tool",
     )
-    rust_bin = bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test")
+    rust_bin = bt_rule in ("rustc_binary", "rust_binary", "rustc_test", "rust_test", "fidl_library", "zither_fidl_library")
     preserved_in_gn = bool(
         cur_top and (cur_top.get("output_name") == gn_out or cur_top.get("name") == gn_out)
     )
