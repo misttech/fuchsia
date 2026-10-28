@@ -15,7 +15,7 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, fence};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 /// A lock-free thread-safe future.
@@ -119,9 +119,12 @@ impl Meta {
     }
 
     fn release(&self) {
-        // This can be Relaxed because there is a barrier in the drop function.
-        let old = self.state.fetch_sub(1, Relaxed) & REF_COUNT_MASK;
+        // Release ordering pairs with the Acquire fence below so that any prior
+        // accesses on this thread happen-before the `AtomicFuture` is dropped
+        // and deallocated.
+        let old = self.state.fetch_sub(1, Release) & REF_COUNT_MASK;
         if old == 1 {
+            fence(Acquire);
             // SAFETY: This is safe because we just released the last reference.
             unsafe {
                 (self.vtable.drop)(self.into());
@@ -657,9 +660,9 @@ impl AtomicFutureHandle<'static> {
 impl<F: Future> Drop for AtomicFuture<F> {
     fn drop(&mut self) {
         let meta = &mut self.meta;
-        // This needs to be acquire ordering so that we see writes that might have just happened
-        // in another thread when the future was polled.
-        let state = meta.state.load(Acquire);
+        // This can be Relaxed ordering because `Meta::release` already executed
+        // an Acquire fence before dropping the `AtomicFuture`.
+        let state = *meta.state.get_mut();
         if state & DONE == 0 {
             // SAFETY: The state isn't DONE so we must drop the future.
             unsafe {
@@ -688,5 +691,58 @@ struct Bomb;
 impl Drop for Bomb {
     fn drop(&mut self) {
         std::process::abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AtomicFutureHandle, REF_COUNT_MASK};
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::Ordering::Relaxed;
+    use std::task::{Context, Poll};
+    use std::thread;
+
+    const PAYLOAD_LEN: usize = 8;
+    const DROPPED_PATTERN: u64 = 0xDEAD_BEEF_DEAD_BEEF;
+    const ITERATIONS: usize = 64;
+
+    struct WriteOnDropFuture {
+        payload: [u64; PAYLOAD_LEN],
+    }
+
+    impl Future for WriteOnDropFuture {
+        type Output = ();
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<()> {
+            Poll::Pending
+        }
+    }
+
+    impl Drop for WriteOnDropFuture {
+        fn drop(&mut self) {
+            self.payload.fill(DROPPED_PATTERN);
+        }
+    }
+
+    #[test]
+    fn test_concurrent_try_drop_and_release() {
+        for _ in 0..ITERATIONS {
+            let handle: AtomicFutureHandle<'static> =
+                AtomicFutureHandle::new(None, WriteOnDropFuture { payload: [0; PAYLOAD_LEN] });
+            let handle_clone = handle.clone();
+
+            let join_handle = thread::spawn(move || {
+                handle.try_drop().expect("try_drop should succeed while future is inactive");
+                drop(handle);
+            });
+
+            while (handle_clone.meta().state.load(Relaxed) & REF_COUNT_MASK) != 1 {
+                thread::yield_now();
+            }
+
+            drop(handle_clone);
+            join_handle.join().expect("worker thread should not panic");
+        }
     }
 }
