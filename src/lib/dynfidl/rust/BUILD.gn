@@ -7,10 +7,6 @@ import("//build/rust/rustc_test.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
 import("//tools/fidl/gidl/gidl.gni")
 
-group("rust") {
-  public_deps = [ ":dynfidl" ]
-}
-
 group("tests") {
   testonly = true
   deps = [ ":fidl_dynfidl_conformance_tests" ]
@@ -73,4 +69,12 @@ rustc_library("dynfidl") {
     "//src/sys/lib/config_encoder:*",
   ]
   deps = [ "//src/lib/fidl/rust_constants" ]
+}
+group("rust") {
+  public_deps = [ ":dynfidl" ]
+  visibility = [
+    ":*",
+    "//src/lib/dynfidl:*",
+    "//src/sys/lib/config_encoder:*",
+  ]
 }

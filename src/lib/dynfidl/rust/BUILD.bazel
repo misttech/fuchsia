@@ -16,3 +16,12 @@ rustc_library(
     ],
     deps = ["//src/lib/fidl/rust_constants"],
 )
+
+alias(
+    name = "rust",
+    actual = ":dynfidl",
+    visibility = [
+        "//src/lib/dynfidl:__pkg__",
+        "//src/sys/lib/config_encoder:__pkg__",
+    ],
+)
