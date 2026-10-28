@@ -1862,6 +1862,82 @@ def check_modified_ancestor_bazel_dep_packages():
 
 check_modified_ancestor_bazel_dep_packages()
 
+
+# Check that component manifest includes (and other `*.shard` labels) name a target the
+# owning package declares. A package that exists but lacks the cml_shard passes the package
+# check above, yet `fx bazel build` fails analysis with `no such target '<pkg>:<x>.shard'`.
+def iter_shard_labels(tree):
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for kw in node.keywords:
+            if kw.arg not in DEP_ATTRS:
+                continue
+            for raw_label, ln in iter_dep_label_strings(kw.value):
+                name_part = raw_label.rpartition(":")[2]
+                if kw.arg == "includes" or name_part.endswith(".shard"):
+                    yield raw_label, ln
+
+
+def bazel_pkg_declares(pkg, name):
+    """True when <pkg>/BUILD(.bazel) quotes "<name>" (target or exports_files) or it is a file."""
+    if os.path.isfile(os.path.join(workdir, pkg, name)):
+        return True
+    for bfile in ("BUILD.bazel", "BUILD"):
+        full = os.path.join(workdir, pkg, bfile)
+        if os.path.isfile(full):
+            try:
+                with open(full, "r", encoding="utf-8") as bf:
+                    return f'"{name}"' in bf.read()
+            except Exception:
+                return True
+    return True  # A missing package is reported as missing_bazel_dependency_package.
+
+
+def check_missing_shard_targets(bazel_rel, td, tree):
+    reported = set()
+    for raw_label, ln in iter_shard_labels(tree):
+        parsed = split_label(raw_label, td)
+        if not parsed or not parsed[0] or not parsed[1]:
+            continue
+        dep_pkg, name = parsed
+        if (dep_pkg, name) in reported or bazel_pkg_declares(dep_pkg, name):
+            continue
+        reported.add((dep_pkg, name))
+        shard_src = f"{name}.cml" if name.endswith(".shard") else "<stem>.shard.cml"
+        msg = (
+            f"`{raw_label}` in '{bazel_rel}' names target `{name}`, which "
+            f"'{dep_pkg}/BUILD.bazel' does not declare, so `fx bazel build` fails analysis "
+            f"with `no such target '//{dep_pkg}:{name}'`."
+        )
+        rem = (
+            f"Add `cml_shard(name = \"{name}\", shard = \"{shard_src}\", "
+            "includes = [<cml_shard targets of the shards it includes>], "
+            "visibility = [...])` (load from "
+            "`//build/bazel/rules/components:cml_shard.bzl`) to "
+            f"'{dep_pkg}/BUILD.bazel' as part of this change, the same way a dependency "
+            "without a Bazel target is migrated. If another agent owns that file in this "
+            "task, ask for that exact edit and keep the label; do not drop the include."
+        )
+        findings.append({
+            "source": "cq_reachability",
+            "category": "missing_bazel_dependency_target",
+            "severity": "error",
+            "file": bazel_rel,
+            "line": ln,
+            "message": msg,
+            "remediation": rem,
+        })
+
+
+for _td in target_dirs:
+    _bz_rel = os.path.join(_td, "BUILD.bazel")
+    try:
+        with open(os.path.join(workdir, _bz_rel), "r", encoding="utf-8") as _f:
+            check_missing_shard_targets(_bz_rel, _td, ast.parse(_f.read(), filename=_bz_rel))
+    except Exception:
+        pass
+
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:
     bazel_rel = os.path.join(td, "BUILD.bazel")

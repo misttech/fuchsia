@@ -119,7 +119,13 @@ def normalize_git_rev(rev: str) -> str:
 change_base = normalize_git_rev(change_base)
 changed = set()
 changed.update(git_lines(["diff", "--name-only", change_base]))
-untracked = git_lines(["ls-files", "--others", "--exclude-standard"])
+# Untracked agent report files (CoderReport*.json) at the checkout root are not part of the
+# change (build_only_scope notes them as INFO), so they are not out-of-scope edits either.
+untracked = [
+    f
+    for f in git_lines(["ls-files", "--others", "--exclude-standard"])
+    if "/" in f or not re.fullmatch(r"CoderReport[\w.-]*\.json", f)
+]
 changed.update(untracked)
 head_subj = git_lines(["log", "-1", "--format=%s", "HEAD"])
 if change_base == "HEAD" and head_subj and head_subj[0].startswith("[bazel_migration]"):

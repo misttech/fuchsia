@@ -144,7 +144,24 @@ if head_subj.startswith("[bazel_migration]"):
             change_base = "HEAD~1"
 # Pass --no-renames so moved files deterministically appear in both added and deleted sets.
 changed.update(git_lines(["diff", "--no-renames", "--name-only", change_base]))
-changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+
+
+# Skip untracked agent report files at the checkout root.
+# Coding agents sometimes write their CoderReport JSON (CoderReport*.json) to the checkout
+# root. An untracked report is not part of the commit; in a parallel task another coder may
+# have written it, and the coder that sees the finding is not allowed to delete it. It is only
+# reported (INFO) so it is not committed; a committed copy still fails as a non-build file.
+AGENT_REPORT_RE = re.compile(r"CoderReport[\w.-]*\.json")
+
+
+def untracked_change_files():
+    files = git_lines(["ls-files", "--others", "--exclude-standard"])
+    reports = {f for f in files if "/" not in f and AGENT_REPORT_RE.fullmatch(f)}
+    return [f for f in files if f not in reports], sorted(reports)
+
+
+untracked_files, untracked_agent_reports = untracked_change_files()
+changed.update(untracked_files)
 
 
 def is_build_file(path: str) -> bool:
@@ -162,7 +179,7 @@ def is_build_file(path: str) -> bool:
 added = set(
     git_lines(["diff", "--no-renames", "--name-only", "--diff-filter=A", change_base])
 )
-added.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+added.update(untracked_files)
 deleted = set(
     git_lines(["diff", "--no-renames", "--name-only", "--diff-filter=D", change_base])
 )
@@ -377,6 +394,21 @@ def is_package_readme_label_update(path: str) -> bool:
     ]
     return bool(mod_lines) and all(f"//{pkg}" in l for l in mod_lines)
 findings = []
+
+# Note untracked agent report files that were left out of the scope check.
+for path in untracked_agent_reports:
+    findings.append({
+        "source": "build_only_scope",
+        "category": "untracked_agent_report_ignored",
+        "severity": "INFO",
+        "file": path,
+        "line": 0,
+        "message": (
+            f"Ignored untracked agent report '{path}' at the checkout root: it is not part of "
+            "the change. Do not commit it; print the CoderReport JSON in the final reply "
+            "instead of writing it to a file in the checkout."
+        ),
+    })
 
 # Emit findings for changed non-build files, relocated manifests, and unbuilt GN package notes.
 for path in sorted(changed):
