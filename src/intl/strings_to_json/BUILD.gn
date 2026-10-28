@@ -2,41 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/host.gni")
-import("//build/rust/rustc_binary.gni")
-
-group("strings_to_json") {
-  testonly = true
-  public_deps = [
-    ":install",
-    ":tests",
-  ]
-}
-
-group("tests") {
-  testonly = true
-
-  public_deps = [ ":strings_to_json_bin_test($host_toolchain)" ]
-}
-
-install_host_tools("install") {
-  deps = [ ":strings_to_json_bin($host_toolchain)" ]
-  outputs = [ "strings_to_json" ]
-}
+import("//build/bazel/bazel_host_tool.gni")
 
 if (is_host) {
-  rustc_binary("strings_to_json_bin") {
-    name = "strings_to_json"
-    with_unit_tests = "host"
-    edition = "2024"
-    deps = [
-      "//src/lib/intl/strings:lib",
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:clap",
-    ]
-
-    test_deps = [ "//third_party/rust_crates:tempfile" ]
-
-    sources = [ "src/main.rs" ]
+  bazel_host_tool("strings_to_json_bin") {
+    bazel_target = ":strings_to_json_bin"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/strings_to_json_bin"
+    output_name = "strings_to_json"
+    install_host_tool = true
   }
+}
+
+group("strings_to_json") {
+  public_deps = [ ":strings_to_json_bin($host_toolchain)" ]
 }

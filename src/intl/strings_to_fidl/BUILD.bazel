@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "strings_to_fidl_bin",
+    srcs = ["src/main.rs"],
+    crate_name = "strings_to_fidl",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/intl:__pkg__",
+        "//src/intl/example:__pkg__",
+        "//src/lib/intl/lookup/rust:__pkg__",
+        "//src/ui/a11y/lib/screen_reader/i18n:__pkg__",
+    ],
+    deps = [
+        "//src/lib/intl/strings:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+    ],
+)
+
+host_rustc_test(
+    name = "strings_to_fidl_bin_test",
+    crate = ":strings_to_fidl_bin",
+    edition = "2024",
+    visibility = ["//src/intl:__pkg__"],
+    deps = ["//third_party/rust_crates/vendor:tempfile"],
+)
