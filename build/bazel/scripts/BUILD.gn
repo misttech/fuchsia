@@ -2,29 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 import("//build/testing/python_build_time_tests.gni")
 
 if (is_host) {
-  python_library("bazel_compdb_utils") {
-    sources = [ "bazel_compdb_utils.py" ]
-  }
-
+  # The python_build_time_tests() below that test libraries defined in
+  # BUILD.bazel are GN copies of the host_py_test() targets there, which
+  # bazel2gn can't translate yet. These run the same tests at build time.
   python_build_time_tests("bazel_compdb_utils_test") {
     tests = [ "bazel_compdb_utils_tests.py" ]
     deps = [ ":bazel_compdb_utils" ]
   }
 
-  python_library("git_test_utils") {
-    sources = [ "git_test_utils.py" ]
-  }
-
-  python_library("get_git_head_commit") {
-    sources = [ "get_git_head_commit.py" ]
-    library_deps = [ "//build/git:git_utils" ]
-  }
-
+  # Stays GN-only because git_test_utils invokes the host git binary, which is
+  # not available in the Swarming test environment where host_py_test runs.
   python_build_time_tests("get_git_head_commit_test") {
     tests = [ "get_git_head_commit_test.py" ]
     deps = [
@@ -33,42 +26,22 @@ if (is_host) {
     ]
   }
 
-  python_library("build_utils") {
-    sources = [ "build_utils.py" ]
-  }
-
+  # This test of the bazel2gn-generated :build_utils stays GN-only because it
+  # runs the real //build/bazel/wrapper.bazel.sh, which no Bazel target
+  # exports as a test runfile.
   python_build_time_tests("build_utils_test") {
     tests = [ "build_utils_test.py" ]
     inputs = [ "//build/bazel/wrapper.bazel.sh" ]
     deps = [ ":build_utils" ]
   }
 
-  python_library("compute_content_hash") {
-    sources = [ "compute_content_hash.py" ]
-    library_deps = [ ":get_git_head_commit" ]
-  }
-
+  # Stays GN-only because git_test_utils invokes the host git binary, which is
+  # not available in the Swarming test environment where host_py_test runs.
   python_build_time_tests("compute_content_hash_test") {
     tests = [ "compute_content_hash_test.py" ]
     deps = [
       ":compute_content_hash",
       ":git_test_utils",
-    ]
-  }
-
-  python_library("stdio_redirection") {
-    sources = [ "stdio_redirection.py" ]
-  }
-
-  python_library("thread_pool_helpers") {
-    sources = [ "thread_pool_helpers.py" ]
-  }
-
-  python_library("bazel_action_file_copy_utils") {
-    sources = [ "bazel_action_file_copy_utils.py" ]
-    library_deps = [
-      ":build_utils",
-      ":thread_pool_helpers",
     ]
   }
 
@@ -91,21 +64,9 @@ if (is_host) {
     deps = [ ":bazel_action_utils" ]
   }
 
-  python_library("bazel_build_events") {
-    sources = [ "bazel_build_events.py" ]
-  }
-
   python_build_time_tests("bazel_build_events_test") {
     tests = [ "bazel_build_events_test.py" ]
     deps = [ ":bazel_build_events" ]
-  }
-
-  python_library("generate_host_test_wrapper") {
-    sources = [ "generate_host_test_wrapper.py" ]
-    library_deps = [
-      ":build_utils",
-      ":runfiles_utils",
-    ]
   }
 
   python_build_time_tests("generate_host_test_wrapper_test") {
@@ -127,10 +88,6 @@ if (is_host) {
     deps = [ ":generate_invocation_bazelrc" ]
   }
 
-  python_library("bazel_invocation") {
-    sources = [ "bazel_invocation.py" ]
-  }
-
   python_build_time_tests("bazel_invocation_test") {
     tests = [ "bazel_invocation_test.py" ]
     deps = [ ":bazel_invocation" ]
@@ -149,21 +106,9 @@ if (is_host) {
     deps = [ ":remote_services_utils" ]
   }
 
-  python_library("workspace_utils") {
-    sources = [ "workspace_utils.py" ]
-    library_deps = [
-      ":bazel_build_flags",
-      ":build_utils",
-    ]
-  }
-
   python_build_time_tests("workspace_utils_test") {
     tests = [ "workspace_utils_test.py" ]
     deps = [ ":workspace_utils" ]
-  }
-
-  python_library("runfiles_utils") {
-    sources = [ "runfiles_utils.py" ]
   }
 
   python_build_time_tests("runfiles_utils_test") {
@@ -171,19 +116,9 @@ if (is_host) {
     deps = [ ":runfiles_utils" ]
   }
 
-  python_library("bazel_rust_analyzer_utils") {
-    sources = [ "bazel_rust_analyzer_utils.py" ]
-    library_deps = [ ":build_utils" ]
-  }
-
   python_build_time_tests("bazel_rust_analyzer_utils_test") {
     tests = [ "bazel_rust_analyzer_utils_test.py" ]
     deps = [ ":bazel_rust_analyzer_utils" ]
-  }
-
-  python_library("bazel_source_path_mapper") {
-    sources = [ "bazel_source_path_mapper.py" ]
-    library_deps = [ ":build_utils" ]
   }
 
   python_build_time_tests("bazel_source_path_mapper_test") {
@@ -220,6 +155,8 @@ if (is_host) {
     deps = [ ":bazel_test_packages" ]
   }
 
+  # This library and its test stay in GN: bazel_tests_utils.py imports
+  # bazel_action_utils, which needs the GN-only //build/rbe:rbe_settings.
   python_library("bazel_tests_utils") {
     sources = [ "bazel_tests_utils.py" ]
     library_deps = [
@@ -283,18 +220,9 @@ if (is_host) {
     deps = [ ":bazel_ninja_delayed_actions" ]
   }
 
-  python_library("bazel_build_args") {
-    sources = [ "bazel_build_args.py" ]
-    library_deps = [ ":build_utils" ]
-  }
-
   python_build_time_tests("bazel_build_args_test") {
     tests = [ "bazel_build_args_test.py" ]
     deps = [ ":bazel_build_args" ]
-  }
-
-  python_library("bazel_build_flags") {
-    sources = [ "bazel_build_flags.py" ]
   }
 
   python_build_time_tests("bazel_build_flags_test") {
@@ -302,32 +230,14 @@ if (is_host) {
     deps = [ ":bazel_build_flags" ]
   }
 
-  python_library("bazel_label_mapper") {
-    sources = [ "bazel_label_mapper.py" ]
-    library_deps = [
-      ":bazel_repository_utils",
-      ":build_utils",
-      ":workspace_utils",
-    ]
-  }
-
   python_build_time_tests("bazel_label_mapper_test") {
     tests = [ "bazel_label_mapper_test.py" ]
     deps = [ ":bazel_label_mapper" ]
   }
 
-  python_library("bazel_repository_utils") {
-    sources = [ "bazel_repository_utils.py" ]
-    library_deps = [ ":build_utils" ]
-  }
-
   python_build_time_tests("bazel_repository_utils_test") {
     tests = [ "bazel_repository_utils_test.py" ]
     deps = [ ":bazel_repository_utils" ]
-  }
-
-  python_library("fetch_cipd_prebuilt") {
-    sources = [ "fetch_cipd_prebuilt.py" ]
   }
 
   python_build_time_tests("fetch_cipd_prebuilt_test") {
@@ -353,6 +263,26 @@ if (is_host) {
   }
 }
 
+bazel_test_suite("bazel_tests") {
+  host_tests = [
+    "//build/bazel/scripts:bazel_action_file_copy_utils_test",
+    "//build/bazel/scripts:bazel_build_args_test",
+    "//build/bazel/scripts:bazel_build_events_test",
+    "//build/bazel/scripts:bazel_build_flags_test",
+    "//build/bazel/scripts:bazel_compdb_utils_test",
+    "//build/bazel/scripts:bazel_invocation_test",
+    "//build/bazel/scripts:bazel_label_mapper_test",
+    "//build/bazel/scripts:bazel_repository_utils_test",
+    "//build/bazel/scripts:bazel_rust_analyzer_utils_test",
+    "//build/bazel/scripts:bazel_source_path_mapper_test",
+    "//build/bazel/scripts:fetch_cipd_prebuilt_test",
+    "//build/bazel/scripts:generate_host_test_wrapper_test",
+    "//build/bazel/scripts:runfiles_utils_test",
+    "//build/bazel/scripts:stdio_redirection_test",
+    "//build/bazel/scripts:workspace_utils_test",
+  ]
+}
+
 group("tests") {
   testonly = true
   deps = [
@@ -369,6 +299,7 @@ group("tests") {
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
     ":bazel_source_path_mapper_test($host_toolchain)",
     ":bazel_test_packages_test($host_toolchain)",
+    ":bazel_tests",
     ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
     ":compute_content_hash_test($host_toolchain)",
@@ -420,5 +351,168 @@ if (is_host) {
       # For copy_bazel_debug_symbols.py.
       "//build/api:debug_symbols",
     ]
+  }
+}
+
+## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
+#
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+#
+# AUTO-GENERATED - DO NOT EDIT
+#
+# The targets below are auto-generated based on the targets defined in the
+# BUILD.bazel file from the same directory. If you made changes to targets in
+# Bazel, instead of editing this file manually, run:
+#
+#   > fx bazel2gn
+#
+# Please do NOT edit this file directly. Instead, edit the BUILD.bazel file and
+# rerun bazel2gn.
+
+import("//build/tools/bazel2gn/bazel_migration.gni")
+
+if (is_host) {
+  python_library("bazel_compdb_utils") {
+    sources = [ "bazel_compdb_utils.py" ]
+  }
+}
+if (is_host) {
+  python_library("git_test_utils") {
+    sources = [ "git_test_utils.py" ]
+  }
+}
+if (is_host) {
+  python_library("get_git_head_commit") {
+    sources = [ "get_git_head_commit.py" ]
+    deps = [ "//build/git:git_utils" ]
+  }
+}
+if (is_host) {
+  python_library("build_utils") {
+    sources = [ "build_utils.py" ]
+    visibility = [
+      ":*",
+      "//build/api:*",
+      "//build/beads/scripts:*",
+      "//build/ninja_implicit_inputs:*",
+    ]
+  }
+}
+if (is_host) {
+  python_library("compute_content_hash") {
+    sources = [ "compute_content_hash.py" ]
+    deps = [ ":get_git_head_commit" ]
+  }
+}
+if (is_host) {
+  python_library("stdio_redirection") {
+    sources = [ "stdio_redirection.py" ]
+  }
+}
+if (is_host) {
+  python_library("thread_pool_helpers") {
+    sources = [ "thread_pool_helpers.py" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_action_file_copy_utils") {
+    sources = [ "bazel_action_file_copy_utils.py" ]
+    deps = [
+      ":build_utils",
+      ":thread_pool_helpers",
+    ]
+  }
+}
+if (is_host) {
+  python_library("bazel_build_events") {
+    sources = [ "bazel_build_events.py" ]
+  }
+}
+if (is_host) {
+  python_library("generate_host_test_wrapper") {
+    sources = [ "generate_host_test_wrapper.py" ]
+    deps = [
+      ":build_utils",
+      ":runfiles_utils",
+    ]
+  }
+}
+if (is_host) {
+  python_library("bazel_invocation") {
+    sources = [ "bazel_invocation.py" ]
+    visibility = [
+      ":*",
+      "//build/scripts:*",
+    ]
+  }
+}
+if (is_host) {
+  python_library("workspace_utils") {
+    sources = [ "workspace_utils.py" ]
+    deps = [
+      ":bazel_build_flags",
+      ":build_utils",
+    ]
+  }
+}
+if (is_host) {
+  python_library("runfiles_utils") {
+    sources = [ "runfiles_utils.py" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_rust_analyzer_utils") {
+    sources = [ "bazel_rust_analyzer_utils.py" ]
+    deps = [ ":build_utils" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_source_path_mapper") {
+    sources = [ "bazel_source_path_mapper.py" ]
+    deps = [ ":build_utils" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_build_args") {
+    sources = [ "bazel_build_args.py" ]
+    visibility = [
+      ":*",
+      "//build/beads/scripts:*",
+    ]
+    deps = [ ":build_utils" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_build_flags") {
+    sources = [ "bazel_build_flags.py" ]
+  }
+}
+if (is_host) {
+  python_library("bazel_label_mapper") {
+    sources = [ "bazel_label_mapper.py" ]
+    deps = [
+      ":bazel_repository_utils",
+      ":build_utils",
+      ":workspace_utils",
+    ]
+  }
+}
+if (is_host) {
+  python_library("bazel_repository_utils") {
+    sources = [ "bazel_repository_utils.py" ]
+    deps = [ ":build_utils" ]
+  }
+}
+if (is_host) {
+  python_library("fetch_cipd_prebuilt") {
+    sources = [ "fetch_cipd_prebuilt.py" ]
   }
 }

@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
 package(default_applicable_licenses = ["//:license"])
 
 # The following files are exported for use by Bazel rules.
@@ -11,3 +15,259 @@ exports_files([
     "generate_host_test_wrapper.py",
     "runfiles_utils.py",
 ])
+
+py_library(
+    name = "bazel_compdb_utils",
+    srcs = ["bazel_compdb_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "bazel_compdb_utils_test",
+    srcs = ["bazel_compdb_utils_tests.py"],
+    main = "bazel_compdb_utils_tests.py",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_compdb_utils"],
+)
+
+py_library(
+    name = "git_test_utils",
+    srcs = ["git_test_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+py_library(
+    name = "get_git_head_commit",
+    srcs = ["get_git_head_commit.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = ["//build/git:git_utils"],
+)
+
+py_library(
+    name = "build_utils",
+    srcs = ["build_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/api:__pkg__",
+        "//build/beads/scripts:__pkg__",
+        "//build/ninja_implicit_inputs:__pkg__",
+    ],
+)
+
+py_library(
+    name = "compute_content_hash",
+    srcs = ["compute_content_hash.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":get_git_head_commit"],
+)
+
+py_library(
+    name = "stdio_redirection",
+    srcs = ["stdio_redirection.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+py_library(
+    name = "thread_pool_helpers",
+    srcs = ["thread_pool_helpers.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+py_library(
+    name = "bazel_action_file_copy_utils",
+    srcs = ["bazel_action_file_copy_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":build_utils",
+        ":thread_pool_helpers",
+    ],
+)
+
+host_py_test(
+    name = "bazel_action_file_copy_utils_test",
+    srcs = ["bazel_action_file_copy_utils_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_action_file_copy_utils"],
+)
+
+py_library(
+    name = "bazel_build_events",
+    srcs = ["bazel_build_events.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "bazel_build_events_test",
+    srcs = ["bazel_build_events_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_build_events"],
+)
+
+py_library(
+    name = "generate_host_test_wrapper",
+    srcs = ["generate_host_test_wrapper.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":build_utils",
+        ":runfiles_utils",
+    ],
+)
+
+host_py_test(
+    name = "generate_host_test_wrapper_test",
+    srcs = ["generate_host_test_wrapper_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":generate_host_test_wrapper"],
+)
+
+py_library(
+    name = "bazel_invocation",
+    srcs = ["bazel_invocation.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/scripts:__pkg__"],
+)
+
+host_py_test(
+    name = "bazel_invocation_test",
+    srcs = ["bazel_invocation_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_invocation"],
+)
+
+py_library(
+    name = "workspace_utils",
+    srcs = ["workspace_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":bazel_build_flags",
+        ":build_utils",
+    ],
+)
+
+host_py_test(
+    name = "workspace_utils_test",
+    srcs = ["workspace_utils_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":workspace_utils"],
+)
+
+py_library(
+    name = "runfiles_utils",
+    srcs = ["runfiles_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "runfiles_utils_test",
+    srcs = ["runfiles_utils_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":runfiles_utils"],
+)
+
+py_library(
+    name = "bazel_rust_analyzer_utils",
+    srcs = ["bazel_rust_analyzer_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":build_utils"],
+)
+
+host_py_test(
+    name = "bazel_rust_analyzer_utils_test",
+    srcs = ["bazel_rust_analyzer_utils_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_rust_analyzer_utils"],
+)
+
+py_library(
+    name = "bazel_source_path_mapper",
+    srcs = ["bazel_source_path_mapper.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":build_utils"],
+)
+
+host_py_test(
+    name = "bazel_source_path_mapper_test",
+    srcs = ["bazel_source_path_mapper_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_source_path_mapper"],
+)
+
+host_py_test(
+    name = "stdio_redirection_test",
+    srcs = ["stdio_redirection_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":stdio_redirection"],
+)
+
+py_library(
+    name = "bazel_build_args",
+    srcs = ["bazel_build_args.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/beads/scripts:__pkg__"],
+    deps = [":build_utils"],
+)
+
+host_py_test(
+    name = "bazel_build_args_test",
+    srcs = ["bazel_build_args_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_build_args"],
+)
+
+py_library(
+    name = "bazel_build_flags",
+    srcs = ["bazel_build_flags.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "bazel_build_flags_test",
+    srcs = ["bazel_build_flags_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_build_flags"],
+)
+
+py_library(
+    name = "bazel_label_mapper",
+    srcs = ["bazel_label_mapper.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":bazel_repository_utils",
+        ":build_utils",
+        ":workspace_utils",
+    ],
+)
+
+host_py_test(
+    name = "bazel_label_mapper_test",
+    srcs = ["bazel_label_mapper_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_label_mapper"],
+)
+
+py_library(
+    name = "bazel_repository_utils",
+    srcs = ["bazel_repository_utils.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":build_utils"],
+)
+
+host_py_test(
+    name = "bazel_repository_utils_test",
+    srcs = ["bazel_repository_utils_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":bazel_repository_utils"],
+)
+
+py_library(
+    name = "fetch_cipd_prebuilt",
+    srcs = ["fetch_cipd_prebuilt.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "fetch_cipd_prebuilt_test",
+    srcs = ["fetch_cipd_prebuilt_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":fetch_cipd_prebuilt"],
+)

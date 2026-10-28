@@ -1,0 +1,172 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "affected_tests",
+    srcs = ["affected_tests.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":ninja_artifacts",
+        "//build/bazel/scripts:build_utils",
+    ],
+)
+
+host_py_test(
+    name = "affected_tests_test",
+    srcs = ["affected_tests_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":affected_tests",
+        ":ninja_artifacts",
+    ],
+)
+
+py_library(
+    name = "build_api_filter",
+    srcs = ["build_api_filter.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "build_api_filter_test",
+    srcs = ["build_api_filter_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":build_api_filter"],
+)
+
+py_library(
+    name = "debug_symbols",
+    srcs = ["debug_symbols.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build:__pkg__",
+        "//build/bazel/scripts:__pkg__",
+    ],
+)
+
+host_py_test(
+    name = "debug_symbols_test",
+    srcs = ["debug_symbols_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":debug_symbols"],
+)
+
+py_library(
+    name = "elf_sizes",
+    srcs = ["elf_sizes.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":debug_symbols",
+        ":gn_ninja_outputs",
+        "//build/bazel/scripts:build_utils",
+    ],
+)
+
+host_py_test(
+    name = "elf_sizes_test",
+    srcs = ["elf_sizes_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":elf_sizes"],
+)
+
+py_library(
+    name = "file_to_test_package",
+    srcs = ["file_to_test_package.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":gn_ninja_outputs",
+        "//build/bazel/scripts:build_utils",
+    ],
+)
+
+host_py_test(
+    name = "file_to_test_package_test",
+    srcs = ["file_to_test_package_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":file_to_test_package"],
+)
+
+py_library(
+    name = "gn_labels",
+    srcs = ["gn_labels.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/ninja_implicit_inputs:__pkg__"],
+)
+
+host_py_test(
+    name = "gn_labels_test",
+    srcs = ["gn_labels_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":gn_labels"],
+)
+
+py_library(
+    name = "gn_ninja_outputs",
+    srcs = ["gn_ninja_outputs.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//build/beads/scripts:__pkg__",
+        "//build/ninja_implicit_inputs:__pkg__",
+    ],
+)
+
+host_py_test(
+    name = "gn_ninja_outputs_test",
+    srcs = ["gn_ninja_outputs_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":gn_ninja_outputs"],
+)
+
+py_library(
+    name = "ninja_artifacts",
+    srcs = ["ninja_artifacts.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = ["//build/bazel/scripts:build_utils"],
+)
+
+host_py_test(
+    name = "ninja_artifacts_test",
+    srcs = ["ninja_artifacts_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":ninja_artifacts"],
+)
+
+py_library(
+    name = "script_commands",
+    srcs = ["script_commands.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_py_test(
+    name = "script_commands_test",
+    srcs = ["script_commands_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":script_commands"],
+)
+
+# This target cannot be named "client" as it would conflict
+# with the script with the same name during mypy checks.
+py_library(
+    name = "client_lib",
+    srcs = ["client.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":affected_tests",
+        ":build_api_filter",
+        ":debug_symbols",
+        ":elf_sizes",
+        ":file_to_test_package",
+        ":gn_labels",
+        ":gn_ninja_outputs",
+        ":ninja_artifacts",
+        ":script_commands",
+        "//build/bazel/scripts:build_utils",
+    ],
+)

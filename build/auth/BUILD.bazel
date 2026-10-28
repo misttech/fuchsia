@@ -1,0 +1,75 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_py_test.bzl", "host_py_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+py_library(
+    name = "apt",
+    srcs = ["apt.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/scripts:__pkg__"],
+)
+
+py_library(
+    name = "gcloud",
+    srcs = ["gcloud.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/scripts:__pkg__"],
+    deps = [":apt"],
+)
+
+py_library(
+    name = "gcloud_creds",
+    srcs = ["gcloud_creds.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/scripts:__pkg__"],
+    deps = [
+        ":apt",
+        ":gcloud",
+    ],
+)
+
+py_library(
+    name = "select_auth_method",
+    srcs = ["select_auth_method.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/scripts:__pkg__"],
+    deps = [":gcloud"],
+)
+
+host_py_test(
+    name = "apt_test",
+    srcs = ["apt_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":apt"],
+)
+
+host_py_test(
+    name = "gcloud_test",
+    srcs = ["gcloud_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":gcloud"],
+)
+
+host_py_test(
+    name = "gcloud_creds_test",
+    srcs = ["gcloud_creds_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        ":apt",
+        ":gcloud",
+        ":gcloud_creds",
+    ],
+)
+
+host_py_test(
+    name = "select_auth_method_test",
+    srcs = ["select_auth_method_test.py"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [":select_auth_method"],
+)
