@@ -13003,7 +13003,7 @@ rustc_library("json5format-v0_2_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":regex-v1_13_1" ]
 
   rustenv = []
@@ -13105,18 +13105,18 @@ rustc_library("kqueue-v1_2_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("lazy_static-v1_5_0.license") {
+license("lazy_static-v1_5_1.license") {
   public_package_name = "lazy_static"
   license_files = [
-    "//third_party/rust_crates/vendor/lazy_static-1.5.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/lazy_static-1.5.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/lazy_static-1.5.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/lazy_static-1.5.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("lazy_static-v1_5_0") {
+rustc_library("lazy_static-v1_5_1") {
   crate_name = "lazy_static"
-  source_root = "//third_party/rust_crates/vendor/lazy_static-1.5.0/src/lib.rs"
-  output_name = "lazy_static-5683d883f41296b9"
+  source_root = "//third_party/rust_crates/vendor/lazy_static-1.5.1/src/lib.rs"
+  output_name = "lazy_static-d86b352212a19dcc"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -13128,13 +13128,13 @@ rustc_library("lazy_static-v1_5_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=5683d883f41296b9",
-    "-Cextra-filename=-5683d883f41296b9",
+    "-Cmetadata=d86b352212a19dcc",
+    "-Cextra-filename=-d86b352212a19dcc",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":lazy_static-v1_5_0.license" ]
+  applicable_licenses = [ ":lazy_static-v1_5_1.license" ]
 }
 
 license("libc-v0_2_190.license") {
@@ -14883,7 +14883,7 @@ rustc_library("num-bigint-dig-v0_8_6") {
 
   deps = []
   deps += [ ":zeroize-v1_9_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":libm-v0_2_16" ]
   deps += [ ":num-integer-v0_1_46" ]
   deps += [ ":num-iter-v0_1_45" ]
@@ -17347,7 +17347,7 @@ rustc_library("prettytable-rs-v0_10_0") {
   deps = []
   deps += [ ":csv-v1_4_0" ]
   deps += [ ":encode_unicode-v1_0_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":term-v1_2_1" ]
   deps += [ ":unicode-width-v0_1_14" ]
 
@@ -21937,7 +21937,7 @@ rustc_library("sharded-slab-v0_1_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
 
   rustenv = []
 
@@ -24778,7 +24778,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":idna-v0_2_3" ]
   deps += [ ":ipnet-v2_11_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":smallvec-v1_16_2" ]
   deps += [ ":thiserror-v1_0_69" ]
@@ -24822,7 +24822,7 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   deps += [ ":trust-dns-proto-v0_22_0" ]
   deps += [ ":cfg-if-v1_0_5" ]
   deps += [ ":futures-util-v0_3_34" ]
-  deps += [ ":lazy_static-v1_5_0" ]
+  deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":lru-cache-v0_1_2" ]
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":smallvec-v1_16_2" ]
