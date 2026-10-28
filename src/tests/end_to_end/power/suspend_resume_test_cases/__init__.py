@@ -189,6 +189,10 @@ class SuspendResumeTestCases(fuchsia_base_test.FuchsiaTestCases):
             # resume.
             self._set_display_power(self.dut, power_on=True)
 
+
+class NoSuspendOnUsbTestCases(fuchsia_base_test.FuchsiaTestCases):
+    """Test cases for verifying the device does not suspend while on USB."""
+
     async def test_no_suspend_on_usb(self) -> None:
         before_on_usb_idle_stats = await power.get_sag_suspend_stats(self.dut)
 

@@ -2,15 +2,29 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_mobly_test.gni")
 import("//build/testing/environments.gni")
 
-import("//build/python/python_mobly_test.gni")
+if (is_host) {
+  python_mobly_test("suspend_resume_test") {
+    main_source = "suspend_resume_test.py"
+    libraries = [ "//src/tests/end_to_end/power/suspend_resume_test_cases" ]
 
-assert(is_host, "the Python driver of the e2e test can only be run on the host")
+    environments = [ nelson_env ]
+  }
 
-python_mobly_test("suspend_resume_test") {
-  main_source = "test.py"
-  libraries = [ "//src/tests/end_to_end/power/suspend_resume_test_cases" ]
+  python_mobly_test("no_suspend_on_usb_test") {
+    main_source = "no_suspend_on_usb_test.py"
+    libraries = [ "//src/tests/end_to_end/power/suspend_resume_test_cases" ]
 
-  environments = [ nelson_env ]
+    environments = [ nelson_env ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  public_deps = [
+    ":no_suspend_on_usb_test($host_toolchain)",
+    ":suspend_resume_test($host_toolchain)",
+  ]
 }

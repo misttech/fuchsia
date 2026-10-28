@@ -18,8 +18,25 @@ Verifies that the device suspends and resumes at the appropriate times.
    you should manually unplug and replug the USB cable, and uses more forgiving
    timeouts to give you time to do so.
 
+To run the suspend/resume test (`test_suspend_resume`):
+
 ```sh
 fx add-host-test //src/tests/end_to_end/power/suspend_resume:suspend_resume_test
 fx build
 fx test //src/tests/end_to_end/power/suspend_resume:suspend_resume_test --e2e --output
+```
+
+To run the no-suspend-on-USB test (`test_no_suspend_on_usb`):
+
+```sh
+fx add-host-test //src/tests/end_to_end/power/suspend_resume:no_suspend_on_usb_test
+fx build
+fx test //src/tests/end_to_end/power/suspend_resume:no_suspend_on_usb_test --e2e --output
+```
+
+To add both tests at once:
+
+```sh
+fx add-host-test //src/tests/end_to_end/power/suspend_resume:tests
+fx build
 ```
