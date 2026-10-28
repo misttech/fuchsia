@@ -1,0 +1,37 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:expect_includes.bzl", "expect_includes")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    aspect_hints = [":lib_includes"],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "netemul_sync",
+    edition = "2024",
+    visibility = [
+        "//src/connectivity/network/testing/netemul/configurable-netstack/tests:__pkg__",
+        "//src/connectivity/network/testing/netemul/doc/runner-test:__pkg__",
+        "//src/connectivity/network/tests/multi_nic/server:__pkg__",
+        "//src/connectivity/network/tests/tproxy/filter-setup:__pkg__",
+        "//src/connectivity/weave/tests/weave_ip_forward:__pkg__",
+    ],
+    deps = [
+        "//src/connectivity/network/testing/netemul/sync-manager/fidl:sync_rust",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-component",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures-util",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+expect_includes(
+    name = "lib_includes",
+    includes = ["//src/connectivity/network/testing/netemul/sync-manager/meta:client.shard"],
+)
