@@ -98,428 +98,205 @@ static_assert(sizeof(SystemBrwLockType) == kExpectedBrwLockSize, "SystemBrwLockT
 static_assert(alignof(SystemBrwLockType) == kExpectedBrwLockAlign,
               "SystemBrwLockType alignment mismatch");
 
-#if WITH_LOCK_DEP
-template <typename T>
-using LockPtr = lockdep::Lock<T>*;
-
-template <typename T>
-struct LockInitHelper : public lockdep::Lock<T> {
-  LockInitHelper(lockdep::LockClassId id) : lockdep::Lock<T>(id) {}
-};
-#else
-template <typename T>
-using LockPtr = T*;
-#endif
-
 extern "C" {
 
-void cpp_mutex_destroy(LockPtr<Mutex> mutex);
-void cpp_mutex_acquire(LockPtr<Mutex> lock, void* entry_storage);
-void cpp_mutex_release(LockPtr<Mutex> lock, void* entry_storage);
-bool cpp_mutex_is_contested(LockPtr<Mutex> lock);
-void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> mutex);
-bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock, void* entry_storage);
-void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
-                                bool should_clear);
-bool cpp_critical_mutex_is_contested(LockPtr<CriticalMutex> lock);
-void cpp_spinlock_init(LockPtr<SpinLock> lock, const void* class_id);
-void cpp_spinlock_destroy(LockPtr<SpinLock> lock);
-interrupt_saved_state_t cpp_spinlock_acquire_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
-void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, void* entry_storage,
-                                     interrupt_saved_state_t state);
-void cpp_spinlock_acquire_no_irqsave(LockPtr<SpinLock> lock, void* entry_storage);
-void cpp_spinlock_release_no_irqrestore(LockPtr<SpinLock> lock, void* entry_storage);
-void cpp_monitored_spinlock_init(LockPtr<MonitoredSpinLock> lock, const void* class_id);
-void cpp_monitored_spinlock_destroy(LockPtr<MonitoredSpinLock> lock);
-interrupt_saved_state_t cpp_monitored_spinlock_acquire_irqsave(LockPtr<MonitoredSpinLock> lock,
-                                                               void* entry_storage,
+interrupt_saved_state_t cpp_ksync_interrupt_save();
+void cpp_mutex_destroy(Mutex* lock);
+void cpp_mutex_acquire(Mutex* lock);
+void cpp_mutex_release(Mutex* lock);
+bool cpp_mutex_is_contested(Mutex* lock);
+bool cpp_critical_mutex_acquire(CriticalMutex* lock);
+void cpp_critical_mutex_release(CriticalMutex* lock, bool should_clear);
+void cpp_spinlock_init(SpinLock* lock, const void* class_id);
+void cpp_spinlock_destroy(SpinLock* lock);
+interrupt_saved_state_t cpp_spinlock_acquire_irqsave(SpinLock* lock);
+void cpp_spinlock_release_irqrestore(SpinLock* lock, interrupt_saved_state_t state);
+void cpp_spinlock_acquire_no_irqsave(SpinLock* lock);
+void cpp_spinlock_release_no_irqrestore(SpinLock* lock);
+void cpp_monitored_spinlock_init(MonitoredSpinLock* lock, const void* class_id);
+void cpp_monitored_spinlock_destroy(MonitoredSpinLock* lock);
+interrupt_saved_state_t cpp_monitored_spinlock_acquire_irqsave(MonitoredSpinLock* lock,
                                                                const char* name);
-void cpp_monitored_spinlock_release_irqrestore(LockPtr<MonitoredSpinLock> lock, void* entry_storage,
+void cpp_monitored_spinlock_release_irqrestore(MonitoredSpinLock* lock,
                                                interrupt_saved_state_t state);
-void cpp_monitored_spinlock_acquire_no_irqsave(LockPtr<MonitoredSpinLock> lock, void* entry_storage,
-                                               const char* name);
-void cpp_monitored_spinlock_release_no_irqrestore(LockPtr<MonitoredSpinLock> lock,
-                                                  void* entry_storage);
-void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id);
-void cpp_brwlock_pi_destroy(LockPtr<BrwLockPi> lock);
-void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock, void* entry_storage);
-void cpp_brwlock_pi_release_read(LockPtr<BrwLockPi> lock, void* entry_storage);
-void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock, void* entry_storage);
-void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, void* entry_storage);
-void cpp_lock_validate_release(void* entry_storage);
-void cpp_lock_validate_acquire(void* entry_storage);
+void cpp_monitored_spinlock_acquire_no_irqsave(MonitoredSpinLock* lock, const char* name);
+void cpp_monitored_spinlock_release_no_irqrestore(MonitoredSpinLock* lock);
+void cpp_brwlock_pi_init(BrwLockPi* lock, const void* class_id);
+void cpp_brwlock_pi_destroy(BrwLockPi* lock);
+void cpp_brwlock_pi_acquire_read(BrwLockPi* lock);
+void cpp_brwlock_pi_release_read(BrwLockPi* lock);
+void cpp_brwlock_pi_acquire_write(BrwLockPi* lock);
+void cpp_brwlock_pi_release_write(BrwLockPi* lock);
+void cpp_lock_dep_acquire(void* lock, const void* class_id, void* entry_storage,
+                          lockdep::LockFlags flags);
+void cpp_lock_dep_release(void* entry_storage, lockdep::LockFlags flags);
+void cpp_lock_validate_release(void* entry_storage, lockdep::LockFlags flags);
+void cpp_lock_validate_acquire(void* entry_storage, lockdep::LockFlags flags);
 
-FFI_ALWAYS_INLINE void cpp_mutex_destroy(LockPtr<Mutex> lock) {
-#if WITH_LOCK_DEP
-  using LockType = lockdep::Lock<Mutex>;
-  lock->~LockType();
-#else
-  lock->~Mutex();
-#endif
+FFI_ALWAYS_INLINE interrupt_saved_state_t cpp_ksync_interrupt_save() {
+  return arch_interrupt_save();
 }
 
-FFI_ALWAYS_INLINE void cpp_mutex_acquire(LockPtr<Mutex> lock,
-                                         void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
-    }
-  }
-  lock->lock().Acquire();
-#else
+FFI_ALWAYS_INLINE void cpp_mutex_destroy(Mutex* lock) { lock->~Mutex(); }
+
+FFI_ALWAYS_INLINE void cpp_mutex_acquire(Mutex* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Acquire();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_mutex_release(LockPtr<Mutex> lock,
-                                         void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().Release();
-#else
+FFI_ALWAYS_INLINE void cpp_mutex_release(Mutex* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Release();
-#endif
 }
 
-FFI_ALWAYS_INLINE bool cpp_mutex_is_contested(LockPtr<Mutex> lock) {
-#if WITH_LOCK_DEP
-  return lock->lock().IsContested();
-#else
-  return lock->IsContested();
-#endif
-}
+FFI_ALWAYS_INLINE bool cpp_mutex_is_contested(Mutex* lock) { return lock->IsContested(); }
 
-FFI_ALWAYS_INLINE void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> lock) {
-#if WITH_LOCK_DEP
-  using LockType = lockdep::Lock<CriticalMutex>;
-  lock->~LockType();
-#else
-  lock->~CriticalMutex();
-#endif
-}
-
-FFI_ALWAYS_INLINE bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock, void* entry_storage)
+FFI_ALWAYS_INLINE bool cpp_critical_mutex_acquire(CriticalMutex* lock)
     TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
-    }
-  }
-  auto should_clear = lock->lock().Acquire();
-#else
   auto should_clear = lock->Acquire();
-#endif
   return should_clear == CriticalMutex::ShouldClear::Yes;
 }
 
-FFI_ALWAYS_INLINE void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
+FFI_ALWAYS_INLINE void cpp_critical_mutex_release(CriticalMutex* lock,
                                                   bool should_clear) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().Release(should_clear ? CriticalMutex::ShouldClear::Yes
-                                    : CriticalMutex::ShouldClear::No);
-#else
   lock->Release(should_clear ? CriticalMutex::ShouldClear::Yes : CriticalMutex::ShouldClear::No);
-#endif
 }
 
-FFI_ALWAYS_INLINE bool cpp_critical_mutex_is_contested(LockPtr<CriticalMutex> lock) {
-#if WITH_LOCK_DEP
-  return lock->lock().IsContested();
-#else
-  return lock->IsContested();
-#endif
-}
-
-FFI_ALWAYS_INLINE void cpp_spinlock_init(LockPtr<SpinLock> lock, const void* class_id) {
-#if WITH_LOCK_DEP
-  new (lock) LockInitHelper<SpinLock>(reinterpret_cast<lockdep::LockClassId>(class_id));
-#else
+FFI_ALWAYS_INLINE void cpp_spinlock_init(SpinLock* lock, const void* class_id) {
   new (lock) SpinLock();
-#endif
+  lock->SetLockClassId(reinterpret_cast<lockdep::LockClassId>(class_id));
 }
 
-FFI_ALWAYS_INLINE void cpp_spinlock_destroy(LockPtr<SpinLock> lock) {
-#if WITH_LOCK_DEP
-  using LockType = lockdep::Lock<SpinLock>;
-  lock->~LockType();
-#else
-  lock->~SpinLock();
-#endif
-}
+FFI_ALWAYS_INLINE void cpp_spinlock_destroy(SpinLock* lock) { lock->~SpinLock(); }
 
-FFI_ALWAYS_INLINE interrupt_saved_state_t cpp_spinlock_acquire_irqsave(
-    LockPtr<SpinLock> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
-  interrupt_saved_state_t state = arch_interrupt_save();
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
-    }
-  }
-  lock->lock().Acquire();
-#else
-  lock->Acquire();
-#endif
+FFI_ALWAYS_INLINE interrupt_saved_state_t cpp_spinlock_acquire_irqsave(SpinLock* lock)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  interrupt_saved_state_t state;
+  lock->AcquireIrqSave(state);
   return state;
 }
 
-FFI_ALWAYS_INLINE void cpp_spinlock_release_irqrestore(LockPtr<SpinLock> lock, void* entry_storage,
-                                                       interrupt_saved_state_t state)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().ReleaseIrqRestore(state);
-#else
+FFI_ALWAYS_INLINE void cpp_spinlock_release_irqrestore(
+    SpinLock* lock, interrupt_saved_state_t state) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->ReleaseIrqRestore(state);
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_spinlock_acquire_no_irqsave(LockPtr<SpinLock> lock, void* entry_storage)
+FFI_ALWAYS_INLINE void cpp_spinlock_acquire_no_irqsave(SpinLock* lock)
     TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
-    }
-  }
-  lock->lock().Acquire();
-#else
   lock->Acquire();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_spinlock_release_no_irqrestore(
-    LockPtr<SpinLock> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().Release();
-#else
+FFI_ALWAYS_INLINE void cpp_spinlock_release_no_irqrestore(SpinLock* lock)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Release();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_monitored_spinlock_init(LockPtr<MonitoredSpinLock> lock,
-                                                   const void* class_id) {
-#if WITH_LOCK_DEP
-  new (lock) LockInitHelper<MonitoredSpinLock>(reinterpret_cast<lockdep::LockClassId>(class_id));
-#else
+FFI_ALWAYS_INLINE void cpp_monitored_spinlock_init(MonitoredSpinLock* lock, const void* class_id) {
   new (lock) MonitoredSpinLock();
-#endif
+  lock->SetLockClassId(reinterpret_cast<lockdep::LockClassId>(class_id));
 }
 
-FFI_ALWAYS_INLINE void cpp_monitored_spinlock_destroy(LockPtr<MonitoredSpinLock> lock) {
-#if WITH_LOCK_DEP
-  using LockType = lockdep::Lock<MonitoredSpinLock>;
-  lock->~LockType();
-#else
+FFI_ALWAYS_INLINE void cpp_monitored_spinlock_destroy(MonitoredSpinLock* lock) {
   lock->~MonitoredSpinLock();
-#endif
 }
 
-FFI_ALWAYS_INLINE interrupt_saved_state_t
-cpp_monitored_spinlock_acquire_irqsave(LockPtr<MonitoredSpinLock> lock, void* entry_storage,
-                                       const char* name) TA_NO_THREAD_SAFETY_ANALYSIS {
-  interrupt_saved_state_t state = arch_interrupt_save();
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
-    }
-  }
-  lock->lock().Acquire(name);
-#else
-  lock->Acquire(name);
-#endif
+FFI_ALWAYS_INLINE interrupt_saved_state_t cpp_monitored_spinlock_acquire_irqsave(
+    MonitoredSpinLock* lock, const char* name) TA_NO_THREAD_SAFETY_ANALYSIS {
+  interrupt_saved_state_t state;
+  lock->AcquireIrqSave(state, name);
   return state;
 }
 
 FFI_ALWAYS_INLINE void cpp_monitored_spinlock_release_irqrestore(
-    LockPtr<MonitoredSpinLock> lock, void* entry_storage,
-    interrupt_saved_state_t state) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().ReleaseIrqRestore(state);
-#else
+    MonitoredSpinLock* lock, interrupt_saved_state_t state) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->ReleaseIrqRestore(state);
-#endif
 }
 
 FFI_ALWAYS_INLINE void cpp_monitored_spinlock_acquire_no_irqsave(
-    LockPtr<MonitoredSpinLock> lock, void* entry_storage,
-    const char* name) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Acquire(entry);
-    }
-  }
-  lock->lock().Acquire(name);
-#else
+    MonitoredSpinLock* lock, const char* name) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Acquire(name);
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_monitored_spinlock_release_no_irqrestore(
-    LockPtr<MonitoredSpinLock> lock, void* entry_storage) TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsIrqSafe)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().Release();
-#else
+FFI_ALWAYS_INLINE void cpp_monitored_spinlock_release_no_irqrestore(MonitoredSpinLock* lock)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->Release();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_init(LockPtr<BrwLockPi> lock, const void* class_id) {
-#if WITH_LOCK_DEP
-  new (lock) LockInitHelper<BrwLockPi>(reinterpret_cast<lockdep::LockClassId>(class_id));
-#else
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_init(BrwLockPi* lock, const void* class_id) {
   new (lock) BrwLockPi();
-#endif
+  lock->SetLockClassId(reinterpret_cast<lockdep::LockClassId>(class_id));
 }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_destroy(LockPtr<BrwLockPi> lock) {
-#if WITH_LOCK_DEP
-  using LockType = lockdep::Lock<BrwLockPi>;
-  lock->~LockType();
-#else
-  lock->~BrwLockPi();
-#endif
-}
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_destroy(BrwLockPi* lock) { lock->~BrwLockPi(); }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_acquire_read(LockPtr<BrwLockPi> lock, void* entry_storage)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
-    }
-  }
-  lock->lock().ReadAcquire();
-#else
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_acquire_read(BrwLockPi* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->ReadAcquire();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_read(LockPtr<BrwLockPi> lock, void* entry_storage)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
-#if WITH_LOCK_DEP
-  if constexpr (lockdep::kLockValidationEnabled) {
-    if (entry_storage != nullptr) {
-      LockValidationGuard guard;
-      auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Release(entry);
-      entry->~AcquiredLockEntry();
-    }
-  }
-  lock->lock().ReadRelease();
-#else
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_read(BrwLockPi* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
   lock->ReadRelease();
-#endif
 }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock, void* entry_storage)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_acquire_write(BrwLockPi* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  lock->WriteAcquire();
+}
+
+FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_write(BrwLockPi* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  lock->WriteRelease();
+}
+
+FFI_ALWAYS_INLINE void cpp_lock_dep_acquire(void* lock, const void* class_id, void* entry_storage,
+                                            lockdep::LockFlags flags) {
 #if WITH_LOCK_DEP
   if constexpr (lockdep::kLockValidationEnabled) {
     if (entry_storage != nullptr) {
       LockValidationGuard guard;
-      auto* entry = new (entry_storage) lockdep::AcquiredLockEntry(&lock->lock(), lock->id(), 0);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Acquire(entry);
+      auto* entry = new (entry_storage)
+          lockdep::AcquiredLockEntry(lock, reinterpret_cast<lockdep::LockClassId>(class_id), 0);
+      if (class_id != nullptr) {
+        lockdep::ThreadLockState::Get(flags)->Acquire(entry);
+      }
     }
   }
-  lock->lock().WriteAcquire();
-#else
-  lock->WriteAcquire();
 #endif
 }
 
-FFI_ALWAYS_INLINE void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, void* entry_storage)
-    TA_NO_THREAD_SAFETY_ANALYSIS {
+FFI_ALWAYS_INLINE void cpp_lock_dep_release(void* entry_storage, lockdep::LockFlags flags) {
 #if WITH_LOCK_DEP
   if constexpr (lockdep::kLockValidationEnabled) {
     if (entry_storage != nullptr) {
       LockValidationGuard guard;
       auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsMultiAcquire)->Release(entry);
+      if (entry->id() != lockdep::kInvalidLockClassId) {
+        lockdep::ThreadLockState::Get(flags)->Release(entry);
+      }
       entry->~AcquiredLockEntry();
     }
   }
-  lock->lock().WriteRelease();
-#else
-  lock->WriteRelease();
 #endif
 }
 
-FFI_ALWAYS_INLINE void cpp_lock_validate_release(void* entry_storage) {
+FFI_ALWAYS_INLINE void cpp_lock_validate_release(void* entry_storage, lockdep::LockFlags flags) {
 #if WITH_LOCK_DEP
   if constexpr (lockdep::kLockValidationEnabled) {
     if (entry_storage != nullptr) {
       LockValidationGuard guard;
       auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Release(entry);
+      if (entry->id() != lockdep::kInvalidLockClassId) {
+        lockdep::ThreadLockState::Get(flags)->Release(entry);
+      }
     }
   }
 #endif
 }
 
-FFI_ALWAYS_INLINE void cpp_lock_validate_acquire(void* entry_storage) {
+FFI_ALWAYS_INLINE void cpp_lock_validate_acquire(void* entry_storage, lockdep::LockFlags flags) {
 #if WITH_LOCK_DEP
   if constexpr (lockdep::kLockValidationEnabled) {
     if (entry_storage != nullptr) {
       LockValidationGuard guard;
       auto* entry = static_cast<lockdep::AcquiredLockEntry*>(entry_storage);
-      lockdep::ThreadLockState::Get(lockdep::LockFlagsNone)->Acquire(entry);
+      if (entry->id() != lockdep::kInvalidLockClassId) {
+        lockdep::ThreadLockState::Get(flags)->Acquire(entry);
+      }
     }
   }
 #endif

@@ -3,19 +3,21 @@
 // found in the LICENSE file.
 
 use super::RawLock;
+use super::lockdep_tracked::LockdepTracked;
+use super::raw_lock::{ConstRawLock, ExclusiveLockPolicy};
 use lock_api::RawMutex as _;
 use pin_init::{PinInit, pin_init_from_closure};
 
 #[repr(transparent)]
-pub struct RawMutex(fuchsia_sync::RawMutex);
+pub struct RawMutexStorage(fuchsia_sync::RawMutex);
 
-impl Default for RawMutex {
+impl Default for RawMutexStorage {
     fn default() -> Self {
         Self::const_init(core::ptr::null())
     }
 }
 
-impl RawMutex {
+impl RawMutexStorage {
     #[allow(clippy::declare_interior_mutable_const)]
     pub const INIT: Self = Self::const_init(core::ptr::null());
 
@@ -42,8 +44,9 @@ impl RawMutex {
     }
 }
 
-// SAFETY: RawMutex forwards directly to fuchsia_sync::RawMutex which implements lock_api::RawMutex.
-unsafe impl lock_api::RawMutex for RawMutex {
+// SAFETY: `RawMutexStorage` forwards directly to `fuchsia_sync::RawMutex` which implements
+// `lock_api::RawMutex`.
+unsafe impl lock_api::RawMutex for RawMutexStorage {
     const INIT: Self = Self::const_init(core::ptr::null());
     type GuardMarker = <fuchsia_sync::RawMutex as lock_api::RawMutex>::GuardMarker;
 
@@ -73,24 +76,27 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
 pub struct RawMutexPolicy;
 
-// SAFETY: `RawMutex::lock` and `RawMutex::unlock` enforce mutual exclusion on `RawMutex`.
-unsafe impl super::LockPolicy<RawMutex> for RawMutexPolicy {
+// SAFETY: `RawMutexStorage::lock` and `RawMutexStorage::unlock` enforce mutual exclusion on
+// `RawMutexStorage`.
+unsafe impl super::LockPolicy<RawMutexStorage> for RawMutexPolicy {
     type AcquireArgs = ();
     type GuardState = ();
 
     #[inline]
-    unsafe fn acquire(lock: &RawMutex, _entry: *mut (), _args: ()) -> Self::GuardState {
+    unsafe fn acquire(lock: &RawMutexStorage, _state: &mut Self::GuardState, _args: ()) {
         lock.lock();
     }
 
     #[inline]
-    unsafe fn reacquire(lock: &RawMutex, entry: *mut (), state: &mut Self::GuardState) {
+    unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
         // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
-        *state = unsafe { Self::acquire(lock, entry, ()) };
+        unsafe {
+            Self::acquire(lock, state, ());
+        }
     }
 
     #[inline]
-    unsafe fn release(lock: &RawMutex, _entry: *mut (), _state: Self::GuardState) {
+    unsafe fn release(lock: &RawMutexStorage, _state: &mut Self::GuardState) {
         // SAFETY: The raw lock is held by the current thread
         unsafe {
             lock.unlock();
@@ -98,9 +104,11 @@ unsafe impl super::LockPolicy<RawMutex> for RawMutexPolicy {
     }
 }
 
-// SAFETY: `RawMutex` is a physical userspace mutex with a unique storage address.
-unsafe impl RawLock for RawMutex {
-    type LockEntry = ();
+// SAFETY: `RawMutexPolicy` enforces exclusive mutual exclusion on `RawMutexStorage`.
+unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawMutexPolicy {}
+
+// SAFETY: `RawMutexStorage` is a physical userspace mutex with a unique storage address.
+unsafe impl RawLock for RawMutexStorage {
     type DefaultPolicy = RawMutexPolicy;
 
     #[inline]
@@ -121,3 +129,10 @@ unsafe impl RawLock for RawMutex {
         self as *const Self as *mut core::ffi::c_void
     }
 }
+
+impl ConstRawLock for RawMutexStorage {
+    const INIT: Self = Self::const_init(core::ptr::null());
+}
+
+/// Lockdep-tracked userspace `RawMutex`.
+pub type RawMutex = LockdepTracked<RawMutexStorage>;

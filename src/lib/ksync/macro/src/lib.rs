@@ -32,6 +32,7 @@ struct MutexField {
     custom_class: Option<Type>,
     custom_flags: Option<syn::Expr>,
     is_phantom: bool,
+    is_untracked: bool,
 }
 
 struct GuardedField {
@@ -52,12 +53,14 @@ struct FieldAttrAnalysis {
     is_unpinned: bool,
     custom_class: Option<Type>,
     custom_flags: Option<syn::Expr>,
+    is_untracked: bool,
 }
 
 fn parse_mutex_or_brwlock_args(
     meta_list: &syn::MetaList,
     custom_class: &mut Option<Type>,
     custom_flags: &mut Option<syn::Expr>,
+    is_untracked: &mut bool,
     errors: &mut Vec<syn::Error>,
     attr_name: &str,
 ) {
@@ -82,6 +85,9 @@ fn parse_mutex_or_brwlock_args(
             syn::Meta::NameValue(nv) if nv.path.is_ident("flags") => {
                 *custom_flags = Some(nv.value);
             }
+            syn::Meta::Path(path) if path.is_ident("untracked") => {
+                *is_untracked = true;
+            }
             syn::Meta::Path(path) => {
                 *custom_class = Some(Type::Path(TypePath { attrs: Vec::new(), qself: None, path }));
             }
@@ -96,7 +102,7 @@ fn parse_mutex_or_brwlock_args(
                 errors.push(syn::Error::new(
                     other.span(),
                     format!(
-                        "#[{attr_name}] attribute accepts `LockClass`, `flags = <expr>`, or both"
+                        "#[{attr_name}] attribute accepts `LockClass`, `untracked`, `flags = <expr>`, or combinations thereof"
                     ),
                 ));
             }
@@ -116,6 +122,7 @@ fn parse_field_attributes(
         is_unpinned: false,
         custom_class: None,
         custom_flags: None,
+        is_untracked: false,
     };
 
     field.attrs.retain(|attr| {
@@ -126,6 +133,7 @@ fn parse_field_attributes(
                     meta_list,
                     &mut analysis.custom_class,
                     &mut analysis.custom_flags,
+                    &mut analysis.is_untracked,
                     errors,
                     "mutex",
                 );
@@ -133,7 +141,7 @@ fn parse_field_attributes(
                 errors.push(syn::Error::new(
                     attr.meta.span(),
                     "#[mutex] attribute must be either #[mutex], #[mutex(LockClass)], \
-                     #[mutex(flags = ...)], or #[mutex(LockClass, flags = ...)].",
+                     #[mutex(untracked)], #[mutex(flags = ...)], or #[mutex(LockClass, flags = ...)].",
                 ));
             }
             false
@@ -144,6 +152,7 @@ fn parse_field_attributes(
                     meta_list,
                     &mut analysis.custom_class,
                     &mut analysis.custom_flags,
+                    &mut analysis.is_untracked,
                     errors,
                     "brwlock",
                 );
@@ -1091,7 +1100,7 @@ fn generate_pinned_guard_struct(
 ///     _marker: ::core::marker::PhantomData<(&'b (),)>,
 /// }
 ///
-/// impl<'a, P: ::ksync::LockPolicy<::ksync::RawMutex>> ExampleMu1Guard<'a, P> {
+/// impl<'a, P: ::ksync::ExclusiveLockPolicy<::ksync::RawMutex>> ExampleMu1Guard<'a, P> {
 ///     fn single(&self) -> &u32 {
 ///         unsafe { self.parent.single.get(self.inner.token()) }
 ///     }
@@ -1189,11 +1198,19 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     Err(e) => errors.push(e),
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
+                let is_untracked = analysis.is_untracked || is_untracked_storage_type(&mutex_type);
+                if is_untracked && analysis.custom_flags.is_some() {
+                    errors.push(syn::Error::new(
+                        field.ident.as_ref().unwrap().span(),
+                        "untracked mutexes cannot specify lockdep flags",
+                    ));
+                }
                 mutex_fields.push((
                     field.clone(),
                     mutex_type,
                     analysis.custom_class,
                     analysis.custom_flags,
+                    is_untracked,
                 ));
             } else if analysis.is_brwlock {
                 if !is_brwlock_type(&field.ty) {
@@ -1202,8 +1219,14 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                         "Brwlock field must be of type BrwLockPi",
                     ));
                 }
+                if analysis.is_untracked && analysis.custom_flags.is_some() {
+                    errors.push(syn::Error::new(
+                        field.ident.as_ref().unwrap().span(),
+                        "untracked brwlocks cannot specify lockdep flags",
+                    ));
+                }
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                brwlock_fields.push((field.clone(), analysis.custom_flags));
+                brwlock_fields.push((field.clone(), analysis.custom_flags, analysis.is_untracked));
             } else if !analysis.guarded_by.is_empty() {
                 let konce_cell_inner_ty = if is_konce_cell_type(&field.ty) {
                     match extract_konce_cell_inner_type(&field.ty) {
@@ -1264,7 +1287,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let mut brwlock_fields_processed = Vec::new();
     let mut generated_names = std::collections::HashSet::new();
 
-    for (field, mutex_type, custom_class, custom_flags) in mutex_fields {
+    for (field, mutex_type, custom_class, custom_flags, is_untracked) in mutex_fields {
         let field_ident = field.ident.clone().unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
         let guard_name = format!("{struct_ident}{mu_camel}Guard");
@@ -1336,10 +1359,11 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             custom_class,
             custom_flags,
             is_phantom,
+            is_untracked,
         });
     }
 
-    for (field, custom_flags) in brwlock_fields {
+    for (field, custom_flags, is_untracked) in brwlock_fields {
         let field_ident = field.ident.unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
@@ -1388,6 +1412,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             custom_class: None,
             custom_flags,
             is_phantom: false,
+            is_untracked,
         });
     }
 
@@ -1588,27 +1613,35 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         );
 
         let class_registration_code = if mutex.custom_class.is_none() {
-            let flags_expr = match mutex.custom_flags.as_ref() {
-                Some(flags) => {
-                    quote! { (<#mutex_type as ::ksync::RawLock>::LOCK_FLAGS | (#flags)) }
+            if mutex.is_untracked {
+                quote! {
+                    impl #class_impl_generics ::ksync::LockClass for #class_ident #class_ty_generics #where_clause {
+                        const ID: *mut ::core::ffi::c_void = ::core::ptr::null_mut();
+                    }
                 }
-                None => quote! { <#mutex_type as ::ksync::RawLock>::LOCK_FLAGS },
-            };
-            let string_reg_ident = format_ident!(
-                "{}_{}_STRING_REG",
-                struct_ident.to_string().to_ascii_uppercase(),
-                mu_camel.to_ascii_uppercase()
-            );
-            generate_lock_class_registration(
-                struct_ident,
-                mu_ident,
-                &mu_camel,
-                class_ident,
-                &class_impl_generics,
-                &class_ty_generics,
-                where_clause,
-                quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
-            )
+            } else {
+                let flags_expr = match mutex.custom_flags.as_ref() {
+                    Some(flags) => {
+                        quote! { (<#mutex_type>::LOCK_FLAGS | (#flags)) }
+                    }
+                    None => quote! { <#mutex_type>::LOCK_FLAGS },
+                };
+                let string_reg_ident = format_ident!(
+                    "{}_{}_STRING_REG",
+                    struct_ident.to_string().to_ascii_uppercase(),
+                    mu_camel.to_ascii_uppercase()
+                );
+                generate_lock_class_registration(
+                    struct_ident,
+                    mu_ident,
+                    &mu_camel,
+                    class_ident,
+                    &class_impl_generics,
+                    &class_ty_generics,
+                    where_clause,
+                    quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
+                )
+            }
         } else {
             quote! {}
         };
@@ -1619,7 +1652,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             quote! { <'a, #params> }
         } else {
             let mut params = params_with_bounds.clone();
-            params.push(syn::parse_quote!(P: ::ksync::LockPolicy<#mutex_type> = <#mutex_type as ::ksync::RawLock>::DefaultPolicy));
+            params.push(syn::parse_quote!(P: ::ksync::ExclusiveLockPolicy<#mutex_type> = <#mutex_type as ::ksync::RawLock>::DefaultPolicy));
             quote! { <'a, #params>  }
         };
         let guard_impl_generics = if mutex.is_phantom {
@@ -1628,7 +1661,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             quote! { <'a, #params> }
         } else {
             let mut params = params_with_bounds.clone();
-            params.push(syn::parse_quote!(P: ::ksync::LockPolicy<#mutex_type>));
+            params.push(syn::parse_quote!(P: ::ksync::ExclusiveLockPolicy<#mutex_type>));
             quote! { <'a, #params> }
         };
         let guard_ty_generics = if mutex.is_phantom {
@@ -1670,7 +1703,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     real_mutex: &'a ::ksync::KMutex<#class_type, M>,
                 ) -> impl pin_init::PinInit<#guard_ident #guard_ty_generics, ::core::convert::Infallible>
                 where
-                    <M as ::ksync::RawLock>::DefaultPolicy: ::ksync::LockPolicy<M, AcquireArgs = ()>,
+                    <M as ::ksync::RawLock>::DefaultPolicy: ::ksync::ExclusiveLockPolicy<M, AcquireArgs = ()>,
                 {
                     pin_init::pin_init!(#guard_ident {
                         parent: self,
@@ -1695,7 +1728,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     })
                 }
                 #[inline]
-                #struct_vis fn #lock_policy_method_ident<P: ::ksync::LockPolicy<#mutex_type>>(
+                #struct_vis fn #lock_policy_method_ident<P: ::ksync::ExclusiveLockPolicy<#mutex_type>>(
                     &self,
                     args: P::AcquireArgs,
                 ) -> impl pin_init::PinInit<#guard_ident #policy_return_ty_generics, ::core::convert::Infallible> {
@@ -1724,7 +1757,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     'a,
                     AliasClass: ::ksync::LockClass,
                     M2: ::ksync::RawLock,
-                    P: ::ksync::LockPolicy<#mutex_type>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
                 >(
                     &'a self,
                     alias: &'a ::ksync::KMutex<AliasClass, M2>,
@@ -1752,7 +1785,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #struct_vis fn #lock_multiple_policy_method_ident<
                     'a,
                     const __KSYNC_N: usize,
-                    P: ::ksync::LockPolicy<#mutex_type>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
                 >(
                     items: [&'a Self; __KSYNC_N],
                     args: P::AcquireArgs,
@@ -1780,7 +1813,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     })
                 }
                 #[inline]
-                #struct_vis fn #lock_policy_method_ident<P: ::ksync::LockPolicy<#mutex_type, AcquireArgs = ()>>(&self)
+                #struct_vis fn #lock_policy_method_ident<P: ::ksync::ExclusiveLockPolicy<#mutex_type, AcquireArgs = ()>>(&self)
                     -> impl pin_init::PinInit<#guard_ident #policy_return_ty_generics, ::core::convert::Infallible> {
                     pin_init::pin_init!(#guard_ident {
                         parent: self,
@@ -1806,7 +1839,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                     'a,
                     AliasClass: ::ksync::LockClass,
                     M2: ::ksync::RawLock,
-                    P: ::ksync::LockPolicy<#mutex_type, AcquireArgs = ()>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type, AcquireArgs = ()>,
                 >(
                     &'a self,
                     alias: &'a ::ksync::KMutex<AliasClass, M2>,
@@ -1829,7 +1862,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #struct_vis fn #lock_multiple_policy_method_ident<
                     'a,
                     const __KSYNC_N: usize,
-                    P: ::ksync::LockPolicy<#mutex_type, AcquireArgs = ()>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type, AcquireArgs = ()>,
                 >(
                     items: [&'a Self; __KSYNC_N],
                 ) -> impl pin_init::PinInit<
@@ -1854,7 +1887,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #struct_vis fn #guard_from_guard_method_ident<
                     'b,
                     'a,
-                    P: ::ksync::LockPolicy<#mutex_type>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
                 >(
                     &'b self,
                     guard: &'b ::ksync::KMutexGuard<'a, #class_type, #mutex_type, P>,
@@ -1870,7 +1903,7 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                 #struct_vis fn #guard_mut_from_guard_method_ident<
                     'b,
                     'a,
-                    P: ::ksync::LockPolicy<#mutex_type>,
+                    P: ::ksync::ExclusiveLockPolicy<#mutex_type>,
                 >(
                     &'b self,
                     guard: ::core::pin::Pin<
@@ -2533,7 +2566,20 @@ fn is_kmutex_type(ty: &Type) -> bool {
 
 fn is_monitored_spinlock_type(tokens: &proc_macro2::TokenStream) -> bool {
     if let Ok(ty) = syn::parse2::<Type>(tokens.clone()) {
-        is_type_named(&ty, "RawMonitoredSpinlock") || is_type_named(&ty, "KMonitoredSpinlock")
+        is_type_named(&ty, "RawMonitoredSpinlock")
+            || is_type_named(&ty, "RawMonitoredSpinlockStorage")
+            || is_type_named(&ty, "KMonitoredSpinlock")
+    } else {
+        false
+    }
+}
+
+fn is_untracked_storage_type(tokens: &proc_macro2::TokenStream) -> bool {
+    if let Ok(ty) = syn::parse2::<Type>(tokens.clone()) {
+        is_type_named(&ty, "RawMutexStorage")
+            || is_type_named(&ty, "RawSpinlockStorage")
+            || is_type_named(&ty, "RawMonitoredSpinlockStorage")
+            || is_type_named(&ty, "RawBrwLockPiStorage")
     } else {
         false
     }
@@ -2653,7 +2699,7 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
 
             /// Acquires the singleton monitored spinlock using the specified lock policy and arguments.
             #[inline]
-            pub fn lock_policy<P: ::ksync::LockPolicy<#raw_lock>>(
+            pub fn lock_policy<P: ::ksync::ExclusiveLockPolicy<#raw_lock>>(
                 args: P::AcquireArgs,
             ) -> impl ::ksync::pin_init::PinInit<
                 ::ksync::KMutexGuard<'static, #name, #raw_lock, P>,
@@ -2676,7 +2722,7 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
             /// Acquires the singleton mutex using the specified lock policy.
             #[inline]
             pub fn lock_policy<
-                P: ::ksync::LockPolicy<#raw_lock, AcquireArgs = ()>,
+                P: ::ksync::ExclusiveLockPolicy<#raw_lock, AcquireArgs = ()>,
             >() -> impl ::ksync::pin_init::PinInit<
                 ::ksync::KMutexGuard<'static, #name, #raw_lock, P>,
                 ::core::convert::Infallible,
@@ -2699,7 +2745,7 @@ pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
             static #reg_ident: ::ksync::LockClassRegistration =
                 ::ksync::LockClassRegistration::with_flags(
                     &#string_reg_ident,
-                    <#raw_lock as ::ksync::RawLock>::LOCK_FLAGS
+                    <#raw_lock>::LOCK_FLAGS
                         | ::ksync::LOCK_FLAGS_SINGLETON_LOCK,
                 );
 
@@ -2871,5 +2917,50 @@ mod tests {
                 && err_too_many.contains("#[guarded_by(...)] supports at most 3 locks"),
             "unexpected output: {err_too_many}"
         );
+
+        // 9. Combining `untracked` and `flags = ...` on `#[mutex(...)]`.
+        let err_untracked_flags = guarded_impl(quote! {
+            struct BadUntrackedFlags {
+                #[mutex(untracked, flags = 1)]
+                mu: KMutex<RawMutexStorage>,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_untracked_flags.contains("compile_error")
+                && err_untracked_flags.contains("untracked mutexes cannot specify lockdep flags"),
+            "unexpected output: {err_untracked_flags}"
+        );
+    }
+
+    #[test]
+    fn test_untracked_lock_class_generation() {
+        let out_storage = guarded_impl(quote! {
+            struct UntrackedStorageObj {
+                #[mutex]
+                mu: KMutex<RawMutexStorage>,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!out_storage.contains("compile_error"), "unexpected error: {out_storage}");
+        assert!(!out_storage.contains("rust_lock_classes"), "unexpected section: {out_storage}");
+        assert!(out_storage.contains("null_mut"), "expected null_mut ID: {out_storage}");
+
+        let out_explicit = guarded_impl(quote! {
+            struct ExplicitUntrackedObj {
+                #[mutex(untracked)]
+                mu: KMutex<CustomUntrackedLock>,
+                #[guarded_by(mu)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!out_explicit.contains("compile_error"), "unexpected error: {out_explicit}");
+        assert!(!out_explicit.contains("rust_lock_classes"), "unexpected section: {out_explicit}");
+        assert!(out_explicit.contains("null_mut"), "expected null_mut ID: {out_explicit}");
     }
 }

@@ -28,6 +28,7 @@ rustc_library("ksync") {
     "src/konce_cell.rs",
     "src/lib.rs",
     "src/lock_token.rs",
+    "src/lockdep_tracked.rs",
     "src/phantom_mutex.rs",
     "src/raw_kernel_brwlock.rs",
     "src/raw_kernel_mutex.rs",

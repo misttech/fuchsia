@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::raw_lock::RawLock;
+use crate::lockdep_tracked::LockdepTracked;
+use crate::raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 use core::ffi::c_void;
 use pin_init::{PinInit, pin_data, pin_init_from_closure};
 
@@ -12,19 +13,13 @@ const RAW_MUTEX_SIZE: usize = 32;
 const RAW_MUTEX_SIZE: usize = 24;
 
 unsafe extern "C" {
-    fn cpp_mutex_destroy(mutex: *mut c_void);
-    fn cpp_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void);
-    fn cpp_mutex_release(lock: *mut c_void, entry_storage: *mut c_void);
+    fn cpp_mutex_destroy(lock: *mut c_void);
+    fn cpp_mutex_acquire(lock: *mut c_void);
+    fn cpp_mutex_release(lock: *mut c_void);
     fn cpp_mutex_is_contested(lock: *mut c_void) -> bool;
 
-    fn cpp_critical_mutex_destroy(mutex: *mut c_void);
-    fn cpp_critical_mutex_acquire(lock: *mut c_void, entry_storage: *mut c_void) -> bool;
-    fn cpp_critical_mutex_release(
-        lock: *mut c_void,
-        entry_storage: *mut c_void,
-        should_clear: bool,
-    );
-    fn cpp_critical_mutex_is_contested(lock: *mut c_void) -> bool;
+    fn cpp_critical_mutex_acquire(lock: *mut c_void) -> bool;
+    fn cpp_critical_mutex_release(lock: *mut c_void, should_clear: bool);
 }
 
 const MUTEX_MAGIC: u32 = 0x6D757478; // 'mutx'
@@ -53,37 +48,20 @@ const fn make_mutex_storage() -> [u8; RAW_MUTEX_SIZE] {
     bytes
 }
 
-#[repr(C, align(8))]
-struct RawMutexStorage(zr::OpaqueBytes<RAW_MUTEX_SIZE>);
-
-#[cfg(feature = "lock_dep")]
-#[derive(Default)]
-#[repr(C, align(8))]
-pub struct LockEntryStorage(zr::OpaqueBytes<40>);
-
-#[cfg(not(feature = "lock_dep"))]
-#[derive(Default)]
-pub struct LockEntryStorage(zr::OpaqueBytes<0>);
-
-/// Opaque layout block matching the Zircon C++ Mutex exactly.
+/// Opaque layout block matching the Zircon C++ `Mutex` (and `CriticalMutex`) object.
 #[pin_data(PinnedDrop)]
-#[repr(C)]
-pub struct RawMutex {
-    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
-    class_id: *const c_void,
-    storage: RawMutexStorage,
+#[repr(C, align(8))]
+pub struct RawMutexStorage {
+    storage: zr::OpaqueBytes<RAW_MUTEX_SIZE>,
 }
 
-impl RawMutex {
-    pub const INIT: Self = Self::const_init(core::ptr::null());
+impl RawMutexStorage {
+    #[allow(clippy::declare_interior_mutable_const)]
+    pub const INIT: Self = Self::const_init();
 
-    /// Statically initializes a RawMutex in constant context.
-    pub const fn const_init(_class_id: *const c_void) -> Self {
-        Self {
-            #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
-            class_id: _class_id,
-            storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
-        }
+    /// Statically initializes a `RawMutexStorage` in constant context.
+    pub const fn const_init() -> Self {
+        Self { storage: zr::OpaqueBytes::new(make_mutex_storage()) }
     }
 
     /// Is the mutex contested i.e. is at least one thread blocked waiting on it?
@@ -92,7 +70,7 @@ impl RawMutex {
     /// Mutex and have yet to enter a blocking phase.
     #[inline]
     pub fn is_contested(&self) -> bool {
-        // SAFETY: The FFI call is safe because the lock is initialized
+        // SAFETY: The FFI call is safe because the lock is initialized.
         unsafe { cpp_mutex_is_contested(self.as_mut_ptr()) }
     }
 
@@ -101,74 +79,69 @@ impl RawMutex {
     #[inline]
     pub fn raw_storage_slice(&self) -> &[u8] {
         // SAFETY: The storage is valid and allocated with RAW_MUTEX_SIZE bytes.
-        unsafe { core::slice::from_raw_parts(self.storage.0.get() as *const u8, RAW_MUTEX_SIZE) }
+        unsafe { core::slice::from_raw_parts(self.storage.get() as *const u8, RAW_MUTEX_SIZE) }
     }
 }
 
-impl Default for RawMutex {
+impl Default for RawMutexStorage {
     fn default() -> Self {
-        Self::const_init(core::ptr::null())
+        Self::INIT
     }
 }
 
-// SAFETY: RawMutex is safe to share and access across threads.
-unsafe impl Sync for RawMutex {}
-// SAFETY: RawMutex is safe to send across threads.
-unsafe impl Send for RawMutex {}
+// SAFETY: RawMutexStorage is safe to share and access across threads.
+unsafe impl Sync for RawMutexStorage {}
+// SAFETY: RawMutexStorage is safe to send across threads.
+unsafe impl Send for RawMutexStorage {}
 
-zr::unsafe_pinned_drop_ffi!(RawMutex, cpp_mutex_destroy);
+zr::unsafe_pinned_drop_ffi!(RawMutexStorage, cpp_mutex_destroy);
 
-pub struct RawMutexPolicy;
-
-// SAFETY: `cpp_mutex_acquire` and `cpp_mutex_release` enforce mutual exclusion on `RawMutex`.
-unsafe impl crate::LockPolicy<RawMutex> for RawMutexPolicy {
+// SAFETY: `cpp_mutex_acquire` and `cpp_mutex_release` enforce mutual exclusion on
+// `RawMutexStorage`.
+unsafe impl LockPolicy<RawMutexStorage> for RawMutexStorage {
     type AcquireArgs = ();
     type GuardState = ();
 
     #[inline]
-    unsafe fn acquire(
-        lock: &RawMutex,
-        entry: *mut LockEntryStorage,
-        _args: (),
-    ) -> Self::GuardState {
-        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `entry` points to valid storage for a lockdep entry.
+    unsafe fn acquire(lock: &RawMutexStorage, _state: &mut Self::GuardState, _args: ()) {
+        // SAFETY: The FFI call is safe because the lock is initialized.
         unsafe {
-            cpp_mutex_acquire(lock.as_mut_ptr(), entry as *mut c_void);
+            cpp_mutex_acquire(lock.as_mut_ptr());
         }
     }
 
     #[inline]
-    unsafe fn reacquire(
-        lock: &RawMutex,
-        entry: *mut LockEntryStorage,
-        state: &mut Self::GuardState,
-    ) {
+    unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
         // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
-        *state = unsafe { Self::acquire(lock, entry, ()) };
+        unsafe {
+            Self::acquire(lock, state, ());
+        }
     }
 
     #[inline]
-    unsafe fn release(lock: &RawMutex, entry: *mut LockEntryStorage, _state: Self::GuardState) {
-        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `entry` points to valid storage for a lockdep entry.
+    unsafe fn release(lock: &RawMutexStorage, _state: &mut Self::GuardState) {
+        // SAFETY: The FFI call is safe because the lock is initialized and held by the current
+        // thread.
         unsafe {
-            cpp_mutex_release(lock.as_mut_ptr(), entry as *mut c_void);
+            cpp_mutex_release(lock.as_mut_ptr());
         }
     }
 }
 
-// SAFETY: `RawMutex` is a physical kernel mutex with a unique storage address.
-unsafe impl crate::RawLock for RawMutex {
-    type LockEntry = LockEntryStorage;
-    type DefaultPolicy = RawMutexPolicy;
+// SAFETY: `cpp_mutex_acquire` and `cpp_mutex_release` enforce exclusive mutual exclusion on
+// `RawMutexStorage`.
+unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawMutexStorage {}
+
+// SAFETY: `RawMutexStorage` is a physical kernel mutex with a unique storage address.
+unsafe impl RawLock for RawMutexStorage {
+    type DefaultPolicy = Self;
 
     #[inline]
-    unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
+    unsafe fn init(_class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
         // SAFETY: The closure initializes the provided slot in place before returning Ok(()).
         unsafe {
             pin_init_from_closure(move |slot: *mut Self| {
-                slot.write(Self::const_init(class_id));
+                slot.write(Self::const_init());
                 Ok(())
             })
         }
@@ -180,123 +153,52 @@ unsafe impl crate::RawLock for RawMutex {
     }
 }
 
-/// Opaque layout block matching the Zircon C++ CriticalMutex exactly.
-#[pin_data(PinnedDrop)]
-#[repr(C)]
-pub struct RawCriticalMutex {
-    #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
-    class_id: *const c_void,
-    storage: RawMutexStorage,
+impl ConstRawLock for RawMutexStorage {
+    const INIT: Self = Self::INIT;
 }
 
-impl RawCriticalMutex {
-    pub const INIT: Self = Self::const_init(core::ptr::null());
-
-    /// Statically initializes a RawCriticalMutex in constant context.
-    pub const fn const_init(_class_id: *const c_void) -> Self {
-        Self {
-            #[cfg(any(feature = "lock_dep", feature = "lock_metadata_only"))]
-            class_id: _class_id,
-            storage: RawMutexStorage(zr::OpaqueBytes::new(make_mutex_storage())),
-        }
-    }
-
-    /// Is the mutex contested i.e. is at least one thread blocked waiting on it?
-    ///
-    /// The contested flag does not track threads which are spin-waiting on the
-    /// Mutex and have yet to enter a blocking phase.
-    #[inline]
-    pub fn is_contested(&self) -> bool {
-        // SAFETY: The FFI call is safe because the lock is initialized
-        unsafe { cpp_critical_mutex_is_contested(self.as_mut_ptr()) }
-    }
-
-    /// Returns a slice over the raw critical mutex storage bytes.
-    #[cfg(any(test, ktest))]
-    #[inline]
-    pub fn raw_storage_slice(&self) -> &[u8] {
-        // SAFETY: The storage is valid and allocated with RAW_MUTEX_SIZE bytes.
-        unsafe { core::slice::from_raw_parts(self.storage.0.get() as *const u8, RAW_MUTEX_SIZE) }
-    }
-}
-
-impl Default for RawCriticalMutex {
-    fn default() -> Self {
-        Self::const_init(core::ptr::null())
-    }
-}
-
-// SAFETY: RawCriticalMutex is safe to share and access across threads.
-unsafe impl Sync for RawCriticalMutex {}
-// SAFETY: RawCriticalMutex is safe to send across threads.
-unsafe impl Send for RawCriticalMutex {}
-
-zr::unsafe_pinned_drop_ffi!(RawCriticalMutex, cpp_critical_mutex_destroy);
-
+/// Lock policy for acquiring and releasing a `RawMutexStorage` as a C++ `CriticalMutex`.
 pub struct RawCriticalMutexPolicy;
 
 // SAFETY: `cpp_critical_mutex_acquire` and `cpp_critical_mutex_release` enforce mutual exclusion
-// on `RawCriticalMutex`.
-unsafe impl crate::LockPolicy<RawCriticalMutex> for RawCriticalMutexPolicy {
+// on `RawMutexStorage`.
+unsafe impl LockPolicy<RawMutexStorage> for RawCriticalMutexPolicy {
     type AcquireArgs = ();
     type GuardState = bool;
 
     #[inline]
-    unsafe fn acquire(
-        lock: &RawCriticalMutex,
-        entry: *mut LockEntryStorage,
-        _args: (),
-    ) -> Self::GuardState {
-        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `entry` points to valid storage for a lockdep entry.
-        unsafe { cpp_critical_mutex_acquire(lock.as_mut_ptr(), entry as *mut c_void) }
+    unsafe fn acquire(lock: &RawMutexStorage, state: &mut Self::GuardState, _args: ()) {
+        // SAFETY: The FFI call is safe because the lock is initialized.
+        *state = unsafe { cpp_critical_mutex_acquire(lock.as_mut_ptr()) };
     }
 
     #[inline]
-    unsafe fn reacquire(
-        lock: &RawCriticalMutex,
-        entry: *mut LockEntryStorage,
-        state: &mut Self::GuardState,
-    ) {
+    unsafe fn reacquire(lock: &RawMutexStorage, state: &mut Self::GuardState) {
         // SAFETY: Caller upholds the `LockPolicy::reacquire` contract.
-        *state = unsafe { Self::acquire(lock, entry, ()) };
-    }
-
-    #[inline]
-    unsafe fn release(
-        lock: &RawCriticalMutex,
-        entry: *mut LockEntryStorage,
-        should_clear: Self::GuardState,
-    ) {
-        // SAFETY: The FFI call is safe because the lock is initialized, and the caller guarantees
-        // that `entry` points to valid storage for a lockdep entry.
         unsafe {
-            cpp_critical_mutex_release(lock.as_mut_ptr(), entry as *mut c_void, should_clear);
-        }
-    }
-}
-
-// SAFETY: `RawCriticalMutex` is a physical kernel critical mutex with a unique storage address.
-unsafe impl crate::RawLock for RawCriticalMutex {
-    type LockEntry = LockEntryStorage;
-    type DefaultPolicy = RawCriticalMutexPolicy;
-
-    #[inline]
-    unsafe fn init(class_id: *const c_void) -> impl PinInit<Self, core::convert::Infallible> {
-        // SAFETY: The closure initializes the provided slot in place before returning Ok(()).
-        unsafe {
-            pin_init_from_closure(move |slot: *mut Self| {
-                slot.write(Self::const_init(class_id));
-                Ok(())
-            })
+            Self::acquire(lock, state, ());
         }
     }
 
     #[inline]
-    fn as_mut_ptr(&self) -> *mut c_void {
-        self as *const Self as *mut Self as *mut c_void
+    unsafe fn release(lock: &RawMutexStorage, should_clear: &mut Self::GuardState) {
+        // SAFETY: The FFI call is safe because the lock is initialized and held by the current
+        // thread.
+        unsafe {
+            cpp_critical_mutex_release(lock.as_mut_ptr(), *should_clear);
+        }
     }
 }
+
+// SAFETY: `cpp_critical_mutex_acquire` and `cpp_critical_mutex_release` enforce exclusive mutual
+// exclusion on `RawMutexStorage`.
+unsafe impl ExclusiveLockPolicy<RawMutexStorage> for RawCriticalMutexPolicy {}
+
+/// Lockdep-tracked kernel mutex matching the Zircon C++ `Lock<Mutex>` layout.
+pub type RawMutex = LockdepTracked<RawMutexStorage>;
+
+/// Lockdep-tracked kernel critical mutex matching the Zircon C++ `Lock<CriticalMutex>` layout.
+pub type RawCriticalMutex = LockdepTracked<RawMutexStorage, RawCriticalMutexPolicy>;
 
 const _: () = {
     const HAS_NAME_STORAGE: bool =

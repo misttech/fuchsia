@@ -70,6 +70,30 @@ mod ksync_tests {
     }
 
     #[ksync::guarded]
+    struct GuardedUntrackedMutexObj {
+        #[mutex]
+        mu: ksync::KMutex<ksync::RawMutexStorage>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
+    struct GuardedUntrackedSpinlockObj {
+        #[mutex]
+        mu: ksync::KMutex<ksync::RawSpinlockStorage>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
+    struct GuardedUntrackedMonitoredSpinlockObj {
+        #[mutex]
+        mu: ksync::KMutex<ksync::RawMonitoredSpinlockStorage>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[ksync::guarded]
     struct GuardedBrwLockObj {
         #[brwlock]
         lock: ksync::BrwLockPi,
@@ -289,6 +313,11 @@ mod ksync_tests {
         })
         .unwrap();
 
+        expect_true!(core::ptr::eq(
+            <ksync::RawMutex as ksync::RawLock>::as_mut_ptr(obj.mu.raw_mutex()),
+            <ksync::RawMutexStorage as ksync::RawLock>::as_mut_ptr(&**obj.mu.raw_mutex()),
+        ));
+
         {
             ksync::lock!(let mut guard = obj.lock_mu());
             expect_true!(*guard.value() == 42);
@@ -298,6 +327,74 @@ mod ksync_tests {
         {
             ksync::lock!(let guard = obj.lock_mu());
             expect_true!(*guard.value() == 43);
+        }
+    }
+
+    /// test untracked RawMutexStorage directly with both standard and critical policies
+    #[test]
+    fn untracked_mutex() {
+        stack_pin_init!(let obj = pin_init!(GuardedUntrackedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+
+        expect_true!(!obj.mu.raw_mutex().is_contested());
+
+        {
+            ksync::lock!(let mut guard = obj.lock_mu());
+            expect_true!(*guard.value() == 10);
+            *guard.as_mut().value_mut() = 20;
+            let res = guard.as_mut().call_unlocked(|| 99);
+            expect_true!(res == 99);
+        }
+
+        {
+            ksync::lock!(let mut guard = obj.lock_mu_policy::<ksync::RawCriticalMutexPolicy>());
+            expect_true!(*guard.value() == 20);
+            *guard.as_mut().value_mut() = 30;
+        }
+
+        {
+            ksync::lock!(let guard = obj.lock_mu());
+            expect_true!(*guard.value() == 30);
+        }
+    }
+
+    /// test untracked RawSpinlockStorage and RawMonitoredSpinlockStorage directly
+    #[test]
+    fn untracked_spinlock() {
+        stack_pin_init!(let obj = pin_init!(GuardedUntrackedSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+        stack_pin_init!(let mobj = pin_init!(GuardedUntrackedMonitoredSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 50.into(),
+        }));
+
+        {
+            ksync::lock!(let mut guard = obj.lock_mu());
+            expect_true!(*guard.value() == 10);
+            *guard.as_mut().value_mut() = 20;
+
+            ksync::lock!(let mut mguard = mobj.lock_mu_policy::<ksync::NoIrqSavePolicy>(ksync::source_tag!()));
+            expect_true!(*mguard.value() == 50);
+            *mguard.as_mut().value_mut() = 60;
+        }
+
+        {
+            ksync::lock!(let mut mguard = mobj.lock_mu(ksync::source_tag!()));
+            expect_true!(*mguard.value() == 60);
+            let res = mguard.as_mut().call_unlocked(|| 77);
+            expect_true!(res == 77);
+            *mguard.as_mut().value_mut() = 70;
+        }
+
+        {
+            ksync::lock!(let guard = obj.lock_mu());
+            expect_true!(*guard.value() == 20);
+            ksync::lock!(let mguard = mobj.lock_mu(ksync::source_tag!()));
+            expect_true!(*mguard.value() == 70);
         }
     }
 

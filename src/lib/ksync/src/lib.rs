@@ -121,6 +121,7 @@ mod kcell;
 mod kmutex;
 mod konce_cell;
 mod lock_token;
+mod lockdep_tracked;
 mod phantom_mutex;
 mod raw_lock;
 mod singleton;
@@ -154,20 +155,18 @@ pub use lockdep::{
     LOCK_FLAGS_MULTI_ACQUIRE, LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration,
     LockFlags,
 };
+pub use lockdep_tracked::{LockdepTracked, LockdepTrackedGuardState};
 pub use phantom_mutex::PhantomMutex;
-pub use raw_lock::{LockPolicy, RawLock};
+pub use raw_lock::{ConstRawLock, ExclusiveLockPolicy, LockPolicy, RawLock};
 pub use singleton::SingletonMutex;
 
 #[cfg(not(feature = "kernel"))]
-pub use raw_userspace_mutex::RawMutex;
-
-#[cfg(not(feature = "kernel"))]
-pub type LockEntryStorage = ();
+pub use raw_userspace_mutex::{RawMutex, RawMutexStorage};
 
 #[cfg(feature = "kernel")]
 pub use raw_spin_lock::{
     InterruptSavedState, IrqSavePolicy, MonitoredSpinlockGuardState, NoIrqSavePolicy,
-    RawMonitoredSpinlock, RawSpinlock,
+    RawMonitoredSpinlock, RawMonitoredSpinlockStorage, RawSpinlock, RawSpinlockStorage,
 };
 #[cfg(feature = "kernel")]
 pub type KSpinlock<Class> = KMutex<Class, RawSpinlock>;
@@ -176,8 +175,12 @@ pub type KMonitoredSpinlock<Class> = KMutex<Class, RawMonitoredSpinlock>;
 #[cfg(any(feature = "kernel", test))]
 pub use brwlock::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard};
 #[cfg(feature = "kernel")]
-pub use raw_kernel_brwlock::RawBrwLockPi;
+pub use raw_kernel_brwlock::{
+    RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,
+};
 #[cfg(feature = "kernel")]
-pub use raw_kernel_mutex::{LockEntryStorage, RawCriticalMutex, RawMutex};
+pub use raw_kernel_mutex::{RawCriticalMutex, RawCriticalMutexPolicy, RawMutex, RawMutexStorage};
 #[cfg(all(not(feature = "kernel"), test))]
-pub use raw_userspace_brwlock::RawBrwLockPi;
+pub use raw_userspace_brwlock::{
+    RawBrwLockPi, RawBrwLockPiReadPolicy, RawBrwLockPiStorage, RawBrwLockPiWritePolicy,
+};

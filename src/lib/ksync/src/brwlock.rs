@@ -7,8 +7,14 @@ use core::pin::Pin;
 use core::ptr::addr_of_mut;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 
-use crate::{LockEntryStorage, RawBrwLockPi};
+use crate::{
+    ExclusiveLockPolicy, LockPolicy, LockdepTracked, RawBrwLockPi, RawBrwLockPiReadPolicy,
+    RawBrwLockPiStorage, RawLock,
+};
 use lockdep::LockClass;
+
+type LockdepTrackedBrwLockReadPolicy = LockdepTracked<RawBrwLockPiStorage, RawBrwLockPiReadPolicy>;
+type LockdepTrackedBrwLockWritePolicy = <RawBrwLockPi as RawLock>::DefaultPolicy;
 
 /// A priority-inheriting reader-writer lock.
 #[repr(transparent)]
@@ -29,7 +35,7 @@ impl<Class: LockClass> BrwLockPi<Class> {
     pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
         pin_init!(Self {
             // SAFETY: `Class::ID` is either null or a valid, static `LockClassId`.
-            lock <- unsafe { RawBrwLockPi::init(Class::ID) },
+            lock <- unsafe { <RawBrwLockPi as RawLock>::init(Class::ID) },
             _marker: PhantomData,
         })
     }
@@ -63,7 +69,7 @@ impl<Class: LockClass> BrwLockPi<Class> {
 pub struct BrwLockPiReadGuard<'a, Class: LockClass> {
     lock: &'a BrwLockPi<Class>,
     #[pin]
-    lock_entry: LockEntryStorage,
+    state: <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::GuardState,
     token: crate::LockToken<'a, Class>,
 }
 
@@ -78,11 +84,14 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
                     let lock_addr = addr_of_mut!((*this).lock);
                     core::ptr::write(lock_addr, lock);
 
-                    let entry_addr = addr_of_mut!((*this).lock_entry);
-                    #[allow(clippy::unit_arg)]
-                    core::ptr::write(entry_addr, LockEntryStorage::default());
+                    let state_addr = addr_of_mut!((*this).state);
+                    core::ptr::write(state_addr, Default::default());
 
-                    lock.lock.acquire_read(entry_addr as *mut core::ffi::c_void);
+                    <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::acquire(
+                        &lock.lock,
+                        &mut *state_addr,
+                        (),
+                    );
 
                     let token_addr = addr_of_mut!((*this).token);
                     core::ptr::write(token_addr, crate::LockToken::new());
@@ -109,13 +118,18 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
     /// re-acquires the read lock.
     #[inline]
     pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
-        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        // SAFETY: `state` is pinned on the stack and valid.
         unsafe {
             let me = self.get_unchecked_mut();
-            let entry_addr = addr_of_mut!(me.lock_entry);
-            me.lock.lock.release_read(entry_addr as *mut core::ffi::c_void);
+            <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::release(
+                &me.lock.lock,
+                &mut me.state,
+            );
             let result = f();
-            me.lock.lock.acquire_read(entry_addr as *mut core::ffi::c_void);
+            <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::reacquire(
+                &me.lock.lock,
+                &mut me.state,
+            );
             result
         }
     }
@@ -125,29 +139,36 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
 impl<'a, Class: LockClass> PinnedDrop for BrwLockPiReadGuard<'a, Class> {
     fn drop(self: Pin<&mut Self>) {
         // SAFETY: `get_unchecked_mut` is safe because we do not move the fields out of Pin.
-        // `release_read` is safe because the read lock was acquired when creating this guard,
-        // and we are releasing it with the same entry storage.
+        // `release` is safe because the read lock was acquired when creating this guard,
+        // and we are releasing it with the same pinned state.
         unsafe {
             let me = self.get_unchecked_mut();
-            let entry_addr = addr_of_mut!(me.lock_entry);
-            me.lock.lock.release_read(entry_addr as *mut core::ffi::c_void);
+            <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::release(
+                &me.lock.lock,
+                &mut me.state,
+            );
         }
     }
 }
 
 /// A validation guard representing writer lock ownership and active list participation.
 #[repr(C)]
-#[pin_data(PinnedDrop)]
-pub struct BrwLockPiWriteGuard<'a, Class: LockClass> {
+pub struct BrwLockPiWriteGuard<
+    'a,
+    Class: LockClass,
+    P: ExclusiveLockPolicy<RawBrwLockPi> = LockdepTrackedBrwLockWritePolicy,
+> {
     lock: &'a BrwLockPi<Class>,
-    #[pin]
-    lock_entry: LockEntryStorage,
+    state: P::GuardState,
     token: crate::LockToken<'a, Class>,
 }
 
-impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
+impl<'a, Class: LockClass, P: ExclusiveLockPolicy<RawBrwLockPi>> BrwLockPiWriteGuard<'a, Class, P> {
     /// Creates a new stack-pinned validation guard initialization block.
-    pub fn new(lock: &'a BrwLockPi<Class>) -> impl PinInit<Self, core::convert::Infallible> {
+    pub fn new(lock: &'a BrwLockPi<Class>) -> impl PinInit<Self, core::convert::Infallible>
+    where
+        P: ExclusiveLockPolicy<RawBrwLockPi, AcquireArgs = ()>,
+    {
         // SAFETY: The closure correctly initializes all fields of the allocated
         // `BrwLockPiWriteGuard` and satisfies all safety requirements of `pin_init_from_closure`.
         unsafe {
@@ -156,11 +177,10 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
                     let lock_addr = addr_of_mut!((*this).lock);
                     core::ptr::write(lock_addr, lock);
 
-                    let entry_addr = addr_of_mut!((*this).lock_entry);
-                    #[allow(clippy::unit_arg)]
-                    core::ptr::write(entry_addr, LockEntryStorage::default());
+                    let state_addr = addr_of_mut!((*this).state);
+                    core::ptr::write(state_addr, Default::default());
 
-                    lock.lock.acquire_write(entry_addr as *mut core::ffi::c_void);
+                    P::acquire(&lock.lock, &mut *state_addr, ());
 
                     let token_addr = addr_of_mut!((*this).token);
                     core::ptr::write(token_addr, crate::LockToken::new());
@@ -196,28 +216,27 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
     /// re-acquires the write lock.
     #[inline]
     pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
-        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        // SAFETY: `state` is pinned on the stack and valid.
         unsafe {
             let me = self.get_unchecked_mut();
-            let entry_addr = addr_of_mut!(me.lock_entry);
-            me.lock.lock.release_write(entry_addr as *mut core::ffi::c_void);
+            P::release(&me.lock.lock, &mut me.state);
             let result = f();
-            me.lock.lock.acquire_write(entry_addr as *mut core::ffi::c_void);
+            P::reacquire(&me.lock.lock, &mut me.state);
             result
         }
     }
 }
 
-#[pinned_drop]
-impl<'a, Class: LockClass> PinnedDrop for BrwLockPiWriteGuard<'a, Class> {
-    fn drop(self: Pin<&mut Self>) {
-        // SAFETY: `get_unchecked_mut` is safe because we do not move the fields out of Pin.
-        // `release_write` is safe because the write lock was acquired when creating this guard,
-        // and we are releasing it with the same entry storage.
+impl<'a, Class: LockClass, P: ExclusiveLockPolicy<RawBrwLockPi>> Drop
+    for BrwLockPiWriteGuard<'a, Class, P>
+{
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: A guard is only created pinned, by `new`, and `self` is not moved after it is
+        // dropped. `release` is safe because the write lock was acquired when creating this guard,
+        // and we are releasing it with the same pinned state.
         unsafe {
-            let me = self.get_unchecked_mut();
-            let entry_addr = addr_of_mut!(me.lock_entry);
-            me.lock.lock.release_write(entry_addr as *mut core::ffi::c_void);
+            P::release(&self.lock.lock, &mut self.state);
         }
     }
 }
@@ -226,7 +245,8 @@ impl<'a, Class: LockClass> PinnedDrop for BrwLockPiWriteGuard<'a, Class> {
 mod tests {
     extern crate std;
 
-    use crate::{BrwLockPi, RawBrwLockPi, guarded};
+    use super::{LockdepTrackedBrwLockReadPolicy, LockdepTrackedBrwLockWritePolicy};
+    use crate::{BrwLockPi, LockPolicy, RawBrwLockPi, RawLock, guarded};
     use pin_init::{pin_init, stack_pin_init};
     use std::string::String;
     use std::vec::Vec;
@@ -291,7 +311,7 @@ mod tests {
 
         stack_pin_init!(let test = pin_init!(BrwLockTest {
             // SAFETY: Null class ID is valid for an untracked test lock.
-            lock <- unsafe { RawBrwLockPi::init(core::ptr::null()) },
+            lock <- unsafe { <RawBrwLockPi as RawLock>::init(core::ptr::null()) },
             state: std::sync::atomic::AtomicU32::new(0),
             kill: std::sync::atomic::AtomicBool::new(false),
         }));
@@ -301,17 +321,26 @@ mod tests {
 
             for _ in 0..readers {
                 threads.push(s.spawn(|| {
+                    let mut state =
+                        <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::GuardState::default();
                     while !test.kill.load(Ordering::Relaxed) {
                         // SAFETY: lock is initialized and pinned.
                         unsafe {
-                            test.lock.acquire_read(core::ptr::null_mut());
+                            <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::acquire(
+                                &test.lock,
+                                &mut state,
+                                (),
+                            );
                         }
                         let _ = test.state.fetch_add(1, Ordering::Relaxed);
                         std::thread::yield_now();
                         let _ = test.state.fetch_sub(1, Ordering::Relaxed);
                         // SAFETY: lock is held in read mode.
                         unsafe {
-                            test.lock.release_read(core::ptr::null_mut());
+                            <LockdepTrackedBrwLockReadPolicy as LockPolicy<RawBrwLockPi>>::release(
+                                &test.lock,
+                                &mut state,
+                            );
                         }
                         std::thread::yield_now();
                     }
@@ -320,17 +349,26 @@ mod tests {
 
             for _ in 0..writers {
                 threads.push(s.spawn(|| {
+                    let mut state = <LockdepTrackedBrwLockWritePolicy as LockPolicy<
+                        RawBrwLockPi,
+                    >>::GuardState::default();
                     while !test.kill.load(Ordering::Relaxed) {
                         // SAFETY: lock is initialized and pinned.
                         unsafe {
-                            test.lock.acquire_write(core::ptr::null_mut());
+                            <LockdepTrackedBrwLockWritePolicy as LockPolicy<RawBrwLockPi>>::acquire(
+                                &test.lock,
+                                &mut state,
+                                (),
+                            );
                         }
                         let _ = test.state.fetch_add(0x10000, Ordering::Relaxed);
                         std::thread::yield_now();
                         let _ = test.state.fetch_sub(0x10000, Ordering::Relaxed);
                         // SAFETY: lock is held in write mode.
                         unsafe {
-                            test.lock.release_write(core::ptr::null_mut());
+                            <LockdepTrackedBrwLockWritePolicy as LockPolicy<RawBrwLockPi>>::release(
+                                &test.lock, &mut state,
+                            );
                         }
                         std::thread::yield_now();
                     }

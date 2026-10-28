@@ -941,7 +941,7 @@ pub unsafe extern "C" fn rust_handle_table_destroy(table: *mut HandleTable) {
 /// `table` must be a valid reference to an initialized `HandleTable`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_handle_table_get_lock(table: &HandleTable) -> *mut core::ffi::c_void {
-    table.lock.raw_lock().as_mut_ptr()
+    core::ptr::from_ref(table.lock.raw_lock()).cast_mut().cast()
 }
 
 /// Maps a `Handle` pointer to a user-visible handle value using the table's mixer.
