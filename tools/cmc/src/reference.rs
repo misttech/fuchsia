@@ -189,7 +189,7 @@ fn get_program_reference(
             for entry in entries {
                 if entry.key == reference {
                     if let Some(value) = &entry.value {
-                        if let fidl_fuchsia_data::DictionaryValue::Str(ref str) = **value {
+                        if let fidl_fuchsia_data_common::DictionaryValue::Str(ref str) = **value {
                             return Some(str.clone());
                         } else {
                             return None;

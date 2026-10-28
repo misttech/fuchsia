@@ -5,7 +5,7 @@
 use crate::error::Error;
 use crate::features::FeatureSet;
 use crate::util;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile_ext::NamedTempFileExt as _;
@@ -110,8 +110,8 @@ mod tests {
     use cml::OfferToAllCapability;
     use difference::Changeset;
     use fidl::unpersist;
-    use fidl_fuchsia_component_decl as fdecl;
-    use fidl_fuchsia_data as fdata;
+    use fidl_fuchsia_component_decl_common as fdecl;
+    use fidl_fuchsia_data_common as fdata;
     use serde_json::json;
     use std::fs::File;
     use std::io::Read;

@@ -31,8 +31,8 @@ rustc_library(
     ],
     with_host_unit_tests = True,
     deps = [
-        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
-        "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+        "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_common",
+        "//sdk/fidl/fuchsia.data:fuchsia.data_rust_common",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/tempfile-ext",
         "//src/sys/lib/cm_rust",

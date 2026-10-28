@@ -6,7 +6,7 @@ use crate::Document;
 use crate::error::Error;
 use cm_rust::ComponentDecl;
 use fidl::unpersist;
-use fidl_fuchsia_component_decl::Component;
+use fidl_fuchsia_component_decl_common::Component;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

@@ -5,7 +5,7 @@
 use crate::error::Error;
 use cm_rust::FidlIntoNative;
 use fidl::unpersist;
-use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_decl_common as fdecl;
 use std::fs::read;
 use std::path::PathBuf;
 
