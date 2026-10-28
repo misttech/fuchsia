@@ -94,7 +94,6 @@ tracing::TransferStatus SharedBuffer::WriteChunk(
     uint64_t end, uint64_t buffer_size) const {
   ZX_DEBUG_ASSERT(last <= buffer_size);
   ZX_DEBUG_ASSERT(end <= buffer_size);
-  ZX_DEBUG_ASSERT(end == 0 || last <= end);
   offset += last;
   if (buffering_mode_ == fuchsia_tracing::BufferingMode::kOneshot ||
       // If end is zero then the header wasn't updated when tracing stopped.
@@ -102,6 +101,11 @@ tracing::TransferStatus SharedBuffer::WriteChunk(
     uint64_t size = buffer_size - last;
     return output->WriteChunkBy(tracing::BufferForwarder::ForwardStrategy::Records, vmo_, offset,
                                 size);
+  }
+  if (end < last) {
+    FX_LOGS(ERROR) << std::format("{}: buffer data end {} is before already transferred offset {}",
+                                  provider_name_, end, last);
+    return tracing::TransferStatus::kProviderError;
   }
   uint64_t size = end - last;
   return output->WriteChunkBy(tracing::BufferForwarder::ForwardStrategy::Size, vmo_, offset, size);

@@ -4,6 +4,7 @@
 //
 #include <lib/zx/socket.h>
 #include <lib/zx/vmo.h>
+#include <zircon/syscalls.h>
 
 #include <array>
 #include <vector>
@@ -82,7 +83,6 @@ TEST(BufferForwarderTest, SocketBackpressureThreshold) {
 
   ASSERT_FALSE(forwarder.IsSocketBackpressureExceeded());
 }
-
 TEST(BufferForwarderTest, WriteChunkOffsetAbove4GiB) {
   zx::socket ep0, ep1;
   ASSERT_EQ(zx::socket::create(0, &ep0, &ep1), ZX_OK);
@@ -112,4 +112,21 @@ TEST(BufferForwarderTest, WriteChunkOffsetAbove4GiB) {
   ASSERT_EQ(ep0.read(0, actual_words.data(), sizeof(actual_words), &actual_read), ZX_OK);
   EXPECT_EQ(actual_read, sizeof(kHighWords));
   EXPECT_EQ(actual_words, kHighWords);
+}
+
+TEST(BufferForwarderTest, ZeroSizeChunkAtPageAlignedOffsetCompletesWithoutWriting) {
+  zx::socket ep0, ep1;
+  ASSERT_EQ(zx::socket::create(0, &ep0, &ep1), ZX_OK);
+  tracing::BufferForwarder forwarder(std::move(ep1));
+  const uint64_t page_size = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(2 * page_size, 0u, &vmo), ZX_OK);
+
+  tracing::TransferStatus status = forwarder.WriteChunkBy(
+      tracing::BufferForwarder::ForwardStrategy::Size, vmo, /*vmo_offset=*/page_size, /*size=*/0);
+
+  EXPECT_EQ(status, tracing::TransferStatus::kComplete);
+  zx_signals_t pending = 0;
+  EXPECT_EQ(ep0.wait_one(ZX_SOCKET_READABLE, zx::time::infinite_past(), &pending),
+            ZX_ERR_TIMED_OUT);
 }

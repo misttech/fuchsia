@@ -121,9 +121,16 @@ TransferStatus BufferForwarder::WriteChunkBy(BufferForwarder::ForwardStrategy st
                  << std::hex << size
                  << (strategy == ForwardStrategy::Size ? ", by-size" : ", by-record");
 
-  // TODO(gmtr): This is run on the async loop and we may block on the socket write below. We should
-  // instead write as much as possible to the socket and if we get ZX_SHOULD_WAIT we instead
-  // schedule a continuation on the async loop when the socket becomes writable.
+  // There is nothing to forward. Mapping would also fail: if |vmo_offset| is page aligned then the
+  // mapping size below is zero, which zx_vmar_map rejects with ZX_ERR_INVALID_ARGS.
+  if (size == 0) {
+    return TransferStatus::kComplete;
+  }
+
+  // TODO(https://fxbug.dev/578973452): This is run on the async loop and we may block on the socket
+  // write below. We should instead write as much as possible to the socket and if we get
+  // ZX_SHOULD_WAIT we instead schedule a continuation on the async loop when the socket becomes
+  // writable.
 
   uint64_t size_in_words = trace::BytesToWords(size);
   // For paranoia purposes verify size is a multiple of the word size so we
