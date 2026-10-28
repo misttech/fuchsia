@@ -5,7 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/crypto/entropy/collector.h>
+#include <lib/crypto/entropy/hw_rng_collector.h>
 #include <lib/unittest/unittest.h>
+#include <zircon/errors.h>
+
+#include <dev/hw_rng.h>
 
 namespace crypto {
 
@@ -132,10 +136,40 @@ bool entropy_estimate_test() {
   END_TEST;
 }
 
+// Verifies that the hardware RNG collector is available and functional whenever
+// a hardware RNG is registered. Platform drivers may register after the first
+// call to HwRngCollector::GetInstance (e.g. during EarlyBootSeed), so an early
+// negative result must not prevent later callers from using the collector.
+bool hw_rng_collector_availability_test() {
+  BEGIN_TEST;
+
+  Collector* collector = nullptr;
+  const zx_status_t status = HwRngCollector::GetInstance(&collector);
+
+  if (hw_rng_is_registered()) {
+    ASSERT_EQ(ZX_OK, status, "HW RNG registered but collector unavailable");
+    ASSERT_NONNULL(collector);
+
+    uint8_t buf[32] = {};
+    EXPECT_EQ(sizeof(buf), collector->DrawEntropy(buf, sizeof(buf)));
+
+    // Repeated calls must keep returning the same instance.
+    Collector* again = nullptr;
+    ASSERT_EQ(ZX_OK, HwRngCollector::GetInstance(&again));
+    EXPECT_EQ(collector, again);
+  } else {
+    EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, status);
+    EXPECT_NULL(collector);
+  }
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(entropy_collector_tests)
 UNITTEST("test entropy estimates", entropy_estimate_test)
+UNITTEST("hw rng collector availability", hw_rng_collector_availability_test)
 UNITTEST_END_TESTCASE(entropy_collector_tests, "entropy_collector",
                       "Test entropy collector implementation.")
 

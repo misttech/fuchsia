@@ -55,6 +55,7 @@ source_set("kernel-tests") {
   sources = [ "collector_unittest.cc" ]
   deps = [
     ":entropy",
+    "//zircon/kernel/dev/hw_rng",
     "//zircon/kernel/lib/unittest",
   ]
 }

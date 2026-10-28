@@ -26,16 +26,25 @@ zx_status_t HwRngCollector::GetInstance(Collector** ptr) {
   if (ptr == nullptr) {
     return ZX_ERR_INVALID_ARGS;
   }
-  static HwRngCollector* instance = nullptr;
-  static ktl::atomic<uint32_t> state{0};  // 0: uninitialized, 1: initializing, 2: initialized
 
+  // Check for a registered hardware RNG on every call. Platform HW RNG drivers
+  // may register after the first caller (e.g. EarlyBootSeed on ARM64, where the
+  // drivers are registered later in DriverHandoffLate), so an early call must
+  // not latch the collector as unavailable for later reseeds.
+  if (!hw_rng_is_registered()) {
+    *ptr = nullptr;
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // Construct the collector lazily, after static constructors have run, so that
+  // its Mutex is initialized after the lock class metadata it depends on. Only
+  // reached once a hardware RNG is registered, so the one-shot initialization
+  // always produces a usable instance.
+  static ktl::atomic<uint32_t> state{0};  // 0: uninitialized, 1: initializing, 2: initialized
   if (state.load(ktl::memory_order_acquire) != 2) {
     uint32_t expected = 0;
     if (state.compare_exchange_strong(expected, 1, ktl::memory_order_acq_rel)) {
-      if (hw_rng_is_registered()) {
-        g_collector.Initialize();
-        instance = &g_collector.Get();
-      }
+      g_collector.Initialize();
       state.store(2, ktl::memory_order_release);
     } else {
       while (state.load(ktl::memory_order_acquire) != 2) {
@@ -44,13 +53,8 @@ zx_status_t HwRngCollector::GetInstance(Collector** ptr) {
     }
   }
 
-  if (instance != nullptr) {
-    *ptr = instance;
-    return ZX_OK;
-  } else {
-    *ptr = nullptr;
-    return ZX_ERR_NOT_SUPPORTED;
-  }
+  *ptr = &g_collector.Get();
+  return ZX_OK;
 }
 
 HwRngCollector::HwRngCollector() : Collector("hw_rng", /* entropy_per_1000_bytes */ 8000) {}
