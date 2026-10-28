@@ -5,6 +5,7 @@ use super::cache_stats::{AtomicCacheStats, CacheStats, ShardedCacheStats};
 use crate::sync::{LockDepRwLock, SeLinuxQueryCacheResetLock};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::arch::asm;
+use crossbeam_utils::CachePadded;
 use starnix_logging::CATEGORY_STARNIX_SECURITY;
 use std::hint::cold_path;
 use std::mem::size_of;
@@ -42,8 +43,10 @@ pub struct LockFreeQueryCache<
     buckets: Box<[Bucket<WAYS4, INLINE_U64S, INLINE_U32S, INLINE_U16S, INLINE_U8S>]>,
     /// Out-of-line storage.
     out_of_line_data: Box<[[AtomicU64; OUT_OF_LINE_U64S]]>,
-    /// Reset lock.
-    reset_lock: LockDepRwLock<(), SeLinuxQueryCacheResetLock>,
+    /// Reset lock, padded to its own cache line so reader lock acquisitions on cache misses do
+    /// not invalidate the read-only slice headers (`buckets`, `out_of_line_data`, `stats`) for
+    /// concurrent cache hits.
+    reset_lock: CachePadded<LockDepRwLock<(), SeLinuxQueryCacheResetLock>>,
     /// The stats are sharded and padded to reduce cache line contention.
     stats: ShardedCacheStats,
     /// The storage strategy may contain state (this is useful in tests).
@@ -332,7 +335,7 @@ impl<
             buckets: buckets.into_boxed_slice(),
             out_of_line_data: outline_data.into_boxed_slice(),
             stats: ShardedCacheStats::new(),
-            reset_lock: LockDepRwLock::new(()),
+            reset_lock: CachePadded::new(LockDepRwLock::new(())),
             storage,
         }
     }
