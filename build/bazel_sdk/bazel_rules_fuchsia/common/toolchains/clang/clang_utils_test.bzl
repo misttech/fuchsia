@@ -87,6 +87,7 @@ def _to_clang_target_tuple_test(ctx):
         ("linux", "x64", "x86_64-unknown-linux-gnu"),
         ("linux", "arm64", "aarch64-unknown-linux-gnu"),
         ("linux", "riscv64", "riscv64-unknown-linux-gnu"),
+        ("linux", "arm", "armv7-unknown-linux-gnueabihf"),
         ("linux", "k8", "x86_64-unknown-linux-gnu"),
         ("linux", "x86_64", "x86_64-unknown-linux-gnu"),
         ("linux", "aarch64", "aarch64-unknown-linux-gnu"),

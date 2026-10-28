@@ -539,7 +539,8 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
     if ctx.attr.sysroot_label:
         if ctx.attr.sysroot_path:
             fail("Only one of sysroot_label or sysroot_path can be set")
-        sysroot_path = ctx.file.sysroot_label.dirname
+        sysroot_file = ctx.file.sysroot_label
+        sysroot_path = sysroot_file.path if sysroot_file.is_directory else sysroot_file.dirname
     else:
         sysroot_path = ctx.attr.sysroot_path
 
@@ -685,7 +686,8 @@ def generate_clang_cc_toolchain(
            Mutually exclusive with sysroot_label. One of them must be set if
            sysroot_header_files or sysroot_library_files are used.
 
-       sysroot_label: (optional) The label to a file at the root of the sysroot.
+       sysroot_label: (optional) The label to a file at the root of the sysroot,
+           or to a directory (tree artifact) that is the sysroot itself.
            Use this instead of sysroot_path if the path is not relative to the
            workspace root. Mutually exclusive with sysroot_path. One of them
            must be set if sysroot_header_files or sysroot_library_files are used.

@@ -516,6 +516,22 @@ platform_flags_map = {
         "--host-flag",
         "--cpu=aarch64",
     ],
+    "linux_starnix_x64": [
+        "--host-flag",
+        "--cpu=x86_64",
+    ],
+    "linux_starnix_arm64": [
+        "--host-flag",
+        "--cpu=aarch64",
+    ],
+    "linux_starnix_riscv64": [
+        "--host-flag",
+        "--cpu=riscv64",
+    ],
+    "linux_starnix_arm": [
+        "--host-flag",
+        "--cpu=arm",
+    ],
     "fuchsia_sdk_x64": [
         "--target-flag",
         "--cpu=x86_64",
@@ -603,6 +619,26 @@ platform_flags_map = {
         "--host-flag1",
         "--host-flag2",
         "--cpu=aarch64",
+    ],
+    "linux_starnix_x64": [
+        "--host-flag1",
+        "--host-flag2",
+        "--cpu=x86_64",
+    ],
+    "linux_starnix_arm64": [
+        "--host-flag1",
+        "--host-flag2",
+        "--cpu=aarch64",
+    ],
+    "linux_starnix_riscv64": [
+        "--host-flag1",
+        "--host-flag2",
+        "--cpu=riscv64",
+    ],
+    "linux_starnix_arm": [
+        "--host-flag1",
+        "--host-flag2",
+        "--cpu=arm",
     ],
     "fuchsia_sdk_x64": [
         "--target-flag1",

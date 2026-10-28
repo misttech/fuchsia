@@ -77,6 +77,7 @@ _TARGET_TRIPLE_MAP = {
     "linux-x64": "x86_64-unknown-linux-gnu",
     "linux-arm64": "aarch64-unknown-linux-gnu",
     "linux-riscv64": "riscv64-unknown-linux-gnu",
+    "linux-arm": "armv7-unknown-linux-gnueabihf",
 }
 
 def to_clang_target_tuple(target_os, target_arch):

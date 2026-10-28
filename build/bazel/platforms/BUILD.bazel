@@ -45,6 +45,14 @@ _flags_for_linux_x64 = platform_flags_map["linux_x64"]
 
 _flags_for_linux_arm64 = platform_flags_map["linux_arm64"]
 
+_flags_for_linux_starnix_x64 = platform_flags_map["linux_starnix_x64"]
+
+_flags_for_linux_starnix_arm64 = platform_flags_map["linux_starnix_arm64"]
+
+_flags_for_linux_starnix_riscv64 = platform_flags_map["linux_starnix_riscv64"]
+
+_flags_for_linux_starnix_arm = platform_flags_map["linux_starnix_arm"]
+
 _flags_for_fuchsia_sdk_x64 = platform_flags_map["fuchsia_sdk_x64"]
 
 _flags_for_fuchsia_sdk_arm64 = platform_flags_map["fuchsia_sdk_arm64"]
@@ -215,6 +223,62 @@ platform(
     visibility = ["//:__subpackages__"],
 )
 
+# Linux platforms for binaries that run in Starnix, e.g. the Starnix vDSO.
+#
+# Unlike the linux_$cpu platforms above, which are used for host binaries,
+# build tools and binaries distributed out-of-tree (e.g. in the IDK) and must
+# keep using the older Linux sysroot, these use the newer sysroot that GN
+# uses for non-host Linux toolchains. They carry the :linux_flavor_starnix
+# constraint value so that they never resolve to the host C++ toolchains (and
+# vice versa), see define_starnix_prebuilt_clang_cc_toolchains() in
+# //build/bazel/toolchains/clang/toolchains.bzl.
+#
+# linux_starnix_arm (32-bit arm) is only used to build the 32-bit ("arch32")
+# vDSO that arm64 devices ship for 32-bit Linux programs.
+platform(
+    name = "linux_starnix_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+        ":linux_flavor_starnix",
+    ],
+    flags = _flags_for_linux_starnix_x64,
+    visibility = ["//:__subpackages__"],
+)
+
+platform(
+    name = "linux_starnix_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:arm64",
+        ":linux_flavor_starnix",
+    ],
+    flags = _flags_for_linux_starnix_arm64,
+    visibility = ["//:__subpackages__"],
+)
+
+platform(
+    name = "linux_starnix_riscv64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:riscv64",
+        ":linux_flavor_starnix",
+    ],
+    flags = _flags_for_linux_starnix_riscv64,
+    visibility = ["//:__subpackages__"],
+)
+
+platform(
+    name = "linux_starnix_arm",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:arm",
+        ":linux_flavor_starnix",
+    ],
+    flags = _flags_for_linux_starnix_arm,
+    visibility = ["//:__subpackages__"],
+)
+
 # TODO(https://fxbug.dev/484422864): Make these standalone platforms that use
 # the more permissive sysroot.
 alias(
@@ -336,5 +400,32 @@ constraint_value(
     visibility = [
         "//:__subpackages__",
         "@fuchsia_clang//:__subpackages__",
+    ],
+)
+
+# A constraint dimension which distinguishes the Linux platforms used for host
+# binaries, build tools and out-of-tree binaries (the default) from the ones
+# used for Linux binaries that run in Starnix (linux_starnix_$cpu), which use
+# a different sysroot and C++ toolchains.
+constraint_setting(
+    name = "linux_flavor",
+    default_constraint_value = ":linux_flavor_host",
+)
+
+constraint_value(
+    name = "linux_flavor_host",
+    constraint_setting = ":linux_flavor",
+    visibility = [
+        "//:__subpackages__",
+        "@prebuilt_clang//:__subpackages__",
+    ],
+)
+
+constraint_value(
+    name = "linux_flavor_starnix",
+    constraint_setting = ":linux_flavor",
+    visibility = [
+        "//:__subpackages__",
+        "@prebuilt_clang//:__subpackages__",
     ],
 )

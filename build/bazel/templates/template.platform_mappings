@@ -29,6 +29,19 @@ platforms:
   //build/bazel/platforms:linux_arm64
     --cpu=aarch64
 
+  # Linux platforms for Starnix binaries
+  //build/bazel/platforms:linux_starnix_x64
+    --cpu=k8
+
+  //build/bazel/platforms:linux_starnix_arm64
+    --cpu=aarch64
+
+  //build/bazel/platforms:linux_starnix_riscv64
+    --cpu=riscv64
+
+  //build/bazel/platforms:linux_starnix_arm
+    --cpu=arm
+
   # Fuchsia platforms for building artifacts using the Bazel SDK
   //build/bazel/platforms:fuchsia_sdk_x64
     --cpu=k8

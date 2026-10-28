@@ -2,4 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules:cipd_prebuilt.bzl", "cipd_prebuilt_directory")
+
 package(default_applicable_licenses = ["//:license"])
+
+# The Linux sysroot that GN uses for non-host Linux toolchains. The C++
+# toolchains for the linux_starnix_$cpu platforms use it as their sysroot, see
+# define_starnix_prebuilt_clang_cc_toolchains() in
+# //build/bazel/toolchains/clang/toolchains.bzl.
+cipd_prebuilt_directory(
+    name = "linux_target_sysroot",
+    path = "//prebuilt/third_party/sysroot/ubuntu20.04",
+    visibility = ["@prebuilt_clang//:__pkg__"],
+)
