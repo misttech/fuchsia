@@ -46,13 +46,7 @@ if (is_host && current_cpu == "x64") {
       ":test_tools",
       "//src/developer/ffx:ffx_bin",
     ]
-    environments = [
-      {
-        dimensions = {
-          device_type = "QEMU"
-        }
-      },
-    ]
+    environments = [ qemu_env ]
   }
 
   host_test("driver_lspci_test") {
@@ -65,13 +59,7 @@ if (is_host && current_cpu == "x64") {
       ":test_tools",
       "//src/developer/ffx:ffx_bin",
     ]
-    environments = [
-      {
-        dimensions = {
-          device_type = "QEMU"
-        }
-      },
-    ]
+    environments = [ qemu_env ]
   }
 
   group("host_tests") {

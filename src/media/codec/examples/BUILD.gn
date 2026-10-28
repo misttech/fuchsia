@@ -227,9 +227,7 @@ fuchsia_test_package("use_h264_decoder_stream_switching_tests") {
                             # longer flaky
       },
       {
-        dimensions = {
-          device_type = "QEMU"
-        }
+        dimensions = qemu_env.dimensions
         tags =
             [ "flaky" ]  # TODO(https://fxbug.dev/42126698): Re-enable when test
                          # is no

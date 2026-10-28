@@ -115,13 +115,7 @@ fuchsia_unittest_package("lowpan-ot-driver-test") {
   manifest = "meta/lowpan-ot-driver-test.cml"
   deps = [ ":bin_test" ]
   test_specs = {
-    environments = [
-      {
-        dimensions = {
-          device_type = "QEMU"
-        }
-      },
-    ]
+    environments = [ qemu_env ]
 
     log_settings = {
       max_severity = "ERROR"

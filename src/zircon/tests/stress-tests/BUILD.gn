@@ -16,9 +16,7 @@ fuchsia_test_package("kernel-stress-tests") {
   test_specs = {
     environments = [
       {
-        dimensions = {
-          device_type = "QEMU"
-        }
+        dimensions = qemu_env.dimensions
         tags = [ "stress-tests" ]
       },
       {

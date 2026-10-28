@@ -62,9 +62,7 @@ foreach(test_type, test_types) {
         if (test_type == "long") {
           environments = [
             {
-              dimensions = {
-                device_type = "QEMU"
-              }
+              dimensions = qemu_env.dimensions
               tags = [ "stress-tests" ]
             },
             {

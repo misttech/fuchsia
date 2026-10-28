@@ -45,8 +45,27 @@ fx_test_environment(
 )
 
 fx_test_environment(
-    name = "crosvm_env",
+    name = "crosvm_arm64_env",
+    dimensions = {
+        "device_type": device_types.crosvm,
+        "host_device_type": host_device_types.gcp_c4a_highmem_96_bm,
+    },
+    visibility = ["//zircon/kernel:__subpackages__"],
+)
+
+fx_test_environment(
+    name = "crosvm_x64_env",
     dimensions = {"device_type": device_types.crosvm},
+    visibility = ["//zircon/kernel:__subpackages__"],
+)
+
+alias(
+    name = "crosvm_env",
+    actual = select({
+        "//build/bazel/platforms:is_fuchsia_x64": ":crosvm_x64_env",
+        "//build/bazel/platforms:is_fuchsia_arm64": ":crosvm_arm64_env",
+        "//conditions:default": ":crosvm_x64_env",
+    }),
     visibility = ["//zircon/kernel:__subpackages__"],
 )
 

@@ -49,9 +49,7 @@ fuchsia_test_package("archivist-stress-test") {
     }
     environments = [
       {
-        dimensions = {
-          device_type = "QEMU"
-        }
+        dimensions = qemu_env.dimensions
         tags = [ "stress-tests" ]
       },
     ]

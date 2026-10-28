@@ -106,6 +106,7 @@ _boards = [
       dimensions = {
         device_type = "QEMU"
         cpu = "arm64"
+        host_device_type = host_device_types.gcp_c4a_highmem_96_bm
       }
     },
   ],
