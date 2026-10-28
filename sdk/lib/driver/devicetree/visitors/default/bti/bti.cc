@@ -15,6 +15,7 @@ namespace fdf_devicetree {
 constexpr const char kBtiProp[] = "iommus";
 constexpr const char kBtiNameProp[] = "iommu-names";
 constexpr const char kIommuCellsProp[] = "#iommu-cells";
+constexpr const char kRegProp[] = "reg";
 
 // #iommu-cells == 1.
 // This is because fuchsia_hardware_platform_bus::Bti only takes a
@@ -47,6 +48,28 @@ BtiVisitor::BtiVisitor() {
 }
 
 zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& decoder) {
+  if (IsIommu(node.name())) {
+    const auto property = node.properties().find(kRegProp);
+    if (property != node.properties().end()) {
+      const auto reg_props = property->second.AsReg(decoder);
+      if (!reg_props || reg_props->size() == 0) {
+        fdf::error("IOMMU node '{}' has invalid reg property.", node.name());
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      const std::optional<uint64_t> reg_address = (*reg_props)[0].address();
+      if (!reg_address) {
+        fdf::error("IOMMU node '{}' has invalid reg address.", node.name());
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      const std::optional<uint64_t> base_address = decoder.TranslateAddress(*reg_address);
+      if (!base_address) {
+        fdf::error("IOMMU node '{}' failed to translate reg base address.", node.name());
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      iommu_base_addresses_[node.id()] = *base_address;
+    }
+  }
+
   zx::result parser_output = reference_parser_->Parse(node);
   if (parser_output.is_error()) {
     fdf::error("Failed to parse reference for node '{}'", node.name());
@@ -110,15 +133,14 @@ zx::result<> BtiVisitor::ReferenceChildVisit(Node& child, ReferenceNode& parent,
 }
 
 zx::result<> BtiVisitor::FinalizeNode(Node& node) {
-  uint32_t iommu_id = node.id();
+  const uint32_t iommu_id = node.id();
   if (iommu_nodes_.find(iommu_id) != iommu_nodes_.end()) {
-    auto reg = node.GetProperty<std::vector<uint32_t>>("reg");
-    if (reg.is_ok() && !reg->empty()) {
+    if (const auto it = iommu_base_addresses_.find(iommu_id); it != iommu_base_addresses_.end()) {
       std::ignore = node.RegisterIommu(
-          node.id(), fuchsia_hardware_platform_bus::Iommu::WithArmSmmu(reg.value()[0]));
+          iommu_id, fuchsia_hardware_platform_bus::Iommu::WithArmSmmu(it->second));
     } else {
       std::ignore =
-          node.RegisterIommu(node.id(), fuchsia_hardware_platform_bus::Iommu::WithStubIommu({}));
+          node.RegisterIommu(iommu_id, fuchsia_hardware_platform_bus::Iommu::WithStubIommu({}));
     }
   }
   return zx::ok();

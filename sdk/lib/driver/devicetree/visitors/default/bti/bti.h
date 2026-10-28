@@ -8,8 +8,10 @@
 #include <lib/driver/devicetree/manager/visitor.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
+#include <cstdint>
 #include <memory>
 #include <set>
+#include <unordered_map>
 
 namespace fdf_devicetree {
 
@@ -30,6 +32,7 @@ class BtiVisitor : public Visitor {
                                    std::optional<std::string> iommu_name);
 
   std::set<Phandle> iommu_nodes_;
+  std::unordered_map<uint32_t, uint64_t> iommu_base_addresses_;
   std::unique_ptr<PropertyParser> reference_parser_;
 };
 
