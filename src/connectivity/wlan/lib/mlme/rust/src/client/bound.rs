@@ -143,6 +143,20 @@ impl<'a, D: DeviceOps> BoundClient<'a, D> {
                 Err(e) => Err(format_err!("error parsing rsne {:?} : {:?}", security_ie, e)),
             })
             .transpose()?;
+        let wpa1 = (!security_ie.is_empty() && security_ie[0] == ie::Id::VENDOR_SPECIFIC.0)
+            .then(|| match ie::parse_vendor_ie(&security_ie[2..]) {
+                Ok(ie::VendorIe::MsftLegacyWpa(body)) => {
+                    Some(ie::parse_wpa_ie(body).map_err(|e| {
+                        format_err!("error parsing wpa1 ie {:?} : {:?}", security_ie, e)
+                    }))
+                }
+                Ok(_) => None,
+                Err(e) => {
+                    Some(Err(format_err!("error parsing vendor ie {:?} : {:?}", security_ie, e)))
+                }
+            })
+            .flatten()
+            .transpose()?;
         let buffer = write_frame!({
             headers: {
                 mac::MgmtHdr: &mgmt_writer::mgmt_hdr_to_ap(
@@ -166,6 +180,7 @@ impl<'a, D: DeviceOps> BoundClient<'a, D> {
                 rsne?: rsne,
                 ht_cap?: ht_cap,
                 vht_cap?: vht_cap,
+                wpa1?: wpa1,
             },
         })?;
         self.send_mgmt_or_ctrl_frame(buffer)
@@ -741,6 +756,69 @@ mod tests {
                 191, 12, // VHT Cap id and length
                 100, 101, 102, 103, 104, 105, 106, 107, // VHT Cap \
                 108, 109, 110, 111, // VHT Cap (12 bytes)
+            ][..]
+        );
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn client_send_assoc_req_frame_wpa1() {
+        let mut m = MockObjects::new().await;
+        let mut me = m.make_mlme().await;
+        let connect_req = ParsedConnectRequest {
+            selected_bss: fake_bss_description!(Wpa1,
+                ssid: Ssid::try_from([11, 22, 33, 44]).unwrap(),
+                bssid: BSSID.to_array(),
+            ),
+            connect_failure_timeout: 100,
+            auth_type: fidl_mlme::AuthenticationTypes::OpenSystem,
+            security_ie: fake_wpa1_ie(false),
+        };
+        let client_capabilities = ClientCapabilities(StaCapabilities {
+            capability_info: mac::CapabilityInfo(0x1234),
+            rates: vec![8u8, 7, 6, 5, 4, 3, 2, 1, 0].into_iter().map(ie::SupportedRate).collect(),
+            ht_cap: ie::parse_ht_capabilities(&(0..26).collect::<Vec<u8>>()[..]).map(|h| *h).ok(),
+            vht_cap: ie::parse_vht_capabilities(&(100..112).collect::<Vec<u8>>()[..])
+                .map(|v| *v)
+                .ok(),
+        });
+        me.sta.replace(Client::new(connect_req, *IFACE_MAC, client_capabilities));
+        let mut client = me.get_bound_client().expect("client should be present");
+        client.send_assoc_req_frame().expect("error delivering WLAN frame");
+        assert_eq!(m.fake_device_state.lock().wlan_queue.len(), 1);
+        assert_eq!(
+            &m.fake_device_state.lock().wlan_queue[0].0[..],
+            &[
+                // Mgmt header:
+                0, 0, // FC
+                0, 0, // Duration
+                6, 6, 6, 6, 6, 6, // addr1
+                7, 7, 7, 7, 7, 7, // addr2
+                6, 6, 6, 6, 6, 6, // addr3
+                0x10, 0, // Sequence Control
+                // Association Request header:
+                0x34, 0x12, // capability info
+                0, 0, // listen interval
+                // IEs
+                0, 4, // SSID id and length
+                11, 22, 33, 44, // SSID
+                1, 8, // supp rates id and length
+                8, 7, 6, 5, 4, 3, 2, 1, // supp rates
+                50, 1, // ext supp rates and length
+                0, // ext supp rates
+                45, 26, // HT Cap id and length
+                0, 1, 2, 3, 4, 5, 6, 7, // HT Cap \
+                8, 9, 10, 11, 12, 13, 14, 15, // HT Cap \
+                16, 17, 18, 19, 20, 21, 22, 23, // HT Cap \
+                24, 25, // HT Cap (26 bytes)
+                191, 12, // VHT Cap id and length
+                100, 101, 102, 103, 104, 105, 106, 107, // VHT Cap \
+                108, 109, 110, 111, // VHT Cap (12 bytes)
+                0xdd, 0x16, // Vendor IE header
+                0x00, 0x50, 0xf2, // MSFT OUI
+                0x01, 0x01, 0x00, // WPA IE header
+                0x00, 0x50, 0xf2, 0x02, // multicast cipher: TKIP
+                0x01, 0x00, 0x00, 0x50, 0xf2, 0x02, // 1 unicast cipher: TKIP
+                0x01, 0x00, 0x00, 0x50, 0xf2, 0x02, // 1 AKM: PSK
             ][..]
         );
     }
