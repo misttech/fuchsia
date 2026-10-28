@@ -173,7 +173,6 @@ async fn handle_inspect_writer(
                 component::health().set_ok();
                 responder.send().expect("response succeeds")
             }
-            #[cfg(fuchsia_api_level_at_least = "29")]
             fpuppet::InspectWriterRequest::SetHealthStartingUp { responder } => {
                 component::health().set_starting_up();
                 responder.send().expect("response succeeds")
@@ -195,7 +194,6 @@ async fn handle_inspect_writer(
                     .expect("response succeeds");
                 std::process::exit(0);
             }
-            #[cfg(fuchsia_api_level_at_least = "28")]
             fpuppet::InspectWriterRequest::RecordLazyValues { key, responder } => {
                 let (client, requests) = create_request_stream();
                 responder.send(client).expect("response succeeds");
@@ -416,13 +414,11 @@ async fn record_lazy_values(
             fpuppet::LazyInspectPuppetRequest::_UnknownMethod { .. } => unreachable!(),
             fpuppet::LazyInspectPuppetRequest::EmitExampleInspectData { .. }
             | fpuppet::LazyInspectPuppetRequest::SetHealthOk { .. }
-            | fpuppet::LazyInspectPuppetRequest::EscrowAndExit { .. } => {
+            | fpuppet::LazyInspectPuppetRequest::SetHealthStartingUp { .. }
+            | fpuppet::LazyInspectPuppetRequest::EscrowAndExit { .. }
+            | fpuppet::LazyInspectPuppetRequest::RecordLazyValues { .. } => {
                 unimplemented!()
             }
-            #[cfg(fuchsia_api_level_at_least = "28")]
-            fpuppet::LazyInspectPuppetRequest::RecordLazyValues { .. } => unimplemented!(),
-            #[cfg(fuchsia_api_level_at_least = "29")]
-            fpuppet::LazyInspectPuppetRequest::SetHealthStartingUp { .. } => unimplemented!(),
         };
     }
 

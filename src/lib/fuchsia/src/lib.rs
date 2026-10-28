@@ -14,16 +14,12 @@
 
 #![deny(missing_docs)]
 
+pub use fidl_fuchsia_diagnostics_types_common::{Interest, Severity};
 pub use fuchsia_macro::{main, test};
 use libc as _;
 #[doc(hidden)]
 pub use log::error;
 use std::future::Future;
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-pub use fidl_fuchsia_diagnostics::{Interest, Severity};
-#[cfg(fuchsia_api_level_at_least = "27")]
-pub use fidl_fuchsia_diagnostics_types_common::{Interest, Severity};
 
 #[cfg(target_os = "fuchsia")]
 pub use fuchsia_async_inspect;

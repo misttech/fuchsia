@@ -5,13 +5,9 @@
 
 #![warn(missing_docs)]
 
+use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 use std::str::FromStr;
 use std::{cmp, fmt};
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-use fidl_fuchsia_diagnostics as fdiagnostics;
-#[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 
 #[cfg(feature = "serde")]
 #[doc(hidden)]
@@ -192,7 +188,6 @@ impl From<fdiagnostics::Severity> for Severity {
             fdiagnostics::Severity::Warn => Severity::Warn,
             fdiagnostics::Severity::Error => Severity::Error,
             fdiagnostics::Severity::Fatal => Severity::Fatal,
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fdiagnostics::Severity::__SourceBreaking { .. } => Severity::Info,
         }
     }
@@ -257,7 +252,6 @@ impl PartialOrd<fdiagnostics::Severity> for Severity {
             fdiagnostics::Severity::Warn => Severity::Warn,
             fdiagnostics::Severity::Error => Severity::Error,
             fdiagnostics::Severity::Fatal => Severity::Fatal,
-            #[cfg(fuchsia_api_level_at_least = "27")]
             fdiagnostics::Severity::__SourceBreaking { .. } => return None,
         };
         self.partial_cmp(&other)
@@ -276,7 +270,6 @@ mod tests {
         assert_eq!(Severity::from(fdiagnostics::Severity::Warn), Severity::Warn);
         assert_eq!(Severity::from(fdiagnostics::Severity::Error), Severity::Error);
         assert_eq!(Severity::from(fdiagnostics::Severity::Fatal), Severity::Fatal);
-        #[cfg(fuchsia_api_level_at_least = "27")]
         assert_eq!(
             Severity::from(fdiagnostics::Severity::__SourceBreaking { unknown_ordinal: 123 }),
             Severity::Info
@@ -297,7 +290,6 @@ mod tests {
             Severity::Info.partial_cmp(&fdiagnostics::Severity::Info),
             Some(cmp::Ordering::Equal)
         );
-        #[cfg(fuchsia_api_level_at_least = "27")]
         assert_eq!(
             Severity::Info
                 .partial_cmp(&fdiagnostics::Severity::__SourceBreaking { unknown_ordinal: 123 }),

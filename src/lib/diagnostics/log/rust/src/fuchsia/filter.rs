@@ -4,13 +4,9 @@
 use crate::OnInterestChanged;
 use diagnostics_log_encoding::encode::TestRecord;
 use diagnostics_log_types::Severity;
+use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 use fidl_fuchsia_logger::LogSinkProxy;
 use fuchsia_sync::Mutex;
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-use fidl_fuchsia_diagnostics as fdiagnostics;
-#[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types_common as fdiagnostics;
 
 pub(crate) struct InterestFilter {
     default_severity: Severity,

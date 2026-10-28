@@ -7,6 +7,7 @@
 use crate::{
     ArgType, Argument, Header, MAX_SIZE_WORDS, Metatag, RawSeverity, Record, Value, constants, zx,
 };
+use fidl_fuchsia_diagnostics_types::Severity;
 use std::array::TryFromSliceError;
 use std::borrow::{Borrow, Cow};
 use std::fmt::Debug;
@@ -14,11 +15,6 @@ use std::io::Cursor;
 use std::ops::Deref;
 use thiserror::Error;
 use zerocopy::{FromBytes, IntoBytes};
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-use fidl_fuchsia_diagnostics::Severity;
-#[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types::Severity;
 
 /// An `Encoder` wraps any value implementing `MutableBuffer` and writes diagnostic stream records
 /// into it.

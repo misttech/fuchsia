@@ -11,7 +11,7 @@ use fidl_fuchsia_diagnostics_common::{
     self as fdiagnostics, ComponentSelector, LogInterestSelector, PropertySelector, Selector,
     SelectorArgument, StringSelector, SubtreeSelector, TreeNames, TreeSelector,
 };
-
+use fidl_fuchsia_diagnostics_types_common::{Interest, Severity};
 use fidl_fuchsia_inspect_common::DEFAULT_TREE_NAME;
 use itertools::Itertools;
 use moniker::{
@@ -23,11 +23,6 @@ use std::io::BufReader;
 use std::iter::once;
 use std::path::Path;
 use std::sync::Arc;
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-use fidl_fuchsia_diagnostics::{Interest, Severity};
-#[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types_common::{Interest, Severity};
 
 // Character used to delimit the different sections of an inspect selector,
 // the component selector, the tree selector, and the property selector.

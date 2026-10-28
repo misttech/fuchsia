@@ -10,9 +10,6 @@ LIB_SRCS = [
     "src/fuchsia/filter.rs",
     "src/fuchsia/mod.rs",
     "src/fuchsia/sink.rs",
-    "src/fuchsia_28/filter.rs",
-    "src/fuchsia_28/mod.rs",
-    "src/fuchsia_28/sink.rs",
     "src/lib.rs",
     "src/portable/mod.rs",
 ]

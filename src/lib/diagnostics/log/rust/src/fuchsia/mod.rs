@@ -4,10 +4,14 @@
 use crate::PublishOptions;
 use diagnostics_log_types::Severity;
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_diagnostics_types_common::Interest;
 use fidl_fuchsia_logger::{
     LogSinkEvent, LogSinkMarker, LogSinkOnInitRequest, LogSinkProxy, LogSinkSynchronousProxy,
 };
 use fuchsia_async as fasync;
+use fuchsia_component_client::connect::connect_to_protocol;
+#[cfg(not(feature = "no_startup_handle"))]
+use fuchsia_runtime::{HandleInfo, HandleType};
 use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
 use std::borrow::Borrow;
@@ -15,15 +19,6 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::sync::Arc;
 use thiserror::Error;
-
-#[cfg(fuchsia_api_level_less_than = "27")]
-use fidl_fuchsia_diagnostics::Interest;
-#[cfg(fuchsia_api_level_at_least = "27")]
-use fidl_fuchsia_diagnostics_types_common::Interest;
-
-use fuchsia_component_client::connect::connect_to_protocol;
-#[cfg(not(feature = "no_startup_handle"))]
-use fuchsia_runtime::{HandleInfo, HandleType};
 
 mod filter;
 mod sink;
@@ -544,14 +539,6 @@ pub enum PublishError {
     /// Connection to fuchsia.logger.LogSink failed.
     #[error("failed to connect to fuchsia.logger.LogSink ({0})")]
     LogSinkConnect(String),
-
-    /// Couldn't create a new socket.
-    #[error("failed to create a socket for logging")]
-    MakeSocket(#[source] zx::Status),
-
-    /// An issue with the LogSink channel or socket prevented us from sending it to the `LogSink`.
-    #[error("failed to send a socket to the LogSink")]
-    SendSocket(#[source] fidl::Error),
 
     /// Installing a Logger.
     #[error("failed to install the loger")]
