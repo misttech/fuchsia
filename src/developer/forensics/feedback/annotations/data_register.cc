@@ -28,6 +28,7 @@ const char kDefaultNamespace[] = "misc";
 const char kNamespaceSeparator[] = ".";
 
 constexpr re2::LazyRE2 kNamespaceRegex = MakeLazyRE2(R"([a-z\-]+)");
+constexpr re2::LazyRE2 kKeyRegex = MakeLazyRE2(R"([a-z\-\.]+)");
 
 Annotations Flatten(const std::map<std::string, Annotations>& namespaced_annotations) {
   Annotations flat_annotations;
@@ -82,6 +83,13 @@ void DataRegister::Upsert(UpsertRequest& request, UpsertCompleter::Sync& complet
 
   Annotations new_annotations = namespaced_annotations_[ns];
   for (const auto& annotation : *data.annotations()) {
+    if (!re2::RE2::FullMatch(annotation.key(), *kKeyRegex)) {
+      FX_LOGS(WARNING) << std::format("Ignoring non-platform annotations, {} is not a valid key",
+                                      annotation.key());
+      completer.Close(ZX_ERR_INVALID_ARGS);
+      return;
+    }
+
     new_annotations.insert_or_assign(annotation.key(), ErrorOrString(annotation.value()));
   }
 

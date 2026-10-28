@@ -191,6 +191,52 @@ TEST_P(InvalidNamespaceDataRegisterTest, Upsert_NoInsertionsOnInvalidNamespace) 
   EXPECT_TRUE(ReadRegisterJson().empty());
 }
 
+struct InvalidKeyParam {
+  std::string test_name;
+  std::string key;
+};
+
+class InvalidKeyDataRegisterTest : public DataRegisterTest,
+                                   public testing::WithParamInterface<InvalidKeyParam> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousInvalidKeys, InvalidKeyDataRegisterTest,
+                         testing::ValuesIn(std::vector<InvalidKeyParam>({
+                             {
+                                 "Empty",
+                                 "",
+                             },
+                             {
+                                 "ContainsUnderscore",
+                                 "key_with_underscore",
+                             },
+                             {
+                                 "ContainsUppercase",
+                                 "KeyWithUppercase",
+                             },
+                             {
+                                 "ContainsDigit",
+                                 "key1",
+                             },
+                         })),
+                         [](const testing::TestParamInfo<InvalidKeyParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(InvalidKeyDataRegisterTest, Upsert_NoInsertionsOnInvalidKey) {
+  ComponentData data;
+  data.namespace_("namespace");
+  data.annotations({{
+      {"valid-key.with.period", "v"},
+      {GetParam().key, "v"},
+  }});
+
+  Upsert(std::move(data), ZX_ERR_INVALID_ARGS);
+
+  EXPECT_THAT(data_register_->Get(), testing::IsEmpty());
+  EXPECT_FALSE(data_register_->IsMissingAnnotations());
+  EXPECT_TRUE(ReadRegisterJson().empty());
+}
+
 TEST_F(DataRegisterTest, Upsert_NoInsertionsOnTooMany) {
   MakeNewDataRegister(/*max_size=*/1);
   ComponentData data;
@@ -214,7 +260,7 @@ TEST_F(DataRegisterTest, Upsert_NoInsertionsOnTooMany) {
   ComponentData data2;
   data2.namespace_("namespace");
   data2.annotations({{
-      {"k2", "v2"},
+      {"k-two", "v2"},
   }});
 
   Upsert(std::move(data2));
@@ -328,20 +374,20 @@ TEST_F(DataRegisterTest, Upsert_InsertIfDifferentKey) {
   ComponentData data2;
   data2.namespace_("namespace");
   data2.annotations({{
-      {"k2", "v2"},
+      {"k.two", "v2"},
   }});
 
   Upsert(std::move(data2));
 
   EXPECT_THAT(data_register_->Get(), UnorderedElementsAreArray({
                                          Pair("namespace.k", ErrorOrString("v")),
-                                         Pair("namespace.k2", ErrorOrString("v2")),
+                                         Pair("namespace.k.two", ErrorOrString("v2")),
                                      }));
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
   EXPECT_EQ(ReadRegisterJson(), R"({
     "namespace": {
         "k": "v",
-        "k2": "v2"
+        "k.two": "v2"
     }
 })");
 }
@@ -389,8 +435,8 @@ TEST_F(DataRegisterTest, ReinitializesFromJson) {
   ComponentData data1;
   data1.namespace_("namespace-one");
   data1.annotations({{
-      {"k1", "v1"},
-      {"k2", "v2"},
+      {"k-one", "v1"},
+      {"k-two", "v2"},
   }});
 
   Upsert(std::move(data1));
@@ -398,18 +444,18 @@ TEST_F(DataRegisterTest, ReinitializesFromJson) {
   ComponentData data2;
   data2.namespace_("namespace-two");
   data2.annotations({{
-      {"k3", "v3"},
-      {"k4", "v4"},
+      {"k-three", "v3"},
+      {"k-four", "v4"},
   }});
 
   Upsert(std::move(data2));
 
   MakeNewDataRegister();
   EXPECT_THAT(data_register_->Get(), UnorderedElementsAreArray({
-                                         Pair("namespace-one.k1", ErrorOrString("v1")),
-                                         Pair("namespace-one.k2", ErrorOrString("v2")),
-                                         Pair("namespace-two.k3", ErrorOrString("v3")),
-                                         Pair("namespace-two.k4", ErrorOrString("v4")),
+                                         Pair("namespace-one.k-one", ErrorOrString("v1")),
+                                         Pair("namespace-one.k-two", ErrorOrString("v2")),
+                                         Pair("namespace-two.k-three", ErrorOrString("v3")),
+                                         Pair("namespace-two.k-four", ErrorOrString("v4")),
                                      }));
   EXPECT_FALSE(data_register_->IsMissingAnnotations());
 }
