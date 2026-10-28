@@ -254,6 +254,20 @@ if (is_host) {
     environments = [ iris_env ]
     timeout_secs = 1200
   }
+
+  python_mobly_test("adbd_restart_stress_test") {
+    main_source = "test_adbd_restart_stress.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_iterations = 10
+      respawn_timeout_sec = 60
+    }
+    environments = [ iris_env ]
+    timeout_secs = 700
+  }
 }
 
 group("zero_function_stress_test") {
@@ -268,6 +282,7 @@ group("tests") {
     ":adb_random_stress_test($host_toolchain)",
     ":adb_root_unroot_stress_test($host_toolchain)",
     ":adb_server_restart_stress_test($host_toolchain)",
+    ":adbd_restart_stress_test($host_toolchain)",
     ":cdc_stress_test($host_toolchain)",
     ":usb_disconnect_irq_storm_test($host_toolchain)",
     ":usb_disconnect_stress_test($host_toolchain)",
