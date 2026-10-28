@@ -2591,7 +2591,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "bluetooth_core",
     flexible_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/core/bt-host",
+        "//src/connectivity/bluetooth/core/bt-host",
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/core/bt-init",

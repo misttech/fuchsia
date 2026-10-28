@@ -887,7 +887,6 @@ group("bluetooth_avrcp") {
 
 group("bluetooth_core") {
   deps = [
-    "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/core/bt-host",
     "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/core/bt-init",
   ]
 }

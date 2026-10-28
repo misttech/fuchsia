@@ -1,0 +1,40 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules:cipd_prebuilt.bzl", "cipd_prebuilt_file")
+load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
+
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# The out-of-tree built bt-host package, taken directly from the CIPD prebuilt.
+# Note that the archive does not have a `.far` extension.
+cipd_prebuilt_file(
+    name = "bt-host_archive_arm64",
+    path = "//prebuilt/connectivity/bluetooth/bt-host/arm64/bt-host",
+    visibility = ["//visibility:private"],
+)
+
+cipd_prebuilt_file(
+    name = "bt-host_archive_riscv64",
+    path = "//prebuilt/connectivity/bluetooth/bt-host/riscv64/bt-host",
+    visibility = ["//visibility:private"],
+)
+
+cipd_prebuilt_file(
+    name = "bt-host_archive_x64",
+    path = "//prebuilt/connectivity/bluetooth/bt-host/x64/bt-host",
+    visibility = ["//visibility:private"],
+)
+
+prebuilt_package(
+    name = "bt-host",
+    archive = select({
+        "//build/bazel/platforms:is_fuchsia_arm64": ":bt-host_archive_arm64",
+        "//build/bazel/platforms:is_fuchsia_riscv64": ":bt-host_archive_riscv64",
+        "//build/bazel/platforms:is_fuchsia_x64": ":bt-host_archive_x64",
+    }),
+)
