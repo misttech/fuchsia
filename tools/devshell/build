@@ -864,7 +864,12 @@ function main {
     fi
 
     declare -r end_time="${EPOCHREALTIME/./}"
-    track-build-event "${start_time}" "${end_time}" "${status}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
+    track-build-event "${start_time}" "${end_time}" "${status}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}" &
+    # In dry-run mode, wait for background tracking to finish so tests and scripts
+    # can deterministically inspect tracking events before this process exits.
+    if [[ -z "${run_ninja_build}" || "${FX_BUILD_DRY_RUN:-0}" == 1 ]]; then
+      wait "$!"
+    fi
 
   fi
   exit-with-message
