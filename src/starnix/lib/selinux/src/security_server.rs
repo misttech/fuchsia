@@ -9,8 +9,8 @@ use crate::kernel::{
 };
 use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::{
-    AccessDecision, AccessVector, ClassId, FsUseLabelAndType, FsUseType, HandleUnknown,
-    HasName as _, HasPolicyId as _, PermissionId, Policy, PolicyData, SELINUX_AVD_FLAGS_PERMISSIVE,
+    AccessDecision, AccessVector, ClassId, FsUseLabelAndType, HandleUnknown, HasName as _,
+    HasPolicyId as _, PermissionId, Policy, PolicyData, SELINUX_AVD_FLAGS_PERMISSIVE,
     SecurityContext, XpermsBitmap, XpermsKind,
 };
 use crate::sid_table::{PortableSidTable, SidTable};
@@ -527,10 +527,7 @@ impl SecurityServer {
             // The name of the filesystem type was not recognized.
             FileSystemLabel {
                 sid: mount_sids.fs_context.unwrap_or_else(|| InitialSid::Unlabeled.into()),
-                scheme: FileSystemLabelingScheme::FsUse {
-                    fs_use_type: FsUseType::Xattr,
-                    default_sid: mount_sids.def_context.unwrap_or_else(|| InitialSid::File.into()),
-                },
+                scheme: FileSystemLabelingScheme::None,
                 mount_sids,
             }
         };

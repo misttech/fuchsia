@@ -528,7 +528,7 @@ impl FileSystemState {
             return false;
         };
         match label.scheme {
-            FileSystemLabelingScheme::Mountpoint { .. } => false,
+            FileSystemLabelingScheme::Mountpoint { .. } | FileSystemLabelingScheme::None => false,
             FileSystemLabelingScheme::FsUse { .. } => true,
             FileSystemLabelingScheme::GenFsCon { supports_seclabel } => supports_seclabel,
         }
@@ -541,7 +541,8 @@ impl FileSystemState {
         };
         match label.scheme {
             FileSystemLabelingScheme::Mountpoint { .. }
-            | FileSystemLabelingScheme::GenFsCon { .. } => false,
+            | FileSystemLabelingScheme::GenFsCon { .. }
+            | FileSystemLabelingScheme::None => false,
             FileSystemLabelingScheme::FsUse { fs_use_type, .. } => fs_use_type == FsUseType::Xattr,
         }
     }

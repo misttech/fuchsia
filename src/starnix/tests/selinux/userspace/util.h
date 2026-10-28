@@ -74,6 +74,10 @@ std::string MakeTestSecurityContext(std::string_view test_domain);
 /// Returns an `errno` on failure.
 fit::result<int, bool> IsSameInode(int fd_1, int fd_2);
 
+/// Returns the `/proc/mounts` mount options string for `mount_path`, or an empty string if not
+/// found.
+std::string MountOptionsFor(std::string_view mount_path);
+
 /// Runs the given action in a forked process after transitioning to |label|. This requires some
 /// rules to be set-up. For transitions from unconfined_t (the starting label for tests), giving
 /// them the `test_a` attribute from `test_policy.conf` is sufficient.

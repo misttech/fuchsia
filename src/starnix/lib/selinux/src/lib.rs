@@ -69,6 +69,8 @@ pub enum FileSystemLabelingScheme {
     /// This filesystem has one or more "genfscon" statements associated with it in the policy.
     /// If `supports_seclabel` is true then nodes in the filesystem may be dynamically relabeled.
     GenFsCon { supports_seclabel: bool },
+    /// This filesystem has no labeling scheme specified in the policy.
+    None,
 }
 
 /// SELinux security context-related filesystem mount options. These options are documented in the

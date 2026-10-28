@@ -59,10 +59,6 @@
                 "SysFs/SysFsTest.SubdirectoryLabels/InheritsParentXattrLabel",
                 "SysFs/SysFsTest.SubdirectoryLabels/AppliesTypeTransitionWhenParentHasXattr",
                 "SysFs/SysFsTest.SubdirectoryLabels/UsesFscreateLabelWhenParentHasXattr",
-
-                // TODO: https://fxbug.dev/507820778 - Default unlabeled filesystems to the
-                // `unlabeled` initial SID.
-                "UnlabeledFsTest.CreateFileInUnlabeledFs",
             ],
         },
         {

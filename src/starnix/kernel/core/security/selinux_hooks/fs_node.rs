@@ -235,6 +235,13 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                     errno!(EINVAL)
                 })?
         }
+        FileSystemLabelingScheme::None => {
+            if parent.is_none() {
+                label.mount_sids.root_context.unwrap_or(label.sid)
+            } else {
+                label.sid
+            }
+        }
     };
 
     set_cached_sid(fs_node, sid);
@@ -324,10 +331,12 @@ fn compute_new_file_sid(
     let TaskAttrs { current_sid, fscreate_sid, .. } = *current_task_state(current_task);
 
     // If the task has an "fscreate" context set then use that deferring to the policy, except in
-    // the gensfscon case where the fscreate context is ignored.
+    // the genfscon and unlabeled filesystem cases where the fscreate context is ignored.
     if let Some(fscreate_sid) = fscreate_sid {
-        if !matches!(fs_label.scheme, FileSystemLabelingScheme::GenFsCon { .. }) {
-            return Ok(fscreate_sid);
+        match fs_label.scheme {
+            FileSystemLabelingScheme::FsUse { .. } => return Ok(fscreate_sid),
+            FileSystemLabelingScheme::Mountpoint { sid } => return Ok(sid),
+            FileSystemLabelingScheme::GenFsCon { .. } | FileSystemLabelingScheme::None => (),
         }
     }
 
@@ -479,7 +488,7 @@ pub(in crate::security) fn fs_node_init_on_create(
                 .transpose()?;
             (sid, xattr)
         }
-        FileSystemLabelingScheme::Mountpoint { .. } => (sid, None),
+        FileSystemLabelingScheme::Mountpoint { .. } | FileSystemLabelingScheme::None => (sid, None),
         FileSystemLabelingScheme::GenFsCon { .. } => {
             // Defer labeling to `fs_node_init_with_dentry()`, so that the path of the new
             // node can be taken into account.

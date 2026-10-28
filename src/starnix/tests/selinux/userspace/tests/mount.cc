@@ -4,7 +4,6 @@
 
 #include <fcntl.h>
 #include <lib/stdcompat/string_view.h>
-#include <mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -24,19 +23,6 @@ namespace {
 std::map<std::string, fit::result<int>> g_pre_policy_mount_results;
 
 const char* kSelinuxMountOptions[] = {"context", "fscontext", "defcontext", "rootcontext"};
-
-std::string MountOptionsFor(std::string_view mount_path) {
-  FILE* mounts = setmntent("/proc/mounts", "r");
-  std::string result;
-  for (struct mntent* entry = 0; (entry = getmntent(mounts));) {
-    if (mount_path == entry->mnt_dir) {
-      result = entry->mnt_opts;
-      break;
-    }
-  }
-  endmntent(mounts);
-  return result;
-}
 
 class MountOptionValidationTest : public ::testing::TestWithParam<const char*> {};
 

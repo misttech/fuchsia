@@ -5,6 +5,7 @@
 #include "src/starnix/tests/selinux/userspace/util.h"
 
 #include <fcntl.h>
+#include <mntent.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/xattr.h>
@@ -191,6 +192,19 @@ fit::result<int, bool> IsSameInode(int fd_1, int fd_2) {
     return fit::error(errno);
   }
   return fit::ok(fd_1_info.st_dev == fd_2_info.st_dev && fd_1_info.st_ino == fd_2_info.st_ino);
+}
+
+std::string MountOptionsFor(std::string_view mount_path) {
+  FILE* mounts = setmntent("/proc/mounts", "r");
+  std::string result;
+  for (struct mntent* entry = nullptr; (entry = getmntent(mounts));) {
+    if (mount_path == entry->mnt_dir) {
+      result = entry->mnt_opts;
+      break;
+    }
+  }
+  endmntent(mounts);
+  return result;
 }
 
 pid_t RunInForkedProcessWithLabel(test_helper::ForkHelper& fork_helper, std::string_view label,
