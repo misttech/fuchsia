@@ -1,0 +1,83 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//src/starnix/containers:linux_resource.bzl", "linux_resource")
+
+package(default_applicable_licenses = ["//:license"])
+
+# bazel2gn cannot express starnix_linux_executable ($target_linux_toolchain).
+# @bazel2gn:skip
+fx_cc_binary(
+    name = "hello_starnix_bin_bin",
+    srcs = select({
+        "@platforms//cpu:x86_64": ["hello_x64.S"],
+        "@platforms//cpu:arm64": ["hello_aarch64.S"],
+        "@platforms//cpu:riscv64": ["hello_riscv64.S"],
+    }),
+    disable_instrumentation = True,
+    disable_syslog_backend = True,
+    linkopts = [
+        "-nostdlib",
+        "-nostartfiles",
+        "-static",
+        # There are several flags that are not being used when linking a static
+        # binary. Disable the warning.
+        "-Wno-unused-command-line-argument",
+    ],
+    tags = ["manual"],
+)
+
+# bazel2gn cannot express linux_resource / starnix_linux_executable.
+# @bazel2gn:skip
+linux_resource(
+    name = "hello_starnix_bin",
+    src = ":hello_starnix_bin_bin",
+    dest = "data/tests/hello_starnix",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "hello_starnix",
+    manifest = "meta/hello_starnix.cml",
+)
+
+# TODO(https://fxbug.dev/296309679) remove once ScopedInstance can be used separately
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "hello_starnix",
+    deps = [":hello_starnix_bin"],
+)
+
+fx_package(
+    name = "hello_starnix",
+    package_name = "hello_starnix",
+    components = [":component"],
+)
+
+rustc_binary(
+    name = "hello_starnix_integration_test_bin",
+    testonly = True,
+    srcs = ["test.rs"],
+    crate_root = "test.rs",
+    edition = "2024",
+    deps = [
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//src/sys/lib/component-events",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
