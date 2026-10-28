@@ -11,6 +11,7 @@ pub mod arch;
 mod arch_ffi;
 pub mod bootstrap16;
 pub mod cache;
+mod cache_ffi;
 pub mod cpuid;
 pub mod fake_msr_access;
 pub mod feature;

@@ -10,26 +10,36 @@ pub const MAX_SUPPORTED_CPUID_EXT: u32 = 0x80000021;
 
 pub const X86_MAX_CSTATES: usize = 12;
 
+/// Transparent `UnsafeCell` wrapper for `extern "C"` globals populated during early boot.
+#[repr(transparent)]
+struct BootExtern<T>(core::cell::UnsafeCell<T>);
+
+// SAFETY: Values wrapped in `BootExtern` are populated exclusively on the boot CPU during
+// single-threaded early boot before secondary CPUs start, and are read-only thereafter.
+unsafe impl<T: Sync> Sync for BootExtern<T> {}
+
 unsafe extern "C" {
     #[link_name = "_cpuid"]
-    static mut CPUID: [CpuidLeaf; (MAX_SUPPORTED_CPUID + 1) as usize];
+    static CPUID: BootExtern<[CpuidLeaf; (MAX_SUPPORTED_CPUID + 1) as usize]>;
 
     #[link_name = "_cpuid_hyp"]
-    static mut CPUID_HYP:
-        [CpuidLeaf; (MAX_SUPPORTED_CPUID_HYP - X86CpuidLeafNum::HypVendor as u32 + 1) as usize];
+    static CPUID_HYP: BootExtern<
+        [CpuidLeaf; (MAX_SUPPORTED_CPUID_HYP - X86CpuidLeafNum::HypVendor as u32 + 1) as usize],
+    >;
 
     #[link_name = "_cpuid_ext"]
-    static mut CPUID_EXT:
-        [CpuidLeaf; (MAX_SUPPORTED_CPUID_EXT - X86CpuidLeafNum::ExtBase as u32 + 1) as usize];
+    static CPUID_EXT: BootExtern<
+        [CpuidLeaf; (MAX_SUPPORTED_CPUID_EXT - X86CpuidLeafNum::ExtBase as u32 + 1) as usize],
+    >;
 
     #[link_name = "max_cpuid"]
-    static mut MAX_CPUID: u32;
+    static MAX_CPUID: BootExtern<u32>;
 
     #[link_name = "max_hyp_cpuid"]
-    static mut MAX_HYP_CPUID: u32;
+    static MAX_HYP_CPUID: BootExtern<u32>;
 
     #[link_name = "max_ext_cpuid"]
-    static mut MAX_EXT_CPUID: u32;
+    static MAX_EXT_CPUID: BootExtern<u32>;
 
     #[link_name = "x86_vendor"]
     static mut X86_VENDOR: X86VendorList;
@@ -352,40 +362,40 @@ x86_cpuid_bit! {X86_FEATURE_RDTSCP, ExtModelFeatures, 3, 27}
 x86_cpuid_bit! {X86_FEATURE_INVAR_TSC, ExtPowerManagement, 3, 8}
 x86_cpuid_bit! {X86_FEATURE_INVLPGB, ExtAddressSizes, 1, 3}
 
+#[inline]
 pub fn x86_get_cpuid_leaf(leaf: X86CpuidLeafNum) -> Option<&'static CpuidLeaf> {
     let leaf_val = leaf as u32;
     // SAFETY: Values are only written to during single-threaded startup.
     unsafe {
         if leaf_val < X86CpuidLeafNum::HypVendor as u32 {
-            let max = core::ptr::addr_of!(MAX_CPUID).read();
-            if leaf_val > max {
+            if leaf_val > *MAX_CPUID.0.get() || leaf_val > MAX_SUPPORTED_CPUID {
+                core::hint::cold_path();
                 return None;
             }
-            let ptr = core::ptr::addr_of!(CPUID).cast::<CpuidLeaf>();
-            Some(&*ptr.add(leaf_val as usize))
+            Some(&(*CPUID.0.get())[leaf_val as usize])
         } else if leaf_val < X86CpuidLeafNum::ExtBase as u32 {
-            let max_hyp = core::ptr::addr_of!(MAX_HYP_CPUID).read();
-            if leaf_val > max_hyp {
+            if leaf_val > *MAX_HYP_CPUID.0.get() || leaf_val > MAX_SUPPORTED_CPUID_HYP {
+                core::hint::cold_path();
                 return None;
             }
             let offset = (leaf_val - X86CpuidLeafNum::HypVendor as u32) as usize;
-            let ptr = core::ptr::addr_of!(CPUID_HYP).cast::<CpuidLeaf>();
-            Some(&*ptr.add(offset))
+            Some(&(*CPUID_HYP.0.get())[offset])
         } else {
-            let max_ext = core::ptr::addr_of!(MAX_EXT_CPUID).read();
-            if leaf_val > max_ext {
+            if leaf_val > *MAX_EXT_CPUID.0.get() || leaf_val > MAX_SUPPORTED_CPUID_EXT {
+                core::hint::cold_path();
                 return None;
             }
             let offset = (leaf_val - X86CpuidLeafNum::ExtBase as u32) as usize;
-            let ptr = core::ptr::addr_of!(CPUID_EXT).cast::<CpuidLeaf>();
-            Some(&*ptr.add(offset))
+            Some(&(*CPUID_EXT.0.get())[offset])
         }
     }
 }
 
+#[inline]
 pub fn x86_feature_test(bit: X86CpuidBit) -> bool {
     debug_assert!(bit.word <= 3 && bit.bit <= 31);
     if bit.word > 3 || bit.bit > 31 {
+        core::hint::cold_path();
         return false;
     }
     let Some(leaf) = x86_get_cpuid_leaf(bit.leaf_num) else {
