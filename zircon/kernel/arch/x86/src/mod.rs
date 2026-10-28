@@ -11,6 +11,7 @@ pub mod arch;
 mod arch_ffi;
 pub mod bootstrap16;
 pub mod cache;
+pub mod cpuid;
 pub mod fake_msr_access;
 pub mod feature;
 #[cfg(console_enabled)]

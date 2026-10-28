@@ -342,6 +342,7 @@ kernel_rust_mod("arch-x86-rs") {
     "src/arch_ffi.rs",
     "src/bootstrap16.rs",
     "src/cache.rs",
+    "src/cpuid.rs",
     "src/fake_msr_access.rs",
     "src/feature.rs",
     "src/hwp.rs",
