@@ -1127,6 +1127,8 @@ def compute_package_rdeps(
     gn_only_targets = {"tests", "benchmarks"}
     gn_nonconvertible_targets = {"tests", "benchmarks"}
     gn_forwarding_groups = {}
+
+    # Classify pre-sentinel GN-only targets and targets generated below BAZEL2GN SENTINEL.
     # If a pre-sentinel GN target (such as a `group("<name>")` forwarding `expect_includes`)
     # has a same-named target in `BUILD.bazel` (such as `alias(name = "<name>", actual = "...")`),
     # GN callers of `:<name>` are real callers of the Bazel target and must not be filtered out.
@@ -1135,14 +1137,33 @@ def compute_package_rdeps(
     ):
         only_targets = {"tests", "benchmarks"}
         nonconv_targets = {"tests", "benchmarks"}
+        above_clean = re.sub(r"#[^\n]*", "", above_sentinel)
+        below_clean = re.sub(r"#[^\n]*", "", below_sentinel)
+        below_synced = {
+            m.group(2)
+            for m in re.finditer(
+                r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)',
+                below_clean,
+                flags=re.MULTILINE,
+            )
+            if m.group(2) in bazel_targets
+        }
         for m in re.finditer(
-            r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE
+            r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)',
+            above_clean,
+            flags=re.MULTILINE,
         ):
             tmpl, t = m.group(1), m.group(2)
             if t in fwd_groups:
                 continue
             if t not in bazel_targets:
                 only_targets.add(t)
+            is_unmigrated_dep_target = (
+                not has_sentinel
+                and target_dir
+                and pkg_path != target_dir
+                and t not in bazel_targets
+            )
             if (
                 tmpl not in CONVERTIBLE_GN_TEMPLATES
                 and (
@@ -1150,24 +1171,17 @@ def compute_package_rdeps(
                     or t in ("tests", "benchmarks")
                     or tmpl == "bazel_test_suite"
                 )
-            ) or (not has_sentinel and target_dir and pkg_path != target_dir and t not in bazel_targets):
+            ) or is_unmigrated_dep_target:
                 nonconv_targets.add(t)
-        below_synced = {
-            m.group(2)
-            for m in re.finditer(
-                r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)',
-                below_sentinel,
-                flags=re.MULTILINE,
-            )
-            if m.group(2) in bazel_targets
-        }
         return only_targets, nonconv_targets, below_synced
 
     if os.path.isfile(gn_file):
         try:
             with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
                 gn_src = f.read()
-            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
+            for m in re.finditer(
+                r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE
+            ):
                 if m.group(1) in GN_PACKAGE_TEMPLATES:
                     package_targets.add(m.group(2))
             has_sentinel = "BAZEL2GN SENTINEL" in gn_src
@@ -1551,6 +1565,64 @@ def record_diff_visibility_narrowed_info(clean_targets):
         })
 
 
+# Cache ancestor packages that host (or are the canonical area root for) a Bazel test_suite
+# so test targets prepared for ancestor suite aggregation (e.g. pending outside_changes in a
+# parallel multi-package migration) are not rejected before the ancestor BUILD.bazel is edited.
+_ancestor_test_suite_pkg_cache = {}
+
+
+def is_ancestor_test_suite_package(anc_pkg, child_pkg):
+    if not anc_pkg or anc_pkg == child_pkg or not child_pkg.startswith(anc_pkg + "/"):
+        return False
+    cached = _ancestor_test_suite_pkg_cache.get(anc_pkg)
+    if cached is None:
+        has_suite = False
+        anc_bazel = os.path.join(workdir, anc_pkg, "BUILD.bazel")
+        if os.path.isfile(anc_bazel):
+            try:
+                with open(anc_bazel, "r", encoding="utf-8") as bf:
+                    anc_tree = ast.parse(bf.read(), filename=anc_bazel)
+                has_suite = any(
+                    isinstance(n, ast.Call)
+                    and (
+                        (isinstance(n.func, ast.Name) and n.func.id == "test_suite")
+                        or (isinstance(n.func, ast.Attribute) and n.func.attr == "test_suite")
+                    )
+                    for n in ast.walk(anc_tree)
+                )
+            except Exception:
+                has_suite = False
+        if not has_suite:
+            anc_gn = os.path.join(workdir, anc_pkg, "BUILD.gn")
+            if os.path.isfile(anc_gn):
+                try:
+                    with open(anc_gn, "r", encoding="utf-8") as gf:
+                        gn_clean = re.sub(r"#[^\n]*", "", gf.read())
+                    has_suite = bool(re.search(r"\bbazel_test_suite\s*\(", gn_clean))
+                except Exception:
+                    has_suite = False
+        _ancestor_test_suite_pkg_cache[anc_pkg] = has_suite
+        cached = has_suite
+    if cached:
+        return True
+    return anc_pkg == get_pkg_area(child_pkg) and os.path.isfile(
+        os.path.join(workdir, anc_pkg, "BUILD.gn")
+    )
+
+
+def is_pending_ancestor_test_suite_vis(
+    caller_pkg, child_pkg, target_is_test_rule, direct_rdeps_for_target
+):
+    if not target_is_test_rule:
+        return False
+    if any(
+        "bazel" in kinds and child_pkg != r_pkg and child_pkg.startswith(r_pkg + "/")
+        for r_pkg, kinds in direct_rdeps_for_target.items()
+    ):
+        return False
+    return is_ancestor_test_suite_package(caller_pkg, child_pkg)
+
+
 findings = []
 clean_audited_targets = set()
 
@@ -1787,12 +1859,24 @@ for rel_path in sorted(candidate_files):
         if preserved_gn_vis:
             rec_target_vis = preserved_gn_vis
 
-        # Check missing target-level visibility on targets used outside this package
+        # Check missing target-level visibility on targets used outside this package.
+        # Synced test targets without visibility stay unrestricted in bazel2gn, so GN-only
+        # test callers do not require a Bazel visibility attribute unless a Bazel caller
+        # (such as an ancestor BUILD.bazel test_suite) also depends on the test target.
+        requires_vis_for_callers = (
+            not (is_test_rule or target_name in test_rule_targets)
+            or has_macro_injected_rdeps
+            or any(
+                "bazel" in kinds
+                for kinds in per_target_direct_rdeps.get(target_name, {}).values()
+            )
+        )
         target_start_findings = len(findings)
         if vis_kw is None:
             if (
                 not preexisting_pkg_default_vis
                 and len(target_rdeps) > 0
+                and requires_vis_for_callers
                 and target_name not in preexisting_no_vis_targets
             ):
                 msg = (
@@ -2301,6 +2385,15 @@ for rel_path in sorted(candidate_files):
                     caller_pkg = m_pkg.group(1).strip("/")
                     if caller_pkg == "visibility":
                         continue
+                    # Allow package-scoped visibility to an ancestor test_suite package on test
+                    # targets before outside_changes wires the test into that ancestor BUILD.bazel.
+                    if is_pending_ancestor_test_suite_vis(
+                        caller_pkg,
+                        pkg_path,
+                        is_test_rule,
+                        per_target_direct_rdeps.get(target_name, {}),
+                    ):
+                        continue
                     if caller_pkg in vis_only_pkgs:
                         findings.append({
                             "source": "visibility_audit",
@@ -2361,6 +2454,13 @@ for rel_path in sorted(candidate_files):
                         continue
                     sp = pkg_path if m_scope.group(1) is None else m_scope.group(1).strip("/")
                     kind = m_scope.group(2)
+                    if kind == "pkg" and is_pending_ancestor_test_suite_vis(
+                        sp,
+                        pkg_path,
+                        is_test_rule,
+                        per_target_direct_rdeps.get(target_name, {}),
+                    ):
+                        continue
                     if kind == "pkg":
                         covered_by_gn = any(
                             sp == gsp or (gk == "subpackages" and (gsp == "" or sp.startswith(gsp + "/")))

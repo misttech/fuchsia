@@ -247,6 +247,30 @@ def references_in_scope_package_at_base(norm: str) -> bool:
     return False
 
 
+# Check whether a deleted out-of-package .cml file was referenced by an in-scope
+# package's pre-migration BUILD.gn and relocated into that Bazel package.
+def is_relocated_in_scope_cml(norm: str) -> bool:
+    if not norm.endswith(".cml") or os.path.exists(os.path.join(workdir, norm)):
+        return False
+    in_scope = list(target_dirs) + sorted(dependency_dirs)
+    refs = [change_base, "HEAD~1"] if change_base == "HEAD" else [change_base]
+    for td in in_scope:
+        for ref in refs:
+            gn_txt = "\n".join(git_lines(["show", f"{ref}:{td}/BUILD.gn"]))
+            if not gn_txt:
+                continue
+            code_gn = re.sub(r"#[^\n]*", "", gn_txt)
+            for raw_cml in re.findall(r'"([^"\n]+\.cml)"', code_gn):
+                resolved = (
+                    raw_cml[2:].lstrip("/")
+                    if raw_cml.startswith("//")
+                    else os.path.normpath(os.path.join(td, raw_cml)).replace("\\", "/")
+                )
+                if resolved == norm:
+                    return True
+    return False
+
+
 def is_allowed_scope(path: str) -> bool:
     if not target_dirs:
         return True
@@ -260,6 +284,8 @@ def is_allowed_scope(path: str) -> bool:
     if is_shared_bazel_rule_file(norm):
         return references_in_scope_package_at_base(norm)
     if (os.path.basename(norm) in ("BUILD.bazel", "BUILD", "BUILD.gn") or norm.endswith((".bzl", ".gni", ".cml"))) and references_in_scope_package_at_base(norm):
+        return True
+    if is_relocated_in_scope_cml(norm):
         return True
     if norm in allowed_gni_files:
         return True

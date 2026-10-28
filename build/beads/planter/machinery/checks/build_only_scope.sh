@@ -22,6 +22,10 @@ set -euo pipefail
 #     `fx_component_manifest` of the nearest BUILD.bazel uses as `manifest` next to an
 #     `fx_test_component` (it replaces the manifest GN's fuchsia_unittest_package generated;
 #     Bazel does not generate test manifests, for C++ or Rust tests)
+#   - a `.cml` manifest relocated byte-identically from an out-of-package path (such as an
+#     unmigrated ancestor/sibling `meta/` directory referenced by the pre-migration `BUILD.gn`)
+#     into a migrated Bazel package whose `BUILD.bazel` references it directly (including
+#     removal of the pre-migration `.cml` path once no external GN targets use it)
 #   - existing source files (`.rs`, `.cc`, `.cpp`, `.c`, `.h`, `.hpp`) inside a migrated
 #     package whose `BUILD.gn` at `$PLANTER_CHANGE_BASE` was disconnected from the configured
 #     GN build graph (`<build dir>/ninja_outputs.json` has no targets for that package), when
@@ -138,7 +142,8 @@ if head_subj.startswith("[bazel_migration]"):
         ).returncode
         if rc == 0:
             change_base = "HEAD~1"
-changed.update(git_lines(["diff", "--name-only", change_base]))
+# Pass --no-renames so moved files deterministically appear in both added and deleted sets.
+changed.update(git_lines(["diff", "--no-renames", "--name-only", change_base]))
 changed.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
 
 
@@ -153,9 +158,105 @@ def is_build_file(path: str) -> bool:
     return False
 
 
-# Newly added files (not modifications of existing ones).
-added = set(git_lines(["diff", "--name-only", "--diff-filter=A", change_base]))
+# Newly added and deleted files (not in-place modifications of existing ones).
+added = set(
+    git_lines(["diff", "--no-renames", "--name-only", "--diff-filter=A", change_base])
+)
 added.update(git_lines(["ls-files", "--others", "--exclude-standard"]))
+deleted = set(
+    git_lines(["diff", "--no-renames", "--name-only", "--diff-filter=D", change_base])
+)
+deleted.update(p for p in changed if not os.path.exists(os.path.join(workdir, p)))
+
+
+def git_blob_bytes(ref: str, rel_path: str):
+    try:
+        return subprocess.check_output(
+            ["git", "-C", workdir, "show", f"{ref}:{rel_path}"],
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+
+
+def find_nearest_bazel_package(path: str):
+    pkg = os.path.dirname(path)
+    for _ in range(6):
+        bazel = os.path.join(workdir, pkg, "BUILD.bazel")
+        if os.path.isfile(bazel):
+            try:
+                with open(bazel, encoding="utf-8") as f:
+                    return pkg, f.read()
+            except OSError:
+                return None, ""
+        if not pkg:
+            break
+        pkg = os.path.dirname(pkg)
+    return None, ""
+
+
+# Identify .cml manifests relocated byte-identically from an out-of-package directory into
+# their owning Bazel package (supporting both single-commit git mv and staged subpackage
+# copies before outside_changes deletes the old path).
+def find_relocated_component_manifests():
+    new_to_old = {}
+    old_to_new = {}
+    refs = [change_base, "HEAD~1"] if change_base == "HEAD" else [change_base]
+    for new_path in sorted(added):
+        if not new_path.endswith(".cml"):
+            continue
+        full_new = os.path.join(workdir, new_path)
+        if not os.path.isfile(full_new):
+            continue
+        pkg, bazel_text = find_nearest_bazel_package(new_path)
+        if not pkg:
+            continue
+        rel_in_pkg = os.path.relpath(new_path, pkg)
+        if not re.search(r'"(?::)?' + re.escape(rel_in_pkg) + r'"', bazel_text):
+            continue
+        try:
+            with open(full_new, "rb") as f:
+                new_bytes = f.read()
+        except OSError:
+            continue
+        candidates = []
+        for ref in refs:
+            base_gn_raw = git_blob_bytes(ref, f"{pkg}/BUILD.gn")
+            if base_gn_raw is not None:
+                code_gn = re.sub(
+                    r"#[^\n]*", "", base_gn_raw.decode("utf-8", errors="replace")
+                )
+                for raw_cml in re.findall(r'"([^"\n]+\.cml)"', code_gn):
+                    cand_old = (
+                        raw_cml[2:].lstrip("/")
+                        if raw_cml.startswith("//")
+                        else os.path.normpath(os.path.join(pkg, raw_cml)).replace("\\", "/")
+                    )
+                    if (
+                        cand_old
+                        and not cand_old.startswith("../")
+                        and cand_old != new_path
+                        and not cand_old.startswith(pkg + "/")
+                    ):
+                        candidates.append((ref, cand_old))
+            for d_path in sorted(deleted):
+                if (
+                    d_path.endswith(".cml")
+                    and d_path != new_path
+                    and not d_path.startswith(pkg + "/")
+                ):
+                    candidates.append((ref, d_path))
+        seen_cands = set()
+        for ref, cand_old in candidates:
+            if (ref, cand_old) in seen_cands:
+                continue
+            seen_cands.add((ref, cand_old))
+            old_bytes = git_blob_bytes(ref, cand_old)
+            if old_bytes is not None and old_bytes == new_bytes:
+                new_to_old[new_path] = (cand_old, pkg)
+                old_to_new.setdefault(cand_old, []).append((new_path, pkg))
+                break
+    return new_to_old, old_to_new
 
 
 def is_new_test_manifest(path: str) -> bool:
@@ -253,6 +354,7 @@ def check_unbuilt_target_bitrot_fix(path: str, unbuilt_dirs: set):
 
 
 unbuilt_dirs = find_unbuilt_gn_packages()
+relocated_new_to_old, relocated_old_to_new = find_relocated_component_manifests()
 bitrot_fixed_dirs = set()
 
 
@@ -276,13 +378,44 @@ def is_package_readme_label_update(path: str) -> bool:
     return bool(mod_lines) and all(f"//{pkg}" in l for l in mod_lines)
 findings = []
 
-# Emit findings for changed non-build files and unbuilt GN package scope notes.
+# Emit findings for changed non-build files, relocated manifests, and unbuilt GN package notes.
 for path in sorted(changed):
     if (
         is_build_file(path)
         or is_new_test_manifest(path)
         or is_package_readme_label_update(path)
     ):
+        continue
+    if path in relocated_new_to_old:
+        old_p, owner_pkg = relocated_new_to_old[path]
+        findings.append({
+            "source": "build_only_scope",
+            "category": "relocated_component_manifest",
+            "severity": "INFO",
+            "file": path,
+            "line": 0,
+            "message": (
+                f"Allowed byte-identical component manifest relocation: '{path}' is an "
+                f"unchanged copy of '{old_p}' moved into Bazel package '//{owner_pkg}' "
+                "so its manifest target owns the file directly."
+            ),
+        })
+        continue
+    if path in deleted and path in relocated_old_to_new:
+        dest_desc = ", ".join(
+            f"'{np}' (//{op})" for np, op in relocated_old_to_new[path]
+        )
+        findings.append({
+            "source": "build_only_scope",
+            "category": "relocated_component_manifest",
+            "severity": "INFO",
+            "file": path,
+            "line": 0,
+            "message": (
+                f"Allowed removal of relocated component manifest '{path}', moved "
+                f"byte-identically to {dest_desc}."
+            ),
+        })
         continue
     bitrot_dir = check_unbuilt_target_bitrot_fix(path, unbuilt_dirs)
     if bitrot_dir is not None:
