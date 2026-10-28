@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp",
+    hdrs = ["connector.h"],
+    api_area = "Driver SDK",
+    category = "partner",
+    idk_name = "driver_devfs_cpp",
+    include_base = "//sdk",
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/component/cpp:__pkg__",
+        "//src/connectivity:__subpackages__",
+        "//src/developer:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/firmware:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/media:__subpackages__",
+        "//src/power:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = ["//sdk/fidl/fuchsia.device.fs:fuchsia.device.fs_cpp"],
+)
