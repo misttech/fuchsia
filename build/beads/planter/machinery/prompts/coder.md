@@ -495,16 +495,6 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 - **Comments**: carry each migrated GN target's comments (and comments about it in parent
    BUILD.gn files) over to the BUILD.bazel that now defines it.
 
-## Accelerating CQ with Build-Only: true (fxr/1913427)
-Add `Build-Only: true` to the footer block (after `Test:` and `Bazel-Migration-Target:`,
-before `TAG:` and `Change-Id:`) when ALL of these hold:
-1. **Subject**: Begins with `[bazel_migration]`.
-2. **Pure BUILD Files**: Modifies ONLY `BUILD.gn` and `BUILD.bazel` files (no `.cml`, `.gni`,
-   `.bzl`, `.rs`, `.cc`, or other files, which fail Gerrit's `No-Build-Only-Footer` check).
-3. **No Product / Assembly Impact**: Does NOT touch Assembly Input Bundles (`bundles/assembly/`,
-   `build/images/`) or alter product contents, even transitively.
-4. **Leaf Node Migrations**: Leaf libraries and dual-build targets.
-
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check, `review_diff`, and `build_verification` (`fx build`,
 GN dependents, `fx host-tool shac check`, and `fx bazel build` for fuchsia and host). Never run full
