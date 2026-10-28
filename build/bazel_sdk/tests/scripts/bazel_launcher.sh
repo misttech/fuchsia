@@ -158,6 +158,7 @@ _BAZEL_STARTUP_ARGS+=("--output_base=${_OUTPUT_BASE}")
 readonly _INVOCATION_BAZELRC="$(mktemp "${_OUTPUT_BASE}/invocation.bazelrc.XXXXXX")"
 trap 'rm -f "${_INVOCATION_BAZELRC}"' EXIT
 
+PYTHONPATH="${_FUCHSIA_SOURCE_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
 "${_PYTHON_PREBUILT_DIR}/bin/python3" -S \
   "${_FUCHSIA_SOURCE_DIR}/build/bazel/scripts/generate_invocation_bazelrc.py" \
   > "${_INVOCATION_BAZELRC}"

@@ -5,9 +5,13 @@
 
 """Unit-tests for generate_invocation_bazelrc.py functions."""
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from build.bazel.scripts import bazel_invocation as bazel_inv
 from build.bazel.scripts import generate_invocation_bazelrc as gen
@@ -35,7 +39,13 @@ class BuildConfigOptionTest(unittest.TestCase):
 
 class MetadataBazelrcTest(unittest.TestCase):
     def test_no_id(self) -> None:
-        self.assertEqual(list(gen._metadata_bazelrc({})), [])
+        config = gen.generate_invocation({})
+        self.assertFalse(
+            any("--build_metadata=" in line for line in config.bazelrc_lines)
+        )
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_ID], config.invocation_id
+        )
 
     def test_uuid_top_build(self) -> None:
         uuid = "uuid-6767"
@@ -43,8 +53,15 @@ class MetadataBazelrcTest(unittest.TestCase):
             rel_inv.ENV_FX_BUILD_UUID: uuid,
             rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
         }
+        config = gen.generate_invocation(env)
+        self.assertEqual(config.invocation_id, uuid)
+        self.assertEqual(config.child_env[rel_inv.ENV_PARENT_BUILD_ID], uuid)
         self.assertEqual(
-            set(gen._metadata_bazelrc(env)),
+            config.child_env[rel_inv.ENV_PARENT_BUILD_LINK],
+            f"{_TEST_RESULTS_URL}/{uuid}",
+        )
+        rc = set(config.bazelrc_lines)
+        self.assertTrue(
             {
                 _bes_meta(rel_inv.KEY_FX_BUILD_UUID, uuid),
                 _bes_meta(
@@ -55,7 +72,7 @@ class MetadataBazelrcTest(unittest.TestCase):
                     rel_inv.KEY_SUB_BUILDS_LINK,
                     f"{_TEST_RESULTS_URL}/?q={rel_inv.KEY_PARENT_BUILD_ID}:{uuid}",
                 ),
-            },
+            }.issubset(rc)
         )
 
     def test_uuid_sub_build(self) -> None:
@@ -70,13 +87,19 @@ class MetadataBazelrcTest(unittest.TestCase):
             rel_inv.ENV_SIBLING_BUILDS_LINK: siblings_link,
             rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
         }
+        config = gen.generate_invocation(env)
+        self.assertNotEqual(config.invocation_id, parent_id)
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_ID], config.invocation_id
+        )
+        rc = set(config.bazelrc_lines)
         self.assertTrue(
             {
                 _bes_meta(rel_inv.KEY_FX_BUILD_UUID, uuid),
                 _bes_meta(rel_inv.KEY_PARENT_BUILD_ID, parent_id),
                 _bes_meta(rel_inv.KEY_PARENT_BUILD_LINK, parent_link),
                 _bes_meta(rel_inv.KEY_SIBLING_BUILDS_LINK, siblings_link),
-            }.issubset(set(gen._metadata_bazelrc(env)))
+            }.issubset(rc)
         )
 
     def test_bbid_top_build(self) -> None:
@@ -85,6 +108,15 @@ class MetadataBazelrcTest(unittest.TestCase):
             rel_inv.ENV_BUILDBUCKET_ID: bbid,
             rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
         }
+        config = gen.generate_invocation(env)
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_ID], config.invocation_id
+        )
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_LINK],
+            f"{_TEST_RESULTS_URL}/{config.invocation_id}",
+        )
+        rc = set(config.bazelrc_lines)
         self.assertTrue(
             {
                 _bes_meta(rel_inv.KEY_BUILDBUCKET_ID, bbid),
@@ -96,7 +128,7 @@ class MetadataBazelrcTest(unittest.TestCase):
                     rel_inv.KEY_SIBLING_BUILDS_LINK,
                     f"{_TEST_RESULTS_URL}/?q={rel_inv.KEY_BUILDBUCKET_ID}:{bbid}",
                 ),
-            }.issubset(set(gen._metadata_bazelrc(env)))
+            }.issubset(rc)
         )
 
     def test_bbid_sub_build(self) -> None:
@@ -111,13 +143,18 @@ class MetadataBazelrcTest(unittest.TestCase):
             rel_inv.ENV_SIBLING_BUILDS_LINK: siblings_link,
             rel_inv.ENV_RESULTS_URL: _TEST_RESULTS_URL,
         }
+        config = gen.generate_invocation(env)
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_ID], config.invocation_id
+        )
+        rc = set(config.bazelrc_lines)
         self.assertTrue(
             {
                 _bes_meta(rel_inv.KEY_BUILDBUCKET_ID, bbid),
                 _bes_meta(rel_inv.KEY_PARENT_BUILD_ID, parent_id),
                 _bes_meta(rel_inv.KEY_PARENT_BUILD_LINK, parent_link),
                 _bes_meta(rel_inv.KEY_SIBLING_BUILDS_LINK, siblings_link),
-            }.issubset(set(gen._metadata_bazelrc(env)))
+            }.issubset(rc)
         )
 
 
@@ -206,13 +243,14 @@ class ServiceProxiesBazelrcTest(unittest.TestCase):
         )
 
 
-class GenerateBazelrcTest(unittest.TestCase):
-    def test_generate_bazelrc_with_metadata(self) -> None:
+class GenerateInvocationTest(unittest.TestCase):
+    def test_generate_invocation_with_metadata(self) -> None:
         env = {
             rel_inv.ENV_FX_BUILD_UUID: "fake-uuid-1",
             rel_inv.ENV_RESULTS_URL: "http://go/fake-rs",
         }
-        rc = list(gen.generate_bazelrc(env))
+        config = gen.generate_invocation(env)
+        rc = config.bazelrc_lines
         self.assertIn(_bes_meta(rel_inv.KEY_FX_BUILD_UUID, "fake-uuid-1"), rc)
         self.assertIn(
             _bes_meta(
@@ -228,6 +266,113 @@ class GenerateBazelrcTest(unittest.TestCase):
             ),
             rc,
         )
+
+    def test_explicit_invocation_id(self) -> None:
+        env = {
+            rel_inv.ENV_FX_BUILD_UUID: "parent-uuid",
+            rel_inv.ENV_PARENT_BUILD_ID: "parent-uuid",
+            rel_inv.ENV_RESULTS_URL: "http://go/fake-rs",
+        }
+        config = gen.generate_invocation(env, invocation_id="custom-child-id")
+        self.assertEqual(config.invocation_id, "custom-child-id")
+        self.assertIn(
+            "build --invocation_id=custom-child-id", config.bazelrc_lines
+        )
+        self.assertEqual(
+            config.child_env[rel_inv.ENV_PARENT_BUILD_ID], "custom-child-id"
+        )
+
+    def test_log_dir_options(self) -> None:
+        log_dir = Path("/tmp/fake/log_dir")
+        config = gen.generate_invocation({}, log_dir=log_dir)
+        self.assertIn(
+            "common --experimental_workspace_rules_log_file=/tmp/fake/log_dir/workspace_events.log",
+            config.bazelrc_lines,
+        )
+        self.assertIn(
+            "common:exec_log --execution_log_compact_file=/tmp/fake/log_dir/exec_log.pb.zstd",
+            config.bazelrc_lines,
+        )
+        self.assertIn(
+            "common:_profiling --profile=/tmp/fake/log_dir/command.profile.gz",
+            config.bazelrc_lines,
+        )
+
+
+class MainEnvWrapperTest(unittest.TestCase):
+    @mock.patch.object(os, "execvpe")
+    def test_main_exec_mode(self, mock_exec: mock.MagicMock) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            rc_path = Path(td) / "test.bazelrc"
+            gen.main(
+                [
+                    f"--output-bazelrc={rc_path}",
+                    "--invocation-id=test-id-123",
+                    "--",
+                    "echo",
+                    "hello",
+                ]
+            )
+            self.assertTrue(rc_path.is_file())
+            content = rc_path.read_text()
+            self.assertIn("build --invocation_id=test-id-123", content)
+            mock_exec.assert_called_once()
+            cmd, child_env = (
+                mock_exec.call_args[0][1],
+                mock_exec.call_args[0][2],
+            )
+            self.assertEqual(cmd, ["echo", "hello"])
+            self.assertEqual(
+                child_env[rel_inv.ENV_PARENT_BUILD_ID], "test-id-123"
+            )
+
+    @mock.patch.object(os, "execvpe")
+    def test_main_stdout_with_log_dir_saves_copy(
+        self, mock_exec: mock.MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log_dir = Path(td) / "bazel_logs"
+            log_dir.mkdir()
+            out_buf = io.StringIO()
+            with contextlib.redirect_stdout(out_buf):
+                gen.main([f"--log-dir={log_dir}"])
+            stdout_content = out_buf.getvalue()
+            saved_copy = log_dir / "invocation.bazelrc"
+            self.assertTrue(saved_copy.is_file())
+            disk_content = saved_copy.read_text()
+            self.assertIn("build --invocation_id=", stdout_content)
+            self.assertEqual(stdout_content, disk_content)
+
+    def test_main_wrap_without_output_bazelrc_errors(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                gen.main(["--", "echo", "hello"])
+
+    @mock.patch.object(os, "execvpe")
+    def test_main_empty_log_dir_ignored(
+        self, mock_exec: mock.MagicMock
+    ) -> None:
+        out_buf = io.StringIO()
+        with contextlib.redirect_stdout(out_buf):
+            gen.main(["--log-dir="])
+        self.assertIn("build --invocation_id=", out_buf.getvalue())
+
+    @mock.patch.object(os, "execvpe")
+    @mock.patch.object(Path, "write_text")
+    def test_main_log_dir_oserror_prints_warning(
+        self, mock_write: mock.MagicMock, mock_exec: mock.MagicMock
+    ) -> None:
+        mock_write.side_effect = OSError("Read-only file system")
+        err_buf = io.StringIO()
+        out_buf = io.StringIO()
+        with (
+            contextlib.redirect_stderr(err_buf),
+            contextlib.redirect_stdout(out_buf),
+        ):
+            gen.main(["--log-dir=/fake/read_only_dir"])
+        self.assertIn("WARNING: Failed to save debug copy", err_buf.getvalue())
+        self.assertIn("Read-only file system", err_buf.getvalue())
+        self.assertIn("build --invocation_id=", out_buf.getvalue())
 
 
 if __name__ == "__main__":

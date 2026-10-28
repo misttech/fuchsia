@@ -80,6 +80,7 @@ if (is_host) {
       ":bazel_invocation",
       "//build/rbe:casfs",
       "//build/resultstore:related_invocations",
+      "//build/resultstore:rs_profile",
     ]
   }
 

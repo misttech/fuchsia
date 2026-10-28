@@ -23,6 +23,9 @@ readonly _SCRIPT_DIR
 _SRCDIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" >/dev/null 2>&1 && pwd)"
 readonly _SRCDIR
 
+_FUCHSIA_DIR="${FUCHSIA_DIR:-$(cd "${_SRCDIR}/../.." >/dev/null 2>&1 && pwd)}"
+readonly _FUCHSIA_DIR
+
 function die {
   echo >&2 "ERROR: $*"
   exit 1
@@ -162,22 +165,17 @@ esac
 
 # We generate our own invocation id, to make it easier to propagate its value
 # to sub-build invocations.
-readonly RESULTSTORE_invocation_id="$("${_PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
-
-# main_build.py is already expected to set RS_results_url from the active
-# ResultStore profile into the build environment, but this fallback path
-# exists to make this wrapper usable standalone (outside of main_build.py).
-if [[ -z "${RS_results_url:-}" ]]; then
-  RS_results_url="$("${_PREBUILT_PYTHON3}" -S "${_SRCDIR}/../resultstore/rs_profile.py" run -- printenv RS_results_url 2>/dev/null || :)"
+# If top-level fx bazel build, use FX_BUILD_UUID as the invocation id.
+# If sub-build under Ninja, generate a unique child invocation id.
+if [[ -z "${RESULTSTORE_PARENT_BUILD_ID:-}" && -n "${FX_BUILD_UUID:-}" ]]; then
+  readonly RESULTSTORE_invocation_id="${FX_BUILD_UUID}"
+else
+  readonly RESULTSTORE_invocation_id="${RESULTSTORE_invocation_id:-$("${_PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')}"
 fi
-readonly RESULTSTORE_URL="$RS_results_url"
-readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESULTSTORE_invocation_id"
 
 # A list of extra Bazel arguments that must appear after the
 # command.
-_BAZEL_EXTRA_ARGS=(
-  --invocation_id="$RESULTSTORE_invocation_id"
-)
+_BAZEL_EXTRA_ARGS=()
 
 # LINT.IfChange(resultstore_bazel_env_vars)
 # Enable ResultStore reporting if requested by the orchestrator.
@@ -213,15 +211,6 @@ esac
 # These environment-sensitive modifications to config definitions
 # manifest in the short-lived 'invocation.bazelrc'.
 # Cleanup handler called on script exit.
-function cleanup {
-  local exit_code=$?
-  rm -f "${_INVOCATION_BAZELRC}"
-  # Preserve the completed invocation's command.log (stdout/stderr stream from Bazel).
-  if [[ -n "${_BAZEL_INVOCATION_LOG_DIR:-}" && -d "${_BAZEL_INVOCATION_LOG_DIR}" && -f "${_BAZEL_OUTPUT_BASE}/command.log" ]]; then
-    cp -f "${_BAZEL_OUTPUT_BASE}/command.log" "${_BAZEL_INVOCATION_LOG_DIR}/command.log" 2>/dev/null || true
-  fi
-  return "$exit_code"
-}
 # main_build.py sets FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE to 0 or 1,
 # but resolve it via casfs.py when invoked standalone.
 # LINT.IfChange(rbe_casfs_env_vars)
@@ -230,9 +219,6 @@ if [[ "${FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE:-}" != "0" && "${FX_BUILD_INTERN
   export FX_BUILD_INTERNAL_RBE_CASFS_VIRTUALIZE
 fi
 # LINT.ThenChange(//build/rbe/casfs.py:rbe_casfs_env_vars)
-
-trap cleanup EXIT
-"${_PREBUILT_PYTHON3}" -S "${_GENERATE_INVOCATION_BAZELRC}" > "${_INVOCATION_BAZELRC}" || die "Failed to generate ${_INVOCATION_BAZELRC}"
 
 # Save per-invocation logs.
 # Log directories are generated dynamically per fx-build invocation,
@@ -254,18 +240,23 @@ fi
 readonly _BAZEL_INVOCATION_LOG_DIR="${_BAZEL_INVOCATION_LOG_PARENT}/${_BAZEL_INVOCATION_LOG_DIR_NAME}"
 mkdir -p "${_BAZEL_INVOCATION_LOG_DIR}"
 
-# Override log locations for this specific invocation.
-# Bazel doesn't have a single log-dir control for writing all logs,
-# so we must direct each one individually.
-cat >> "${_INVOCATION_BAZELRC}" <<EOF
-# Logs for this specific invocation.
-common --experimental_workspace_rules_log_file=${_BAZEL_INVOCATION_LOG_DIR}/workspace_events.log
-common:exec_log --execution_log_compact_file=${_BAZEL_INVOCATION_LOG_DIR}/exec_log.pb.zstd
-common:_profiling --profile=${_BAZEL_INVOCATION_LOG_DIR}/command.profile.gz
-EOF
+function cleanup {
+  local exit_code=$?
+  rm -f "${_INVOCATION_BAZELRC}"
+  # Preserve the completed invocation's command.log (stdout/stderr stream from Bazel).
+  if [[ -n "${_BAZEL_INVOCATION_LOG_DIR:-}" && -d "${_BAZEL_INVOCATION_LOG_DIR}" && -f "${_BAZEL_OUTPUT_BASE}/command.log" ]]; then
+    cp -f "${_BAZEL_OUTPUT_BASE}/command.log" "${_BAZEL_INVOCATION_LOG_DIR}/command.log" 2>/dev/null || true
+  fi
+  return "$exit_code"
+}
+trap cleanup EXIT
 
-# Save a copy of the final invocation.bazelrc for debugging.
-cp "${_INVOCATION_BAZELRC}" "${_BAZEL_INVOCATION_LOG_DIR}/invocation.bazelrc"
+PYTHONPATH="${_FUCHSIA_DIR}${PYTHONPATH:+:${PYTHONPATH}}" \
+"${_PREBUILT_PYTHON3}" -S "${_GENERATE_INVOCATION_BAZELRC}" \
+  --output-bazelrc="${_INVOCATION_BAZELRC}" \
+  --invocation-id="${RESULTSTORE_invocation_id}" \
+  --log-dir="${_BAZEL_INVOCATION_LOG_DIR}" \
+  || die "Failed to generate ${_INVOCATION_BAZELRC}"
 
 # Maintain a 'recent' symlink to the latest log directory.
 # Use a relative path for the symlink target so it works in archives.
@@ -379,18 +370,7 @@ _user="${USER:-unused-bazel-build-user}"
 
 _bazel_env=(
     env USER="${_user}"
-
-    # Inform sub-builds of this bazel invocation where to find related builds.
-    # These environment variables are read by generate_invocation_bazelrc.py
-    # and rsninja.sh, but do not impact actions from this bazel invocation.
-    # LINT.IfChange(related_invocations_env_vars)
     RESULTSTORE_PARENT_BUILD_ID="$RESULTSTORE_invocation_id"
-    RESULTSTORE_PARENT_BUILD_LINK="$RESULTSTORE_URL/$RESULTSTORE_invocation_id"
-    RESULTSTORE_SIBLING_BUILDS_LINK="$RESULTSTORE_SUB_BUILDS_LINK"
-    # LINT.ThenChange(
-    #   //build/bazel/scripts/generate_invocation_bazelrc.py:related_invocations_env_vars,
-    #   //build/resultstore/rsninja.sh:related_invocations_env_vars
-    # )
 )
 
 _bazel_exec="${_BAZEL_BIN}"

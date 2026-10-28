@@ -10,13 +10,9 @@ import uuid
 from collections.abc import Mapping
 
 # Environment variable keys for related invocations.
-# Note: Future commits will migrate wrapper scripts to adopt this shared module,
-# eliminating cross-file environment variable duplication and reducing these IfChange guards.
-# LINT.IfChange(related_invocations_env_vars)
 ENV_PARENT_BUILD_ID = "RESULTSTORE_PARENT_BUILD_ID"
 ENV_PARENT_BUILD_LINK = "RESULTSTORE_PARENT_BUILD_LINK"
 ENV_SIBLING_BUILDS_LINK = "RESULTSTORE_SIBLING_BUILDS_LINK"
-# LINT.ThenChange(//build/bazel/wrapper.bazel.sh:related_invocations_env_vars)
 
 # Set by main_build.py (or inherited from developer environment).
 ENV_FX_BUILD_UUID = "FX_BUILD_UUID"
