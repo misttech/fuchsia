@@ -47,6 +47,7 @@ test_suite(
         "//src/developer/ffx/lib/safe_string:lib_test",
         "//src/developer/ffx/lib/ssh:lib_test",
         "//src/developer/ffx/lib/target:lib_test",
+        "//src/developer/ffx/lib/target/behavior:lib_test",
         "//src/developer/ffx/lib/target_errors:lib_test",
         "//src/developer/ffx/lib/termio:termio_test",
         "//src/developer/ffx/lib/trace:lib_test",
