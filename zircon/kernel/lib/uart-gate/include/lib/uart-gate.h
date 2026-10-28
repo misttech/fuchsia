@@ -15,6 +15,61 @@
 #include <kernel/event.h>
 #include <ktl/atomic.h>
 
+namespace internal {
+
+// Equivalent to `value.compare_exchange_weak(expected, desired,
+// ktl::memory_order_seq_cst)`: returns true if |value| was |expected| and was
+// replaced with |desired|.  Otherwise, returns false and sets |expected| to the
+// value observed.  May fail spuriously (with |expected| unchanged).
+//
+// This exists because, when optimizing for arm64 without LSE atomics or
+// outline atomics, LLVM expands compare_exchange_weak to an LL/SC loop in IR,
+// so register allocation may place other instructions, e.g. stack spills,
+// between the load-exclusive and the store-exclusive.  The Arm architecture
+// only guarantees forward progress when there are no explicit memory accesses
+// in between.  On Nelson, a spill there made the store-exclusive in the UART
+// IRQ handler fail indefinitely, wedging a CPU in the handler (see
+// https://fxbug.dev/575797059).  So on arm64, this is a single exclusive
+// attempt written in assembly, with only a comparison between the LDAXR and
+// the STLXR.  LDAXR/STLXR is the standard mapping of a seq_cst
+// read-modify-write.  On failure, the LDAXR is a load-acquire which, like the
+// LDAR used for a seq_cst load, is not reordered with a preceding
+// store-release.  (Other architectures are unaffected: x86 uses a single
+// instruction, and LLVM expands RISC-V LR/SC loops after register allocation.)
+//
+// TODO(575797059): Remove when a more general fix is accepted.
+inline bool CompareExchangeWeakSeqCst(ktl::atomic<uint32_t>& value, uint32_t& expected,
+                                      uint32_t desired) {
+#if defined(__aarch64__)
+  uint32_t observed;
+  // The store-exclusive's status (0 if it succeeded), or 1 on a mismatch.
+  uint32_t status;
+  __asm__ volatile(
+      "ldaxr %w[observed], [%[value]]\n"
+      "cmp %w[observed], %w[expected]\n"
+      "b.ne 1f\n"
+      "stlxr %w[status], %w[desired], [%[value]]\n"
+      "b 2f\n"
+      "1:\n"
+      "clrex\n"
+      "mov %w[status], #1\n"
+      "2:\n"
+      : [observed] "=&r"(observed), [status] "=&r"(status)
+      : [value] "r"(&value), [expected] "r"(expected), [desired] "r"(desired)
+      : "cc", "memory");
+  if (status == 0) {
+    return true;
+  }
+  // On a spurious failure, |observed| is equal to |expected|.
+  expected = observed;
+  return false;
+#else   // !defined(__aarch64__)
+  return value.compare_exchange_weak(expected, desired, ktl::memory_order_seq_cst);
+#endif  // defined(__aarch64__)
+}
+
+}  // namespace internal
+
 // UartGate arbitrates access to the UART hardware so that usermode may suspend
 // (and later resume) all kernel access to the hardware via `zx_debug_suspend`
 // and `zx_debug_resume`, e.g. so that it may power down the UART.
@@ -188,8 +243,7 @@ class UartGate {
         return false;
       }
       DEBUG_ASSERT((state & kCountMask) != kCountMask);
-    } while (!state_.compare_exchange_weak(state, state + 1, ktl::memory_order_seq_cst,
-                                           ktl::memory_order_seq_cst));
+    } while (!internal::CompareExchangeWeakSeqCst(state_, state, state + 1));
     return true;
   }
 

@@ -22,6 +22,11 @@ struct UartGateTestAccess {
   static bool ConsumeDrainedSignal(UartGate& gate) {
     return gate.drained_.Wait(Deadline::infinite_past()) == ZX_OK;
   }
+
+  // Returns the gate's count of active users.
+  static uint32_t ActiveCount(const UartGate& gate) {
+    return gate.state_.load(ktl::memory_order_relaxed) & UartGate::kCountMask;
+  }
 };
 
 namespace {
@@ -162,6 +167,136 @@ bool CancelDrainTest() {
   EXPECT_EQ(UartGate::Phase::kSuspended, gate.phase());
   gate.Resume();
   EXPECT_EQ(UartGate::Phase::kRunning, gate.phase());
+
+  END_TEST;
+}
+
+// Verifies that each successful entry, in each phase and by each kind of entry,
+// increments the active count by exactly one and leaves the phase unchanged,
+// and that a refused entry changes nothing.
+bool EnterCountsTest() {
+  BEGIN_TEST;
+
+  UartGate gate;
+  auto count = [&gate]() { return UartGateTestAccess::ActiveCount(gate); };
+
+  // Running: both kinds of entry succeed.
+  EXPECT_EQ(0u, count());
+  ASSERT_TRUE(gate.TryEnter());
+  EXPECT_EQ(1u, count());
+  EXPECT_EQ(UartGate::Phase::kRunning, gate.phase());
+  ASSERT_TRUE(gate.TryEnterUnlessSuspended());
+  EXPECT_EQ(2u, count());
+  EXPECT_EQ(UartGate::Phase::kRunning, gate.phase());
+  ASSERT_TRUE(gate.TryEnter());
+  EXPECT_EQ(3u, count());
+  EXPECT_EQ(UartGate::Phase::kRunning, gate.phase());
+
+  // Draining: normal entry is refused, entry unless suspended succeeds.
+  gate.BeginDrain();
+  EXPECT_EQ(3u, count());
+  EXPECT_FALSE(gate.TryEnter());
+  EXPECT_EQ(3u, count());
+  EXPECT_EQ(UartGate::Phase::kDraining, gate.phase());
+  ASSERT_TRUE(gate.TryEnterUnlessSuspended());
+  EXPECT_EQ(4u, count());
+  EXPECT_EQ(UartGate::Phase::kDraining, gate.phase());
+  EXPECT_FALSE(gate.TryEnter());
+  EXPECT_EQ(4u, count());
+  EXPECT_EQ(UartGate::Phase::kDraining, gate.phase());
+
+  for (uint32_t remaining = 4; remaining > 0; --remaining) {
+    gate.Exit();
+    EXPECT_EQ(remaining - 1, count());
+  }
+  ASSERT_TRUE(gate.TryFinishDrain());
+
+  // Suspended: both kinds of entry are refused.
+  EXPECT_FALSE(gate.TryEnter());
+  EXPECT_FALSE(gate.TryEnterUnlessSuspended());
+  EXPECT_EQ(0u, count());
+  EXPECT_EQ(UartGate::Phase::kSuspended, gate.phase());
+
+  // Running again.
+  gate.Resume();
+  ASSERT_TRUE(gate.TryEnterUnlessSuspended());
+  EXPECT_EQ(1u, count());
+  EXPECT_EQ(UartGate::Phase::kRunning, gate.phase());
+  gate.Exit();
+  EXPECT_EQ(0u, count());
+
+  END_TEST;
+}
+
+// Contends for the gate from several threads with no delay between operations,
+// so that entries race (e.g. exercising the retry of a failed store-exclusive on
+// arm64), and verifies that no entry or exit is lost.
+bool ContendedEnterExitTest() {
+  BEGIN_TEST;
+
+  struct TestState {
+    UartGate gate;
+    ktl::atomic<uint32_t> refused{0};
+  };
+  TestState state;
+
+  thread_start_routine worker = [](void* arg) -> int {
+    auto* s = static_cast<TestState*>(arg);
+    constexpr uint32_t kIterations = 10000;
+    for (uint32_t i = 0; i < kIterations; ++i) {
+      const bool entered = (i % 2 == 0) ? s->gate.TryEnter() : s->gate.TryEnterUnlessSuspended();
+      if (!entered) {
+        s->refused.fetch_add(1, ktl::memory_order_relaxed);
+        continue;
+      }
+      s->gate.Exit();
+    }
+    return 0;
+  };
+
+  constexpr size_t kNumWorkers = 4;
+  ktl::array<Thread*, kNumWorkers> workers{};
+  for (Thread*& t : workers) {
+    t = Thread::Create("uart_gate_test_contender", worker, &state, DEFAULT_PRIORITY);
+    ASSERT_NONNULL(t);
+  }
+  for (Thread* t : workers) {
+    t->Resume();
+  }
+  for (Thread* t : workers) {
+    ASSERT_OK(t->Join(nullptr, ZX_TIME_INFINITE));
+  }
+
+  // The gate stayed running throughout, so no entry was refused, and every
+  // entry was matched by an exit.
+  EXPECT_EQ(0u, state.refused.load(ktl::memory_order_relaxed));
+  EXPECT_EQ(0u, UartGateTestAccess::ActiveCount(state.gate));
+  EXPECT_EQ(UartGate::Phase::kRunning, state.gate.phase());
+
+  END_TEST;
+}
+
+// Directly tests the compare-exchange which entry uses.
+bool CompareExchangeWeakSeqCstTest() {
+  BEGIN_TEST;
+
+  // Success.  The compare-exchange may fail spuriously, leaving everything
+  // unchanged, so retry until it succeeds.
+  ktl::atomic<uint32_t> value{0x8000'0001};
+  uint32_t expected = 0x8000'0001;
+  while (!internal::CompareExchangeWeakSeqCst(value, expected, 0x7fff'fffe)) {
+    ASSERT_EQ(0x8000'0001u, expected);
+    ASSERT_EQ(0x8000'0001u, value.load());
+  }
+  EXPECT_EQ(0x8000'0001u, expected);
+  EXPECT_EQ(0x7fff'fffeu, value.load());
+
+  // Mismatch (only in the top bit): fails, reporting the observed value, and
+  // leaves |value| unchanged.
+  expected = 0xffff'fffe;
+  EXPECT_FALSE(internal::CompareExchangeWeakSeqCst(value, expected, 0x1234'5678));
+  EXPECT_EQ(0x7fff'fffeu, expected);
+  EXPECT_EQ(0x7fff'fffeu, value.load());
 
   END_TEST;
 }
@@ -382,6 +517,7 @@ bool ConcurrentEnterExitAndSuspendResumeTest() {
 
   EXPECT_FALSE(state.saw_violation.load(ktl::memory_order_relaxed));
   EXPECT_EQ(0u, state.active_count.load(ktl::memory_order_relaxed));
+  EXPECT_EQ(0u, UartGateTestAccess::ActiveCount(state.gate));
 
   END_TEST;
 }
@@ -393,6 +529,9 @@ UNITTEST("initial_state", InitialStateTest)
 UNITTEST("drain_with_no_active_users", DrainWithNoActiveUsersTest)
 UNITTEST("drain_waits_for_active_users", DrainWaitsForActiveUsersTest)
 UNITTEST("cancel_drain", CancelDrainTest)
+UNITTEST("enter_counts", EnterCountsTest)
+UNITTEST("contended_enter_exit", ContendedEnterExitTest)
+UNITTEST("compare_exchange_weak_seq_cst", CompareExchangeWeakSeqCstTest)
 UNITTEST("wait_is_woken_by_last_exit", WaitIsWokenByLastExitTest)
 UNITTEST("last_exit_signals", LastExitSignalsTest)
 UNITTEST("wait_notices_last_exit_without_waking", WaitNoticesLastExitWithoutWakingTest)
