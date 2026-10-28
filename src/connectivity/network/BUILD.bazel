@@ -52,7 +52,9 @@ build_flags(
 test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
-    tests = [],
+    tests = [
+        "//src/connectivity/network/lib/netfilter:netfilter-tests",
+    ],
     visibility = ["//src/connectivity:__pkg__"],
 )
 

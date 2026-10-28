@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "netfilter",
+    srcs = [
+        "src/grammar.rs",
+        "src/lib.rs",
+        "src/parser.rs",
+        "src/util.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_features = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["fdomain"],
+    }),
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:pest_derive",
+    ],
+    visibility = ["//src/connectivity/policy/netcfg:__pkg__"],
+    deps = [
+        "//third_party/rust_crates/vendor:pest",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.net:fuchsia.net_rust_flex",
+            "//src/lib/network/fidl_fuchsia_net_filter_ext",
+            "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
+            "//src/lib/network/fidl_fuchsia_net_matchers_ext",
+        ],
+        "//conditions:default": [
+            "//sdk/fidl/fuchsia.net:fuchsia.net_rust_fdomain_flex",
+            "//src/lib/network/fidl_fuchsia_net_filter_ext:fidl_fuchsia_net_filter_ext_fdomain",
+            "//src/lib/network/fidl_fuchsia_net_interfaces_ext:fidl_fuchsia_net_interfaces_ext_fdomain",
+            "//src/lib/network/fidl_fuchsia_net_matchers_ext:fidl_fuchsia_net_matchers_ext_fdomain",
+        ],
+    }),
+)
+
+rustc_test(
+    name = "netfilter_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":netfilter",
+    crate_features = select({
+        "@platforms//os:fuchsia": [],
+        "//conditions:default": ["fdomain"],
+    }),
+    crate_name = "netfilter_lib_test",
+    edition = "2024",
+    deps = ["//src/connectivity/lib/net-declare"],
+)
+
+fx_unittest_package(
+    name = "netfilter-tests",
+    unit_tests = [":netfilter_test"],
+    visibility = ["//src/connectivity/network:__pkg__"],
+)
