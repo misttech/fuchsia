@@ -9,6 +9,8 @@ use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_resources as fnet_resources;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_tun as fnet_tun;
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_tracing_controller as ftracing_controller;
@@ -18,27 +20,65 @@ use futures::{AsyncReadExt as _, FutureExt as _};
 
 use libc as _;
 use net_declare::fidl_subnet;
-use net_types::ip::{Ip, Ipv4, Ipv6};
+use net_types::ip::{Ip, IpAddr, Ipv4, Ipv6};
 use netemul::{PacketCapture, TestEndpoint, TestNetwork};
 use netstack_testing_common::realms::{KnownServiceProvider, NetstackVersion};
 use netstack_testing_common::{devices, interfaces};
 
-trait IpExt: Ip {
-    const CLIENT_SUBNET: fnet::Subnet;
-    const SERVER_SUBNET: fnet::Subnet;
+/// Addressing for the direct topology, in which the client and server share a
+/// link:
+///
+///   client <-> server
+struct DirectSubnets {
+    client: fnet::Subnet,
+    server: fnet::Subnet,
+}
+
+/// Addressing for the forwarding topology, in which the client and server are
+/// on separate subnets connected by a router:
+///
+///   client <-> (client gateway) router (server gateway) <-> server
+struct ForwardingSubnets {
+    client: fnet::Subnet,
+    client_gateway: fnet::Subnet,
+    server_gateway: fnet::Subnet,
+    server: fnet::Subnet,
+}
+
+trait IpExt:
+    Ip + fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt
+{
     const DOMAIN: fposix_socket::Domain;
+    const DIRECT: DirectSubnets;
+    const FORWARDING: ForwardingSubnets;
 }
 
 impl IpExt for Ipv4 {
-    const CLIENT_SUBNET: fnet::Subnet = fidl_subnet!("192.0.2.1/24");
-    const SERVER_SUBNET: fnet::Subnet = fidl_subnet!("192.0.2.254/24");
     const DOMAIN: fposix_socket::Domain = fposix_socket::Domain::Ipv4;
+    const DIRECT: DirectSubnets = DirectSubnets {
+        client: fidl_subnet!("192.168.1.1/24"),
+        server: fidl_subnet!("192.168.1.2/24"),
+    };
+    const FORWARDING: ForwardingSubnets = ForwardingSubnets {
+        client: fidl_subnet!("192.168.1.1/24"),
+        client_gateway: fidl_subnet!("192.168.1.2/24"),
+        server_gateway: fidl_subnet!("192.168.2.1/24"),
+        server: fidl_subnet!("192.168.2.2/24"),
+    };
 }
 
 impl IpExt for Ipv6 {
-    const CLIENT_SUBNET: fnet::Subnet = fidl_subnet!("2001:0db8:abcd:efff::1/64");
-    const SERVER_SUBNET: fnet::Subnet = fidl_subnet!("2001:0db8:abcd:efff:ffff:ffff:ffff:ffff/64");
     const DOMAIN: fposix_socket::Domain = fposix_socket::Domain::Ipv6;
+    const DIRECT: DirectSubnets = DirectSubnets {
+        client: fidl_subnet!("2001:db8:1::1/64"),
+        server: fidl_subnet!("2001:db8:1::2/64"),
+    };
+    const FORWARDING: ForwardingSubnets = ForwardingSubnets {
+        client: fidl_subnet!("2001:db8:1::1/64"),
+        client_gateway: fidl_subnet!("2001:db8:1::2/64"),
+        server_gateway: fidl_subnet!("2001:db8:2::1/64"),
+        server: fidl_subnet!("2001:db8:2::2/64"),
+    };
 }
 
 fn generate_send_recv_bufs(size: usize) -> (Vec<u8>, Vec<u8>) {
@@ -60,41 +100,131 @@ fn generate_send_recv_bufs(size: usize) -> (Vec<u8>, Vec<u8>) {
     )
 }
 
-// This type holds unused FIDL proxies so that the underlying object stays
-// alive.
+// This type holds FIDL proxies so that the underlying object stays alive.
 struct InterfaceFidlProxies {
     _device_control: fnet_interfaces_admin::DeviceControlProxy,
-    _control: fidl_fuchsia_net_interfaces_ext::admin::Control,
+    control: fidl_fuchsia_net_interfaces_ext::admin::Control,
 }
 
-// This type holds unused FIDL proxies so that the underlying object stays
-// alive.
+// This type holds FIDL proxies so that the underlying objects stay alive.
 struct FidlProxies<'a> {
-    tun_or_network: TunOrDebugNetwork<'a>,
-    _client_if: InterfaceFidlProxies,
-    _server_if: InterfaceFidlProxies,
+    links: Vec<Link<'a>>,
+    _interfaces: Vec<InterfaceFidlProxies>,
 }
 
-const DEBUG_NETWORK_NAME: &'static str = "sniff";
-
-enum TunOrDebugNetwork<'a> {
+/// A link between two netstacks.
+enum Link<'a> {
+    /// Backed by a Tun device pair.
     Tun(fnet_tun::DevicePairProxy),
-    DebugNetwork { net: TestNetwork<'a>, _ep1: TestEndpoint<'a>, _ep2: TestEndpoint<'a> },
+    /// Backed by a netemul network, which supports packet capture.
+    DebugNetwork {
+        name: &'static str,
+        net: TestNetwork<'a>,
+        _ep1: TestEndpoint<'a>,
+        _ep2: TestEndpoint<'a>,
+    },
 }
 
-impl<'a> TunOrDebugNetwork<'a> {
-    async fn start_capture(&mut self, name: &str) -> Option<PacketCapture> {
+impl<'a> Link<'a> {
+    /// Creates a link, returning it along with the ports at each of its ends.
+    ///
+    /// The link is backed by a netemul network if `capture_packets` is set,
+    /// and by a Tun device pair otherwise.
+    async fn new(
+        sandbox: &'a netemul::TestSandbox,
+        name: &'static str,
+        capture_packets: bool,
+    ) -> (Self, fhardware_network::PortProxy, fhardware_network::PortProxy) {
+        if capture_packets {
+            let net = sandbox.create_network(name).await.expect("create network");
+            let (left_port, left_port_server_end) =
+                fidl::endpoints::create_proxy::<fhardware_network::PortMarker>();
+            let (right_port, right_port_server_end) =
+                fidl::endpoints::create_proxy::<fhardware_network::PortMarker>();
+            let ep1 = net
+                .create_endpoint(format!("{name}-ep1"))
+                .await
+                .expect("failed to create endpoint");
+            let ep2 = net
+                .create_endpoint(format!("{name}-ep2"))
+                .await
+                .expect("failed to create endpoint");
+            ep1.get_port(left_port_server_end).expect("failed to get port for endpoint");
+            ep2.get_port(right_port_server_end).expect("failed to get port for endpoint");
+            ep1.set_link_up(true).await.expect("failed to enable endpoint");
+            ep2.set_link_up(true).await.expect("failed to enable endpoint");
+            (Link::DebugNetwork { name, net, _ep1: ep1, _ep2: ep2 }, left_port, right_port)
+        } else {
+            let (tun_dev_pair, left_port, right_port) = devices::create_eth_tun_pair().await;
+            (Link::Tun(tun_dev_pair), left_port, right_port)
+        }
+    }
+
+    /// Starts a packet capture on the link named `{prefix}-{link name}`, if
+    /// the link supports it.
+    async fn start_capture(&mut self, prefix: &str) -> Option<PacketCapture> {
         match self {
-            TunOrDebugNetwork::Tun(_tun) => None,
-            TunOrDebugNetwork::DebugNetwork { net, _ep1, _ep2 } => {
+            Link::Tun(_tun) => None,
+            Link::DebugNetwork { name, net, _ep1, _ep2 } => {
                 // We exclusively borrowed `net` so no one should be able to capture
                 // packets at the moment.
-                Some(net.start_capture(name).await.expect("failed to start packet capture"))
+                Some(
+                    net.start_capture(&format!("{prefix}-{name}"))
+                        .await
+                        .expect("failed to start packet capture"),
+                )
             }
         }
     }
 }
 
+async fn install_interface(
+    realm: &netemul::TestRealm<'_>,
+    port: fhardware_network::PortProxy,
+    subnets: impl IntoIterator<Item = fnet::Subnet>,
+) -> InterfaceFidlProxies {
+    let device = {
+        let (device, server_end) =
+            fidl::endpoints::create_endpoints::<fhardware_network::DeviceMarker>();
+        port.get_device(server_end).expect("get device");
+        device
+    };
+    let device_control = devices::install_device(realm, device);
+
+    let control = {
+        let port_id =
+            port.get_info().await.expect("get port info").id.expect("port ID must be present");
+        let (control, server_end) =
+            fnet_interfaces_ext::admin::Control::create_endpoints().expect("create endpoints");
+        device_control
+            .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
+            .expect("create interface");
+        control
+    };
+    assert!(control.enable().await.expect("enable interface FIDL call").expect("enable interface"));
+
+    for subnet in subnets {
+        let addr_state_provider = interfaces::add_address_wait_assigned(
+            &control,
+            subnet,
+            fnet_interfaces_admin::AddressParameters {
+                add_subnet_route: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("add address and wait for it to be assigned");
+        addr_state_provider.detach().expect("address state provider detach FIDL call");
+    }
+
+    InterfaceFidlProxies { _device_control: device_control, control }
+}
+
+/// Sets up a client and server sharing a link:
+///
+///   client <-> server
+///
+/// Returns the client and server realms, in that order.
 async fn setup<'a>(
     sandbox: &'a netemul::TestSandbox,
     netstack_version: NetstackVersion,
@@ -113,75 +243,160 @@ async fn setup<'a>(
         )
         .expect("create server netstack");
 
-    let (tun_or_network, left_port, right_port) = if capture_packets {
-        let net = sandbox.create_network(DEBUG_NETWORK_NAME).await.expect("create network");
-        let (left_port, left_port_server_end) =
-            fidl::endpoints::create_proxy::<fhardware_network::PortMarker>();
-        let (right_port, right_port_server_end) =
-            fidl::endpoints::create_proxy::<fhardware_network::PortMarker>();
-        let ep1 = net.create_endpoint("ep1").await.expect("failed to create endpoint");
-        let ep2 = net.create_endpoint("ep2").await.expect("failed to create endpoint");
-        ep1.get_port(left_port_server_end).expect("failed to get port for endpoint");
-        ep2.get_port(right_port_server_end).expect("failed to get port for endpoint");
-        ep1.set_link_up(true).await.expect("failed to enable endpoint");
-        ep2.set_link_up(true).await.expect("failed to enable endpoint");
-        (TunOrDebugNetwork::DebugNetwork { net, _ep1: ep1, _ep2: ep2 }, left_port, right_port)
-    } else {
-        let (tun_dev_pair, left_port, right_port) =
-            netstack_testing_common::devices::create_eth_tun_pair().await;
-        (TunOrDebugNetwork::Tun(tun_dev_pair), left_port, right_port)
-    };
+    let (link, client_port, server_port) = Link::new(sandbox, "direct", capture_packets).await;
 
-    async fn install_interface(
-        realm: &netemul::TestRealm<'_>,
-        port: fhardware_network::PortProxy,
-        subnets: impl IntoIterator<Item = fnet::Subnet>,
-    ) -> InterfaceFidlProxies {
-        let device = {
-            let (device, server_end) =
-                fidl::endpoints::create_endpoints::<fhardware_network::DeviceMarker>();
-            port.get_device(server_end).expect("get device");
-            device
-        };
-        let device_control = devices::install_device(realm, device);
-
-        let control = {
-            let port_id =
-                port.get_info().await.expect("get port info").id.expect("port ID must be present");
-            let (control, server_end) =
-                fnet_interfaces_ext::admin::Control::create_endpoints().expect("create endpoints");
-            device_control
-                .create_interface(&port_id, server_end, fnet_interfaces_admin::Options::default())
-                .expect("create interface");
-            control
-        };
-        assert!(
-            control.enable().await.expect("enable interface FIDL call").expect("enable interface")
-        );
-
-        for subnet in subnets {
-            let addr_state_provider = interfaces::add_address_wait_assigned(
-                &control,
-                subnet,
-                fnet_interfaces_admin::AddressParameters {
-                    add_subnet_route: Some(true),
-                    ..Default::default()
-                },
-            )
-            .await
-            .expect("add address and wait for it to be assigned");
-            addr_state_provider.detach().expect("address state provider detach FIDL call");
-        }
-
-        InterfaceFidlProxies { _device_control: device_control, _control: control }
-    }
-    let (_client_if, _server_if) = futures::future::join(
-        install_interface(&client_realm, left_port, [Ipv4::CLIENT_SUBNET, Ipv6::CLIENT_SUBNET]),
-        install_interface(&server_realm, right_port, [Ipv4::SERVER_SUBNET, Ipv6::SERVER_SUBNET]),
+    let (client_if, server_if) = futures::future::join(
+        install_interface(&client_realm, client_port, [Ipv4::DIRECT.client, Ipv6::DIRECT.client]),
+        install_interface(&server_realm, server_port, [Ipv4::DIRECT.server, Ipv6::DIRECT.server]),
     )
     .await;
 
-    (client_realm, server_realm, FidlProxies { tun_or_network, _client_if, _server_if })
+    (
+        client_realm,
+        server_realm,
+        FidlProxies { links: vec![link], _interfaces: vec![client_if, server_if] },
+    )
+}
+
+/// Adds a default route via the address in `gateway` through the interface
+/// controlled by `control` to the global route table in `realm`.
+async fn add_default_route<I: IpExt>(
+    realm: &netemul::TestRealm<'_>,
+    control: &fnet_interfaces_ext::admin::Control,
+    gateway: fnet::Subnet,
+) {
+    let gateway: I::Addr = I::map_ip_out(
+        fnet_ext::IntoExt::<IpAddr>::into_ext(gateway.addr),
+        |addr| match addr {
+            IpAddr::V4(addr) => addr,
+            IpAddr::V6(addr) => panic!("expected IPv4 gateway, got {addr}"),
+        },
+        |addr| match addr {
+            IpAddr::V6(addr) => addr,
+            IpAddr::V4(addr) => panic!("expected IPv6 gateway, got {addr}"),
+        },
+    );
+    let root_routes = realm
+        .connect_to_protocol::<I::GlobalRouteTableMarker>()
+        .expect("connect to global route table");
+    let route_set = fnet_routes_ext::admin::new_global_route_set::<I>(&root_routes)
+        .expect("create global route set");
+    let fnet_resources::GrantForInterfaceAuthorization { interface_id, token } =
+        control.get_authorization_for_interface().await.expect("get interface authorization");
+    fnet_routes_ext::admin::authenticate_for_interface::<I>(
+        &route_set,
+        fnet_resources::ProofOfInterfaceAuthorization { interface_id, token },
+    )
+    .await
+    .expect("authenticate for interface FIDL call")
+    .expect("authenticate for interface");
+    let route = fnet_routes_ext::Route::<I>::new_forward_with_inherited_metric(
+        net_types::ip::Subnet::new(I::UNSPECIFIED_ADDRESS, 0).expect("default subnet"),
+        interface_id,
+        Some(net_types::SpecifiedAddr::new(gateway).expect("gateway must be specified")),
+    );
+    assert!(
+        fnet_routes_ext::admin::add_route::<I>(
+            &route_set,
+            &route.try_into().expect("convert route to FIDL"),
+        )
+        .await
+        .expect("add route FIDL call")
+        .expect("add route")
+    );
+}
+
+/// Sets up a client and server on separate subnets connected via a router:
+///
+///   client <-> (client gateway) router (server gateway) <-> server
+///
+/// Returns the client, router, and server realms, in that order.
+async fn setup_forwarding<'a>(
+    sandbox: &'a netemul::TestSandbox,
+    netstack_version: NetstackVersion,
+    capture_packets: bool,
+) -> (netemul::TestRealm<'a>, netemul::TestRealm<'a>, netemul::TestRealm<'a>, FidlProxies<'a>) {
+    let create_realm = |name| {
+        sandbox
+            .create_realm(
+                name,
+                [
+                    KnownServiceProvider::SecureStash,
+                    KnownServiceProvider::Netstack(netstack_version),
+                ],
+            )
+            .expect("create netstack realm")
+    };
+    let client_realm = create_realm("forward-client");
+    let router_realm = create_realm("forward-router");
+    let server_realm = create_realm("forward-server");
+
+    let (client_link, client_port, client_gateway_port) =
+        Link::new(sandbox, "client", capture_packets).await;
+    let (server_link, server_gateway_port, server_port) =
+        Link::new(sandbox, "server", capture_packets).await;
+
+    let (client_if, client_gateway_if, server_gateway_if, server_if) = futures::future::join4(
+        install_interface(
+            &client_realm,
+            client_port,
+            [Ipv4::FORWARDING.client, Ipv6::FORWARDING.client],
+        ),
+        install_interface(
+            &router_realm,
+            client_gateway_port,
+            [Ipv4::FORWARDING.client_gateway, Ipv6::FORWARDING.client_gateway],
+        ),
+        install_interface(
+            &router_realm,
+            server_gateway_port,
+            [Ipv4::FORWARDING.server_gateway, Ipv6::FORWARDING.server_gateway],
+        ),
+        install_interface(
+            &server_realm,
+            server_port,
+            [Ipv4::FORWARDING.server, Ipv6::FORWARDING.server],
+        ),
+    )
+    .await;
+
+    for router_if in [&client_gateway_if, &server_gateway_if] {
+        let _: fnet_interfaces_admin::Configuration = router_if
+            .control
+            .set_configuration(&fnet_interfaces_admin::Configuration {
+                ipv4: Some(fnet_interfaces_admin::Ipv4Configuration {
+                    unicast_forwarding: Some(true),
+                    ..Default::default()
+                }),
+                ipv6: Some(fnet_interfaces_admin::Ipv6Configuration {
+                    unicast_forwarding: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await
+            .expect("set configuration FIDL call")
+            .expect("set configuration");
+    }
+
+    add_default_route::<Ipv4>(&client_realm, &client_if.control, Ipv4::FORWARDING.client_gateway)
+        .await;
+    add_default_route::<Ipv6>(&client_realm, &client_if.control, Ipv6::FORWARDING.client_gateway)
+        .await;
+    add_default_route::<Ipv4>(&server_realm, &server_if.control, Ipv4::FORWARDING.server_gateway)
+        .await;
+    add_default_route::<Ipv6>(&server_realm, &server_if.control, Ipv6::FORWARDING.server_gateway)
+        .await;
+
+    (
+        client_realm,
+        router_realm,
+        server_realm,
+        FidlProxies {
+            links: vec![client_link, server_link],
+            _interfaces: vec![client_if, client_gateway_if, server_gateway_if, server_if],
+        },
+    )
 }
 
 fn format_byte_count(byte_count: usize) -> String {
@@ -192,11 +407,13 @@ fn format_byte_count(byte_count: usize) -> String {
     }
 }
 
-/// Connects a TCP socket in `client_realm` to a listener in `server_realm`,
-/// sizing the socket buffers for `transfer` bytes.
+/// Connects a TCP socket in `client_realm` to a listener bound to
+/// `server_addr` in `server_realm`, sizing the socket buffers for `transfer`
+/// bytes.
 async fn connect_tcp<'a, I: IpExt>(
     client_realm: &netemul::TestRealm<'a>,
     server_realm: &netemul::TestRealm<'a>,
+    server_addr: fnet::IpAddress,
     transfer: usize,
 ) -> (socket2::Socket, socket2::Socket) {
     let (listen_sock, client_sock) = futures::future::join(
@@ -214,7 +431,7 @@ async fn connect_tcp<'a, I: IpExt>(
     // the sockets non-async-aware and use `socket2` calls directly to
     // connect the sockets.
     let bind_sockaddr = {
-        let fnet_ext::IpAddress(listen_addr) = I::SERVER_SUBNET.addr.into();
+        let fnet_ext::IpAddress(listen_addr) = server_addr.into();
         socket2::SockAddr::from(std::net::SocketAddr::from((listen_addr, 0)))
     };
     listen_sock.bind(&bind_sockaddr).expect("bind");
@@ -284,7 +501,8 @@ fn read_exact(mut sock: &socket2::Socket, buf: &mut [u8]) {
 }
 
 /// Benchmarks transferring `transfer` bytes from `client_realm` to
-/// `server_realm`, split evenly across `flows` concurrent TCP connections.
+/// `server_addr` in `server_realm`, split evenly across `flows` concurrent TCP
+/// connections.
 ///
 /// Each iteration writes each connection's share of the transfer before
 /// reading any of it on the receiving end. With multiple connections, the
@@ -292,24 +510,30 @@ fn read_exact(mut sock: &socket2::Socket, buf: &mut [u8]) {
 async fn bench_tcp<'a, I: IpExt>(
     test_suite: &'static str,
     iter_count: usize,
+    name: &'static str,
     client_realm: &netemul::TestRealm<'a>,
     server_realm: &netemul::TestRealm<'a>,
+    server_addr: fnet::IpAddress,
     transfer: usize,
     flows: usize,
-    tun_or_network: &mut TunOrDebugNetwork<'a>,
+    links: &mut [Link<'a>],
 ) -> fuchsiaperf::FuchsiaPerfBenchmarkResult {
     assert_eq!(transfer % flows, 0, "transfer must divide evenly across flows");
     let flow_transfer = transfer / flows;
 
     let label = if flows > 1 {
-        format!("WriteRead/TCP/{}/{}/{}Flows", I::NAME, format_byte_count(transfer), flows)
+        format!("{}/TCP/{}/{}/{}Flows", name, I::NAME, format_byte_count(transfer), flows)
     } else {
-        format!("WriteRead/TCP/{}/{}", I::NAME, format_byte_count(transfer))
+        format!("{}/TCP/{}/{}", name, I::NAME, format_byte_count(transfer))
     };
-    let _packet_capture = tun_or_network.start_capture(&label.replace("/", "-")).await;
+    let capture_prefix = label.replace("/", "-");
+    let _packet_captures: Vec<Option<PacketCapture>> =
+        futures::future::join_all(links.iter_mut().map(|link| link.start_capture(&capture_prefix)))
+            .await;
     let mut sockets = Vec::with_capacity(flows);
     for _ in 0..flows {
-        sockets.push(connect_tcp::<I>(client_realm, server_realm, flow_transfer).await);
+        sockets
+            .push(connect_tcp::<I>(client_realm, server_realm, server_addr, flow_transfer).await);
     }
 
     fuchsia_trace::duration!("tun_socket_benchmarks", "test_group", "label" => &*label);
@@ -413,7 +637,7 @@ async fn bench_udp<'a, I: IpExt>(
         // here we "manually" use non-blocking calls to connect sockets instead of
         // using the normal async facilities.
         let bind_sockaddr = {
-            let fnet_ext::IpAddress(listen_addr) = I::SERVER_SUBNET.addr.into();
+            let fnet_ext::IpAddress(listen_addr) = I::DIRECT.server.addr.into();
             socket2::SockAddr::from(std::net::SocketAddr::from((listen_addr, 0)))
         };
         server_sock.bind(&bind_sockaddr).expect("bind");
@@ -517,6 +741,12 @@ async fn main() {
     let test_suite = "fuchsia.network.socket.tun.netstack3";
     let (client_realm, server_realm, mut fidl_proxies) =
         setup(&sandbox, NetstackVersion::ProdNetstack3, pcap).await;
+    let (
+        forward_client_realm,
+        _forward_router_realm,
+        forward_server_realm,
+        mut forward_fidl_proxies,
+    ) = setup_forwarding(&sandbox, NetstackVersion::ProdNetstack3, pcap).await;
 
     let tracer = if tracing {
         // TODO(https://fxbug.dev/42096938): Use race-free trace provider
@@ -572,11 +802,13 @@ async fn main() {
                 bench_tcp::<Ipv4>(
                     test_suite,
                     iter_count,
+                    "WriteRead",
                     &client_realm,
                     &server_realm,
+                    Ipv4::DIRECT.server.addr,
                     transfer,
                     1,
-                    &mut fidl_proxies.tun_or_network,
+                    &mut fidl_proxies.links,
                 )
                 .await,
             );
@@ -584,11 +816,13 @@ async fn main() {
                 bench_tcp::<Ipv6>(
                     test_suite,
                     iter_count,
+                    "WriteRead",
                     &client_realm,
                     &server_realm,
+                    Ipv6::DIRECT.server.addr,
                     transfer,
                     1,
-                    &mut fidl_proxies.tun_or_network,
+                    &mut fidl_proxies.links,
                 )
                 .await,
             );
@@ -605,11 +839,13 @@ async fn main() {
                     bench_tcp::<Ipv4>(
                         test_suite,
                         iter_count,
+                        "WriteRead",
                         &client_realm,
                         &server_realm,
+                        Ipv4::DIRECT.server.addr,
                         transfer,
                         flows,
-                        &mut fidl_proxies.tun_or_network,
+                        &mut fidl_proxies.links,
                     )
                     .await,
                 );
@@ -617,15 +853,48 @@ async fn main() {
                     bench_tcp::<Ipv6>(
                         test_suite,
                         iter_count,
+                        "WriteRead",
                         &client_realm,
                         &server_realm,
+                        Ipv6::DIRECT.server.addr,
                         transfer,
                         flows,
-                        &mut fidl_proxies.tun_or_network,
+                        &mut fidl_proxies.links,
                     )
                     .await,
                 );
             }
+        }
+
+        for transfer in [1 << 10, 10 << 10, 100 << 10, 500 << 10, 1000 << 10] {
+            metrics.push(
+                bench_tcp::<Ipv4>(
+                    test_suite,
+                    iter_count,
+                    "Forward",
+                    &forward_client_realm,
+                    &forward_server_realm,
+                    Ipv4::FORWARDING.server.addr,
+                    transfer,
+                    1,
+                    &mut forward_fidl_proxies.links,
+                )
+                .await,
+            );
+            metrics.push(
+                bench_tcp::<Ipv6>(
+                    test_suite,
+                    iter_count,
+                    "Forward",
+                    &forward_client_realm,
+                    &forward_server_realm,
+                    Ipv6::FORWARDING.server.addr,
+                    transfer,
+                    1,
+                    &mut forward_fidl_proxies.links,
+                )
+                .await,
+            );
         }
 
         // NB: All of these message sizes are kept below the MTU of 1500 bytes

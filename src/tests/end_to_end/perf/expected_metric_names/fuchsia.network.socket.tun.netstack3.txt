@@ -1,3 +1,13 @@
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv4/1000KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv4/100KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv4/10KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv4/1KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv4/500KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv6/1000KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv6/100KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv6/10KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv6/1KiB
+fuchsia.network.socket.tun.netstack3: Forward/TCP/IPv6/500KiB
 fuchsia.network.socket.tun.netstack3: MultiWriteRead/UDP/IPv4/100B/10Messages
 fuchsia.network.socket.tun.netstack3: MultiWriteRead/UDP/IPv4/100B/250Messages
 fuchsia.network.socket.tun.netstack3: MultiWriteRead/UDP/IPv4/100B/50Messages
