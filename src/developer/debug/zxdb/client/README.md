@@ -147,6 +147,11 @@ Public headers expose these client classes and observers:
   `zxdb::BreakpointObserver`, `zxdb::ExecutionScope`: Global and scoped
   breakpoints with per-process `BreakpointLocation` controls (`breakpoint.h`,
   `breakpoint_settings.h`, `breakpoint_location.h`).
+- `zxdb::TracepointSpec`, `zxdb::TracepointFrameCapture`,
+  `zxdb::TracepointHitRecord`, `zxdb::TracepointMatchResult`,
+  `zxdb::MatchTracepointFrames`, `zxdb::CaptureThreadBacktrace`,
+  `zxdb::CaptureTracepointFrame`: Stateless tracepoint frame matching and state
+  capture (`tracepoint_spec.h`, `tracepoint_capture.h`).
 - `zxdb::Filter`: Process, component, and job attach filter synchronized with
   `debug_agent` (`filter.h`).
 - `zxdb::ThreadController`, `zxdb::StepThreadController`,

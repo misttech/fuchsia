@@ -4,11 +4,11 @@
 
 #include "src/developer/debug/zxdb/client/system.h"
 
-#include <functional>
 #include <lib/syslog/cpp/log_settings.h>
 
 #include <algorithm>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <set>
 
@@ -21,6 +21,7 @@
 #include "src/developer/debug/zxdb/client/download_observer.h"
 #include "src/developer/debug/zxdb/client/exception_settings.h"
 #include "src/developer/debug/zxdb/client/filter.h"
+#include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
 #include "src/developer/debug/zxdb/client/process_impl.h"
 #include "src/developer/debug/zxdb/client/remote_api.h"
 #include "src/developer/debug/zxdb/client/session.h"
@@ -277,6 +278,9 @@ System::System(Session* session)
       weak_factory_(this) {
   // Create the default target.
   AddNewTarget(std::make_unique<TargetImpl>(this));
+
+  pretty_stack_manager_ = fxl::MakeRefCounted<PrettyStackManager>();
+  pretty_stack_manager_->LoadDefaultMatchers();
 
   session->AddObserver(this);
   session->AddDownloadObserver(this);
