@@ -86,7 +86,7 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util",
         "//third_party/rust_crates/vendor/hickory-net-0.26.3:hickory_net",
         "//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto",
-        "//third_party/rust_crates/vendor/ipnet-2.11.0:ipnet",
+        "//third_party/rust_crates/vendor/ipnet-2.12.2:ipnet",
         "//third_party/rust_crates/vendor/metrics-0.24.6:metrics",
         "//third_party/rust_crates/vendor/moka-0.12.16:moka",
         "//third_party/rust_crates/vendor/once_cell-1.21.4:once_cell",

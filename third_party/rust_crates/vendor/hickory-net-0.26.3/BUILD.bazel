@@ -89,7 +89,7 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-util-0.3.34:futures_util",
         "//third_party/rust_crates/vendor/hickory-proto-0.26.3:hickory_proto",
         "//third_party/rust_crates/vendor/idna-1.1.0:idna",
-        "//third_party/rust_crates/vendor/ipnet-2.11.0:ipnet",
+        "//third_party/rust_crates/vendor/ipnet-2.12.2:ipnet",
         "//third_party/rust_crates/vendor/lru-cache-0.1.2:lru_cache",
         "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
         "//third_party/rust_crates/vendor/rand-0.10.3:rand",

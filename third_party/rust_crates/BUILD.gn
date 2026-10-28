@@ -11380,7 +11380,7 @@ rustc_library("hickory-net-v0_26_3") {
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":hickory-proto-v0_26_3" ]
   deps += [ ":idna-v1_1_0" ]
-  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":lru-cache-v0_1_2" ]
   deps += [ ":parking_lot-v0_12_5" ]
   deps += [ ":rand-v0_10_3" ]
@@ -11432,7 +11432,7 @@ rustc_library("hickory-proto-v0_26_3") {
   deps += [ ":bitflags-v2_13_2" ]
   deps += [ ":data-encoding-v2_11_1" ]
   deps += [ ":idna-v1_1_0" ]
-  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":once_cell-v1_21_4" ]
   deps += [ ":prefix-trie-v0_8_4" ]
   deps += [ ":rand-v0_10_3" ]
@@ -11487,7 +11487,7 @@ rustc_library("hickory-resolver-v0_26_3") {
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":hickory-net-v0_26_3" ]
   deps += [ ":hickory-proto-v0_26_3" ]
-  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":metrics-v0_24_6" ]
   deps += [ ":moka-v0_12_16" ]
   deps += [ ":once_cell-v1_21_4" ]
@@ -12798,18 +12798,18 @@ rustc_library("iota-v0_2_3") {
   applicable_licenses = [ ":iota-v0_2_3.license" ]
 }
 
-license("ipnet-v2_11_0.license") {
+license("ipnet-v2_12_2.license") {
   public_package_name = "ipnet"
   license_files = [
-    "//third_party/rust_crates/vendor/ipnet-2.11.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ipnet-2.11.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ipnet-2.12.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ipnet-2.12.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("ipnet-v2_11_0") {
+rustc_library("ipnet-v2_12_2") {
   crate_name = "ipnet"
-  source_root = "//third_party/rust_crates/vendor/ipnet-2.11.0/src/lib.rs"
-  output_name = "ipnet-20bd7b4ffb3107d0"
+  source_root = "//third_party/rust_crates/vendor/ipnet-2.12.2/src/lib.rs"
+  output_name = "ipnet-f5aa57e8902acd91"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -12822,8 +12822,8 @@ rustc_library("ipnet-v2_11_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=20bd7b4ffb3107d0",
-    "-Cextra-filename=-20bd7b4ffb3107d0",
+    "-Cmetadata=f5aa57e8902acd91",
+    "-Cextra-filename=-f5aa57e8902acd91",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -12831,7 +12831,7 @@ rustc_library("ipnet-v2_11_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ipnet-v2_11_0.license" ]
+  applicable_licenses = [ ":ipnet-v2_12_2.license" ]
 }
 
 license("itertools-v0_13_0.license") {
@@ -17208,7 +17208,7 @@ rustc_library("prefix-trie-v0_8_4") {
 
   deps = []
   deps += [ ":either-v1_19_0" ]
-  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":num-traits-v0_2_19" ]
 
   rustenv = []
@@ -24741,7 +24741,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":futures-io-v0_3_34" ]
   deps += [ ":futures-util-v0_3_34" ]
   deps += [ ":idna-v0_2_3" ]
-  deps += [ ":ipnet-v2_11_0" ]
+  deps += [ ":ipnet-v2_12_2" ]
   deps += [ ":lazy_static-v1_5_1" ]
   deps += [ ":rand-v0_8_4" ]
   deps += [ ":smallvec-v1_16_2" ]
