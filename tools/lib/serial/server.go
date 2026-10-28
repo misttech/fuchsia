@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -68,7 +69,13 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 	}
 	defer auxOutput.Close()
 
+	stopConns := make(chan struct{})
+	var acceptWg sync.WaitGroup
+	acceptWg.Add(1)
 	go func() {
+		defer acceptWg.Done()
+		var connWg sync.WaitGroup
+		defer connWg.Wait()
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -91,7 +98,9 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 				for {
 					l, err := b.ReadString('\n')
 					if err != nil {
-						logger.Warningf(ctx, "serial: conn read: %s", err)
+						if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+							logger.Warningf(ctx, "serial: conn read: %s", err)
+						}
 						return
 					}
 					_, err = io.WriteString(s.serial, l)
@@ -102,12 +111,15 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 				}
 			}()
 
+			connWg.Add(1)
 			go func() {
+				defer connWg.Done()
 				defer conn.Close()
 
 				f, err := os.Open(s.AuxiliaryOutput)
 				if err != nil {
 					logger.Errorf(ctx, "serial: %s", err)
+					return
 				}
 				defer f.Close()
 
@@ -121,6 +133,8 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 
 				// keep copying until conn is closed
 				buf := make([]byte, 4096)
+				ticker := time.NewTicker(50 * time.Millisecond)
+				defer ticker.Stop()
 				for {
 					// files on unix always return readable, even if select'd so
 					// there's no great strategy for "tailing". It's possible to relax
@@ -128,9 +142,11 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 					// filesystem watcher APIs, but in this context, this rate is both
 					// easy enough on CPU and fast enough for keeping up with serial.
 					select {
-					case <-ctx.Done():
+					case <-stopConns:
+						_ = conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+						_, _ = io.CopyBuffer(conn, f, buf)
 						return
-					case <-time.After(50 * time.Millisecond):
+					case <-ticker.C:
 						_, err := io.CopyBuffer(conn, f, buf)
 						// io.Copy returns nil on io.EOF, which is useful here, as that's the
 						// case where we read the end of the file
@@ -170,5 +186,7 @@ func (s *Server) Run(ctx context.Context, listener net.Listener) error {
 	}
 
 	listener.Close()
+	close(stopConns)
+	acceptWg.Wait()
 	return err
 }

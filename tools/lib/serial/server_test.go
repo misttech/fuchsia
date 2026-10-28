@@ -256,6 +256,52 @@ func TestServerSerialClosing(t *testing.T) {
 	}
 }
 
+func TestServerFlushesAuxOutputOnCancel(t *testing.T) {
+	serial, device := serialAndDevice()
+	aux := mkTempFile(t)
+
+	s := NewServer(serial, ServerOptions{AuxiliaryOutput: aux.Name()})
+	ctx, cancel := context.WithCancel(context.Background())
+	l, sockPath := testListener(t)
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- s.Run(ctx, l)
+	}()
+
+	c, err := net.DialUnix("unix", nil, &net.UnixAddr{Net: "unix", Name: sockPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Wait for the initial line so we know the client connection has been accepted.
+	if _, err := io.WriteString(device, "initial line\n"); err != nil {
+		t.Fatal(err)
+	}
+	bio := bufio.NewReader(c)
+	if line, err := bio.ReadString('\n'); err != nil || line != "initial line\n" {
+		t.Fatalf("ReadString() = %q, %v; want %q, nil", line, err, "initial line\n")
+	}
+
+	// Write a final line and immediately cancel the server before the next 50ms poll tick.
+	if _, err := io.WriteString(device, "final line before cancel\n"); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+
+	rest, err := io.ReadAll(bio)
+	if err != nil {
+		t.Fatalf("io.ReadAll() failed: %s", err)
+	}
+	if string(rest) != "final line before cancel\n" {
+		t.Errorf("got remaining output %q, want %q", string(rest), "final line before cancel\n")
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("unexpected server error: %s", err)
+	}
+}
+
 // Creates a "serial connection" in terms of its host- and device-side
 // descriptors. They are implemented with synchronous in-memory pipes, so
 // associated writes and reads will be one-to-one (with the usual caveats of

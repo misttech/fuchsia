@@ -1465,3 +1465,18 @@ func TestScaleTestTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestRunHealthCheckWithoutDMC(t *testing.T) {
+	t.Setenv(botanistconstants.NodenameEnvKey, "fuchsia-gce-instance")
+	t.Setenv(constants.DMCPathEnvKey, "")
+
+	reconnectErr := fmt.Errorf("reconnect failed")
+	tester := &fakeTester{
+		reconnect: func(context.Context, testsharder.Test) error {
+			return reconnectErr
+		},
+	}
+	if err := runHealthCheck(context.Background(), tester); err != reconnectErr {
+		t.Errorf("runHealthCheck() = %v, want %v", err, reconnectErr)
+	}
+}

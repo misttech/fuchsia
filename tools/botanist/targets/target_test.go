@@ -7,10 +7,14 @@ package targets
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"go.fuchsia.dev/fuchsia/tools/botanist/constants"
@@ -241,5 +245,100 @@ func TestResolveIPWrapsError(t *testing.T) {
 	}
 	if errors.Unwrap(err) == nil {
 		t.Errorf("ResolveIP() error is not wrapped: %v", err)
+	}
+}
+
+func TestCaptureSerialLogDrainsOnStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	targetOutR, targetOutW := io.Pipe()
+	hostInR, hostInW := io.Pipe()
+	defer hostInR.Close()
+	fakeSerial := &fakePipeSerial{
+		r:  targetOutR,
+		w:  hostInW,
+		in: targetOutW,
+	}
+
+	target, err := newGenericFuchsia(ctx, "fuchsia-test-node", "", nil, fakeSerial)
+	if err != nil {
+		t.Fatalf("newGenericFuchsia() failed: %s", err)
+	}
+	if err := target.StartSerialServer(); err != nil {
+		t.Fatalf("StartSerialServer() failed: %s", err)
+	}
+
+	serialLogPath := filepath.Join(t.TempDir(), "serial_log.txt")
+	captureDone := make(chan error, 1)
+	go func() {
+		captureDone <- target.CaptureSerialLog(serialLogPath)
+	}()
+
+	if _, err := io.WriteString(targetOutW, "first line\n"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if b, err := os.ReadFile(serialLogPath); err == nil && strings.Contains(string(b), "first line") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for first line in serial_log.txt")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Write a line without sleeping for the 50ms poll interval and immediately stop.
+	if _, err := io.WriteString(targetOutW, "final line without newline"); err != nil {
+		t.Fatal(err)
+	}
+	target.Stop()
+
+	if err := <-captureDone; err != nil {
+		t.Fatalf("CaptureSerialLog() returned unexpected error on Stop(): %s", err)
+	}
+	got, err := os.ReadFile(serialLogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "final line without newline") {
+		t.Errorf("serial_log.txt missing final line; got:\n%s", string(got))
+	}
+}
+
+func TestCaptureSerialLogReturnsErrorOnUnexpectedDisconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	socketPath := CreateSocketPath("serial-test")
+	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetUnlinkOnClose(true)
+	defer l.Close()
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = io.WriteString(conn, "line before crash\n")
+		conn.Close()
+	}()
+
+	target, err := newGenericFuchsia(ctx, "fuchsia-test-node", socketPath, nil, nil)
+	if err != nil {
+		t.Fatalf("newGenericFuchsia() failed: %s", err)
+	}
+
+	serialLogPath := filepath.Join(t.TempDir(), "serial_log.txt")
+	err = target.CaptureSerialLog(serialLogPath)
+	if err == nil {
+		t.Fatal("expected error from CaptureSerialLog on unexpected disconnect, got nil")
+	}
+	if !strings.Contains(err.Error(), constants.SerialReadErrorMsg) {
+		t.Errorf("CaptureSerialLog() error = %q, want substring %q", err.Error(), constants.SerialReadErrorMsg)
 	}
 }

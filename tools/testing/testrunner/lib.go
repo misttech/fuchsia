@@ -645,8 +645,8 @@ func againstDevice() bool {
 func runHealthCheck(ctx context.Context, t Tester) error {
 	if err := t.Reconnect(ctx); err == nil {
 		return nil
-	} else if !againstDevice() {
-		// Power-cycling doesn't apply for emulators
+	} else if !againstDevice() || os.Getenv(constants.DMCPathEnvKey) == "" {
+		// Power-cycling doesn't apply for emulators or GCE VMs without DMC,
 		// so just return the error if we fail to reconnect.
 		return err
 	}

@@ -508,7 +508,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	// power-cycled (see https://fxbug.dev/425675837). We record this here and
 	// execute the power cycle in ProcessResult so it runs outside the per-test
 	// timeout and grace period budget.
-	needsPowerCycle := againstDevice() && errors.As(err, &exitErr) && exitErr.ExitCode() == 40
+	needsPowerCycle := againstDevice() && os.Getenv(constants.DMCPathEnvKey) != "" && errors.As(err, &exitErr) && exitErr.ExitCode() == 40
 	t.setTestRun(test, subprocessTestRun{
 		profileRelDir:   profileRelDir,
 		needsPowerCycle: needsPowerCycle,

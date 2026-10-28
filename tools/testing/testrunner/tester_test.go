@@ -379,26 +379,37 @@ func TestSubprocessTester(t *testing.T) {
 
 	t.Run("power cycles target on exit code 40 in ProcessResult", func(t *testing.T) {
 		exit40Err := exec.Command("sh", "-c", "exit 40").Run()
-		t.Setenv(constants.DMCPathEnvKey, "/path/to/dmc")
 		t.Setenv(botanistconstants.NodenameEnvKey, "device-nodename")
 
 		for _, tc := range []struct {
 			name              string
+			dmcPath           string
 			powerCycleTimeout time.Duration
 			hangPowerCycle    bool
+			wantPowerCycle    bool
 			wantErr           bool
 		}{
 			{
-				name: "succeeds with default power cycle timeout",
+				name:           "succeeds with default power cycle timeout",
+				dmcPath:        "/path/to/dmc",
+				wantPowerCycle: true,
 			},
 			{
 				name:              "fails when power cycle times out",
+				dmcPath:           "/path/to/dmc",
 				powerCycleTimeout: time.Nanosecond,
 				hangPowerCycle:    true,
+				wantPowerCycle:    true,
 				wantErr:           true,
+			},
+			{
+				name:           "skips power cycle when DMC_PATH is unset",
+				dmcPath:        "",
+				wantPowerCycle: false,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv(constants.DMCPathEnvKey, tc.dmcPath)
 				runner := &fakeCmdRunner{
 					runErrs: []error{exit40Err},
 				}
@@ -443,6 +454,12 @@ func TestSubprocessTester(t *testing.T) {
 				}
 				if testResult.Status != runtests.TestFailure {
 					t.Errorf("tester.ProcessResult got status %s, want %s", testResult.Status, runtests.TestFailure)
+				}
+				if !tc.wantPowerCycle {
+					if runner.runCalls != 1 {
+						t.Fatalf("after ProcessResult got %d commands run, want 1", runner.runCalls)
+					}
+					return
 				}
 				if runner.runCalls != 2 {
 					t.Fatalf("after ProcessResult got %d commands run, want 2", runner.runCalls)

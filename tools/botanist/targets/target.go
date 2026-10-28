@@ -240,16 +240,17 @@ func (t *genericFuchsiaTarget) StartSerialServer() error {
 	if t.serial == nil || t.serialSocket != "" {
 		return nil
 	}
-	t.serialSocket = CreateSocketPath("serial")
-	t.serialServer = serial.NewServer(t.serial, serial.ServerOptions{})
+	socketPath := CreateSocketPath("serial")
 	addr := &net.UnixAddr{
-		Name: t.serialSocket,
+		Name: socketPath,
 		Net:  "unix",
 	}
 	l, err := net.ListenUnix("unix", addr)
 	if err != nil {
 		return err
 	}
+	t.serialSocket = socketPath
+	t.serialServer = serial.NewServer(t.serial, serial.ServerOptions{})
 	go func() {
 		t.serialServer.Run(t.targetCtx, l)
 	}()
@@ -336,30 +337,53 @@ func (t *genericFuchsiaTarget) CaptureSerialLog(filename string) error {
 	if err != nil {
 		return err
 	}
+	defer serialLog.Close()
 	serialLogWriter := botanist.NewTimestampWriter(serialLog)
 	conn, err := net.Dial("unix", t.serialSocket)
 	if err != nil {
+		if t.targetCtx.Err() != nil {
+			return nil
+		}
 		return err
 	}
+	defer conn.Close()
 	// Set up a goroutine to terminate this capture on target context cancel.
+	captureDone := make(chan struct{})
+	defer close(captureDone)
 	go func() {
-		<-t.targetCtx.Done()
-		conn.Close()
-		serialLog.Close()
+		select {
+		case <-t.targetCtx.Done():
+			if t.serialServer != nil {
+				// Allow the in-process serial server to flush any remaining
+				// buffered output and close its side of the connection first.
+				select {
+				case <-captureDone:
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+			conn.Close()
+		case <-captureDone:
+		}
 	}()
 
 	// Start capturing serial logs.
 	b := bufio.NewReader(conn)
 	for {
 		line, err := b.ReadString('\n')
-		if err != nil {
-			if !errors.Is(err, net.ErrClosed) {
-				return fmt.Errorf("%s: %w", constants.SerialReadErrorMsg, err)
+		if len(line) > 0 {
+			if !strings.HasSuffix(line, "\n") {
+				line += "\n"
 			}
-			return nil
+			if _, writeErr := io.WriteString(serialLogWriter, line); writeErr != nil {
+				return fmt.Errorf("failed to write line to serial log: %w", writeErr)
+			}
 		}
-		if _, err := io.WriteString(serialLogWriter, line); err != nil {
-			return fmt.Errorf("failed to write line to serial log: %w", err)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) || (errors.Is(err, io.EOF) && t.targetCtx.Err() != nil) {
+				return nil
+			}
+			return fmt.Errorf("%s: %w", constants.SerialReadErrorMsg, err)
 		}
 	}
 }
