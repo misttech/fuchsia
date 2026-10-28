@@ -1,0 +1,41 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "inspect-writable",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//src/sys/time/lib/inspect-writable/macro:inspect-writable-derive",
+    ],
+    visibility = ["//src/sys/time/timekeeper:__pkg__"],
+    deps = [
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+    ],
+)
+
+rustc_test(
+    name = "test_bin",
+    srcs = ["tests/derive_test.rs"],
+    crate_name = "inspect_writable_test",
+    crate_root = "tests/derive_test.rs",
+    edition = "2024",
+    deps = [
+        ":inspect-writable",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia",
+    ],
+)
+
+fx_unittest_package(
+    name = "inspect-writable-tests",
+    unit_tests = [":test_bin"],
+)
