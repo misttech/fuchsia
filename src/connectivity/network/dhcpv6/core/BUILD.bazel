@@ -1,0 +1,61 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "wrap_host_rust_test")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "core",
+    srcs = [
+        "src/client.rs",
+        "src/lib.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "dhcpv6_core",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:derivative"],
+    visibility = ["//src/connectivity/network/dhcpv6/client:__pkg__"],
+    deps = [
+        "//src/connectivity/lib/net-types",
+        "//src/connectivity/lib/packet-formats-dhcp",
+        "//src/lib/network/packet",
+        "//third_party/rust_crates/vendor:arrayvec",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:either",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-rational",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "core_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":core",
+    crate_name = "dhcpv6_core_lib_test",
+    edition = "2024",
+    deps = [
+        "//src/connectivity/lib/net-declare",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+wrap_host_rust_test(
+    name = "core_host_test",
+    binary_name = "core_test",
+    visibility = ["//src/connectivity/network:__pkg__"],
+)
+
+fx_unittest_package(
+    name = "dhcpv6-core-test",
+    unit_tests = [":core_test"],
+    visibility = ["//src/connectivity/network:__pkg__"],
+)
