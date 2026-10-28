@@ -340,6 +340,25 @@ mod tests {
             expand_macros(&ctx_with_home, json!("$HOME/.ssh")).unwrap(),
             Some(json!("/custom/isolated/home/.ssh"))
         );
+
+        let main_ffx_isolated = EnvironmentContext::isolated(
+            crate::environment::ExecutableKind::MainFfx,
+            "/tmp/ffx_isolate".into(),
+            [("HOME".to_string(), "/home/builder".to_string())].into_iter().collect(),
+            Default::default(),
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            expand_macros(&main_ffx_isolated, json!("$HOME/.ssh/fuchsia_ed25519")).unwrap(),
+            Some(json!("/home/builder/.ssh/fuchsia_ed25519"))
+        );
+        assert_eq!(
+            expand_macros(&main_ffx_isolated, json!("$DATA/subdir")).unwrap(),
+            Some(json!("/tmp/ffx_isolate/data/subdir"))
+        );
     }
 
     #[test]

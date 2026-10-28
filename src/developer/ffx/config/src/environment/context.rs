@@ -116,8 +116,8 @@ impl EnvironmentContext {
         serde_json::from_reader(std::io::BufReader::new(file)).map_err(Into::into)
     }
 
-    fn default_env_vars(exe_kind: ExecutableKind, is_isolated: bool) -> EnvVars {
-        if exe_kind == ExecutableKind::Test || is_isolated {
+    fn default_env_vars(exe_kind: ExecutableKind) -> EnvVars {
+        if exe_kind == ExecutableKind::Test {
             EnvVars::new()
         } else {
             EnvVars::from_iter(std::env::vars())
@@ -133,15 +133,11 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
-        if let Some(isolate_root) = kind.isolate_root() {
-            let keep_existing_home = exe_kind == ExecutableKind::Test
-                || env_vars.get("HOME").is_some_and(|h| Path::new(h).starts_with(isolate_root));
-            if keep_existing_home {
+        if exe_kind == ExecutableKind::Test {
+            if let Some(isolate_root) = kind.isolate_root() {
                 env_vars
                     .entry("HOME".to_string())
                     .or_insert_with(|| isolate_root.to_string_lossy().into_owned());
-            } else {
-                env_vars.insert("HOME".to_string(), isolate_root.to_string_lossy().into_owned());
             }
         }
         let config = if !no_environment {
@@ -235,7 +231,7 @@ impl EnvironmentContext {
         isolate_root: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
-        let env_vars = Self::default_env_vars(exe_kind, isolate_root.is_some());
+        let env_vars = Self::default_env_vars(exe_kind);
         Self::new(
             EnvironmentKind::ConfigDomain { domain: Box::new(domain), isolate_root },
             exe_kind,
@@ -271,7 +267,7 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
-        let env_vars = Self::default_env_vars(exe_kind, false);
+        let env_vars = Self::default_env_vars(exe_kind);
         Self::new(
             EnvironmentKind::InTree { tree_root, build_dir, isolate_root: None },
             exe_kind,
@@ -349,7 +345,7 @@ impl EnvironmentContext {
         env_file_path: Option<PathBuf>,
         no_environment: bool,
     ) -> Result<Self, ContextError> {
-        let env_vars = Self::default_env_vars(exe_kind, false);
+        let env_vars = Self::default_env_vars(exe_kind);
         Self::new(
             EnvironmentKind::NoContext,
             exe_kind,
@@ -878,6 +874,87 @@ mod test {
         .expect("Isolated context");
 
         check_isolated_paths(&context, &isolate_dir.path());
+    }
+
+    #[fuchsia::test]
+    fn test_isolated_main_ffx_preserves_host_home_and_env_vars() {
+        let isolate_dir = tempdir().expect("tempdir");
+        let isolate_path = std::path::absolute(isolate_dir.path()).expect("absolute path");
+        let env_vars = HashMap::from_iter([
+            ("HOME".to_string(), "/home/builder".to_string()),
+            ("PATH".to_string(), "/usr/bin".to_string()),
+        ]);
+        let context = EnvironmentContext::isolated(
+            ExecutableKind::MainFfx,
+            isolate_dir.path().to_owned(),
+            env_vars,
+            Default::default(),
+            None,
+            None,
+            false,
+        )
+        .expect("isolated MainFfx context");
+
+        assert!(context.is_isolated());
+        assert_eq!(context.get_config_path().unwrap(), isolate_path.join("config"));
+        assert_eq!(context.get_data_path().unwrap(), isolate_path.join("data"));
+        assert_eq!(context.get_cache_path().unwrap(), isolate_path.join("cache"));
+        assert_eq!(context.get_runtime_path().unwrap(), isolate_path.join("runtime"));
+        assert_eq!(context.get_shared_data_path().unwrap(), isolate_path.join("shared"));
+
+        assert_eq!(context.env_var("HOME"), Ok("/home/builder".to_string()));
+        assert_eq!(context.env_var("PATH"), Ok("/usr/bin".to_string()));
+        assert_eq!(context.get_home_dir().unwrap(), PathBuf::from("/home/builder"));
+
+        let ssh_priv: Vec<PathBuf> = context.get("ssh.priv").expect("ssh.priv config");
+        assert_eq!(ssh_priv, vec![PathBuf::from("/home/builder/.ssh/fuchsia_ed25519")]);
+    }
+
+    #[fuchsia::test]
+    fn test_isolated_main_ffx_without_home_env_falls_back_to_system_home() {
+        let isolate_dir = tempdir().expect("tempdir");
+        let isolate_path = std::path::absolute(isolate_dir.path()).expect("absolute path");
+        let context = EnvironmentContext::isolated(
+            ExecutableKind::MainFfx,
+            isolate_dir.path().to_owned(),
+            EnvVars::new(),
+            Default::default(),
+            None,
+            None,
+            false,
+        )
+        .expect("isolated MainFfx context without HOME env");
+
+        assert_eq!(context.env_var("HOME"), Err(std::env::VarError::NotPresent));
+        if let Some(system_home) = home::home_dir() {
+            assert_eq!(context.get_home_dir().unwrap(), system_home);
+            assert_ne!(context.get_home_dir().unwrap(), isolate_path);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_isolated_config_domain_main_ffx_preserves_env_vars() {
+        let isolate_dir = tempdir().expect("tempdir");
+        let isolate_path = std::path::absolute(isolate_dir.path()).expect("absolute path");
+        let domain_root = domains_test_data_path().join("basic_example");
+        let context = EnvironmentContext::config_domain_root(
+            ExecutableKind::MainFfx,
+            domain_root,
+            Default::default(),
+            Some(isolate_path.clone()),
+            false,
+        )
+        .expect("isolated MainFfx config domain context");
+
+        assert!(context.is_isolated());
+        if let Ok(host_path) = std::env::var("PATH") {
+            assert_eq!(context.env_var("PATH"), Ok(host_path));
+        }
+        if let Ok(host_home) = std::env::var("HOME").map(PathBuf::from) {
+            if !host_home.as_os_str().is_empty() {
+                assert_eq!(context.get_home_dir().unwrap(), host_home);
+            }
+        }
     }
 
     #[fuchsia::test]
