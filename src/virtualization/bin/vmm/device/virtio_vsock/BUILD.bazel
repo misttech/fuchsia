@@ -1,0 +1,98 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_vsock_bin",
+    srcs = [
+        "src/connection.rs",
+        "src/connection_states.rs",
+        "src/device.rs",
+        "src/main.rs",
+        "src/port_manager.rs",
+        "src/wire.rs",
+    ],
+    crate_name = "virtio_vsock",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:num-derive",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.virtualization:fuchsia.virtualization_rust",
+        "//sdk/fidl/fuchsia.virtualization.hardware:fuchsia.virtualization.hardware_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/virtualization/lib/machina-virtio-device",
+        "//src/virtualization/lib/virtio-device",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:async-lock",
+        "//third_party/rust_crates/vendor:bitflags",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "virtio_vsock_bin_test",
+    crate = ":virtio_vsock_bin",
+    edition = "2024",
+    deps = [
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+fx_unittest_package(
+    name = "virtio_vsock_unittests",
+    max_log_severity = "ERROR",
+    unit_tests = [":virtio_vsock_bin_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "virtio_vsock_packaged_bin",
+    binary = ":virtio_vsock_bin",
+    binary_name = "virtio_vsock",
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "virtio_vsock",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard",
+    ],
+    manifest = "meta/virtio_vsock.cml",
+)
+
+fx_component(
+    name = "virtio_vsock_cmp",
+    compiled_manifest = ":manifest",
+    component_name = "virtio_vsock",
+    visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
+    deps = [":virtio_vsock_packaged_bin"],
+)

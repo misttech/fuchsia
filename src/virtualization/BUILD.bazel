@@ -13,6 +13,8 @@ test_suite(
         "//src/virtualization/bin/vmm/device/virtio_gpu:virtio_gpu_unittests",
         "//src/virtualization/bin/vmm/device/virtio_input:virtio_input_unittests",
         "//src/virtualization/bin/vmm/device/virtio_mem:virtio_mem_unittests",
+        "//src/virtualization/bin/vmm/device/virtio_sound:virtio_sound_unittests",
+        "//src/virtualization/bin/vmm/device/virtio_vsock:virtio_vsock_unittests",
         "//src/virtualization/lib/cli:guest_cli_tests",
         "//src/virtualization/lib/guest_config:guest-config-tests",
         "//src/virtualization/lib/machina-virtio-device:machina-virtio-device-tests",
