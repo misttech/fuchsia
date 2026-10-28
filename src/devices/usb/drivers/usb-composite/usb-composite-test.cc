@@ -863,4 +863,131 @@ TEST_F(TwoAssociationCompositeTest, InitTest) {
   });
 }
 
+constexpr struct __PACKED truncated_assoc_config_t {
+  usb_configuration_descriptor_t config;
+  uint8_t truncated_association[2];
+  usb_interface_descriptor_t interface1;
+} kTestTruncatedAssociation = {
+    .config =
+        {
+            .b_length = sizeof(usb_configuration_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration),
+            .w_total_length = sizeof(truncated_assoc_config_t),
+            .b_num_interfaces = 1,
+            .b_configuration_value = 0,
+            .i_configuration = 0,
+            .bm_attributes =
+                fdescriptor::kConfigurationReserved7 | fdescriptor::kConfigurationSelfPowered,
+            .b_max_power = 4,
+        },
+    .truncated_association =
+        {
+            2,
+            fidl::ToUnderlying(fdescriptor::DescriptorType::kInterfaceAssociation),
+        },
+    .interface1 =
+        {
+            .b_length = sizeof(usb_interface_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
+            .b_interface_number = 0,
+            .b_alternate_setting = 0,
+            .b_num_endpoints = 0,
+            .b_interface_class = 8,
+            .b_interface_sub_class = 6,
+            .b_interface_protocol = 80,
+            .i_interface = 0,
+        },
+};
+
+using TruncatedAssociationCompositeTest = UsbCompositeTest<&kTestTruncatedAssociation>;
+
+template <>
+void TruncatedAssociationCompositeTest::ExpectConfigureEndpoints() {}
+
+TEST_F(TruncatedAssociationCompositeTest, InitTest) {
+  // The association descriptor's b_length (2) is smaller than
+  // sizeof(usb_interface_assoc_descriptor_t), so descriptor parsing stops there and no
+  // interfaces (including interface1) are published as children.
+  InitTest(std::vector<init_test_expected_values_t>{});
+}
+
+constexpr struct __PACKED extended_assoc_config_t {
+  usb_configuration_descriptor_t config;
+  usb_interface_assoc_descriptor_t association;
+  uint8_t association_extra[2];
+  usb_interface_descriptor_t interface1;
+  usb_interface_descriptor_t interface2;
+} kTestExtendedAssociation = {
+    .config =
+        {
+            .b_length = sizeof(usb_configuration_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kConfiguration),
+            .w_total_length = sizeof(extended_assoc_config_t),
+            .b_num_interfaces = 2,
+            .b_configuration_value = 0,
+            .i_configuration = 0,
+            .bm_attributes =
+                fdescriptor::kConfigurationReserved7 | fdescriptor::kConfigurationSelfPowered,
+            .b_max_power = 4,
+        },
+    .association =
+        {
+            .b_length = sizeof(usb_interface_assoc_descriptor_t) + 2,
+            .b_descriptor_type =
+                fidl::ToUnderlying(fdescriptor::DescriptorType::kInterfaceAssociation),
+            .b_first_interface = 0,
+            .b_interface_count = 1,
+            .b_function_class = 5,
+            .b_function_sub_class = 3,
+            .b_function_protocol = 2,
+            .i_function = 1,
+        },
+    .association_extra = {0xaa, 0xbb},
+    .interface1 =
+        {
+            .b_length = sizeof(usb_interface_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
+            .b_interface_number = 0,
+            .b_alternate_setting = 0,
+            .b_num_endpoints = 0,
+            .b_interface_class = 8,
+            .b_interface_sub_class = 6,
+            .b_interface_protocol = 80,
+            .i_interface = 0,
+        },
+    .interface2 =
+        {
+            .b_length = sizeof(usb_interface_descriptor_t),
+            .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kInterface),
+            .b_interface_number = 1,
+            .b_alternate_setting = 0,
+            .b_num_endpoints = 0,
+            .b_interface_class = 12,
+            .b_interface_sub_class = 3,
+            .b_interface_protocol = 6,
+            .i_interface = 0,
+        },
+};
+
+using ExtendedAssociationCompositeTest = UsbCompositeTest<&kTestExtendedAssociation>;
+
+template <>
+void ExtendedAssociationCompositeTest::ExpectConfigureEndpoints() {}
+
+TEST_F(ExtendedAssociationCompositeTest, InitTest) {
+  InitTest(std::vector<init_test_expected_values_t>{
+      init_test_expected_values_t{
+          .name = "asc-000",
+          .length = reinterpret_cast<uintptr_t>(&kTestExtendedAssociation.interface2) -
+                    reinterpret_cast<uintptr_t>(&kTestExtendedAssociation.association),
+          .start = reinterpret_cast<const uint8_t*>(&kTestExtendedAssociation.association),
+      },
+      init_test_expected_values_t{
+          .name = "ifc-001",
+          .length = sizeof(kTestExtendedAssociation.interface2),
+          .start = reinterpret_cast<const uint8_t*>(&kTestExtendedAssociation.interface2),
+      },
+  });
+}
+
 }  // namespace usb_composite

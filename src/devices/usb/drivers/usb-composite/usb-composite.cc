@@ -246,7 +246,7 @@ zx_status_t UsbComposite::AddInterfaces() {
 
     if (interface.association()) {
       if (!assoc || interface.association() != assoc->desc_) {
-        assoc.emplace(interface.association(), sizeof(*interface.association()), this,
+        assoc.emplace(interface.association(), interface.association()->b_length, this,
                       &assoc_status);
       }
 
