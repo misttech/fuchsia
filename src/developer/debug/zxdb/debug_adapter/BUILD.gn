@@ -10,6 +10,8 @@ static_library("debug_adapter") {
     "async_backtrace_subscription.h",
     "context.cc",
     "context.h",
+    "data_id.cc",
+    "data_id.h",
     "handlers/request_async_backtrace.cc",
     "handlers/request_async_backtrace.h",
     "handlers/request_attach.cc",

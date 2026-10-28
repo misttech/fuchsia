@@ -53,6 +53,7 @@ Public headers and subdirectories expose these DAP server and context types:
 - `zxdb::VariablesType`, `zxdb::VariablesRecord`: Scope categories (`kLocal`,
   `kArguments`, `kRegister`, `kChildVariable`) and variable reference table
   entries (`context.h`).
+- `zxdb::DataId`: DAP `dataId` identifier parser and validator (`data_id.h`).
 - `zxdb::AsyncBacktraceSubscription`, `zxdb::FormatAsyncTaskTree`,
   `dap::AsyncTaskNode`, `dap::AsyncBacktraceUpdate`: Subscription manager and
   DAP types for streaming async task trees (`async_backtrace_subscription.h`).
