@@ -189,11 +189,6 @@
              path="third_party/glm"
              remote="https://chromium.googlesource.com/external/github.com/g-truc/glm"
              revision="5dcc56489e1b66dfd5bca751fa9b8dc68059e008"/>
-    <project name="third_party/go"
-             remote="https://fuchsia.googlesource.com/third_party/go"
-             gerrithost="https://fuchsia-review.googlesource.com"
-             revision="0e8f75048563897aeb1e06b9c791cd55e41a0469"
-             path="third_party/go"/>
     <project name="third_party/github.com/intel/intel-linux-processor-microcode-data-files"
              path="third_party/github.com/intel/intel-linux-processor-microcode-data-files"
              remote="https://fuchsia.googlesource.com/third_party/github.com/intel/intel-linux-processor-microcode-data-files"
