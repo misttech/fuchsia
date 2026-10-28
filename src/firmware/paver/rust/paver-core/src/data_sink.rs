@@ -22,6 +22,9 @@ pub const ZIRCON_R_PARTITION: &str = "zircon_r";
 pub const VBMETA_A_PARTITION: &str = "vbmeta_a";
 pub const VBMETA_B_PARTITION: &str = "vbmeta_b";
 pub const VBMETA_R_PARTITION: &str = "vbmeta_r";
+pub const BOOTLOADER_A_PARTITION: &str = "bootloader_a";
+pub const BOOTLOADER_B_PARTITION: &str = "bootloader_b";
+pub const BOOTLOADER_R_PARTITION: &str = "bootloader_r";
 
 /// Legacy `fuchsia.paver.DataSink` and `fuchsia.paver.DynamicDataSink` implementation backed by a
 /// board's [`BoardPartitions`] and `/block` directory.
@@ -172,22 +175,71 @@ impl DataSink {
     }
 
     /// Writes `payload` to the firmware partition of `firmware_type` for `configuration`.
+    ///
+    /// Note: Unlike legacy C++ `DataSinkImpl::GetFirmwarePartitionSpec`, this method intentionally
+    /// does **not** fall back from `Configuration::B` to `Configuration::A` on `NOT_SUPPORTED`.
+    /// Because `PartitionIo` callers address `"{type}_a"` and `"{type}_b"` directly without going
+    /// through `DataSink`, boards with single-slotted firmware map both `"_a"` and `"_b"` variants
+    /// to the single underlying slot in [`BoardPartitions::open_partition`].
     pub async fn write_firmware(
         &self,
-        _configuration: fpaver::Configuration,
-        _firmware_type: String,
-        _payload: fmem::Buffer,
+        configuration: fpaver::Configuration,
+        firmware_type: String,
+        payload: fmem::Buffer,
     ) -> fpaver::WriteFirmwareResult {
-        fpaver::WriteFirmwareResult::Unsupported(true)
+        let partition = firmware_partition_name(configuration, &firmware_type);
+        let size = payload.size;
+        let client = match self.open_partition(&partition).await {
+            Ok(client) => client,
+            Err(zx::Status::NOT_SUPPORTED) => {
+                log::info!(
+                    partition = partition.as_str(),
+                    firmware_type = firmware_type.as_str();
+                    "Skipping unsupported firmware"
+                );
+                return fpaver::WriteFirmwareResult::Unsupported(true);
+            }
+            Err(status) => {
+                log::warn!(
+                    partition = partition.as_str(),
+                    size,
+                    status:?;
+                    "Failed to open firmware partition for write"
+                );
+                return fpaver::WriteFirmwareResult::Status(Err(status));
+            }
+        };
+        match Self::write_client_from_vmo(client.as_ref(), &payload.vmo, size).await {
+            Ok(()) => {
+                log::info!(partition = partition.as_str(), size; "Partition written successfully");
+                fpaver::WriteFirmwareResult::Status(Ok(()))
+            }
+            Err(err) => {
+                let status = status_from_error(&err);
+                log::warn!(
+                    partition = partition.as_str(),
+                    size;
+                    "Partition write error: {err:#}"
+                );
+                fpaver::WriteFirmwareResult::Status(Err(status))
+            }
+        }
     }
 
     /// Reads the firmware image of `firmware_type` for `configuration`.
+    ///
+    /// Note: Single-slotted firmware is mapped for both `"_a"` and `"_b"` in
+    /// [`BoardPartitions::open_partition`]; `DataSink` does not fall back from `Configuration::B`
+    /// to `Configuration::A`.
     pub async fn read_firmware(
         &self,
-        _configuration: fpaver::Configuration,
-        _firmware_type: String,
+        configuration: fpaver::Configuration,
+        firmware_type: String,
     ) -> Result<fmem::Buffer, zx::Status> {
-        Err(zx::Status::NOT_SUPPORTED)
+        let partition = firmware_partition_name(configuration, &firmware_type);
+        let (vmo, partition_size) = self.read_full_partition(&partition).await?;
+        let size = extract_zbi_asset_size(&vmo, partition_size);
+        Ok(fmem::Buffer { vmo, size })
     }
 
     /// Writes a raw FVM/Fxfs image `payload` to the system volume partition.
@@ -395,6 +447,15 @@ pub async fn serve_dynamic_data_sink(
         .context("serving DynamicDataSink")
 }
 
+/// Returns the slot suffix (`"a"`, `"b"`, or `"r"`) for `configuration`.
+fn configuration_suffix(configuration: fpaver::Configuration) -> &'static str {
+    match configuration {
+        fpaver::Configuration::A => "a",
+        fpaver::Configuration::B => "b",
+        fpaver::Configuration::Recovery => "r",
+    }
+}
+
 /// Maps a `(configuration, asset)` pair to its standard logical partition name.
 fn asset_partition_name(
     configuration: fpaver::Configuration,
@@ -410,6 +471,16 @@ fn asset_partition_name(
             VBMETA_R_PARTITION
         }
     }
+}
+
+/// Maps a `(configuration, firmware_type)` pair to its logical firmware partition name.
+///
+/// Both `""` and `"bootloader"` map to `"bootloader_{a,b,r}"`, matching `system-updater` and board
+/// partition configuration conventions.
+fn firmware_partition_name(configuration: fpaver::Configuration, firmware_type: &str) -> String {
+    let base_name = if firmware_type.is_empty() { "bootloader" } else { firmware_type };
+    let suffix = configuration_suffix(configuration);
+    format!("{base_name}_{suffix}")
 }
 
 /// Attempts to parse `vmo` (within `partition_size` bytes) as a [`zbi::ZbiContainer`], returning
@@ -431,6 +502,7 @@ fn try_extract_zbi_size(vmo: &zx::Vmo, partition_size: u64) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::partition::tests::{FakeBoardPartitions, TEST_PARTITION_SIZE};
+    use async_trait::async_trait;
     use fuchsia_async as fasync;
 
     /// Creates an [`fmem::Buffer`] containing `data` with `size` set to `data.len()`.
@@ -556,13 +628,14 @@ mod tests {
         );
     }
 
-    /// Verifies ZBI container size extraction on `read_asset` and fallback to full partition size
-    /// for tiny, oversized, or corrupted headers.
+    /// Verifies ZBI container size extraction on `read_asset` and `read_firmware` and fallback to
+    /// full partition size for tiny, oversized, or corrupted headers.
     #[fuchsia::test]
-    async fn test_read_asset_zbi_size_extraction() {
+    async fn test_read_asset_and_firmware_zbi_size_extraction() {
         let board_partitions = FakeBoardPartitions::new();
         let _zircon_b = board_partitions.add_partition(ZIRCON_B_PARTITION, 0x00);
-        let _tiny_vbmeta = board_partitions.add_partition_with_size(VBMETA_A_PARTITION, 16, 0x7f);
+        let _abl_a = board_partitions.add_partition("abl_a", 0x00);
+        let _tiny_fw = board_partitions.add_partition_with_size("tiny_a", 16, 0x7f);
         let sink = make_sink(board_partitions);
 
         // Valid ZBI container trims `Buffer.size` while preserving full partition stream size on
@@ -585,11 +658,27 @@ mod tests {
             TEST_PARTITION_SIZE as u64
         );
 
+        // `read_firmware` also trims ZBI-formatted firmware payloads.
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::A,
+                "abl".to_string(),
+                make_buffer(&zbi_image),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Status(Ok(()))
+        );
+        let fw_buf = sink
+            .read_firmware(fpaver::Configuration::A, "abl".to_string())
+            .await
+            .expect("read abl_a");
+        assert_eq!(fw_buf.size, expected_zbi_size);
+
         // Partition smaller than a 32-byte ZbiHeader falls back to partition_size.
         let tiny_buf = sink
-            .read_asset(fpaver::Configuration::A, fpaver::Asset::VerifiedBootMetadata)
+            .read_firmware(fpaver::Configuration::A, "tiny".to_string())
             .await
-            .expect("read tiny vbmeta_a");
+            .expect("read tiny_a");
         assert_eq!(tiny_buf.size, 16);
 
         // ZBI header claiming length > partition_size - 32 falls back to partition_size without
@@ -627,6 +716,234 @@ mod tests {
         assert_eq!(invalid_read.size, TEST_PARTITION_SIZE as u64);
     }
 
+    /// Fake [`PartitionClient`] that succeeds on open/size queries but fails I/O with
+    /// `zx::Status::NOT_SUPPORTED`.
+    struct WriteUnsupportedClient;
+
+    #[async_trait(?Send)]
+    impl PartitionClient for WriteUnsupportedClient {
+        fn partition_size(&self) -> Result<u64, zx::Status> {
+            Ok(TEST_PARTITION_SIZE as u64)
+        }
+
+        async fn read_vmo(
+            &self,
+            _vmo: &zx::Vmo,
+            _vmo_offset: u64,
+            _dev_offset: u64,
+            _size: u64,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+
+        async fn write_vmo(
+            &self,
+            _vmo: &zx::Vmo,
+            _vmo_offset: u64,
+            _dev_offset: u64,
+            _size: u64,
+        ) -> Result<(), zx::Status> {
+            Err(zx::Status::NOT_SUPPORTED)
+        }
+    }
+
+    /// Fake [`BoardPartitions`] exposing `"ro_fw_a"` backed by [`WriteUnsupportedClient`].
+    struct WriteUnsupportedBoard;
+
+    #[async_trait(?Send)]
+    impl BoardPartitions for WriteUnsupportedBoard {
+        async fn open_partition(
+            &self,
+            partition_name: &str,
+            _block_dir: &fidl_next::ClientEnd<fio::Directory>,
+        ) -> Result<Box<dyn PartitionClient>, zx::Status> {
+            if partition_name == "ro_fw_a" {
+                Ok(Box::new(WriteUnsupportedClient))
+            } else {
+                Err(zx::Status::NOT_SUPPORTED)
+            }
+        }
+    }
+
+    /// Verifies reading and writing named firmware partitions and default `""` (`"bootloader"`)
+    /// type mapping across configurations.
+    #[fuchsia::test]
+    async fn test_write_and_read_firmware() {
+        let board_partitions = FakeBoardPartitions::new();
+        let abl_a = board_partitions.add_partition("abl_a", 0x00);
+        let dtbo_b = board_partitions.add_partition("dtbo_b", 0x00);
+        let bootloader_a = board_partitions.add_partition(BOOTLOADER_A_PARTITION, 0x00);
+        let bootloader_b = board_partitions.add_partition(BOOTLOADER_B_PARTITION, 0x00);
+        let bootloader_r = board_partitions.add_partition(BOOTLOADER_R_PARTITION, 0x00);
+        let sink = make_sink(board_partitions);
+
+        let fw_data = vec![0x5au8; 1024];
+        assert_eq!(
+            sink.write_firmware(fpaver::Configuration::A, "abl".to_string(), make_buffer(&fw_data))
+                .await,
+            fpaver::WriteFirmwareResult::Status(Ok(()))
+        );
+        assert_eq!(&abl_a.bytes()[..1024], &fw_data[..]);
+
+        let read_fw =
+            sink.read_firmware(fpaver::Configuration::A, "abl".to_string()).await.expect("read");
+        let mut read_vec = vec![0u8; 1024];
+        read_fw.vmo.read(&mut read_vec, 0).expect("read vmo");
+        assert_eq!(read_vec, fw_data);
+
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::B,
+                "dtbo".to_string(),
+                make_buffer(&fw_data)
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Status(Ok(()))
+        );
+        assert_eq!(&dtbo_b.bytes()[..1024], &fw_data[..]);
+
+        // Empty firmware type maps to bootloader_{a,b,r}.
+        for (cfg, part) in [
+            (fpaver::Configuration::A, &bootloader_a),
+            (fpaver::Configuration::B, &bootloader_b),
+            (fpaver::Configuration::Recovery, &bootloader_r),
+        ] {
+            assert_eq!(
+                sink.write_firmware(cfg, String::new(), make_buffer(&fw_data)).await,
+                fpaver::WriteFirmwareResult::Status(Ok(()))
+            );
+            assert_eq!(&part.bytes()[..1024], &fw_data[..]);
+        }
+    }
+
+    /// Verifies `WriteFirmwareResult::Unsupported(true)` and `NOT_SUPPORTED` for unsupported
+    /// firmware types and unmapped configurations without falling back to `Configuration::A`.
+    #[fuchsia::test]
+    async fn test_write_and_read_firmware_unsupported() {
+        let board_partitions = FakeBoardPartitions::new();
+        let abl_a = board_partitions.add_partition("abl_a", 0x5a);
+        let sink = make_sink(board_partitions);
+
+        let fw_data = vec![0x6bu8; 1024];
+
+        // `DataSink` does NOT silently fall back from `Configuration::B` or `Recovery` to
+        // `Configuration::A` when `abl_b` / `abl_r` is `NOT_SUPPORTED` (single-slot firmware maps
+        // both `_a` and `_b` in `BoardPartitions`).
+        for cfg in [fpaver::Configuration::B, fpaver::Configuration::Recovery] {
+            assert_eq!(
+                sink.write_firmware(cfg, "abl".to_string(), make_buffer(&fw_data)).await,
+                fpaver::WriteFirmwareResult::Unsupported(true)
+            );
+            assert_eq!(
+                sink.read_firmware(cfg, "abl".to_string()).await.err(),
+                Some(zx::Status::NOT_SUPPORTED)
+            );
+        }
+        assert_eq!(&abl_a.bytes()[..], &[0x5au8; TEST_PARTITION_SIZE]);
+
+        // Unsupported firmware type returns Unsupported(true) across configurations (even when
+        // payload size is 0) and NOT_SUPPORTED for read.
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::A,
+                "unsupported_fw".to_string(),
+                make_buffer(&[]),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Unsupported(true)
+        );
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::B,
+                "unsupported_fw".to_string(),
+                make_buffer(&fw_data),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Unsupported(true)
+        );
+        assert_eq!(
+            sink.read_firmware(fpaver::Configuration::A, "unsupported_fw".to_string()).await.err(),
+            Some(zx::Status::NOT_SUPPORTED)
+        );
+    }
+
+    /// Verifies `WriteFirmwareResult::Status(Err(...))` and `read_firmware` errors for missing
+    /// partitions, invalid payload sizes, and post-open I/O failures.
+    #[fuchsia::test]
+    async fn test_write_and_read_firmware_errors() {
+        let board_partitions = FakeBoardPartitions::new();
+        let abl_a = board_partitions.add_partition("abl_a", 0x5a);
+        let dual_missing_a = board_partitions.add_partition("dual_missing_a", 0x42);
+        board_partitions.add_missing_partition("dual_missing_b");
+        board_partitions.add_missing_partition("missing_fw_a");
+        let sink = make_sink(board_partitions);
+
+        let fw_data = vec![0x6bu8; 1024];
+
+        // Supported `_b` partition that is missing on disk (`NOT_FOUND`) fails with `NOT_FOUND`
+        // without touching `_a`.
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::B,
+                "dual_missing".to_string(),
+                make_buffer(&fw_data),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Status(Err(zx::Status::NOT_FOUND))
+        );
+        assert_eq!(&dual_missing_a.bytes()[..], &[0x42u8; TEST_PARTITION_SIZE]);
+        assert_eq!(
+            sink.read_firmware(fpaver::Configuration::B, "dual_missing".to_string()).await.err(),
+            Some(zx::Status::NOT_FOUND)
+        );
+
+        // Supported firmware partition that is missing on disk returns Status(Err(NOT_FOUND)).
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::A,
+                "missing_fw".to_string(),
+                make_buffer(&fw_data),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Status(Err(zx::Status::NOT_FOUND))
+        );
+
+        // Zero-length payload on a supported firmware partition returns Status(Err(INVALID_ARGS))
+        // without modifying existing partition data.
+        assert_eq!(
+            sink.write_firmware(fpaver::Configuration::A, "abl".to_string(), make_buffer(&[]))
+                .await,
+            fpaver::WriteFirmwareResult::Status(Err(zx::Status::INVALID_ARGS))
+        );
+        assert_eq!(&abl_a.bytes()[..], &[0x5au8; TEST_PARTITION_SIZE]);
+
+        // Payload exceeding partition size returns Status(Err(OUT_OF_RANGE)).
+        assert_eq!(
+            sink.write_firmware(
+                fpaver::Configuration::A,
+                "abl".to_string(),
+                make_buffer(&vec![0u8; TEST_PARTITION_SIZE + 1]),
+            )
+            .await,
+            fpaver::WriteFirmwareResult::Status(Err(zx::Status::OUT_OF_RANGE))
+        );
+
+        // Post-open `write_vmo` returning `NOT_SUPPORTED` must surface `Status(Err(NOT_SUPPORTED))`
+        // rather than `Unsupported(true)`.
+        let (ro_block_dir, _ro_server) = fidl_next::fuchsia::create_channel::<fio::Directory>();
+        let ro_sink = DataSink::new(Box::new(WriteUnsupportedBoard), ro_block_dir);
+        assert_eq!(
+            ro_sink
+                .write_firmware(
+                    fpaver::Configuration::A,
+                    "ro_fw".to_string(),
+                    make_buffer(&fw_data)
+                )
+                .await,
+            fpaver::WriteFirmwareResult::Status(Err(zx::Status::NOT_SUPPORTED))
+        );
+    }
+
     /// Verifies FIDL dispatch over [`serve_data_sink`] and [`serve_dynamic_data_sink`].
     #[fuchsia::test]
     async fn test_serve_data_sink_and_dynamic_data_sink_fidl() {
@@ -636,6 +953,7 @@ mod tests {
         let board_partitions = FakeBoardPartitions::new();
         let flushes = board_partitions.flushes.clone();
         let _zircon_a = board_partitions.add_partition(ZIRCON_A_PARTITION, 0x11);
+        let abl_a = board_partitions.add_partition("abl_a", 0x22);
         let sink = make_sink(board_partitions);
 
         let (ds_client, ds_server) = fidl_next::fuchsia::create_channel::<fpaver::DataSink>();
@@ -667,18 +985,44 @@ mod tests {
         read_asset_resp.vmo.read(&mut read_back, 0).expect("read vmo");
         assert_eq!(read_back, kernel_payload);
 
+        let fw_payload = vec![0x88u8; 512];
         assert_eq!(
             ds_client
-                .write_firmware(fpaver::Configuration::A, "abl", make_buffer(&[0x88u8; 64]))
+                .write_firmware(fpaver::Configuration::A, "abl", make_buffer(&fw_payload))
                 .await
                 .expect("write_firmware fidl")
                 .result,
+            fpaver::WriteFirmwareResult::Status(Ok(()))
+        );
+        // Both unmapped `Configuration::B` and `Configuration::Recovery` return `Unsupported(true)`
+        // without falling back to `abl_a`.
+        let fw_payload_b = vec![0x89u8; 512];
+        assert_eq!(
+            ds_client
+                .write_firmware(fpaver::Configuration::B, "abl", make_buffer(&fw_payload_b))
+                .await
+                .expect("write_firmware B unsupported fidl")
+                .result,
             fpaver::WriteFirmwareResult::Unsupported(true)
         );
+        assert_eq!(&abl_a.bytes()[..512], &fw_payload[..]);
         assert_eq!(
-            ds_client.read_firmware(fpaver::Configuration::A, "abl").await.expect("read_fw fidl"),
-            Err(zx::Status::NOT_SUPPORTED)
+            ds_client
+                .write_firmware(fpaver::Configuration::Recovery, "abl", make_buffer(&fw_payload))
+                .await
+                .expect("write_firmware unsupported fidl")
+                .result,
+            fpaver::WriteFirmwareResult::Unsupported(true)
         );
+        let read_fw_resp = ds_client
+            .read_firmware(fpaver::Configuration::A, "abl")
+            .await
+            .expect("read_firmware fidl")
+            .expect("read_firmware ok")
+            .firmware;
+        let mut read_fw_bytes = vec![0u8; 512];
+        read_fw_resp.vmo.read(&mut read_fw_bytes, 0).expect("read fw vmo");
+        assert_eq!(read_fw_bytes, fw_payload);
 
         assert_eq!(ds_client.flush().await.expect("flush fidl").status, Ok(()));
         assert_eq!(flushes.get(), 1);

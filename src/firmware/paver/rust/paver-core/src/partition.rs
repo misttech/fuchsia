@@ -18,6 +18,14 @@ pub trait BoardPartitions {
     /// - `Err(zx::Status::NOT_SUPPORTED)` if the partition name is not supported by this board.
     /// - `Err(zx::Status::NOT_FOUND)` if the partition is supported by the board, but cannot be
     ///   found on storage.
+    ///
+    /// # Single-Slot Firmware Mapping
+    ///
+    /// Neither `PartitionIo` nor [`crate::data_sink::DataSink`] performs a silent fallback from
+    /// `Configuration::B` to `Configuration::A`. For boards that don't have A/B firmware slots,
+    /// board backends must map both the `"_a"` and `"_b"` partition names (e.g.
+    /// `"bootloader_a" | "bootloader_b"`) to the single underlying target here so `PartitionIo` and
+    /// `DataSink` behave identically.
     async fn open_partition(
         &self,
         partition_name: &str,
