@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-PROTOCOL_VERSION = 19
+PROTOCOL_VERSION = 20
 
 T_Resp = TypeVar("T_Resp")
 

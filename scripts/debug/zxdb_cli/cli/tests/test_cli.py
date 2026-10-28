@@ -25,6 +25,7 @@ from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.console import ConsoleRequest
 from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.driver_list import DriverListRequest
 from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
@@ -1263,6 +1264,112 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
                 function="usb_xhci::UsbXhci::Init", condition="status != 0"
             )
         )
+
+    @patch("cli.cli.send_command")
+    async def test_driver_list_and_attach_driver_flags(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+
+        exit_code = await main(["driver-list"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(DriverListRequest(filter=None))
+
+        mock_send.reset_mock()
+        exit_code = await main(["driver-list", "usb"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(DriverListRequest(filter="usb"))
+
+        mock_send.reset_mock()
+        exit_code = await main(["driver-hosts", "--filter", "xhci"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(DriverListRequest(filter="xhci"))
+
+        mock_send.reset_mock()
+        with patch("sys.stderr", StringIO()):
+            exit_code = await main(["driver-list", "usb", "--filter", "xhci"])
+            self.assertEqual(exit_code, 1)
+            mock_send.assert_not_called()
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["attach", "--driver", "xhci.cm", "--weak", "--wait"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(driver="xhci.cm", weak=True, wait=True)
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            [
+                "attach",
+                "--driver",
+                "xhci.cm",
+                "--weak",
+                "--wait",
+                "-r",
+                "--job-only",
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(
+                driver="xhci.cm",
+                weak=True,
+                wait=True,
+                recursive=True,
+                job_only=True,
+            )
+        )
+
+        mock_send.reset_mock()
+        with patch("sys.stderr", StringIO()) as mock_stderr:
+            exit_code = await main(["attach", "--driver", "xhci.cm", "--exact"])
+            self.assertEqual(exit_code, 1)
+            self.assertIn(
+                "--exact cannot be used with --driver or --node",
+                mock_stderr.getvalue(),
+            )
+            mock_send.assert_not_called()
+
+        mock_send.reset_mock()
+        with patch("sys.stderr", StringIO()) as mock_stderr:
+            exit_code = await main(
+                ["attach", "--node", "dev.sys.platform.xhci", "--exact"]
+            )
+            self.assertEqual(exit_code, 1)
+            self.assertIn(
+                "--exact cannot be used with --driver or --node",
+                mock_stderr.getvalue(),
+            )
+            mock_send.assert_not_called()
+
+        mock_send.reset_mock()
+        exit_code = await main(["attach", "--node", "dev.sys.platform.xhci"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(node="dev.sys.platform.xhci")
+        )
+
+        mock_send.reset_mock()
+        exit_code = await main(
+            ["attach", "--node", "dev.sys.platform.xhci", "--wait"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            AttachRequest(node="dev.sys.platform.xhci", wait=True)
+        )
+
+        mock_send.reset_mock()
+        with patch("sys.stderr", StringIO()):
+            exit_code = await main(["attach"])
+            self.assertEqual(exit_code, 1)
+            mock_send.assert_not_called()
+
+            exit_code = await main(["attach", "xhci", "--driver", "xhci.cm"])
+            self.assertEqual(exit_code, 1)
+            mock_send.assert_not_called()
 
 
 class TestSendCommand(unittest.IsolatedAsyncioTestCase):

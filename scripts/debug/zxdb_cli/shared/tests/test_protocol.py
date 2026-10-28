@@ -21,6 +21,11 @@ from shared.protocol.break_request import BreakRequest
 from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
+from shared.protocol.driver_list import (
+    DriverHostEntry,
+    DriverListRequest,
+    DriverListResponse,
+)
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest, GetStateResponse
@@ -178,6 +183,49 @@ class TestAttachRequestSchema(unittest.TestCase):
         self.assertTrue(req.weak)
         self.assertTrue(req.exact)
         self.assertTrue(req.recursive)
+
+    def test_driver_and_node_flags(self) -> None:
+        req_drv = AttachRequest(driver="xhci", weak=True, wait=True)
+        self.assertEqual(req_drv.driver, "xhci")
+        self.assertTrue(req_drv.weak)
+        self.assertTrue(req_drv.wait)
+
+        req_node = AttachRequest(node="dev.sys.platform.xhci")
+        self.assertEqual(req_node.node, "dev.sys.platform.xhci")
+
+        with self.assertRaises(ValidationError):
+            AttachRequest(filter="xhci", driver="xhci")
+
+        with self.assertRaises(ValidationError):
+            AttachRequest(driver="xhci", node="dev.sys.platform.xhci")
+
+        with self.assertRaises(ValidationError):
+            AttachRequest(driver="xhci", exact=True)
+
+        with self.assertRaises(ValidationError):
+            AttachRequest(node="dev.sys.platform.xhci", exact=True)
+
+        valid_exact = AttachRequest(filter="xhci", exact=True)
+        self.assertTrue(valid_exact.exact)
+
+    def test_driver_list_schema(self) -> None:
+        req = DriverListRequest(filter="usb")
+        self.assertEqual(req.command, "driver-list")
+        self.assertEqual(req.filter, "usb")
+        resp = DriverListResponse(
+            driver_hosts=[
+                DriverHostEntry(
+                    host_koid=48291,
+                    host_name="driver_host:pdev",
+                    drivers=["fuchsia-boot:///xhci#meta/xhci.cm"],
+                    devices=["dev.sys.platform.xhci"],
+                    colocated=False,
+                    transport_hazard=True,
+                    transport_sensitive=["fuchsia-boot:///xhci#meta/xhci.cm"],
+                )
+            ]
+        )
+        self.assertEqual(resp.driver_hosts[0].host_koid, 48291)
 
     def test_process_inspection_schemas(self) -> None:
         mod_req = ModulesRequest(pid=48291, filter="xhci", force_reload=True)
@@ -364,6 +412,7 @@ class TestResponseTypeAndDeserialization(unittest.TestCase):
         self.assertEqual(StepInRequest.response_type, dict[str, Any])
         self.assertIsNone(StopRequest.response_type)
         self.assertEqual(ThreadsRequest.response_type, dict[str, Any])
+        self.assertEqual(DriverListRequest.response_type, DriverListResponse)
         self.assertEqual(VariablesRequest.response_type, dict[str, Any])
         self.assertIsNone(WaitForEventRequest.response_type)
 

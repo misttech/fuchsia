@@ -26,6 +26,7 @@ if (is_host) {
       "commands/console.py",
       "commands/continue_cmd.py",
       "commands/detach.py",
+      "commands/driver_list.py",
       "commands/evaluate.py",
       "commands/finish.py",
       "commands/get_state.py",

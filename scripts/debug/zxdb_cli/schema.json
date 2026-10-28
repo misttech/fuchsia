@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 19,
+    "version": 20,
     "requests": {
         "$defs": {
             "AspaceRequest": {
@@ -128,7 +128,7 @@
                 "type": "object"
             },
             "AttachRequest": {
-                "description": "Request to attach to a process.",
+                "description": "Request to attach to a process or driver_host.",
                 "properties": {
                     "command": {
                         "const": "attach",
@@ -167,9 +167,37 @@
                             },
                             {
                                 "type": "string"
+                            },
+                            {
+                                "type": "null"
                             }
                         ],
+                        "default": null,
                         "title": "Filter"
+                    },
+                    "driver": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Driver"
+                    },
+                    "node": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Node"
                     },
                     "weak": {
                         "default": false,
@@ -190,11 +218,13 @@
                         "default": false,
                         "title": "Job Only",
                         "type": "boolean"
+                    },
+                    "wait": {
+                        "default": false,
+                        "title": "Wait",
+                        "type": "boolean"
                     }
                 },
-                "required": [
-                    "filter"
-                ],
                 "title": "AttachRequest",
                 "type": "object"
             },
@@ -457,6 +487,55 @@
                     }
                 },
                 "title": "DetachRequest",
+                "type": "object"
+            },
+            "DriverListRequest": {
+                "description": "Request to list running driver_hosts, drivers, and device nodes.",
+                "properties": {
+                    "command": {
+                        "const": "driver-list",
+                        "default": "driver-list",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "filter": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Filter"
+                    }
+                },
+                "title": "DriverListRequest",
                 "type": "object"
             },
             "EvaluateRequest": {
@@ -1527,6 +1606,7 @@
                 "console": "#/$defs/ConsoleRequest",
                 "continue": "#/$defs/ContinueRequest",
                 "detach": "#/$defs/DetachRequest",
+                "driver-list": "#/$defs/DriverListRequest",
                 "evaluate": "#/$defs/EvaluateRequest",
                 "finish": "#/$defs/FinishRequest",
                 "get-state": "#/$defs/GetStateRequest",
@@ -1568,6 +1648,9 @@
             },
             {
                 "$ref": "#/$defs/DetachRequest"
+            },
+            {
+                "$ref": "#/$defs/DriverListRequest"
             },
             {
                 "$ref": "#/$defs/EvaluateRequest"
@@ -1871,6 +1954,80 @@
                     "output"
                 ],
                 "title": "ConsoleResponse",
+                "type": "object"
+            },
+            "DriverHostEntry": {
+                "additionalProperties": false,
+                "description": "Information about a driver_host process and its loaded drivers.",
+                "properties": {
+                    "host_koid": {
+                        "title": "Host Koid",
+                        "type": "integer"
+                    },
+                    "host_name": {
+                        "default": "",
+                        "title": "Host Name",
+                        "type": "string"
+                    },
+                    "drivers": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Drivers",
+                        "type": "array"
+                    },
+                    "devices": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Devices",
+                        "type": "array"
+                    },
+                    "colocated": {
+                        "default": false,
+                        "title": "Colocated",
+                        "type": "boolean"
+                    },
+                    "attached": {
+                        "default": false,
+                        "title": "Attached",
+                        "type": "boolean"
+                    },
+                    "transport_hazard": {
+                        "default": false,
+                        "title": "Transport Hazard",
+                        "type": "boolean"
+                    },
+                    "transport_sensitive": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "title": "Transport Sensitive",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "host_koid"
+                ],
+                "title": "DriverHostEntry",
+                "type": "object"
+            },
+            "DriverListResponse": {
+                "additionalProperties": false,
+                "description": "Response for driver-list command.",
+                "properties": {
+                    "driver_hosts": {
+                        "items": {
+                            "$ref": "#/$defs/DriverHostEntry"
+                        },
+                        "title": "Driver Hosts",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "driver_hosts"
+                ],
+                "title": "DriverListResponse",
                 "type": "object"
             },
             "EvaluateResponse": {
@@ -2598,6 +2755,9 @@
                     },
                     {
                         "$ref": "#/$defs/MemReadResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/DriverListResponse"
                     },
                     {
                         "additionalProperties": true,

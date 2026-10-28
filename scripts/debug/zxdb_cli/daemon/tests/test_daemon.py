@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
+from daemon.driver_utils import match_driver_host, match_host_by_node
 from daemon.handlers import start
 from daemon.state import Process, Thread
 from pydap.client import DapError
@@ -40,6 +41,10 @@ from shared.protocol.async_backtrace import (
 from shared.protocol.attach import AttachRequest
 from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
+from shared.protocol.driver_list import (
+    DriverListRequest,
+    DriverListResponse,
+)
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import GetStateRequest
@@ -2768,6 +2773,214 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(bound_thread.is_stopped)
         self.assertFalse(orphan_thread.is_stopped)
+
+    @patch("daemon.driver_utils.run_ffx_json", new_callable=AsyncMock)
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_handle_driver_list_and_attach(
+        self, mock_dap_client_class: Mock, mock_ffx_json: AsyncMock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.attach = AsyncMock(
+            return_value=Mock(dump_dap=lambda: {"success": True})
+        )
+
+        async def ffx_side_effect(*args: str) -> object:
+            if args == ("driver", "host", "list"):
+                return [
+                    {
+                        "koid": 48291,
+                        "name": "driver_host:pdev:05:00:f",
+                        "drivers": [
+                            "fuchsia-boot:///xhci#meta/xhci.cm",
+                            "fuchsia-boot:///usb-bus#meta/usb-bus.cm",
+                        ],
+                    }
+                ]
+            if args == ("driver", "node", "list"):
+                return [
+                    {
+                        "moniker": "dev.sys.platform.xhci",
+                        "owner": "fuchsia-boot:///xhci#meta/xhci.cm",
+                    }
+                ]
+            return []
+
+        mock_ffx_json.side_effect = ffx_side_effect
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        list_resp = await daemon.registry.handle(
+            "driver-list", DriverListRequest(filter="xhci")
+        )
+        self.assertTrue(list_resp.success)
+        assert isinstance(list_resp.body, DriverListResponse)
+        self.assertEqual(len(list_resp.body.driver_hosts), 1)
+        host = list_resp.body.driver_hosts[0]
+        self.assertEqual(host.host_koid, 48291)
+        self.assertTrue(host.colocated)
+        self.assertTrue(host.transport_hazard)
+        self.assertIn("dev.sys.platform.xhci", host.devices)
+
+        attach_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(
+                driver="xhci",
+                weak=True,
+                recursive=True,
+                job_only=True,
+            ),
+        )
+        self.assertTrue(attach_resp.success)
+        assert isinstance(attach_resp.body, dict)
+        self.assertEqual(attach_resp.body["driver_host_koid"], 48291)
+        self.assertEqual(attach_resp.body["attach_mode"], "weak")
+        self.assertTrue(attach_resp.body["transport_hazard"])
+        self.assertIsNotNone(attach_resp.body["hazard_warning"])
+        self.assertIn("modules, aspace", attach_resp.body["hazard_warning"])
+        self.assertNotIn("tracepoints", attach_resp.body["hazard_warning"])
+        self.assertIsNotNone(attach_resp.body["colocated_warning"])
+        attach_call_arg = mock_dap_client.attach.call_args[0][0]
+        self.assertEqual(
+            attach_call_arg.extra_fields,
+            {"process": "48291", "weak": True},
+        )
+        self.assertIsInstance(attach_call_arg.extra_fields["process"], str)
+
+        # Wait filter when driver is not running yet
+        wait_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(
+                driver="nonexistent_drv",
+                wait=True,
+                weak=True,
+                recursive=True,
+                job_only=True,
+            ),
+        )
+        self.assertTrue(wait_resp.success)
+        assert isinstance(wait_resp.body, dict)
+        self.assertEqual(wait_resp.body["attach_mode"], "filter")
+        self.assertEqual(wait_resp.body["filter_pattern"], "driver_host")
+        self.assertEqual(wait_resp.body["requested_target"], "nonexistent_drv")
+        self.assertIsNotNone(wait_resp.body["filter_warning"])
+        self.assertIn("nonexistent_drv", wait_resp.body["filter_warning"])
+        self.assertIn("--weak", wait_resp.body["filter_warning"])
+        wait_call_arg = mock_dap_client.attach.call_args[0][0]
+        self.assertEqual(
+            wait_call_arg.extra_fields,
+            {
+                "process": "driver_host",
+                "weak": True,
+                "recursive": True,
+                "job_only": True,
+            },
+        )
+
+        # Numeric --driver matching a running driver_host KOID attaches with hazard checks
+        mock_dap_client.attach.reset_mock()
+        koid_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(driver="48291", weak=True),
+        )
+        self.assertTrue(koid_resp.success)
+        assert isinstance(koid_resp.body, dict)
+        self.assertEqual(koid_resp.body["driver_host_koid"], 48291)
+        self.assertTrue(koid_resp.body["transport_hazard"])
+        self.assertIsNotNone(koid_resp.body["hazard_warning"])
+
+        # Numeric --driver (e.g. "8250") when no host matches and wait=True installs filter
+        mock_dap_client.attach.reset_mock()
+        wait_num_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(driver="8250", wait=True, weak=True),
+        )
+        self.assertTrue(wait_num_resp.success)
+        assert isinstance(wait_num_resp.body, dict)
+        self.assertEqual(wait_num_resp.body["attach_mode"], "filter")
+        self.assertEqual(wait_num_resp.body["filter_pattern"], "driver_host")
+        self.assertEqual(wait_num_resp.body["requested_target"], "8250")
+        wait_num_call_arg = mock_dap_client.attach.call_args[0][0]
+        self.assertEqual(
+            wait_num_call_arg.extra_fields,
+            {"process": "driver_host", "weak": True},
+        )
+
+        # Numeric --driver when no host matches and wait=False fails without DAP attach
+        mock_dap_client.attach.reset_mock()
+        missing_num_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(driver="8250", wait=False),
+        )
+        self.assertFalse(missing_num_resp.success)
+        self.assertIn(
+            "No running driver_host matched '8250'",
+            missing_num_resp.message or "",
+        )
+        mock_dap_client.attach.assert_not_called()
+
+        # Wait filter when node is not running yet
+        wait_node_resp = await daemon.registry.handle(
+            "attach",
+            AttachRequest(node="dev.sys.nonexistent", wait=True),
+        )
+        self.assertTrue(wait_node_resp.success)
+        assert isinstance(wait_node_resp.body, dict)
+        self.assertEqual(wait_node_resp.body["attach_mode"], "filter")
+        self.assertEqual(wait_node_resp.body["filter_pattern"], "driver_host")
+        self.assertEqual(
+            wait_node_resp.body["requested_target"], "dev.sys.nonexistent"
+        )
+        self.assertIsNotNone(wait_node_resp.body["filter_warning"])
+        self.assertIn(
+            "dev.sys.nonexistent", wait_node_resp.body["filter_warning"]
+        )
+        wait_node_call_arg = mock_dap_client.attach.call_args[0][0]
+        self.assertEqual(
+            wait_node_call_arg.extra_fields,
+            {"process": "driver_host"},
+        )
+
+        # Rejection of --exact with --driver / --node in daemon handler
+        exact_drv_req = AttachRequest.model_construct(
+            command="attach",
+            driver="xhci",
+            exact=True,
+        )
+        exact_drv_resp = await daemon.registry.handle("attach", exact_drv_req)
+        self.assertFalse(exact_drv_resp.success)
+        self.assertIn(
+            "--exact cannot be used with --driver or --node",
+            exact_drv_resp.message or "",
+        )
+
+        exact_node_req = AttachRequest.model_construct(
+            command="attach",
+            node="dev.sys.platform.xhci",
+            exact=True,
+        )
+        exact_node_resp = await daemon.registry.handle("attach", exact_node_req)
+        self.assertFalse(exact_node_resp.success)
+        self.assertIn(
+            "--exact cannot be used with --driver or --node",
+            exact_node_resp.message or "",
+        )
+
+        # match_host_by_node empty and whitespace queries return (None, None)
+        matched, drv = match_host_by_node(list_resp.body.driver_hosts, "")
+        self.assertIsNone(matched)
+        self.assertIsNone(drv)
+        matched, drv = match_host_by_node(list_resp.body.driver_hosts, "   ")
+        self.assertIsNone(matched)
+        self.assertIsNone(drv)
+        matched, drv = match_driver_host(list_resp.body.driver_hosts, node="")
+        self.assertIsNone(matched)
+        self.assertIsNone(drv)
+        matched, drv = match_driver_host(
+            list_resp.body.driver_hosts, node="   "
+        )
+        self.assertIsNone(matched)
+        self.assertIsNone(drv)
 
 
 class TestDaemonStart(unittest.IsolatedAsyncioTestCase):

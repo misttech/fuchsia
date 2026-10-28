@@ -33,6 +33,11 @@ from shared.protocol.break_request import BreakRequest
 from shared.protocol.console import ConsoleRequest, ConsoleResponse
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
+from shared.protocol.driver_list import (
+    DriverHostEntry,
+    DriverListRequest,
+    DriverListResponse,
+)
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
 from shared.protocol.get_state import (
@@ -81,6 +86,7 @@ RequestType = Annotated[
     | ConsoleRequest
     | ContinueRequest
     | DetachRequest
+    | DriverListRequest
     | EvaluateRequest
     | FinishRequest
     | GetStateRequest
@@ -112,6 +118,7 @@ ResponseType = (
     | AspaceResponse
     | HandlesResponse
     | MemReadResponse
+    | DriverListResponse
     | dict[str, Any]
     | None
 )
@@ -139,6 +146,9 @@ __all__ = [
     "ModuleEntry",
     "ModulesRequest",
     "ModulesResponse",
+    "DriverHostEntry",
+    "DriverListRequest",
+    "DriverListResponse",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",

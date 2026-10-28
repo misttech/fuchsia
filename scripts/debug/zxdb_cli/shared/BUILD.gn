@@ -30,6 +30,7 @@ if (is_host) {
       "protocol/console.py",
       "protocol/continue_request.py",
       "protocol/detach.py",
+      "protocol/driver_list.py",
       "protocol/evaluate.py",
       "protocol/finish.py",
       "protocol/get_state.py",
