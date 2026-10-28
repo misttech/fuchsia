@@ -10,6 +10,7 @@ use fidl_fuchsia_memory_stacktrack_process as fstacktrack_process;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
+use itertools::Itertools;
 use log::{info, warn};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
@@ -25,6 +26,22 @@ pub struct Registry {
 impl Registry {
     pub fn new() -> Registry {
         Registry { processes: Mutex::new(HashMap::new()) }
+    }
+
+    pub fn register_inspect(self: &Arc<Self>, root: &fuchsia_inspect::Node) {
+        let this = self.clone();
+
+        root.record_lazy_child("processes", move || {
+            let processes = this.list_processes();
+            let inspector = fuchsia_inspect::Inspector::default();
+            let root = inspector.root();
+            for (koid, name) in processes.iter() {
+                root.record_child(koid.raw_koid().to_string(), |node| {
+                    node.record_string("name", name);
+                });
+            }
+            Box::pin(async move { Ok(inspector) })
+        });
     }
 
     fn find_process(
@@ -132,16 +149,13 @@ impl Registry {
         self.processes.lock().get(koid).cloned()
     }
 
-    #[cfg(test)]
     pub fn list_processes(&self) -> Vec<(Koid, String)> {
-        let mut processes: Vec<_> = self
-            .processes
+        self.processes
             .lock()
             .iter()
             .map(|(koid, process)| (*koid, process.get_name().to_string()))
-            .collect();
-        processes.sort_by_key(|(koid, _)| *koid);
-        processes
+            .sorted_by_key(|(koid, _)| *koid)
+            .collect()
     }
 
     async fn serve_process(&self, process: Arc<dyn Process>) -> Result<(), anyhow::Error> {
@@ -181,7 +195,9 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
+    use fuchsia_inspect::Inspector;
     use futures::channel::oneshot;
     use futures::pin_mut;
     use test_case::test_case;
@@ -425,5 +441,31 @@ mod tests {
         } else {
             FakeSnapshot::receive_and_assert_match(receiver_stream).await;
         }
+    }
+
+    #[fuchsia::test]
+    async fn test_inspect() {
+        let name1 = "fake-1";
+        let koid1 = Koid::from_raw(1234);
+        let (process1, _signal1) = FakeProcess::new(name1, koid1, false);
+
+        let name2 = "fake-2";
+        let koid2 = Koid::from_raw(5678);
+        let (process2, _signal2) = FakeProcess::new(name2, koid2, false);
+
+        let (registry, _proxy) = create_registry_and_proxy([process1, process2]);
+        let inspector = Inspector::default();
+        registry.register_inspect(inspector.root());
+
+        assert_data_tree!(inspector, root: {
+            processes: {
+                "1234": {
+                    name: "fake-1",
+                },
+                "5678": {
+                    name: "fake-2",
+                },
+            }
+        });
     }
 }

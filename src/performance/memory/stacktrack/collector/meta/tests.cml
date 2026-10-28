@@ -4,6 +4,7 @@
 {
     include: [
         "//src/sys/test_runners/elf/create_raw_processes.shard.cml",
+        "inspect/client.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {

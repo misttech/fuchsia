@@ -25,7 +25,12 @@ enum Service {
 
 #[fuchsia::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let inspector = fuchsia_inspect::component::inspector();
+    let _inspect_server_task =
+        inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
+
     let registry = Arc::new(Registry::new());
+    registry.register_inspect(inspector.root());
 
     let mut service_fs = ServiceFs::new();
     service_fs.dir("svc").add_fidl_service(Service::Client);
