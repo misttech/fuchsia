@@ -1,0 +1,16 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+package(default_applicable_licenses = ["//:license"])
+
+exports_files(
+    [
+        "test_configs/invalid_test_config_1.json5",
+        "test_configs/invalid_test_config_2.json5",
+        "test_configs/invalid_test_config_3.json5",
+        "test_configs/valid_test_config.json5",
+        "vim3.json5",
+    ],
+    visibility = ["//src/power/cpu-manager/energy_model_config/validator:__pkg__"],
+)

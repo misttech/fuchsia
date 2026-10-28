@@ -29,5 +29,6 @@ test_suite(
     target_compatible_with = HOST_OS_CONSTRAINTS,
     tests = [
         "//src/power/cpu-manager/energy_model_config/parser:parser_host_test",
+        "//src/power/cpu-manager/energy_model_config/validator:validator_test",
     ],
 )

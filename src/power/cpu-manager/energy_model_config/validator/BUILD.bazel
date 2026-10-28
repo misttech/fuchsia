@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "validator",
+    srcs = ["src/main.rs"],
+    crate_name = "energy_model_config_validator",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    deps = [
+        "//src/power/cpu-manager/energy_model_config/parser",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+    ],
+)
+
+host_test_data_files(
+    name = "valid_energy_model_test_configs",
+    srcs = [
+        "//src/power/cpu-manager/energy_model_config:test_configs/valid_test_config.json5",
+        "//src/power/cpu-manager/energy_model_config:vim3.json5",
+    ],
+    dest_dir = "valid_energy_model_test_configs",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_test_data_files(
+    name = "invalid_energy_model_test_configs",
+    srcs = [
+        "//src/power/cpu-manager/energy_model_config:test_configs/invalid_test_config_1.json5",
+        "//src/power/cpu-manager/energy_model_config:test_configs/invalid_test_config_2.json5",
+        "//src/power/cpu-manager/energy_model_config:test_configs/invalid_test_config_3.json5",
+    ],
+    dest_dir = "invalid_energy_model_test_configs",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+host_rustc_test(
+    name = "validator_test",
+    crate = ":validator",
+    edition = "2024",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    test_data = [
+        ":invalid_energy_model_test_configs",
+        ":valid_energy_model_test_configs",
+    ],
+    visibility = ["//src/power:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)

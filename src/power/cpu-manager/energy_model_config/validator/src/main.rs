@@ -53,21 +53,10 @@ mod tests {
 
     // Gets the test configs located under the given subdirectory
     fn get_configs(sub_dir: &str) -> Vec<PathBuf> {
-        get_test_directory()
-            .join(sub_dir)
-            .read_dir()
+        fs::read_dir(sub_dir)
             .expect("Failed to read files in subdirectory")
             .map(|dir_entry| dir_entry.unwrap().path())
             .collect()
-    }
-
-    // Gets the parent directory for this test executable.
-    fn get_test_directory() -> PathBuf {
-        std::env::current_exe()
-            .expect("Failed to get path of this executable")
-            .parent()
-            .expect("Failed to get current executable's parent directory")
-            .to_path_buf()
     }
 
     // Helper for managing the temporary directory / path of the test-only stamp file
