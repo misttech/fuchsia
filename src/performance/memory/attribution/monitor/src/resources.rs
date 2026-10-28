@@ -11,6 +11,7 @@ use index_table_builder::IndexTableBuilder;
 use log::warn;
 use std::collections::{HashMap, HashSet};
 use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use traces::CATEGORY_MEMORY_CAPTURE;
 use zerocopy::{FromBytes, IntoBytes};
 const ZX_INFO_CACHE_INITIAL_SIZE: usize = 64;
@@ -128,9 +129,20 @@ impl KernelResourcesBuilder {
 }
 
 /// Crawls the jobs, processes and vmos, calling back visitor method for each object.
-#[derive(Default)]
 pub struct KernelResourcesExplorer {
-    cache: Cache,
+    /// Used to track the maximum cache size needed across captures, to avoid re-fetches.
+    vmos_cache_size: AtomicUsize,
+    /// Used to track the maximum cache size needed across captures, to avoid re-fetches.
+    maps_cache_size: AtomicUsize,
+}
+
+impl Default for KernelResourcesExplorer {
+    fn default() -> Self {
+        Self {
+            vmos_cache_size: AtomicUsize::new(ZX_INFO_CACHE_INITIAL_SIZE),
+            maps_cache_size: AtomicUsize::new(ZX_INFO_CACHE_INITIAL_SIZE),
+        }
+    }
 }
 
 struct Cache {
@@ -138,25 +150,35 @@ struct Cache {
     vmos_cache_internal: Vec<MaybeUninit<zx::VmoInfo>>,
     /// Cache for `zx_info_maps_t` objects, to speed up related syscalls.
     maps_cache_internal: Vec<MaybeUninit<zx::MapInfo>>,
-}
-
-impl Default for Cache {
-    fn default() -> Self {
-        let mut result = Self { vmos_cache_internal: vec![], maps_cache_internal: vec![] };
-        result.vmos_cache(ZX_INFO_CACHE_INITIAL_SIZE);
-        result.maps_cache(ZX_INFO_CACHE_INITIAL_SIZE);
-        result
-    }
+    /// Maximum number of VMOs observed in a single process during the capture.
+    max_vmos: usize,
+    /// Maximum number of maps observed in a single process during the capture.
+    max_maps: usize,
 }
 
 impl Cache {
+    fn new(initial_vmos_size: usize, initial_maps_size: usize) -> Self {
+        // Having all entries initialized to a non-zero value ensures their page are committed to
+        // memory. This avoids the issue described in https://fxbug.dev/383401884, where faulting
+        // pages during the syscall is much more expensive than faulting them in userspace.
+        let mut base_vmo = zx::VmoInfo::default();
+        base_vmo.size_bytes = 1;
+        let base_map = zx::MapInfo::new(Default::default(), 1, 0, 0, zx::MapDetails::None).unwrap();
+        Self {
+            vmos_cache_internal: vec![MaybeUninit::new(base_vmo); initial_vmos_size],
+            maps_cache_internal: vec![MaybeUninit::new(base_map); initial_maps_size],
+            max_vmos: 0,
+            max_maps: 0,
+        }
+    }
+
     /// Returns a buffer with enough space to hold at least `minimum_size` [zx::VmoInfo] objects.
     fn vmos_cache(&mut self, minimum_size: usize) -> &mut Vec<MaybeUninit<zx::VmoInfo>> {
-        if self.vmos_cache_internal.len() > minimum_size {
+        if self.vmos_cache_internal.len() >= minimum_size {
             return &mut self.vmos_cache_internal;
         }
 
-        // Having all entries inititialized to a non-zero value ensures their page are committed to
+        // Having all entries initialized to a non-zero value ensures their page are committed to
         // memory. This avoids the issue described in https://fxbug.dev/383401884, where faulting
         // pages during the syscall is much more expensive than faulting them in userspace.
         let mut base = zx::VmoInfo::default();
@@ -169,11 +191,11 @@ impl Cache {
 
     /// Returns a buffer with enough space to hold at least `minimum_size` [zx::MapInfo] objects.
     fn maps_cache(&mut self, minimum_size: usize) -> &mut Vec<MaybeUninit<zx::MapInfo>> {
-        if self.maps_cache_internal.len() > minimum_size {
+        if self.maps_cache_internal.len() >= minimum_size {
             return &mut self.maps_cache_internal;
         }
 
-        // Having all entries inititialized to a non-zero value ensures their page are committed to
+        // Having all entries initialized to a non-zero value ensures their page are committed to
         // memory. This avoids the issue described in https://fxbug.dev/383401884, where faulting
         // pages during the syscall is much more expensive than faulting them in userspace.
         let base = zx::MapInfo::new(Default::default(), 1, 0, 0, zx::MapDetails::None).unwrap();
@@ -341,33 +363,20 @@ impl Process for zx::Process {
     }
 }
 
-impl KernelResources {
+impl KernelResourcesExplorer {
     // Get all jobs, processes and vmos for the specified root.
-    pub fn get_resources(
+    pub fn explore_root_job(
+        &self,
         root: &dyn Job,
         attribution_state: &AttributionState,
         muted_principal: &Option<PrincipalDescription>,
     ) -> Result<KernelResources, zx::Status> {
-        let mut kernel_resources_builder = KernelResourcesBuilder::default();
-        KernelResourcesExplorer::default().explore_root_job(
-            &mut kernel_resources_builder,
-            root,
-            attribution_state,
-            muted_principal,
-        )?;
-        Ok(kernel_resources_builder.build())
-    }
-}
-
-impl KernelResourcesExplorer {
-    fn explore_root_job(
-        &mut self,
-        builder: &mut KernelResourcesBuilder,
-        root: &dyn Job,
-        attribution_state: &AttributionState,
-        muted_principal: &Option<PrincipalDescription>,
-    ) -> Result<(), zx::Status> {
         duration!(CATEGORY_MEMORY_CAPTURE, "get_resources");
+        let mut builder = KernelResourcesBuilder::default();
+        let mut cache = Cache::new(
+            self.vmos_cache_size.load(Ordering::Relaxed),
+            self.maps_cache_size.load(Ordering::Relaxed),
+        );
 
         // Turn the description into a global identifier.
         let muted_principal = muted_principal
@@ -430,14 +439,28 @@ impl KernelResourcesExplorer {
                 }
             }
         }
-        self.explore_job(builder, &root.get_koid()?, root, &process_collection_requests)?;
-        Ok(())
+        Self::explore_job(
+            &mut builder,
+            &mut cache,
+            &root.get_koid()?,
+            root,
+            &process_collection_requests,
+        )?;
+        self.vmos_cache_size.store(
+            ((cache.max_vmos as f64 * 1.2) as usize).max(ZX_INFO_CACHE_INITIAL_SIZE),
+            Ordering::Relaxed,
+        );
+        self.maps_cache_size.store(
+            ((cache.max_maps as f64 * 1.2) as usize).max(ZX_INFO_CACHE_INITIAL_SIZE),
+            Ordering::Relaxed,
+        );
+        Ok(builder.build())
     }
 
     /// Recursively gather memory information from a job.
     fn explore_job(
-        &mut self,
         builder: &mut KernelResourcesBuilder,
+        cache: &mut Cache,
         job_koid: &zx::Koid,
         job: &dyn Job,
         process_collection_requests: &HashMap<zx::Koid, CollectionRequest>,
@@ -454,8 +477,9 @@ impl KernelResourcesExplorer {
                 Err(status) => return Err(status),
                 Ok(child) => child,
             };
-            match self.explore_job(
+            match Self::explore_job(
                 builder,
+                cache,
                 child_job_koid,
                 child_job.as_ref(),
                 process_collection_requests,
@@ -475,8 +499,9 @@ impl KernelResourcesExplorer {
                     Err(s) => return Err(s),
                     Ok(child) => child,
                 };
-            match self.explore_process(
+            match Self::explore_process(
                 builder,
+                cache,
                 child_process_koid,
                 child_process.as_ref(),
                 &process_collection_requests.get(child_process_koid).cloned().unwrap_or_default(),
@@ -502,8 +527,8 @@ impl KernelResourcesExplorer {
 
     /// Gather the memory information of a process.
     fn explore_process(
-        &mut self,
         builder: &mut KernelResourcesBuilder,
+        cache: &mut Cache,
         process_koid: &zx::Koid,
         process: &dyn Process,
         collection: &CollectionRequest,
@@ -514,15 +539,15 @@ impl KernelResourcesExplorer {
 
         let vmo_koids = if collection.collect_vmos() {
             duration!(CATEGORY_MEMORY_CAPTURE, "vmos:explore_process");
-            let (mut vmo_infos, available) = {
+            let (mut vmo_infos, mut available) = {
                 duration!(CATEGORY_MEMORY_CAPTURE, "fetch:vmos:explore_process");
-                process.info_vmos(self.cache.vmos_cache(0))?
+                process.info_vmos(cache.vmos_cache(0))?
             };
 
             if vmo_infos.len() < available {
                 duration!(CATEGORY_MEMORY_CAPTURE, "refetch:vmos:explore_process",
                     "initial_length" => vmo_infos.len(), "target_length" => available);
-                (vmo_infos, _) = process.info_vmos(self.cache.vmos_cache(available))?;
+                (vmo_infos, available) = process.info_vmos(cache.vmos_cache(available))?;
             }
 
             let mut vmo_koids = HashSet::with_capacity(vmo_infos.len());
@@ -553,6 +578,7 @@ impl KernelResourcesExplorer {
                     },
                 )?;
             }
+            cache.max_vmos = cache.max_vmos.max(available);
             Some(vmo_koids.iter().map(zx::Koid::raw_koid).collect())
         } else {
             None
@@ -561,14 +587,14 @@ impl KernelResourcesExplorer {
         let process_maps = if let Some(selected_range) = collection.collect_maps {
             duration!(CATEGORY_MEMORY_CAPTURE, "maps:explore_process");
 
-            let (mut info_maps, available) = {
+            let (mut info_maps, mut available) = {
                 duration!(CATEGORY_MEMORY_CAPTURE, "fetch:maps:explore_process");
-                process.info_maps(self.cache.maps_cache(0))?
+                process.info_maps(cache.maps_cache(0))?
             };
             if info_maps.len() < available {
                 duration!(CATEGORY_MEMORY_CAPTURE, "refetch:maps:explore_process",
                     "initial_length" => info_maps.len(), "target_length" => available);
-                (info_maps, _) = process.info_maps(self.cache.maps_cache(available))?;
+                (info_maps, available) = process.info_maps(cache.maps_cache(available))?;
             }
 
             // This overestimates the capacity needed, but it is still better than resizing several
@@ -590,6 +616,7 @@ impl KernelResourcesExplorer {
                     }
                 }
             }
+            cache.max_maps = cache.max_maps.max(available);
             // As we overestimated the capacity, we now need to shrink it.
             mappings.shrink_to_fit();
             Some(mappings)
@@ -758,6 +785,8 @@ pub mod tests {
         vmos: Vec<zx::VmoInfo>,
         maps: Vec<zx::MapInfo>,
         status: Option<zx::Status>,
+        vmos_buffer_lengths: std::sync::Arc<fuchsia_sync::Mutex<Vec<usize>>>,
+        maps_buffer_lengths: std::sync::Arc<fuchsia_sync::Mutex<Vec<usize>>>,
     }
 
     impl FakeProcess {
@@ -773,6 +802,8 @@ pub mod tests {
                 vmos,
                 maps,
                 status: None,
+                vmos_buffer_lengths: Default::default(),
+                maps_buffer_lengths: Default::default(),
             }
         }
 
@@ -783,6 +814,8 @@ pub mod tests {
                 vmos: Vec::new(),
                 maps: Vec::new(),
                 status: Some(status),
+                vmos_buffer_lengths: Default::default(),
+                maps_buffer_lengths: Default::default(),
             }
         }
     }
@@ -802,13 +835,15 @@ pub mod tests {
             if let Some(status) = self.status {
                 return Err(status);
             }
+            self.vmos_buffer_lengths.lock().push(output_vector.len());
             self.vmos.iter().take(output_vector.len()).copied().enumerate().for_each(
                 |(index, vmo)| {
                     output_vector[index] = MaybeUninit::new(vmo);
                 },
             );
 
-            let (initialized, _) = output_vector.split_at_mut(self.vmos.len());
+            let initialized_len = self.vmos.len().min(output_vector.len());
+            let (initialized, _) = output_vector.split_at_mut(initialized_len);
             // TODO(https://fxbug.dev/352398385) switch to MaybeUninit::slice_assume_init_mut
             // SAFETY: these values have been initialized just above.
             let initialized = unsafe {
@@ -827,13 +862,15 @@ pub mod tests {
             if let Some(status) = self.status {
                 return Err(status);
             }
+            self.maps_buffer_lengths.lock().push(output_vector.len());
             self.maps.iter().take(output_vector.len()).copied().enumerate().for_each(
                 |(index, maps)| {
                     output_vector[index] = MaybeUninit::new(maps);
                 },
             );
 
-            let (initialized, _) = output_vector.split_at_mut(self.maps.len());
+            let initialized_len = self.maps.len().min(output_vector.len());
+            let (initialized, _) = output_vector.split_at_mut(initialized_len);
             // TODO(https://fxbug.dev/352398385) switch to MaybeUninit::slice_assume_init_mut
             // SAFETY: these values have been initialized just above.
             let initialized = unsafe {
@@ -954,9 +991,9 @@ pub mod tests {
                 .collect(),
             },
         );
-        let kernel_resoures =
-            KernelResources::get_resources(root_job.as_ref(), &attribution_state, &None)
-                .expect("Failed to gather resources");
+        let kernel_resoures = KernelResourcesExplorer::default()
+            .explore_root_job(root_job.as_ref(), &attribution_state, &None)
+            .expect("Failed to gather resources");
 
         if let fplugin::ResourceType::Process(proc11) = kernel_resoures
             .resources
@@ -1032,5 +1069,96 @@ pub mod tests {
                 collect_maps: Some(Range { start: 100, end: 200 })
             }
         );
+    }
+
+    #[test]
+    fn test_cache_size_preserved_between_captures() {
+        let mut mapping_details = zx::MappingDetails::default();
+        mapping_details.mmu_flags = zx::VmarFlagsExtended::PERM_READ;
+        mapping_details.vmo_koid = zx::Koid::from_raw(1000);
+        mapping_details.committed_bytes = 100;
+        mapping_details.populated_bytes = 100;
+
+        let make_vmos = |count: usize| -> Vec<zx::VmoInfo> {
+            (0..count).map(|i| simple_vmo_info(1000 + i as u64, "vmo", 0, 100, 100)).collect()
+        };
+        let make_maps = |count: usize| -> Vec<zx::MapInfo> {
+            (0..count)
+                .map(|_| {
+                    zx::MapInfo::new(
+                        zx::Name::from_bytes_lossy("mapping".as_bytes()),
+                        0x1200,
+                        1024,
+                        2,
+                        zx::MapDetails::Mapping(&mapping_details),
+                    )
+                    .unwrap()
+                })
+                .collect()
+        };
+
+        let mut attribution_state = AttributionState::default();
+        let root_id = GlobalPrincipalIdentifier::new_for_test(1);
+        attribution_state.0.insert(
+            root_id,
+            AttributionProvider {
+                definitions: Default::default(),
+                resources: vec![(
+                    LocalPrincipalIdentifier::new_for_tests(1),
+                    vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
+                        process: 11,
+                        base: 0x1000,
+                        len: 2048,
+                        hint_skip_handle_table: false,
+                    })],
+                )]
+                .into_iter()
+                .collect(),
+            },
+        );
+
+        let explorer = KernelResourcesExplorer::default();
+
+        // Capture 1: 100 VMOs and 150 maps exceed ZX_INFO_CACHE_INITIAL_SIZE (64), triggering
+        // refetches at 2x (200 and 300).
+        let proc1 = FakeProcess::new(11, "proc11", make_vmos(100), make_maps(150));
+        let job1 = FakeJob::new(0, "root", vec![], vec![proc1.clone()]);
+        let res1 =
+            explorer.explore_root_job(&job1, &attribution_state, &None).expect("Capture 1 failed");
+        if let Some(fplugin::ResourceType::Process(p)) =
+            res1.resources.get(&zx::Koid::from_raw(11)).and_then(|r| r.resource_type.as_ref())
+        {
+            assert_eq!(p.vmos.as_ref().unwrap().len(), 100);
+            assert_eq!(p.mappings.as_ref().unwrap().len(), 150);
+        } else {
+            panic!("Expected process 11");
+        }
+        assert_eq!(*proc1.vmos_buffer_lengths.lock(), vec![64, 200]);
+        assert_eq!(*proc1.maps_buffer_lengths.lock(), vec![64, 300]);
+
+        // Capture 2: Initial cache sizes should be 100 + 20% = 120 and 150 + 20% = 180 (based on
+        // the actual object counts 100 and 150, not the 200/300 refetch capacities). With 80 VMOs
+        // and 100 maps, no refetch is needed.
+        let proc2 = FakeProcess::new(11, "proc11", make_vmos(80), make_maps(100));
+        let job2 = FakeJob::new(0, "root", vec![], vec![proc2.clone()]);
+        explorer.explore_root_job(&job2, &attribution_state, &None).expect("Capture 2 failed");
+        assert_eq!(*proc2.vmos_buffer_lengths.lock(), vec![120]);
+        assert_eq!(*proc2.maps_buffer_lengths.lock(), vec![180]);
+
+        // Capture 3: Since Capture 2 had fewer objects (80 VMOs, 100 maps), the initial cache
+        // sizes decrease to 80 + 20% = 96 and 100 + 20% = 120.
+        let proc3 = FakeProcess::new(11, "proc11", make_vmos(10), make_maps(20));
+        let job3 = FakeJob::new(0, "root", vec![], vec![proc3.clone()]);
+        explorer.explore_root_job(&job3, &attribution_state, &None).expect("Capture 3 failed");
+        assert_eq!(*proc3.vmos_buffer_lengths.lock(), vec![96]);
+        assert_eq!(*proc3.maps_buffer_lengths.lock(), vec![120]);
+
+        // Capture 4: Since Capture 3 had 10 VMOs (10 + 20% = 12 < 64) and 20 maps (20 + 20% = 24
+        // < 64), both initial cache sizes are floored at ZX_INFO_CACHE_INITIAL_SIZE (64).
+        let proc4 = FakeProcess::new(11, "proc11", make_vmos(10), make_maps(20));
+        let job4 = FakeJob::new(0, "root", vec![], vec![proc4.clone()]);
+        explorer.explore_root_job(&job4, &attribution_state, &None).expect("Capture 4 failed");
+        assert_eq!(*proc4.vmos_buffer_lengths.lock(), vec![64]);
+        assert_eq!(*proc4.maps_buffer_lengths.lock(), vec![64]);
     }
 }

@@ -4,7 +4,7 @@
 
 use crate::attribution_client::AttributionClient;
 use crate::common::PrincipalIdMap;
-use crate::resources::{Job, KernelResources};
+use crate::resources::{Job, KernelResourcesExplorer};
 use attribution_processing::{
     Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
     ResourceReference,
@@ -17,6 +17,7 @@ use traces::CATEGORY_MEMORY_CAPTURE;
 pub struct AttributionDataProviderImpl {
     root_job: Arc<Mutex<dyn Job>>,
     attribution_client: Arc<dyn AttributionClient>,
+    kernel_resources_explorer: Arc<KernelResourcesExplorer>,
     muted_principal: Option<PrincipalDescription>,
 }
 
@@ -31,6 +32,7 @@ impl AttributionDataProviderImpl {
         Arc::new(AttributionDataProviderImpl {
             root_job,
             attribution_client,
+            kernel_resources_explorer: Arc::new(KernelResourcesExplorer::default()),
             muted_principal: None,
         })
     }
@@ -38,6 +40,7 @@ impl AttributionDataProviderImpl {
         Arc::new(AttributionDataProviderImpl {
             root_job: self.root_job.clone(),
             attribution_client: self.attribution_client.clone(),
+            kernel_resources_explorer: self.kernel_resources_explorer.clone(),
             muted_principal,
         })
     }
@@ -47,7 +50,7 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
     fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
         let attribution_state = self.attribution_client.get_attributions();
 
-        let kernel_resources = KernelResources::get_resources(
+        let kernel_resources = self.kernel_resources_explorer.explore_root_job(
             &*self.root_job.lock(),
             &attribution_state,
             &self.muted_principal,
@@ -134,14 +137,12 @@ mod tests {
         GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, PrincipalDescription,
         PrincipalType, ZXName,
     };
+    use fidl_fuchsia_memory_attribution as fattribution;
+    use fidl_fuchsia_memory_attribution_plugin as fplugin;
     use itertools::Itertools;
     use maplit::hashmap;
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
-    use {
-        fidl_fuchsia_memory_attribution as fattribution,
-        fidl_fuchsia_memory_attribution_plugin as fplugin,
-    };
 
     /// Projection of object state into a standardized (canonical) form that can be
     /// compared with equality. This usually removes variability of the state
