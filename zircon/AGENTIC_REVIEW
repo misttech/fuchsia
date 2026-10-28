@@ -10,3 +10,10 @@ conditional_capability_groups {
   review_capability_skills: "zircon/skills/cpp-to-rust-rubric/SKILL.md"
   review_capability_skills: "zircon/skills/fbl-intrusive-porting/SKILL.md"
 }
+
+# Zircon kernel dispatcher and syscall C++ to Rust porting patterns.
+conditional_capability_groups {
+  path_expression: "kernel/object/..."
+  path_expression: "kernel/lib/syscalls/..."
+  review_capability_skills: "zircon/skills/cpp-to-rust-dispatcher/SKILL.md"
+}
