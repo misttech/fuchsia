@@ -63,13 +63,11 @@ rust_library(
     ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
             "extra-traits",  # aarch64-unknown-linux-gnu
-            "fold",  # aarch64-unknown-linux-gnu
             "visit",  # aarch64-unknown-linux-gnu
             "visit-mut",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
             "extra-traits",  # x86_64-unknown-linux-gnu
-            "fold",  # x86_64-unknown-linux-gnu
             "visit",  # x86_64-unknown-linux-gnu
             "visit-mut",  # x86_64-unknown-linux-gnu
         ],

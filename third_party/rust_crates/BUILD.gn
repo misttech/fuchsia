@@ -22975,7 +22975,6 @@ rustc_library("syn-v2_0_119") {
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"extra-traits\"",
-    "--cfg=feature=\"fold\"",
     "--cfg=feature=\"full\"",
     "--cfg=feature=\"parsing\"",
     "--cfg=feature=\"printing\"",
@@ -23033,42 +23032,6 @@ rustc_library("syn-v3_0_6") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":syn-v3_0_6.license" ]
-}
-
-license("synstructure-v0_13_2.license") {
-  public_package_name = "synstructure"
-  license_files =
-      [ "//third_party/rust_crates/vendor/synstructure-0.13.2/LICENSE" ]
-}
-
-rustc_library("synstructure-v0_13_2") {
-  crate_name = "synstructure"
-  source_root =
-      "//third_party/rust_crates/vendor/synstructure-0.13.2/src/lib.rs"
-  output_name = "synstructure-1e1e433f12110f5f"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro2-v1_0_107" ]
-  deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=1e1e433f12110f5f",
-    "-Cextra-filename=-1e1e433f12110f5f",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"proc-macro\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":synstructure-v0_13_2.license" ]
 }
 
 license("synstructure-v0_14_0.license") {
@@ -27048,7 +27011,7 @@ rustc_library("yoke-v0_8_3") {
 
   deps = []
   deps += [ ":stable_deref_trait-v1_2_1" ]
-  deps += [ ":yoke-derive-v0_8_2($host_toolchain)" ]
+  deps += [ ":yoke-derive-v0_8_4($host_toolchain)" ]
   deps += [ ":zerofrom-v0_1_8" ]
 
   rustenv = []
@@ -27066,16 +27029,16 @@ rustc_library("yoke-v0_8_3") {
   applicable_licenses = [ ":yoke-v0_8_3.license" ]
 }
 
-license("yoke-derive-v0_8_2.license") {
+license("yoke-derive-v0_8_4.license") {
   public_package_name = "yoke_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/yoke-derive-0.8.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/yoke-derive-0.8.4/LICENSE" ]
 }
 
-rustc_macro("yoke-derive-v0_8_2") {
+rustc_macro("yoke-derive-v0_8_4") {
   crate_name = "yoke_derive"
-  source_root = "//third_party/rust_crates/vendor/yoke-derive-0.8.2/src/lib.rs"
-  output_name = "yoke_derive-4f3ebe8567bab5b3"
+  source_root = "//third_party/rust_crates/vendor/yoke-derive-0.8.4/src/lib.rs"
+  output_name = "yoke_derive-74ea2afac93ee068"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -27084,20 +27047,20 @@ rustc_macro("yoke-derive-v0_8_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
-  deps += [ ":synstructure-v0_13_2" ]
+  deps += [ ":syn-v3_0_6" ]
+  deps += [ ":synstructure-v0_14_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4f3ebe8567bab5b3",
-    "-Cextra-filename=-4f3ebe8567bab5b3",
+    "-Cmetadata=74ea2afac93ee068",
+    "-Cextra-filename=-74ea2afac93ee068",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":yoke-derive-v0_8_2.license" ]
+  applicable_licenses = [ ":yoke-derive-v0_8_4.license" ]
 }
 
 license("zerocopy-v0_8_61.license") {
