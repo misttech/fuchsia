@@ -14,6 +14,7 @@ if (is_host) {
       ":pstree_lib",
       ":python_subprocess_lib",
       ":signal_utils_lib",
+      ":top_build_wrap_lib",
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
       "//build/bazel/scripts:bazel_invocation",
@@ -66,6 +67,11 @@ if (is_host) {
       ":pstree_lib",
       "//build/python/modules/serialization",
     ]
+  }
+
+  python_library("top_build_wrap_lib") {
+    sources = [ "top_build_wrap.py" ]
+    library_deps = [ ":python_subprocess_lib" ]
   }
 
   python_library("ninjatrace2json_lib") {
@@ -143,6 +149,11 @@ if (is_host) {
     ]
   }
 
+  python_build_time_tests("top_build_wrap_test") {
+    tests = [ "top_build_wrap_test.py" ]
+    deps = [ ":top_build_wrap_lib" ]
+  }
+
   python_build_time_tests("ninjatrace2json_test") {
     tests = [ "ninjatrace2json_test.py" ]
     deps = [ ":ninjatrace2json_lib" ]
@@ -162,5 +173,6 @@ group("tests") {
     ":python_subprocess_test($host_toolchain)",
     ":service_profile_test($host_toolchain)",
     ":signal_utils_test($host_toolchain)",
+    ":top_build_wrap_test($host_toolchain)",
   ]
 }

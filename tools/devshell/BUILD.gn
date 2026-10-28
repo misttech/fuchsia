@@ -190,6 +190,7 @@ host_script_test_data("fx_bash_tests") {
         # manual file dependency tracking.
         "//build/scripts/service_profile.py",
         "//build/scripts/top_build_wrap.sh",
+        "//build/scripts/top_build_wrap.py",
         "//build/tui/build-tui-wrap.sh",
 
         # Python modules directly imported by main_build.py

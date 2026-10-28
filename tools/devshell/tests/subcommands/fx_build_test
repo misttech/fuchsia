@@ -22,6 +22,7 @@ BT_FILE_DEPS=(
     # TODO(b/567721959): Migrate devshell build tests to Python to avoid manual file dependency tracking.
     "build/scripts/service_profile.py"
     "build/scripts/top_build_wrap.sh"
+    "build/scripts/top_build_wrap.py"
     "build/rbe/profiles/default.json"
     "build/resultstore/profiles/default.json"
 

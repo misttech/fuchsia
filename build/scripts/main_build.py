@@ -289,7 +289,7 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
     rbe_metadata: JSONObject = {}
     # LINT.IfChange(reproxy_logs_dir)
     reproxy_log_dir = log_dir / "reproxy_logs"
-    # LINT.ThenChange(//build/scripts/top_build_wrap.sh:reproxy_logs_dir)
+    # LINT.ThenChange(//build/scripts/top_build_wrap.py:reproxy_logs_dir)
     if not reproxy_log_dir.exists():
         return rbe_metadata
 
@@ -353,7 +353,7 @@ def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
     resultstore_metadata: JSONObject = {}
     # LINT.IfChange(rsproxy_logs_dir)
     rsproxy_log_dir = log_dir / "rsproxy_logs"
-    # LINT.ThenChange(//build/scripts/top_build_wrap.sh:rsproxy_logs_dir)
+    # LINT.ThenChange(//build/scripts/top_build_wrap.py:rsproxy_logs_dir)
     if not rsproxy_log_dir.exists():
         return resultstore_metadata
 
@@ -1441,7 +1441,7 @@ class BuildInvocation(object):
 
         if build_profile:
             metadata["build_profile"] = build_profile
-        # LINT.ThenChange(//build/scripts/top_build_wrap.sh:build_profile_filenames)
+        # LINT.ThenChange(//build/scripts/top_build_wrap.py:build_profile_filenames)
 
         rbe_metadata = _collect_rbe_metadata(log_dir)
         if rbe_metadata:
@@ -1625,8 +1625,15 @@ class BuildInvocation(object):
                 yield str(cfg_path)
 
         # Auth type handling
-        yield "--auth-type"
-        yield context.rbe_auth_type
+        if context.rbe_enabled and context.rbe_auth_type:
+            yield "--rbe-auth-type"
+            yield context.rbe_auth_type
+        if (
+            context.config.resultstore != "none"
+            and context.resultstore_auth_type
+        ):
+            yield "--resultstore-auth-type"
+            yield context.resultstore_auth_type
         # Only pass --use-machine-credentials if ResultStore is disabled or also using machine auth,
         # avoiding overriding ResultStore's auth_type: none in fuchsia-rsproxy-wrap.sh.
         if context.rbe_auth_type == "machine" and (
