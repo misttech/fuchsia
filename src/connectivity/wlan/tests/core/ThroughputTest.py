@@ -165,6 +165,7 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ssid=ssid,
             password=password,
             security=test.security_mode.to_fidl_wlan_internal(),
+            channels=[test.channel],
         )
 
         if self.openwrt_ap is None:

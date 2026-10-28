@@ -100,7 +100,12 @@ class SARSettingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ).unwrap()
 
         # Connect to the AP
-        await iface.scan_and_connect(ssid=ssid)
+        target_channel = (
+            DEFAULT_2G_CHANNEL.number
+            if self.openwrt_ap
+            else AP_DEFAULT_CHANNEL_2G
+        )
+        await iface.scan_and_connect(ssid=ssid, channels=[target_channel])
 
         # confirm the SAR scenario is still set
         get_sar_resp = (

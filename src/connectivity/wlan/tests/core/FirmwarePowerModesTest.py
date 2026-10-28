@@ -99,7 +99,12 @@ class FirmwarePowerModesTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ps_resp.status == 0
         ), f"SetPowerSaveMode failed with status {ps_resp.status}"
 
-        await iface.scan_and_connect(ssid=ssid)
+        target_channel = (
+            DEFAULT_2G_CHANNEL.number
+            if self.openwrt_ap
+            else AP_DEFAULT_CHANNEL_2G
+        )
+        await iface.scan_and_connect(ssid=ssid, channels=[target_channel])
 
         netstack_iface = await self.dut.netstack.wait_for_interface(
             PortClass.WLAN_CLIENT

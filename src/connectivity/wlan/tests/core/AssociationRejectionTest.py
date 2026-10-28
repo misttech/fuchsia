@@ -182,7 +182,12 @@ class AssociationRejectionTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         logger.info(
             f"Scanning for {ssid} and connecting, expecting AP to reject association"
         )
-        scan_results = await iface.passive_scan()
+        target_channel = (
+            DEFAULT_2G_CHANNEL.number
+            if self.openwrt_ap
+            else AP_DEFAULT_CHANNEL_2G
+        )
+        scan_results = await iface.passive_scan(channels=[target_channel])
         asserts.assert_in(
             ssid,
             scan_results,

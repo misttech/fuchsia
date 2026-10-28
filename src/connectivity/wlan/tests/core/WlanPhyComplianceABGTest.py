@@ -296,6 +296,7 @@ class WlanPhyComplianceABGTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ssid=target_ssid,
                     password=target_pwd,
                     security=target_security,
+                    channels=[target_channel],
                 )
                 break
             except HoneydewWlanError:

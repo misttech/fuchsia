@@ -258,14 +258,19 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         # find the network in its scan results.
         associate_counter = 0
         associate_max_attempts = 3
+        target_channel = (
+            band.default_channel
+            if self.openwrt_ap is not None
+            else ConfigMapper.to_hostapd_band(band).default_channel()
+        )
         while associate_counter < associate_max_attempts:
             await iface.disconnect()
 
             if self.openwrt_ap is not None:
-                channel = (
-                    BssChannel(Band.BAND_2G, 1, HeMode(bw=20))
-                    if band == Band.BAND_2G
-                    else BssChannel(Band.BAND_5G, 36, HeMode(bw=80))
+                channel = BssChannel(
+                    band,
+                    target_channel,
+                    HeMode(bw=20 if band == Band.BAND_2G else 80),
                 )
                 config = AccessPointConfig(
                     radios=[
@@ -293,9 +298,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         iface_wlan_2g=self.access_point.wlan_2g,
                         iface_wlan_5g=self.access_point.wlan_5g,
                         profile_name="whirlwind",
-                        channel=ConfigMapper.to_hostapd_band(
-                            band
-                        ).default_channel(),
+                        channel=target_channel,
                         ssid=ssid,
                         security=legacy_security,
                     ),
@@ -308,6 +311,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     ssid=ssid,
                     password=password,
                     security=fidl_sec,
+                    channels=[target_channel],
                 )
                 break
             except HoneydewWlanError as e:
@@ -334,6 +338,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             ssid=ssid,
             security=security,
             password=password,
+            channel=target_channel,
             reverse=False,
         )
         if self.reverse_rvr_after_forward:
@@ -346,6 +351,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=ssid,
                 security=security,
                 password=password,
+                channel=target_channel,
                 reverse=True,
             )
 
@@ -361,6 +367,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid: str,
         security: Security,
         password: str | None,
+        channel: int,
         reverse: bool,
     ) -> list[RateByRange]:
         """The loop that goes through each attenuation level and runs the iperf
@@ -402,6 +409,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 ssid=ssid,
                 security=security,
                 password=password,
+                channel=channel,
                 reverse=reverse,
             )
             logger.info(
@@ -422,6 +430,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid: str,
         security: Security,
         password: str | None,
+        channel: int,
         reverse: bool,
     ) -> float:
         status = await iface.status()
@@ -438,6 +447,7 @@ class WlanRvrTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         ssid=ssid,
                         password=password,
                         security=security.to_fidl_wlan_internal(),
+                        channels=[channel],
                     )
                     logger.info("Successfully associated.")
                     try:
