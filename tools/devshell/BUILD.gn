@@ -189,8 +189,6 @@ host_script_test_data("fx_bash_tests") {
         # TODO(b/567721959): Migrate devshell build tests to Python to avoid
         # manual file dependency tracking.
         "//build/scripts/service_profile.py",
-        "//build/scripts/top_build_wrap.sh",
-        "//build/scripts/top_build_wrap.py",
         "//build/tui/build-tui-wrap.sh",
 
         # Python modules directly imported by main_build.py
@@ -207,6 +205,7 @@ host_script_test_data("fx_bash_tests") {
         "//build/scripts/pstree.py",
         "//build/scripts/python_subprocess.py",
         "//build/scripts/signal_utils.py",
+        "//build/scripts/top_build_wrap.py",
 
         # LINT.ThenChange(//build/scripts/main_build.py:main_build_python_imports,
         # //tools/devshell/tests/subcommands/fx_build_test:main_build_python_imports)

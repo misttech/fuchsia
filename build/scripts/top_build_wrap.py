@@ -42,23 +42,17 @@ _TUI_WRAPPER: pathlib.Path = pathlib.Path("build/tui/build-tui-wrap.sh")
 _BUILD_LOGS_DIR: str = "_build_logs"
 _TUI_LOGS_DIR: str = "tui_logs"
 
-# LINT.IfChange(build_profile_filenames)
 _BUILD_PROFILE_DIR: str = "build_profile"
 _SYSTEM_PROFILE_JSON: str = "system_profile.json"
 _HARDWARE_PROFILE_JSON: str = "hardware_profile.json"
 _HARDWARE_PROFILE_CACHE_JSON: str = "hardware_profile.cache.json"
-# LINT.ThenChange(//build/scripts/main_build.py:build_profile_filenames)
 
-# LINT.IfChange(reproxy_logs_dir)
 _REPROXY_LOGS_DIR: str = "reproxy_logs"
-# LINT.ThenChange(//build/scripts/main_build.py:reproxy_logs_dir)
 _REPROXY_TMPDIRS_DIR: str = ".reproxy_tmpdirs"
 _RBE_METRICS_TXT: str = "rbe_metrics.txt"
 _REPROXY_RRPL: str = "reproxy.rrpl"
 
-# LINT.IfChange(rsproxy_logs_dir)
 _RSPROXY_LOGS_DIR: str = "rsproxy_logs"
-# LINT.ThenChange(//build/scripts/main_build.py:rsproxy_logs_dir)
 
 
 def msg(text: str, file: TextIO = sys.stderr) -> None:

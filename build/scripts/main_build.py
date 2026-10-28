@@ -49,6 +49,7 @@ from build.scripts import (
     pstree,
     python_subprocess,
     signal_utils,
+    top_build_wrap,
 )
 
 # LINT.ThenChange(//tools/devshell/BUILD.gn:main_build_python_imports, //tools/devshell/tests/subcommands/fx_build_test:main_build_python_imports)
@@ -275,11 +276,11 @@ def has_loas() -> bool:
     return check_shell_command("gcert") and check_shell_command("gcertstatus")
 
 
-def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
-    """Scans the active reproxy logs directory for diagnostic files and CAS logs.
+def _collect_rbe_metadata(reproxy_log_dir: pathlib.Path) -> JSONObject:
+    """Scans the reproxy logs directory for diagnostic files and CAS logs.
 
     Args:
-        log_dir: Path to the active build invocation's log directory.
+        reproxy_log_dir: Path to the reproxy log directory.
 
     Returns:
         A dictionary containing paths to the reproxy log directory, diagnostic
@@ -287,9 +288,6 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
         and summarized metrics.
     """
     rbe_metadata: JSONObject = {}
-    # LINT.IfChange(reproxy_logs_dir)
-    reproxy_log_dir = log_dir / "reproxy_logs"
-    # LINT.ThenChange(//build/scripts/top_build_wrap.py:reproxy_logs_dir)
     if not reproxy_log_dir.exists():
         return rbe_metadata
 
@@ -336,8 +334,8 @@ def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
     return rbe_metadata
 
 
-def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
-    """Scans the active build invocation's log directory for rsproxy diagnostic logs.
+def _collect_resultstore_metadata(rsproxy_log_dir: pathlib.Path) -> JSONObject:
+    """Scans the rsproxy log directory for diagnostic logs.
 
     Collects direct top-level rsproxy logs as well as recursively discovered sub-build
     rsproxy logs. Note: Sub-build log isolation assumes that sub-build directory basenames
@@ -345,15 +343,12 @@ def _collect_resultstore_metadata(log_dir: pathlib.Path) -> JSONObject:
     build/resultstore/fuchsia-rsproxy-wrap.sh).
 
     Args:
-        log_dir: Path to the active build invocation's log directory.
+        rsproxy_log_dir: Path to the rsproxy log directory.
 
     Returns:
         A dictionary containing paths to rsproxy diagnostic log files.
     """
     resultstore_metadata: JSONObject = {}
-    # LINT.IfChange(rsproxy_logs_dir)
-    rsproxy_log_dir = log_dir / "rsproxy_logs"
-    # LINT.ThenChange(//build/scripts/top_build_wrap.py:rsproxy_logs_dir)
     if not rsproxy_log_dir.exists():
         return resultstore_metadata
 
@@ -1215,10 +1210,6 @@ class FuchsiaBuildContext(object):
         return self.source_dir / "build/auth/gcloud_creds.py"
 
     @property
-    def top_build_wrapper(self) -> pathlib.Path:
-        return self.source_dir / "build/scripts/top_build_wrap.sh"
-
-    @property
     def build_timeout_script(self) -> pathlib.Path:
         """Path to build_timeout.py wrapper script."""
         return self.source_dir / BUILD_TIMEOUT_SCRIPT
@@ -1426,30 +1417,26 @@ class BuildInvocation(object):
         if gn_trace:
             metadata["gn_trace"] = gn_trace
 
-        # LINT.IfChange(build_profile_filenames)
-        profile_dir = log_dir / "build_profile"
-        system_profile_path = profile_dir / "system_profile.json"
-        hardware_profile_path = profile_dir / "hardware_profile.json"
-
         build_profile: JSONObject = {}
-        if system_profile_path.exists():
-            build_profile["system_profile"] = str(system_profile_path.resolve())
-        if hardware_profile_path.exists():
-            build_profile["hardware_profile"] = str(
-                hardware_profile_path.resolve()
-            )
+        if self.wrap_context.profile:
+            for key, path in self.wrap_context.profile.artifacts.items():
+                if path.exists():
+                    build_profile[key] = str(path.resolve())
 
         if build_profile:
             metadata["build_profile"] = build_profile
-        # LINT.ThenChange(//build/scripts/top_build_wrap.py:build_profile_filenames)
 
-        rbe_metadata = _collect_rbe_metadata(log_dir)
-        if rbe_metadata:
-            metadata["rbe"] = rbe_metadata
+        if self.wrap_context.rbe:
+            rbe_metadata = _collect_rbe_metadata(self.wrap_context.rbe.log_dir)
+            if rbe_metadata:
+                metadata["rbe"] = rbe_metadata
 
-        resultstore_metadata = _collect_resultstore_metadata(log_dir)
-        if resultstore_metadata:
-            metadata["resultstore"] = resultstore_metadata
+        if self.wrap_context.resultstore:
+            resultstore_metadata = _collect_resultstore_metadata(
+                self.wrap_context.resultstore.log_dir
+            )
+            if resultstore_metadata:
+                metadata["resultstore"] = resultstore_metadata
 
         bazel_metadata = _collect_bazel_metadata(log_dir)
         if bazel_metadata:
@@ -1605,61 +1592,52 @@ class BuildInvocation(object):
         """The directory where timeout diagnostics and process snapshots are recorded."""
         return self.log_dir / TIMEOUT_LOGS_DIR
 
-    def top_build_command_prefix(self) -> Iterable[str]:
-        """Construct the prefix command for the top-level wrapper."""
+    def top_build_wrap_config(self) -> top_build_wrap.Config:
+        """Construct the configuration for the top-level build wrappers."""
         context = self.context
-        # top_build_wrapper is a wrapper orchestrator whose purpose is to
-        # auto-start/stop processes around the build.
-        yield str(context.top_build_wrapper)
-
-        if context.config.dry_run:
-            yield "--dry-run"
-
-        if context.config.tui:
-            yield "--tui"
-
-        if context.rbe_enabled:
-            yield "--rbe"
-            for cfg_path in context.get_reproxy_configs():
-                yield "--reproxy-cfg"
-                yield str(cfg_path)
-
-        # Auth type handling
-        if context.rbe_enabled and context.rbe_auth_type:
-            yield "--rbe-auth-type"
-            yield context.rbe_auth_type
-        if (
-            context.config.resultstore != "none"
-            and context.resultstore_auth_type
-        ):
-            yield "--resultstore-auth-type"
-            yield context.resultstore_auth_type
-        # Only pass --use-machine-credentials if ResultStore is disabled or also using machine auth,
-        # avoiding overriding ResultStore's auth_type: none in fuchsia-rsproxy-wrap.sh.
-        if context.rbe_auth_type == "machine" and (
-            context.config.resultstore == "none"
-            or context.resultstore_auth_type == "machine"
-        ):
-            yield "--use-machine-credentials"
-
-        # Log directory setup
-        yield "--build-dir"
-        yield str(context.build_dir)
-        yield "--log-dir"
-        yield str(self.log_dir)
-
+        pre_build_uploads: list[pathlib.Path] = []
         if context.config.resultstore in ("all", "ninja"):
-            yield "--resultstore"
             args_gn = context.args_gn
             if exists(args_gn):
-                yield "--pre-build-uploads"
-                yield str(args_gn)
+                pre_build_uploads.append(args_gn)
 
-        if context.config.profile:
-            yield "--profile"
+        use_machine_credentials = context.rbe_auth_type == "machine" and (
+            context.config.resultstore == "none"
+            or context.resultstore_auth_type == "machine"
+        )
 
-        if context.config.verbose:
-            yield "--verbose"
+        return top_build_wrap.Config(
+            build_dir=context.build_dir,
+            log_dir=self.log_dir,
+            rbe_auth_type=context.rbe_auth_type,
+            resultstore_auth_type=context.resultstore_auth_type,
+            use_machine_credentials=use_machine_credentials,
+            collect_system_profile=context.config.profile,
+            needs_reproxy_rbe=context.rbe_enabled,
+            reproxy_cfgs=context.get_reproxy_configs(),
+            enable_resultstore=context.config.resultstore in ("all", "ninja"),
+            pre_build_uploads=pre_build_uploads,
+            tui=context.config.tui,
+            verbose=context.config.verbose,
+            dry_run=context.config.dry_run,
+        )
+
+    @functools.cached_property
+    def wrap_context(self) -> top_build_wrap.WrapContext:
+        """The WrapContext for orchestrating top-level build wrappers."""
+        config = self.top_build_wrap_config()
+        return top_build_wrap.WrapContext(
+            config, source_dir=self.context.source_dir
+        )
+
+    def top_build_command_prefix(
+        self,
+        post_build_uploads: Sequence[pathlib.Path] = (),
+    ) -> list[str]:
+        """Construct the prefix command for the top-level wrapper."""
+        return self.wrap_context.command_prefix(
+            extra_post_build_uploads=post_build_uploads
+        )
 
     def timeout_command_prefix(self) -> Iterable[str]:
         """Constructs the build_timeout wrapper prefix.
@@ -1710,7 +1688,7 @@ class BuildInvocation(object):
         context = self.context
 
         # For non-build commands (e.g. 'bazel query' or 'bazel info'), we bypass
-        # top_build_wrap.sh completely since no remote execution (reproxy) or
+        # top_build_wrap.py completely since no remote execution (reproxy) or
         # ResultStore (rsproxy) background wrappers/daemons are required.
         if not is_build:
             return BuildCommandExecution(
@@ -1721,9 +1699,7 @@ class BuildInvocation(object):
                 preflight_actions=preflight_actions,
             )
 
-        top_cmd = list(self.top_build_command_prefix())
-        resultstore_post_build_uploads = []
-
+        resultstore_post_build_uploads: list[pathlib.Path] = []
         if context.config.resultstore in ("all", "ninja"):
             if command_type == "ninja":
                 ninja_log_dir = self.log_dir / "ninja_logs"
@@ -1736,10 +1712,8 @@ class BuildInvocation(object):
                     ]
                 )
 
-        top_cmd.extend(
-            arg
-            for f in resultstore_post_build_uploads
-            for arg in ("--post-build-uploads", str(f))
+        top_cmd = self.top_build_command_prefix(
+            post_build_uploads=resultstore_post_build_uploads
         )
 
         # Prepare Ninja-specific options
@@ -1759,7 +1733,12 @@ class BuildInvocation(object):
         if fint_cmd:
             build_command = fint_cmd + list(build_command)
 
-        full_cmd = top_cmd + ["--"] + list(build_command)
+        # Note: Every wrapper layer in top_cmd terminates with '--' (e.g.
+        # [tui_wrap, ..., '--', reproxy_wrap, ..., '--']), so build_command is
+        # naturally protected without needing an artificial '--' between top_cmd
+        # and build_command. If no wrappers are enabled, top_cmd is empty and
+        # build_command executes directly without a preceding '--'.
+        full_cmd = top_cmd + list(build_command)
 
         if is_build and context.config.timeout:
             mkdir(self.timeout_log_dir)
@@ -1859,23 +1838,22 @@ class BuildCommandExecution(object):
                 f"--------------------------------------------------"
             )
             msg(auth_summary)
-        # Note: when config.dry_run is set, we still execute the command,
-        # but we have forwarded --dry-run to the top_build_wrapper, which
-        # will skip the actual build execution. This allows for high-fidelity
-        # verification of the entire wrapper orchestration stack.
+
+        if config.dry_run:
+            print(" ".join(self.full_command))
+            return BuildResult(return_code=0)
 
         # Run preflight actions here so they execute under BuildLock (acquired in
         # run()) and cannot race a concurrent build of the same directory.
-        if not config.dry_run:
-            preflight_failed = False
-            for action in self.preflight_actions:
-                status = action()
-                if status == PreflightStatus.FATAL:
-                    return BuildResult(return_code=1)
-                if status == PreflightStatus.ERROR:
-                    preflight_failed = True
-            if preflight_failed:
+        preflight_failed = False
+        for action in self.preflight_actions:
+            status = action()
+            if status == PreflightStatus.FATAL:
                 return BuildResult(return_code=1)
+            if status == PreflightStatus.ERROR:
+                preflight_failed = True
+        if preflight_failed:
+            return BuildResult(return_code=1)
 
         # If the TUI is enabled, we MUST NOT use a separate process group,
         # otherwise the TUI will be suspended when it tries to interact with

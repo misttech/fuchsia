@@ -3,12 +3,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import pathlib
 import sys
-from pathlib import Path
 
 # Dynamically resolve and insert the Fuchsia root directory into sys.path
 # to support standalone script package imports (e.g. from build.rbe).
-_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
+_FUCHSIA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 if str(_FUCHSIA_DIR) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_DIR))
 
@@ -19,11 +19,9 @@ import getpass
 import io
 import json
 import os
-import pathlib
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
@@ -39,7 +37,11 @@ if str(_FUCHSIA_ROOT) not in sys.path:
 from build.auth import gcloud
 from build.rbe import build_summary, casfs, rbe_profile, rbe_settings
 from build.resultstore import rs_profile
-from build.scripts import main_build, python_subprocess, signal_utils
+from build.scripts import (
+    main_build,
+    python_subprocess,
+    signal_utils,
+)
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
 
@@ -205,10 +207,6 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         self.assertEqual(
             context.select_auth_script,
             source_dir / "build/auth/select_auth_method.py",
-        )
-        self.assertEqual(
-            context.top_build_wrapper,
-            source_dir / "build/scripts/top_build_wrap.sh",
         )
         self.assertEqual(context.args_gn, build_dir / "args.gn")
         self.assertEqual(context.args_json, build_dir / "args.json")
@@ -1790,11 +1788,8 @@ class BuildCommandExecutionTest(MainBuildTestBase):
                 )
 
     @mock.patch.object(main_build, "BuildLock")
-    @mock.patch.object(subprocess, "Popen")
     @mock.patch.dict(os.environ, {"FX_BUILD_QUIET": "0"})
-    def test_run_dry_run(
-        self, mock_popen: mock.Mock, mock_lock: mock.Mock
-    ) -> None:
+    def test_run_dry_run(self, mock_lock: mock.Mock) -> None:
         config = main_build.FuchsiaBuildConfig(
             rbe=False,
             resultstore="none",
@@ -1834,16 +1829,14 @@ class BuildCommandExecutionTest(MainBuildTestBase):
             cleanup_files=[],
         )
 
-        mock_process = mock.Mock()
-        mock_process.pid = 5678
-        mock_process.wait.return_value = 0
-        mock_popen.return_value = mock_process
-
-        result = exec_info.run()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            result = exec_info.run()
         self.assertEqual(result.return_code, 0)
-        # Even in dry_run mode, we should call the subprocess because
-        # we forwarded --dry-run to the wrapper.
-        mock_popen.assert_called_once()
+        self.assertEqual(
+            out.getvalue().splitlines(),
+            ["[main_build.py] Running: VAR=VAL cmd arg", "cmd arg"],
+        )
         mock_lock.assert_called_once()
 
     @mock.patch.object(signal_utils, "SignalManagedProcess")
@@ -1887,10 +1880,7 @@ class BuildCommandExecutionTest(MainBuildTestBase):
             )
             self.assertEqual(calls, expected_calls)
 
-    @mock.patch.object(signal_utils, "SignalManagedProcess")
-    def test_run_dry_run_skips_preflight_actions(
-        self, mock_managed: mock.Mock
-    ) -> None:
+    def test_run_dry_run_skips_preflight_actions(self) -> None:
         context = self.create_context(dry_run=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -1902,12 +1892,16 @@ class BuildCommandExecutionTest(MainBuildTestBase):
             invocation=invocation,
             preflight_actions=[action],
         )
-        mock_managed.return_value.run.return_value = 0
 
-        result = exec_info._run_without_locking()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            result = exec_info._run_without_locking()
         self.assertEqual(result.return_code, 0)
         action.assert_not_called()
-        mock_managed.return_value.run.assert_called_once()
+        self.assertEqual(
+            out.getvalue().splitlines(),
+            ["[main_build.py] Running: VAR=VAL cmd arg", "cmd arg"],
+        )
 
 
 class BuildLockTest(unittest.TestCase):
@@ -2067,20 +2061,18 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         context = self.create_context(rbe=False, resultstore="none")
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = list(invocation.top_build_command_prefix())
-            self.assertIn(
-                "/tmp/fuchsia/build/scripts/top_build_wrap.sh", prefix[0]
-            )
-            self.assertIn("--build-dir", prefix)
-            self.assertNotIn("--rbe", prefix)
-            self.assertNotIn("--dry-run", prefix)
+            config = invocation.top_build_wrap_config()
+            self.assertFalse(config.needs_reproxy_rbe)
+            self.assertFalse(config.enable_resultstore)
+            self.assertFalse(config.tui)
+            self.assertEqual(invocation.top_build_command_prefix(), [])
 
     def test_dry_run_forwarding(self) -> None:
         context = self.create_context(dry_run=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = list(invocation.top_build_command_prefix())
-            self.assertIn("--dry-run", prefix)
+            config = invocation.top_build_wrap_config()
+            self.assertTrue(config.dry_run)
 
     def test_rbe_resultstore(self) -> None:
         context = self.create_context(rbe=True, resultstore="all")
@@ -2091,17 +2083,25 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         ):
             with self.mock_invocation_context():
                 invocation = main_build.BuildInvocation(context)
-                prefix = list(invocation.top_build_command_prefix())
-                self.assertIn("--rbe", prefix)
-                self.assertIn("--reproxy-cfg", prefix)
-                self.assertIn("--resultstore", prefix)
+                prefix = invocation.top_build_command_prefix()
+                self.assertIsNotNone(invocation.wrap_context.rbe)
+                self.assertIsNotNone(invocation.wrap_context.resultstore)
+                assert invocation.wrap_context.rbe is not None
+                assert invocation.wrap_context.resultstore is not None
+                self.assertIn(invocation.wrap_context.rbe.prefix[0], prefix)
+                self.assertIn(
+                    invocation.wrap_context.resultstore.prefix[0],
+                    prefix,
+                )
 
     def test_tui(self) -> None:
         context = self.create_context(tui=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = list(invocation.top_build_command_prefix())
-            self.assertIn("--tui", prefix)
+            prefix = invocation.top_build_command_prefix()
+            self.assertIsNotNone(invocation.wrap_context.tui)
+            assert invocation.wrap_context.tui is not None
+            self.assertIn(invocation.wrap_context.tui.prefix[0], prefix)
 
     def test_use_machine_credentials_omitted_when_resultstore_is_none(
         self,
@@ -2115,7 +2115,9 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         ):
             with self.mock_invocation_context():
                 invocation = main_build.BuildInvocation(context)
-                prefix = list(invocation.top_build_command_prefix())
+                config = invocation.top_build_wrap_config()
+                self.assertFalse(config.use_machine_credentials)
+                prefix = invocation.top_build_command_prefix()
                 self.assertNotIn("--use-machine-credentials", prefix)
 
     def test_use_machine_credentials_passed_when_both_machine(self) -> None:
@@ -2128,7 +2130,9 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         ):
             with self.mock_invocation_context():
                 invocation = main_build.BuildInvocation(context)
-                prefix = list(invocation.top_build_command_prefix())
+                config = invocation.top_build_wrap_config()
+                self.assertTrue(config.use_machine_credentials)
+                prefix = invocation.top_build_command_prefix()
                 self.assertIn("--use-machine-credentials", prefix)
 
 
@@ -2196,9 +2200,8 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                     )
                     self.assertEqual(
                         exec_info.full_command[0],
-                        str(context.top_build_wrapper),
+                        "ninja",
                     )
-                    self.assertIn("--", exec_info.full_command)
                     self.assertEqual(exec_info.env["FX_BUILD_UUID"], "uuid-123")
 
     def test_new_build_command_execution_ninja_resultstore(self) -> None:
@@ -2209,7 +2212,11 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                 exec_info = invocation.new_build_command_execution(
                     "ninja", ["ninja", "target"]
                 )
-                self.assertIn("--post-build-uploads", exec_info.full_command)
+                self.assertIn(
+                    invocation.wrap_context.resultstore.prefix[0],
+                    exec_info.full_command,
+                )
+                self.assertIn("--post_build_uploads", exec_info.full_command)
                 metrics_path = invocation.ninja_action_metrics_path
                 self.assertIn(str(metrics_path), exec_info.full_command)
 
@@ -2272,9 +2279,7 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
 
                     self.assertIn("--", full_cmd)
                     sep_idx = full_cmd.index("--")
-                    self.assertEqual(
-                        full_cmd[sep_idx + 1], str(context.top_build_wrapper)
-                    )
+                    self.assertEqual(full_cmd[sep_idx + 1], "ninja")
                     self.assertEqual(full_cmd[-1], "target")
 
     def test_new_build_command_execution_non_build_ignores_timeout(
@@ -2311,9 +2316,6 @@ class PrepareFunctionsTest(MainBuildTestBase):
             )
             self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
             self.assertFalse(exec_info.is_build)
-            self.assertNotIn(
-                str(context.top_build_wrapper), exec_info.full_command
-            )
             self.assertEqual(exec_info.full_command, ["bazel", "info"])
 
     def test_ninja_non_build(self) -> None:
@@ -2324,9 +2326,6 @@ class PrepareFunctionsTest(MainBuildTestBase):
             )
             self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
             self.assertFalse(exec_info.is_build)
-            self.assertNotIn(
-                str(context.top_build_wrapper), exec_info.full_command
-            )
             self.assertIn("--help", exec_info.full_command)
             # Non-build commands never probe the persistent server.
             self.assertEqual(exec_info.preflight_actions, [])
@@ -2347,7 +2346,7 @@ class PrepareFunctionsTest(MainBuildTestBase):
             )
             self.assertEqual(len(exec_info.cleanup_files), 0)
             fint_part = exec_info.full_command[
-                exec_info.full_command.index("--") + 1 :
+                : exec_info.full_command.index("--")
             ]
             self.assertIn("--build-dir", fint_part)
             self.assertIn(str(context.build_dir), fint_part)
@@ -2365,7 +2364,7 @@ class PrepareFunctionsTest(MainBuildTestBase):
             self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
             self.assertEqual(len(exec_info.cleanup_files), 0)
             fint_part = exec_info.full_command[
-                exec_info.full_command.index("--") + 1 :
+                : exec_info.full_command.index("--")
             ]
             self.assertIn("--context", fint_part)
             self.assertIn("/tmp/explicit_context.proto", fint_part)
@@ -3025,7 +3024,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 "summarize_rbe_metrics_from_logdir",
                 return_value=mock_metrics,
             ) as mock_summary:
-                meta = main_build._collect_rbe_metadata(log_dir)
+                meta = main_build._collect_rbe_metadata(reproxy_log_dir)
                 self.assertIn("metrics_summary", meta)
                 self.assertEqual(meta["metrics_summary"], mock_metrics)
                 mock_summary.assert_called_once_with(reproxy_log_dir.resolve())
@@ -3042,7 +3041,7 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
                 "summarize_rbe_metrics_from_logdir",
                 return_value=None,
             ):
-                meta = main_build._collect_rbe_metadata(log_dir)
+                meta = main_build._collect_rbe_metadata(reproxy_log_dir)
                 self.assertNotIn("metrics_summary", meta)
 
     @mock.patch.object(subprocess, "check_output")
@@ -3398,16 +3397,15 @@ class CollectBazelMetadataTest(unittest.TestCase):
 class CollectResultStoreMetadataTest(unittest.TestCase):
     def test_collect_resultstore_metadata_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            log_dir = pathlib.Path(tmpdir)
-            metadata = main_build._collect_resultstore_metadata(log_dir)
+            rsproxy_log_dir = pathlib.Path(tmpdir) / "rsproxy_logs"
+            metadata = main_build._collect_resultstore_metadata(rsproxy_log_dir)
             self.assertEqual(metadata, {})
 
     def test_collect_resultstore_metadata_empty_rsproxy_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            log_dir = pathlib.Path(tmpdir)
-            rsproxy_log_dir = log_dir / "rsproxy_logs"
+            rsproxy_log_dir = pathlib.Path(tmpdir) / "rsproxy_logs"
             main_build.mkdir(rsproxy_log_dir)
-            metadata = main_build._collect_resultstore_metadata(log_dir)
+            metadata = main_build._collect_resultstore_metadata(rsproxy_log_dir)
             self.assertEqual(metadata, {})
 
     def test_collect_resultstore_metadata_with_logs(self) -> None:
@@ -3441,7 +3439,7 @@ class CollectResultStoreMetadataTest(unittest.TestCase):
                 rsproxy_log_dir / "rsproxy.other.log", "unrelated"
             )
 
-            metadata = main_build._collect_resultstore_metadata(log_dir)
+            metadata = main_build._collect_resultstore_metadata(rsproxy_log_dir)
 
             self.assertIn("diagnostic_logs", metadata)
             diagnostic_logs = metadata["diagnostic_logs"]
