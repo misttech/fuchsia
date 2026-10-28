@@ -13,6 +13,7 @@ cc_test_executable("arm_smmu_tests_binary") {
     "device_aspace_test.cc",
     "page_cache_test.cc",
     "smmu_mode_string_tests.cc",
+    "smmu_model_tests.cc",
   ]
 
   # The subset of code being tested on the host
