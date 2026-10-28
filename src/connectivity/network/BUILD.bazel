@@ -4,6 +4,7 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("//build/bazel/config/derived:compilation_modes.bzl", "is_release")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -45,3 +46,21 @@ build_flags(
     ],
 )
 # LINT.ThenChange(//src/connectivity/network/BUILD.gn:performance_critical_rust_crate)
+
+# Network target-side tests defined in Bazel. These are exported to `fx test`
+# and infra builders through //src/connectivity:target_tests.
+test_suite(
+    name = "target_tests",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    tests = [],
+    visibility = ["//src/connectivity:__pkg__"],
+)
+
+# Network host-side tests defined in Bazel. These are exported to `fx test` and
+# infra builders through //src/connectivity:host_tests.
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    tests = [],
+    visibility = ["//src/connectivity:__pkg__"],
+)

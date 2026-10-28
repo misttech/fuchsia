@@ -12,11 +12,12 @@ test_suite(
     tests = [
         "//src/connectivity/bluetooth:target_tests",
         "//src/connectivity/location:target_tests",
+        "//src/connectivity/network:target_tests",
     ],
 )
 
 test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
-    tests = [],
+    tests = ["//src/connectivity/network:host_tests"],
 )
