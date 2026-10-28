@@ -10,5 +10,5 @@ python_library("common") {
     "__init__.py",
     "utils/ies.py",
   ]
-  library_deps = [ "//src/testing/end_to_end/antlion" ]
+  library_deps = []
 }
