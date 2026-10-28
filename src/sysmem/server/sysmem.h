@@ -296,7 +296,11 @@ class Sysmem final : public MemoryAllocator::Owner,
     }
   }
 
-  virtual void OnAllocationFailure() override { LogAllBufferCollections(); }
+  // This is not necessarily rare, and does not necessarily indicate any problem from the user's
+  // point of view, so please do not add time-consuming logging in here. In debug builds it could
+  // be reasonable to log info re. the first few allocation failures or log with a rate limit (and
+  // without any waiting for the log to keep up), but not in release please.
+  virtual void OnAllocationFailure() override {}
   void LogAllBufferCollections();
 
   fidl::ServerBindingGroup<fuchsia_sysmem::Allocator>& v1_allocators() { return v1_allocators_; }

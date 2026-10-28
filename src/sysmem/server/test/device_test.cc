@@ -743,5 +743,32 @@ TEST_F(FakeDdkSysmem, PartialMultiBufferAllocationFailure) {
   heap_loop.Shutdown();
 }
 
+TEST_F(FakeDdkSysmem, OnAllocationFailureDoesNotBlockLoop) {
+  constexpr size_t kCollectionCount = 50;
+  constexpr size_t kMaxAttempts = 50;
+  // With 50 collections, the previous 20ms sleep per collection in LogAllBufferCollections()
+  // blocked the sysmem loop for >= 1000ms. Try up to kMaxAttempts times to observe a duration
+  // well below that threshold so scheduling pauses on shared CI bots cannot cause a flake.
+  constexpr zx::duration kMaxAllowedDuration = zx::msec(500);
+
+  zx::duration last_elapsed = zx::duration::infinite();
+  for (size_t attempt = 0; attempt < kMaxAttempts; ++attempt) {
+    std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollection>> collections;
+    collections.reserve(kCollectionCount);
+    for (size_t i = 0; i < kCollectionCount; ++i) {
+      collections.push_back(AllocateNonSharedCollection());
+    }
+
+    auto start = zx::clock::get_monotonic();
+    device_->RunSyncOnLoop([this]() { device_->OnAllocationFailure(); });
+    last_elapsed = zx::clock::get_monotonic() - start;
+    if (last_elapsed < kMaxAllowedDuration) {
+      return;
+    }
+  }
+
+  EXPECT_LT(last_elapsed, kMaxAllowedDuration);
+}
+
 }  // namespace
 }  // namespace sysmem_service

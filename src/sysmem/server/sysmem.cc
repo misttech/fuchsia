@@ -1238,9 +1238,6 @@ void Sysmem::LogAllBufferCollections() {
   std::sort(sort_by_create_time.begin(), sort_by_create_time.end(), CompareByCreateTime{});
   for (auto* logical_buffer_collection : sort_by_create_time) {
     logical_buffer_collection->LogSummary(indent_tracker);
-    // let output catch up so we don't drop log lines, hopefully; if there were a way to flush/wait
-    // the logger to avoid dropped lines, we could do that instead
-    zx::nanosleep(zx::deadline_after(zx::msec(20)));
   };
 }
 
