@@ -93,8 +93,8 @@ cc_test_executable("exception_broker_unittest_exe") {
   deps = [
     ":test_lib",
     "//sdk/fidl/fuchsia.driver.crash:fuchsia.driver.crash_cpp",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
-    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_hlcpp",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
+    "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_cpp",
     "//sdk/lib/sys/cpp/testing:unit",
     "//src/developer/forensics/exceptions:constants",
     "//src/developer/forensics/exceptions:lib",
@@ -103,6 +103,7 @@ cc_test_executable("exception_broker_unittest_exe") {
     "//src/developer/forensics/testing:gpretty_printers",
     "//src/developer/forensics/testing:gtest_with_syslog_main",
     "//src/developer/forensics/testing:unit_test_fixture",
+    "//src/developer/forensics/testing/stubs:fidl_server",
     "//src/developer/forensics/testing/stubs:wake_lease",
     "//src/lib/fostr/fidl/fuchsia.exception",
     "//src/lib/fxl",
@@ -177,7 +178,7 @@ executable("stub_exception_handler_exe") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fit",
-    "//src/developer/forensics/exceptions/fidl:fuchsia.exception.internal_hlcpp",
+    "//src/developer/forensics/exceptions/fidl:fuchsia.exception.internal_cpp",
   ]
 }
 
