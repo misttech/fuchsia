@@ -32,6 +32,7 @@ idk_cc_source_library_zx(
     # Widely used in GN, so GN visibility stays open via raw_overwrite; Bazel
     # visibility is limited to actual Bazel dependents.
     visibility = [
+        "//src/connectivity/location/gnss:__pkg__",
         "//src/lib/callback:__pkg__",
         "//src/lib/testing/loop_fixture:__pkg__",
         "//src/lib/timekeeper:__pkg__",

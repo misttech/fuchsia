@@ -2,9 +2,59 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/cc:fx_cc_binary.bzl", "fx_cc_binary")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
     ["meta/gnss-service.core-shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "gnss_service_bin"
+fx_cc_binary(
+    name = "bin",
+    srcs = [
+        "gnss_service.cc",
+        "gnss_service.h",
+        "main.cc",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.location.gnss:fuchsia.location.gnss_cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/component/outgoing/cpp",
+        "//sdk/lib/syslog/cpp",
+    ],
+)
+
+fx_cc_binary(
+    name = "unittests",
+    testonly = True,
+    srcs = [
+        "gnss_service.cc",
+        "gnss_service.h",
+        "gnss_unittest.cc",
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.location.gnss:fuchsia.location.gnss_cpp",
+        "//sdk/lib/async-loop:async-loop-default",
+        "//sdk/lib/async-testing",
+        "//sdk/lib/component/outgoing/cpp",
+        "//sdk/lib/syslog/cpp",
+        "//src/lib/fxl/test:gtest_main",
+        "//src/lib/testing/predicates",
+        "//zircon/system/ulib/sync:sync-cpp",
+    ],
+)
+
+fx_unittest_package(
+    name = "gnss-unittests",
+    unit_tests = [":unittests"],
+    visibility = ["//src/connectivity/location:__pkg__"],
 )

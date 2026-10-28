@@ -11,6 +11,7 @@ test_suite(
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
         "//src/connectivity/location/emergency:emergency-tests",
+        "//src/connectivity/location/gnss:gnss-unittests",
         "//src/connectivity/location/regulatory_region:regulatory-region-tests",
     ],
     visibility = ["//src/connectivity:__pkg__"],
