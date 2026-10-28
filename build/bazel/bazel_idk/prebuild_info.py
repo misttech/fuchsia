@@ -11,12 +11,10 @@ import sys
 import typing as T
 from pathlib import Path
 
+from build.bazel.scripts import build_utils
+
 # Assume the script is in //build/bazel/bazel_idk/.
 _CURRENT_DIR = Path(__file__).parent
-_SCRIPT_DIR = _CURRENT_DIR.parent / "scripts"
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-import build_utils
 
 # Location of the file containing the Starlark cquery code to run in this script
 # to locate all test targets.

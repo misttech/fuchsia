@@ -6,13 +6,11 @@
 """Unit-test for generate_repository.py"""
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-from generate_repository import (
+from build.bazel.fuchsia_idk.generate_repository import (
     OutputIdk,
     OutputPackageInfo,
     split_path_to_package_name,
