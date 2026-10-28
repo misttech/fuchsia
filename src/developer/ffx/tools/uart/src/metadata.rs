@@ -329,6 +329,15 @@ fn scan_for_metadata_by_identifier(
 /// Length of a hexadecimal target/connection ID string.
 pub const TARGET_ID_HEX_LEN: usize = 16;
 
+/// Filename prefix shared by all UART metadata and socket files (`ffx_uart_<target_id>.<ext>`).
+pub const UART_FILE_PREFIX: &str = "ffx_uart_";
+
+/// Returns `true` if `s` has the shape of a target ID: exactly [`TARGET_ID_HEX_LEN`]
+/// hexadecimal characters (in either case).
+pub fn is_target_id(s: &str) -> bool {
+    s.len() == TARGET_ID_HEX_LEN && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Resolves a target specifier to an active connection metadata file and record.
 ///
 /// Because users and automation can refer to UART connections in different ways,

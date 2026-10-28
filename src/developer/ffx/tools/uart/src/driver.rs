@@ -66,8 +66,8 @@ pub async fn wait_for_daemon_started(
 }
 
 pub async fn terminate_process(pid: u32) -> Result<()> {
-    if pid <= 1 || pid > i32::MAX as u32 {
-        log::warn!("Refusing to terminate invalid process ID {}.", pid);
+    if pid <= 1 || pid > i32::MAX as u32 || pid == std::process::id() {
+        log::warn!("Refusing to terminate invalid or current process ID {}.", pid);
         return Ok(());
     }
     let nix_pid = Pid::from_raw(pid as i32);

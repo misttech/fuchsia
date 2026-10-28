@@ -43,12 +43,14 @@ if (is_host) {
 
     sources = [
       "src/args.rs",
+      "src/doctor.rs",
       "src/driver.rs",
       "src/lib.rs",
       "src/metadata.rs",
       "src/stream.rs",
       "src/subtools/connect.rs",
       "src/subtools/disconnect.rs",
+      "src/subtools/doctor.rs",
       "src/subtools/list.rs",
       "src/subtools/mod.rs",
       "src/subtools/probe.rs",

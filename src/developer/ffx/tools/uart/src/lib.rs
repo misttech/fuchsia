@@ -9,6 +9,8 @@
 
 /// Command-line argument definitions for the `ffx uart` subcommands.
 pub mod args;
+/// Diagnostic check framework and automated repair for UART connections.
+pub mod doctor;
 /// Process supervision and execution helpers for the `ffx-uart-driver` daemon binary.
 pub mod driver;
 /// Connection metadata resolution and persistence for active UART targets.
@@ -27,6 +29,7 @@ use fho::{FfxTool, FhoEnvironment, Result, user_error};
 use sha2 as _;
 
 pub use args::*;
+pub use doctor::*;
 pub use driver::*;
 pub use metadata::*;
 pub use stream::*;
@@ -64,6 +67,9 @@ impl SubtoolSuite for UartSuite {
             }
             UartSubCommand::Status(cmd) => {
                 Subtool::new(subtools::StatusTool::from_env(env, cmd).await?)
+            }
+            UartSubCommand::Doctor(cmd) => {
+                Subtool::new(subtools::DoctorTool::from_env(env, cmd).await?)
             }
         })
     }
