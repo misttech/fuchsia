@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.1.3",
     deps = [
-        "//third_party/rust_crates/vendor/ptr_meta-0.3.1:ptr_meta",
+        "//third_party/rust_crates/vendor/ptr_meta-0.3.2:ptr_meta",
     ],
 )

@@ -5479,7 +5479,7 @@ rustc_library("bytecheck-v0_8_3") {
 
   deps = []
   deps += [ ":bytecheck_derive-v0_8_3($host_toolchain)" ]
-  deps += [ ":ptr_meta-v0_3_1" ]
+  deps += [ ":ptr_meta-v0_3_2" ]
   deps += [ ":rancor-v0_1_3" ]
   deps += [ ":simdutf8-v0_1_5" ]
 
@@ -17774,29 +17774,29 @@ rustc_library("psl-types-v2_0_11") {
   applicable_licenses = [ ":psl-types-v2_0_11.license" ]
 }
 
-license("ptr_meta-v0_3_1.license") {
+license("ptr_meta-v0_3_2.license") {
   public_package_name = "ptr_meta"
-  license_files = [ "//third_party/rust_crates/vendor/ptr_meta-0.3.1/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/ptr_meta-0.3.2/LICENSE" ]
 }
 
-rustc_library("ptr_meta-v0_3_1") {
+rustc_library("ptr_meta-v0_3_2") {
   crate_name = "ptr_meta"
-  source_root = "//third_party/rust_crates/vendor/ptr_meta-0.3.1/src/lib.rs"
-  output_name = "ptr_meta-fef7bb3749f5ef85"
+  source_root = "//third_party/rust_crates/vendor/ptr_meta-0.3.2/src/lib.rs"
+  output_name = "ptr_meta-a860ce6b711b5d64"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ptr_meta_derive-v0_3_1($host_toolchain)" ]
+  deps += [ ":ptr_meta_derive-v0_3_2($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=fef7bb3749f5ef85",
-    "-Cextra-filename=-fef7bb3749f5ef85",
+    "-Cmetadata=a860ce6b711b5d64",
+    "-Cextra-filename=-a860ce6b711b5d64",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"ptr_meta_derive\"",
     "--cfg=feature=\"std\"",
@@ -17804,20 +17804,20 @@ rustc_library("ptr_meta-v0_3_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ptr_meta-v0_3_1.license" ]
+  applicable_licenses = [ ":ptr_meta-v0_3_2.license" ]
 }
 
-license("ptr_meta_derive-v0_3_1.license") {
+license("ptr_meta_derive-v0_3_2.license") {
   public_package_name = "ptr_meta_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.2/LICENSE" ]
 }
 
-rustc_macro("ptr_meta_derive-v0_3_1") {
+rustc_macro("ptr_meta_derive-v0_3_2") {
   crate_name = "ptr_meta_derive"
   source_root =
-      "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.1/src/lib.rs"
-  output_name = "ptr_meta_derive-b144804457e035c5"
+      "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.2/src/lib.rs"
+  output_name = "ptr_meta_derive-b7cb0c8a80e359d1"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17826,19 +17826,19 @@ rustc_macro("ptr_meta_derive-v0_3_1") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_6" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=b144804457e035c5",
-    "-Cextra-filename=-b144804457e035c5",
+    "-Cmetadata=b7cb0c8a80e359d1",
+    "-Cextra-filename=-b7cb0c8a80e359d1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ptr_meta_derive-v0_3_1.license" ]
+  applicable_licenses = [ ":ptr_meta_derive-v0_3_2.license" ]
 }
 
 license("pulldown-cmark-v0_13_5.license") {
@@ -18077,7 +18077,7 @@ rustc_library("rancor-v0_1_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ptr_meta-v0_3_1" ]
+  deps += [ ":ptr_meta-v0_3_2" ]
 
   rustenv = []
 
@@ -19195,7 +19195,7 @@ rustc_library("rkyv-v0_8_18") {
   deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":indexmap-v2_14_2" ]
   deps += [ ":munge-v0_4_7" ]
-  deps += [ ":ptr_meta-v0_3_1" ]
+  deps += [ ":ptr_meta-v0_3_2" ]
   deps += [ ":rancor-v0_1_3" ]
   deps += [ ":rend-v0_5_4" ]
   deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]

@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "ptr_meta",
     package_url = "https://github.com/rkyv/ptr_meta",
-    package_version = "0.3.1",
+    package_version = "0.3.2",
 )
 
 license(
@@ -57,7 +57,7 @@ rust_library(
     crate_root = "src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.1:ptr_meta_derive",
+        "//third_party/rust_crates/vendor/ptr_meta_derive-0.3.2:ptr_meta_derive",
     ],
     rustc_flags = [
         "--cap-lints=allow",
@@ -77,5 +77,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.3.1",
+    version = "0.3.2",
 )

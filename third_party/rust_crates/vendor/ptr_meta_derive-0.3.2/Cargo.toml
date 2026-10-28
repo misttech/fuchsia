@@ -12,8 +12,8 @@
 [package]
 edition = "2021"
 rust-version = "1.81"
-name = "ptr_meta"
-version = "0.3.1"
+name = "ptr_meta_derive"
+version = "0.3.2"
 authors = ["David Koloski <djkoloski@gmail.com>"]
 build = false
 autolib = false
@@ -21,8 +21,8 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "A radioactive stabilization of the ptr_meta rfc"
-documentation = "https://docs.rs/ptr_meta"
+description = "Proc macros for ptr_meta"
+documentation = "https://docs.rs/ptr_meta_derive"
 readme = "README.md"
 keywords = ["no_std"]
 categories = [
@@ -32,19 +32,29 @@ categories = [
 license = "MIT"
 repository = "https://github.com/rkyv/ptr_meta"
 
-[features]
-default = [
-    "derive",
-    "std",
-]
-derive = ["ptr_meta_derive"]
-std = []
-
 [lib]
-name = "ptr_meta"
+name = "ptr_meta_derive"
 path = "src/lib.rs"
+proc-macro = true
 
-[dependencies.ptr_meta_derive]
-version = "=0.3.1"
-optional = true
+[dependencies.proc-macro2]
+version = "1"
+features = ["proc-macro"]
+default-features = false
+
+[dependencies.quote]
+version = "1"
+features = ["proc-macro"]
+default-features = false
+
+[dependencies.syn]
+version = "3.0"
+features = [
+    "clone-impls",
+    "derive",
+    "full",
+    "parsing",
+    "printing",
+    "proc-macro",
+]
 default-features = false
