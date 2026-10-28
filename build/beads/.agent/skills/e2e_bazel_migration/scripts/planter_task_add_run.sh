@@ -17,6 +17,8 @@
 # --desc into the commit body; footer lines (e.g. `Bug:`,
 # `Bazel-Migration-Target:`) in the last paragraph of --desc become footers.
 # Planter itself adds the `Test:` footers, TAG: and Change-Id.
+# Planter replaces any TAG: line in --desc with its own
+# `TAG: planter planter-<freshness>` footer, so never write one in --desc.
 
 set -euo pipefail
 

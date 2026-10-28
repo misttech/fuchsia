@@ -90,6 +90,33 @@ description: >
   Planter, at go/planter_installation_guide. If the user specifies a different
   guide in the prompt, use that one instead.
 
+* **Planter tag** : The `TAG: planter planter-<freshness>` footer that Planter
+  writes into the commit message of every CL it creates (e.g.,
+  `TAG: planter planter-20261008-633b8b4b94a`). `<freshness>` identifies the
+  Planter machinery that generated the CL. Only Planter knows it.
+
+## Planter Rules
+
+These rules apply to every step of this skill, and to any later work on a
+migration CL (e.g., addressing review comments, fixing CQ failures, rebasing
+or re-uploading).
+
+1. **Preserve the Planter tag. Never invent one.**
+   * Planter generates the commit message of every migration CL. Commit and
+     upload migration CLs with Planter (`scripts/planter_task_add_run.sh`,
+     `planter run --gerrit` or `planter fleet --gerrit`); do not create the
+     commits of new migration CLs yourself.
+   * When you amend a commit message of a migration CL, keep the **Planter
+     tag** exactly as Planter wrote it: copy the line verbatim from the current
+     commit message (`git log -1 --format=%B`) or from the CL on Gerrit. Do not
+     remove it, move it out of the footer block, or change any character of it.
+     It goes right before the `Change-Id:` line.
+   * Never write a `TAG:` line yourself: do not make up a `<freshness>` value,
+     copy one from another CL, or add a `TAG:` line to get past a check. If a
+     migration CL has no **Planter tag**, leave it without one and tell the user
+     that the CL has no **Planter tag** and was probably not generated or
+     uploaded by Planter.
+
 ## End-to-End Bazel Migration
 
 If any step fails, refer to [Error Handling](#error-handling) to handle the

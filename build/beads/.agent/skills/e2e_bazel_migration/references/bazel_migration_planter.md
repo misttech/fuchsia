@@ -6,6 +6,8 @@ Each **migration group** is migrated by one Planter task and uploaded as one CL.
 
 The `<planter>` below is the `planter` binary resolved with `"$(command -v planter || echo "$HOME/.local/bin/planter")"`, because `~/.local/bin` may not be on `PATH`.
 
+Follow the [Planter Rules](../SKILL.md#planter-rules) in every step below: keep the **Planter tag** verbatim and never invent one.
+
 ## Planter Task Parameters
 
 For a **migration group**, the `<package_names>` are the GN labels of the packages of the **migration group**, separated by `, `. Create the parameters of its Planter task as below:
@@ -20,6 +22,7 @@ For a **migration group**, the `<package_names>` are the GN labels of the packag
     * If the ticket number is the "Parent ID" defined in the [Buganizer ticket template](../assets/buganizer_ticket_template.md), use a `Bug:` footer, so landing the CL does not close the parent ticket.
     * Otherwise, use a `Fixed:` footer, so landing the CL closes the migration ticket.
   * Leave out the `Test:` footer, because Planter adds its own test footers.
+  * Leave out the `TAG:` footer and the `Change-Id:` footer. Planter adds the **Planter tag** and replaces any `TAG:` line in `--desc` with it.
 
 ## One Migration Group
 
@@ -32,7 +35,9 @@ For a **migration group**, the `<package_names>` are the GN labels of the packag
 3. Run `git log -1 --format=%B` to get the commit message of the commit Planter just made, and then use "fuchsia-gerrit-cli" skill to get the CL number with the `Change-Id` in the retrieved commit message.
    * If it fails to get the CL number, fail the Bazel Migration and CL Creation step with the reason: "Fail to get the generated CL for `<package_names>` migration."
 
-4. Review the commit message retrieved at the previous step based on the **commit message guidelines**. If there are review errors, fix them, amend the commit with updated commit message but keep the `Change-Id:` and Planter's `TAG:`, and run `git push origin HEAD:refs/for/main` to upload a new patchset.
+4. Review the commit message retrieved at the previous step based on the **commit message guidelines**. If there are review errors, fix them, amend the commit with updated commit message, and run `git push origin HEAD:refs/for/main` to upload a new patchset.
+   * Keep the `Change-Id:` line and the **Planter tag** of the retrieved commit message exactly as they are: copy them verbatim into the updated commit message, with the **Planter tag** right before the `Change-Id:` line. Never write a new `TAG:` line or change the `<freshness>` value.
+   * If the retrieved commit message has no **Planter tag**, do not add one. Tell the user that the commit has no **Planter tag**.
    * If it fails to amend the commit or upload a new patchset, ignore the failure.
 
 5. Use "gsheets" skill: Update the "Migration Status" of each **migration package** in the **control table** to "CL_created" and set "Last Status Update" to the **status timestamp**.
@@ -65,7 +70,9 @@ A **migration group** fails when its Planter task cannot be queued, or the task 
    * Otherwise, the **migration group** fails with the reason: "Planter failed to migrate `<package_names>`." Run `<planter> inspect --task=<task ID>` to find the cause and add it to the reason.
 
 6. For each **migration group** whose CL is created:
-   1. Use "fuchsia-gerrit-cli" skill to get the commit message of the CL, and review it based on the **commit message guidelines**. If there are review errors, fetch the CL into the current Fuchsia checkout, fix them, amend the commit with updated commit message but keep the `Change-Id:` and Planter's `TAG:`, and run `git push origin HEAD:refs/for/main` to upload a new patchset. Then switch back to the **migration branch**.
+   1. Use "fuchsia-gerrit-cli" skill to get the commit message of the CL, and review it based on the **commit message guidelines**. If there are review errors, fetch the CL into the current Fuchsia checkout, fix them, amend the commit with updated commit message, and run `git push origin HEAD:refs/for/main` to upload a new patchset. Then switch back to the **migration branch**.
+      * Keep the `Change-Id:` line and the **Planter tag** of the CL's commit message exactly as they are: copy them verbatim into the updated commit message, with the **Planter tag** right before the `Change-Id:` line. Never write a new `TAG:` line or change the `<freshness>` value.
+      * If the CL's commit message has no **Planter tag**, do not add one. Tell the user that the CL has no **Planter tag**.
       * If it fails to amend the commit or upload a new patchset, ignore the failure.
    2. Use "gsheets" skill: Update the "Migration Status" of each package of the **migration group** in the **control table** to "CL_created" and set "Last Status Update" to the **status timestamp**.
       * If it fails to update the **control table**, ignore the failure.
