@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+load("//build/bazel/rules/testing:fx_unittest_component.bzl", "fx_unittest_component")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "hooks",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    visibility = ["//src/sys/component_manager:__subpackages__"],
+    deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+        "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-sync",
+        "//src/sys/component_manager/lib/errors",
+        "//src/sys/lib/cm_types",
+        "//src/sys/lib/moniker",
+        "//src/sys/lib/runtime_capabilities",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "hooks_test",
+    crate = ":hooks",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_component(
+    name = "test_component",
+    binary = ":hooks_test",
+)
+
+fx_package(
+    name = "hooks_tests_package",
+    package_name = "hooks_test",
+    test_components = [":test_component"],
+)
+
+fx_test(
+    name = "hooks_tests",
+    package = ":hooks_tests_package",
+)
