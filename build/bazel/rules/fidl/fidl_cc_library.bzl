@@ -16,6 +16,7 @@ _FidlCcCodegenInfo = provider(
         "sources": "A depset of generated source files.",
         "testing_headers": "A depset of generated testing header files.",
         "conversion_headers": "A depset of generated HLCPP conversion header files.",
+        "driver_headers": "A depset of generated driver header files not in `headers`.",
     },
 )
 
@@ -120,6 +121,8 @@ def fidl_cpp_family(
         cpp_sources_name = "%s_sources" % cpp_lib_name
         cpp_testing_headers_name = "%s_testing_headers" % cpp_lib_name
 
+        cpp_driver_headers_files_name = "%s_driver_headers_files" % cpp_lib_name
+
         generated_header_files = [
             "common_types.h",
             "common_types_format.h",
@@ -163,15 +166,30 @@ def fidl_cpp_family(
             "//conditions:default": [],
         })
 
+        # fidlgen_cpp generates the driver/*.h headers for every FIDL library,
+        # and the driver headers of a library include the corresponding driver
+        # headers of all its FIDL dependencies, even those that do not set
+        # `contains_drivers`. Like GN, only libraries with `contains_drivers`
+        # expose the driver headers (and depend on //sdk/lib/fidl_driver). For
+        # other libraries, the headers are declared in a separate
+        # "..._cpp_driver_headers" library that only driver FIDL libraries
+        # depend on, so that their driver headers can be found in Bazel.
+        driver_header_files = ["driver/wire.h"] + select({
+            "@platforms//os:fuchsia": [
+                "driver/fidl.h",
+                "driver/natural_messaging.h",
+                "driver/wire_messaging.h",
+            ],
+            "//conditions:default": [],
+        })
+        driver_deps = [
+            "//sdk/lib/fidl_driver",
+            "//sdk/lib/fidl_driver:fidl_driver_natural",
+        ]
+        generated_driver_header_files = []
+
         if contains_drivers:
-            generated_header_files += ["driver/wire.h"] + select({
-                "@platforms//os:fuchsia": [
-                    "driver/fidl.h",
-                    "driver/natural_messaging.h",
-                    "driver/wire_messaging.h",
-                ],
-                "//conditions:default": [],
-            })
+            generated_header_files += driver_header_files
             generated_source_files += select({
                 "@platforms//os:fuchsia": [
                     "driver/natural_messaging.cc",
@@ -183,10 +201,12 @@ def fidl_cpp_family(
                 "driver/test_base.h",
                 "driver/wire_test_base.h",
             ]
-            additional_deps += [
-                "//sdk/lib/fidl_driver",
-                "//sdk/lib/fidl_driver:fidl_driver_natural",
-            ]
+            additional_deps += driver_deps + _get_deps_with_suffix(
+                deps,
+                _get_name_with_suffix(cpp_bindings_flavor, "driver_headers"),
+            )
+        else:
+            generated_driver_header_files = driver_header_files
 
         generated_hlcpp_conversion_header_files = []
         if enable_hlcpp:
@@ -203,6 +223,7 @@ def fidl_cpp_family(
             generated_source_files = generated_source_files,
             generated_testing_header_files = generated_testing_header_files,
             generated_conversion_header_files = generated_hlcpp_conversion_header_files,
+            generated_driver_header_files = generated_driver_header_files,
             fidlgen_tool = "@//tools/fidl/fidlgen_cpp:fidlgen_cpp",
             testonly = testonly,
         )
@@ -229,6 +250,43 @@ def fidl_cpp_family(
             native.alias(
                 name = cpp_lib_name + "_idk",
                 actual = name + "_idk",
+                visibility = visibility,
+            )
+
+        # The driver headers of this library, for use by the bindings of driver
+        # FIDL libraries that depend on it. See `driver_header_files` above.
+        # For libraries with `contains_drivers`, this just forwards to the main
+        # library, which already provides the driver headers.
+        cpp_driver_headers_lib_name = _get_name_with_suffix(cpp_lib_name, "driver_headers")
+        if contains_drivers:
+            cc_library(
+                name = cpp_driver_headers_lib_name,
+                deps = [":%s" % cpp_lib_name],
+                testonly = testonly,
+                visibility = visibility,
+            )
+        else:
+            _driver_headers_wrapper(
+                name = cpp_driver_headers_files_name,
+                generated_fidl_cc_bindings = ":%s" % cpp_codegen_name,
+                testonly = testonly,
+            )
+            _fidl_cc_library(
+                name = cpp_driver_headers_lib_name,
+                fidl_library_name = fidl_library_name,
+                fidl_deps = deps,
+                bindings_flavor = cpp_bindings_flavor,
+                hdrs = [":%s" % cpp_driver_headers_files_name],
+                srcs = [],
+                # //sdk/lib/fidl_driver cannot be built on host in Bazel yet.
+                # Only depend on it for Fuchsia so that host builds of
+                # non-driver FIDL libraries, including wildcard builds, work.
+                additional_deps = [":%s" % cpp_lib_name] + select({
+                    "@platforms//os:fuchsia": driver_deps,
+                    "//conditions:default": [],
+                }),
+                extra_dep_suffix = "driver_headers",
+                testonly = testonly,
                 visibility = visibility,
             )
 
@@ -418,6 +476,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
     sources = []
     testing_headers = []
     conversion_headers = []
+    driver_headers = []
     for header in ctx.attr.generated_header_files:
         headers.append(ctx.actions.declare_file(dir + "/" + header))
     for source in ctx.attr.generated_source_files:
@@ -426,6 +485,8 @@ def _generate_fidl_cc_bindings_impl(ctx):
         testing_headers.append(ctx.actions.declare_file(dir + "/" + testing_header))
     for conversion_header in ctx.attr.generated_conversion_header_files:
         conversion_headers.append(ctx.actions.declare_file(dir + "/" + conversion_header))
+    for driver_header in ctx.attr.generated_driver_header_files:
+        driver_headers.append(ctx.actions.declare_file(dir + "/" + driver_header))
 
     ctx.actions.run(
         executable = ctx.executable.fidlgen_tool,
@@ -448,7 +509,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
             # }
         ],
         inputs = [ir, ctx.executable._clang_format],
-        outputs = headers + sources + testing_headers + conversion_headers,
+        outputs = headers + sources + testing_headers + conversion_headers + driver_headers,
         mnemonic = "FidlGenCc",
     )
 
@@ -458,6 +519,7 @@ def _generate_fidl_cc_bindings_impl(ctx):
             sources = depset(sources),
             testing_headers = depset(testing_headers),
             conversion_headers = depset(conversion_headers),
+            driver_headers = depset(driver_headers),
         ),
         DefaultInfo(files = depset(headers)),
     ]
@@ -506,6 +568,11 @@ _generate_fidl_cc_bindings = rule(
         ),
         "generated_conversion_header_files": attr.string_list(
             doc = "List of header files for HLCPP conversion that will be generated.",
+            default = [],
+        ),
+        "generated_driver_header_files": attr.string_list(
+            doc = "List of driver header files that will be generated but not " +
+                  "included in `generated_header_files`.",
             default = [],
         ),
         "fidlgen_tool": attr.label(
@@ -575,6 +642,27 @@ _conversion_headers_wrapper = rule(
     attrs = {
         "generated_fidl_cc_bindings": attr.label(
             doc = "The `_generate_fidl_cc_bindings` target generating the HLCPP conversion header files.",
+            mandatory = True,
+            allow_files = False,
+            providers = [_FidlCcCodegenInfo],
+        ),
+    },
+)
+
+def _driver_headers_wrapper_impl(ctx):
+    return [DefaultInfo(
+        files = ctx.attr.generated_fidl_cc_bindings[_FidlCcCodegenInfo].driver_headers,
+    )]
+
+_driver_headers_wrapper = rule(
+    doc = "Simply declares the driver header files generated by the " +
+          "`_generate_fidl_cc_bindings` target for FIDL libraries without " +
+          "`contains_drivers` as outputs. This allows those header files to be " +
+          "exposed as headers in their own rule.",
+    implementation = _driver_headers_wrapper_impl,
+    attrs = {
+        "generated_fidl_cc_bindings": attr.label(
+            doc = "The `_generate_fidl_cc_bindings` target generating the driver header files.",
             mandatory = True,
             allow_files = False,
             providers = [_FidlCcCodegenInfo],
