@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_mem_bin",
+    srcs = [
+        "src/main.rs",
+        "src/mem_device.rs",
+        "src/wire.rs",
+    ],
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.virtualization.hardware:fuchsia.virtualization.hardware_rust",
+        "//sdk/rust/zx",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/virtualization/lib/machina-virtio-device",
+        "//src/virtualization/lib/virtio-device",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
+
+rustc_test(
+    name = "virtio_mem_bin_test",
+    crate = ":virtio_mem_bin",
+    edition = "2024",
+    deps = ["//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions"],
+)
+
+fx_unittest_package(
+    name = "virtio_mem_unittests",
+    max_log_severity = "ERROR",
+    unit_tests = [":virtio_mem_bin_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "virtio_mem_packaged_bin",
+    binary = ":virtio_mem_bin",
+    binary_name = "virtio_mem_bin",
+)
+
+fx_component_manifest(
+    name = "virtio_mem_manifest",
+    component_name = "virtio_mem",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard",
+    ],
+    manifest = "meta/virtio_mem.cml",
+)
+
+fx_component(
+    name = "virtio_mem_component",
+    compiled_manifest = ":virtio_mem_manifest",
+    component_name = "virtio_mem",
+    visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
+    deps = [":virtio_mem_packaged_bin"],
+)

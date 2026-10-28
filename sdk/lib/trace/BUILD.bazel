@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/rules/components:cml_shard.bzl", "cml_shard")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -15,4 +17,10 @@ exports_files(
         "//sdk/lib/vulkan:__pkg__",
         "//src/connectivity/policy/http-client:__pkg__",
     ],
+)
+
+cml_shard(
+    name = "use.shard",
+    shard = "use.shard.cml",
+    visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
 )

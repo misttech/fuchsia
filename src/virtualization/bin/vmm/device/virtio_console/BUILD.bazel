@@ -1,0 +1,85 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load(
+    "//build/bazel/rules/testing:fx_unittest_package.bzl",
+    "fx_unittest_package",
+)
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "virtio_console_bin",
+    srcs = [
+        "src/device.rs",
+        "src/main.rs",
+        "src/wire.rs",
+    ],
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//sdk/fidl/fuchsia.virtualization.hardware:fuchsia.virtualization.hardware_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/virtualization/lib/machina-virtio-device",
+        "//src/virtualization/lib/virtio-device",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_test(
+    name = "virtio_console_bin_test",
+    crate = ":virtio_console_bin",
+    edition = "2024",
+    deps = [
+        "//src/lib/async-utils",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+)
+
+fx_unittest_package(
+    name = "virtio_console_unittests",
+    unit_tests = [":virtio_console_bin_test"],
+    visibility = ["//src/virtualization:__pkg__"],
+)
+
+fx_packaged_binary(
+    name = "virtio_console_packaged_bin",
+    binary = ":virtio_console_bin",
+    binary_name = "virtio_console_bin",
+)
+
+fx_component_manifest(
+    name = "virtio_console_manifest",
+    component_name = "virtio_console",
+    includes = [
+        "//sdk/lib/syslog:client.shard",
+        "//sdk/lib/trace:use.shard",
+    ],
+    manifest = "meta/virtio_console.cml",
+)
+
+fx_component(
+    name = "virtio_console_component",
+    compiled_manifest = ":virtio_console_manifest",
+    component_name = "virtio_console",
+    visibility = ["//src/virtualization/bin/vmm/device:__subpackages__"],
+    deps = [":virtio_console_packaged_bin"],
+)
