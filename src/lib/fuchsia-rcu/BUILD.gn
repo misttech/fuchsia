@@ -11,6 +11,7 @@ group("tests") {
   deps = [
     ":fuchsia-rcu-atomic-tests-pkg",
     ":fuchsia-rcu-tests",
+    ":fuchsia-rcu-traits_test($host_toolchain)",
   ]
 }
 
@@ -109,6 +110,15 @@ rustc_macro("fuchsia-rcu-derive") {
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",
   ]
+}
+rustc_library("fuchsia-rcu-traits") {
+  sources = [ "traits/src/lib.rs" ]
+  source_root = "traits/src/lib.rs"
+  edition = "2024"
+  proc_macro_deps = [ ":fuchsia-rcu-derive" ]
+  version = "0.1.0"
+  with_unit_tests = true
+  deps = [ "//third_party/rust_crates:lock_api" ]
 }
 rustc_library("fuchsia-rcu") {
   sources = _COMMON_SRCS

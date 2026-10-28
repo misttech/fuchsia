@@ -50,6 +50,21 @@ rustc_proc_macro(
 )
 
 rustc_library(
+    name = "fuchsia-rcu-traits",
+    srcs = ["traits/src/lib.rs"],
+    crate_root = "traits/src/lib.rs",
+    edition = "2024",
+    proc_macro_deps = [
+        ":fuchsia-rcu-derive",
+    ],
+    version = "0.1.0",
+    with_unit_tests = True,
+    deps = [
+        "//third_party/rust_crates/vendor:lock_api",
+    ],
+)
+
+rustc_library(
     name = "fuchsia-rcu",
     srcs = _COMMON_SRCS,
     crate_features = ["rseq_backend"],
