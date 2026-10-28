@@ -482,6 +482,15 @@ for p in changed_all:
         ):
             candidate_dirs.add(d)
 
+# 1-based line of the rule call in BUILD.bazel that defines `name` (0 if not found).
+def bazel_target_line(bazel_text, name):
+    if not bazel_text:
+        return 0
+    pat = re.compile(r'^(\w+)\(\s*\n\s*name\s*=\s*"' + re.escape(name) + r'"', re.M)
+    m = pat.search(bazel_text)
+    return bazel_text.count("\n", 0, m.start()) + 1 if m else 0
+
+
 findings = []
 for pkg in sorted(candidate_dirs):
     gn_rel, bazel_rel = f"{pkg}/BUILD.gn", f"{pkg}/BUILD.bazel"
@@ -573,8 +582,53 @@ for pkg in sorted(candidate_dirs):
                 is_feature_set_expansion = all(
                     "rustc_library" in new.get(v, (set(), 0))[0] for v in variant_names
                 )
+            # Accept a GN cc_test_executable converted from a Bazel fx_cc_binary(testonly = True):
+            # bazel2gn maps fx_cc_binary/cc_binary to executable() and has no form that emits
+            # cc_test_executable(), a thin executable() wrapper that only adds LTO link settings.
+            is_cc_test_executable_conversion = (
+                old_types == {"cc_test_executable"}
+                and new_types == {"executable"}
+                and name in bazel_names
+                and is_testonly_target(after, name)
+            )
+            if is_cc_test_executable_conversion:
+                findings.append(
+                    {
+                        "source": "gn_target_type_parity",
+                        "category": "cc_test_executable_converted",
+                        "severity": "INFO",
+                        "file": gn_rel,
+                        "line": line,
+                        "message": (
+                            f"`{label}` was GN `cc_test_executable` and is now a bazel2gn-generated\n"
+                            "testonly `executable` from a Bazel fx_cc_binary(testonly = True); bazel2gn\n"
+                            "has no form for cc_test_executable, so this type change is expected."
+                        ),
+                        "remediation": "None needed; do not dispute or work around this INFO.",
+                    }
+                )
+                # Record the matching INFO template_parity coverage so planter's deduplicator
+                # (same category/file/line/message key) suppresses review_diff's ERROR for it.
+                bz_line = bazel_target_line(bazel_text, name)
+                if bz_line:
+                    findings.append(
+                        {
+                            "source": "gn_target_type_parity",
+                            "category": "template_parity",
+                            "severity": "INFO",
+                            "file": bazel_rel,
+                            "line": bz_line,
+                            "message": (
+                                f'Target "{name}" (Rule & Directives): bazel2gn generated '
+                                f'executable("{name}") below the sentinel ({gn_rel}:{line}), but '
+                                f'the original GN target was cc_test_executable("{name}"); '
+                                "the migration must keep the GN template"
+                            ),
+                        }
+                    )
             if new_types != old_types and not (
-                is_test_suite_conversion
+                is_cc_test_executable_conversion
+                or is_test_suite_conversion
                 or is_host_tool_conversion
                 or is_bazel_input_transition
                 or is_feature_set_expansion

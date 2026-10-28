@@ -307,6 +307,30 @@ def extract_base_feature_set_deps(body):
     return deps
 
 
+# Dependency labels from every branch of an `if (...) { deps = [...] } else ... { deps = [...] }`
+# chain in a base GN target body. review_diff's GN parser keeps only the last branch's `deps`
+# assignment, so the other branches' deps (carried by a Bazel select()) look unmatched to it.
+def extract_conditional_branch_deps(body):
+    code = re.sub(r"#[^\n]*", "", body)
+    if not re.search(r"\}\s*else\b", code):
+        return []
+    deps = []
+    for dm in re.finditer(r"(?<![\w.])(?:public_)?deps\s*\+?=\s*\[([^\]]*)\]", code):
+        deps.extend(re.findall(r'"([^"]+)"', dm.group(1)))
+    return deps
+
+
+# The GN view review_diff compares for an if/else target: only the last `deps =` branch.
+def last_branch_top(body, branch_deps):
+    if not branch_deps:
+        return None
+    code = re.sub(r"#[^\n]*", "", body)
+    last = None
+    for dm in re.finditer(r"(?<![\w.])deps\s*=\s*\[([^\]]*)\]", code):
+        last = re.findall(r'"([^"]+)"', dm.group(1))
+    return {"deps": last} if last else None
+
+
 def canonical_dep_label(pkg_dir, dep):
     d = dep.strip().strip('"')
     if "(" in d:
@@ -949,6 +973,7 @@ def check_dep_alignment_info(
     overwritten_bz_deps=(),
     extra_bazel_deps=(),
     hinted_deps=(),
+    branch_gn_deps=(),
 ):
     gn_deps = gn_top_dep_labels(gn_top)
     bazel_deps = bazel_dep_labels(bt_kws, top_vars, extra_bazel_deps)
@@ -1001,6 +1026,13 @@ def check_dep_alignment_info(
         elif b_norm.replace("-", "_") in base_fs_canons:
             continue
         elif bt_rule in ("fx_cc_binary", "cc_binary") and b_norm == "//sdk/lib/fdio":
+            continue
+        # Covered by a dep of another if/else branch of the base GN target (Bazel select()).
+        elif any(
+            normalize_dep_slashes(pkg, g).replace("-", "_") == b_norm.replace("-", "_")
+            or is_vendor_crate_match(normalize_dep_slashes(pkg, g), b)
+            for g in branch_gn_deps
+        ):
             continue
         else:
             return None
@@ -2183,7 +2215,8 @@ for pkg in sorted(d for d in dirs if d):
                 hinted_deps = unit_test_aspect_hints(
                     pkg, bt_rule, bt_kws, bazel_targets, top_vars
                 )
-                for cand_top in (gn_top, cur_top):
+                branch_deps = extract_conditional_branch_deps(body)
+                for cand_top in (gn_top, cur_top, last_branch_top(body, branch_deps)):
                     if not cand_top:
                         continue
                     dep_info = check_dep_alignment_info(
@@ -2201,6 +2234,7 @@ for pkg in sorted(d for d in dirs if d):
                         overwritten_bz_deps,
                         c_deps,
                         hinted_deps,
+                        branch_deps,
                     )
                     if dep_info and dep_info not in findings:
                         findings.append(dep_info)
