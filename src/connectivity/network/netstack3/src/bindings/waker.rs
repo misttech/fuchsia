@@ -6,16 +6,19 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::Poll;
 
-use assert_matches::assert_matches;
 use fidl_fuchsia_net_power as fnet_power;
 use fidl_fuchsia_net_resources as fnet_resources;
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
 use futures::future::FutureExt as _;
-use futures::{StreamExt as _, TryStreamExt as _};
+use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use log::{debug, info, warn};
+use netdevice_client::RxLease;
+use netstack3_core::CounterContext;
 
+use crate::bindings::counters::PowerCounters;
 use crate::bindings::sync::CoreMutex;
 use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _};
 
@@ -31,17 +34,28 @@ const WAITER_AWAKE_SIGNAL: zx::Signals =
 const WAITER_ASLEEP_SIGNAL: zx::Signals =
     zx::Signals::from_bits(fnet_power::WAITER_ASLEEP_SIGNAL).unwrap();
 
-#[derive(Default, Clone)]
-pub(crate) struct WakeGroups(Arc<CoreMutex<WakeGroupsInner>>);
+pub(crate) struct WakeGroups<C: CounterContext<PowerCounters>>(Arc<CoreMutex<WakeGroupsInner<C>>>);
 
-#[derive(Default)]
-struct WakeGroupsInner {
-    wake_groups: HashMap<zx::Koid, WakeGroupInputs>,
+impl<C: CounterContext<PowerCounters>> Default for WakeGroups<C> {
+    fn default() -> Self {
+        Self(Arc::new(CoreMutex::new(WakeGroupsInner { wake_groups: HashMap::new() })))
+    }
 }
 
-#[derive(Debug)]
-struct WakeGroupInputs {
+impl<C: CounterContext<PowerCounters>> Clone for WakeGroups<C> {
+    fn clone(&self) -> Self {
+        let Self(inner) = self;
+        Self(Arc::clone(inner))
+    }
+}
+
+struct WakeGroupsInner<C: CounterContext<PowerCounters>> {
+    wake_groups: HashMap<zx::Koid, WakeGroupInputs<C>>,
+}
+
+struct WakeGroupInputs<C: CounterContext<PowerCounters>> {
     data_notifier: DataNotifier,
+    rx_leases: mpsc::UnboundedSender<Arc<DelegatedRxLease<C>>>,
     suspend_events: mpsc::UnboundedSender<SuspendEvent>,
 }
 
@@ -52,19 +66,19 @@ enum SuspendEvent {
     Resumed,
 }
 
-impl WakeGroups {
+impl<C: CounterContext<PowerCounters> + Send + Sync + 'static> WakeGroups<C> {
     /// Notifies every wake group that the system is about to suspend. The
     /// returned future completes once every group has acknowledged.
     ///
     /// NOTE: Must be followed by [`WakeGroups::resume`] once the system
     /// resumes.
-    pub(crate) fn suspend(&self) -> impl Future<Output = ()> + use<> {
+    pub(crate) fn suspend(&self) -> impl Future<Output = ()> + use<C> {
         let Self(inner) = self;
         let acks = inner
             .lock()
             .wake_groups
             .values()
-            .map(|WakeGroupInputs { data_notifier: _, suspend_events }| {
+            .map(|WakeGroupInputs { data_notifier: _, rx_leases: _, suspend_events }| {
                 let (sender, receiver) = oneshot::channel();
                 // The group's task may have been dropped before it started
                 // serving, in which case the dropped sender resolves the ack as
@@ -81,7 +95,7 @@ impl WakeGroups {
 
     pub(crate) fn resume(&self) {
         let Self(inner) = self;
-        for WakeGroupInputs { data_notifier: _, suspend_events } in
+        for WakeGroupInputs { data_notifier: _, rx_leases: _, suspend_events } in
             inner.lock().wake_groups.values()
         {
             // The group's task may have been dropped before it started
@@ -123,21 +137,28 @@ impl WakeGroups {
         &self,
         debug_name: String,
         wake_watcher: zx::EventPair,
-    ) -> (WakeGroup, WakeGroupId) {
+    ) -> (WakeGroup<C>, WakeGroupId) {
         let WakeGroups(inner) = self;
 
         let (data_watcher, data_notifier) = DataWatcher::new();
+        let (rx_leases_sender, rx_leases_receiver) = mpsc::unbounded();
         let (suspend_events_sender, suspend_events_receiver) = mpsc::unbounded();
-        let wake_group =
-            WakeGroup::new(debug_name, data_watcher, wake_watcher, suspend_events_receiver);
+        let wake_group = WakeGroup::new(
+            debug_name,
+            data_watcher,
+            wake_watcher,
+            rx_leases_receiver,
+            suspend_events_receiver,
+        );
         let id = wake_group.id.duplicate_for_client();
 
-        assert_matches!(
-            inner.lock().wake_groups.insert(
-                id.koid,
-                WakeGroupInputs { data_notifier, suspend_events: suspend_events_sender }
-            ),
-            None,
+        let inputs = WakeGroupInputs {
+            data_notifier,
+            rx_leases: rx_leases_sender,
+            suspend_events: suspend_events_sender,
+        };
+        assert!(
+            inner.lock().wake_groups.insert(id.koid, inputs).is_none(),
             "koid of new wake group should be unique",
         );
 
@@ -168,19 +189,42 @@ impl WakeGroups {
 
     fn remove_wake_group(&self, koid: zx::Koid) {
         let WakeGroups(inner) = self;
-        assert_matches!(inner.lock().wake_groups.remove(&koid), Some(_));
+        assert!(inner.lock().wake_groups.remove(&koid).is_some());
     }
 
     pub(crate) fn data_notifier(&self, wake_group: &WakeGroupId) -> Option<DataNotifier> {
         let Self(inner) = self;
         let wake_groups = &inner.lock().wake_groups;
-        let Some(WakeGroupInputs { data_notifier, suspend_events: _ }) =
+        let Some(WakeGroupInputs { data_notifier, rx_leases: _, suspend_events: _ }) =
             wake_groups.get(&wake_group.koid)
         else {
             warn!("could not attach socket to nonexistent wake group {wake_group:?}");
             return None;
         };
         Some(data_notifier.clone())
+    }
+
+    /// Delegates an RX wake lease to every wake group.
+    ///
+    /// A group that has seen a data notification but whose client has not woken
+    /// holds the first delegated lease it sees. A group that had not observed
+    /// its client asleep when the system suspended holds every lease until the
+    /// system resumes. The lease is relinquished once every group has dropped
+    /// it.
+    ///
+    /// Callers must only delegate a lease once every frame it covers has been
+    /// processed to avoid lost wakeups (see [`wait_for_data`]).
+    pub(crate) fn delegate_rx_lease(&self, lease: RxLease, ctx: C) {
+        let Self(inner) = self;
+        let lease = Arc::new(DelegatedRxLease { _lease: lease, ctx });
+        for WakeGroupInputs { data_notifier: _, rx_leases, suspend_events: _ } in
+            inner.lock().wake_groups.values()
+        {
+            // The group's task may have been dropped before it started
+            // serving.
+            let _: Result<(), mpsc::TrySendError<Arc<DelegatedRxLease<C>>>> =
+                rx_leases.unbounded_send(Arc::clone(&lease));
+        }
     }
 }
 
@@ -222,6 +266,25 @@ impl From<fnet_resources::WakeGroupToken> for WakeGroupId {
     }
 }
 
+/// An [`RxLease`] delegated to the netstack, which counts itself as dropped
+/// once it is relinquished.
+struct DelegatedRxLease<C: CounterContext<PowerCounters>> {
+    _lease: RxLease,
+    ctx: C,
+}
+
+impl<C: CounterContext<PowerCounters>> Drop for DelegatedRxLease<C> {
+    fn drop(&mut self) {
+        let Self { _lease: _, ctx } = self;
+
+        // Increment the counter before _lease closes its handle so that
+        // observers of the handle's PEER_CLOSED (e.g. tests) always read the
+        // updated count.
+        debug!("dropping delegated rx power lease");
+        ctx.counters().dropped_rx_leases.increment();
+    }
+}
+
 /// Asserts [`GROUP_WAKEUP_SIGNAL`] on a wake group's token for as long as it is
 /// held.
 struct WakeSignalGuard<'a>(&'a zx::Event);
@@ -241,12 +304,42 @@ impl Drop for WakeSignalGuard<'_> {
 }
 
 #[derive(Debug)]
-struct WakeGroup {
+struct WakeGroup<C: CounterContext<PowerCounters>> {
     name: String,
     id: WakeGroupId,
     data_watcher: DataWatcher,
     wake_watcher: zx::EventPair,
+    rx_leases: mpsc::UnboundedReceiver<Arc<DelegatedRxLease<C>>>,
     suspend_events: mpsc::UnboundedReceiver<SuspendEvent>,
+}
+
+/// Returns a future that completes once `data_watcher` is notified, dropping
+/// any delegated RX wake leases it dequeues before then.
+///
+/// Returns a delegated RX wake lease if one won the race with the data
+/// notification. We'd rather not do that and avoid it if the data notification
+/// won the race. This is to say: It's possible there's a lease in rx_leases on
+/// a return value of `None`.
+fn wait_for_data<L>(
+    data_watcher: &DataWatcher,
+    rx_leases: &mut (impl Stream<Item = L> + Unpin),
+) -> impl Future<Output = Option<L>> {
+    let mut data_fut = data_watcher.wait();
+
+    futures::future::poll_fn(move |cx| {
+        if data_fut.poll_unpin(cx).is_ready() {
+            return Poll::Ready(None);
+        }
+
+        loop {
+            let lease = futures::ready!(rx_leases.poll_next_unpin(cx))
+                .expect("rx lease channel outlives wake group task");
+
+            if data_fut.poll_unpin(cx).is_ready() {
+                return Poll::Ready(Some(lease));
+            }
+        }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,24 +390,25 @@ async fn wait_for_client_state(
     }
 }
 
-impl WakeGroup {
+impl<C: CounterContext<PowerCounters> + Send + Sync + 'static> WakeGroup<C> {
     fn new(
         name: String,
         data_watcher: DataWatcher,
         wake_watcher: zx::EventPair,
+        rx_leases: mpsc::UnboundedReceiver<Arc<DelegatedRxLease<C>>>,
         suspend_events: mpsc::UnboundedReceiver<SuspendEvent>,
     ) -> Self {
-        Self { name, id: WakeGroupId::new(), data_watcher, wake_watcher, suspend_events }
+        Self { name, id: WakeGroupId::new(), data_watcher, wake_watcher, rx_leases, suspend_events }
     }
 
-    async fn serve(self, wake_groups: WakeGroups) -> Result<!, WakeGroupShutdownReason> {
-        let Self { name, id, data_watcher, wake_watcher, mut suspend_events } = self;
+    async fn serve(self, wake_groups: WakeGroups<C>) -> Result<!, WakeGroupShutdownReason> {
+        let Self { name, id, data_watcher, wake_watcher, mut rx_leases, mut suspend_events } = self;
         let WakeGroupId { token, koid: _ } = &id;
 
-        enum WakeGroupState<'a> {
+        enum WakeGroupState<'a, L> {
             Awake,
             Asleep,
-            Waking(WakeSignalGuard<'a>),
+            Waking(WakeSignalGuard<'a>, Option<L>),
             SystemSuspended,
         }
 
@@ -368,6 +462,12 @@ impl WakeGroup {
                                 SuspendEvent::Resumed => WakeGroupState::Awake,
                             }
                         }
+                        lease = rx_leases.next() => {
+                            let _: Arc<DelegatedRxLease<C>> =
+                                lease.expect("rx lease channel outlives wake group task");
+
+                            WakeGroupState::Awake
+                        }
                     }
                 }
                 WakeGroupState::Asleep => {
@@ -380,12 +480,12 @@ impl WakeGroup {
                             // The other side woke up without us. Nothing left to do here.
                             WakeGroupState::Awake
                         }
-                        () = data_watcher.wait().fuse() => {
+                        lease = wait_for_data(&data_watcher, &mut rx_leases).fuse() => {
                             // Assert the wake signal to wake up the other side.
                             let signal = WakeSignalGuard::raise(token);
                             debug!("notified wake group '{name}' {id:?} of incoming data");
 
-                            WakeGroupState::Waking(signal)
+                            WakeGroupState::Waking(signal, lease)
                         }
                         event = next_suspend_event().fuse() => {
                             if let SuspendEvent::Suspending(ack) = event {
@@ -396,19 +496,17 @@ impl WakeGroup {
                         }
                     }
                 }
-                WakeGroupState::Waking(signal) => {
+                WakeGroupState::Waking(signal, held_lease) => {
                     futures::select_biased! {
                         res = wait_for_client_state(&wake_watcher, ClientState::Awake).fuse() => {
                             res?;
-
-                            // TODO(https://fxbug.dev/538164589): Hold delegated wake
-                            // leases from netdevice until the client is awake.
 
                             // Deassert wake signal. When the other side is awake, we
                             // assume they're capable of staying awake until they're
                             // done processing the incoming data.
                             drop(signal);
                             debug!("deasserted wake signal on '{name}' {id:?}");
+                            drop(held_lease);
 
                             WakeGroupState::Awake
                         }
@@ -419,7 +517,13 @@ impl WakeGroup {
                                 let _: Result<(), ()> = ack.send(());
                             }
 
-                            WakeGroupState::Waking(signal)
+                            WakeGroupState::Waking(signal, held_lease)
+                        }
+                        // Hold just the first lease and drop the rest.
+                        lease = rx_leases.next() => {
+                            let lease = lease.expect("rx lease channel outlives wake group task");
+
+                            WakeGroupState::Waking(signal, held_lease.or(Some(lease)))
                         }
                     }
                 }
@@ -448,6 +552,7 @@ impl WakeGroup {
 pub(crate) mod testutils {
     use super::*;
 
+    use assert_matches::assert_matches;
     use futures::task::Poll;
     use zx::Peered as _;
 
@@ -479,7 +584,10 @@ pub(crate) mod testutils {
     }
 
     impl TestWakeGroup {
-        pub(crate) fn new(wake_groups: &WakeGroups, name: &str) -> Self {
+        pub(crate) fn new<C: CounterContext<PowerCounters> + Send + Sync + 'static>(
+            wake_groups: &WakeGroups<C>,
+            name: &str,
+        ) -> Self {
             let (wake_watcher_observer, signaller) = zx::EventPair::create();
             // Clients start out awake.
             signaller.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).unwrap();
@@ -525,7 +633,7 @@ pub(crate) mod testutils {
                 .unwrap();
         }
 
-        pub(super) fn is_registered(&self, wake_groups: &WakeGroups) -> bool {
+        pub(super) fn is_registered(&self, wake_groups: &WakeGroups<Arc<PowerCounters>>) -> bool {
             wake_groups.0.lock().wake_groups.contains_key(&self.id.koid)
         }
 
@@ -551,11 +659,44 @@ pub(crate) mod testutils {
 mod tests {
     use super::*;
 
+    use assert_matches::assert_matches;
+    use fidl_fuchsia_hardware_network as fhardware_network;
     use test_case::{test_case, test_matrix};
 
     use crate::bindings::waker::testutils::{
         TestWakeGroup, assert_wake_signal_clear, assert_wake_signal_set,
     };
+
+    impl CounterContext<PowerCounters> for Arc<PowerCounters> {
+        fn counters(&self) -> &PowerCounters {
+            self
+        }
+    }
+
+    type WakeGroups = super::WakeGroups<Arc<PowerCounters>>;
+
+    /// Delegates a newly created lease to `wake_groups` and returns the peer
+    /// handle.
+    fn delegate_rx_lease(wake_groups: &WakeGroups, counters: &Arc<PowerCounters>) -> zx::EventPair {
+        let (lease, peer) = zx::EventPair::create();
+        let lease = RxLease::new(fhardware_network::DelegatedRxLeaseHandle::Eventpair(lease));
+        wake_groups.delegate_rx_lease(lease, Arc::clone(counters));
+        peer
+    }
+
+    fn assert_lease_held(peer: &zx::EventPair) {
+        assert_matches!(
+            peer.wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST),
+            zx::WaitResult::TimedOut(_)
+        );
+    }
+
+    fn assert_lease_relinquished(peer: &zx::EventPair) {
+        let observed = peer
+            .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
+            .unwrap();
+        assert!(observed.contains(zx::Signals::EVENTPAIR_PEER_CLOSED));
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TriggerShutdownWhen {
@@ -594,6 +735,7 @@ mod tests {
         // State machine is waiting for the client to signal it's asleep.
         group.run_until_stalled(&mut exec);
 
+        let mut held_lease_peer = None;
         match shutdown_when {
             TriggerShutdownWhen::BeforeSuspend => {}
             TriggerShutdownWhen::WhileSystemSuspended => {
@@ -611,10 +753,13 @@ mod tests {
 
                 if shutdown_when == TriggerShutdownWhen::AfterData {
                     group.notifier.notify();
+                    let peer = delegate_rx_lease(&wake_groups, &Arc::default());
                     // State machine is waiting for the client to wake up after
                     // we assert the wake signal.
                     group.run_until_stalled(&mut exec);
                     assert_wake_signal_set(group.token());
+                    assert_lease_held(&peer);
+                    held_lease_peer = Some(peer);
                 }
             }
         }
@@ -642,6 +787,9 @@ mod tests {
         group.run_until_shutdown(&mut exec, expected_reason);
         assert!(!group.is_registered(&wake_groups));
         assert_wake_signal_clear(group.token());
+        if let Some(peer) = &held_lease_peer {
+            assert_lease_relinquished(peer);
+        }
         assert_eq!(suspend_fut.now_or_never(), Some(()));
     }
 
@@ -678,6 +826,34 @@ mod tests {
         assert_wake_signal_clear(group.token());
     }
 
+    #[test]
+    fn waking_group_holds_first_rx_lease_across_system_suspend() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let wake_groups = WakeGroups::default();
+        let mut group = TestWakeGroup::new(&wake_groups, "test-group");
+        group.run_until_stalled(&mut exec);
+
+        group.suspend_client();
+        group.run_until_stalled(&mut exec);
+        group.notifier.notify();
+        let first = delegate_rx_lease(&wake_groups, &Arc::default());
+        group.run_until_stalled(&mut exec);
+
+        // A system suspend/resume cycle while the client is waking doesn't
+        // release the held lease.
+        let suspend_fut = wake_groups.suspend();
+        group.run_until_stalled(&mut exec);
+        assert_eq!(suspend_fut.now_or_never(), Some(()));
+        wake_groups.resume();
+
+        // A waking group holds only the first lease it gets.
+        let second = delegate_rx_lease(&wake_groups, &Arc::default());
+        group.run_until_stalled(&mut exec);
+        assert_lease_held(&first);
+        assert_lease_relinquished(&second);
+    }
+
     #[test_case(false, false, true, false; "client_awake_with_data")]
     #[test_case(false, true, false, false; "client_asleep_without_data")]
     #[test_case(false, true, true, true; "client_asleep_with_data")]
@@ -709,16 +885,20 @@ mod tests {
         if notify_while_suspended {
             group.notifier.notify();
         }
+        let peer = delegate_rx_lease(&wake_groups, &Arc::default());
         group.run_until_stalled(&mut exec);
         // Nothing happens until the group learns that the system resumed.
         assert_wake_signal_clear(group.token());
+        assert_lease_held(&peer);
 
         wake_groups.resume();
         group.run_until_stalled(&mut exec);
         if expect_wake {
             assert_wake_signal_set(group.token());
+            assert_lease_held(&peer);
         } else {
             assert_wake_signal_clear(group.token());
+            assert_lease_relinquished(&peer);
         }
     }
 
@@ -789,5 +969,56 @@ mod tests {
         group.wake_client();
         group.run_until_stalled(&mut exec);
         assert_wake_signal_clear(group.token());
+    }
+
+    #[test]
+    fn rx_lease_shared_by_all_waking_groups() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let counters = Arc::<PowerCounters>::default();
+        let wake_groups = WakeGroups::default();
+        let mut first = TestWakeGroup::new(&wake_groups, "first");
+        let mut second = TestWakeGroup::new(&wake_groups, "second");
+
+        for group in [&mut first, &mut second] {
+            group.suspend_client();
+            group.run_until_stalled(&mut exec);
+            group.notifier.notify();
+            group.run_until_stalled(&mut exec);
+            assert_wake_signal_set(group.token());
+        }
+
+        let peer = delegate_rx_lease(&wake_groups, &counters);
+        for group in [&mut first, &mut second] {
+            group.run_until_stalled(&mut exec);
+        }
+
+        first.wake_client();
+        first.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(first.token());
+        assert_lease_held(&peer);
+
+        second.wake_client();
+        second.run_until_stalled(&mut exec);
+        assert_wake_signal_clear(second.token());
+        assert_lease_relinquished(&peer);
+        assert_eq!(counters.dropped_rx_leases.get(), 1);
+    }
+
+    #[test]
+    fn wait_for_data_keeps_lease_that_raced_with_notification() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (watcher, notifier) = DataWatcher::new();
+        let (lease, _peer) = zx::EventPair::create();
+
+        // Deliver the notification while the lease is being dequeued, i.e.
+        // after the data future was found pending but before it is polled
+        // again.
+        let mut leases = futures::stream::iter([lease]).inspect(|_| notifier.notify());
+        assert_matches!(
+            exec.run_until_stalled(&mut wait_for_data(&watcher, &mut leases)),
+            Poll::Ready(Some(_))
+        );
     }
 }

@@ -431,7 +431,7 @@ pub(crate) struct BindingsCtxInner {
     ebpf_manager: EbpfManager,
     packet_captures: PacketCaptures,
     power: PowerWorkerSink,
-    wake_groups: waker::WakeGroups,
+    wake_groups: waker::WakeGroups<BindingsCtx>,
     settings: Settings,
     destruction_dispatcher: SocketDestructionDispatcher,
 }

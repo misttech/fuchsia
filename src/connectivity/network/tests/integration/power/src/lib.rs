@@ -7,6 +7,7 @@
 //! Netstack power framework integration tests.
 
 use std::marker::PhantomData;
+use std::num::NonZeroU16;
 use std::pin::pin;
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use fidl::endpoints::{DiscoverableProtocolMarker as _, ServiceMarker as _};
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_hardware_power_suspend as fhsuspend;
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
 use fidl_fuchsia_net_power as fnet_power;
 use fidl_fuchsia_net_resources as fnet_resources;
@@ -31,19 +33,22 @@ use fuchsia_async::{self as fasync, TimeoutExt as _};
 use futures::stream::FusedStream;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, Stream, StreamExt as _};
 use log::info;
-use net_declare::{fidl_subnet, std_socket_addr_v6};
-use net_types::ip::{Ip, IpAddress as _, IpVersion, Ipv4, Ipv6};
+use net_declare::{fidl_subnet, net_ip_v4, std_socket_addr_v6};
+use net_types::ip::{Ip, IpAddress as _, IpVersion, Ipv4, Ipv4Addr, Ipv6};
 use netemul::{RealmTcpStream as _, RealmUdpSocket as _};
 use netstack_testing_common::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT;
 use netstack_testing_common::realms::{
     KnownServiceProvider, Netstack3, NetstackVersion, TestRealmExt as _, TestSandboxExt as _,
 };
 use netstack_testing_macros::netstack_test;
-use packet::ParsablePacket as _;
+use packet::{
+    InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext,
+    ParsablePacket as _, Serializer as _,
+};
 use packet_formats::ip::{IpPacket, IpProto, Ipv6Proto};
-use packet_formats::ipv4::Ipv4Packet;
+use packet_formats::ipv4::{Ipv4Packet, Ipv4PacketBuilder};
 use packet_formats::ipv6::Ipv6Packet;
-use packet_formats::udp::{UdpPacket, UdpParseArgs};
+use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpParseArgs};
 use sockaddr::IntoSockAddr as _;
 use test_case::test_case;
 use zx::Peered as _;
@@ -261,6 +266,47 @@ async fn create_power_realm<'a>(
     sagctl.set_boot_complete().await.expect("SetBootComplete");
 
     realm
+}
+
+struct TunInterface {
+    tun_device: fnet_tun::DeviceProxy,
+    interface_control: finterfaces_ext::admin::Control,
+    _tun_port: fnet_tun::PortProxy,
+    _device_control: fnet_interfaces_admin::DeviceControlProxy,
+}
+
+async fn set_up_tun_interface(realm: &netemul::TestRealm<'_>) -> TunInterface {
+    let (tun_device, device) =
+        netstack_testing_common::devices::create_tun_device_with(fnet_tun::DeviceConfig {
+            blocking: Some(true),
+            ..Default::default()
+        });
+    let (tun_port, port) = netstack_testing_common::devices::create_ip_tun_port(
+        &tun_device,
+        netstack_testing_common::devices::TUN_DEFAULT_PORT_ID,
+    )
+    .await;
+    tun_port.set_online(true).await.expect("set online");
+    let device_control = netstack_testing_common::devices::install_device(realm, device);
+    let interface_control = finterfaces_ext::admin::Control::new(
+        netstack_testing_common::devices::add_pure_ip_interface(&port, &device_control, "tun")
+            .await,
+    );
+    let if_id = interface_control.get_id().await.expect("get id");
+    assert_matches!(interface_control.enable().await, Ok(Ok(true)));
+
+    let interfaces_state =
+        realm.connect_to_protocol::<fnet_interfaces::StateMarker>().expect("connect to protocol");
+    netstack_testing_common::interfaces::wait_for_online(&interfaces_state, if_id, true)
+        .await
+        .expect("wait online");
+
+    TunInterface {
+        tun_device,
+        interface_control,
+        _tun_port: tun_port,
+        _device_control: device_control,
+    }
 }
 
 fn extract_udp_frame_in_ipv6_packet(ipv6_frame: &[u8]) -> Option<&[u8]> {
@@ -481,29 +527,12 @@ async fn tx_suspension(name: &str, netstack_suspend_enabled: bool) {
 async fn rx_lease_drops(name: &str, netstack_suspend_enabled: bool) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let realm = create_power_realm(&sandbox, name, netstack_suspend_enabled).await;
-    let (tun_device, device) =
-        netstack_testing_common::devices::create_tun_device_with(fnet_tun::DeviceConfig {
-            blocking: Some(true),
-            ..Default::default()
-        });
-    let (tun_port, port) = netstack_testing_common::devices::create_ip_tun_port(
-        &tun_device,
-        netstack_testing_common::devices::TUN_DEFAULT_PORT_ID,
-    )
-    .await;
-    tun_port.set_online(true).await.expect("set online");
-    let device_control = netstack_testing_common::devices::install_device(&realm, device);
-    let interface_control = finterfaces_ext::admin::Control::new(
-        netstack_testing_common::devices::add_pure_ip_interface(&port, &device_control, name).await,
-    );
-    let if_id = interface_control.get_id().await.expect("get id");
-    assert_matches!(interface_control.enable().await, Ok(Ok(true)));
-
-    let interfaces_state =
-        realm.connect_to_protocol::<fnet_interfaces::StateMarker>().expect("connect to protocol");
-    netstack_testing_common::interfaces::wait_for_online(&interfaces_state, if_id, true)
-        .await
-        .expect("wait online");
+    let TunInterface {
+        tun_device,
+        interface_control: _interface_control,
+        _tun_port,
+        _device_control,
+    } = set_up_tun_interface(&realm).await;
 
     for packet_number in 1..=4 {
         let (lease, send_lease) = zx::Channel::create();
@@ -956,4 +985,141 @@ async fn wake_group_sockets<S: WakeupSocket>(name: &str, _socket_type: PhantomDa
     drop(wake_watcher_other);
     setup.client_write(&realm).await;
     setup.server_read().await;
+}
+
+#[netstack_test]
+async fn delegated_rx_lease_held_in_wake_group(name: &str) {
+    const SRC_IP: Ipv4Addr = net_ip_v4!("192.168.0.2");
+    const DST_IP: Ipv4Addr = net_ip_v4!("192.168.0.1");
+    const PORT: NonZeroU16 = NonZeroU16::new(8080).unwrap();
+
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let realm = create_power_realm(&sandbox, name, true).await;
+
+    let sagctl =
+        realm.connect_to_protocol::<fsagcontrol::StateMarker>().expect("connect to SAG ctl");
+    let mut sag_state = pin!(execution_state_level_stream(&sagctl));
+    assert_eq!(sag_state.next().await, Some(fpower_system::ExecutionStateLevel::Active));
+
+    let TunInterface { tun_device, interface_control, _tun_port, _device_control } =
+        set_up_tun_interface(&realm).await;
+    // The netstack only lets the system suspend once the TX queue is drained,
+    // so we keep the TUN's queue empty.
+    let _drain_tx_task = fasync::Task::local({
+        let tun_device = tun_device.clone();
+        async move {
+            loop {
+                let _: fnet_tun::Frame =
+                    tun_device.read_frame().await.expect("FIDL error").expect("read frame error");
+            }
+        }
+    });
+
+    let _address_state_provider = netstack_testing_common::interfaces::add_address_wait_assigned(
+        &interface_control,
+        fidl_subnet!("192.168.0.1/24"),
+        Default::default(),
+    )
+    .await
+    .expect("add addr");
+
+    let (wake_watcher, netstack_wake_watcher) = zx::EventPair::create();
+    wake_watcher.signal_peer(zx::Signals::NONE, WAITER_AWAKE_SIGNAL).expect("signal awake");
+    let fnet_power::CreateWakeGroupResponse { token, .. } = realm
+        .connect_to_protocol::<fnet_power::WakeGroupProviderMarker>()
+        .expect("connect to protocol")
+        .create_wake_group(&fnet_power::WakeGroupOptions::default(), netstack_wake_watcher)
+        .await
+        .expect("create wake group");
+    let wake_group = token.expect("netstack must provide wake group token");
+    let wake_group_token =
+        wake_group.token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate token");
+
+    let socket = realm
+        .datagram_socket_with_options(
+            fposix_socket::Domain::Ipv4,
+            fposix_socket::DatagramSocketProtocol::Udp,
+            fposix_socket::SocketCreationOptions { group: Some(wake_group), ..Default::default() },
+        )
+        .await
+        .expect("create datagram socket");
+    socket
+        .bind(&std::net::SocketAddrV4::new(DST_IP.into(), PORT.get()).into())
+        .expect("bind socket");
+
+    let frame = fnet_tun::Frame {
+        frame_type: Some(fhardware_network::FrameType::Ipv4),
+        data: Some(
+            [1, 2, 3, 4]
+                .into_serializer()
+                .wrap_in(UdpPacketBuilder::new(SRC_IP, DST_IP, None, PORT))
+                .wrap_in(Ipv4PacketBuilder::new(SRC_IP, DST_IP, 64, IpProto::Udp.into()))
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .expect("serialize packet")
+                .unwrap_b()
+                .into_inner(),
+        ),
+        port: Some(netstack_testing_common::devices::TUN_DEFAULT_PORT_ID),
+        ..Default::default()
+    };
+    let send_frame_with_lease = async |hold_until_frame| {
+        let (lease, lease_peer) = zx::Channel::create();
+        tun_device
+            .delegate_rx_lease(fhardware_network::DelegatedRxLease {
+                handle: Some(fhardware_network::DelegatedRxLeaseHandle::Channel(lease)),
+                hold_until_frame: Some(hold_until_frame),
+                ..Default::default()
+            })
+            .expect("delegate lease");
+        tun_device.write_frame(&frame).await.expect("write frame").expect("write frame error");
+        lease_peer
+    };
+
+    // Signal that the client is asleep and suspend the system. Reaching
+    // ExecutionStateLevel::Inactive guarantees the netstack handled
+    // BeforeSuspend, so the wake group has already reset its data watcher.
+    wake_watcher.signal_peer(WAITER_AWAKE_SIGNAL, WAITER_ASLEEP_SIGNAL).expect("signal asleep");
+    sagctl
+        .set(&fsagcontrol::SystemActivityGovernorState {
+            execution_state_level: Some(fpower_system::ExecutionStateLevel::Inactive),
+            application_activity_level: Some(fpower_system::ApplicationActivityLevel::Inactive),
+            ..Default::default()
+        })
+        .await
+        .expect("SAG set")
+        .expect("SAG set");
+    assert_eq!(sag_state.next().await, Some(fpower_system::ExecutionStateLevel::Inactive));
+
+    let first_lease = send_frame_with_lease(1).await;
+    let _: zx::Signals = fasync::OnSignals::new(&wake_group_token, GROUP_WAKEUP_SIGNAL)
+        .await
+        .expect("wait for wake signal");
+
+    // Leases reach the wake group in order, so the second lease closing proves
+    // the first lease was already processed and retained.
+    let second_lease = send_frame_with_lease(2).await;
+    let _: zx::Signals = fasync::OnSignals::new(&second_lease, zx::Signals::CHANNEL_PEER_CLOSED)
+        .await
+        .expect("wait closed");
+    assert_matches!(
+        fasync::OnSignals::new(&first_lease, zx::Signals::CHANNEL_PEER_CLOSED)
+            .on_timeout(fasync::MonotonicInstant::after(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT), || {
+                Err(zx::Status::TIMED_OUT)
+            })
+            .await,
+        Err(zx::Status::TIMED_OUT)
+    );
+
+    wake_watcher.signal_peer(WAITER_ASLEEP_SIGNAL, WAITER_AWAKE_SIGNAL).expect("signal awake");
+    let _: zx::Signals = fasync::OnSignals::new(&first_lease, zx::Signals::CHANNEL_PEER_CLOSED)
+        .await
+        .expect("wait closed");
+    assert_matches!(
+        fasync::OnSignals::new(&wake_group_token, GROUP_WAKEUP_SIGNAL)
+            .on_timeout(fasync::MonotonicInstant::after(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT), || {
+                Err(zx::Status::TIMED_OUT)
+            })
+            .await,
+        Err(zx::Status::TIMED_OUT)
+    );
 }

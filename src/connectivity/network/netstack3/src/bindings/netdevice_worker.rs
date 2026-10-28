@@ -232,12 +232,8 @@ impl NetdeviceWorker {
                             return;
                         }
                     };
-                    // NB: Increment the counter before dropping the lease so
-                    // the side effects are synchronized. Useful for tests to
-                    // synchronize on lease drop
-                    debug!("dropping delegated rx power lease");
-                    ctx.bindings_ctx().counters.power.dropped_rx_leases.increment();
-                    std::mem::drop(lease);
+                    let bindings_ctx = ctx.bindings_ctx();
+                    bindings_ctx.wake_groups.delegate_rx_lease(lease, bindings_ctx.clone());
                 })
                 .collect::<()>();
             let _: fasync::JoinHandle<()> = fasync::Scope::current().spawn(fut);

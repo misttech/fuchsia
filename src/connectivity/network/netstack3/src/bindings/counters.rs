@@ -5,8 +5,11 @@
 //! Counters kept in bindings context.
 
 use net_types::ip::{GenericOverIp, Ip, IpVersionMarker, Ipv4, Ipv6};
+use netstack3_core::CounterContext;
 use netstack3_core::inspect::{Inspectable, Inspector, InspectorExt as _};
 use netstack3_core::types::Counter;
+
+use crate::bindings::BindingsCtx;
 
 /// Holder for generic bindings counters.
 #[derive(Debug, Default)]
@@ -41,6 +44,12 @@ impl Inspectable for BindingsCounters {
 #[derive(Debug, Default)]
 pub(crate) struct PowerCounters {
     pub(crate) dropped_rx_leases: Counter,
+}
+
+impl CounterContext<PowerCounters> for BindingsCtx {
+    fn counters(&self) -> &PowerCounters {
+        &self.counters.power
+    }
 }
 
 impl Inspectable for PowerCounters {

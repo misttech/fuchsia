@@ -63,6 +63,12 @@ closed protocol WakeGroupProvider {
         /// power broker lease that keeps the system from suspending. To stay
         /// awake long enough to process that data, the client must acquire such
         /// a lease of its own before asserting [`WAITER_AWAKE_SIGNAL`].
+        ///
+        /// In turn, when data arrives while the client is asleep, the netstack
+        /// holds on to the wake lease delegated to it alongside that data (see
+        /// [`fuchsia.hardware.network/DelegatedRxLease`]) until it observes
+        /// [`WAITER_AWAKE_SIGNAL`] or closes the wake group, keeping the system
+        /// awake until the client can hold a lease of its own.
         wake_watcher zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.WAIT>;
     }) -> (@generated_name("CreateWakeGroupResponse") resource table {
         /// A token that is used both to identify this wake group when adding

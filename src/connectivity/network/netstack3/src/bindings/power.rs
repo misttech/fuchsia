@@ -21,6 +21,7 @@ use element::InternalLessor;
 use suspension_block::{SuspensionBlock, SuspensionBlockControl};
 pub(crate) use transmit_suspension_handler::TransmitSuspensionHandler;
 
+use crate::bindings::BindingsCtx;
 use crate::bindings::power::element::InternalLease;
 use crate::bindings::util::ResultExt;
 use crate::bindings::waker::WakeGroups;
@@ -39,7 +40,7 @@ impl PowerWorker {
         (this, PowerWorkerSink { work_sink, suspension_block })
     }
 
-    pub(crate) async fn run(self, suspend_enabled: bool, wake_groups: WakeGroups) {
+    pub(crate) async fn run(self, suspend_enabled: bool, wake_groups: WakeGroups<BindingsCtx>) {
         let stream = if suspend_enabled {
             futures::stream::unfold((), async |()| match open_suspension_blocker().await {
                 Ok(s) => Some((s, ())),
@@ -61,7 +62,7 @@ impl PowerWorker {
     async fn run_inner(
         self,
         suspend_blocker_stream: impl Stream<Item = fpower_system::SuspendBlockerRequestStream>,
-        wake_groups: WakeGroups,
+        wake_groups: WakeGroups<BindingsCtx>,
     ) {
         let Self { work_stream, suspension_control } = self;
 
@@ -199,7 +200,7 @@ async fn open_suspension_blocker()
 /// deep indentation.
 struct PowerWorkerInner {
     suspension_control: SuspensionBlockControl,
-    wake_groups: WakeGroups,
+    wake_groups: WakeGroups<BindingsCtx>,
     state: SuspensionState,
     lessors: HashMap<InternalLessor, Option<InternalLease>>,
 }
@@ -401,7 +402,7 @@ mod tests {
     }
 
     impl FakeDeps {
-        fn new(wake_groups: WakeGroups) -> (Self, PowerWorkerSink, fasync::Task<()>) {
+        fn new(wake_groups: WakeGroups<BindingsCtx>) -> (Self, PowerWorkerSink, fasync::Task<()>) {
             let (worker, sink) = PowerWorker::new();
             let (proxy, stream) =
                 fidl::endpoints::create_proxy_and_stream::<fpower_system::SuspendBlockerMarker>();

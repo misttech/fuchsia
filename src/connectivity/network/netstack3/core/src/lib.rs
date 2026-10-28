@@ -276,12 +276,12 @@ pub use context::{CoreCtx, UnlockedCoreCtx};
 pub use inspect::Inspector;
 pub use marker::{BindingsContext, BindingsTypes, CoreContext, IpBindingsContext, IpExt};
 pub use netstack3_base::{
-    BindingsSyncTypes, ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading, CtxPair,
-    DeferredResourceRemovalContext, EventContext, GsoInfo, InstantBindingsTypes, InstantContext,
-    Ipv4IdMode, MapDerefExt, MatcherBindingsTypes, NetworkParsingContext,
-    NetworkSerializationContext, ProtocolSpecificOffloadSpec, ReferenceNotifiers, RngContext,
-    SettingsContext, SocketDiagnosticsSeed, TimerBindingsTypes, TimerContext, TxMetadata,
-    TxMetadataBindingsTypes,
+    BindingsSyncTypes, ChecksumOffloadResult, ChecksumOffloadSpec, ChecksumRxOffloading,
+    CounterContext, CtxPair, DeferredResourceRemovalContext, EventContext, GsoInfo,
+    InstantBindingsTypes, InstantContext, Ipv4IdMode, MapDerefExt, MatcherBindingsTypes,
+    NetworkParsingContext, NetworkSerializationContext, ProtocolSpecificOffloadSpec,
+    ReferenceNotifiers, RngContext, SettingsContext, SocketDiagnosticsSeed, TimerBindingsTypes,
+    TimerContext, TxMetadata, TxMetadataBindingsTypes,
 };
 pub use netstack3_datagram::PendingDatagramSocketError;
 pub use state::{StackState, StackStateBuilder};
