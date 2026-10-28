@@ -1488,10 +1488,12 @@ impl Task {
         self.persistent_info.command.lock().clone()
     }
 
-    pub fn set_command_name(&self, mut new_name: TaskCommand) {
+    /// Sets the task's command name and returns the name that was stored, which for the
+    /// thread-group leader may be extended from argv[0]. Returns `None` for a dead task.
+    pub fn set_command_name(&self, mut new_name: TaskCommand) -> Option<TaskCommand> {
         let Ok(running_state) = self.running_state() else {
             log_warn!("Cannot set command name for dead task {}", self.get_tid());
-            return;
+            return None;
         };
 
         let is_leader = self.is_leader();
@@ -1529,12 +1531,22 @@ impl Task {
             );
         }
 
+        // Compute `name_changed` after updating the Zircon thread and process names, because newly
+        // spawned threads start with the placeholder Zircon name `"user-thread"` while inheriting
+        // the parent's `TaskCommand`.
+        let name_changed = *command_guard != new_name;
+        if name_changed {
+            *command_guard = new_name.clone();
+        }
         // Avoid a lock cycle by dropping the guard before notifying memory attribution of the
         // change.
-        *command_guard = new_name;
         drop(command_guard);
 
-        if is_leader {
+        if !name_changed && self.scheduler_state.lock().has_committed_role() {
+            return Some(new_name);
+        }
+
+        if name_changed && is_leader {
             let tasks = {
                 let thread_group = self.thread_group().read();
                 if let Some(notifier) = &thread_group.notifier {
@@ -1551,6 +1563,7 @@ impl Task {
         } else if let Err(err) = self.sync_scheduler_state_to_role() {
             log_warn!(err:?; "Failed to update scheduler role after thread name change.");
         }
+        Some(new_name)
     }
 
     pub fn set_seccomp_state(&self, state: SeccompStateValue) -> Result<(), Errno> {

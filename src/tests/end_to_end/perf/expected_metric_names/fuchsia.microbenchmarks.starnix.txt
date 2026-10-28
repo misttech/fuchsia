@@ -38,6 +38,11 @@ fuchsia.microbenchmarks.starnix: Null5Step.step2
 fuchsia.microbenchmarks.starnix: Null5Step.step3
 fuchsia.microbenchmarks.starnix: Null5Step.step4
 fuchsia.microbenchmarks.starnix: Null5Step.step5
+fuchsia.microbenchmarks.starnix: Prctl/SetName/Leader
+fuchsia.microbenchmarks.starnix: Prctl/SetName/Unchanged
+fuchsia.microbenchmarks.starnix: Prctl/SetName/Worker
+fuchsia.microbenchmarks.starnix: Prctl/SetVmaAnonName
+fuchsia.microbenchmarks.starnix: Prctl/SetVmaAnonName/Unchanged
 fuchsia.microbenchmarks.starnix: RandomMemcpy/16Kbytes/128Mbytes
 fuchsia.microbenchmarks.starnix: RandomMemcpy/16Mbytes/128Mbytes
 fuchsia.microbenchmarks.starnix: RandomMemcpy/16bytes/128Mbytes

@@ -520,6 +520,11 @@ impl SchedulerState {
         self.normal_priority
     }
 
+    /// Returns whether a scheduler role has been committed to the task's Zircon thread.
+    pub(crate) fn has_committed_role(&self) -> bool {
+        self.committed_role_name.is_some()
+    }
+
     /// Returns a monotonic priority key (`0..=139`) for ordering `FUTEX_WAIT` waiters:
     /// - `0`: `SCHED_IDLE`
     /// - `1..=40`: `SCHED_NORMAL` / `SCHED_BATCH` (`20` is default nice `0`)

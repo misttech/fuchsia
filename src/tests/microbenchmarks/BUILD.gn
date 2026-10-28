@@ -45,6 +45,7 @@ if (is_linux) {
     # not useful to run it on Fuchsia because Fuchsia's getpid()
     # function does not return a real process ID.
     "getpid.cc",
+    "prctl.cc",
     "process_spawn_posix.cc",
     "unshare.cc",
   ]
@@ -342,6 +343,7 @@ if (host_os == "linux" && !is_asan) {
     "malloc.cc",
     "memcpy.cc",
     "null.cc",
+    "prctl.cc",
     "random_memcpy.cc",
     "starnix_filesystem.cc",
     "starnix_mm.cc",
