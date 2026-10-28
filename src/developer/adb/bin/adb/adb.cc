@@ -51,6 +51,7 @@ void Adb::ReceiveCallback(
     } else if (pending_packet_) {
       packet = std::move(pending_packet_);
       write_len = copied_len_;
+      copied_len_ = 0;
       FX_LOGS(DEBUG) << "Reusing last times packet";
     } else {
       packet = std::make_unique<apacket>();
@@ -71,7 +72,8 @@ void Adb::ReceiveCallback(
         FX_LOGS(DEBUG) << "Short header";
       }
 
-      memcpy((&packet->msg) + write_len, response->data.data() + offset, copy_len);
+      memcpy(reinterpret_cast<uint8_t*>(&packet->msg) + write_len, response->data.data() + offset,
+             copy_len);
       data_left -= copy_len;
       offset += copy_len;
       write_len += copy_len;
@@ -81,10 +83,15 @@ void Adb::ReceiveCallback(
       if (!complete) {
         continue;
       }
+
+      if (!check_header(packet.get(), &transport_)) {
+        FX_LOGS(ERROR) << "Invalid header received";
+        return;
+      }
+      packet->payload.resize(packet->msg.data_length);
     }
 
     if (packet->msg.data_length) {
-      packet->payload.resize(packet->msg.data_length);
       if (packet->msg.data_length - (write_len - sizeof(packet->msg)) <= data_left) {
         copy_len = packet->msg.data_length - (write_len - sizeof(packet->msg));
         complete = true;
@@ -109,7 +116,7 @@ void Adb::ReceiveCallback(
     }
   }
 
-  if (!complete) {
+  if (!complete && packet) {
     pending_packet_ = std::move(packet);
     copied_len_ = write_len;
     FX_LOGS(DEBUG) << "Storing incomplete packet " << write_len;

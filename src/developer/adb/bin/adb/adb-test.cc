@@ -8,8 +8,10 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fidl/cpp/binding_set.h>
+#include <lib/fit/defer.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/sys/component/cpp/testing/realm_builder.h>
+#include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <unistd.h>
 
@@ -303,6 +305,143 @@ TEST_F(AdbTest, SendUsbPacketTest) {
 
 TEST_F(AdbTest, ConnectTest) {
   // Send A_CNXN
+  std::string connection_string =
+      "device::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
+  fake_driver_.ExpectQueueTx(
+      0, {
+             .msg =
+                 {
+                     .command = A_CNXN,
+                     .arg0 = A_VERSION,
+                     .arg1 = MAX_PAYLOAD,
+                     .data_length = static_cast<uint32_t>(connection_string.size()),
+                     .data_check = 0,
+                     .magic = A_CNXN ^ 0xffffffff,
+                 },
+             .payload = {},
+         });
+  fake_driver_.ExpectQueueTx(
+      0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
+  fake_driver_.SendConnect();
+}
+
+TEST_F(AdbTest, SplitHeaderConnectTest) {
+  std::string connection_string =
+      "device::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
+  fake_driver_.ExpectQueueTx(
+      0, {
+             .msg =
+                 {
+                     .command = A_CNXN,
+                     .arg0 = A_VERSION,
+                     .arg1 = MAX_PAYLOAD,
+                     .data_length = static_cast<uint32_t>(connection_string.size()),
+                     .data_check = 0,
+                     .magic = A_CNXN ^ 0xffffffff,
+                 },
+             .payload = {},
+         });
+  fake_driver_.ExpectQueueTx(
+      0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
+
+  amessage msg{
+      .command = A_CNXN,
+      .arg0 = A_VERSION,
+      .arg1 = MAX_PAYLOAD,
+      .data_length = 234,
+      .data_check = 0x5b44,
+      .magic = A_CNXN ^ 0xffffffff,
+  };
+  const auto* msg_bytes = reinterpret_cast<const uint8_t*>(&msg);
+  constexpr size_t kFirstFragmentSize = 10;
+  fake_driver_.impl_.ExpectReceive(std::vector<uint8_t>(msg_bytes, msg_bytes + kFirstFragmentSize));
+  fake_driver_.impl_.ExpectReceive(
+      std::vector<uint8_t>(msg_bytes + kFirstFragmentSize, msg_bytes + sizeof(amessage)));
+
+  std::string host_banner = "host::features=shell_v2,cmd,stat_v2,ls_v2,fixed_pu";
+  std::vector<uint8_t> payload(host_banner.begin(), host_banner.end());
+  payload.resize(234);
+  fake_driver_.impl_.ExpectReceive(std::move(payload));
+}
+
+TEST_F(AdbTest, OversizedPayloadHeaderRejectedTest) {
+  fuchsia_logging::LogSettingsBuilder()
+      .WithMinLogSeverity(fuchsia_logging::LogSeverity::Fatal)
+      .BuildAndInitialize();
+  auto restore_logs = fit::defer([this]() {
+    while (!fake_driver_.expectations_empty()) {
+      usleep(1'000);
+    }
+    fuchsia_logging::LogSettingsBuilder()
+        .WithMinLogSeverity(fuchsia_logging::kDefaultLogLevel)
+        .BuildAndInitialize();
+  });
+
+  // Header with untrusted data_length > MAX_PAYLOAD (0xffffffff).
+  fake_driver_.impl_.ExpectReceive({
+      .msg =
+          {
+              .command = A_CNXN,
+              .arg0 = A_VERSION,
+              .arg1 = MAX_PAYLOAD,
+              .data_length = 0xffffffff,
+              .data_check = 0,
+              .magic = A_CNXN ^ 0xffffffff,
+          },
+      .payload = {},
+  });
+
+  // Subsequent valid A_CNXN should still succeed.
+  std::string connection_string =
+      "device::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
+  fake_driver_.ExpectQueueTx(
+      0, {
+             .msg =
+                 {
+                     .command = A_CNXN,
+                     .arg0 = A_VERSION,
+                     .arg1 = MAX_PAYLOAD,
+                     .data_length = static_cast<uint32_t>(connection_string.size()),
+                     .data_check = 0,
+                     .magic = A_CNXN ^ 0xffffffff,
+                 },
+             .payload = {},
+         });
+  fake_driver_.ExpectQueueTx(
+      0, std::vector<uint8_t>(connection_string.begin(), connection_string.end()));
+  fake_driver_.SendConnect();
+}
+
+TEST_F(AdbTest, InvalidMagicHeaderRejectedTest) {
+  fuchsia_logging::LogSettingsBuilder()
+      .WithMinLogSeverity(fuchsia_logging::LogSeverity::Fatal)
+      .BuildAndInitialize();
+  auto restore_logs = fit::defer([this]() {
+    while (!fake_driver_.expectations_empty()) {
+      usleep(1'000);
+    }
+    fuchsia_logging::LogSettingsBuilder()
+        .WithMinLogSeverity(fuchsia_logging::kDefaultLogLevel)
+        .BuildAndInitialize();
+  });
+
+  // Split header with invalid magic, also exercising pending_packet_ and copied_len_ reset.
+  amessage bad_msg{
+      .command = A_CNXN,
+      .arg0 = A_VERSION,
+      .arg1 = MAX_PAYLOAD,
+      .data_length = 234,
+      .data_check = 0,
+      .magic = 0,
+  };
+  const auto* bad_msg_bytes = reinterpret_cast<const uint8_t*>(&bad_msg);
+  constexpr size_t kFirstFragmentSize = 10;
+  fake_driver_.impl_.ExpectReceive(
+      std::vector<uint8_t>(bad_msg_bytes, bad_msg_bytes + kFirstFragmentSize));
+  fake_driver_.impl_.ExpectReceive(
+      std::vector<uint8_t>(bad_msg_bytes + kFirstFragmentSize, bad_msg_bytes + sizeof(amessage)));
+
+  // Subsequent valid A_CNXN should still succeed.
   std::string connection_string =
       "device::ro.product.name=zircon;ro.product.model=zircon;ro.product.device=zircon;";
   fake_driver_.ExpectQueueTx(

@@ -74,7 +74,7 @@ class Adb : public AdbBase {
   std::unique_ptr<apacket> pending_packet_;
   // copied_len_ keeps track of the current size received of pending_packet_. If packet was
   // completely received, copied_len_ should be 0.
-  size_t copied_len_;
+  size_t copied_len_ = 0;
 
   std::shared_ptr<fit::callback<void()>> teardown_callback_ =
       std::make_shared<fit::callback<void()>>();
