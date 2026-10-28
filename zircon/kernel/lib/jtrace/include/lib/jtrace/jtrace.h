@@ -5,6 +5,7 @@
 #ifndef ZIRCON_KERNEL_LIB_JTRACE_INCLUDE_LIB_JTRACE_JTRACE_H_
 #define ZIRCON_KERNEL_LIB_JTRACE_INCLUDE_LIB_JTRACE_JTRACE_H_
 
+#include <lib/jtrace/jtrace_ffi.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/time.h>
@@ -77,30 +78,25 @@ struct FileFuncLineInfo {
 // instead of a 64 bit pointer), but it may also become a more hard requirement
 // for persistent traces once kernel images start to be loaded in different
 // locations on every boot because of ASLR.
-template <UseLargeEntries>
-struct Entry;
-
-template <>
-struct Entry<UseLargeEntries::No> {
-  Entry() = default;
-  Entry(const char* _tag, const ::jtrace::internal::FileFuncLineInfo* _ffl_info,
-        internal::Field32 _a = 0)
+struct SmallEntry {
+  SmallEntry() = default;
+  SmallEntry(const char* _tag, const ::jtrace::internal::FileFuncLineInfo* _ffl_info,
+             internal::Field32 _a = 0)
       : tag(_tag), a(_a.val) {}
 
   // This ticks value is generally on the boot timeline, but can be on the monotonic
   // timeline when the UseMonoTimestamps::Yes is used.
-  zx_ticks_t ts_ticks;       //  0 + 8 == 8 bytes
+  zx_ticks_t ts_ticks{0};    //  0 + 8 == 8 bytes
   const char* tag{nullptr};  //  8 + 8 == 16 bytes
-  cpu_num_t cpu_id;          // 16 + 4 == 20 bytes
-  uint32_t a;                // 24 + 4 == 24 bytes
+  cpu_num_t cpu_id{0};       // 16 + 4 == 20 bytes
+  uint32_t a{0};             // 20 + 4 == 24 bytes
 };
 
-template <>
-struct Entry<UseLargeEntries::Yes> {
-  Entry() = default;
-  Entry(const char* _tag, const ::jtrace::internal::FileFuncLineInfo* _ffl_info,
-        internal::Field32 _a = 0, internal::Field32 _b = 0, internal::Field32 _c = 0,
-        internal::Field32 _d = 0, internal::Field64 _e = 0, internal::Field64 _f = 0)
+struct LargeEntry {
+  LargeEntry() = default;
+  LargeEntry(const char* _tag, const ::jtrace::internal::FileFuncLineInfo* _ffl_info,
+             internal::Field32 _a = 0, internal::Field32 _b = 0, internal::Field32 _c = 0,
+             internal::Field32 _d = 0, internal::Field64 _e = 0, internal::Field64 _f = 0)
       : tag(_tag),
         ffl_info(_ffl_info),
         e(_e.val),
@@ -112,26 +108,28 @@ struct Entry<UseLargeEntries::Yes> {
 
   // This ticks value is generally on the boot timeline, but can be on the monotonic
   // timeline when the UseMonoTimestamps::Yes is used.
-  zx_ticks_t ts_ticks;                                  //  0 +  8 == 8 bytes
+  zx_ticks_t ts_ticks{0};                               //  0 +  8 == 8 bytes
   const char* tag{nullptr};                             //  8 +  8 == 16 bytes
   const internal::FileFuncLineInfo* ffl_info{nullptr};  // 16 +  8 == 24 bytes
-  zx_koid_t tid;                                        // 24 +  8 == 32 bytes
-  uint64_t e, f;                                        // 32 + 16 == 48 bytes
-  uint32_t a, b, c, d;                                  // 48 + 16 == 64 bytes
-  cpu_num_t cpu_id;                                     // 64 +  4 == 68 bytes
-  // implicit padding to 8 bytes alignment brings the structure to 72 bytes
-  // total.
+  zx_koid_t tid{0};                                     // 24 +  8 == 32 bytes
+  uint64_t e{0}, f{0};                                  // 32 + 16 == 48 bytes
+  uint32_t a{0}, b{0}, c{0}, d{0};                      // 48 + 16 == 64 bytes
+  cpu_num_t cpu_id{0};                                  // 64 +  4 == 68 bytes
+  uint32_t padding{0};                                  // 68 +  4 == 72 bytes
 };
+
+template <UseLargeEntries kUseLargeEntries>
+using Entry = ktl::conditional_t<kUseLargeEntries == UseLargeEntries::Yes, LargeEntry, SmallEntry>;
 
 }  // namespace jtrace
 
 #if JTRACE_TARGET_BUFFER_SIZE > 0
-void jtrace_init();
-void jtrace_set_after_thread_init_early();
-void jtrace_set_location(void* ptr, size_t len);
-void jtrace_invalidate();
-void jtrace_log(jtrace::Entry<kJTraceUseLargeEntries>& e);
-void jtrace_dump(jtrace::TraceBufferType which);
+inline void jtrace_init() { rust_jtrace_init(); }
+inline void jtrace_set_after_thread_init_early() { rust_jtrace_set_after_thread_init_early(); }
+inline void jtrace_set_location(void* ptr, size_t len) { rust_jtrace_set_location(ptr, len); }
+inline void jtrace_invalidate() { rust_jtrace_invalidate(); }
+inline void jtrace_log(jtrace::Entry<kJTraceUseLargeEntries>& e) { rust_jtrace_log(e); }
+inline void jtrace_dump(jtrace::TraceBufferType which) { rust_jtrace_dump(which); }
 
 #define JTRACE(tag, ...)                                                         \
   do {                                                                           \
@@ -153,17 +151,5 @@ inline void jtrace_dump(jtrace::TraceBufferType which) {}
 #define JTRACE(tag, ...) while (false)
 
 #endif
-
-extern "C" {
-
-// FFI wrappers for Rust callers.  Defined unconditionally: they forward to the
-// functions above, which are no-ops when JTRACE is compiled out.
-void cpp_jtrace_set_location(void* ptr, size_t len);
-void cpp_jtrace_invalidate();
-void cpp_jtrace_dump_current();
-void cpp_jtrace_dump(jtrace::TraceBufferType which);
-const uint8_t* cpp_jtrace_get_location(size_t* out_size);
-
-}  // extern "C"
 
 #endif  // ZIRCON_KERNEL_LIB_JTRACE_INCLUDE_LIB_JTRACE_JTRACE_H_

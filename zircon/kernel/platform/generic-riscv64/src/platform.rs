@@ -17,6 +17,10 @@ use crate::arch_rs::riscv64::mp::{
 use crate::arch_rs::riscv64::sbi::sbi_get_cpu_state_impl;
 #[cfg(console_enabled)]
 use crate::console::panic_shell_start;
+use crate::jtrace::{
+    IS_PERSISTENT as JTRACE_IS_PERSISTENT,
+    TARGET_PERSISTENT_BUFFER_SIZE as JTRACE_TARGET_PERSISTENT_BUFFER_SIZE,
+};
 use crate::kernel::mp::{MpIpi, MpIpiTarget, SMP_MAX_CPUS};
 use crate::kernel::types::cpu_num_t;
 use crate::object::ResourceDispatcher;
@@ -69,17 +73,6 @@ zr::static_assert!(
 );
 zr::static_assert!(TARGET_PERSISTENT_DEBUGLOG_SIZE <= u32::MAX as usize);
 
-const JTRACE_TARGET_BUFFER_SIZE: usize =
-    zr::parse_usize(env!("JTRACE_TARGET_BUFFER_SIZE")).expect("JTRACE_TARGET_BUFFER_SIZE invalid");
-const JTRACE_IS_PERSISTENT: bool = cfg!(jtrace_persistent);
-const JTRACE_TARGET_PERSISTENT_BUFFER_SIZE: usize =
-    if JTRACE_IS_PERSISTENT { JTRACE_TARGET_BUFFER_SIZE } else { 0 };
-// A persistent jtrace buffer must be a multiple of the persistent RAM allocation granularity.
-zr::static_assert!(
-    !JTRACE_IS_PERSISTENT
-        || JTRACE_TARGET_BUFFER_SIZE.is_multiple_of(PERSISTENT_RAM_ALLOCATION_GRANULARITY)
-);
-
 /// `memalloc::Range` as handed off by physboot.  Only ever passed through to the
 /// PMM, never read here.
 #[repr(C)]
@@ -88,8 +81,6 @@ struct MemallocRange {
 }
 
 unsafe extern "C" {
-    fn cpp_jtrace_dump_current();
-    fn cpp_jtrace_set_location(ptr: *mut u8, len: usize);
     fn cpp_mapped_crashlog_bind(base: *mut u8, size: usize);
     fn cpp_phys_handoff_cpu_topology(count: &mut usize) -> *const zbi::TopologyNode;
     fn cpp_phys_handoff_memory(count: &mut usize) -> *const MemallocRange;
@@ -146,8 +137,7 @@ pub extern "C" fn rust_platform_panic_start(halt_others: bool) {
     if !PANIC_STARTED.swap(true, Ordering::SeqCst) {
         debuglog::dlog_bluescreen_init();
         // Attempt to dump the current debug trace buffer, if we have one.
-        // SAFETY: takes no arguments; jtrace owns the buffer it dumps.
-        unsafe { cpp_jtrace_dump_current() };
+        crate::jtrace::jtrace_dump(crate::jtrace::TraceBufferType::Current);
     }
 }
 
@@ -523,10 +513,20 @@ fn allocate_persistent_ram(range: &'static mut [u8]) {
     // trace buffer would have been already set during (very) early init.
     if JTRACE_IS_PERSISTENT {
         let (jtrace, _) = leftover.split_at_mut(jtrace_size);
-        // SAFETY: `jtrace` is the tail of the persistent RAM range, which stays
-        // mapped for the life of the kernel; jtrace keeps using it and nothing
-        // here touches it again.
-        unsafe { cpp_jtrace_set_location(jtrace.as_mut_ptr(), jtrace.len()) };
+        let jtrace_len = jtrace.len();
+        // SAFETY: `allocate_persistent_ram` runs once during single-CPU early
+        // platform initialization (`rust_platform_early_init`), so
+        // `jtrace_set_location` is never called concurrently with itself or
+        // `jtrace_dump(TraceBufferType::Recovered)`. `jtrace` is the tail of
+        // the initialized persistent RAM range, which stays mapped and valid
+        // for the `'static` lifetime of the kernel, and nothing here touches it
+        // again.
+        unsafe {
+            crate::jtrace::jtrace_set_location(
+                jtrace.as_mut_ptr().cast::<core::ffi::c_void>(),
+                jtrace_len,
+            );
+        }
     }
 }
 

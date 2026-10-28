@@ -477,6 +477,10 @@ config("jtrace_config") {
       rustflags += [ "--cfg=jtrace_use_large_entries" ]
     }
 
+    if (jtrace_use_mono_timestamps) {
+      rustflags += [ "--cfg=jtrace_use_mono_timestamps" ]
+    }
+
     if (jtrace_enabled == "persistent") {
       defines += [ "JTRACE_IS_PERSISTENT=true" ]
       rustflags += [ "--cfg=jtrace_persistent" ]

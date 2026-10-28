@@ -5,42 +5,111 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_bindgen.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
-static_library("jtrace") {
+source_set("jtrace") {
   public_deps = [ ":headers" ]
+  deps = [ ":jtrace-rs" ]
+}
 
-  sources = [
-    "jtrace.cc",
-    "jtrace_internal.h",
-  ]
+rustc_bindgen("jtrace-bindings.bindgen") {
+  visibility = [ ":*" ]
+  output_name = "jtrace_bindings.rs"
+  headers = [ "include/lib/jtrace/jtrace.h" ]
   deps = [
-    ":jtrace-rs",
-    "//sdk/lib/fit:headers",
-    "//src/lib/lazy_init",
-    "//zircon/kernel/lib/arch",
-    "//zircon/kernel/lib/debuglog",
-    "//zircon/kernel/lib/io",
-    "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/syscalls",
-    "//zircon/kernel/vm",
-    "//zircon/system/ulib/affine",
+    ":headers",
+    "//zircon/kernel/lib/ktl:headers",
     "//zircon/system/ulib/fbl:headers",
-    "//zircon/system/ulib/pretty",
+  ]
+  cpp = true
+
+  notice_year = "2026"
+  type_allowlist = [
+    "cpu_num_t",
+    "jtrace::TraceBufferType",
+    "jtrace::UseLargeEntries",
+    "jtrace::IsPersistent",
+    "jtrace::UseMonoTimestamps",
+    "jtrace::SmallEntry",
+    "jtrace::LargeEntry",
+    "jtrace::internal::FileFuncLineInfo",
+  ]
+  type_blocklist = [
+    "zx_ticks_t",
+    "zx_koid_t",
+  ]
+  function_blocklist = [ ".*" ]
+  rustified_enum = [
+    "jtrace::TraceBufferType",
+    "jtrace::UseLargeEntries",
+    "jtrace::IsPersistent",
+    "jtrace::UseMonoTimestamps",
+  ]
+  std_derives = [
+    "partialeq",
+    "eq",
+  ]
+  additional_bindgen_flags = [
+    "--no-recursive-allowlist",
+    "--with-derive-custom-struct=jtrace_(Small|Large)Entry=Debug,Copy,Clone,PartialEq,Eq",
+  ]
+
+  raw_lines = [ "use zx_types::{zx_koid_t, zx_ticks_t};" ]
+}
+
+kernel_rust_crate("jtrace-bindings") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/*",
+  ]
+  _bindgen_outputs = get_target_outputs(":jtrace-bindings.bindgen")
+  source_root = "jtrace_types.rs"
+  sources = [ "jtrace_types.rs" ] + _bindgen_outputs
+  inputs = _bindgen_outputs
+  rustenv = [ "JTRACE_BINDINGS_RS=" +
+              rebase_path(_bindgen_outputs[0], root_build_dir) ]
+  deps = [
+    ":jtrace-bindings.bindgen",
+    "//sdk/rust/zx-types",
+    "//src/lib/kalloc",
+    "//zircon/kernel/bin/rustenv_path",
+    "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }
 
 kernel_rust_mod("jtrace-rs") {
-  sources = [ "jtrace.rs" ]
+  sources = [
+    "jtrace.rs",
+    "jtrace_ffi.rs",
+    "jtrace_internal.rs",
+    "jtrace_tests.rs",
+  ]
   deps = [
+    ":jtrace-bindings",
+    "//sdk/rust/zx-types",
     "//src/lib/kprint",
     "//src/lib/zr",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/console:console_rs",
+    "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/libc:rust",
+    "//zircon/system/ulib/affine/rust:affine",
+    "//zircon/system/ulib/pretty/rust:pretty",
+  ]
+  test_deps = [
+    "//src/lib/kalloc",
+    "//zircon/kernel/lib/unittest:unittest-rs",
+    "//zircon/system/ulib/fbl/rust:fbl",
   ]
 }
 
 library_headers("headers") {
-  headers = [ "lib/jtrace/jtrace.h" ]
+  headers = [
+    "lib/jtrace/jtrace.h",
+    "lib/jtrace/jtrace_ffi.h",
+  ]
 }
 
 group("tests") {
@@ -49,7 +118,6 @@ group("tests") {
 
 group("kernel-tests") {
   testonly = true
-  deps = [ "tests" ]
 }
 
 group("phys-tests") {

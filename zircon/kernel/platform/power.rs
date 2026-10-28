@@ -7,6 +7,7 @@
 
 #[cfg(console_enabled)]
 use crate::console::{CMD_AVAIL_ALWAYS, CMD_FLAG_PANIC, CmdArgs, static_command};
+use crate::jtrace::jtrace_invalidate;
 use crate::pdev_watchdog::{hw_watchdog_pet, hw_watchdog_set_enabled};
 use crate::persistent_debuglog_rs::persistent_dlog_invalidate;
 use crate::platform_rs::timer::InstantBoot;
@@ -124,7 +125,6 @@ unsafe extern "C" {
         reason: ZirconCrashReason,
         amt: usize,
     );
-    fn cpp_jtrace_invalidate();
     fn cpp_platform_serial_is_suspended() -> bool;
     fn cpp_platform_serial_suspended_at() -> InstantBoot;
 }
@@ -182,12 +182,6 @@ impl PlatformCrashlogInterface {
         // `PlatformCrashlog::Get()`.
         unsafe { cpp_platform_crashlog_finalize(self.0, reason, amt) }
     }
-}
-
-#[inline]
-fn jtrace_invalidate() {
-    // SAFETY: Invalidates the global jtrace buffer (or is a no-op if jtrace is disabled).
-    unsafe { cpp_jtrace_invalidate() }
 }
 
 #[inline]
