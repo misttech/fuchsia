@@ -53,7 +53,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
-        "//src/connectivity/network/dhcpv6/core:dhcpv6-core-test",
+        "//src/connectivity/network/dhcpv6/core:dhcpv6-test",
         "//src/connectivity/network/lib/netfilter:netfilter-tests",
         "//src/connectivity/network/netstack3/core:netstack3-core-test-package",
     ],

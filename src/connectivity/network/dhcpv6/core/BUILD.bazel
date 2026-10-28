@@ -55,7 +55,7 @@ wrap_host_rust_test(
 )
 
 fx_unittest_package(
-    name = "dhcpv6-core-test",
+    name = "dhcpv6-test",
     unit_tests = [":core_test"],
     visibility = ["//src/connectivity/network:__pkg__"],
 )

@@ -78,7 +78,7 @@ pattern).
 *   Parsing and serialization tests:
     [packet_formats_test](../../../lib/packet-formats/BUILD.gn).
 
-*   Core unit tests: [dhcpv6-core-test](core/BUILD.gn).
+*   Core unit tests: [dhcpv6-test](core/BUILD.gn).
 
 *   Client bindings unit tests:
     [dhcpv6-client-test](client/BUILD.gn).
