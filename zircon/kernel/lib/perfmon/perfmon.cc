@@ -18,42 +18,12 @@
 
 #include <lib/perfmon.h>
 
-#include <ktl/atomic.h>
-
 #include <ktl/enforce.h>
 
-bool perfmon_supported = false;
+PerfmonStateBase::PerfmonStateBase(unsigned n_cpus) { rust_perfmon_state_base_init(this, n_cpus); }
 
-ktl::atomic<int> perfmon_active;
-
-PerfmonStateBase::PerfmonStateBase(unsigned n_cpus) : num_cpus(n_cpus) {}
-
-PerfmonStateBase::~PerfmonStateBase() {
-  DEBUG_ASSERT(!perfmon_active.load());
-
-  if (cpu_data) {
-    for (unsigned cpu = 0; cpu < num_cpus; ++cpu) {
-      auto data = &cpu_data[cpu];
-      data->~PerfmonCpuData();
-    }
-    // This frees the memory allocated by |memalign()|.
-    free(cpu_data);
-  }
-}
+PerfmonStateBase::~PerfmonStateBase() { rust_perfmon_state_base_destroy(this); }
 
 bool PerfmonStateBase::AllocatePerCpuData() {
-  DEBUG_ASSERT(cpu_data == nullptr);
-
-  size_t space_needed = sizeof(PerfmonCpuData) * num_cpus;
-  auto cdata = reinterpret_cast<PerfmonCpuData*>(memalign(alignof(PerfmonCpuData), space_needed));
-  if (!cdata) {
-    return false;
-  }
-
-  for (unsigned cpu = 0; cpu < num_cpus; ++cpu) {
-    new (&cdata[cpu]) PerfmonCpuData();
-  }
-
-  cpu_data = cdata;
-  return true;
+  return rust_perfmon_state_base_allocate_per_cpu_data(this);
 }

@@ -23,7 +23,7 @@ zr::static_assert!(core::mem::size_of::<PinnedVmObject>() == 24);
 zr::static_assert!(core::mem::align_of::<PinnedVmObject>() == 8);
 
 impl PinnedVmObject {
-    /// Creates an empty `PinnedVmObject`.
+    /// Creates an empty, unpinned `PinnedVmObject`.
     pub const fn new() -> Self {
         Self { vmo: None, offset: 0, size: 0 }
     }
@@ -55,12 +55,18 @@ impl PinnedVmObject {
     pub fn size(&self) -> u64 {
         self.size as u64
     }
+
+    /// Unpins the VMO range if pinned and releases the underlying `VmObject` reference.
+    pub fn reset(&mut self) {
+        if let Some(ref vmo) = self.vmo {
+            vmo.unpin(self.offset as u64, self.size as u64);
+            self.vmo = None;
+        }
+    }
 }
 
 impl Drop for PinnedVmObject {
     fn drop(&mut self) {
-        if let Some(vmo) = self.vmo.take() {
-            vmo.unpin(self.offset as u64, self.size as u64);
-        }
+        self.reset();
     }
 }

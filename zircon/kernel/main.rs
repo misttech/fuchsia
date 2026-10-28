@@ -101,6 +101,9 @@ pub mod page_cache;
 #[path = "lib/percpu_writer/allocator.rs"]
 pub mod percpu_writer;
 
+#[path = "lib/perfmon/src/mod.rs"]
+pub mod perfmon;
+
 #[path = "lib/persistent-debuglog/persistent_debuglog.rs"]
 pub mod persistent_debuglog_rs;
 

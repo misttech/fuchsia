@@ -68,6 +68,7 @@ source_set("main") {
     "//zircon/kernel/lib/jtrace",
     "//zircon/kernel/lib/lockdep:lockdep-rs",
     "//zircon/kernel/lib/lockup_detector",
+    "//zircon/kernel/lib/perfmon:perfmon_rs",
     "//zircon/kernel/lib/thread_sampler",
     "//zircon/kernel/lib/userabi",
     "//zircon/kernel/phys/handoff",

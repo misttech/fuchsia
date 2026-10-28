@@ -5,16 +5,96 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [ "lib/perfmon.h" ]
+}
+
+kernel_bindgen_crate("perfmon-bindings") {
+  headers = [ "include/lib/perfmon.h" ]
+  cpp = true
+  non_rust_deps = [
+    ":headers",
+    "//zircon/kernel/vm:headers",
+    "//zircon/system/ulib/zircon-internal:headers",
+  ]
+  deps = [ "//sdk/rust/zx-types" ]
+  notice_year = 2026
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_instant_mono_ticks_t, zx_ticks_t};",
+    "pub type fbl_RefPtr = usize;",
+  ]
+  function_blocklist = [ ".*" ]
+  type_blocklist = [
+    "zx_.*",
+    "VmObject.*",
+    "VmMapping.*",
+    "PinnedVmObject_.*",
+    "PerfmonStateBase_.*",
+    "PmuEventId",
+    "fbl_RefPtr.*",
+  ]
+  type_allowlist = [
+    "perfmon::.*",
+    "PerfmonCpuData",
+    "PerfmonStateBase",
+    "PinnedVmObject",
+  ]
+  var_allowlist = [
+    "perfmon::.*",
+    "kMaxEventRecordSize",
+  ]
+  opaque_types = [
+    "fbl::RefPtr",
+    "PinnedVmObject",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  replacements = [
+    [
+      "\\bperfmon_([A-Za-z0-9_]+)",
+      "\\1",
+    ],
+    [
+      "#\\[repr\\(align\\(4\\)\\)\\]\n(#\\[derive\\([^\\n]+\\)\\]\npub struct RecordHeader \\{)",
+      "\\1\n    pub _align: [u32; 0],",
+    ],
+  ]
+  std_derives = [
+    "default",
+    "eq",
+    "partialeq",
+  ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+}
+
+kernel_rust_mod("perfmon_rs") {
+  output_name = "perfmon"
+  source_root = "src/mod.rs"
+  sources = [ "src/mod.rs" ]
+  deps = [
+    ":perfmon-bindings",
+    "//sdk/rust/zx-types",
+    "//src/lib/zr",
+    "//zircon/kernel/vm:vm-rs",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 static_library("perfmon") {
   public_deps = [ ":headers" ]
 
   sources = [ "perfmon.cc" ]
-  deps = [ "//zircon/kernel/vm" ]
+  deps = [
+    ":perfmon_rs",
+    "//zircon/kernel/vm",
+  ]
 }
 
 group("tests") {
