@@ -85,6 +85,30 @@ def _auth_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
     yield from bazel_inv.generate_auth_bazelrc(rbe_auth, rs_auth)
 
 
+def _resultstore_config_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
+    """Generates bazelrc lines for ResultStore config mode (e.g. build --config=resultstore).
+
+    Note: 'build --config=...' applies to build-like commands (build, test, run)
+    and excludes query commands (query, cquery, aquery), which do not evaluate
+    build configurations. The 'bazel vendor' maintenance command is also
+    intentionally excluded because dependency vendoring is an offline developer
+    workflow that does not emit build events or require build service integration.
+    """
+    rs_bazel = env.get(bazel_inv.ENV_RESULTSTORE_BAZEL, "")
+    if not rs_bazel or rs_bazel == "0":
+        return
+    if rs_bazel in bazel_inv.VALID_RESULTSTORE_CONFIGS:
+        yield f"build --config={rs_bazel}"
+    else:
+        valid_modes = " or ".join(
+            repr(c) for c in sorted(bazel_inv.VALID_RESULTSTORE_CONFIGS)
+        )
+        raise ValueError(
+            f"Invalid {bazel_inv.ENV_RESULTSTORE_BAZEL} value: {rs_bazel!r}. "
+            f"Expected {valid_modes}."
+        )
+
+
 def _log_options_bazelrc(log_dir: Path) -> Iterable[str]:
     """Generates options pointing Bazel invocation log outputs to log_dir."""
     workspace_log = log_dir / "workspace_events.log"
@@ -144,6 +168,7 @@ def generate_invocation(
             opt = _metadata_option(k, v)
             bazelrc_lines.append(build_config_option("_bes_common", opt))
 
+    bazelrc_lines.extend(_resultstore_config_bazelrc(env))
     bazelrc_lines.extend(_auth_bazelrc(env))
     bazelrc_lines.extend(_service_proxies_bazelrc(env))
 

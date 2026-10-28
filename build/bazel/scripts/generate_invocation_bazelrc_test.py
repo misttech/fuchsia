@@ -202,6 +202,50 @@ class AuthBazelrcTest(unittest.TestCase):
         self.assertEqual(list(gen._auth_bazelrc({})), [])
 
 
+class ResultStoreConfigBazelrcTest(unittest.TestCase):
+    def test_resultstore_config(self) -> None:
+        rc = list(
+            gen._resultstore_config_bazelrc(
+                {bazel_inv.ENV_RESULTSTORE_BAZEL: bazel_inv.CONFIG_RESULTSTORE}
+            )
+        )
+        self.assertEqual(rc, [f"build --config={bazel_inv.CONFIG_RESULTSTORE}"])
+
+    def test_resultstore_infra_config(self) -> None:
+        rc = list(
+            gen._resultstore_config_bazelrc(
+                {
+                    bazel_inv.ENV_RESULTSTORE_BAZEL: bazel_inv.CONFIG_RESULTSTORE_INFRA
+                }
+            )
+        )
+        self.assertEqual(
+            rc, [f"build --config={bazel_inv.CONFIG_RESULTSTORE_INFRA}"]
+        )
+
+    def test_disabled_config(self) -> None:
+        self.assertEqual(
+            list(
+                gen._resultstore_config_bazelrc(
+                    {bazel_inv.ENV_RESULTSTORE_BAZEL: "0"}
+                )
+            ),
+            [],
+        )
+        self.assertEqual(list(gen._resultstore_config_bazelrc({})), [])
+
+    def test_invalid_config_raises(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            list(
+                gen._resultstore_config_bazelrc(
+                    {bazel_inv.ENV_RESULTSTORE_BAZEL: "invalid_mode"}
+                )
+            )
+        self.assertIn(
+            "Invalid FX_INTERNAL_RESULTSTORE_BAZEL", str(ctx.exception)
+        )
+
+
 class ServiceProxiesBazelrcTest(unittest.TestCase):
     def test_proxy_sockets(self) -> None:
         env = {

@@ -177,29 +177,6 @@ fi
 # command.
 _BAZEL_EXTRA_ARGS=()
 
-# LINT.IfChange(resultstore_bazel_env_vars)
-# Enable ResultStore reporting if requested by the orchestrator.
-# FX_INTERNAL_RESULTSTORE_BAZEL (set by build/scripts/main_build.py based on
-# resultstore_auth_type) can be set to "resultstore" or "resultstore_infra"
-# (configs defined in build/bazel/templates/template.remote_services.gni).
-case "${FX_INTERNAL_RESULTSTORE_BAZEL:-0}" in
-  "" | "0")
-    # Disabled or empty, do nothing
-    ;;
-  resultstore | resultstore_infra)
-    # The resultstore configs (build:resultstore, build:resultstore_infra) are only
-    # defined for commands that use build configuration. Subcommands like query do not
-    # recognize build: configs.
-    if [[ -n "${bazel_command_does_configuration}" ]]; then
-      _BAZEL_EXTRA_ARGS+=( --config="${FX_INTERNAL_RESULTSTORE_BAZEL}" )
-    fi
-    ;;
-  *)
-    die "Invalid FX_INTERNAL_RESULTSTORE_BAZEL value: ${FX_INTERNAL_RESULTSTORE_BAZEL:-}. Expected 'resultstore' or 'resultstore_infra'."
-    ;;
-esac
-# LINT.ThenChange(//build/scripts/main_build.py:resultstore_bazel_env_vars)
-
 # The following step is sensitive to special environment variables:
 #   * per-invocation build metadata
 #       When uploading results to build event services like ResultStore or

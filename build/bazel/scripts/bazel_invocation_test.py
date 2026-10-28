@@ -48,7 +48,13 @@ class SocketEnvVarsTest(unittest.TestCase):
 
 
 class ResultStoreBazelConfigTest(unittest.TestCase):
-    def test_disabled_mode(self) -> None:
+    def test_valid_resultstore_configs(self) -> None:
+        self.assertEqual(
+            bi.VALID_RESULTSTORE_CONFIGS,
+            frozenset({bi.CONFIG_RESULTSTORE, bi.CONFIG_RESULTSTORE_INFRA}),
+        )
+
+    def test_disabled(self) -> None:
         self.assertIsNone(
             bi.resultstore_bazel_config("none", "loas", in_infra=False)
         )
