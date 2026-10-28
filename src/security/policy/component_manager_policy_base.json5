@@ -597,9 +597,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/lowpanservice",
-
-                    // TODO(https://fxbug.dev/521638047): Remove once added to product policy.
-                    "/core/session-manager/session:session/nest_thread_controller",
                 ],
             },
             {
@@ -627,9 +624,6 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/lowpanservice",
-
-                    // TODO(https://fxbug.dev/521638047): Remove once added to product policy.
-                    "/core/session-manager/session:session/nest_thread_controller",
                 ],
             },
 
