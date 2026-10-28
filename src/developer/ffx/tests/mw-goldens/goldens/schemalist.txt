@@ -15,6 +15,7 @@ emu_console.json
 emu_list.json
 emu_screenshot.json
 emu_show.json
+emu_snapshot_delete.json
 emu_snapshot_list.json
 emu_snapshot_load.json
 emu_snapshot_save.json

@@ -9,7 +9,7 @@ use ffx_emulator_config::{EmulatorEngine, SnapshotInfo};
 use ffx_emulator_engines::EngineBuilder;
 use ffx_emulator_snapshot_args::{SnapshotCommand, SnapshotSubCommand};
 use ffx_writer::VerifiedMachineWriter;
-use fho::{FfxMain, FfxTool, Result, bug, user_error};
+use fho::{FfxMain, FfxTool, Result, bug, return_user_error, user_error};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -18,6 +18,8 @@ use std::path::PathBuf;
 #[derive(Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum SnapshotOutput {
+    /// The named snapshots were deleted.
+    Deleted { names: Vec<String> },
     /// The snapshots which are saved for the emulator.
     List { snapshots: Vec<SnapshotInfo> },
     /// The emulator was restored to the named snapshot.
@@ -56,6 +58,7 @@ impl EmuSnapshotTool {
         let builder = EngineBuilder::new(&self.context, EmulatorInstances::new(instance_dir));
 
         let mut name = match &self.cmd.subcommand {
+            SnapshotSubCommand::Delete(cmd) => cmd.name.clone(),
             SnapshotSubCommand::List(cmd) => cmd.name.clone(),
             SnapshotSubCommand::Load(cmd) => cmd.name.clone(),
             SnapshotSubCommand::Save(cmd) => cmd.name.clone(),
@@ -96,6 +99,33 @@ async fn run_subcommand(
             let text = format_snapshots(&snapshots);
             writer.machine_or(&SnapshotOutput::List { snapshots }, text)?;
         }
+        SnapshotSubCommand::Delete(cmd) => {
+            let names = match (&cmd.snapshot, cmd.all) {
+                (Some(snapshot), false) => vec![snapshot.clone()],
+                (None, true) => engine
+                    .list_snapshots()
+                    .await?
+                    .into_iter()
+                    .map(|snapshot| snapshot.name)
+                    .collect(),
+                _ => {
+                    return_user_error!("Specify either the name of a snapshot to delete, or --all.")
+                }
+            };
+            for name in &names {
+                engine.delete_snapshot(name).await?;
+            }
+            let text = if names.is_empty() {
+                "No snapshots found.".to_string()
+            } else {
+                names
+                    .iter()
+                    .map(|name| format!("Deleted snapshot '{name}'."))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            writer.machine_or(&SnapshotOutput::Deleted { names }, text)?;
+        }
     }
     Ok(())
 }
@@ -122,7 +152,7 @@ mod tests {
     use super::*;
     use ffx_emulator_config::BoxFuture;
     use ffx_emulator_snapshot_args::{
-        SnapshotListCommand, SnapshotLoadCommand, SnapshotSaveCommand,
+        SnapshotDeleteCommand, SnapshotListCommand, SnapshotLoadCommand, SnapshotSaveCommand,
     };
     use ffx_writer::{Format, TestBuffers};
 
@@ -131,6 +161,7 @@ mod tests {
     struct StubEngine {
         saved: Vec<String>,
         loaded: Vec<String>,
+        deleted: Vec<String>,
         snapshots: Vec<SnapshotInfo>,
         error: Option<String>,
     }
@@ -167,6 +198,14 @@ mod tests {
                 Ok(self.snapshots.clone())
             })
         }
+
+        fn delete_snapshot<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                self.result()?;
+                self.deleted.push(name.to_string());
+                Ok(())
+            })
+        }
     }
 
     fn save_command(snapshot: &str) -> SnapshotSubCommand {
@@ -179,6 +218,18 @@ mod tests {
 
     fn list_command() -> SnapshotSubCommand {
         SnapshotSubCommand::List(SnapshotListCommand { name: None })
+    }
+
+    fn delete_command(snapshot: &str) -> SnapshotSubCommand {
+        SnapshotSubCommand::Delete(SnapshotDeleteCommand {
+            snapshot: Some(snapshot.to_string()),
+            all: false,
+            name: None,
+        })
+    }
+
+    fn delete_all_command() -> SnapshotSubCommand {
+        SnapshotSubCommand::Delete(SnapshotDeleteCommand { snapshot: None, all: true, name: None })
     }
 
     fn test_snapshots() -> Vec<SnapshotInfo> {
@@ -344,6 +395,88 @@ mod tests {
             StubEngine { error: Some("the engine failed".to_string()), ..Default::default() };
         let err = run(list_command(), &mut engine, None).await.expect_err("list fails");
         assert!(err.to_string().contains("the engine failed"), "unexpected error: {err}");
+    }
+
+    #[fuchsia::test]
+    async fn test_delete() {
+        let mut engine = StubEngine::default();
+        let stdout =
+            run(delete_command("booted"), &mut engine, None).await.expect("delete succeeds");
+        assert_eq!(stdout, "Deleted snapshot 'booted'.\n");
+        assert_eq!(engine.deleted, vec!["booted".to_string()]);
+        assert!(engine.saved.is_empty());
+        assert!(engine.loaded.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_machine() {
+        let mut engine = StubEngine::default();
+        let stdout = run(delete_command("booted"), &mut engine, Some(Format::Json))
+            .await
+            .expect("delete succeeds");
+        assert_machine_output(
+            &stdout,
+            serde_json::json!({"type": "deleted", "data": {"names": ["booted"]}}),
+        );
+        assert_eq!(engine.deleted, vec!["booted".to_string()]);
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_error() {
+        let mut engine =
+            StubEngine { error: Some("the engine failed".to_string()), ..Default::default() };
+        let err = run(delete_command("booted"), &mut engine, None).await.expect_err("delete fails");
+        assert!(err.to_string().contains("the engine failed"), "unexpected error: {err}");
+        assert!(engine.deleted.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_all() {
+        let mut engine = StubEngine { snapshots: test_snapshots(), ..Default::default() };
+        let stdout = run(delete_all_command(), &mut engine, None).await.expect("delete succeeds");
+        assert_eq!(
+            stdout,
+            "Deleted snapshot 'booted'.\nDeleted snapshot 'a-much-longer-snapshot-name'.\n"
+        );
+        assert_eq!(
+            engine.deleted,
+            vec!["booted".to_string(), "a-much-longer-snapshot-name".to_string()]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_all_machine() {
+        let mut engine = StubEngine { snapshots: test_snapshots(), ..Default::default() };
+        let stdout = run(delete_all_command(), &mut engine, Some(Format::Json))
+            .await
+            .expect("delete succeeds");
+        assert_machine_output(
+            &stdout,
+            serde_json::json!({
+                "type": "deleted",
+                "data": {"names": ["booted", "a-much-longer-snapshot-name"]}
+            }),
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_all_without_snapshots() {
+        let mut engine = StubEngine::default();
+        let stdout = run(delete_all_command(), &mut engine, None).await.expect("delete succeeds");
+        assert_eq!(stdout, "No snapshots found.\n");
+        assert!(engine.deleted.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_needs_snapshot_or_all() {
+        let mut engine = StubEngine { snapshots: test_snapshots(), ..Default::default() };
+        for (snapshot, all) in [(None, false), (Some("booted".to_string()), true)] {
+            let command =
+                SnapshotSubCommand::Delete(SnapshotDeleteCommand { snapshot, all, name: None });
+            let err = run(command, &mut engine, None).await.expect_err("delete fails");
+            assert!(err.to_string().contains("or --all"), "unexpected error: {err}");
+        }
+        assert!(engine.deleted.is_empty());
     }
 
     #[fuchsia::test]

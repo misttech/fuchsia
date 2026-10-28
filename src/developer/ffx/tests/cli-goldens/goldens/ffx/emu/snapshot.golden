@@ -1,6 +1,6 @@
 {
   "name": "snapshot",
-  "description": "Save, load and list snapshots of a Fuchsia emulator.",
+  "description": "Save, load, list and delete snapshots of a Fuchsia emulator.",
   "examples": [
     "Start an emulator which supports snapshots, and save one once it has booted:\n  $ ffx emu start --engine qemu --enable-snapshots\n  $ ffx emu snapshot save booted\n\nRoll the running emulator back to that snapshot:\n  $ ffx emu snapshot load booted\n\nStop the emulator, then later resume from the snapshot instead of booting:\n  $ ffx emu stop --persist\n  $ ffx emu start --from-snapshot booted"
   ],

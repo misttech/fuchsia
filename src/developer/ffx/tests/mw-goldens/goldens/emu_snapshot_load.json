@@ -4,6 +4,34 @@
     "description": "The result of a successful `ffx emu snapshot` subcommand.",
     "oneOf": [
         {
+            "description": "The named snapshots were deleted.",
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "deleted"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "names"
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "data"
+            ]
+        },
+        {
             "description": "The snapshots which are saved for the emulator.",
             "type": "object",
             "properties": {

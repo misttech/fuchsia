@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //! A client for the QEMU Human Monitor Protocol (HMP), which QEMU serves on the monitor socket
-//! in the emulator's instance directory. It is used to save, load and list snapshots of a
+//! in the emulator's instance directory. It is used to save, load, list and delete snapshots of a
 //! running emulator. The commands are documented in
 //! https://www.qemu.org/docs/master/system/monitor.html.
 
@@ -90,17 +90,7 @@ impl Monitor {
         // QEMU pauses the emulator before it tries to load a snapshot, and leaves it paused if
         // that fails. Check that the snapshot exists first, so that a mistyped name doesn't
         // interrupt the emulator.
-        let snapshots = self.list_snapshots()?;
-        if !snapshots.iter().any(|snapshot| snapshot.name == name) {
-            let names: Vec<&str> =
-                snapshots.iter().map(|snapshot| snapshot.name.as_str()).collect();
-            let available = if names.is_empty() {
-                "No snapshots have been saved for this emulator.".to_string()
-            } else {
-                format!("The available snapshots are: {}.", names.join(", "))
-            };
-            return_user_error!("Snapshot '{name}' does not exist. {available}");
-        }
+        check_snapshot_exists(name, &self.list_snapshots()?)?;
 
         let output = self.execute(&format!("loadvm {name}"), self.snapshot_timeout)?;
         check_output(&output).map_err(|e| {
@@ -122,6 +112,17 @@ impl Monitor {
             })?;
         }
         Ok(())
+    }
+
+    /// Deletes the snapshot with the given name.
+    pub(crate) fn delete_snapshot(&mut self, name: &str) -> Result<()> {
+        // The monitor doesn't report an error for a snapshot which doesn't exist, so check that
+        // it does, to report a mistyped name.
+        check_snapshot_exists(name, &self.list_snapshots()?)?;
+        // Deleting a snapshot frees the clusters which it used in the disk image, which takes
+        // longer for a snapshot of a larger guest.
+        let output = self.execute(&format!("delvm {name}"), self.snapshot_timeout)?;
+        check_output(&output).map_err(|e| user_error!("Could not delete snapshot '{name}': {e}"))
     }
 
     /// Returns the snapshots which the emulator can be restored to.
@@ -190,6 +191,21 @@ fn parse_response(response: &[u8]) -> String {
         Some((_echo, output)) => output.replace("\r\n", "\n").trim().to_string(),
         None => String::new(),
     }
+}
+
+/// Returns an error which lists the available `snapshots`, if there is none named `name` among
+/// them.
+pub(super) fn check_snapshot_exists(name: &str, snapshots: &[SnapshotInfo]) -> Result<()> {
+    if snapshots.iter().any(|snapshot| snapshot.name == name) {
+        return Ok(());
+    }
+    let names: Vec<&str> = snapshots.iter().map(|snapshot| snapshot.name.as_str()).collect();
+    let available = if names.is_empty() {
+        "No snapshots have been saved for this emulator.".to_string()
+    } else {
+        format!("The available snapshots are: {}.", names.join(", "))
+    };
+    return_user_error!("Snapshot '{name}' does not exist. {available}");
 }
 
 /// Checks whether the output of a monitor command reports that the command failed, and if so
@@ -484,6 +500,51 @@ pub(crate) mod tests {
         assert!(err.contains("The emulator has been left paused"), "{err}");
         drop(monitor);
         assert_eq!(handle.join().unwrap(), vec!["info snapshots", "loadvm booted"]);
+    }
+
+    #[fuchsia::test]
+    fn test_delete_snapshot() {
+        let (_temp, socket_path, handle) =
+            start_fake_monitor(vec![("info snapshots", SNAPSHOT_LIST), ("delvm booted", "")]);
+        let mut monitor =
+            Monitor::connect(&socket_path, TEST_SNAPSHOT_TIMEOUT).expect("connect to monitor");
+        monitor.delete_snapshot("booted").expect("delete snapshot");
+        drop(monitor);
+        assert_eq!(handle.join().unwrap(), vec!["info snapshots", "delvm booted"]);
+    }
+
+    #[fuchsia::test]
+    fn test_delete_snapshot_missing() {
+        // The emulator is not asked to delete a snapshot which doesn't exist, which it would
+        // silently do nothing for.
+        let (_temp, socket_path, handle) =
+            start_fake_monitor(vec![("info snapshots", SNAPSHOT_LIST)]);
+        let mut monitor =
+            Monitor::connect(&socket_path, TEST_SNAPSHOT_TIMEOUT).expect("connect to monitor");
+        let err = monitor.delete_snapshot("missing").expect_err("delete fails");
+        assert_eq!(
+            err.to_string(),
+            "Snapshot 'missing' does not exist. The available snapshots are: booted, second."
+        );
+        drop(monitor);
+        assert_eq!(handle.join().unwrap(), vec!["info snapshots"]);
+    }
+
+    #[fuchsia::test]
+    fn test_delete_snapshot_error() {
+        let (_temp, socket_path, handle) = start_fake_monitor(vec![
+            ("info snapshots", SNAPSHOT_LIST),
+            ("delvm booted", "Error: Error while deleting snapshot on 'vdisk'\r\n"),
+        ]);
+        let mut monitor =
+            Monitor::connect(&socket_path, TEST_SNAPSHOT_TIMEOUT).expect("connect to monitor");
+        let err = monitor.delete_snapshot("booted").expect_err("delete fails");
+        assert_eq!(
+            err.to_string(),
+            "Could not delete snapshot 'booted': Error while deleting snapshot on 'vdisk'"
+        );
+        drop(monitor);
+        handle.join().unwrap();
     }
 
     #[fuchsia::test]

@@ -123,10 +123,11 @@ impl QemuEngine {
         Monitor::connect(&socket_path, monitor::snapshot_timeout(memory))
     }
 
-    /// Returns the snapshots which are stored in the disk image of the stopped emulator, as
-    /// listed by the `qemu-img` tool. While the emulator is running it holds a lock on the image,
-    /// and the snapshots are listed through its monitor instead.
-    fn stored_snapshots(&self) -> Result<Vec<SnapshotInfo>> {
+    /// Runs `qemu-img snapshot` with the given arguments on the disk image of the stopped
+    /// emulator, which holds its snapshots, and returns what the tool prints. If the tool fails,
+    /// the error is described as "Error <action> <image>". While the emulator is running it holds
+    /// a lock on the image, and its snapshots are managed through its monitor instead.
+    fn run_image_snapshot_command(&self, args: &[&str], action: &str) -> Result<String> {
         self.check_snapshots_enabled()?;
         // The snapshots are stored in the qcow2 image which the instance was staged with.
         let image_path = match &self.data.get_emulator_configuration().guest.disk_image {
@@ -137,23 +138,39 @@ impl QemuEngine {
             ),
         };
         let qemu_img = super::get_qemu_img_tool(&self.context)?;
-        let mut list_command = Command::new(&qemu_img);
-        list_command.args(["snapshot", "-l", "-f", "qcow2"]).arg(image_path);
-        log::debug!("Running command to list the snapshots of the disk image: {:?}", list_command);
+        let mut command = Command::new(&qemu_img);
+        command.arg("snapshot").args(args).args(["-f", "qcow2"]).arg(image_path);
+        log::debug!("Running command on the snapshots of the disk image: {:?}", command);
 
-        let list_result =
-            list_command.output().map_err(|e| bug!("Error running {}: {e}", qemu_img.display()))?;
-        if !list_result.status.success() {
+        let result =
+            command.output().map_err(|e| bug!("Error running {}: {e}", qemu_img.display()))?;
+        if !result.status.success() {
             return_bug!(
-                "Error reading the snapshots of {}: {}",
+                "Error {action} {}: {}",
                 image_path.display(),
-                String::from_utf8_lossy(&list_result.stderr)
+                String::from_utf8_lossy(&result.stderr)
             );
         }
-        monitor::parse_snapshot_table(
-            &String::from_utf8_lossy(&list_result.stdout),
-            IMAGE_SNAPSHOTS_HEADING,
-        )
+        Ok(String::from_utf8_lossy(&result.stdout).into_owned())
+    }
+
+    /// Returns the snapshots which are stored in the disk image of the stopped emulator.
+    fn stored_snapshots(&self) -> Result<Vec<SnapshotInfo>> {
+        let output = self.run_image_snapshot_command(&["-l"], "reading the snapshots of")?;
+        monitor::parse_snapshot_table(&output, IMAGE_SNAPSHOTS_HEADING)
+    }
+
+    /// Deletes the snapshot with the given name from the disk image of the stopped emulator.
+    fn delete_stored_snapshot(&self, name: &str) -> Result<()> {
+        // qemu-img only says that a snapshot was not found if there is none with the name. Look
+        // for it first, so that the snapshots which do exist are listed instead, as they are for
+        // a running emulator.
+        monitor::check_snapshot_exists(name, &self.stored_snapshots()?)?;
+        self.run_image_snapshot_command(
+            &["-d", name],
+            &format!("deleting snapshot '{name}' from"),
+        )?;
+        Ok(())
     }
 
     /// Checks that the instance was staged with support for snapshots.
@@ -298,6 +315,17 @@ impl EmulatorEngine for QemuEngine {
                 self.connect_to_snapshot_monitor()?.list_snapshots()
             } else {
                 self.stored_snapshots()
+            }
+        })
+    }
+
+    fn delete_snapshot<'a>(&'a mut self, name: &'a str) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            validate_snapshot_name(name)?;
+            if self.get_engine_state() == EngineState::Running {
+                self.connect_to_snapshot_monitor()?.delete_snapshot(name)
+            } else {
+                self.delete_stored_snapshot(name)
             }
         })
     }
@@ -537,6 +565,59 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_delete_snapshot() {
+        let env = ffx_config::test_init().unwrap();
+        let (temp, _socket_path, monitor) =
+            start_fake_monitor(vec![("info snapshots", SNAPSHOT_LIST), ("delvm booted", "")]);
+        let mut engine = running_engine(&env, temp.path(), true);
+
+        engine.delete_snapshot("booted").await.expect("delete snapshot");
+
+        assert_eq!(monitor.join().unwrap(), vec!["info snapshots", "delvm booted"]);
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_snapshot_of_stopped_emulator() {
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        // The fake qemu-img tool lists the snapshots in an image by printing its contents, and
+        // records the arguments of other commands in the image.
+        let image_path = temp.path().join("fxfs.blk.qcow2");
+        fs::write(
+            &image_path,
+            "Snapshot list:\n\
+            ID      TAG               VM_SIZE                DATE        VM_CLOCK     ICOUNT\n\
+            1       booted            382 MiB 2026-09-30 22:30:24  0000:00:19.615         --\n\
+            2       second           1.45 GiB 2026-10-01 08:15:00  0001:02:03.004         --\n",
+        )
+        .expect("write image");
+
+        let mut cfg = EmulatorConfiguration::default();
+        cfg.runtime.name = "test-emu".to_string();
+        cfg.runtime.snapshots_enabled = true;
+        cfg.guest.disk_image = Some(DiskImage::Fxfs(image_path.clone()));
+        let data = EmulatorInstanceData::new(cfg, EngineType::Qemu, EngineState::Staged);
+        let mut engine =
+            QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+
+        // A snapshot which doesn't exist is reported along with the ones which do.
+        let err = engine.delete_snapshot("missing").await.expect_err("no such snapshot");
+        assert_eq!(
+            err.to_string(),
+            "Snapshot 'missing' does not exist. The available snapshots are: booted, second."
+        );
+
+        // The snapshot is deleted from the disk image, without the emulator having to run.
+        engine.delete_snapshot("booted").await.expect("delete snapshot");
+        assert_eq!(
+            fs::read_to_string(&image_path).expect("read image"),
+            format!("snapshot -d booted -f qcow2 {}\n", image_path.display())
+        );
+    }
+
+    #[fuchsia::test]
     async fn test_snapshots_require_running_emulator() {
         let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
@@ -568,6 +649,8 @@ mod tests {
         assert!(err.contains(expected), "unexpected error: {err}");
         let err = engine.list_snapshots().await.expect_err("list fails").to_string();
         assert!(err.contains(expected), "unexpected error: {err}");
+        let err = engine.delete_snapshot("booted").await.expect_err("delete fails").to_string();
+        assert!(err.contains(expected), "unexpected error: {err}");
     }
 
     #[fuchsia::test]
@@ -582,6 +665,8 @@ mod tests {
             let err = engine.save_snapshot(name).await.expect_err("save fails").to_string();
             assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
             let err = engine.load_snapshot(name).await.expect_err("load fails").to_string();
+            assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
+            let err = engine.delete_snapshot(name).await.expect_err("delete fails").to_string();
             assert!(err.contains("Invalid snapshot name"), "unexpected error: {err}");
         }
     }

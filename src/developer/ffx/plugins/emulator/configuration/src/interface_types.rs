@@ -140,6 +140,14 @@ pub trait EmulatorEngine: Send + Sync {
         Box::pin(async { Err(user_error!("Snapshots are not supported by this emulator engine.")) })
     }
 
+    /// Deletes the snapshot with the given name, whether the emulator is running or stopped.
+    ///
+    /// The default implementation, which is used by the engines that don't support snapshots,
+    /// returns an error.
+    fn delete_snapshot<'a>(&'a mut self, _name: &'a str) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async { Err(user_error!("Snapshots are not supported by this emulator engine.")) })
+    }
+
     /// Output the details of an existing emulation instance. The engine should have been
     /// instantiated from a saved and serialized instance, so no additional initialization should be
     /// needed. This function will output text to the terminal describing the instance, its status,

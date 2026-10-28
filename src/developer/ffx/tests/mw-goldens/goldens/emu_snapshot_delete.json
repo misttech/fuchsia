@@ -1,0 +1,143 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "SnapshotOutput",
+    "description": "The result of a successful `ffx emu snapshot` subcommand.",
+    "oneOf": [
+        {
+            "description": "The named snapshots were deleted.",
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "deleted"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "names": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "names"
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "data"
+            ]
+        },
+        {
+            "description": "The snapshots which are saved for the emulator.",
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "list"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "snapshots": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/SnapshotInfo"
+                            }
+                        }
+                    },
+                    "required": [
+                        "snapshots"
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "data"
+            ]
+        },
+        {
+            "description": "The emulator was restored to the named snapshot.",
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "loaded"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "name"
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "data"
+            ]
+        },
+        {
+            "description": "The emulator's state was saved under the given name.",
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "saved"
+                },
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "name"
+                    ]
+                }
+            },
+            "required": [
+                "type",
+                "data"
+            ]
+        }
+    ],
+    "definitions": {
+        "SnapshotInfo": {
+            "description": "Describes a snapshot of an emulator instance, as reported by the emulator.",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "The name the snapshot was saved under.",
+                    "type": "string"
+                },
+                "vm_size": {
+                    "description": "The size of the saved state of the virtual machine, e.g. \"382 MiB\". This does not include\nthe state of the disk.",
+                    "type": "string"
+                },
+                "date": {
+                    "description": "The date and time, in the host's time zone, at which the snapshot was saved.",
+                    "type": "string"
+                },
+                "vm_clock": {
+                    "description": "How long the virtual machine had been running for when the snapshot was saved, formatted\nas hours:minutes:seconds.milliseconds.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "name",
+                "vm_size",
+                "date",
+                "vm_clock"
+            ]
+        }
+    }
+}

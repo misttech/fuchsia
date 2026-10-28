@@ -10,7 +10,7 @@ use ffx_core::ffx_command;
 #[argh(
     subcommand,
     name = "snapshot",
-    description = "Save, load and list snapshots of a Fuchsia emulator.",
+    description = "Save, load, list and delete snapshots of a Fuchsia emulator.",
     example = "Start an emulator which supports snapshots, and save one once it has booted:
   $ ffx emu start --engine qemu --enable-snapshots
   $ ffx emu snapshot save booted
@@ -40,6 +40,7 @@ pub struct SnapshotCommand {
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum SnapshotSubCommand {
+    Delete(SnapshotDeleteCommand),
     List(SnapshotListCommand),
     Load(SnapshotLoadCommand),
     Save(SnapshotSaveCommand),
@@ -113,6 +114,35 @@ with `ffx emu start --from-snapshot <snapshot>`."
 )]
 pub struct SnapshotListCommand {
     /// name of the emulator to list the snapshots of, as specified to the
+    /// start command. See a list of available instances by running
+    /// `ffx emu list`. If no name is specified, and only one emulator is
+    /// running, it will be selected.
+    #[argh(option)]
+    pub name: Option<String>,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(
+    subcommand,
+    name = "delete",
+    description = "Delete snapshots of a Fuchsia emulator.",
+    example = "  $ ffx emu snapshot delete booted
+  $ ffx emu snapshot delete booted --name fuchsia-emulator
+  $ ffx emu snapshot delete --all",
+    note = "The emulator does not have to be running. Deleting a snapshot frees the disk
+space which it took up in the emulator's disk image. --all deletes all of the
+emulator's snapshots, and keeps the emulator instance."
+)]
+pub struct SnapshotDeleteCommand {
+    /// name of the snapshot to delete, as specified to `ffx emu snapshot save`.
+    #[argh(positional)]
+    pub snapshot: Option<String>,
+
+    /// delete all of the emulator's snapshots.
+    #[argh(switch)]
+    pub all: bool,
+
+    /// name of the emulator to delete the snapshot of, as specified to the
     /// start command. See a list of available instances by running
     /// `ffx emu list`. If no name is specified, and only one emulator is
     /// running, it will be selected.
@@ -223,6 +253,61 @@ mod tests {
     #[test]
     fn test_list_args_emulator_name_is_not_positional() {
         assert!(SnapshotCommand::from_args(CMD_NAME, &["list", "fuchsia-emulator"]).is_err());
+    }
+
+    #[test]
+    fn test_delete_args() {
+        let cmd = SnapshotCommand::from_args(CMD_NAME, &["delete", "booted"]).unwrap();
+        assert_eq!(
+            cmd.subcommand,
+            SnapshotSubCommand::Delete(SnapshotDeleteCommand {
+                snapshot: Some("booted".to_string()),
+                all: false,
+                name: None
+            })
+        );
+    }
+
+    #[test]
+    fn test_delete_args_with_emulator_name() {
+        let cmd = SnapshotCommand::from_args(
+            CMD_NAME,
+            &["delete", "booted", "--name", "fuchsia-emulator"],
+        )
+        .unwrap();
+        assert_eq!(
+            cmd.subcommand,
+            SnapshotSubCommand::Delete(SnapshotDeleteCommand {
+                snapshot: Some("booted".to_string()),
+                all: false,
+                name: Some("fuchsia-emulator".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn test_delete_args_emulator_name_is_not_positional() {
+        assert!(
+            SnapshotCommand::from_args(CMD_NAME, &["delete", "booted", "fuchsia-emulator"])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_delete_all_args() {
+        let cmd = SnapshotCommand::from_args(
+            CMD_NAME,
+            &["delete", "--all", "--name", "fuchsia-emulator"],
+        )
+        .unwrap();
+        assert_eq!(
+            cmd.subcommand,
+            SnapshotSubCommand::Delete(SnapshotDeleteCommand {
+                snapshot: None,
+                all: true,
+                name: Some("fuchsia-emulator".to_string())
+            })
+        );
     }
 
     #[test]
