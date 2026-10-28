@@ -6,8 +6,10 @@
 //! (UFS 3.1/4.0 section 10.7.8 - 10.7.9).
 
 use crate::UfsError;
+use crate::constants::{DESCRIPTOR_HEADER_SIZE, QUERY_DATA_SEGMENT_SIZE, QUERY_HEADER_SIZE};
 use crate::descriptors::{Descriptor, DescriptorType};
 use crate::upiu::{UpiuHeader, UpiuTransactionCode};
+use log::warn;
 use static_assertions::const_assert_eq;
 use zerocopy::byteorder::big_endian::{U16, U32};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout, Unaligned};
@@ -50,9 +52,12 @@ pub enum QueryOpcode {
 /// UFS Query Flag identifiers (UFS 3.1/4.0 section 14.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Flags {
+pub enum Flag {
     /// Triggers device initialization (`fDeviceInit`, polled until cleared to 0).
     DeviceInit = 0x01,
+    /// Enables power-on write protection for LUs whose `bLUWriteProtect` is `01h`
+    /// (`fPowerOnWPEn`). Once set, it is cleared only by a power cycle or hardware reset.
+    PowerOnWpEn = 0x03,
     /// Enables background flash maintenance operations (`fBackgroundOpsEn`).
     BackgroundOpsEn = 0x04,
     /// Enables SLC WriteBooster caching (`fWriteBoosterEn`).
@@ -66,7 +71,7 @@ pub enum Flags {
 /// UFS Query Attribute identifiers (UFS 3.1/4.0 section 14.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Attributes {
+pub enum Attribute {
     /// Enabled boot LU (`bBootLunEn`).
     BootLunEn = 0x00,
     /// Current device power mode (`bCurrentPowerMode`).
@@ -95,9 +100,12 @@ pub enum RefClkFreq {
     Freq26MHz = 0x1,
     /// 38.4 MHz.
     Freq38_4MHz = 0x2,
+    /// 52 MHz.
+    Freq52MHz = 0x3,
 }
 
-/// Query UPIU representation (32 bytes header + 256 bytes data segment = 288 bytes).
+/// Query UPIU (12-byte UPIU header + 20-byte transaction-specific fields + 256-byte data segment
+/// = 288 bytes).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned,
 )]
@@ -111,16 +119,13 @@ pub struct QueryUpiu {
     pub reserved_1: [u8; 2],
     /// Descriptor length in bytes (request: bytes wanted; response: bytes returned).
     pub length: U16,
-    /// Attribute value or flag value (in the least significant byte).
+    /// 32-bit big-endian attribute value at UPIU bytes `20..24`. For flag queries, the 1-byte
+    /// `Flag Value` at wire byte 23 is the least-significant byte of this big-endian `U32`
+    /// (`self.value.get() & 0xFF`).
     pub value: U32,
     pub reserved_2: [u8; 8],
     pub command_data: [u8; QueryUpiu::DATA_SEGMENT_SIZE],
 }
-
-/// Type alias for a host-to-device Query Request UPIU.
-pub type QueryRequestUpiu = QueryUpiu;
-/// Type alias for a device-to-host Query Response UPIU.
-pub type QueryResponseUpiu = QueryUpiu;
 
 impl Default for QueryUpiu {
     fn default() -> Self {
@@ -133,9 +138,9 @@ const_assert_eq!(QueryUpiu::HEADER_SIZE + QueryUpiu::DATA_SEGMENT_SIZE, size_of:
 
 impl QueryUpiu {
     /// Size in bytes of the fixed Query UPIU header + OSF (excluding `command_data`).
-    pub const HEADER_SIZE: usize = 32;
+    pub const HEADER_SIZE: usize = QUERY_HEADER_SIZE;
     /// Size in bytes of the `command_data` data segment.
-    pub const DATA_SEGMENT_SIZE: usize = 256;
+    pub const DATA_SEGMENT_SIZE: usize = QUERY_DATA_SEGMENT_SIZE;
 
     /// Creates a base Query UPIU with standard headers.
     pub fn new(opcode: QueryOpcode, idn: u8, index: u8, selector: u8) -> Self {
@@ -148,6 +153,7 @@ impl QueryUpiu {
             | QueryOpcode::ToggleFlag
             | QueryOpcode::WriteAttribute
             | QueryOpcode::WriteDescriptor => QueryFunction::StandardWrite as u8,
+            // NOP has no query function; the field is reserved.
             QueryOpcode::Nop => 0x00,
         };
         let mut upiu = Self::new_zeroed();
@@ -169,18 +175,28 @@ impl QueryUpiu {
     }
 
     /// Creates a `ReadFlag` Query Request UPIU for the specified flag.
-    pub fn read_flag(flag: Flags) -> Self {
+    pub fn read_flag(flag: Flag) -> Self {
         Self::new(QueryOpcode::ReadFlag, flag as u8, 0, 0)
     }
 
     /// Creates a `SetFlag` Query Request UPIU for the specified flag.
-    pub fn set_flag(flag: Flags) -> Self {
-        Self::new(QueryOpcode::SetFlag, flag as u8, 0, 0)
+    pub fn set_flag(flag: Flag) -> Self {
+        Self::set_flag_at_index(flag, 0)
+    }
+
+    /// Creates a `SetFlag` Query Request UPIU for the specified flag and `index`.
+    pub fn set_flag_at_index(flag: Flag, index: u8) -> Self {
+        Self::new(QueryOpcode::SetFlag, flag as u8, index, 0)
     }
 
     /// Creates a `ClearFlag` Query Request UPIU for the specified flag.
-    pub fn clear_flag(flag: Flags) -> Self {
-        Self::new(QueryOpcode::ClearFlag, flag as u8, 0, 0)
+    pub fn clear_flag(flag: Flag) -> Self {
+        Self::clear_flag_at_index(flag, 0)
+    }
+
+    /// Creates a `ClearFlag` Query Request UPIU for the specified flag and `index`.
+    pub fn clear_flag_at_index(flag: Flag, index: u8) -> Self {
+        Self::new(QueryOpcode::ClearFlag, flag as u8, index, 0)
     }
 
     /// Creates a `ReadDescriptor` Query Request UPIU for the specified typed descriptor `D`.
@@ -201,8 +217,13 @@ impl QueryUpiu {
     }
 
     /// Creates a `WriteDescriptor` Query Request UPIU carrying the typed descriptor `D`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size_of::<D>()` exceeds the 256-byte data segment. Every in-tree
+    /// [`Descriptor`] is far smaller, so this is a programming error rather than a runtime
+    /// condition.
     pub fn write_typed_descriptor<D: Descriptor>(index: u8, descriptor: &D) -> Self {
-        // Every in-tree `Descriptor` is far smaller than the 256-byte data segment.
         Self::write_descriptor_raw(D::TYPE as u8, index, 0, descriptor.as_bytes())
             .expect("descriptor fits in the Query UPIU data segment")
     }
@@ -211,7 +232,7 @@ impl QueryUpiu {
     ///
     /// # Errors
     ///
-    /// Returns `InvalidParameter` if `data` exceeds the 256-byte data segment.
+    /// Returns [`UfsError::InvalidParameter`] if `data` exceeds the 256-byte data segment.
     pub fn write_descriptor(
         desc_type: DescriptorType,
         index: u8,
@@ -220,14 +241,15 @@ impl QueryUpiu {
         Self::write_descriptor_raw(desc_type as u8, index, 0, data)
     }
 
-    /// Creates a `WriteDescriptor` Query Request UPIU with raw IDN, index, selector, and payload.
+    /// Creates a `WriteDescriptor` Query Request UPIU with raw IDN, index, selector, and payload
+    /// (UFS 3.1/4.0 section 10.7.8.3).
     ///
     /// Sets `length` and the header `data_segment_length` to `data.len()` and copies `data` into
-    /// `command_data`, matching the C++ `WriteDescriptorUpiu` constructor.
+    /// `command_data`.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidParameter` if `data` exceeds the 256-byte data segment.
+    /// Returns [`UfsError::InvalidParameter`] if `data` exceeds the 256-byte data segment.
     pub fn write_descriptor_raw(
         idn: u8,
         index: u8,
@@ -246,15 +268,15 @@ impl QueryUpiu {
         Ok(q)
     }
 
-    /// Creates a `ReadAttribute` Query Request UPIU for a typed [`Attributes`] identifier with
+    /// Creates a `ReadAttribute` Query Request UPIU for a typed [`Attribute`] identifier with
     /// selector 0.
-    pub fn read_attribute(attr: Attributes, index: u8) -> Self {
+    pub fn read_attribute(attr: Attribute, index: u8) -> Self {
         Self::new(QueryOpcode::ReadAttribute, attr as u8, index, 0)
     }
 
-    /// Creates a `WriteAttribute` Query Request UPIU for a typed [`Attributes`] identifier with
+    /// Creates a `WriteAttribute` Query Request UPIU for a typed [`Attribute`] identifier with
     /// selector 0.
-    pub fn write_attribute(attr: Attributes, index: u8, value: u32) -> Self {
+    pub fn write_attribute(attr: Attribute, index: u8, value: u32) -> Self {
         Self::write_attribute_raw(attr as u8, index, 0, value)
     }
 
@@ -282,11 +304,10 @@ impl QueryUpiu {
     ///
     /// # Errors
     ///
-    /// Returns `IoError` if the returned descriptor is shorter than its 2-byte header, or its
-    /// `bDescriptorIDN` does not match `D::TYPE`, and `InvalidParameter` if `D` does not fit in
-    /// the 256-byte data segment.
-    pub fn get_descriptor<D: Descriptor>(&self) -> Result<D, UfsError> {
-        const HEADER_LENGTH: usize = 2;
+    /// Returns [`UfsError::IoError`] if the returned descriptor is shorter than its 2-byte header,
+    /// or its `bDescriptorIDN` does not match `D::TYPE`, and [`UfsError::InvalidParameter`] if `D`
+    /// does not fit in the 256-byte data segment.
+    pub fn parse_descriptor<D: Descriptor>(&self) -> Result<D, UfsError> {
         let capacity = std::mem::size_of::<D>();
         if capacity > self.command_data.len() {
             return Err(UfsError::InvalidParameter);
@@ -294,8 +315,17 @@ impl QueryUpiu {
         let expected_idn = D::TYPE as u8;
         let returned = (self.length.get() as usize).min(self.command_data.len());
         let valid = returned.min(self.command_data[0] as usize).min(capacity);
-        if valid < HEADER_LENGTH || self.idn != expected_idn || self.command_data[1] != expected_idn
+        if valid < DESCRIPTOR_HEADER_SIZE
+            || self.idn != expected_idn
+            || self.command_data[1] != expected_idn
         {
+            warn!(
+                expected_idn,
+                upiu_idn = self.idn,
+                desc_idn = self.command_data[1],
+                valid;
+                "Malformed or mismatched descriptor in Query Response"
+            );
             return Err(UfsError::IoError);
         }
         let mut descriptor = D::new_zeroed();
@@ -322,7 +352,7 @@ mod tests {
         assert_eq!(bytes[14], 3);
         assert_eq!(&bytes[18..20], &[0x00, 0x2D]);
 
-        let write = QueryUpiu::write_attribute(Attributes::WbBufferLifeTimeEst, 1, 0x0A0B0C0D);
+        let write = QueryUpiu::write_attribute(Attribute::WbBufferLifeTimeEst, 1, 0x0A0B0C0D);
         assert_eq!(write, QueryUpiu::write_attribute_raw(0x1E, 1, 0, 0x0A0B0C0D));
         let bytes = write.as_bytes();
         assert_eq!(bytes[5], QueryFunction::StandardWrite as u8);
@@ -364,7 +394,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_get_descriptor_validates_header() {
+    fn test_parse_descriptor_validates_header() {
         let mut response = QueryUpiu::read_typed_descriptor::<UnitDescriptor>(0);
         let mut unit = UnitDescriptor {
             length: 45,
@@ -374,19 +404,19 @@ mod tests {
         };
         response.command_data[..45].copy_from_slice(unit.as_bytes());
         response.length = U16::new(45);
-        let parsed: UnitDescriptor = response.get_descriptor().unwrap();
+        let parsed: UnitDescriptor = response.parse_descriptor().unwrap();
         assert_eq!(parsed.logical_block_count.get(), 0x1122);
         // Parsing a Unit response as DeviceDescriptor is rejected by D::TYPE check.
-        assert_eq!(response.get_descriptor::<DeviceDescriptor>().unwrap_err(), UfsError::IoError);
+        assert_eq!(response.parse_descriptor::<DeviceDescriptor>().unwrap_err(), UfsError::IoError);
 
         // A shorter descriptor is zero-extended.
         unit.length = 0x0B;
         response.command_data[..45].copy_from_slice(unit.as_bytes());
-        let parsed: UnitDescriptor = response.get_descriptor().unwrap();
+        let parsed: UnitDescriptor = response.parse_descriptor().unwrap();
         assert_eq!(parsed.logical_block_count.get(), 0);
 
         // Wrong IDN in payload.
         response.command_data[1] = DescriptorType::Device as u8;
-        assert_eq!(response.get_descriptor::<UnitDescriptor>().unwrap_err(), UfsError::IoError);
+        assert_eq!(response.parse_descriptor::<UnitDescriptor>().unwrap_err(), UfsError::IoError);
     }
 }

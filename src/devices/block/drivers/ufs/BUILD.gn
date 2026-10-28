@@ -239,6 +239,7 @@ rustc_library("ufs_rust") {
   with_unit_tests = true
   edition = "2024"
   sources = [
+    "src/constants.rs",
     "src/controller.rs",
     "src/descriptors.rs",
     "src/dma_buffer.rs",

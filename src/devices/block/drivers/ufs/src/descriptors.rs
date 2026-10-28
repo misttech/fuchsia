@@ -13,6 +13,25 @@ use std::mem::offset_of;
 use zerocopy::byteorder::big_endian::{U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
+/// Device Descriptor `bWriteBoosterBufferType` values (UFS 3.1/4.0 section 14.1.4.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum WriteBoosterBufferType {
+    LuDedicated = 0x00,
+    Shared = 0x01,
+}
+
+impl WriteBoosterBufferType {
+    /// Converts a raw `bWriteBoosterBufferType` byte into a [`WriteBoosterBufferType`].
+    pub const fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0x00 => Some(Self::LuDedicated),
+            0x01 => Some(Self::Shared),
+            _ => None,
+        }
+    }
+}
+
 /// UFS Descriptor identification numbers (UFS 3.1/4.0 section 14.1.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -21,7 +40,7 @@ pub enum DescriptorType {
     Device = 0x00,
     /// Provisioning and LUN partitioning configuration.
     Configuration = 0x01,
-    /// Per-LUN parameters (or RPMB when queried with index `0xC4`).
+    /// Per-LUN parameters (or [`RpmbUnitDescriptor`] when queried with index `0xC4`).
     Unit = 0x02,
     /// MIPI UniPro and M-PHY version information.
     Interconnect = 0x04,
@@ -137,15 +156,26 @@ pub struct GeometryDescriptor {
     pub descriptor_idn: u8,
     pub media_technology: u8,
     pub reserved_03: u8,
+    /// Total raw device capacity in 512-byte units (`qTotalRawDeviceCapacity`).
     pub total_raw_device_capacity: U64,
+    /// Maximum number of logical units (`0` = 8 LUs, `1` = 32 LUs).
     pub max_number_lu: u8,
+    /// Erase block / segment size in 512-byte units (`dSegmentSize`).
     pub segment_size: U32,
+    /// Allocation unit size in segments (`bAllocationUnitSize`).
     pub allocation_unit_size: u8,
+    /// Minimum addressable block size in 512-byte units (`bMinAddrBlockSize`).
     pub min_addr_block_size: u8,
+    /// Optimal read block size in 512-byte units (`bOptimalReadBlockSize`).
     pub optimal_read_block_size: u8,
+    /// Optimal write block size in 512-byte units (`bOptimalWriteBlockSize`).
     pub optimal_write_block_size: u8,
+    /// Maximum data-in buffer size in 512-byte units (`bMaxInBufferSize`).
     pub max_in_buffer_size: u8,
+    /// Maximum data-out buffer size in 512-byte units (`bMaxOutBufferSize`).
     pub max_out_buffer_size: u8,
+    /// Maximum number of 512-byte RPMB frames (each carrying a 256-byte data payload) per Security
+    /// Protocol In/Out transfer.
     pub rpmb_read_write_size: u8,
     pub dynamic_capacity_resource_policy: u8,
     pub data_ordering: u8,
@@ -215,6 +245,7 @@ pub struct UnitDescriptor {
     pub psa_sensitive: u8,
     pub memory_type: u8,
     pub data_reliability: u8,
+    /// `log2` of the logical block size in bytes (`bLogicalBlockSize`, e.g. `12` = 4096 bytes).
     pub logical_block_size: u8,
     pub logical_block_count: U64,
     pub erase_block_size: U32,
@@ -240,6 +271,7 @@ const_assert_eq!(offset_of!(UnitDescriptor, context_capabilities), 0x20);
 const_assert_eq!(offset_of!(UnitDescriptor, lu_num_write_booster_buffer_alloc_units), 0x29);
 
 /// RPMB Unit Descriptor representation (35 bytes, UFS 3.1/4.0 section 14.1.4.6).
+/// Read with Unit Descriptor index `0xC4` (RPMB well-known LU).
 #[derive(
     Debug,
     Clone,
@@ -265,7 +297,9 @@ pub struct RpmbUnitDescriptor {
     pub psa_sensitive: u8,
     pub memory_type: u8,
     pub reserved: u8,
+    /// `log2` of the logical block size in bytes (`bLogicalBlockSize`, `8` = 256 bytes for RPMB).
     pub logical_block_size: u8,
+    /// Number of 256-byte RPMB blocks (`qLogicalBlockCount`, each 128 KiB unit is 512 blocks).
     pub logical_block_count: U64,
     pub erase_block_size: U32,
     pub provisioning_type: u8,

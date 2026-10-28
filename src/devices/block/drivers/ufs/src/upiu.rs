@@ -7,11 +7,16 @@
 //!
 //! Multi-byte fields are big-endian on the wire and use zerocopy `big_endian` types.
 
+use crate::constants::{
+    FLAG_OVERFLOW, FLAG_READ, FLAG_UNDERFLOW, FLAG_WRITE, TRANSACTION_CODE_MASK,
+};
+use crate::request_list::DataDirection;
 use static_assertions::const_assert_eq;
 use zerocopy::byteorder::big_endian::{U16, U32};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-/// UPIU transaction type codes (UFS 3.1/4.0 section 10.5).
+/// UPIU transaction type codes (UFS 3.1/4.0 section 10.5). Bit 5 (`0x20`) is 0 for host-to-device
+/// requests and 1 for device-to-host responses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum UpiuTransactionCode {
@@ -57,6 +62,7 @@ pub enum UpiuTransactionCode {
 )]
 #[repr(C)]
 pub struct UpiuHeader {
+    /// Transaction Type: HD (bit 7), DD (bit 6), and transaction code (bits 5:0).
     pub trans_type: u8,
     /// Transaction-specific flags; see [`CommandUpiu`] and [`ResponseUpiu`] constants.
     pub flags: u8,
@@ -75,7 +81,7 @@ pub struct UpiuHeader {
 impl UpiuHeader {
     /// Returns the lower 6-bit transaction code from `trans_type`.
     pub fn trans_code(&self) -> u8 {
-        self.trans_type & 0x3F
+        self.trans_type & TRANSACTION_CODE_MASK
     }
 }
 
@@ -102,18 +108,18 @@ pub struct CommandUpiu {
 
 impl CommandUpiu {
     /// Header flag `W`: the command has a Data-Out (write) phase.
-    pub const FLAG_WRITE: u8 = 0x20;
+    pub const FLAG_WRITE: u8 = FLAG_WRITE;
     /// Header flag `R`: the command has a Data-In (read) phase.
-    pub const FLAG_READ: u8 = 0x40;
+    pub const FLAG_READ: u8 = FLAG_READ;
 
     /// Constructs a new SCSI Command UPIU with the given 16-byte CDB and transfer direction.
     ///
-    /// `R` and `W` are both 0 when `expected_transfer_len` is 0 (no data phase).
-    pub fn new(cdb: [u8; 16], expected_transfer_len: u32, is_write: bool) -> Self {
-        let flags = match (expected_transfer_len, is_write) {
-            (0, _) => 0,
-            (_, true) => Self::FLAG_WRITE,
-            (_, false) => Self::FLAG_READ,
+    /// `R` and `W` are both 0 when `expected_transfer_len` is 0 or `direction` is `NoData`.
+    pub fn new(cdb: [u8; 16], expected_transfer_len: u32, direction: DataDirection) -> Self {
+        let flags = match (expected_transfer_len, direction) {
+            (0, _) | (_, DataDirection::NoData) => 0,
+            (_, DataDirection::HostToDevice) => Self::FLAG_WRITE,
+            (_, DataDirection::DeviceToHost) => Self::FLAG_READ,
         };
 
         Self {
@@ -156,9 +162,9 @@ pub struct ResponseUpiu {
 impl ResponseUpiu {
     /// Header flag `O`: the command required more data than `Expected Data Transfer Length`
     /// allowed (residual overflow).
-    pub const FLAG_OVERFLOW: u8 = 0x40;
+    pub const FLAG_OVERFLOW: u8 = FLAG_OVERFLOW;
     /// Header flag `U`: the device transferred less data than expected (residual underflow).
-    pub const FLAG_UNDERFLOW: u8 = 0x20;
+    pub const FLAG_UNDERFLOW: u8 = FLAG_UNDERFLOW;
 }
 
 /// UFS NOP OUT UPIU representation (32 bytes, UFS 3.1/4.0 section 10.7.11).
@@ -194,7 +200,11 @@ impl NopOutUpiu {
     }
 }
 
-/// UFS NOP IN UPIU representation (32 bytes, UFS 3.1/4.0 section 10.7.12).
+/// UFS NOP IN UPIU (32 bytes, UFS 3.1/4.0 section 10.7.12), the device's reply to a NOP OUT.
+///
+/// It has the same wire layout as [`NopOutUpiu`] and differs only in `header.trans_type`
+/// ([`UpiuTransactionCode::NopIn`]), so it shares the struct. The alias names the direction at
+/// parse sites; a NOP IN is only ever read back from a UCD, never built with [`NopOutUpiu::new`].
 pub type NopInUpiu = NopOutUpiu;
 
 const_assert_eq!(size_of::<UpiuHeader>(), 12);
@@ -216,18 +226,20 @@ mod tests {
     #[fuchsia::test]
     fn test_command_upiu_wire_format() {
         let cdb = ScsiOpcode::build_read_10_cdb(0x01020304, 0x0506);
-        let read = CommandUpiu::new(cdb, 0x1000, false);
+        let read = CommandUpiu::new(cdb, 0x1000, DataDirection::DeviceToHost);
         let bytes = read.as_bytes();
         assert_eq!(bytes[0], UpiuTransactionCode::Command as u8);
         assert_eq!(bytes[1], CommandUpiu::FLAG_READ);
         assert_eq!(&bytes[12..16], &[0x00, 0x00, 0x10, 0x00]);
         assert_eq!(&bytes[16..26], &[0x28, 0, 1, 2, 3, 4, 0, 5, 6, 0]);
 
-        let write = CommandUpiu::new(cdb, 512, true);
+        let write = CommandUpiu::new(cdb, 512, DataDirection::HostToDevice);
         assert_eq!(write.as_bytes()[1], CommandUpiu::FLAG_WRITE);
 
         // No data phase: neither R nor W.
-        let no_data = CommandUpiu::new(cdb, 0, true);
+        let no_data = CommandUpiu::new(cdb, 0, DataDirection::HostToDevice);
+        assert_eq!(no_data.as_bytes()[1], 0);
+        let no_data = CommandUpiu::new(cdb, 512, DataDirection::NoData);
         assert_eq!(no_data.as_bytes()[1], 0);
     }
 }

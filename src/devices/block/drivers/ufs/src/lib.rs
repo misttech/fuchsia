@@ -4,6 +4,7 @@
 
 //! Universal Flash Storage (UFS 3.1/4.0) wire protocol, DMA queues, UIC, and transfer engine.
 
+pub mod constants;
 pub mod controller;
 pub mod descriptors;
 pub mod dma_buffer;

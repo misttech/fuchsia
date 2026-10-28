@@ -7,8 +7,10 @@
 
 pub mod fake_ufs;
 
+use crate::constants::ADMIN_COMMAND_SLOT_NUMBER;
 use crate::controller::UfsController;
 use crate::request_list::{OverallCommandStatus, SlotState};
+use crate::scsi::ScsiStatus;
 use crate::transfer_request_processor::{IoCompletion, TransferRequestProcessor};
 use crate::upiu::{NopInUpiu, NopOutUpiu, ResponseUpiu, UpiuHeader, UpiuTransactionCode};
 use fake_bti::FakeBti;
@@ -19,13 +21,13 @@ use zerocopy::byteorder::big_endian::U16;
 /// A processor over the fake register block.
 pub(crate) type TestProcessor = TransferRequestProcessor<FakeMmio>;
 
-/// Size of the fake register block.
+/// Register block size shared by the single-doorbell unit tests.
 pub(crate) const MMIO_SIZE: usize = 4096;
-/// Page size assumed by data-buffer tests.
+/// Page size assumed for test data VMOs.
 pub(crate) const PAGE_SIZE: u64 = 4096;
-/// Admin slot of a 32-slot processor.
-pub(crate) const ADMIN_SLOT: u8 = 31;
-/// `OCS` value for a successful request.
+/// The admin command slot.
+pub(crate) const ADMIN_SLOT: u8 = ADMIN_COMMAND_SLOT_NUMBER;
+/// Overall Command Status value reported by the fake for a successful request.
 pub(crate) const OCS_SUCCESS: u8 = OverallCommandStatus::Success as u8;
 
 /// Creates an initialized 32-slot processor and the VMO backing its registers.
@@ -101,7 +103,7 @@ pub(crate) fn scsi_response(task_tag: u8, status: u8) -> ResponseUpiu {
 
 /// CHECK CONDITION response with fixed-format sense data.
 pub(crate) fn check_condition(task_tag: u8, sense_key: u8) -> ResponseUpiu {
-    let mut response = scsi_response(task_tag, crate::scsi::SCSI_STATUS_CHECK_CONDITION);
+    let mut response = scsi_response(task_tag, ScsiStatus::CheckCondition.as_u8());
     response.sense_data_length = U16::new(18);
     response.sense_data[0] = 0x70;
     response.sense_data[2] = sense_key;

@@ -29,28 +29,30 @@
 //! Lock order: `request_list` -> `controller`.
 
 use crate::UfsError;
+use crate::constants::{
+    ADMIN_COMMAND_SLOT_NUMBER, COMMAND_TIMEOUT, INLINE_DATA_OFFSET, INLINE_DATA_SIZE,
+    MAX_PRDT_ENTRIES, MAX_REQUEST_LIST_SIZE, OCS_RETRIES, SCSI_RETRIES, SCSI_RETRY_DELAY,
+    SDB_SLOTS, SENSE_DESCRIPTOR_FORMAT_CURRENT, SENSE_DESCRIPTOR_FORMAT_DEFERRED,
+    SENSE_RESPONSE_CODE_MASK, SMALL_TRANSFER_PAGES, TIMEOUT_RECLAIM_POLL_INTERVAL,
+    TIMEOUT_RECLAIM_WINDOW,
+};
 use crate::controller::UfsController;
+use crate::dma_buffer::ContiguousDmaBuffer;
 use crate::query::QueryUpiu;
 use crate::registers::{
     InterruptStatusReg, UtrListBaseAddressReg, UtrListBaseAddressUpperReg, UtrListClearReg,
     UtrListDoorBellReg, UtrListRunStopReg,
 };
 use crate::request_list::{
-    DataDirection, MAX_REQUEST_LIST_SIZE, OverallCommandStatus, RequestList, SlotCompletion,
-    SlotState, TransferRequestDescriptor, slot_mask,
+    self, DataDirection, OverallCommandStatus, RequestList, SlotCompletion, SlotState,
+    TransferRequestDescriptor,
 };
-use crate::scsi::{
-    SCSI_STATUS_BUSY, SCSI_STATUS_CHECK_CONDITION, SCSI_STATUS_GOOD, SCSI_STATUS_TASK_SET_FULL,
-    SENSE_KEY_UNIT_ATTENTION,
-};
-use crate::transfer::{
-    CommandDescriptorLayout, INLINE_DATA_OFFSET, INLINE_DATA_SIZE, MAX_PRDT_ENTRIES, PrdtEntry,
-    fill_prdt,
-};
+use crate::scsi::{ScsiStatus, SenseKey};
+use crate::transfer::{self, CommandDescriptorLayout, PrdtEntry};
 use crate::upiu::{
     CommandUpiu, NopInUpiu, NopOutUpiu, ResponseUpiu, UpiuHeader, UpiuTransactionCode,
 };
-pub use block_server::RequestId;
+use block_server::RequestId;
 use fuchsia_sync::{Condvar, Mutex, MutexGuard};
 use futures::FutureExt;
 use futures::channel::oneshot;
@@ -61,44 +63,13 @@ use std::sync::{Arc, OnceLock};
 use std::task::Poll;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
-/// Admin (Query/NOP) slot (`SDB_SLOTS - 1`), addressable via the 32-bit `UTRLDBR` doorbell
-/// register.
-pub const ADMIN_COMMAND_SLOT_NUMBER: u8 = 31;
-/// Number of slots in the request list (addressable through the 32-bit `UTRLDBR` doorbell
-/// register).
-const SDB_SLOTS: usize = 32;
 /// Bitmask of all slots in the request list (`0..SDB_SLOTS`).
-const ALL_SLOTS_MASK: u64 = slot_mask(SDB_SLOTS as u8);
+const ALL_SLOTS_MASK: u64 = request_list::slot_mask(SDB_SLOTS as u8);
 /// Bitmask of usable I/O slots (`0..ADMIN_COMMAND_SLOT_NUMBER`).
-const IO_SLOT_MASK: u64 = slot_mask(ADMIN_COMMAND_SLOT_NUMBER);
-/// Time a request may stay in the controller before it is aborted (`UTRLCLR`).
-///
-/// UFSHCI raises error interrupts (`IS.ULLS`, `IS.DFES`, `IS.HCFES`, `IS.SBFES`, `IS.CEFES`,
-/// `IS.UE`, and failed Auto-Hibernate `IS.UHES`/`IS.UHXS`) for link, controller, and protocol
-/// faults, which immediately request link recovery. However, UFSHCI has no hardware per-command
-/// completion timer, so the host driver must bound in-flight requests in software (matching Linux
-/// `ufshcd_abort` and C++ `timeout_task_`).
-pub const COMMAND_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(10);
-/// Interval at which a `Timeout` slot's doorbell bit is polled after `UTRLCLR`, which raises no
-/// interrupt (like Linux `ufshcd_clear_cmd`). This is the only polling the processor does;
-/// completions are interrupt-driven.
-pub(crate) const TIMEOUT_RECLAIM_POLL_INTERVAL: zx::MonotonicDuration =
-    zx::MonotonicDuration::from_millis(10);
-/// How long a timed-out request waits for its doorbell bit to clear after `UTRLCLR` before
-/// escalating to full controller and link recovery.
-const TIMEOUT_RECLAIM_WINDOW: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(100);
-/// Re-reads of an `OCS` still `Invalid` after the doorbell cleared, to absorb posted writes
-/// (matches C++ `kOverallCompletionRetries`).
-const OCS_RETRIES: u32 = 100;
-/// Retries of an async SCSI command that failed with a transient status.
-const SCSI_RETRIES: u32 = 3;
-/// Delay before retrying a SCSI command.
-const SCSI_RETRY_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(5);
-/// Transfers up to this many pages use smaller on-stack scratch arrays.
-const SMALL_TRANSFER_PAGES: usize = 32;
+const IO_SLOT_MASK: u64 = request_list::slot_mask(ADMIN_COMMAND_SLOT_NUMBER);
 
 /// Client data buffer for one transfer.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct DataTransfer<'a> {
     vmo: &'a zx::Vmo,
     offset: u64,
@@ -445,11 +416,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     ///
     /// Returns the DMA allocation or handle duplication error.
     pub fn new(bti: &zx::Bti, controller: Arc<UfsController<M>>) -> Result<Self, zx::Status> {
-        let request_list = RequestList::create(
-            bti,
-            std::mem::size_of::<TransferRequestDescriptor>(),
-            SDB_SLOTS as u8,
-        )?;
+        let request_list = RequestList::new(bti, SDB_SLOTS as u8)?;
 
         Ok(Self {
             bti: bti.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
@@ -719,7 +686,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
                     error!(status:% = s; "Failed to pin transfer buffer");
                     UfsError::IoError
                 })?;
-            match fill_prdt(prdt_table, phys, data.offset, data.length) {
+            match transfer::fill_prdt(prdt_table, phys, data.offset, data.length) {
                 Ok(count) => prdt_count = count,
                 Err(e) => {
                     // SAFETY: The pinned addresses were never written into a descriptor.
@@ -893,9 +860,8 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         completion: IoCompletion,
     ) -> Result<(), UfsError> {
         let data = data.filter(|data| data.length != 0);
-        let (expected_transfer_len, is_write) = data.as_ref().map_or((0, false), |data| {
-            (data.length, data.direction == DataDirection::HostToDevice)
-        });
+        let expected_transfer_len = data.as_ref().map_or(0, |data| data.length);
+        let direction = data.as_ref().map_or(DataDirection::NoData, |data| data.direction);
         let mut read_back = match &data {
             Some(IoTransfer {
                 buffer: IoBuffer::Vmo(vmo),
@@ -911,7 +877,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         let result = self.with_prepared_transfer(source, |prepared| {
             let mut list = self.request_list.lock();
             let slot = self.reserve_io_slot_locked(&mut list)?;
-            let mut command = CommandUpiu::new(cdb, expected_transfer_len, is_write);
+            let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
             command.header.lun = lun;
             command.header.task_tag = slot;
             let mut slot_completion = SlotCompletion::Io {
@@ -1163,18 +1129,18 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     ///
     /// Dropping this future at any `.await` point is DMA-safe; see [`SlotGuard`] for how
     /// `Reserved`, `Scheduled`, and `Completed` slots and their pinned buffers are reclaimed.
-    async fn execute_with_reader<R>(
+    async fn execute_with_reader<R, F>(
         &self,
         guard: &mut SlotGuard<'_, M>,
         layout: CommandDescriptorLayout,
         request: &[u8],
         expected_response: UpiuTransactionCode,
         data: Option<DataTransfer<'_>>,
-        read_response: impl FnOnce(
-            &crate::dma_buffer::ContiguousDmaBuffer,
-            usize,
-        ) -> Result<(R, UpiuHeader), UfsError>,
-    ) -> Result<R, UfsError> {
+        read_response: F,
+    ) -> Result<R, UfsError>
+    where
+        F: FnOnce(&ContiguousDmaBuffer, usize) -> Result<(R, UpiuHeader), UfsError>,
+    {
         let slot = guard.slot;
         let (tx, rx) = oneshot::channel();
         let mut completion = SlotCompletion::Async(tx);
@@ -1279,7 +1245,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         check_response_header(header.as_bytes(), UpiuTransactionCode::Response, slot)?;
         match check_scsi_status(lun, &response) {
             ScsiOutcome::Good => Ok(()),
-            ScsiOutcome::Retry(error) | ScsiOutcome::Fail(error) => Err(error),
+            ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => Err(error),
         }
     }
 
@@ -1541,8 +1507,8 @@ impl<M: Mmio> TransferRequestProcessor<M> {
     }
 
     /// Sends a SCSI command to `lun` and awaits its completion, transferring `data` (if any) to or
-    /// from the device. Retries up to [`SCSI_RETRIES`] times on UNIT ATTENTION, BUSY and TASK SET
-    /// FULL. For block I/O use [`Self::submit_io`] instead.
+    /// from the device. Retries up to [`SCSI_RETRIES`] times on UNIT ATTENTION, NOT READY, BUSY,
+    /// and TASK SET FULL. For block I/O use [`Self::submit_io`] instead.
     ///
     /// # Errors
     ///
@@ -1555,13 +1521,12 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         data: Option<DataTransfer<'_>>,
     ) -> Result<ResponseUpiu, UfsError> {
         let data = data.filter(|data| data.length != 0);
-        let (expected_transfer_len, is_write) = data.map_or((0, false), |data| {
-            (data.length, data.direction == DataDirection::HostToDevice)
-        });
+        let expected_transfer_len = data.map_or(0, |data| data.length);
+        let direction = data.map_or(DataDirection::NoData, |data| data.direction);
         let mut retries = 0;
         loop {
             let mut guard = self.reserve_io_slot().await?;
-            let mut command = CommandUpiu::new(cdb, expected_transfer_len, is_write);
+            let mut command = CommandUpiu::new(cdb, expected_transfer_len, direction);
             command.header.lun = lun;
             command.header.task_tag = guard.slot();
             let response: ResponseUpiu = self
@@ -1577,14 +1542,14 @@ impl<M: Mmio> TransferRequestProcessor<M> {
             drop(guard);
             match check_scsi_status(lun, &response) {
                 ScsiOutcome::Good => return Ok(response),
-                ScsiOutcome::Retry(error) if retries < SCSI_RETRIES => {
+                ScsiOutcome::Retry { error: _, delay } if retries < SCSI_RETRIES => {
                     retries += 1;
-                    if error != UfsError::CheckCondition {
+                    if delay {
                         fuchsia_async::Timer::new(zx::MonotonicInstant::after(SCSI_RETRY_DELAY))
                             .await;
                     }
                 }
-                ScsiOutcome::Retry(error) | ScsiOutcome::Fail(error) => return Err(error),
+                ScsiOutcome::Retry { error, .. } | ScsiOutcome::Fail(error) => return Err(error),
             }
         }
     }
@@ -1600,7 +1565,7 @@ impl<M: Mmio> TransferRequestProcessor<M> {
         {
             let mut list = self.request_list.lock();
             list.stopped = true;
-            let outstanding = (list.scheduled_mask & slot_mask(SDB_SLOTS as u8)) as u32;
+            let outstanding = (list.scheduled_mask & ALL_SLOTS_MASK) as u32;
             self.controller.with_mmio(|mmio| {
                 if outstanding != 0 {
                     UtrListClearReg(!outstanding).write(mmio);
@@ -1643,15 +1608,15 @@ impl<M: Mmio> TransferRequestProcessor<M> {
 
 /// Reads the RESPONSE UPIU of a SCSI command at `offset` in `ucd`, returning it with its header.
 fn read_scsi_response(
-    ucd: &crate::dma_buffer::ContiguousDmaBuffer,
+    ucd: &ContiguousDmaBuffer,
     offset: usize,
 ) -> Result<(ResponseUpiu, UpiuHeader), UfsError> {
     // Read 16 bytes (two 64-bit loads) to inspect the 12-byte UPIU header without copying the
-    // remaining 40 bytes of sense data on the fast path.
+    // remaining 40 bytes (reserved fields, sense data and padding) on the fast path.
     let words: [u64; 2] = ucd.read_struct(offset).map_err(|_| UfsError::IoError)?;
     let (header, _) =
         UpiuHeader::read_from_prefix(words.as_bytes()).map_err(|_| UfsError::IoError)?;
-    if header.status == SCSI_STATUS_GOOD && header.response == 0 && header.flags == 0 {
+    if header.status == ScsiStatus::Good.as_u8() && header.response == 0 && header.flags == 0 {
         let mut response = ResponseUpiu::new_zeroed();
         response.header = header;
         Ok((response, header))
@@ -1686,13 +1651,16 @@ fn check_response_header(
     Ok(())
 }
 
-/// Returns `(sense key, ASC, ASCQ)` from fixed- or descriptor-format sense data.
+/// Returns `(sense key, ASC, ASCQ)` from descriptor-format (SPC-4 section 4.5.2: bytes 1..=3) or
+/// fixed-format (SPC-4 section 4.5.3: bytes 2, 12, 13) sense data.
 fn parse_sense(response: &ResponseUpiu) -> (u8, u8, u8) {
     let length = (response.sense_data_length.get() as usize).min(response.sense_data.len());
     let sense = &response.sense_data[..length];
     let byte = |index: usize| sense.get(index).copied().unwrap_or(0);
-    match byte(0) & 0x7F {
-        0x72 | 0x73 => (byte(1) & 0xF, byte(2), byte(3)),
+    match byte(0) & SENSE_RESPONSE_CODE_MASK {
+        SENSE_DESCRIPTOR_FORMAT_CURRENT | SENSE_DESCRIPTOR_FORMAT_DEFERRED => {
+            (byte(1) & 0xF, byte(2), byte(3))
+        }
         _ => (byte(2) & 0xF, byte(12), byte(13)),
     }
 }
@@ -1701,37 +1669,45 @@ fn parse_sense(response: &ResponseUpiu) -> (u8, u8, u8) {
 enum ScsiOutcome {
     /// GOOD status and no transport-level response error.
     Good,
-    /// A transient failure (UNIT ATTENTION, BUSY, TASK SET FULL) worth retrying.
-    Retry(UfsError),
+    /// A transient failure (UNIT ATTENTION, NOT READY, BUSY, TASK SET FULL) worth retrying.
+    Retry { error: UfsError, delay: bool },
     /// A failure that retrying will not fix.
     Fail(UfsError),
 }
 
 /// Classifies a RESPONSE UPIU and logs failures.
 fn check_scsi_status(lun: u8, response: &ResponseUpiu) -> ScsiOutcome {
-    match response.header.status {
-        SCSI_STATUS_GOOD if response.header.response == 0 => ScsiOutcome::Good,
-        SCSI_STATUS_GOOD => {
+    let raw_status = response.header.status;
+    let Some(status) = ScsiStatus::from_raw(raw_status) else {
+        error!(lun, status = raw_status; "SCSI error status");
+        return ScsiOutcome::Fail(UfsError::IoError);
+    };
+    match status {
+        ScsiStatus::Good if response.header.response == 0 => ScsiOutcome::Good,
+        ScsiStatus::Good => {
             warn!(lun, response = response.header.response; "Target failure");
             ScsiOutcome::Fail(UfsError::IoError)
         }
-        SCSI_STATUS_CHECK_CONDITION => {
-            let (sense_key, asc, ascq) = parse_sense(response);
-            if sense_key == SENSE_KEY_UNIT_ATTENTION {
-                info!(lun, asc, ascq; "UNIT ATTENTION");
-                ScsiOutcome::Retry(UfsError::CheckCondition)
-            } else {
-                warn!(lun, sense_key, asc, ascq; "CHECK CONDITION");
-                ScsiOutcome::Fail(UfsError::CheckCondition)
+        ScsiStatus::CheckCondition => {
+            let (raw_sense_key, asc, ascq) = parse_sense(response);
+            match SenseKey::from_raw(raw_sense_key) {
+                Some(SenseKey::UnitAttention) => {
+                    info!(lun, asc, ascq; "UNIT ATTENTION");
+                    ScsiOutcome::Retry { error: UfsError::CheckCondition, delay: false }
+                }
+                Some(SenseKey::NotReady) => {
+                    info!(lun, asc, ascq; "NOT READY");
+                    ScsiOutcome::Retry { error: UfsError::CheckCondition, delay: true }
+                }
+                Some(_) | None => {
+                    warn!(lun, sense_key = raw_sense_key, asc, ascq; "CHECK CONDITION");
+                    ScsiOutcome::Fail(UfsError::CheckCondition)
+                }
             }
         }
-        status @ (SCSI_STATUS_BUSY | SCSI_STATUS_TASK_SET_FULL) => {
-            warn!(lun, status; "Transient SCSI status");
-            ScsiOutcome::Retry(UfsError::IoError)
-        }
-        status => {
-            error!(lun, status; "SCSI error status");
-            ScsiOutcome::Fail(UfsError::IoError)
+        ScsiStatus::Busy | ScsiStatus::TaskSetFull => {
+            warn!(lun, status = status.as_u8(); "Transient SCSI status");
+            ScsiOutcome::Retry { error: UfsError::IoError, delay: true }
         }
     }
 }
@@ -1741,7 +1717,7 @@ mod tests {
     use super::*;
     use crate::query::QueryOpcode;
     use crate::registers::HostControllerEnableReg;
-    use crate::scsi::ScsiOpcode;
+    use crate::scsi::{InquiryData, ScsiOpcode};
     use crate::testing::fake_ufs::{FakeMmio, FakeUfs, wait_until};
     use crate::testing::{
         ADMIN_SLOT, IoOutcomeReceiver, OCS_SUCCESS, PAGE_SIZE, check_condition,
@@ -1751,6 +1727,9 @@ mod tests {
     use futures::poll;
     use std::sync::atomic::{AtomicBool, Ordering};
     use zerocopy::byteorder::big_endian::U32;
+
+    /// UCD byte offset of a NOP IN response.
+    const NOP_RESPONSE_OFFSET: usize = CommandDescriptorLayout::NOP.response_offset();
 
     #[fuchsia::test]
     async fn test_nop_out_integration() {
@@ -1767,7 +1746,7 @@ mod tests {
 
         assert_eq!(processor.send_nop_out_upiu().await, Ok(()));
         let (utrd, request) = hardware.join().unwrap();
-        assert_eq!(utrd.command_type(), 1);
+        assert_eq!(utrd.command_type(), TransferRequestDescriptor::COMMAND_TYPE_UFS_STORAGE);
         assert_eq!(utrd.data_direction(), DataDirection::NoData as u32);
         assert!(utrd.interrupt());
         assert_eq!((utrd.response_upiu_offset(), utrd.response_upiu_length()), (8, 8));
@@ -1994,7 +1973,7 @@ mod tests {
         // A late OCS write before the deadline is picked up once visible.
         let mut request = Box::pin(processor.send_nop_out_upiu());
         assert!(poll!(request.as_mut()).is_pending());
-        utp.write_ucd(ADMIN_SLOT, 32, nop_in(ADMIN_SLOT).as_bytes());
+        utp.write_ucd(ADMIN_SLOT, NOP_RESPONSE_OFFSET, nop_in(ADMIN_SLOT).as_bytes());
         utp.clear_doorbell(ADMIN_SLOT);
         assert!(!processor.process_slot_completion(ADMIN_SLOT));
         assert_eq!(slot_state(&processor, ADMIN_SLOT), SlotState::Scheduled);
@@ -2005,7 +1984,7 @@ mod tests {
         // OCS still invalid past the deadline is a timeout, not a success.
         let mut request = Box::pin(processor.send_nop_out_upiu());
         assert!(poll!(request.as_mut()).is_pending());
-        utp.write_ucd(ADMIN_SLOT, 32, nop_in(ADMIN_SLOT).as_bytes());
+        utp.write_ucd(ADMIN_SLOT, NOP_RESPONSE_OFFSET, nop_in(ADMIN_SLOT).as_bytes());
         utp.clear_doorbell(ADMIN_SLOT);
         expire_deadline(&processor, ADMIN_SLOT);
         assert!(processor.process_slot_completion(ADMIN_SLOT));
@@ -2015,8 +1994,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_scsi_command_integration() {
-        use crate::scsi::InquiryData;
-
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
         let data_vmo = zx::Vmo::create(PAGE_SIZE).unwrap();
@@ -2026,10 +2003,13 @@ mod tests {
             let slot = wait_for_any_doorbell(&utp);
             let utrd = utp.utrd(slot);
             let command: crate::upiu::CommandUpiu = utp.request(slot);
-            let prdt = PrdtEntry::read_from_bytes(&utp.read_ucd(slot, 88, 16)).unwrap();
+            let prdt_offset = CommandDescriptorLayout::SCSI_COMMAND.prdt_offset();
+            let prdt_bytes = utp.read_ucd(slot, prdt_offset, size_of::<PrdtEntry>());
+            let prdt = PrdtEntry::read_from_bytes(&prdt_bytes).unwrap();
 
             // The fake BTI's addresses are not real, so place the data directly in the VMO.
-            let data = FakeUfs::new().execute_scsi_cmd(&command.cdb, false).unwrap();
+            let data =
+                FakeUfs::new().execute_scsi_cmd(&command.cdb, DataDirection::DeviceToHost).unwrap();
             data_vmo_clone.write(&data, 0).unwrap();
             utp.complete(slot, scsi_response(slot, 0).as_bytes(), OCS_SUCCESS);
             (slot, utrd, command, prdt)
@@ -2105,7 +2085,7 @@ mod tests {
             .await;
         assert_eq!(overflow.err(), err);
 
-        for slot in 0..32 {
+        for slot in 0..SDB_SLOTS as u8 {
             assert_eq!(slot_state(&processor, slot), SlotState::Free);
             assert!(!slot_pinned(&processor, slot));
         }
@@ -2119,9 +2099,13 @@ mod tests {
 
         let hardware = std::thread::spawn(move || {
             let slot = wait_for_any_doorbell(&utp);
-            utp.complete(slot, scsi_response(slot, SCSI_STATUS_BUSY).as_bytes(), OCS_SUCCESS);
+            utp.complete(
+                slot,
+                scsi_response(slot, ScsiStatus::Busy.as_u8()).as_bytes(),
+                OCS_SUCCESS,
+            );
             let slot = wait_for_any_doorbell(&utp);
-            let response = check_condition(slot, SENSE_KEY_UNIT_ATTENTION);
+            let response = check_condition(slot, SenseKey::UnitAttention.as_u8());
             utp.complete(slot, response.as_bytes(), OCS_SUCCESS);
             let slot = wait_for_any_doorbell(&utp);
             utp.complete(slot, scsi_response(slot, 0).as_bytes(), OCS_SUCCESS);
@@ -2133,15 +2117,46 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_scsi_check_condition_not_retried() {
-        const SENSE_KEY_ILLEGAL_REQUEST: u8 = 0x5;
+    async fn test_send_scsi_command_retries_not_ready_check_condition() {
+        let (mmio_vmo, processor) = create_test_processor();
+        let mut utp = fake_utp(&mmio_vmo, &processor);
 
+        let hardware = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let slot = wait_for_any_doorbell(&utp);
+                let response = check_condition(slot, SenseKey::NotReady.as_u8());
+                utp.complete(slot, response.as_bytes(), OCS_SUCCESS);
+            }
+            let slot = wait_for_any_doorbell(&utp);
+            utp.complete(slot, scsi_response(slot, 0).as_bytes(), OCS_SUCCESS);
+
+            for _ in 0..(SCSI_RETRIES + 1) {
+                let slot = wait_for_any_doorbell(&utp);
+                let response = check_condition(slot, SenseKey::NotReady.as_u8());
+                utp.complete(slot, response.as_bytes(), OCS_SUCCESS);
+            }
+        });
+
+        let cdb = ScsiOpcode::build_test_unit_ready_cdb();
+        let start = zx::MonotonicInstant::get();
+        assert!(processor.send_scsi_command(0, cdb, None).await.is_ok());
+        assert!(zx::MonotonicInstant::get() - start >= SCSI_RETRY_DELAY * 2);
+
+        assert_eq!(
+            processor.send_scsi_command(0, cdb, None).await.unwrap_err(),
+            UfsError::CheckCondition
+        );
+        hardware.join().unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_scsi_check_condition_not_retried() {
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
 
         let hardware = std::thread::spawn(move || {
             let slot = wait_for_any_doorbell(&utp);
-            let response = check_condition(slot, SENSE_KEY_ILLEGAL_REQUEST);
+            let response = check_condition(slot, SenseKey::IllegalRequest.as_u8());
             utp.complete(slot, response.as_bytes(), OCS_SUCCESS);
             utp
         });
@@ -2244,8 +2259,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_submit_io_reports_failures_without_retrying() {
-        const SENSE_KEY_ILLEGAL_REQUEST: u8 = 0x5;
-
         let (mmio_vmo, processor) = create_test_processor();
         let mut utp = fake_utp(&mmio_vmo, &processor);
 
@@ -2257,9 +2270,17 @@ mod tests {
         let mut wrong_tag = submit_tur(&processor, 0);
         let mut good = submit_tur(&processor, 0);
         assert_eq!(utp.doorbell(), 0b11_1111);
-        utp.complete(0, scsi_response(0, SCSI_STATUS_BUSY).as_bytes(), OCS_SUCCESS);
-        utp.complete(1, check_condition(1, SENSE_KEY_UNIT_ATTENTION).as_bytes(), OCS_SUCCESS);
-        utp.complete(2, check_condition(2, SENSE_KEY_ILLEGAL_REQUEST).as_bytes(), OCS_SUCCESS);
+        utp.complete(0, scsi_response(0, ScsiStatus::Busy.as_u8()).as_bytes(), OCS_SUCCESS);
+        utp.complete(
+            1,
+            check_condition(1, SenseKey::UnitAttention.as_u8()).as_bytes(),
+            OCS_SUCCESS,
+        );
+        utp.complete(
+            2,
+            check_condition(2, SenseKey::IllegalRequest.as_u8()).as_bytes(),
+            OCS_SUCCESS,
+        );
         utp.complete(3, scsi_response(3, 0).as_bytes(), OverallCommandStatus::Aborted as u8);
         utp.complete(4, scsi_response(5, 0).as_bytes(), OCS_SUCCESS);
         utp.complete(5, scsi_response(5, 0).as_bytes(), OCS_SUCCESS);
@@ -2465,7 +2486,10 @@ mod tests {
         assert_eq!((utrd.prdt_offset(), utrd.prdt_length()), (22, 1));
         let ucd_phys = u64::from(utrd.command_descriptor_base_addr)
             | (u64::from(utrd.command_descriptor_base_addr_upper) << 32);
-        let prdt = PrdtEntry::read_from_bytes(&utp.read_ucd(0, 88, 16)).unwrap();
+        let prdt_offset = CommandDescriptorLayout::SCSI_COMMAND.prdt_offset();
+        let prdt =
+            PrdtEntry::read_from_bytes(&utp.read_ucd(0, prdt_offset, size_of::<PrdtEntry>()))
+                .unwrap();
         assert_eq!(prdt.dma_address(), ucd_phys + INLINE_DATA_OFFSET as u64);
         assert_eq!(prdt.byte_count(), payload.len() as u32);
         assert_eq!(utp.read_ucd(0, INLINE_DATA_OFFSET, payload.len()), payload);

@@ -7,23 +7,13 @@
 //!
 //! UFSHCI host-memory structures are little-endian; UPIUs inside the UCD are big-endian.
 
+use crate::UfsError;
+use crate::constants::{
+    DWORD_ALIGN_MASK, INLINE_DATA_SIZE, MAX_PRDT_ENTRIES, MAX_PRDT_ENTRY_BYTES, PRDT_DBC_MASK,
+    UTP_COMMAND_DESCRIPTOR_SIZE,
+};
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-
-/// UCD buffer size allocated per transfer slot (8 KiB).
-pub const UTP_COMMAND_DESCRIPTOR_SIZE: usize = 8192;
-/// Maximum inline HostToDevice payload stored at the tail of the UCD (64 bytes).
-pub const INLINE_DATA_SIZE: usize = 64;
-/// Byte offset within the UCD of the inline HostToDevice payload region.
-pub const INLINE_DATA_OFFSET: usize = UTP_COMMAND_DESCRIPTOR_SIZE - INLINE_DATA_SIZE;
-/// Maximum PRDT entries per UCD (one per page, so 1 MiB with 4 KiB pages).
-pub const MAX_PRDT_ENTRIES: usize = 256;
-/// Maximum bytes described by one PRDT entry (`DBC` is 18 bits, 0-based).
-pub const MAX_PRDT_ENTRY_BYTES: u32 = 256 * 1024;
-/// 18-bit mask for `PrdtEntry::data_byte_count` (`DBC`, bits 17:0).
-const PRDT_DBC_MASK: u32 = MAX_PRDT_ENTRY_BYTES - 1;
-/// Dword alignment mask required for PRDT physical addresses and byte counts.
-const DWORD_ALIGN_MASK: u64 = 0x3;
 
 /// PRDT entry (16 bytes, UFSHCI 3.0/4.0 section 6.1.2).
 #[derive(
@@ -59,13 +49,13 @@ impl PrdtEntry {
     ///
     /// Returns `InvalidParameter` unless `addr` is dword-aligned and `byte_count` is a multiple
     /// of 4 in `4..=262144`.
-    pub fn set_dma_address(&mut self, addr: u64, byte_count: u32) -> Result<(), crate::UfsError> {
+    pub fn set_dma_address(&mut self, addr: u64, byte_count: u32) -> Result<(), UfsError> {
         if addr & DWORD_ALIGN_MASK != 0
             || u64::from(byte_count) & DWORD_ALIGN_MASK != 0
             || byte_count == 0
             || byte_count > MAX_PRDT_ENTRY_BYTES
         {
-            return Err(crate::UfsError::InvalidParameter);
+            return Err(UfsError::InvalidParameter);
         }
         self.base_addr = addr as u32;
         self.base_addr_upper = (addr >> 32) as u32;
@@ -91,7 +81,7 @@ pub fn fill_prdt(
     buffer_phys: &[zx::sys::zx_paddr_t],
     vmo_offset: u64,
     data_length: u32,
-) -> Result<usize, crate::UfsError> {
+) -> Result<usize, UfsError> {
     fill_prdt_with_page_size(
         prdt_table,
         buffer_phys,
@@ -111,9 +101,9 @@ fn fill_prdt_with_page_size(
     vmo_offset: u64,
     mut data_length: u32,
     page_size: u64,
-) -> Result<usize, crate::UfsError> {
+) -> Result<usize, UfsError> {
     if !page_size.is_power_of_two() || page_size > MAX_PRDT_ENTRY_BYTES as u64 {
-        return Err(crate::UfsError::InvalidParameter);
+        return Err(UfsError::InvalidParameter);
     }
     let mut offset_in_page = vmo_offset & (page_size - 1);
     let mut entry_count: usize = 0;
@@ -121,12 +111,15 @@ fn fill_prdt_with_page_size(
 
     while data_length > 0 {
         let Some(&page) = buffer_phys.get(page_index) else {
-            return Err(crate::UfsError::InvalidParameter);
+            return Err(UfsError::InvalidParameter);
         };
         let addr = page as u64 + offset_in_page;
         let byte_count = data_length.min((page_size - offset_in_page) as u32);
 
-        if offset_in_page == 0 && entry_count > 0 {
+        // After the first page (`entry_count > 0`), `offset_in_page` has been reset to 0, so every
+        // subsequent page starts on a page boundary and can coalesce with the preceding entry when
+        // physically contiguous.
+        if entry_count > 0 {
             let prev = &mut prdt_table[entry_count - 1];
             let prev_addr = prev.dma_address();
             let prev_len = prev.byte_count();
@@ -141,7 +134,7 @@ fn fill_prdt_with_page_size(
         }
 
         let Some(entry) = prdt_table.get_mut(entry_count) else {
-            return Err(crate::UfsError::InvalidParameter);
+            return Err(UfsError::InvalidParameter);
         };
         entry.set_dma_address(addr, byte_count)?;
 
@@ -153,10 +146,12 @@ fn fill_prdt_with_page_size(
     Ok(entry_count)
 }
 
-/// Byte layout of a UCD: request UPIU at offset 0, response UPIU right after it, then the PRDT.
+/// Byte layout of a UCD: request UPIU at offset 0, response UPIU right after it, then the PRDT;
+/// the last [`INLINE_DATA_SIZE`] bytes hold small inline write payloads.
 ///
 /// Offsets are multiples of 8 (UFSHCI requires dword alignment; 8 keeps 64-bit accesses aligned)
-/// and request + response + a full PRDT always fit in [`UTP_COMMAND_DESCRIPTOR_SIZE`].
+/// and request + response + a full PRDT + the inline region always fit in
+/// [`UTP_COMMAND_DESCRIPTOR_SIZE`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommandDescriptorLayout {
     request_length: u16,
@@ -180,15 +175,24 @@ impl CommandDescriptorLayout {
         std::mem::size_of::<crate::upiu::NopInUpiu>(),
     );
 
-    /// Creates a layout, panicking (at compile time for `const` uses) if it is invalid.
+    /// Creates a layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics (at compile time for `const` uses) if either length is not a multiple of 8 or the
+    /// request, response, a full PRDT and the inline region do not fit in a UCD.
     const fn new(request_length: usize, response_length: usize) -> Self {
-        assert!(request_length % 8 == 0 && response_length % 8 == 0);
+        assert!(
+            request_length % 8 == 0 && response_length % 8 == 0,
+            "UPIU lengths must be multiples of 8 bytes"
+        );
         assert!(
             request_length
                 + response_length
                 + MAX_PRDT_ENTRIES * std::mem::size_of::<PrdtEntry>()
                 + INLINE_DATA_SIZE
-                <= UTP_COMMAND_DESCRIPTOR_SIZE
+                <= UTP_COMMAND_DESCRIPTOR_SIZE,
+            "request, response, PRDT and inline data exceed the UCD size"
         );
         Self { request_length: request_length as u16, response_length: response_length as u16 }
     }
@@ -217,7 +221,6 @@ impl CommandDescriptorLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::UfsError;
 
     const PAGE_SIZE: u64 = 4096;
 

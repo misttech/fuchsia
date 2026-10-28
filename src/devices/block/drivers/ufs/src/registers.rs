@@ -5,9 +5,10 @@
 //! UFSHCI memory-mapped register definitions and bitfields (UFSHCI 3.0/4.0 section 5).
 //!
 //! `IS` and `UTRLCNR` are write-1-to-clear, so never read-modify-write them: build the value from
-//! 0 instead. `UTRLCLR` and `UTMRLCLR` clear a slot when a 0 is written and are declared write-only
-//! so that a read-modify-write cannot compile; clear slot `n` with `!(1 << n)`.
+//! 0 instead. `UTRLCLR` clears a slot when a 0 is written and is declared write-only so that a
+//! read-modify-write cannot compile; clear slot `n` with `!(1 << n)`.
 
+use crate::constants::MCQ_QUEUE_CONFIG_PTR_UNIT;
 use mmio::register;
 
 register! {
@@ -25,13 +26,14 @@ register! {
         pub ehs_in_lu_transfer_request_supported, _: 22;
         pub number_of_utp_task_management_request_slots, _: 18, 16;
         pub number_of_outstanding_rtt_requests_supported, _: 15, 8;
-        // UFSHCI 4.0 MCQ mode: 8-bit, 0-based maximum active commands (SDB uses 4:0).
+        // UFSHCI 4.0 MCQ mode: 8-bit, 0-based maximum active commands. Single-doorbell (SDB)
+        // mode uses only bits 4:0 (NUTRS).
         pub number_of_mcq_transfer_request_slots, _: 7, 0;
         pub number_of_utp_transfer_request_slots, _: 4, 0;
     }
 
     #[register(offset = 0x04, mode = RO)]
-    /// UFSHCI 4.0: MCQCAP - MCQ Capabilities.
+    /// UFSHCI 4.0 section 5.2.2: MCQCAP - MCQ Capabilities.
     pub struct McqCapabilityReg(u32) {
         pub max_interrupt_aggregation_groups, _: 31, 24;
         // Queue configuration base in units of `MCQ_QUEUE_CONFIG_PTR_UNIT` (0x200).
@@ -42,7 +44,7 @@ register! {
     }
 
     #[register(offset = 0x08, mode = RO)]
-    /// UFSHCI 3.0/4.0 section 5.2.2: VER - UFS Version.
+    /// UFSHCI 3.0 section 5.2.2 / 4.0 section 5.2.3: VER - UFS Version.
     pub struct VersionReg(u32) {
         pub major_version_number, _: 15, 8;
         pub minor_version_number, _: 7, 4;
@@ -50,7 +52,7 @@ register! {
     }
 
     #[register(offset = 0x18, mode = RW)]
-    /// UFSHCI 3.0/4.0 section 5.2.5: AHIT - Auto-Hibernate Idle Timer.
+    /// UFSHCI 3.0 section 5.2.5 / 4.0 section 5.2.7: AHIT - Auto-Hibernate Idle Timer.
     pub struct AutoHibernateIdleTimerReg(u32) {
         pub timer_scale, set_timer_scale: 12, 10;
         pub timer_value, set_timer_value: 9, 0;
@@ -157,7 +159,7 @@ register! {
 
     #[register(offset = 0x48, mode = RO)]
     /// UFSHCI 3.0/4.0 section 5.3.9: UECDME - Host UIC Error Code DME.
-    pub struct HostUicErrorCodeReg(u32) {
+    pub struct HostUicErrorCodeDmeReg(u32) {
         pub uic_dme_error, _: 31;
         pub uic_dme_error_code, _: 3, 0;
     }
@@ -201,38 +203,6 @@ register! {
         pub notification, set_notification: 31, 0;
     }
 
-    #[register(offset = 0x70, mode = RW)]
-    /// UFSHCI 3.0/4.0 section 5.5.1: UTMRLBA - UTP Task Management Request List Base Address.
-    pub struct UtmrListBaseAddressReg(u32) {
-        pub address, set_address: 31, 0;
-    }
-
-    #[register(offset = 0x74, mode = RW)]
-    /// UFSHCI 3.0/4.0 section 5.5.2: UTMRLBAU - UTP Task Management Request List Base Address
-    /// Upper.
-    pub struct UtmrListBaseAddressUpperReg(u32) {
-        pub address_upper, set_address_upper: 31, 0;
-    }
-
-    #[register(offset = 0x78, mode = RW)]
-    /// UFSHCI 3.0/4.0 section 5.5.3: UTMRLDBR - UTP Task Management Request List Door Bell.
-    pub struct UtmrListDoorBellReg(u32) {
-        pub door_bell, set_door_bell: 7, 0;
-    }
-
-    #[register(offset = 0x7C, mode = WO)]
-    /// UFSHCI 3.0/4.0 section 5.5.4: UTMRLCLR - UTP Task Management Request List Clear. Same
-    /// write-0-to-clear semantics as [`UtrListClearReg`], so also write-only.
-    pub struct UtmrListClearReg(u32) {
-        pub clear, set_clear: 7, 0;
-    }
-
-    #[register(offset = 0x80, mode = RW)]
-    /// UFSHCI 3.0/4.0 section 5.5.5: UTMRLRSR - UTP Task Management Request List Run Stop.
-    pub struct UtmrListRunStopReg(u32) {
-        pub value, set_value: 0;
-    }
-
     #[register(offset = 0x90, mode = RW)]
     /// UFSHCI 3.0/4.0 section 5.6.1: UICCMD - UIC Command.
     pub struct UicCommandReg(u32) {
@@ -260,7 +230,7 @@ register! {
     }
 
     #[register(offset = 0x300, mode = RW)]
-    /// UFSHCI 4.0: CONFIG - Global Configuration.
+    /// UFSHCI 4.0 section 5.2.8: CONFIG - Global Configuration.
     pub struct GlobalConfigReg(u32) {
         pub event_specific_interrupt_enable, set_event_specific_interrupt_enable: 1;
         // Queue Type: 0 = legacy single doorbell, 1 = MCQ.
@@ -268,16 +238,13 @@ register! {
     }
 
     #[register(offset = 0x380, mode = RW)]
-    /// UFSHCI 4.0: MCQCONFIG - MCQ Configuration.
+    /// UFSHCI 4.0 section 5.2.9: MCQCONFIG - MCQ Configuration.
     pub struct McqConfigReg(u32) {
         // Maximum Active Commands, 0-based.
         pub max_active_commands, set_max_active_commands: 16, 8;
         pub arbitration_scheme, set_arbitration_scheme: 1, 0;
     }
 }
-
-/// Unit of `MCQCAP.QCFGPTR`.
-pub const MCQ_QUEUE_CONFIG_PTR_UNIT: usize = 0x200;
 
 impl McqCapabilityReg {
     /// Returns the number of queues (`MAXQ` + 1).

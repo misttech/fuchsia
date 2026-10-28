@@ -122,7 +122,7 @@ Header Segments (EHS) and data payloads:
 | Byte 1: Flags (Read/Write/Attr: Simple, Ordered, Head of Q)   |
 | Byte 2: Logical Unit Number (LUN / W-LUN)                     |
 | Byte 3: Task Tag (Unique ID matching Request to Response)     |
-| Byte 4: Command Set Type / Initiator ID                       |
+| Byte 4: Initiator ID [7:4] / Command Set Type [3:0]           |
 | Byte 5: Query / Task Management Function                      |
 | Byte 6: Response Code                                         |
 | Byte 7: SCSI / Transaction Status                             |
@@ -282,9 +282,12 @@ UFSHCI 3.0/4.0 section 5.6):
 +---------------------+---------+--------------------------------------------------+
 | DME_GET             | 0x01    | Read local UniPro MIB attribute                  |
 |                     |         | Arg1: [31:16] MIB Attribute ID, [15:0] GenIndex  |
+|                     |         | Arg2: [7:0] Result Code (0x00 = SUCCESS)         |
 |                     |         | Arg3: Returns Read Value                         |
 | DME_SET             | 0x02    | Write local UniPro MIB attribute                 |
 |                     |         | Arg1: [31:16] MIB Attribute ID, [15:0] GenIndex  |
+|                     |         | Arg2: [23:16] AttrSetType (0=Normal, 1=Static),  |
+|                     |         |       [7:0] Result Code                          |
 |                     |         | Arg3: Write Value                                |
 | DME_PEER_GET        | 0x03    | Read remote (device-side) UniPro MIB attribute   |
 | DME_PEER_SET        | 0x04    | Write remote (device-side) UniPro MIB attribute  |
@@ -309,7 +312,7 @@ UFSHCI 3.0/4.0 section 5.6):
 3. Set `PA_ActiveTxDataLanes` (`0x1560`), `PA_ActiveRxDataLanes` (`0x1580`),
    `PA_TxGear` (`0x1568`), `PA_RxGear` (`0x1583`), `PA_TxTermination`
    (`0x1569`), `PA_RxTermination` (`0x1584`), and `PA_HSSeries` (`0x156A`,
-   Rate A or Rate B).
+   Rate A or Rate B for HS-G1..G4; Rate B required for HS-G5).
 4. Write `PA_PWRMode` (`0x1571`) = `(Fast_Mode << 4) | Fast_Mode` (`0x11`) via
    `DME_SET` and wait for `IS.UPMS` (UIC Power Mode Status) with
    `HCS.UPMCRS = PWR_LOCAL`.
@@ -367,8 +370,8 @@ drastically improving lock contention on multi-core systems:
 | Feature / Metric | UFS 3.1 (UFSHCI 3.0) | UFS 4.0 (UFSHCI 4.0) |
 | :--- | :--- | :--- |
 | **Physical Layer (M-PHY)** | M-PHY v4.1 (HS-G4) | **M-PHY v5.0 (HS-G5)** |
-| **Max Rate (per lane)** | 11.6 Gbps (~1.45 GB/s) | **23.2 Gbps (~2.9 GB/s)** |
-| **Max Bandwidth (2 lanes)** | ~2.9 GB/s link bandwidth | **~5.8 GB/s link bandwidth** |
+| **Max Rate (per lane)** | 11.6 Gbps (~1.16 GB/s 8b/10b) | **23.2 Gbps (~2.32 GB/s 8b/10b)** |
+| **Max Bandwidth (2 lanes)** | ~2.32 GB/s/dir (4.64 GB/s duplex) | **~4.64 GB/s/dir** |
 | **Interconnect (UniPro)** | MIPI UniPro v1.8 | **MIPI UniPro v2.0** |
 | **Host Queue Model** | Single 32-slot UTRD list | **MCQ (up to 256 SQs/CQs, N:1 SQ->CQ)** |
 | **Doorbell Model** | Single 32-bit `UTRLDBR` | **Per-queue tail (`SQxTP`)** |
@@ -423,8 +426,9 @@ UFSHCI 4.0 introduces **Multi-Circular Queue (MCQ, UFSHCI 4.0 section 5.8 &
    0-based).
    `IS`/`IE` bit 20 is `CQES`/`CQEE`, bit 21 `IAGES`/`IAGEE`.
 5. **Queue configuration** (`QCFGPTR * 0x200 + 0x40 * i`): `SQATTR` 0x00
-   (`SQEN` 31, `CQID` 23:16, `SIZE` 15:0 in dwords minus 1), `SQLBA`/`SQUBA`
-   0x04/0x08 (1 KiB aligned), `SQDAO` 0x0C, `SQISAO` 0x10, `CQATTR` 0x20,
+   (`SQEN` 31, `CQID` 23:16, `SIZE` 15:0 in dwords minus 1 = `entries * 8 - 1`), `SQLBA`/`SQUBA`
+   0x04/0x08 (1 KiB aligned), `SQDAO` 0x0C, `SQISAO` 0x10, `CQATTR` 0x20
+   (`CQEN` 31, `SIZE` 15:0 in dwords minus 1 = `entries * 8 - 1`),
    `CQLBA`/`CQUBA` 0x24/0x28, `CQDAO` 0x2C, `CQISAO` 0x30, `CQCFG` 0x34
    (`IAGVLD` 8, `IAG` 4:0). Enable the CQ before its SQ.
 6. **Runtime blocks** at the `xQDAO`/`xQISAO` offsets: SQ `SQHP` 0x00, `SQTP`

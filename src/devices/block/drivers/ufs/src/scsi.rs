@@ -6,45 +6,93 @@
 //! security operations (UFS 3.1/4.0 section 11.3).
 //!
 //! Multi-byte parameter data fields are big-endian and use zerocopy `big_endian` types.
+//!
+//! Note: `INQUIRY` and `READ CAPACITY (10)/(16)` CDB builders and response parameter structs (plus
+//! [`ScsiOpcode::ReportLuns`]) are provided for UFS SCSI command-set completeness and unit tests
+//! (`FakeUfs`); production LUN geometry discovery reads UFS Query Descriptors (`UnitDescriptor`,
+//! `DeviceDescriptor`, `GeometryDescriptor`).
 
+use crate::constants::{
+    CDB_FUA_BIT, MAX_LUN_INDEX, RPMB_SECURITY_PROTOCOL_SPECIFIC, SCSI_WELL_KNOWN_LUN_ID,
+    SCSI_WELL_KNOWN_LUN_MASK, SERVICE_ACTION_READ_CAPACITY_16, UFS_SECURITY_PROTOCOL,
+    UFS_WELL_KNOWN_LUN_ID,
+};
+use crate::request_list::DataDirection;
 use static_assertions::const_assert_eq;
 use zerocopy::byteorder::big_endian::{U16, U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-// SCSI status codes and sense keys (SAM / SPC). These intentionally mirror the C++
-// `scsi::StatusCode` and `scsi::SenseKey` enums in
-// //src/devices/block/lib/scsi/include/lib/scsi/controller.h, which has no Rust bindings; only
-// the handful of values the UFS driver inspects are duplicated here.
+/// SCSI status codes returned in `RESPONSE` UPIU header byte 7 (SAM-5 section 5.3, UFS 3.1/4.0
+/// section 10.7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ScsiStatus {
+    Good = 0x00,
+    CheckCondition = 0x02,
+    Busy = 0x08,
+    TaskSetFull = 0x28,
+}
 
-/// SCSI status `GOOD` (RESPONSE UPIU `Status` field).
-pub const SCSI_STATUS_GOOD: u8 = 0x00;
-/// SCSI status `CHECK CONDITION`; sense data describes the error.
-pub const SCSI_STATUS_CHECK_CONDITION: u8 = 0x02;
-/// SCSI status `BUSY`.
-pub const SCSI_STATUS_BUSY: u8 = 0x08;
-/// SCSI status `TASK SET FULL`.
-pub const SCSI_STATUS_TASK_SET_FULL: u8 = 0x28;
-/// Sense key `UNIT ATTENTION`.
-pub const SENSE_KEY_UNIT_ATTENTION: u8 = 0x6;
+impl ScsiStatus {
+    /// Converts a raw `RESPONSE` UPIU status byte into a known [`ScsiStatus`].
+    pub const fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0x00 => Some(Self::Good),
+            0x02 => Some(Self::CheckCondition),
+            0x08 => Some(Self::Busy),
+            0x28 => Some(Self::TaskSetFull),
+            _ => None,
+        }
+    }
 
-/// SCSI well-known LUN prefix (UFS 3.1/4.0 well-known LUs).
-const SCSI_WELL_KNOWN_LUN_ID: u16 = 0xC100;
-/// Mask selecting the SCSI LUN address method byte.
-const SCSI_WELL_KNOWN_LUN_MASK: u16 = 0xFF00;
-/// UFS well-known LUN flag in the UPIU LUN field.
-const UFS_WELL_KNOWN_LUN_ID: u8 = 0x80;
-/// Highest regular UFS LUN.
-const MAX_LUN_INDEX: u16 = 31;
-/// Service Action for `READ CAPACITY (16)` (`0x10`).
-const SERVICE_ACTION_READ_CAPACITY_16: u8 = 0x10;
-/// Force Unit Access (`FUA`) bit in byte 1 of `READ (10)/(16)` and `WRITE (10)/(16)` CDBs.
-const CDB_FUA_BIT: u8 = 0x08;
-/// JEDEC UFS Security Protocol ID (`0xEC`).
-const UFS_SECURITY_PROTOCOL: u8 = 0xEC;
-/// UFS RPMB Security Protocol Specific ID (`0x0001`).
-const RPMB_SECURITY_PROTOCOL_SPECIFIC: u16 = 0x0001;
+    /// Returns the raw wire value of this status code.
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
 
-/// Translates a SCSI LUN into the UPIU LUN field (C++ `Ufs::TranslateScsiLunToUfsLun`).
+/// SCSI sense keys decoded from fixed- or descriptor-format sense data (SPC-4 section 4.5.6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SenseKey {
+    NotReady = 0x02,
+    IllegalRequest = 0x05,
+    UnitAttention = 0x06,
+}
+
+impl SenseKey {
+    /// Converts a 4-bit raw sense key into a known [`SenseKey`].
+    pub const fn from_raw(raw: u8) -> Option<Self> {
+        match raw {
+            0x02 => Some(Self::NotReady),
+            0x05 => Some(Self::IllegalRequest),
+            0x06 => Some(Self::UnitAttention),
+            _ => None,
+        }
+    }
+
+    /// Returns the raw 4-bit wire value of this sense key.
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Whether a `WRITE` sets Force Unit Access (`FUA`): the data must reach the medium before the
+/// command completes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fua {
+    Off,
+    On,
+}
+
+/// Which of `READ` or `WRITE` to issue for a block range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Read,
+    Write { fua: Fua },
+}
+
+/// Translates a SCSI LUN into the UPIU LUN field (UFS 3.1/4.0 section 10.8.5).
 ///
 /// # Errors
 ///
@@ -239,10 +287,10 @@ impl ScsiOpcode {
         cdb
     }
 
-    fn build_rw_10_cdb(opcode: ScsiOpcode, fua: bool, lba: u32, block_count: u16) -> [u8; 16] {
+    fn build_rw_10_cdb(opcode: ScsiOpcode, fua: Fua, lba: u32, block_count: u16) -> [u8; 16] {
         let mut cdb = [0u8; 16];
         cdb[0] = opcode as u8;
-        if fua {
+        if fua == Fua::On {
             cdb[1] = CDB_FUA_BIT;
         }
         cdb[2..6].copy_from_slice(&lba.to_be_bytes());
@@ -252,18 +300,18 @@ impl ScsiOpcode {
 
     /// Builds a 16-byte padded `READ (10)` CDB.
     pub fn build_read_10_cdb(lba: u32, block_count: u16) -> [u8; 16] {
-        Self::build_rw_10_cdb(ScsiOpcode::Read10, false, lba, block_count)
+        Self::build_rw_10_cdb(ScsiOpcode::Read10, Fua::Off, lba, block_count)
     }
 
     /// Builds a 16-byte padded `WRITE (10)` CDB.
     pub fn build_write_10_cdb(lba: u32, block_count: u16) -> [u8; 16] {
-        Self::build_rw_10_cdb(ScsiOpcode::Write10, false, lba, block_count)
+        Self::build_rw_10_cdb(ScsiOpcode::Write10, Fua::Off, lba, block_count)
     }
 
-    fn build_rw_16_cdb(opcode: ScsiOpcode, fua: bool, lba: u64, block_count: u32) -> [u8; 16] {
+    fn build_rw_16_cdb(opcode: ScsiOpcode, fua: Fua, lba: u64, block_count: u32) -> [u8; 16] {
         let mut cdb = [0u8; 16];
         cdb[0] = opcode as u8;
-        if fua {
+        if fua == Fua::On {
             cdb[1] = CDB_FUA_BIT;
         }
         cdb[2..10].copy_from_slice(&lba.to_be_bytes());
@@ -273,25 +321,24 @@ impl ScsiOpcode {
 
     /// Builds a 16-byte `READ (16)` CDB.
     pub fn build_read_16_cdb(lba: u64, block_count: u32) -> [u8; 16] {
-        Self::build_rw_16_cdb(ScsiOpcode::Read16, false, lba, block_count)
+        Self::build_rw_16_cdb(ScsiOpcode::Read16, Fua::Off, lba, block_count)
     }
 
     /// Builds a 16-byte `WRITE (16)` CDB.
     pub fn build_write_16_cdb(lba: u64, block_count: u32) -> [u8; 16] {
-        Self::build_rw_16_cdb(ScsiOpcode::Write16, false, lba, block_count)
+        Self::build_rw_16_cdb(ScsiOpcode::Write16, Fua::Off, lba, block_count)
     }
 
-    /// Builds a 10-byte or 16-byte `READ` or `WRITE` CDB with optional Force Unit Access (`FUA`).
-    pub fn build_rw_cdb(is_write: bool, fua: bool, lba: u64, block_count: u32) -> [u8; 16] {
+    /// Builds a `READ` or `WRITE` CDB (with Force Unit Access for `Direction::Write { fua: On }`),
+    /// using the 10-byte form when `lba` and `block_count` fit and the 16-byte form otherwise.
+    pub fn build_rw_cdb(direction: Direction, lba: u64, block_count: u32) -> [u8; 16] {
+        let (opcode10, opcode16, fua) = match direction {
+            Direction::Read => (ScsiOpcode::Read10, ScsiOpcode::Read16, Fua::Off),
+            Direction::Write { fua } => (ScsiOpcode::Write10, ScsiOpcode::Write16, fua),
+        };
         match (u32::try_from(lba), u16::try_from(block_count)) {
-            (Ok(lba32), Ok(blocks16)) => {
-                let op = if is_write { ScsiOpcode::Write10 } else { ScsiOpcode::Read10 };
-                Self::build_rw_10_cdb(op, fua, lba32, blocks16)
-            }
-            _ => {
-                let op = if is_write { ScsiOpcode::Write16 } else { ScsiOpcode::Read16 };
-                Self::build_rw_16_cdb(op, fua, lba, block_count)
-            }
+            (Ok(lba32), Ok(blocks16)) => Self::build_rw_10_cdb(opcode10, fua, lba32, blocks16),
+            _ => Self::build_rw_16_cdb(opcode16, fua, lba, block_count),
         }
     }
 
@@ -310,17 +357,20 @@ impl ScsiOpcode {
         cdb
     }
 
-    /// Builds a 16-byte padded `READ BUFFER (10)` or `WRITE BUFFER` CDB. `buffer_offset` and
-    /// `length` are 24-bit.
+    /// Builds a 16-byte padded `WRITE BUFFER` (`HostToDevice`) or `READ BUFFER (10)` CDB.
+    /// `buffer_offset` and `length` are 24-bit.
     pub fn build_buffer_cdb(
-        is_write: bool,
+        direction: DataDirection,
         mode: u8,
         buffer_id: u8,
         buffer_offset: u32,
         length: u32,
     ) -> [u8; 16] {
         let mut cdb = [0u8; 16];
-        cdb[0] = if is_write { ScsiOpcode::WriteBuffer } else { ScsiOpcode::ReadBuffer } as u8;
+        cdb[0] = match direction {
+            DataDirection::HostToDevice => ScsiOpcode::WriteBuffer,
+            DataDirection::DeviceToHost | DataDirection::NoData => ScsiOpcode::ReadBuffer,
+        } as u8;
         cdb[1] = mode;
         cdb[2] = buffer_id;
         cdb[3..6].copy_from_slice(&buffer_offset.to_be_bytes()[1..]);
@@ -328,12 +378,14 @@ impl ScsiOpcode {
         cdb
     }
 
-    /// Builds a 16-byte padded `SECURITY PROTOCOL IN` (`0xA2`) or `OUT` (`0xB5`) CDB for RPMB.
-    pub fn build_security_protocol_cdb(is_out: bool, transfer_len: u32) -> [u8; 16] {
+    /// Builds a 16-byte padded `SECURITY PROTOCOL OUT` (`0xB5`, `HostToDevice`) or
+    /// `SECURITY PROTOCOL IN` (`0xA2`) CDB for RPMB.
+    pub fn build_security_protocol_cdb(direction: DataDirection, transfer_len: u32) -> [u8; 16] {
         let mut cdb = [0u8; 16];
-        cdb[0] =
-            if is_out { ScsiOpcode::SecurityProtocolOut } else { ScsiOpcode::SecurityProtocolIn }
-                as u8;
+        cdb[0] = match direction {
+            DataDirection::HostToDevice => ScsiOpcode::SecurityProtocolOut,
+            DataDirection::DeviceToHost | DataDirection::NoData => ScsiOpcode::SecurityProtocolIn,
+        } as u8;
         cdb[1] = UFS_SECURITY_PROTOCOL;
         cdb[2..4].copy_from_slice(&RPMB_SECURITY_PROTOCOL_SPECIFIC.to_be_bytes());
         cdb[6..10].copy_from_slice(&transfer_len.to_be_bytes());
@@ -444,21 +496,26 @@ mod tests {
         assert_eq!(cdb[1], 0);
         assert_eq!(&cdb[2..9], &[0xAA, 0xBB, 0xCC, 0xDD, 0, 0, 8]);
 
-        // build_rw_cdb selects 10-byte vs 16-byte and sets FUA bit (0x08) when requested.
-        let write_10_fua = ScsiOpcode::build_rw_cdb(true, true, 0xAABBCCDD, 8);
+        // build_rw_cdb selects 10-byte vs 16-byte and sets the FUA bit when requested.
+        let write_fua = Direction::Write { fua: Fua::On };
+        let write_10_fua = ScsiOpcode::build_rw_cdb(write_fua, 0xAABBCCDD, 8);
         assert_eq!(write_10_fua[0], ScsiOpcode::Write10 as u8);
-        assert_eq!(write_10_fua[1], 0x08);
+        assert_eq!(write_10_fua[1], CDB_FUA_BIT);
         assert_eq!(&write_10_fua[2..9], &[0xAA, 0xBB, 0xCC, 0xDD, 0, 0, 8]);
 
-        let write_16_fua = ScsiOpcode::build_rw_cdb(true, true, 1 << 32, 8);
+        let write_16_fua = ScsiOpcode::build_rw_cdb(write_fua, 1 << 32, 8);
         assert_eq!(write_16_fua[0], ScsiOpcode::Write16 as u8);
-        assert_eq!(write_16_fua[1], 0x08);
+        assert_eq!(write_16_fua[1], CDB_FUA_BIT);
 
-        let sec_in = ScsiOpcode::build_security_protocol_cdb(false, 512);
+        let read_10 = ScsiOpcode::build_rw_cdb(Direction::Read, 0xAABBCCDD, 8);
+        assert_eq!(read_10[0], ScsiOpcode::Read10 as u8);
+        assert_eq!(read_10[1], 0);
+
+        let sec_in = ScsiOpcode::build_security_protocol_cdb(DataDirection::DeviceToHost, 512);
         assert_eq!(sec_in[0], ScsiOpcode::SecurityProtocolIn as u8);
         assert_eq!(&sec_in[1..4], &[0xEC, 0x00, 0x01]);
         assert_eq!(&sec_in[6..10], &512u32.to_be_bytes());
-        let sec_out = ScsiOpcode::build_security_protocol_cdb(true, 1024);
+        let sec_out = ScsiOpcode::build_security_protocol_cdb(DataDirection::HostToDevice, 1024);
         assert_eq!(sec_out[0], ScsiOpcode::SecurityProtocolOut as u8);
         assert_eq!(&sec_out[6..10], &1024u32.to_be_bytes());
 
@@ -469,9 +526,10 @@ mod tests {
 
     #[fuchsia::test]
     fn test_buffer_cdb() {
-        let cdb = ScsiOpcode::build_buffer_cdb(true, 0x02, 0x07, 0x0A0B0C, 0x010203);
+        let write = DataDirection::HostToDevice;
+        let cdb = ScsiOpcode::build_buffer_cdb(write, 0x02, 0x07, 0x0A0B0C, 0x010203);
         assert_eq!(&cdb[..10], &[0x3B, 0x02, 0x07, 0x0A, 0x0B, 0x0C, 0x01, 0x02, 0x03, 0]);
-        let cdb = ScsiOpcode::build_buffer_cdb(false, 0x1C, 0, 0, 4);
+        let cdb = ScsiOpcode::build_buffer_cdb(DataDirection::DeviceToHost, 0x1C, 0, 0, 4);
         assert_eq!(&cdb[..10], &[0x3C, 0x1C, 0, 0, 0, 0, 0, 0, 4, 0]);
     }
 

@@ -4,31 +4,39 @@
 
 //! Fake UFS host controller and device for unit and integration tests.
 
-use crate::descriptors::{DeviceDescriptor, GeometryDescriptor};
+use crate::UfsError;
+use crate::constants::{GEOMETRY_SIZE_UNIT, MIN_LOGICAL_BLOCK_SIZE, UTRD_OCS_MASK};
+use crate::descriptors::{DescriptorType, DeviceDescriptor, GeometryDescriptor};
 use crate::registers::{
-    HostControllerStatusReg, InterruptStatusReg, UicCommandArgument2Reg, UicCommandArgument3Reg,
-    UicCommandReg, UtrListDoorBellReg,
+    HostControllerStatusReg, InterruptStatusReg, PowerModeStatus, UicCommandArgument2Reg,
+    UicCommandArgument3Reg, UicCommandReg, UtrListDoorBellReg,
 };
-use crate::request_list::TransferRequestDescriptor;
+use crate::request_list::{DataDirection, TransferRequestDescriptor};
 use crate::scsi::{InquiryData, ReadCapacity10Data, ScsiOpcode};
 use crate::transfer_request_processor::TransferRequestProcessor;
 use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
 use mmio::{Mmio, MmioError, ReadableRegister, Register, WritableRegister};
+use std::mem::size_of;
 use std::sync::Arc;
 use zerocopy::byteorder::big_endian::{U16, U32, U64};
 use zerocopy::{FromBytes, IntoBytes};
 
-/// `HCS.DP`: the device answered link startup.
+/// `HCS.DP`: a device is attached to the link.
 pub const HCS_DEVICE_PRESENT: u32 = 1 << 0;
-/// `HCS.UIC_COMMAND_READY`: the controller accepts a UIC command.
+/// `HCS.UCRDY`: the controller accepts a UIC command.
 pub const HCS_UIC_COMMAND_READY: u32 = 1 << 3;
+/// `CAP.AUTOH8`: the controller supports auto-hibernate.
+pub const CAP_AUTO_HIBERNATE_SUPPORT: u32 = 1 << 23;
+
+/// Returns an `HCS` value whose `UPMCRS` field reads `status`.
+pub fn hcs_power_mode_status(status: PowerModeStatus) -> u32 {
+    (status as u32) << 8
+}
 
 /// Fakes the UFS device behind the host controller: its descriptors and SCSI command responses.
 pub struct FakeUfs {
-    /// Simulated UFS Device Descriptor.
     pub device_desc: DeviceDescriptor,
-    /// Simulated UFS Geometry Descriptor.
     pub geometry_desc: GeometryDescriptor,
 }
 
@@ -37,8 +45,8 @@ impl FakeUfs {
     pub fn new() -> Self {
         Self {
             device_desc: DeviceDescriptor {
-                length: 89,
-                descriptor_idn: 0x00,
+                length: size_of::<DeviceDescriptor>() as u8,
+                descriptor_idn: DescriptorType::Device as u8,
                 device: 0x00,
                 device_class: 0x00,
                 device_sub_class: 0x01,
@@ -53,11 +61,11 @@ impl FakeUfs {
                 ..Default::default()
             },
             geometry_desc: GeometryDescriptor {
-                length: 87,
-                descriptor_idn: 0x07,
+                length: size_of::<GeometryDescriptor>() as u8,
+                descriptor_idn: DescriptorType::Geometry as u8,
                 total_raw_device_capacity: U64::new(0x8000), // 16 MiB in 512 B sectors
                 max_number_lu: 0x01,
-                segment_size: U32::new(512),
+                segment_size: U32::new(GEOMETRY_SIZE_UNIT),
                 allocation_unit_size: 1,
                 ..Default::default()
             },
@@ -69,17 +77,17 @@ impl FakeUfs {
     pub fn execute_scsi_cmd(
         &mut self,
         cdb: &[u8],
-        is_write: bool,
-    ) -> Result<Vec<u8>, crate::UfsError> {
+        direction: DataDirection,
+    ) -> Result<Vec<u8>, UfsError> {
         const TEST_UNIT_READY: u8 = ScsiOpcode::TestUnitReady as u8;
         const INQUIRY: u8 = ScsiOpcode::Inquiry as u8;
         const READ_CAPACITY_10: u8 = ScsiOpcode::ReadCapacity10 as u8;
         const READ_10: u8 = ScsiOpcode::Read10 as u8;
         const READ_16: u8 = ScsiOpcode::Read16 as u8;
         if self.device_desc.number_lu == 0 {
-            return Err(crate::UfsError::CheckCondition);
+            return Err(UfsError::CheckCondition);
         }
-        match *cdb.first().ok_or(crate::UfsError::InvalidParameter)? {
+        match *cdb.first().ok_or(UfsError::InvalidParameter)? {
             TEST_UNIT_READY => Ok(Vec::new()),
             INQUIRY => {
                 let inquiry = InquiryData {
@@ -100,13 +108,13 @@ impl FakeUfs {
                 let sectors = self.geometry_desc.total_raw_device_capacity.get();
                 let capacity = ReadCapacity10Data {
                     returned_logical_block_address: U32::new((sectors / 8 - 1) as u32),
-                    block_length_in_bytes: U32::new(4096),
+                    block_length_in_bytes: U32::new(MIN_LOGICAL_BLOCK_SIZE),
                 };
                 Ok(capacity.as_bytes().to_vec())
             }
-            READ_10 | READ_16 => Ok(vec![0xAA; 4096]),
-            _ if is_write => Ok(Vec::new()),
-            _ => Err(crate::UfsError::CheckCondition),
+            READ_10 | READ_16 => Ok(vec![0xAA; MIN_LOGICAL_BLOCK_SIZE as usize]),
+            _ if direction == DataDirection::HostToDevice => Ok(Vec::new()),
+            _ => Err(UfsError::CheckCondition),
         }
     }
 }
@@ -281,7 +289,7 @@ impl FakeUtp {
         let offset = slot as usize * std::mem::size_of::<TransferRequestDescriptor>()
             + TransferRequestDescriptor::OCS_OFFSET;
         let dword2 = self.utrl.load32(offset);
-        self.utrl.store32(offset, (dword2 & !0xFF) | ocs as u32);
+        self.utrl.store32(offset, (dword2 & !UTRD_OCS_MASK) | ocs as u32);
     }
 
     /// Reads `len` bytes of `slot`'s UCD at `offset`.
@@ -363,17 +371,19 @@ mod tests {
     #[fuchsia::test]
     fn test_execute_scsi_cmd() {
         let mut fake_ufs = FakeUfs::new();
-        let inq = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::Inquiry as u8], false).unwrap();
+        let read = DataDirection::DeviceToHost;
+        let inq = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::Inquiry as u8], read).unwrap();
         assert_eq!(inq.len(), 36);
 
-        let rd = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::Read10 as u8], false).unwrap();
+        let rd = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::Read10 as u8], read).unwrap();
         assert_eq!(rd.len(), 4096);
 
-        let tur = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::TestUnitReady as u8], false).unwrap();
+        let tur = fake_ufs.execute_scsi_cmd(&[ScsiOpcode::TestUnitReady as u8], read).unwrap();
         assert!(tur.is_empty());
 
-        assert_eq!(fake_ufs.execute_scsi_cmd(&[], false), Err(crate::UfsError::InvalidParameter));
-        assert_eq!(fake_ufs.execute_scsi_cmd(&[0xFF], true), Ok(Vec::new()));
-        assert_eq!(fake_ufs.execute_scsi_cmd(&[0xFF], false), Err(crate::UfsError::CheckCondition));
+        assert_eq!(fake_ufs.execute_scsi_cmd(&[], read), Err(UfsError::InvalidParameter));
+        let write = DataDirection::HostToDevice;
+        assert_eq!(fake_ufs.execute_scsi_cmd(&[0xFF], write), Ok(Vec::new()));
+        assert_eq!(fake_ufs.execute_scsi_cmd(&[0xFF], read), Err(UfsError::CheckCondition));
     }
 }

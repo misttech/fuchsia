@@ -12,6 +12,7 @@
 //! complete commands out of these primitives.
 
 use crate::UfsError;
+use crate::constants::{REGISTER_POLL_INTERVAL, SPIN_POLL_BUDGET};
 use crate::registers::{
     HostControllerStatusReg, InterruptStatusReg, PowerModeStatus, UicCommandArgument1Reg,
     UicCommandArgument2Reg, UicCommandArgument3Reg, UicCommandReg,
@@ -58,77 +59,6 @@ impl UicCommandOpcode {
     }
 }
 
-/// Available TX data lanes (`PA_AvailTxDataLanes`, MIPI UniPro v1.8/v2.0).
-pub const PA_AVAILTXDATALANES: u16 = 0x1520;
-/// Available RX data lanes (`PA_AvailRxDataLanes`).
-pub const PA_AVAILRXDATALANES: u16 = 0x1540;
-/// Active TX data lanes (`PA_ActiveTxDataLanes`).
-pub const PA_ACTIVETXDATALANES: u16 = 0x1560;
-/// Connected TX data lanes (`PA_ConnectedTxDataLanes`).
-pub const PA_CONNECTEDTXDATALANES: u16 = 0x1561;
-/// TX gear (`PA_TxGear`).
-pub const PA_TXGEAR: u16 = 0x1568;
-/// TX termination enable (`PA_TxTermination`).
-pub const PA_TXTERMINATION: u16 = 0x1569;
-/// High-Speed rate series (`PA_HSSeries`: 1 = Rate A, 2 = Rate B).
-pub const PA_HSSERIES: u16 = 0x156A;
-/// Link power mode (`PA_PWRMode`).
-pub const PA_PWRMODE: u16 = 0x1571;
-/// Active RX data lanes (`PA_ActiveRxDataLanes`).
-pub const PA_ACTIVERXDATALANES: u16 = 0x1580;
-/// Connected RX data lanes (`PA_ConnectedRxDataLanes`).
-pub const PA_CONNECTEDRXDATALANES: u16 = 0x1581;
-/// RX gear (`PA_RxGear`).
-pub const PA_RXGEAR: u16 = 0x1583;
-/// RX termination enable (`PA_RxTermination`).
-pub const PA_RXTERMINATION: u16 = 0x1584;
-/// Maximum supported RX High-Speed gear (`PA_MaxRxHSGear`).
-pub const PA_MAXRXHSGEAR: u16 = 0x1587;
-/// Remote (device) UniPro version (`PA_RemoteVerInfo`).
-pub const PA_REMOTEVERINFO: u16 = 0x15A0;
-/// M-PHY `T_ACTIVATE` wake-up time (`PA_TActivate`).
-pub const PA_TACTIVATE: u16 = 0x15A8;
-/// Local (host) UniPro version (`PA_LocalVerInfo`).
-pub const PA_LOCALVERINFO: u16 = 0x15A9;
-/// M-PHY time granularity (`PA_Granularity`).
-pub const PA_GRANULARITY: u16 = 0x15AA;
-/// Power mode user data 0 (`PA_PWRModeUserData0`: `DL_FC0ProtectionTimeOutVal`).
-pub const PA_PWRMODEUSERDATA0: u16 = 0x15B0;
-/// Power mode user data 1 (`PA_PWRModeUserData1`: `DL_TC0ReplayTimeOutVal`).
-pub const PA_PWRMODEUSERDATA1: u16 = 0x15B1;
-/// Power mode user data 2 (`PA_PWRModeUserData2`: `DL_AFC0ReqTimeOutVal`).
-pub const PA_PWRMODEUSERDATA2: u16 = 0x15B2;
-/// Power mode user data 3 (`PA_PWRModeUserData3`).
-pub const PA_PWRMODEUSERDATA3: u16 = 0x15B3;
-/// Power mode user data 4 (`PA_PWRModeUserData4`).
-pub const PA_PWRMODEUSERDATA4: u16 = 0x15B4;
-/// Power mode user data 5 (`PA_PWRModeUserData5`).
-pub const PA_PWRMODEUSERDATA5: u16 = 0x15B5;
-/// Local Data Link FC0 protection timeout (`DME_LocalFC0ProtectionTimeOutVal`).
-pub const DME_LOCAL_FC0_PROTECTION_TIMEOUT_VAL: u16 = 0xD041;
-/// Local Data Link TC0 replay timeout (`DME_LocalTC0ReplayTimeOutVal`).
-pub const DME_LOCAL_TC0_REPLAY_TIMEOUT_VAL: u16 = 0xD042;
-/// Local Data Link AFC0 request timeout (`DME_LocalAFC0ReqTimeOutVal`).
-pub const DME_LOCAL_AFC0_REQ_TIMEOUT_VAL: u16 = 0xD043;
-/// TX High-Speed equalization adaptation type (`PA_TxHsAdaptType`, required for HS-G4/G5).
-pub const PA_TXHSADAPTTYPE: u16 = 0x15D4;
-/// Initial High-Speed adaptation (`PA_INITIAL_ADAPT`).
-pub const PA_INITIAL_ADAPT: u32 = 0x01;
-
-/// Default UniPro Data Link layer FC0 protection timeout value.
-pub const DL_FC0_PROTECTION_TIMEOUT_VAL: u32 = 8191;
-/// Default UniPro Data Link layer TC0 replay timeout value.
-pub const DL_TC0_REPLAY_TIMEOUT_VAL: u32 = 65535;
-/// Default UniPro Data Link layer AFC0 request timeout value.
-pub const DL_AFC0_REQ_TIMEOUT_VAL: u32 = 32767;
-
-/// Interval between register polls while waiting for UIC or controller state changes.
-pub const REGISTER_POLL_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_micros(10);
-/// Local DME commands complete within a few microseconds, so [`poll_until`] spins this long
-/// before falling back to [`REGISTER_POLL_INTERVAL`] timer polling: a timer wakeup costs more
-/// than the command itself, and the PHY calibration issues hundreds of them back to back.
-pub const SPIN_POLL_BUDGET: zx::MonotonicDuration = zx::MonotonicDuration::from_micros(10);
-
 /// A UIC command and its three argument register values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UicCommand {
@@ -170,11 +100,22 @@ impl UicCommand {
 /// Returns `Timeout` if `step` has not returned `Some` after `timeout`.
 pub async fn poll_until<T>(
     timeout: zx::MonotonicDuration,
+    step: impl FnMut() -> Option<T>,
+) -> Result<T, UfsError> {
+    poll_with_spin_and_interval(timeout, SPIN_POLL_BUDGET, REGISTER_POLL_INTERVAL, step).await
+}
+
+/// Shared loop of [`poll_until`]: spins for `spin_budget` after the first miss, then sleeps
+/// `interval` between attempts, up to `timeout`.
+async fn poll_with_spin_and_interval<T>(
+    timeout: zx::MonotonicDuration,
+    spin_budget: zx::MonotonicDuration,
+    interval: zx::MonotonicDuration,
     mut step: impl FnMut() -> Option<T>,
 ) -> Result<T, UfsError> {
     let start = zx::MonotonicInstant::get();
     let deadline = start + timeout;
-    let spin_until = start + SPIN_POLL_BUDGET;
+    let spin_until = start + spin_budget;
     loop {
         if let Some(value) = step() {
             return Ok(value);
@@ -187,7 +128,7 @@ pub async fn poll_until<T>(
             std::hint::spin_loop();
             continue;
         }
-        fuchsia_async::Timer::new(zx::MonotonicInstant::after(REGISTER_POLL_INTERVAL)).await;
+        fuchsia_async::Timer::new(zx::MonotonicInstant::after(interval)).await;
     }
 }
 
@@ -240,7 +181,14 @@ pub fn check_power_mode_status<M: Mmio>(
     let hcs = HostControllerStatusReg::read(mmio);
     match hcs.power_mode_status() {
         Some(PowerModeStatus::PowerLocal) => Ok(()),
-        _ => Err(UfsError::UicError {
+        Some(
+            PowerModeStatus::PowerOk
+            | PowerModeStatus::PowerRemote
+            | PowerModeStatus::PowerBusy
+            | PowerModeStatus::PowerErrorCap
+            | PowerModeStatus::PowerFatalError,
+        )
+        | None => Err(UfsError::UicError {
             opcode: opcode as u8,
             code: hcs.uic_power_mode_change_request_status(),
         }),
