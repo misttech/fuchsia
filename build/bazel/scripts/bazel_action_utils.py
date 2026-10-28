@@ -14,22 +14,12 @@
 import dataclasses
 import json
 import os
-import sys
 import typing as T
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-# Insert fuchsia root directory to sys.path so we can import build packages hermetically
-_FUCHSIA_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-)
-if _FUCHSIA_DIR not in sys.path:
-    sys.path.insert(0, _FUCHSIA_DIR)
-
-import bazel_build_events
-import build_utils
+from build.bazel.scripts import bazel_build_events, build_utils
+from build.bazel.scripts.build_utils import BazelPaths
 from build.rbe import rbe_settings
-from build_utils import BazelPaths
 
 JSONObject: T.TypeAlias = dict[str, T.Any]
 

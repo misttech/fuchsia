@@ -15,9 +15,7 @@ import sys
 import typing as T
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent / "../scripts"))
-import build_utils
-import runfiles_utils
+from build.bazel.scripts import build_utils, runfiles_utils
 
 
 @dataclasses.dataclass

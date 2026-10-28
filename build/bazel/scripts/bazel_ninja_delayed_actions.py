@@ -9,34 +9,32 @@ import argparse
 import dataclasses
 import datetime
 import json
-import os
 import sys
 import typing as T
 from pathlib import Path
 
 # LINT.IfChange(imports)
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import bazel_action_impl
-import bazel_compdb_utils
-import bazel_rust_analyzer_utils
-import build_utils
-from bazel_action_file_copy_utils import write_file_if_changed
-from bazel_action_utils import (
+from build.bazel.scripts import (
+    bazel_action_impl,
+    bazel_compdb_utils,
+    bazel_rust_analyzer_utils,
+    build_utils,
+)
+from build.bazel.scripts.bazel_action_file_copy_utils import (
+    write_file_if_changed,
+)
+from build.bazel.scripts.bazel_action_utils import (
     BazelGlobalArguments,
     BazelTargetInfo,
     BazelTargetInfosMap,
     update_gn_targets_symlink,
 )
-from workspace_utils import (
+from build.bazel.scripts.workspace_utils import (
     GeneratedWorkspaceFiles,
     merge_gn_target_manifests,
     record_gn_targets_dir_from_entries,
 )
-
-_MODULES_DIR = os.path.join(_SCRIPT_DIR, "../../python/modules")
-sys.path.insert(0, _MODULES_DIR)
-from depfile import DepFile
+from build.python.modules.depfile.depfile import DepFile
 
 # LINT.ThenChange(//build/bazel/bazel_action.gni:delayed_action_imports, //build/bazel/scripts/BUILD.gn:delayed_action_imports)
 

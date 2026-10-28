@@ -14,9 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Add build/git to sys.path to import git_utils
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "git"))
-from git_utils import find_git_head_inputs as find_git_head_inputs
+from build.git.git_utils import find_git_head_inputs as find_git_head_inputs
 
 
 def get_git_head_commit(repo_dir: Path, git_binary: Path = Path("git")) -> str:

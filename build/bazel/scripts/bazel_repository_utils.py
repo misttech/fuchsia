@@ -6,15 +6,11 @@
 """Utilities for parsing Bazel repository marker files and tracking inputs."""
 
 import json
-import os
 import subprocess
-import sys
 import typing as T
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-from build_utils import BazelLauncher
+from build.bazel.scripts.build_utils import BazelLauncher
 
 
 class BazelRootRepoMapping:

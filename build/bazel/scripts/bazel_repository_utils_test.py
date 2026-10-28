@@ -6,16 +6,16 @@
 """Unit tests for bazel_repository_utils.py."""
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-from bazel_repository_utils import BazelRootRepoMapping
-from build_utils import BazelLauncher, BazelPaths, MockCommandRunner
+from build.bazel.scripts.bazel_repository_utils import BazelRootRepoMapping
+from build.bazel.scripts.build_utils import (
+    BazelLauncher,
+    BazelPaths,
+    MockCommandRunner,
+)
 
 
 class BazelRootRepoMappingTest(unittest.TestCase):

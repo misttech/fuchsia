@@ -4,16 +4,12 @@
 # found in the LICENSE file.
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-from bazel_source_path_mapper import BazelSourcePathMapper
-from build_utils import BazelPaths
+from build.bazel.scripts.bazel_source_path_mapper import BazelSourcePathMapper
+from build.bazel.scripts.build_utils import BazelPaths
 
 
 class BazelSourcePathMapperTest(unittest.TestCase):

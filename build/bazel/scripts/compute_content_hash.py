@@ -30,10 +30,9 @@ import sys
 import typing as T
 from pathlib import Path
 
-_HASH = "sha1"
+from build.bazel.scripts import get_git_head_commit as gghc
 
-sys.path.insert(0, str(Path(__file__).parent))
-import get_git_head_commit as gghc
+_HASH = "sha1"
 
 
 def _depfile_quote(p: Path | str) -> str:

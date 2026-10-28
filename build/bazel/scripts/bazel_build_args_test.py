@@ -5,17 +5,13 @@
 """Unit tests for bazel_build_args.py."""
 
 import io
-import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import bazel_build_args
-import build_utils
-from bazel_build_args import (
+from build.bazel.scripts import bazel_build_args, build_utils
+from build.bazel.scripts.bazel_build_args import (
     ParsedAction,
     ResolvedBuildArgsFlags,
     ResolvedBuildArgsMap,

@@ -5,15 +5,12 @@
 
 """Unit tests for compute_content_hash.py"""
 
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import compute_content_hash as cch
-from git_test_utils import git_cmd, git_init
+from build.bazel.scripts import compute_content_hash as cch
+from build.bazel.scripts.git_test_utils import git_cmd, git_init
 
 
 def _setup_first_git_dir(git_dir: Path) -> tuple[str, str]:

@@ -8,10 +8,10 @@ import argparse
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR.parent.parent / "api"))
-from bazel_action_impl import copy_debug_symbols_to_build_dir
-from debug_symbols import DebugSymbolsManifestParser
+from build.api.debug_symbols import DebugSymbolsManifestParser
+from build.bazel.scripts.bazel_action_impl import (
+    copy_debug_symbols_to_build_dir,
+)
 
 
 def main() -> int:

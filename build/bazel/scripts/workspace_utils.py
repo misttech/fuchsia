@@ -9,15 +9,12 @@ import json
 import os
 import shlex
 import stat
-import sys
 import typing as T
 from pathlib import Path
 from textwrap import dedent
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import build_utils
-from bazel_build_flags import DefaultBuildFlagsMap
+from build.bazel.scripts import build_utils
+from build.bazel.scripts.bazel_build_flags import DefaultBuildFlagsMap
 
 # LINT.IfChange(gn_targets_dir_symlink)
 # Location of the @gn_targets redirection symlink, relative

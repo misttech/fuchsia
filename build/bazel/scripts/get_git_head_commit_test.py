@@ -11,9 +11,8 @@ import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import get_git_head_commit as gghc
-from git_test_utils import git_cmd, git_init
+from build.bazel.scripts import get_git_head_commit as gghc
+from build.bazel.scripts.git_test_utils import git_cmd, git_init
 
 
 def _setup_first_git_dir(git_dir: Path) -> tuple[str, str]:

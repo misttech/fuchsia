@@ -4,17 +4,13 @@
 # found in the LICENSE file.
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-from bazel_label_mapper import BazelLabelMapper
-from bazel_repository_utils import BazelRootRepoMapping
-from build_utils import BazelPaths
+from build.bazel.scripts.bazel_label_mapper import BazelLabelMapper
+from build.bazel.scripts.bazel_repository_utils import BazelRootRepoMapping
+from build.bazel.scripts.build_utils import BazelPaths
 
 
 class BazelLabelMapperTest(unittest.TestCase):

@@ -10,16 +10,12 @@
 """A tool to perform useful Bazel operations easily."""
 
 import argparse
-import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-_BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
-sys.path.insert(0, _BUILD_API_DIR)
-from script_commands import ScriptCommandBase, ScriptCommandList
+from build.api.script_commands import ScriptCommandBase, ScriptCommandList
 
 
 def error_message(msg: str) -> int:
@@ -202,10 +198,7 @@ up-to-date artifacts in the Ninja build directory.
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
-        # Lazy import of modules.
-        sys.path.insert(0, _SCRIPT_DIR)
-        import bazel_action_utils
-        import build_utils
+        from build.bazel.scripts import bazel_action_utils, build_utils
 
         verbosity = args.verbose - args.quiet
 

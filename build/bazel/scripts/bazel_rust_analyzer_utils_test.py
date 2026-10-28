@@ -4,17 +4,12 @@
 # found in the LICENSE file.
 
 import itertools
-import os
-import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-
-import bazel_rust_analyzer_utils
-from bazel_rust_analyzer_utils import (
+from build.bazel.scripts import bazel_rust_analyzer_utils, build_utils
+from build.bazel.scripts.bazel_rust_analyzer_utils import (
     Crate,
     CrateSpec,
     CrateSpecBuild,
@@ -23,7 +18,7 @@ from bazel_rust_analyzer_utils import (
 
 
 class TestBazelRustAnalyzerUtils(unittest.TestCase):
-    @mock.patch("build_utils.BazelPaths")
+    @mock.patch.object(build_utils, "BazelPaths")
     def test_substitute_tokens(self, MockBazelPaths: mock.Mock) -> None:
         mock_paths = MockBazelPaths()
         mock_paths.fuchsia_dir = Path("/fuchsia_dir")
@@ -50,8 +45,8 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
                 )
                 self.assertEqual(result, expected_str)
 
-    @mock.patch("build_utils.BazelPaths")
-    @mock.patch("pathlib.Path.read_text")
+    @mock.patch.object(build_utils, "BazelPaths")
+    @mock.patch.object(Path, "read_text")
     def test_load_crate_spec_from_json_empty(
         self, mock_read_text: mock.Mock, MockBazelPaths: mock.Mock
     ) -> None:
@@ -62,8 +57,8 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         )
         self.assertEqual(result, {})
 
-    @mock.patch("build_utils.BazelPaths")
-    @mock.patch("pathlib.Path.read_text")
+    @mock.patch.object(build_utils, "BazelPaths")
+    @mock.patch.object(Path, "read_text")
     def test_load_crate_spec_from_json(
         self, mock_read_text: mock.Mock, MockBazelPaths: mock.Mock
     ) -> None:

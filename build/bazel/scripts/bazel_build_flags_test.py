@@ -4,15 +4,11 @@
 # found in the LICENSE file.
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-
-from bazel_build_flags import (
+from build.bazel.scripts.bazel_build_flags import (
     DefaultBuildFlagsMap,
     DefaultBuildFlagsSet,
     get_build_flags_targets_from_ast,

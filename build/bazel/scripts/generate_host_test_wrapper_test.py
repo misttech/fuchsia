@@ -3,14 +3,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
 import unittest
 import unittest.mock
-from pathlib import Path
 
-# Ensure script import path
-sys.path.append(str(Path(__file__).parent))
-import generate_host_test_wrapper
+from build.bazel.scripts import generate_host_test_wrapper
 
 
 class HostTestWrapperGeneratorTest(unittest.TestCase):

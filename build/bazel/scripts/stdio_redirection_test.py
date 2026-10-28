@@ -7,8 +7,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import stdio_redirection
+from build.bazel.scripts import stdio_redirection
 
 
 class OutputSinkTest(unittest.TestCase):

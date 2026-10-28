@@ -12,11 +12,9 @@ import shlex
 import sys
 from typing import Any
 
-# Manually modify sys.path to allow other modules to import
-# this one without worrying about its dependencies.
+from build.bazel.scripts import build_utils
+
 _SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import build_utils
 
 
 @dataclasses.dataclass

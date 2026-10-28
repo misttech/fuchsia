@@ -7,13 +7,11 @@
 
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import bazel_build_events
+from build.bazel.scripts import bazel_build_events
 
 
 class BazelBuildEventsTest(unittest.TestCase):

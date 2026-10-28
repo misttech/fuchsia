@@ -8,8 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import minimal_workspace
-import remote_services_utils
+from build.bazel.scripts import minimal_workspace, remote_services_utils
 
 
 class MainTests(unittest.TestCase):

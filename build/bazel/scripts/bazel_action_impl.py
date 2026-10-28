@@ -17,30 +17,28 @@ import typing as T
 from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
 # LINT.IfChange(imports)
-import bazel_action_utils
-import bazel_label_mapper
-import bazel_rust_analyzer_utils
-import bazel_source_path_mapper
-import bazel_test_packages
-import build_utils
-import stdio_redirection
-import thread_pool_helpers
-from bazel_action_file_copy_utils import (
+from build.api.debug_symbols import (
+    DebugSymbolEntryType,
+    DebugSymbolExporter,
+    DebugSymbolsManifestParser,
+)
+from build.bazel.scripts import (
+    bazel_action_utils,
+    bazel_label_mapper,
+    bazel_rust_analyzer_utils,
+    bazel_source_path_mapper,
+    bazel_test_packages,
+    build_utils,
+    stdio_redirection,
+    thread_pool_helpers,
+)
+from build.bazel.scripts.bazel_action_file_copy_utils import (
     FilePath,
     check_if_need_to_copy_file,
     copy_directory_if_changed,
     hardlink_or_copy_writable,
     write_file_if_changed,
-)
-
-_BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
-sys.path.insert(0, _BUILD_API_DIR)
-from debug_symbols import (
-    DebugSymbolEntryType,
-    DebugSymbolExporter,
-    DebugSymbolsManifestParser,
 )
 
 # LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_action_impl_imports, //build/bazel/scripts/BUILD.gn:bazel_action_impl_imports)

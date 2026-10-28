@@ -38,8 +38,7 @@ import sys
 import typing as T
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import build_utils
+from build.bazel.scripts import build_utils
 
 # The directory, relative to the Ninja build directory, that holds all
 # exported Bazel test packages. It's named after, and lives next to,

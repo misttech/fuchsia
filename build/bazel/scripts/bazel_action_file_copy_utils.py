@@ -10,8 +10,8 @@ import shutil
 import stat
 from pathlib import Path
 
-import thread_pool_helpers
-from build_utils import FilePath
+from build.bazel.scripts import thread_pool_helpers
+from build.bazel.scripts.build_utils import FilePath
 
 
 def make_writable(p: FilePath) -> None:

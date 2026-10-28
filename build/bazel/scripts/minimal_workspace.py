@@ -27,17 +27,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-import build_utils
-import remote_services_utils
+from build.bazel.scripts import build_utils, remote_services_utils
+from build.rbe import rbe_settings
 
 _THIS_SCRIPT = Path(__file__)
 _SCRIPT_DIR = _THIS_SCRIPT.resolve().parent
-_FUCHSIA_DIR = _SCRIPT_DIR.parent.parent.parent
-
-if str(_FUCHSIA_DIR) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_DIR))
-
-from build.rbe import rbe_settings
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:

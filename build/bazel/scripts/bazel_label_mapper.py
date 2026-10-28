@@ -9,11 +9,11 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import bazel_repository_utils
-import build_utils
-import workspace_utils
+from build.bazel.scripts import (
+    bazel_repository_utils,
+    build_utils,
+    workspace_utils,
+)
 
 # Set this to True to debug operations locally in this script.
 _DEBUG = False

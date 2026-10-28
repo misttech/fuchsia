@@ -5,24 +5,21 @@
 
 import json
 import os
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import bazel_build_events
-from bazel_action_utils import (
+from build.bazel.scripts import bazel_build_events
+from build.bazel.scripts.bazel_action_utils import (
     AspectManifestOutputs,
+    BazelTargetInfosMap,
     parse_build_event_manifests,
 )
 
 
 class BazelTargetInfosMapTest(unittest.TestCase):
     def test_update_rust_project(self) -> None:
-        from bazel_action_utils import BazelTargetInfosMap
-
         sample_content: list[dict[str, T.Any]] = [
             {
                 "type": "file",

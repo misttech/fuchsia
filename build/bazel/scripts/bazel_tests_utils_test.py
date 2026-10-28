@@ -7,17 +7,15 @@ import json
 import os
 import re
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
 
-import bazel_tests_utils
-from bazel_test_packages import export_path_for_manifest
-from build_utils import BazelPaths, MockCommandRunner
+from build.bazel.scripts import bazel_tests_utils
+from build.bazel.scripts.bazel_test_packages import export_path_for_manifest
+from build.bazel.scripts.build_utils import BazelPaths, MockCommandRunner
 
 
 class BazelTestsUtilsTest(unittest.TestCase):

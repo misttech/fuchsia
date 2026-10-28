@@ -5,23 +5,12 @@
 
 """Unit-tests for remote_services_utils.py functions."""
 
-import os
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 
-# Insert the fuchsia root directory to PYTHONPATH so that our custom
-# package imports like `from build.rbe import rbe_profile` resolve correctly in tests.
-_FUCHSIA_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-)
-sys.path.insert(0, _FUCHSIA_DIR)
-
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import remote_services_utils
+from build.bazel.scripts import remote_services_utils
 from build.rbe import rbe_profile, rbe_settings
 from build.resultstore import rs_profile
 

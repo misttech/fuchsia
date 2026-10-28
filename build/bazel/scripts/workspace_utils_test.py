@@ -5,7 +5,6 @@
 
 import json
 import os
-import sys
 import tempfile
 import typing as T
 import unittest
@@ -13,10 +12,11 @@ from pathlib import Path
 from textwrap import dedent
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(__file__))
-import build_utils
-import workspace_utils
-from workspace_utils import BazelrcFromGnConfigGenerator, GnBuildArgs
+from build.bazel.scripts import build_utils, workspace_utils
+from build.bazel.scripts.workspace_utils import (
+    BazelrcFromGnConfigGenerator,
+    GnBuildArgs,
+)
 
 
 class TestWorkspaceShouldExcludeFile(unittest.TestCase):

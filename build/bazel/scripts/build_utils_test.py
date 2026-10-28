@@ -5,15 +5,16 @@
 
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import build_utils
-from build_utils import BazelLauncher, BazelQueryCache, MockCommandRunner
+from build.bazel.scripts import build_utils
+from build.bazel.scripts.build_utils import (
+    BazelLauncher,
+    BazelQueryCache,
+    MockCommandRunner,
+)
 
 
 class FindFuchsiaDirTest(unittest.TestCase):

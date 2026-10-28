@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import bazel_compdb_utils
+from build.bazel.scripts import bazel_compdb_utils
 
 _OPT_PATTERN = re.compile(r"[\W]+")
 

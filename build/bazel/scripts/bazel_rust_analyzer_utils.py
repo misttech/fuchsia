@@ -6,14 +6,11 @@
 """Utilities for converting Bazel aspect outputs to rust-project.json format."""
 
 import json
-import os
 import sys
 import typing as T
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import build_utils
+from build.bazel.scripts import build_utils
 
 # Set this to True to debug operations locally in this script.
 _DEBUG = False

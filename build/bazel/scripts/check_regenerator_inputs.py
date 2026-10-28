@@ -10,8 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-import workspace_utils
+from build.bazel.scripts import workspace_utils
 
 
 def main() -> int:

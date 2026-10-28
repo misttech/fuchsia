@@ -9,9 +9,7 @@ import argparse
 import sys
 from pathlib import Path
 
-_SCRIPT_DIR = Path(__file__).parent
-sys.path.insert(0, str(_SCRIPT_DIR))
-import workspace_utils
+from build.bazel.scripts import workspace_utils
 
 
 def main() -> int:

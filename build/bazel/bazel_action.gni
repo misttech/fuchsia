@@ -723,6 +723,7 @@ template("bazel_action") {
         "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
         "//build/bazel/scripts/build_utils.py",
         "//build/bazel/scripts/workspace_utils.py",
+        "//build/python/modules/depfile/depfile.py",
 
         # LINT.ThenChange(
         #   //build/bazel/scripts/bazel_ninja_delayed_actions.py:imports,

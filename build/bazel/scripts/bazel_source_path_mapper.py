@@ -3,10 +3,8 @@
 # found in the LICENSE file.
 
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
-from build_utils import BazelPaths
+from build.bazel.scripts.build_utils import BazelPaths
 
 """Provides a way to map Bazel source file paths to the right location."""
 

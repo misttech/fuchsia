@@ -6,15 +6,8 @@
 """
 
 import os
-import sys
 import typing as T
 from pathlib import Path
-
-# Dynamically resolve and insert the Fuchsia root directory into sys.path
-# to support standalone script package imports (e.g. from build.rbe).
-_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent.parent
-if str(_FUCHSIA_DIR) not in sys.path:
-    sys.path.insert(0, str(_FUCHSIA_DIR))
 
 from build.rbe import rbe_profile, rbe_settings
 from build.resultstore import rs_profile

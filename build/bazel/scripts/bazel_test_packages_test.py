@@ -6,17 +6,15 @@
 import errno
 import json
 import os
-import sys
 import tempfile
 import typing as T
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(__file__))
-import bazel_test_packages
-from bazel_test_packages import export_path_for_manifest
-from build_utils import BazelPaths
+from build.bazel.scripts import bazel_test_packages
+from build.bazel.scripts.bazel_test_packages import export_path_for_manifest
+from build.bazel.scripts.build_utils import BazelPaths
 
 
 class ExportPathTest(unittest.TestCase):

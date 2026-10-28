@@ -3,12 +3,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
-import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(__file__))
-from runfiles_utils import RepoMapping, RunfilesManifest
+from build.bazel.scripts.runfiles_utils import RepoMapping, RunfilesManifest
 
 
 class RepoMappingTest(unittest.TestCase):

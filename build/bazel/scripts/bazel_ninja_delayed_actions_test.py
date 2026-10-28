@@ -3,16 +3,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-from bazel_action_utils import BazelTargetInfosMap
-from bazel_ninja_delayed_actions import (
+from build.api import debug_symbols
+from build.bazel.scripts.bazel_action_utils import BazelTargetInfosMap
+from build.bazel.scripts.bazel_ninja_delayed_actions import (
     TargetWithPlatform,
     compute_sources_by_owner,
     read_extra_bazel_targets,
@@ -405,8 +403,9 @@ class MergeDebugSymbolManifestsTest(unittest.TestCase):
                 build_dir / "execroot/bazel-out/x64/bin/bar.debug": "33334444",
             }
 
-            with mock.patch(
-                "debug_symbols.extract_gnu_build_id",
+            with mock.patch.object(
+                debug_symbols,
+                "extract_gnu_build_id",
                 side_effect=lambda p: build_ids[Path(p)],
             ):
                 (

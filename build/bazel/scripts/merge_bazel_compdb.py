@@ -9,8 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-import bazel_compdb_utils
-import build_utils
+from build.bazel.scripts import bazel_compdb_utils, build_utils
 
 # Set this to True to debug operations locally in this script.
 _DEBUG = False

@@ -32,8 +32,6 @@ import sys
 from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
-_BUILD_API_DIR = os.path.join(_SCRIPT_DIR, "../../api")
-sys.path.insert(0, _BUILD_API_DIR)
 
 
 def copy_tree(from_dir: Path, to_dir: Path) -> set[Path]:

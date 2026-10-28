@@ -8,18 +8,19 @@ import copy
 import dataclasses
 import json
 import os
-import sys
 import tempfile
 import typing as T
 from pathlib import Path
 
+from build.bazel.scripts import (
+    bazel_action_utils,
+    bazel_test_packages,
+    build_utils,
+    workspace_utils,
+)
+from build.bazel.scripts.build_utils import BazelLauncher, BazelPaths
+
 _SCRIPT_DIR = Path(__file__).parent
-sys.path.append(str(_SCRIPT_DIR))
-import bazel_action_utils
-import bazel_test_packages
-import build_utils
-import workspace_utils
-from build_utils import BazelLauncher, BazelPaths
 
 # A single tests.json entry.
 TestSpec = dict[str, T.Any]

@@ -3,14 +3,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
-import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(__file__))
-import bazel_compdb_utils
+from build.bazel.scripts import bazel_compdb_utils
 
 
 class BazelCompdbUtilsTests(unittest.TestCase):
@@ -169,8 +166,8 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             "some/other/path",
         )
 
-    @mock.patch("bazel_compdb_utils.CompDBFormatter.maybe_rewrite_path")
-    @mock.patch("bazel_compdb_utils.CompDBFormatter.rewrite_file")
+    @mock.patch.object(bazel_compdb_utils.CompDBFormatter, "maybe_rewrite_path")
+    @mock.patch.object(bazel_compdb_utils.CompDBFormatter, "rewrite_file")
     def test_compdb_formatter_action_to_compile_commands(
         self,
         mock_rewrite_file: mock.MagicMock,
@@ -253,8 +250,8 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             [],
         )
 
-    @mock.patch("bazel_compdb_utils.run")
-    @mock.patch("bazel_compdb_utils.get_action_graph_from_labels")
+    @mock.patch.object(bazel_compdb_utils, "run")
+    @mock.patch.object(bazel_compdb_utils, "get_action_graph_from_labels")
     def test_compdb_for_labels(
         self,
         mock_get_actions: mock.MagicMock,

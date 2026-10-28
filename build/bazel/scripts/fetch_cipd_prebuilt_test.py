@@ -5,16 +5,12 @@
 
 """Unit-tests for fetch_cipd_prebuilt.py."""
 
-import os
 import stat
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-_SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-import fetch_cipd_prebuilt
+from build.bazel.scripts import fetch_cipd_prebuilt
 
 
 class FetchCipdPrebuiltTest(unittest.TestCase):

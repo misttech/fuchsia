@@ -4,13 +4,13 @@
 # found in the LICENSE file.
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
-from bazel_action_file_copy_utils import copy_directory_if_changed
+from build.bazel.scripts.bazel_action_file_copy_utils import (
+    copy_directory_if_changed,
+)
 
 
 class CopyDirectoryIfChangedTest(unittest.TestCase):

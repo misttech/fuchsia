@@ -13,8 +13,7 @@ import sys
 _SCRIPT_DIR = os.path.dirname(__file__)
 _FUCHSIA_DIR = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", "..", ".."))
 
-sys.path.insert(0, _SCRIPT_DIR)
-import build_utils
+from build.bazel.scripts import build_utils
 
 
 def find_default_log_file() -> str | None:

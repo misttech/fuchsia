@@ -180,6 +180,7 @@ if (is_host) {
     sources = [ "bazel_action_impl.py" ]
 
     # LINT.IfChange(bazel_action_impl_imports)
+    # Modules imported by bazel_action_impl.py
     library_deps = [
       ":bazel_action_file_copy_utils",
       ":bazel_action_utils",
@@ -201,6 +202,7 @@ if (is_host) {
     sources = [ "bazel_ninja_delayed_actions.py" ]
 
     # LINT.IfChange(delayed_action_imports)
+    # Modules imported by bazel_ninja_delayed_actions.py
     library_deps = [
       ":bazel_action_file_copy_utils",
       ":bazel_action_impl",
