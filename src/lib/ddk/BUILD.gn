@@ -298,7 +298,6 @@ static_library("ddk") {
     "//src/media/audio/drivers/intel-hda/controller:*",
     "//src/media/audio/drivers/lib/intel-hda:*",
     "//src/media/audio/drivers/testing/realm:*",
-    "//src/media/audio/drivers/usb-audio:*",
     "//src/media/audio/drivers/virtual-audio-legacy:*",
     "//src/media/audio/lib/simple-audio-stream:*",
     "//src/media/audio/lib/simple-audio-stream/tests:*",

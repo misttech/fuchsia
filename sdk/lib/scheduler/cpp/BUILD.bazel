@@ -25,6 +25,7 @@ fx_cc_library(
         "//src/cobalt/bin/app:__pkg__",
         "//src/developer/memory/monitor:__pkg__",
         "//src/graphics:__subpackages__",
+        "//src/media/audio/drivers/usb-audio:__pkg__",
         "//src/media/audio/services/device_registry:__pkg__",
         "//src/performance/ktrace_provider:__pkg__",
         "//src/storage:__subpackages__",

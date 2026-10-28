@@ -57,14 +57,19 @@ source_set("shared") {
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
-    "//src/devices/lib/dev-operation",
-    "//src/devices/lib/driver",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/compat/cpp:logging",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/incoming/cpp",
+    "//sdk/lib/driver/logging/cpp",
+    "//sdk/lib/driver/node/cpp",
+    "//sdk/lib/scheduler/cpp",
+    "//src/devices/lib/dev-operation:dev-operation-dfv2-compat-logging",
     "//src/devices/lib/driver:driver_runtime",
-    "//src/devices/usb/lib/usb",
     "//src/devices/usb/lib/usb:audio",
-    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
+    "//src/devices/usb/lib/usb-endpoint:usb-endpoint-client-dfv2-compat-logging",
     "//src/lib/digest",
     "//src/media/audio/drivers/lib/audio-driver-proto",
     "//src/media/audio/drivers/lib/audio-proto-utils",
@@ -86,7 +91,6 @@ source_set("shared") {
 }
 
 fuchsia_cc_driver("usb-audio-driver") {
-  legacy = true
   output_name = "usb-audio"
   deps = [ ":shared" ]
 }

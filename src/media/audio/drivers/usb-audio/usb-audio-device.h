@@ -6,32 +6,38 @@
 #define SRC_MEDIA_AUDIO_DRIVERS_USB_AUDIO_USB_AUDIO_DEVICE_H_
 
 #include <fuchsia/hardware/usb/c/banjo.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
-#include <ddktl/device.h>
+#include <memory>
+#include <vector>
+
 #include <fbl/array.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/mutex.h>
-#include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
 #include "debug-logging.h"
 #include "usb-audio-control-interface.h"
 #include "usb-audio-descriptors.h"
+#include "usb-midi-sink.h"
+#include "usb-midi-source.h"
 
 namespace audio {
 namespace usb {
 
 class UsbAudioStream;
 
-class UsbAudioDevice;
-using UsbAudioDeviceBase = ddk::Device<UsbAudioDevice, ddk::Unbindable>;
-
-class UsbAudioDevice : public UsbAudioDeviceBase, public fbl::RefCounted<UsbAudioDevice> {
+class UsbAudioDevice : public fdf::DriverBase2 {
  public:
-  static zx::result<UsbAudioDevice*> DriverBind(zx_device_t* parent);
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  static constexpr std::string_view kDriverName = "usb-audio-ctrl";
+
+  UsbAudioDevice();
+  ~UsbAudioDevice() override = default;
+
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void RemoveAudioStream(const fbl::RefPtr<UsbAudioStream>& stream);
 
@@ -45,12 +51,11 @@ class UsbAudioDevice : public UsbAudioDeviceBase, public fbl::RefCounted<UsbAudi
   const fbl::Array<uint8_t>& prod_name() const { return prod_name_; }
   const fbl::Array<uint8_t>& serial_num() const { return serial_num_; }
   size_t parent_req_size() const { return parent_req_size_; }
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
   // For unit testing.
   const fbl::DoublyLinkedList<fbl::RefPtr<UsbAudioStream>>& streams() const { return streams_; }
 
  private:
-  explicit UsbAudioDevice(zx_device_t* parent);
-  zx_status_t Bind();
   // A small struct used when searching descriptors for midi streaming
   // interfaces.
   //
@@ -78,7 +83,10 @@ class UsbAudioDevice : public UsbAudioDeviceBase, public fbl::RefCounted<UsbAudi
   fbl::Array<uint8_t> serial_num_;
   fbl::RefPtr<DescriptorListMemory> desc_list_;
   fbl::DoublyLinkedList<fbl::RefPtr<UsbAudioStream>> streams_ TA_GUARDED(lock_);
+  std::vector<std::unique_ptr<UsbMidiSink>> midi_sinks_;
+  std::vector<std::unique_ptr<UsbMidiSource>> midi_sources_;
   size_t parent_req_size_ = 0;
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   int midi_sink_index_ = 0;
   int midi_source_index_ = 0;

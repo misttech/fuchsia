@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 {
     name: "usb-audio",
-    include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
+    include: [ "driver_component/driver.shard.cml" ],
     program: {
         colocate: "true",
-        compat: "driver/usb-audio.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [ "fuchsia.devices.usb.audio" ],
         bind: {
@@ -34,6 +33,12 @@
         },
     },
     use: [
+        { protocol: "fuchsia.scheduler.RoleManager" },
+        {
+            name: "default",
+            service: "fuchsia.driver.compat.Service",
+            generate_bind_rule: false,
+        },
         {
             name: "default",
             service: "fuchsia.hardware.usb.UsbService",

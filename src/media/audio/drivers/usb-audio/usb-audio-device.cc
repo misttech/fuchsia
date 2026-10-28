@@ -5,7 +5,10 @@
 #include "usb-audio-device.h"
 
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
-#include <lib/ddk/binding_driver.h>
+#include <fuchsia/hardware/usb/composite/cpp/banjo.h>
+#include <fuchsia/hardware/usb/cpp/banjo.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fit/defer.h>
 #include <string.h>
 #include <zircon/status.h>
@@ -28,27 +31,7 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace audio {
 namespace usb {
 
-zx::result<UsbAudioDevice*> UsbAudioDevice::DriverBind(zx_device_t* parent) {
-  fbl::AllocChecker ac;
-  auto usb_device = fbl::AdoptRef(new (&ac) audio::usb::UsbAudioDevice(parent));
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  zx_status_t status = usb_device->Bind();
-  if (status != ZX_OK) {
-    return zx::error(status);
-  }
-
-  // We have transferred our fbl::RefPtr reference to the C ddk.  We will
-  // recover it (someday) when the release hook is called.  Until then, we
-  // need to deliberately leak our reference so that we do not destruct as we
-  // exit this function.
-  UsbAudioDevice* raw_ptr = fbl::ExportToRawPtr(&usb_device);
-  return zx::ok(raw_ptr);
-}
-
-UsbAudioDevice::UsbAudioDevice(zx_device_t* parent) : UsbAudioDeviceBase(parent) {
+UsbAudioDevice::UsbAudioDevice() : fdf::DriverBase2(kDriverName) {
   ::memset(&usb_proto_, 0, sizeof(usb_proto_));
   ::memset(&usb_dev_desc_, 0, sizeof(usb_dev_desc_));
   snprintf(log_prefix_, sizeof(log_prefix_), "UsbAud Unknown");
@@ -62,26 +45,31 @@ void UsbAudioDevice::RemoveAudioStream(const fbl::RefPtr<UsbAudioStream>& stream
   }
 }
 
-zx_status_t UsbAudioDevice::Bind() {
-  zx_status_t status;
+zx::result<> UsbAudioDevice::Start(fdf::DriverContext context) {
+  incoming_ = context.take_incoming();
 
   // Fetch our protocol.  We will need it to do pretty much anything with this
   // device.
-  status = device_get_protocol(parent(), ZX_PROTOCOL_USB, &usb_proto_);
-  if (status != ZX_OK) {
-    LOG(ERROR, "Failed to get USB protocol thunks (status %d)", status);
-    return status;
+  zx::result<ddk::UsbProtocolClient> usb_client =
+      compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming_);
+  if (usb_client.is_error()) {
+    LOG(ERROR, "Failed to get USB protocol thunks (status %d)", usb_client.status_value());
+    return usb_client.take_error();
   }
+  usb_client->GetProto(&usb_proto_);
 
   parent_req_size_ = usb_get_request_size(&usb_proto_);
   ZX_DEBUG_ASSERT(parent_req_size_ != 0);
 
-  usb_composite_protocol_t usb_composite_proto;
-  status = device_get_protocol(parent(), ZX_PROTOCOL_USB_COMPOSITE, &usb_composite_proto);
-  if (status != ZX_OK) {
-    LOG(ERROR, "Failed to get USB composite protocol thunks (status %d)", status);
-    return status;
+  zx::result<ddk::UsbCompositeProtocolClient> usb_composite_client =
+      compat::ConnectBanjo<ddk::UsbCompositeProtocolClient>(incoming_);
+  if (usb_composite_client.is_error()) {
+    LOG(ERROR, "Failed to get USB composite protocol thunks (status %d)",
+        usb_composite_client.status_value());
+    return usb_composite_client.take_error();
   }
+  usb_composite_protocol_t usb_composite_proto;
+  usb_composite_client->GetProto(&usb_composite_proto);
 
   // Fetch our top level device descriptor, so we know stuff like the values
   // of our VID/PID.
@@ -106,7 +94,7 @@ zx_status_t UsbAudioDevice::Bind() {
   // subclass of control.  Go ahead and claim anything which has a top level
   // class of of "audio"; this is where we will find our Audio and MIDI
   // streaming interfaces.
-  status = usb_claim_additional_interfaces(
+  zx_status_t status = usb_claim_additional_interfaces(
       &usb_composite_proto,
       [](usb_interface_descriptor_t* intf, void* arg) -> bool {
         return (intf->b_interface_class == fdescriptor::UsbClass::kAudio &&
@@ -115,25 +103,20 @@ zx_status_t UsbAudioDevice::Bind() {
       NULL);
   if (status != ZX_OK) {
     LOG(ERROR, "Failed to claim additional audio interfaces (status %d)", status);
-    return status;
+    return zx::error(status);
   }
 
   // Allocate and read in our descriptor list.
   desc_list_ = DescriptorListMemory::Create(&usb_proto_);
   if (desc_list_ == nullptr) {
     LOG(ERROR, "Failed to fetch descriptor list");
-    return status;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  // Publish our device.
-  status = DdkAdd(ddk::DeviceAddArgs("usb-audio-ctrl").set_flags(DEVICE_ADD_NON_BINDABLE));
-  if (status != ZX_OK) {
-    return status;
-  }
-
+  // Publish stream and MIDI endpoint nodes as children of our node.
   Probe();
 
-  return ZX_OK;
+  return zx::ok();
 }
 
 void UsbAudioDevice::Probe() {
@@ -262,15 +245,21 @@ void UsbAudioDevice::Probe() {
         if (info.out_ep != nullptr) {
           LOG(DEBUG, "Adding MIDI sink (iid %u, ep 0x%02x)", info.ifc->b_interface_number,
               info.out_ep->b_endpoint_address);
-          UsbMidiSink::Create(zxdev(), &usb_proto_, midi_sink_index_++, info.ifc, info.out_ep,
-                              parent_req_size_);
+          auto sink = UsbMidiSink::Create(node(), &usb_proto_, midi_sink_index_++, info.ifc,
+                                          info.out_ep, parent_req_size_);
+          if (sink.is_ok()) {
+            midi_sinks_.push_back(std::move(*sink));
+          }
         }
 
         if (info.in_ep != nullptr) {
           LOG(DEBUG, "Adding MIDI source (iid %u, ep 0x%02x)", info.ifc->b_interface_number,
               info.in_ep->b_endpoint_address);
-          UsbMidiSource::Create(zxdev(), &usb_proto_, midi_source_index_++, info.ifc, info.in_ep,
-                                parent_req_size_);
+          auto source = UsbMidiSource::Create(node(), &usb_proto_, midi_source_index_++, info.ifc,
+                                              info.in_ep, parent_req_size_);
+          if (source.is_ok()) {
+            midi_sources_.push_back(std::move(*source));
+          }
         }
 
         break;
@@ -340,7 +329,7 @@ void UsbAudioDevice::Probe() {
 
     // Publish the new stream.  If something goes wrong, take it out of the
     // streams_ collection.
-    status = stream->Bind();
+    status = stream->Bind(node());
     if (status != ZX_OK) {
       // Again, no need to log.  Bind will have already logged any error.
       RemoveAudioStream(stream);
@@ -489,34 +478,39 @@ void UsbAudioDevice::ParseMidiStreamingIfc(DescriptorListMemory::Iterator* iter,
   }
 }
 
-void UsbAudioDevice::DdkUnbind(ddk::UnbindTxn txn) {
-  // Unpublish our device node.
-  txn.Reply();
-}
-
-void UsbAudioDevice::DdkRelease() {
-  // Recover our reference from the unmanaged C DDK.  Then, just let it go out
-  // of scope.
-  auto reference = fbl::ImportFromRawPtr(this);
-}
-
-static zx_status_t usb_audio_device_bind(void* ctx, zx_device_t* device) {
-  auto ret = UsbAudioDevice::DriverBind(device);
-  if (ret.is_ok()) {
-    return ZX_OK;
+void UsbAudioDevice::Stop(fdf::StopCompleter completer) {
+  fbl::DoublyLinkedList<fbl::RefPtr<UsbAudioStream>> streams;
+  {
+    fbl::AutoLock lock(&lock_);
+    streams = std::move(streams_);
   }
-  return ret.error_value();
-}
+  while (!streams.is_empty()) {
+    auto stream = streams.pop_front();
+    stream->Shutdown();
+  }
 
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = usb_audio_device_bind;
-  return ops;
-}();
+  auto total = std::make_shared<size_t>(midi_sinks_.size() + midi_sources_.size());
+  if (*total == 0) {
+    completer(zx::ok());
+    return;
+  }
+
+  auto shared_completer = std::make_shared<fdf::StopCompleter>(std::move(completer));
+  auto on_stop = [total, shared_completer]() {
+    if (--(*total) == 0) {
+      (*shared_completer)(zx::ok());
+    }
+  };
+
+  for (auto& sink : midi_sinks_) {
+    sink->Stop(on_stop);
+  }
+  for (auto& source : midi_sources_) {
+    source->Stop(on_stop);
+  }
+}
 
 }  // namespace usb
 }  // namespace audio
 
-// clang-format off
-ZIRCON_DRIVER(usb_audio, audio::usb::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT2(audio::usb::UsbAudioDevice);

@@ -38,6 +38,7 @@ source_set("cpp") {
     "//src/cobalt/bin/app:*",
     "//src/developer/memory/monitor:*",
     "//src/graphics/*",
+    "//src/media/audio/drivers/usb-audio:*",
     "//src/media/audio/services/device_registry:*",
     "//src/performance/ktrace_provider:*",
     "//src/storage/*",

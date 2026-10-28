@@ -293,7 +293,6 @@ source_set("ddktl") {
     "//src/media/audio/drivers/codecs/tas5720:*",
     "//src/media/audio/drivers/codecs/tas58xx:*",
     "//src/media/audio/drivers/testing/realm:*",
-    "//src/media/audio/drivers/usb-audio:*",
     "//src/media/audio/drivers/virtual-audio-legacy:*",
     "//src/media/audio/lib/simple-audio-stream:*",
     "//src/media/audio/lib/simple-audio-stream/tests:*",

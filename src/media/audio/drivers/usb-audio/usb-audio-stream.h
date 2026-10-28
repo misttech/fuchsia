@@ -5,21 +5,23 @@
 #ifndef SRC_MEDIA_AUDIO_DRIVERS_USB_AUDIO_USB_AUDIO_STREAM_H_
 #define SRC_MEDIA_AUDIO_DRIVERS_USB_AUDIO_USB_AUDIO_STREAM_H_
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.audio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/wait.h>
+#include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/node/cpp/add_child.h>
+#include <lib/fit/function.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/profile.h>
 #include <lib/zx/vmo.h>
 #include <zircon/listnode.h>
 
 #include <memory>
+#include <optional>
 
 #include <audio-proto/audio-proto.h>
-#include <ddktl/device-internal.h>
-#include <ddktl/device.h>
-#include <ddktl/fidl.h>
 #include <fbl/intrusive_double_list.h>
 #include <fbl/mutex.h>
 #include <fbl/ref_counted.h>
@@ -36,24 +38,9 @@ namespace usb {
 class UsbAudioDevice;
 class UsbAudioStreamInterface;
 
-struct AudioStreamProtocol : public ddk::internal::base_protocol {
-  explicit AudioStreamProtocol(bool is_input) {
-    ddk_proto_id_ = is_input ? ZX_PROTOCOL_AUDIO_INPUT : ZX_PROTOCOL_AUDIO_OUTPUT;
-  }
-
-  bool is_input() const { return (ddk_proto_id_ == ZX_PROTOCOL_AUDIO_INPUT); }
-};
-
-class UsbAudioStream;
-using UsbAudioStreamBase =
-    ddk::Device<UsbAudioStream,
-                ddk::Messageable<fuchsia_hardware_audio::StreamConfigConnector>::Mixin,
-                ddk::Unbindable>;
-
-// UsbAudioStream implements WireServer<Device> and WireServer<RingBuffer>.
+// UsbAudioStream implements WireServer<StreamConfigConnector> and WireServer<RingBuffer>.
 // All this is serialized in the single threaded UsbAudioStream's dispatcher() in loop_.
-class UsbAudioStream final : public UsbAudioStreamBase,
-                             public AudioStreamProtocol,
+class UsbAudioStream final : public fidl::WireServer<fuchsia_hardware_audio::StreamConfigConnector>,
                              public fbl::RefCounted<UsbAudioStream>,
                              public fbl::DoublyLinkedListable<fbl::RefPtr<UsbAudioStream>>,
                              public fidl::WireServer<fuchsia_hardware_audio::RingBuffer> {
@@ -168,7 +155,10 @@ class UsbAudioStream final : public UsbAudioStreamBase,
 
   static fbl::RefPtr<UsbAudioStream> Create(UsbAudioDevice* parent,
                                             std::unique_ptr<UsbAudioStreamInterface> ifc);
-  zx_status_t Bind();
+  zx_status_t Bind(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
+  void Shutdown();
+  bool is_input() const { return is_input_; }
+
   void StreamChannelSignalled(async_dispatcher_t* dispatcher, async::WaitBase* wait,
                               zx_status_t status, const zx_packet_signal_t* signal,
                               Channel* channel, bool priviledged);
@@ -177,10 +167,6 @@ class UsbAudioStream final : public UsbAudioStreamBase,
                                   Channel* channel);
 
   const char* log_prefix() const { return log_prefix_; }
-
-  // DDK device implementation
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
 
   // For unit test.
   const inspect::Inspector& inspect() const { return inspect_; }
@@ -199,6 +185,7 @@ class UsbAudioStream final : public UsbAudioStreamBase,
   UsbAudioStream(UsbAudioDevice* parent, std::unique_ptr<UsbAudioStreamInterface> ifc);
   virtual ~UsbAudioStream() = default;
 
+  void Serve(fidl::ServerEnd<fuchsia_hardware_audio::StreamConfigConnector> server);
   void ComputePersistentUniqueId();
 
   void ReleaseRingBufferLocked() __TA_REQUIRES(lock_);
@@ -278,8 +265,13 @@ class UsbAudioStream final : public UsbAudioStreamBase,
 
   UsbAudioDevice& parent_;
   const std::unique_ptr<UsbAudioStreamInterface> ifc_;
+  const bool is_input_;
   char log_prefix_[LOG_PREFIX_STORAGE] = {0};
   audio_stream_unique_id_t persistent_unique_id_;
+
+  driver_devfs::Connector<fuchsia_hardware_audio::StreamConfigConnector> devfs_connector_{
+      fit::bind_member<&UsbAudioStream::Serve>(this)};
+  std::optional<fdf::OwnedChildNode> child_;
 
   fbl::Mutex lock_;
   fbl::Mutex req_lock_ __TA_ACQUIRED_AFTER(lock_);

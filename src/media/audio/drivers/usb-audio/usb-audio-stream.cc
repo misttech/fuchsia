@@ -4,9 +4,11 @@
 
 #include "usb-audio-stream.h"
 
-#include <lib/ddk/device.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
+#include <lib/scheduler/role.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 #include <string.h>
 #include <zircon/process.h>
@@ -38,10 +40,9 @@ namespace audio_fidl = fuchsia_hardware_audio;
 static constexpr uint32_t MAX_OUTSTANDING_REQ = 6;
 
 UsbAudioStream::UsbAudioStream(UsbAudioDevice* parent, std::unique_ptr<UsbAudioStreamInterface> ifc)
-    : UsbAudioStreamBase(parent->zxdev()),
-      AudioStreamProtocol(ifc->direction() == Direction::Input),
-      parent_(*parent),
+    : parent_(*parent),
       ifc_(std::move(ifc)),
+      is_input_(ifc_->direction() == Direction::Input),
       create_time_(zx::clock::get_monotonic().get()),
       loop_(&kAsyncLoopConfigNeverAttachToThread),
       dispatcher_loop_(&kAsyncLoopConfigNeverAttachToThread) {
@@ -124,30 +125,47 @@ fbl::RefPtr<UsbAudioStream> UsbAudioStream::Create(UsbAudioDevice* parent,
   return stream;
 }
 
-zx_status_t UsbAudioStream::Bind() {
+void UsbAudioStream::Serve(fidl::ServerEnd<fuchsia_hardware_audio::StreamConfigConnector> server) {
+  fidl::BindServer(loop_.dispatcher(), std::move(server), this);
+}
+
+zx_status_t UsbAudioStream::Bind(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent) {
   char name[64];
   snprintf(name, sizeof(name), "usb-audio-%s-%03d", is_input() ? "input" : "output",
            ifc_->term_link());
 
-  auto status =
-      UsbAudioStreamBase::DdkAdd(ddk::DeviceAddArgs(name).set_inspect_vmo(inspect_.DuplicateVmo()));
-  if (status == ZX_OK) {
-    // If bind/setup has succeeded, then the devmgr now holds a reference to us.
-    // Manually increase our reference count to account for this.
-    this->AddRef();
-  } else {
-    LOG(ERROR, "Failed to publish UsbAudioStream device node (name \"%s\", status %d)", name,
-        status);
+  zx::result connector = devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector: {}", connector);
+    return connector.status_value();
   }
 
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{{
+      .connector = std::move(connector.value()),
+      .class_name = is_input() ? "audio-input" : "audio-output",
+      .inspect = inspect_.DuplicateVmo(),
+  }};
+
+  zx::result child = fdf::AddOwnedChild(parent, *fdf::Logger::GlobalInstance(), name, devfs_args);
+  if (child.is_error()) {
+    LOG(ERROR, "Failed to publish UsbAudioStream device node (name \"%s\", status %d)", name,
+        child.status_value());
+    return child.status_value();
+  }
+  child_.emplace(std::move(child.value()));
+
   thrd_t tmp_thrd;
-  dispatcher_loop_.StartThread("usb-audio-stream-dispatcher-loop", &tmp_thrd);
+  zx_status_t status = dispatcher_loop_.StartThread("usb-audio-stream-dispatcher-loop", &tmp_thrd);
+  if (status != ZX_OK) {
+    LOG(ERROR, "StartThread() error: %s", zx_status_get_string(status));
+    return status;
+  }
+
   // TODO(johngro) : See https://fxbug.dev/42105800.  Eliminate this as soon as we have a more
   // official way of meeting real-time latency requirements.
   constexpr char role_name[] = "fuchsia.devices.usb.audio";
-  const size_t role_name_size = strlen(role_name);
-  status = device_set_profile_by_role(this->zxdev(), thrd_get_zx_handle(tmp_thrd), role_name,
-                                      role_name_size);
+  status = fuchsia_scheduler::SetRoleForThread(
+      zx::unowned_thread(thrd_get_zx_handle(tmp_thrd)), role_name);
   if (status != ZX_OK) {
     zxlogf(WARNING,
            "Failed to apply role \"%s\" to the USB audio callback thread.  Service will be best "
@@ -155,7 +173,7 @@ zx_status_t UsbAudioStream::Bind() {
            role_name);
   }
 
-  return status;
+  return ZX_OK;
 }
 
 void UsbAudioStream::ComputePersistentUniqueId() {
@@ -283,28 +301,16 @@ void UsbAudioStream::Connect(ConnectRequestView request, ConnectCompleter::Sync&
   }
 }
 
-void UsbAudioStream::DdkUnbind(ddk::UnbindTxn txn) {
+void UsbAudioStream::Shutdown() {
   {
     fbl::AutoLock lock(&lock_);
     shutting_down_ = true;
     rb_vmo_fetched_ = false;
   }
   dispatcher_loop_.Shutdown();
-  // We stop the loop so we can safely deactivate channels via RAII via DdkRelease.
+  // We stop the loop so we can safely deactivate channels via RAII.
   loop_.Shutdown();
-
-  // Unpublish our device node.
-  txn.Reply();
-}
-
-void UsbAudioStream::DdkRelease() {
-  // Reclaim our reference from the driver framework and let it go out of
-  // scope.  If this is our last reference (it should be), we will destruct
-  // immediately afterwards.
-  auto stream = fbl::ImportFromRawPtr(this);
-
-  // Make sure that our parent is no longer holding a reference to us.
-  parent_.RemoveAudioStream(stream);
+  child_.reset();
 }
 
 bool UsbAudioStream::is_async() const {
@@ -1108,7 +1114,7 @@ void UsbAudioStream::RequestComplete(fuchsia_hardware_usb_endpoint::Completion c
 }
 
 zx_status_t UsbAudioStream::StartRequests() {
-  auto client = DdkConnectFidlProtocol<fuchsia_hardware_usb::UsbService::Device>(parent_.parent());
+  auto client = parent_.incoming()->Connect<fuchsia_hardware_usb::UsbService::Device>();
   if (client.is_error()) {
     zxlogf(ERROR, "Failed to connect fidl protocol");
     return client.error_value();

@@ -4,13 +4,14 @@
 
 #include "usb-midi-sink.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/sync/completion.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <threads.h>
 
-#include <ddktl/fidl.h>
 #include <fbl/auto_lock.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
@@ -35,18 +36,25 @@ void UsbMidiSink::WriteComplete(usb_request_t* req) {
   sync_completion_signal(&free_write_completion_);
 }
 
-void UsbMidiSink::DdkUnbind(ddk::UnbindTxn txn) {
+void UsbMidiSink::Stop(fit::callback<void()> completer) {
+  // Unregister devfs node and prevent new connections.
+  child_.reset();
+
+  controller_bindings_.CloseAll(ZX_ERR_PEER_CLOSED);
   if (binding_.has_value()) {
     Binding& binding = binding_.value();
-    ZX_ASSERT(!binding.unbind_txn.has_value());
-    binding.unbind_txn.emplace(std::move(txn));
+    ZX_ASSERT(!binding.stop_completer.has_value());
+    binding.stop_completer.emplace(std::move(completer));
     binding.binding.Unbind();
   } else {
-    txn.Reply();
+    completer();
   }
 }
 
-void UsbMidiSink::DdkRelease() { delete this; }
+void UsbMidiSink::Serve(fidl::ServerEnd<fuchsia_hardware_midi::Controller> server) {
+  controller_bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                  std::move(server), this, fidl::kIgnoreBindingClosure);
+}
 
 void UsbMidiSink::OpenSession(OpenSessionRequestView request,
                               OpenSessionCompleter::Sync& completer) {
@@ -61,8 +69,8 @@ void UsbMidiSink::OpenSession(OpenSessionRequestView request,
             std::optional opt = std::exchange(self->binding_, {});
             ZX_ASSERT(opt.has_value());
             Binding& binding = opt.value();
-            if (binding.unbind_txn.has_value()) {
-              binding.unbind_txn.value().Reply();
+            if (binding.stop_completer.has_value()) {
+              binding.stop_completer.value()();
             }
           }),
   };
@@ -141,21 +149,20 @@ void UsbMidiSink::Write(WriteRequestView request, WriteCompleter::Sync& complete
   }
 }
 
-zx_status_t UsbMidiSink::Create(zx_device_t* parent, const UsbDevice& usb, int index,
-                                const usb_interface_descriptor_t* intf,
-                                const usb_endpoint_descriptor_t* ep, const size_t req_size) {
-  auto dev = std::make_unique<UsbMidiSink>(parent, usb, req_size);
-  auto status = dev->Init(index, intf, ep);
+zx::result<std::unique_ptr<UsbMidiSink>> UsbMidiSink::Create(
+    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent, const UsbDevice& usb, int index,
+    const usb_interface_descriptor_t* intf, const usb_endpoint_descriptor_t* ep,
+    const size_t req_size) {
+  auto dev = std::make_unique<UsbMidiSink>(usb, req_size);
+  auto status = dev->Init(parent, index, intf, ep);
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
-
-  // devmgr is now in charge of the device.
-  [[maybe_unused]] auto* _ = dev.release();
-  return ZX_OK;
+  return zx::ok(std::move(dev));
 }
 
-zx_status_t UsbMidiSink::Init(int index, const usb_interface_descriptor_t* intf,
+zx_status_t UsbMidiSink::Init(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+                              int index, const usb_interface_descriptor_t* intf,
                               const usb_endpoint_descriptor_t* ep) {
   int packet_size = usb_ep_max_packet(ep);
   if (intf->b_alternate_setting != 0) {
@@ -178,7 +185,25 @@ zx_status_t UsbMidiSink::Init(int index, const usb_interface_descriptor_t* intf,
   char name[ZX_DEVICE_NAME_MAX];
   snprintf(name, sizeof(name), "usb-midi-sink-%d", index);
 
-  return DdkAdd(name);
+  zx::result connector = devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  if (connector.is_error()) {
+    fdf::error("Failed to bind devfs connector: {}", connector);
+    return connector.status_value();
+  }
+
+  fuchsia_driver_framework::DevfsAddArgs devfs_args{{
+      .connector = std::move(connector.value()),
+      .class_name{kClassName},
+  }};
+
+  zx::result child = fdf::AddOwnedChild(parent, *fdf::Logger::GlobalInstance(), name, devfs_args);
+  if (child.is_error()) {
+    fdf::error("Failed to add owned child: {}", child);
+    return child.status_value();
+  }
+  child_.emplace(std::move(child.value()));
+
+  return ZX_OK;
 }
 
 }  // namespace usb
