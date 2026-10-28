@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component",
+    "fx_component_manifest",
+)
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "security_pkg_reboot-binary",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    crate_name = "security_pkg_reboot",
+    edition = "2024",
+    tags = ["manual"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/sys/pkg/testing/mock-reboot",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+fx_packaged_binary(
+    name = "security_pkg_reboot_packaged_bin",
+    testonly = True,
+    binary = ":security_pkg_reboot-binary",
+    binary_name = "security_pkg_reboot",
+)
+
+fx_component_manifest(
+    name = "security_pkg_reboot-manifest",
+    testonly = True,
+    component_name = "security_pkg_reboot",
+    includes = ["//sdk/lib/syslog:client.shard"],
+    manifest = "meta/security_pkg_reboot.cml",
+)
+
+fx_component(
+    name = "security_pkg_reboot-component",
+    testonly = True,
+    compiled_manifest = ":security_pkg_reboot-manifest",
+    component_name = "security_pkg_reboot",
+    visibility = ["//src/security/tests/pkg_test/tests:__subpackages__"],
+    deps = [":security_pkg_reboot_packaged_bin"],
+)

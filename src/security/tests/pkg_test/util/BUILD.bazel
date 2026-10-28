@@ -1,0 +1,31 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "util",
+    testonly = True,
+    srcs = [
+        "src/config.rs",
+        "src/lib.rs",
+        "src/storage.rs",
+    ],
+    crate_name = "security_pkg_test_util",
+    edition = "2024",
+    visibility = [
+        "//src/security/tests/pkg_test/dns_resolver:__pkg__",
+        "//src/security/tests/pkg_test/tests/access_ota_blob_as_executable:__pkg__",
+        "//src/security/tests/pkg_test/tests/bad_signature_update:__pkg__",
+    ],
+    deps = [
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-fs",
+        "//src/storage/lib/ramdevice_client",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json5",
+    ],
+)
