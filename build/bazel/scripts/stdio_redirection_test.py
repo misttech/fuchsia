@@ -146,6 +146,36 @@ class PipeOutputSinkTest(unittest.TestCase):
                 return
             raise e
 
+    def test_pipe_line_buffering_across_reads(self) -> None:
+        class ChunkRecordingSink(stdio_redirection.OutputSink):
+            def __init__(self) -> None:
+                self.chunks: list[bytes] = []
+
+            def write(self, data: bytes) -> bool:
+                self.chunks.append(data)
+                return True
+
+        out_sink = ChunkRecordingSink()
+        # Construct a payload where line2 straddles the 8192-byte os.read()
+        # boundary so the first read sees an incomplete trailing line.
+        line1 = b"A" * 8000 + b"\n"
+        line2 = b"B" * 500 + b"\n"
+        tail = b"trailing partial line without newline"
+        payload = line1 + line2 + tail
+
+        with stdio_redirection.PipeOutputSink(out_sink, use_pty=False) as sink:
+            os.write(sink.get_write_fd(), payload)
+
+        self.assertEqual(b"".join(out_sink.chunks), payload)
+        # Every chunk before the final EOF flush must end on a newline boundary
+        # so that lines straddling 8192-byte pipe reads are not flushed mid-line.
+        for chunk in out_sink.chunks[:-1]:
+            self.assertTrue(
+                chunk.endswith(b"\n"),
+                f"Chunk did not end with newline: {chunk[-20:]!r}",
+            )
+        self.assertTrue(out_sink.chunks[-1].endswith(tail))
+
 
 if __name__ == "__main__":
     unittest.main()

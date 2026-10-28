@@ -163,15 +163,35 @@ class PipeOutputSink(OutputSink):
         except OSError:
             return False
 
+    # Maximum number of bytes to buffer when waiting for a newline before
+    # forcing a flush.
+    _MAX_PENDING_BYTES = 65536
+
     def _reader_thread(self) -> None:
+        pending = b""
         while True:
             try:
                 data = os.read(self._pipe_read_fd, 8192)
                 if not data:
+                    if pending:
+                        self._output_sink.write(pending)
                     return
-                if not self._output_sink.write(data):
-                    return
+                buf = pending + data
+                last_nl = buf.rfind(b"\n")
+                if last_nl != -1:
+                    to_write = buf[: last_nl + 1]
+                    pending = buf[last_nl + 1 :]
+                    if not self._output_sink.write(to_write):
+                        return
+                elif len(buf) >= self._MAX_PENDING_BYTES:
+                    pending = b""
+                    if not self._output_sink.write(buf):
+                        return
+                else:
+                    pending = buf
             except OSError:
+                if pending:
+                    self._output_sink.write(pending)
                 return
 
     def close(self) -> None:
