@@ -1671,13 +1671,13 @@ group("prost-build-0.14.4") {
 
 if (!(current_os == "fuchsia")) {
   group("pulldown-cmark") {
-    public_deps = [ ":pulldown-cmark-v0_13_4" ]
+    public_deps = [ ":pulldown-cmark-v0_13_5" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("pulldown-cmark-0.13.4") {
-    public_deps = [ ":pulldown-cmark-v0_13_4" ]
+  group("pulldown-cmark-0.13.5") {
+    public_deps = [ ":pulldown-cmark-v0_13_5" ]
   }
 }
 
@@ -17853,17 +17853,17 @@ rustc_macro("ptr_meta_derive-v0_3_1") {
   applicable_licenses = [ ":ptr_meta_derive-v0_3_1.license" ]
 }
 
-license("pulldown-cmark-v0_13_4.license") {
+license("pulldown-cmark-v0_13_5.license") {
   public_package_name = "pulldown_cmark"
   license_files =
-      [ "//third_party/rust_crates/vendor/pulldown-cmark-0.13.4/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/pulldown-cmark-0.13.5/LICENSE" ]
 }
 
-rustc_library("pulldown-cmark-v0_13_4") {
+rustc_library("pulldown-cmark-v0_13_5") {
   crate_name = "pulldown_cmark"
   source_root =
-      "//third_party/rust_crates/vendor/pulldown-cmark-0.13.4/src/lib.rs"
-  output_name = "pulldown_cmark-660813cb31f5e9a3"
+      "//third_party/rust_crates/vendor/pulldown-cmark-0.13.5/src/lib.rs"
+  output_name = "pulldown_cmark-c8946ea360804389"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17881,8 +17881,8 @@ rustc_library("pulldown-cmark-v0_13_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=660813cb31f5e9a3",
-    "-Cextra-filename=-660813cb31f5e9a3",
+    "-Cmetadata=c8946ea360804389",
+    "-Cextra-filename=-c8946ea360804389",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"getopts\"",
     "--cfg=feature=\"html\"",
@@ -17892,7 +17892,7 @@ rustc_library("pulldown-cmark-v0_13_4") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pulldown-cmark-v0_13_4.license" ]
+  applicable_licenses = [ ":pulldown-cmark-v0_13_5.license" ]
 }
 
 license("pulldown-cmark-escape-v0_11_0.license") {
@@ -23200,7 +23200,7 @@ rustc_library("tempfile-v3_27_0") {
     deps += [ ":rustix-v1_1_5" ]
   }
   if (true || false || false) {
-    deps += [ ":getrandom-v0_4_3" ]
+    deps += [ ":getrandom-v0_3_4" ]
   }
   if (false) {
     deps += [ ":windows-sys-v0_61_2" ]
