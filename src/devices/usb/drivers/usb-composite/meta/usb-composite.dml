@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 {
     name: "usb-composite",
-    include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
+    include: [ "driver_component/driver.shard.cml" ],
     program: {
         colocate: "true",
-        compat: "driver/usb-composite.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         fallback: "true",
         bind: { banjo: "fuchsia.usb.BIND_PROTOCOL.DEVICE" },

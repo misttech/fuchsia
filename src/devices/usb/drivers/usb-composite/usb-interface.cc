@@ -6,11 +6,13 @@
 
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <fuchsia/hardware/usb/composite/c/banjo.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <fbl/alloc_checker.h>
 #include <usb/descriptors.h>
 #include <usb/usb-request.h>
 
@@ -20,15 +22,15 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace usb_composite {
 
-zx::result<fidl::ClientEnd<fuchsia_io::Directory>> UsbInterface::Create(
-    zx_device_t* parent, UsbComposite* composite, const ddk::UsbProtocolClient& usb,
+zx::result<std::unique_ptr<UsbInterface>> UsbInterface::Create(
+    UsbComposite* composite, const ddk::UsbProtocolClient& usb,
     fidl::ClientEnd<fuchsia_hardware_usb::Usb> usb_new,
     const usb_interface_descriptor_t* interface_desc, size_t desc_length,
-    async_dispatcher_t* dispatcher, std::unique_ptr<UsbInterface>* out_interface) {
+    async_dispatcher_t* dispatcher) {
   fbl::AllocChecker ac;
-  auto interface = std::make_unique<UsbInterface>(composite->zxdev(), composite, usb,
-                                                  std::move(usb_new), dispatcher);
-  if (!interface) {
+  auto interface =
+      fbl::make_unique_checked<UsbInterface>(&ac, composite, usb, std::move(usb_new), dispatcher);
+  if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -57,22 +59,18 @@ zx::result<fidl::ClientEnd<fuchsia_io::Directory>> UsbInterface::Create(
     return zx::error(status);
   }
 
-  auto result = interface->ServeOutgoing(dispatcher);
-  if (result.is_ok()) {
-    *out_interface = std::move(interface);
-  }
-  return result;
+  return zx::ok(std::move(interface));
 }
 
-zx::result<fidl::ClientEnd<fuchsia_io::Directory>> UsbInterface::Create(
-    zx_device_t* parent, UsbComposite* composite, const ddk::UsbProtocolClient& usb,
+zx::result<std::unique_ptr<UsbInterface>> UsbInterface::Create(
+    UsbComposite* composite, const ddk::UsbProtocolClient& usb,
     fidl::ClientEnd<fuchsia_hardware_usb::Usb> usb_new,
     const usb_interface_assoc_descriptor_t* assoc_desc, size_t desc_length,
-    async_dispatcher_t* dispatcher, std::unique_ptr<UsbInterface>* out_interface) {
+    async_dispatcher_t* dispatcher) {
   fbl::AllocChecker ac;
-  auto interface = std::make_unique<UsbInterface>(composite->zxdev(), composite, usb,
-                                                  std::move(usb_new), dispatcher);
-  if (!interface) {
+  auto interface =
+      fbl::make_unique_checked<UsbInterface>(&ac, composite, usb, std::move(usb_new), dispatcher);
+  if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
@@ -105,7 +103,7 @@ zx::result<fidl::ClientEnd<fuchsia_io::Directory>> UsbInterface::Create(
       break;
     }
     if (!intf.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     zx_status_t status = interface->ConfigureEndpoints(intf.descriptor()->b_interface_number, 0);
@@ -114,11 +112,146 @@ zx::result<fidl::ClientEnd<fuchsia_io::Directory>> UsbInterface::Create(
     }
   }
 
-  auto result = interface->ServeOutgoing(dispatcher);
-  if (result.is_ok()) {
-    *out_interface = std::move(interface);
+  return zx::ok(std::move(interface));
+}
+
+UsbInterface::~UsbInterface() {
+  if (controller_.is_valid() && !node_removed_) {
+    fidl::OneWayStatus result = fidl::WireCall(controller_)->Remove();
+    if (!result.ok()) {
+      fdf::debug("Failed to remove node {}: {}", name_, result.FormatDescription());
+    }
   }
-  return result;
+  if (outgoing_ != nullptr) {
+    if (zx::result result = outgoing_->RemoveService<fuchsia_hardware_usb::UsbService>(name_);
+        result.is_error()) {
+      fdf::warn("Failed to remove UsbService instance {}: {}", name_, result);
+    }
+  }
+}
+
+zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> UsbInterface::AddChild(
+    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+    const std::shared_ptr<fdf::OutgoingDirectory>& outgoing, std::string_view name,
+    std::vector<fuchsia_driver_framework::NodeProperty2> properties) {
+  if (controller_.is_valid()) {
+    return zx::error(ZX_ERR_ALREADY_BOUND);
+  }
+  name_ = name;
+
+  // Serve the Banjo protocols that DFv1 returned from DdkGetProtocol().
+  compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_USB};
+  banjo_config.callbacks[ZX_PROTOCOL_USB] = usb_banjo_server_.callback();
+  banjo_config.callbacks[ZX_PROTOCOL_USB_COMPOSITE] = usb_composite_banjo_server_.callback();
+  compat_server_.Initialize(name_, std::nullopt, std::move(banjo_config));
+  if (zx_status_t status = compat_server_.Serve(dispatcher_, outgoing.get()); status != ZX_OK) {
+    fdf::error("Failed to serve compat device server: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  zx::result result = outgoing->AddService<fuchsia_hardware_usb::UsbService>(
+      fuchsia_hardware_usb::UsbService::InstanceHandler({
+          .device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+      }),
+      name_);
+  if (result.is_error()) {
+    fdf::error("Failed to add UsbService: {}", result);
+    return result.take_error();
+  }
+  outgoing_ = outgoing;
+
+  std::vector offers = compat_server_.CreateOffers2();
+  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_usb::UsbService>(name_));
+
+  fuchsia_driver_framework::NodeAddArgs args{{
+      .name = name_,
+      .offers2 = std::move(offers),
+      .properties2 = std::move(properties),
+  }};
+
+  auto [controller_client_end, controller_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  fidl::Result add_child_result =
+      fidl::Call(parent)->AddChild({std::move(args), std::move(controller_server_end), {}});
+  if (add_child_result.is_error()) {
+    fdf::error("Failed to add child {}: {}", name_,
+               add_child_result.error_value().FormatDescription());
+    return zx::error(add_child_result.error_value().is_framework_error()
+                         ? add_child_result.error_value().framework_error().status()
+                         : ZX_ERR_INTERNAL);
+  }
+
+  return zx::ok(std::move(controller_client_end));
+}
+
+zx_status_t UsbInterface::SetController(
+    fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller) {
+  controller_ = std::move(controller);
+  controller_wait_.set_object(controller_.channel().get());
+  controller_wait_.set_trigger(ZX_CHANNEL_PEER_CLOSED);
+  if (zx_status_t status = controller_wait_.Begin(dispatcher_); status != ZX_OK) {
+    fdf::error("Failed to wait on node controller for {}: {}", name_, zx_status_get_string(status));
+    // The destructor removes the node, since |controller_| is valid.
+    return status;
+  }
+  if (remove_requested_) {
+    // AsyncRemove() was called before the controller was available.
+    AsyncRemove();
+  }
+  return ZX_OK;
+}
+
+void UsbInterface::AsyncRemove() {
+  remove_requested_ = true;
+  if (!controller_.is_valid()) {
+    // SetController() will request the removal.
+    return;
+  }
+  fidl::OneWayStatus result = fidl::WireCall(controller_)->Remove();
+  if (!result.ok()) {
+    fdf::warn("Failed to remove node {}: {}", name_, result.FormatDescription());
+  }
+}
+
+void UsbInterface::OnControllerClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait,
+                                      zx_status_t status, const zx_packet_signal_t* signal) {
+  if (status != ZX_OK) {
+    // The wait was cancelled, e.g. because the dispatcher is shutting down.
+    return;
+  }
+  OnNodeRemoved();
+}
+
+void UsbInterface::OnNodeRemoved() {
+  node_removed_ = true;
+  // This destroys |this|, so it must be the last thing done here. That is safe from within
+  // OnControllerClosed() because |controller_wait_| is no longer pending when its handler runs.
+  composite_->RemoveInterface(this);
+}
+
+void UsbInterface::ConnectToEndpoint(ConnectToEndpointRequest& request,
+                                     ConnectToEndpointCompleter::Sync& completer) {
+  constexpr uint32_t kMask = 0x7FU;
+  constexpr uint32_t kReservedMask = 0x70U;
+  const uint32_t ep_addr = request.ep_addr();
+  const uint32_t ep_num = ep_addr & kMask;
+  if (ep_num == 0 || ep_num > 15 || (ep_addr & kReservedMask) != 0) {
+    completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> result =
+      usb_new_->ConnectToEndpoint(request.ep_addr(), std::move(request.ep()));
+  if (!result.ok()) {
+    fdf::error("Failed to call ConnectToEndpoint(): {}", result.FormatDescription());
+    completer.Reply(fit::as_error(result.status()));
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("ConnectToEndpoint() error: {}", zx_status_get_string(result->error_value()));
+    completer.Reply(fit::as_error(result->error_value()));
+    return;
+  }
+  completer.Reply(fit::ok());
 }
 
 zx_status_t UsbInterface::Init(const void* descriptors, size_t desc_length,
@@ -138,32 +271,6 @@ zx_status_t UsbInterface::Init(const void* descriptors, size_t desc_length,
 
   return ZX_OK;
 }
-
-zx_status_t UsbInterface::DdkGetProtocol(uint32_t proto_id, void* protocol) {
-  switch (proto_id) {
-    case ZX_PROTOCOL_USB: {
-      auto* proto = static_cast<usb_protocol_t*>(protocol);
-      proto->ctx = this;
-      proto->ops = &usb_protocol_ops_;
-      return ZX_OK;
-    }
-    case ZX_PROTOCOL_USB_COMPOSITE: {
-      auto* proto = static_cast<usb_composite_protocol_t*>(protocol);
-      proto->ctx = this;
-      proto->ops = &usb_composite_protocol_ops_;
-      return ZX_OK;
-    }
-    default:
-      return ZX_ERR_NOT_SUPPORTED;
-  }
-}
-
-void UsbInterface::DdkUnbind(ddk::UnbindTxn txn) {
-  composite_->RemoveInterface(this);
-  txn.Reply();
-}
-
-void UsbInterface::DdkRelease() { delete this; }
 
 // for determining index into active_endpoints[]
 // b_endpoint_address has 4 lower order bits, plus high bit to signify direction
@@ -185,7 +292,7 @@ zx_status_t UsbInterface::ConfigureEndpoints(uint8_t interface_id, uint8_t alt_s
 
   for (const auto& intf : intf_list) {
     if (!intf.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return false;
     }
     if (intf.descriptor()->b_interface_number != interface_id) {
@@ -211,7 +318,7 @@ zx_status_t UsbInterface::ConfigureEndpoints(uint8_t interface_id, uint8_t alt_s
         if (old_ep) {
           zx_status_t ret = usb_.EnableEndpoint(old_ep, nullptr, false);
           if (ret != ZX_OK) {
-            zxlogf(ERROR, "EnableEndpoint failed: %s", zx_status_get_string(ret));
+            fdf::error("EnableEndpoint failed: {}", zx_status_get_string(ret));
             status = ret;
           }
         }
@@ -219,7 +326,7 @@ zx_status_t UsbInterface::ConfigureEndpoints(uint8_t interface_id, uint8_t alt_s
           zx_status_t ret = usb_.EnableEndpoint(new_ep->descriptor(),
                                                 new_ep->ss_companion().value_or(nullptr), true);
           if (ret != ZX_OK) {
-            zxlogf(ERROR, "EnableEndpoint failed: %s", zx_status_get_string(ret));
+            fdf::error("EnableEndpoint failed: {}", zx_status_get_string(ret));
             status = ret;
           }
         }
@@ -312,7 +419,7 @@ size_t UsbInterface::UsbCompositeGetAdditionalDescriptorLength() {
                                       le16toh(config->w_total_length), true);
   for (const auto& intf : intf_list) {
     if (!intf.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return false;
     }
     // We are only interested in descriptors past the last stored descriptor
@@ -374,7 +481,7 @@ bool UsbInterface::ContainsInterface(uint8_t interface_id) {
                                       descriptors_.size(), true);
   for (const auto& intf : intf_list) {
     if (!intf.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return false;
     }
     if (intf.descriptor()->b_interface_number == interface_id) {

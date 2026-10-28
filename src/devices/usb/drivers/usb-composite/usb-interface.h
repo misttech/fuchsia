@@ -6,15 +6,21 @@
 #define SRC_DEVICES_USB_DRIVERS_USB_COMPOSITE_USB_INTERFACE_H_
 
 #include <endian.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb/cpp/fidl.h>
 #include <fuchsia/hardware/usb/composite/cpp/banjo.h>
 #include <fuchsia/hardware/usb/cpp/banjo.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/ddk/debug.h>
+#include <lib/async/cpp/wait.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 
-#include <ddktl/device.h>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include <fbl/array.h>
-#include <fbl/mutex.h>
 #include <usb/descriptors.h>
 #include <usb/usb.h>
 
@@ -23,65 +29,54 @@
 namespace usb_composite {
 
 class UsbComposite;
-class UsbInterface;
-using UsbInterfaceType = ddk::Device<UsbInterface, ddk::GetProtocolable, ddk::Unbindable>;
 
-// This class represents a USB interface in a composite device.
-class UsbInterface : public UsbInterfaceType,
-                     public ddk::UsbProtocol<UsbInterface, ddk::base_protocol>,
+// This class represents a USB interface (or interface association) in a composite device. It is
+// published as a child node of the composite and serves the Banjo usb and usb-composite protocols
+// (through compat) and the fuchsia.hardware.usb/Usb FIDL protocol to the driver bound to it.
+//
+// Instances are owned by UsbComposite. All lifecycle methods (AddChild, the destructor and the
+// node removal notification) run on the composite's driver dispatcher. The Banjo protocol methods
+// are called directly on the threads of the bound (colocated) child driver.
+class UsbInterface : public ddk::UsbProtocol<UsbInterface>,
                      public ddk::UsbCompositeProtocol<UsbInterface>,
                      public fidl::Server<fuchsia_hardware_usb::Usb> {
  public:
-  UsbInterface(zx_device_t* parent, UsbComposite* composite, const ddk::UsbProtocolClient& usb,
+  UsbInterface(UsbComposite* composite, const ddk::UsbProtocolClient& usb,
                fidl::ClientEnd<fuchsia_hardware_usb::Usb> usb_new, async_dispatcher_t* dispatcher)
-      : UsbInterfaceType(parent),
-        composite_(composite),
-        usb_(usb),
-        usb_new_(std::move(usb_new)),
-        outgoing_(dispatcher) {}
+      : composite_(composite), usb_(usb), usb_new_(std::move(usb_new)), dispatcher_(dispatcher) {}
+  ~UsbInterface() override;
 
-  static zx::result<fidl::ClientEnd<fuchsia_io::Directory>> Create(
-      zx_device_t* parent, UsbComposite* composite, const ddk::UsbProtocolClient& usb,
+  static zx::result<std::unique_ptr<UsbInterface>> Create(
+      UsbComposite* composite, const ddk::UsbProtocolClient& usb,
       fidl::ClientEnd<fuchsia_hardware_usb::Usb> usb_new,
       const usb_interface_descriptor_t* interface_desc, size_t desc_length,
-      async_dispatcher_t* dispatcher, std::unique_ptr<UsbInterface>* out_interface);
-  static zx::result<fidl::ClientEnd<fuchsia_io::Directory>> Create(
-      zx_device_t* parent, UsbComposite* composite, const ddk::UsbProtocolClient& usb,
+      async_dispatcher_t* dispatcher);
+  static zx::result<std::unique_ptr<UsbInterface>> Create(
+      UsbComposite* composite, const ddk::UsbProtocolClient& usb,
       fidl::ClientEnd<fuchsia_hardware_usb::Usb> usb_new,
       const usb_interface_assoc_descriptor_t* assoc_desc, size_t desc_length,
-      async_dispatcher_t* dispatcher, std::unique_ptr<UsbInterface>* out_interface);
+      async_dispatcher_t* dispatcher);
 
-  // Device protocol implementation.
-  zx_status_t DdkGetProtocol(uint32_t proto_id, void* out);
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkRelease();
+  // Serves this interface's protocols in |outgoing| and adds a child node named |name| with the
+  // given bind |properties| to |parent|. Returns the node's controller, which the caller must pass
+  // to SetController().
+  zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddChild(
+      fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
+      const std::shared_ptr<fdf::OutgoingDirectory>& outgoing, std::string_view name,
+      std::vector<fuchsia_driver_framework::NodeProperty2> properties);
+
+  // Takes ownership of the child node's |controller| and starts watching for the node's removal.
+  // If AsyncRemove() was already called, the node's removal is requested immediately. Must be
+  // called on the driver dispatcher with the composite's lock held.
+  zx_status_t SetController(fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller);
+
+  // Asynchronously removes the child node. Once the node is gone, the composite is notified via
+  // RemoveInterface(). Must be called with the composite's lock held.
+  void AsyncRemove();
 
   // fuchsia_hardware_usb::Usb protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
-                         ConnectToEndpointCompleter::Sync& completer) override {
-    constexpr uint32_t kMask = 0x7FU;
-    constexpr uint32_t kReservedMask = 0x70U;
-    const uint32_t ep_addr = request.ep_addr();
-    const uint32_t ep_num = ep_addr & kMask;
-    if (ep_num == 0 || ep_num > 15 || (ep_addr & kReservedMask) != 0) {
-      completer.Reply(fit::as_error(ZX_ERR_INVALID_ARGS));
-      return;
-    }
-    fidl::WireResult<fuchsia_hardware_usb::Usb::ConnectToEndpoint> result =
-        usb_new_->ConnectToEndpoint(request.ep_addr(), std::move(request.ep()));
-    if (!result.ok()) {
-      zxlogf(ERROR, "Failed to call ConnectToEndpoint(): %s",
-             result.error().FormatDescription().c_str());
-      completer.Reply(fit::as_error(result.status()));
-      return;
-    }
-    if (result->is_error()) {
-      zxlogf(ERROR, "ConnectToEndpoint() error: %s", zx_status_get_string(result->error_value()));
-      completer.Reply(fit::as_error(result->error_value()));
-      return;
-    }
-    completer.Reply(fit::ok());
-  }
+                         ConnectToEndpointCompleter::Sync& completer) override;
   void GetDeviceSpeed(GetDeviceSpeedCompleter::Sync& completer) override {
     completer.Reply(
         {{.speed = static_cast<fuchsia_hardware_usb_descriptor::UsbSpeed>(UsbGetSpeed())}});
@@ -288,27 +283,17 @@ class UsbInterface : public UsbInterfaceType,
                    uint8_t usb_class, uint8_t usb_subclass, uint8_t usb_protocol);
   zx_status_t ConfigureEndpoints(uint8_t interface_id, uint8_t alt_setting);
 
-  zx::result<fidl::ClientEnd<fuchsia_io::Directory>> ServeOutgoing(async_dispatcher_t* dispatcher) {
-    zx::result result = outgoing_.AddService<fuchsia_hardware_usb::UsbService>(
-        fuchsia_hardware_usb::UsbService::InstanceHandler({
-            .device = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
-        }));
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    if (endpoints.is_error()) {
-      return zx::error(endpoints.status_value());
-    }
-    result = outgoing_.Serve(std::move(endpoints->server));
-    if (result.is_error()) {
-      zxlogf(ERROR, "Failed to service the outgoing directory");
-      return zx::error(result.status_value());
-    }
+  // Called when |controller_| is closed by the driver framework.
+  void OnControllerClosed(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+                          const zx_packet_signal_t* signal);
 
-    return zx::ok(std::move(endpoints->client));
-  }
+  // Called once the child node has been removed.
+  void OnNodeRemoved();
 
   UsbComposite* composite_;
   const ddk::UsbProtocolClient usb_;
   fidl::WireSyncClient<fuchsia_hardware_usb::Usb> usb_new_;
+  async_dispatcher_t* dispatcher_;
 
   uint8_t usb_class_;
   uint8_t usb_subclass_;
@@ -323,8 +308,30 @@ class UsbInterface : public UsbInterfaceType,
   // These point into descriptor_'s storage.
   const usb_endpoint_descriptor_t* active_endpoints_[USB_MAX_EPS] = {};
 
-  component::OutgoingDirectory outgoing_;
+  // Banjo protocols served to the child driver through |compat_server_|.
+  compat::BanjoServer usb_banjo_server_{ZX_PROTOCOL_USB, this, &usb_protocol_ops_};
+  compat::BanjoServer usb_composite_banjo_server_{ZX_PROTOCOL_USB_COMPOSITE, this,
+                                                  &usb_composite_protocol_ops_};
+  compat::DeviceServer compat_server_;
+
   fidl::ServerBindingGroup<fuchsia_hardware_usb::Usb> bindings_;
+
+  // Set by AddChild().
+  std::string name_;
+  std::shared_ptr<fdf::OutgoingDirectory> outgoing_;
+
+  // Set by SetController(). Written and read by AsyncRemove() with the composite's lock held, since
+  // AsyncRemove() may be called from the child driver's threads.
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> controller_;
+
+  // Set by AsyncRemove(), so that SetController() can remove a node whose removal was requested
+  // before its controller was set. Guarded by the composite's lock.
+  bool remove_requested_ = false;
+
+  // Signaled when the node controller channel is closed, which means the child node was removed.
+  // Declared after |controller_| so the wait is cancelled before the channel is closed.
+  async::WaitMethod<UsbInterface, &UsbInterface::OnControllerClosed> controller_wait_{this};
+  bool node_removed_ = false;
 };
 
 }  // namespace usb_composite

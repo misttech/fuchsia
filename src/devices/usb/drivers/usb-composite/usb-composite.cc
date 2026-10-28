@@ -5,180 +5,216 @@
 #include "src/devices/usb/drivers/usb-composite/usb-composite.h"
 
 #include <endian.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/component/cpp/node_add_args.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/usb/cpp/bind.h>
+#include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 
 #include "src/devices/usb/drivers/usb-composite/usb-interface.h"
 
 namespace usb_composite {
 
-zx_status_t UsbComposite::Create(void* ctx, zx_device_t* parent) {
-  fbl::AllocChecker ac;
-  auto device = fbl::make_unique_checked<UsbComposite>(&ac, parent);
-  if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+UsbComposite::UsbComposite() : fdf::DriverBase2(kDriverName) {}
+
+UsbComposite::~UsbComposite() = default;
+
+zx::result<> UsbComposite::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
+  zx::result usb = compat::ConnectBanjo<ddk::UsbProtocolClient>(incoming_);
+  if (usb.is_error()) {
+    fdf::error("Failed to connect to parent USB protocol: {}", usb.status_string());
+    return usb.take_error();
+  }
+  usb_ = *usb;
+
+  if (zx_status_t status = Init(); status != ZX_OK) {
+    return zx::error(status);
   }
 
-  auto status = device->Init();
-  if (status != ZX_OK) {
-    return status;
+  char name[16];
+  snprintf(name, sizeof(name), "%03d", usb_.GetDeviceId());
+  zx::result composite_node = AddOwnedChild(name);
+  if (composite_node.is_error()) {
+    fdf::error("Failed to add composite node {}: {}", name, composite_node.status_string());
+    return composite_node.take_error();
+  }
+  composite_node_ = std::move(composite_node->node_);
+  composite_node_controller_ = std::move(composite_node->node_controller_);
+
+  if (zx_status_t status = AddInterfaces(); status != ZX_OK) {
+    fdf::warn("AddInterfaces() = {}", zx_status_get_string(status));
+    RemoveAllInterfaces();
+    return zx::error(status);
   }
 
-  // Device manager is now in charge of the device.
-  [[maybe_unused]] auto* unowned_device = device.release();
+  return zx::ok();
+}
 
-  return ZX_OK;
+void UsbComposite::Stop(fdf::StopCompleter completer) {
+  RemoveAllInterfaces();
+  completer(zx::ok());
+}
+
+void UsbComposite::RemoveAllInterfaces() {
+  std::vector<std::unique_ptr<UsbInterface>> interfaces;
+  std::vector<std::unique_ptr<UsbInterface>> removed_interfaces;
+  {
+    fbl::AutoLock lock(&lock_);
+    interfaces = std::move(interfaces_);
+    removed_interfaces = std::move(removed_interfaces_);
+    interfaces_.clear();
+    removed_interfaces_.clear();
+  }
+
+  interfaces.clear();
+  removed_interfaces.clear();
+}
+
+std::unique_ptr<UsbInterface> UsbComposite::TakeInterface(UsbInterface* interface) {
+  for (auto* list : {&interfaces_, &removed_interfaces_}) {
+    for (auto it = list->begin(); it != list->end(); ++it) {
+      if (it->get() == interface) {
+        std::unique_ptr<UsbInterface> taken = std::move(*it);
+        list->erase(it);
+        return taken;
+      }
+    }
+  }
+  return nullptr;
 }
 
 void UsbComposite::RemoveInterface(UsbInterface* interface) {
-  size_t index = 0;
-  fbl::AutoLock _(&lock_);
-  for (auto intf : interfaces_) {
-    if (intf == interface) {
-      interfaces_.erase(index);
-      return;
-    }
-    index++;
+  std::unique_ptr<UsbInterface> removed;
+  {
+    fbl::AutoLock lock(&lock_);
+    removed = TakeInterface(interface);
   }
+  removed.reset();
 }
 
 // returns whether the interface with the given id was removed.
 bool UsbComposite::RemoveInterfaceById(uint8_t interface_id) {
-  size_t index = 0;
-  for (auto intf : interfaces_) {
-    if (intf->ContainsInterface(interface_id)) {
-      intf->DdkAsyncRemove();
-      interfaces_.erase(index);
+  for (auto it = interfaces_.begin(); it != interfaces_.end(); ++it) {
+    if ((*it)->ContainsInterface(interface_id)) {
+      // The child driver may still be using the interface until its node is gone, so keep it alive
+      // until RemoveInterface() is called for it.
+      (*it)->AsyncRemove();
+      removed_interfaces_.push_back(std::move(*it));
+      interfaces_.erase(it);
       return true;
     }
-    index++;
   }
   return false;
 }
 
+zx_status_t UsbComposite::PublishInterface(
+    std::unique_ptr<UsbInterface> interface, const char* name,
+    std::vector<fuchsia_driver_framework::NodeProperty2> properties) {
+  UsbInterface* raw_interface = interface.get();
+  {
+    fbl::AutoLock lock(&lock_);
+    // We need to do this first before adding the child node.
+    interfaces_.push_back(std::move(interface));
+  }
+
+  zx::result controller =
+      raw_interface->AddChild(composite_node_.borrow(), outgoing(), name, std::move(properties));
+
+  zx_status_t status;
+  std::unique_ptr<UsbInterface> failed;
+  {
+    fbl::AutoLock lock(&lock_);
+    // The controller is set under the lock because a child driver may concurrently call
+    // ClaimInterface(), which calls AsyncRemove() on this interface.
+    status = controller.is_ok() ? raw_interface->SetController(std::move(*controller))
+                                : controller.status_value();
+    if (status != ZX_OK) {
+      failed = TakeInterface(raw_interface);
+    }
+  }
+
+  failed.reset();
+  return status;
+}
+
 zx_status_t UsbComposite::AddInterface(const usb_interface_descriptor_t* interface_desc,
                                        size_t length) {
-  auto client = DdkConnectFidlProtocol<fuchsia_hardware_usb::UsbService::Device>();
+  zx::result client = incoming_->Connect<fuchsia_hardware_usb::UsbService::Device>();
   if (client.is_error()) {
-    zxlogf(ERROR, "Failed to connect fidl protocol");
+    fdf::error("Failed to connect fidl protocol: {}", client.status_string());
     return client.error_value();
   }
 
-  std::unique_ptr<UsbInterface> interface;
-  auto client_end =
-      UsbInterface::Create(zxdev(), this, usb_, std::move(*client), interface_desc, length,
-                           fdf::Dispatcher::GetCurrent()->async_dispatcher(), &interface);
-  if (client_end.is_error()) {
-    return client_end.error_value();
-  }
-
-  {
-    fbl::AutoLock lock(&lock_);
-    // We need to do this first before calling DdkAdd().
-    interfaces_.push_back(interface.get());
+  zx::result interface =
+      UsbInterface::Create(this, usb_, std::move(*client), interface_desc, length, dispatcher());
+  if (interface.is_error()) {
+    return interface.error_value();
   }
 
   char name[20];
   snprintf(name, sizeof(name), "ifc-%03d", interface_desc->b_interface_number);
 
-  zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_usb::BIND_PROTOCOL_INTERFACE),
-      ddk::MakeStrProperty(bind_fuchsia::USB_VID, static_cast<uint32_t>(device_desc_.id_vendor)),
-      ddk::MakeStrProperty(bind_fuchsia::USB_PID, static_cast<uint32_t>(device_desc_.id_product)),
-      ddk::MakeStrProperty(bind_fuchsia::USB_CLASS, static_cast<uint32_t>(interface->usb_class())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_SUBCLASS,
-                           static_cast<uint32_t>(interface->usb_subclass())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_PROTOCOL,
-                           static_cast<uint32_t>(interface->usb_protocol())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_INTERFACE_NUMBER,
-                           static_cast<uint32_t>(interface_desc->b_interface_number)),
+  std::vector<fuchsia_driver_framework::NodeProperty2> props = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_usb::BIND_PROTOCOL_INTERFACE),
+      fdf::MakeProperty2(bind_fuchsia::USB_VID, static_cast<uint32_t>(device_desc_.id_vendor)),
+      fdf::MakeProperty2(bind_fuchsia::USB_PID, static_cast<uint32_t>(device_desc_.id_product)),
+      fdf::MakeProperty2(bind_fuchsia::USB_CLASS, static_cast<uint32_t>((*interface)->usb_class())),
+      fdf::MakeProperty2(bind_fuchsia::USB_SUBCLASS,
+                         static_cast<uint32_t>((*interface)->usb_subclass())),
+      fdf::MakeProperty2(bind_fuchsia::USB_PROTOCOL,
+                         static_cast<uint32_t>((*interface)->usb_protocol())),
+      fdf::MakeProperty2(bind_fuchsia::USB_INTERFACE_NUMBER,
+                         static_cast<uint32_t>(interface_desc->b_interface_number)),
   };
 
-  std::array offers = {
-      fuchsia_hardware_usb::UsbService::Name,
-  };
-
-  auto status = interface->DdkAdd(ddk::DeviceAddArgs(name)
-                                      .set_str_props(props)
-                                      .set_fidl_service_offers(offers)
-                                      .set_outgoing_dir(client_end->TakeChannel()));
-  if (status == ZX_OK) {
-    // Hold a reference while devmgr has a pointer to this object.
-    interface.release();
-  } else {
-    fbl::AutoLock lock(&lock_);
-    interfaces_.pop_back();
-  }
-
-  return status;
+  return PublishInterface(std::move(*interface), name, std::move(props));
 }
 
 zx_status_t UsbComposite::AddInterfaceAssoc(const usb_interface_assoc_descriptor_t* assoc_desc,
                                             size_t length) {
-  auto client = DdkConnectFidlProtocol<fuchsia_hardware_usb::UsbService::Device>();
+  zx::result client = incoming_->Connect<fuchsia_hardware_usb::UsbService::Device>();
   if (client.is_error()) {
-    zxlogf(ERROR, "Failed to connect fidl protocol");
+    fdf::error("Failed to connect fidl protocol: {}", client.status_string());
     return client.error_value();
   }
 
-  std::unique_ptr<UsbInterface> interface;
-  auto client_end =
-      UsbInterface::Create(zxdev(), this, usb_, std::move(*client), assoc_desc, length,
-                           fdf::Dispatcher::GetCurrent()->async_dispatcher(), &interface);
-  if (client_end.is_error()) {
-    return client_end.error_value();
-  }
-
-  {
-    fbl::AutoLock lock(&lock_);
-    // We need to do this first before calling DdkAdd().
-    interfaces_.push_back(interface.get());
+  zx::result interface =
+      UsbInterface::Create(this, usb_, std::move(*client), assoc_desc, length, dispatcher());
+  if (interface.is_error()) {
+    return interface.error_value();
   }
 
   char name[20];
   snprintf(name, sizeof(name), "asc-%03d", assoc_desc->b_first_interface);
 
-  zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PROTOCOL,
-                           bind_fuchsia_usb::BIND_PROTOCOL_INTERFACE_ASSOCIATION),
-      ddk::MakeStrProperty(bind_fuchsia::USB_VID, static_cast<uint32_t>(device_desc_.id_vendor)),
-      ddk::MakeStrProperty(bind_fuchsia::USB_PID, static_cast<uint32_t>(device_desc_.id_product)),
-      ddk::MakeStrProperty(bind_fuchsia::USB_CLASS, static_cast<uint32_t>(interface->usb_class())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_SUBCLASS,
-                           static_cast<uint32_t>(interface->usb_subclass())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_PROTOCOL,
-                           static_cast<uint32_t>(interface->usb_protocol())),
-      ddk::MakeStrProperty(bind_fuchsia::USB_INTERFACE_NUMBER,
-                           static_cast<uint32_t>(assoc_desc->b_first_interface)),
+  std::vector<fuchsia_driver_framework::NodeProperty2> props = {
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL,
+                         bind_fuchsia_usb::BIND_PROTOCOL_INTERFACE_ASSOCIATION),
+      fdf::MakeProperty2(bind_fuchsia::USB_VID, static_cast<uint32_t>(device_desc_.id_vendor)),
+      fdf::MakeProperty2(bind_fuchsia::USB_PID, static_cast<uint32_t>(device_desc_.id_product)),
+      fdf::MakeProperty2(bind_fuchsia::USB_CLASS, static_cast<uint32_t>((*interface)->usb_class())),
+      fdf::MakeProperty2(bind_fuchsia::USB_SUBCLASS,
+                         static_cast<uint32_t>((*interface)->usb_subclass())),
+      fdf::MakeProperty2(bind_fuchsia::USB_PROTOCOL,
+                         static_cast<uint32_t>((*interface)->usb_protocol())),
+      fdf::MakeProperty2(bind_fuchsia::USB_INTERFACE_NUMBER,
+                         static_cast<uint32_t>(assoc_desc->b_first_interface)),
   };
 
-  std::array offers = {
-      fuchsia_hardware_usb::UsbService::Name,
-  };
-
-  auto status = interface->DdkAdd(ddk::DeviceAddArgs(name)
-                                      .set_str_props(props)
-                                      .set_fidl_service_offers(offers)
-                                      .set_outgoing_dir(client_end->TakeChannel()));
-  if (status == ZX_OK) {
-    // Hold a reference while devmgr has a pointer to this object.
-    interface.release();
-  } else {
-    fbl::AutoLock lock(&lock_);
-    interfaces_.pop_back();
-  }
-
-  return status;
+  return PublishInterface(std::move(*interface), name, std::move(props));
 }
 
 zx_status_t UsbComposite::AddInterfaces() {
   if (config_desc_.size() < sizeof(usb_configuration_descriptor_t)) {
-    zxlogf(ERROR, "Malformed USB descriptor detected!");
+    fdf::error("Malformed USB descriptor detected!");
     return ZX_ERR_INTERNAL;
   }
   auto* config = reinterpret_cast<usb_configuration_descriptor_t*>(config_desc_.data());
@@ -204,7 +240,7 @@ zx_status_t UsbComposite::AddInterfaces() {
   std::optional<assoc_iterator_t> assoc = std::nullopt;
   for (const auto& interface : interface_list) {
     if (!interface.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return ZX_ERR_INTERNAL;
     }
 
@@ -257,9 +293,9 @@ zx_status_t UsbComposite::AddInterfaces() {
 }
 
 UsbInterface* UsbComposite::GetInterfaceById(uint8_t interface_id) {
-  for (auto intf : interfaces_) {
+  for (auto& intf : interfaces_) {
     if (intf->ContainsInterface(interface_id)) {
-      return intf;
+      return intf.get();
     }
   }
   return nullptr;
@@ -289,7 +325,7 @@ zx_status_t UsbComposite::ClaimInterface(uint8_t interface_id) {
 zx_status_t UsbComposite::SetInterface(uint8_t interface_id, uint8_t alt_setting) {
   fbl::AutoLock lock(&lock_);
 
-  for (auto intf : interfaces_) {
+  for (auto& intf : interfaces_) {
     if (intf->ContainsInterface(interface_id)) {
       return intf->SetAltSetting(interface_id, alt_setting);
     }
@@ -303,14 +339,14 @@ zx_status_t UsbComposite::GetAdditionalDescriptorList(uint8_t last_interface_id,
   *out_desc_actual = 0;
 
   if (config_desc_.size() < sizeof(usb_configuration_descriptor_t)) {
-    zxlogf(ERROR, "Malformed USB descriptor detected!");
+    fdf::error("Malformed USB descriptor detected!");
     return ZX_ERR_INTERNAL;
   }
   auto* config = reinterpret_cast<usb_configuration_descriptor_t*>(config_desc_.data());
   usb::UnownedInterfaceList intf_list(config, le16toh(config->w_total_length), true);
   for (const auto& intf : intf_list) {
     if (!intf.descriptor()) {
-      zxlogf(ERROR, "Malformed USB descriptor detected!");
+      fdf::error("Malformed USB descriptor detected!");
       return ZX_ERR_INTERNAL;
     }
     // We are only interested in descriptors past the last stored descriptor
@@ -328,37 +364,6 @@ zx_status_t UsbComposite::GetAdditionalDescriptorList(uint8_t last_interface_id,
   }
   return ZX_OK;
 }
-
-void UsbComposite::DdkInit(ddk::InitTxn txn) {
-  zx_status_t status = AddInterfaces();
-  if (status != ZX_OK) {
-    zxlogf(WARNING, "AddInterfaces() = %s", zx_status_get_string(status));
-  }
-  txn.Reply(status);
-}
-
-void UsbComposite::DdkUnbind(ddk::UnbindTxn txn) {
-  {
-    fbl::AutoLock lock(&lock_);
-    interfaces_.reset();
-  }
-
-  txn.Reply();
-}
-
-void UsbComposite::DdkChildPreRelease(void* child_ctx) {
-  {
-    fbl::AutoLock lock(&lock_);
-    for (size_t i = 0; i < interfaces_.size(); i++) {
-      if (interfaces_[i] == child_ctx) {
-        interfaces_.erase(i);
-        break;
-      }
-    }
-  }
-}
-
-void UsbComposite::DdkRelease() { delete this; }
 
 zx_status_t UsbComposite::Init() {
   // Parent must support USB protocol.
@@ -387,23 +392,9 @@ zx_status_t UsbComposite::Init() {
   if (status == ZX_OK && actual != desc_length) {
     status = ZX_ERR_IO;
   }
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  char name[16];
-  snprintf(name, sizeof(name), "%03d", usb_.GetDeviceId());
-
-  return DdkAdd(name, DEVICE_ADD_NON_BINDABLE);
+  return status;
 }
-
-static constexpr zx_driver_ops_t driver_ops = []() {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = UsbComposite::Create;
-  return ops;
-}();
 
 }  // namespace usb_composite
 
-ZIRCON_DRIVER(usb_composite, usb_composite::driver_ops, "zircon", "0.1");
+FUCHSIA_DRIVER_EXPORT2(usb_composite::UsbComposite);

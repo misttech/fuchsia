@@ -4,23 +4,56 @@
 
 #include "src/devices/usb/drivers/usb-composite/usb-composite.h"
 
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/zx/time.h>
 
-#include <queue>
+#include <string>
 #include <vector>
 
 #include <fbl/auto_lock.h>
-#include <fbl/ref_counted.h>
 #include <usb/descriptors.h>
 #include <zxtest/zxtest.h>
 
-#include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/devices/usb/drivers/usb-composite/test-helper.h"
 #include "src/devices/usb/drivers/usb-composite/usb-interface.h"
 
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace usb_composite {
+
+// Serves |usb_| to the driver as its parent's Banjo USB protocol.
+class Environment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    compat::DeviceServer::BanjoConfig config{ZX_PROTOCOL_USB};
+    config.callbacks[ZX_PROTOCOL_USB] = [this]() {
+      return compat::DeviceServer::GenericProtocol{
+          .ops = usb_.GetProto()->ops,
+          .ctx = usb_.GetProto()->ctx,
+      };
+    };
+    device_server_.Initialize(component::kDefaultInstance, std::nullopt, std::move(config));
+    return zx::make_result(
+        device_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs));
+  }
+
+  MockUsb& usb() { return usb_; }
+
+ private:
+  MockUsb usb_;
+  compat::DeviceServer device_server_;
+};
+
+class TestConfig final {
+ public:
+  using DriverType = UsbComposite;
+  using EnvironmentType = Environment;
+};
+
+// The name of the node that UsbComposite parents its interfaces to. It is the device id returned by
+// the parent, formatted as "%03d".
+constexpr char kCompositeNodeName[] = "010";
 
 // UsbCompositeTest is templated on the configuration descriptor data used for the test,
 // UsbCompositeTest<&kDescriptors> will set up a test fixture with a USB protocol client that
@@ -29,56 +62,38 @@ template <auto* descriptors>
 class UsbCompositeTest : public zxtest::Test {
  public:
   void SetUp() override {
-    fake_parent_->AddProtocol(ZX_PROTOCOL_USB, usb_.GetProto()->ops, usb_.GetProto()->ctx);
-
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    fake_parent_->AddFidlService(fuchsia_hardware_usb::UsbService::Name,
-                                 std::move(endpoints->client));
-
-    usb_.ExpectGetDeviceDescriptor(usb_device_descriptor_t{
-        .b_length = sizeof(usb_device_descriptor_t),
-        .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice),
-        .bcd_usb = 0,
-        .b_device_class = 12,
-        .b_device_sub_class = 14,
-        .b_device_protocol = 16,
-        .b_max_packet_size0 = 5,
-        .id_vendor = 9,
-        .id_product = 8,
-        .bcd_device = 7,
-        .i_manufacturer = 6,
-        .i_product = 5,
-        .i_serial_number = 0x12,
-        .b_num_configurations = 1,
+    driver_test_.RunInEnvironmentTypeContext([this](Environment& env) {
+      MockUsb& usb = env.usb();
+      usb.ExpectGetDeviceDescriptor(usb_device_descriptor_t{
+          .b_length = sizeof(usb_device_descriptor_t),
+          .b_descriptor_type = fidl::ToUnderlying(fdescriptor::DescriptorType::kDevice),
+          .bcd_usb = 0,
+          .b_device_class = 12,
+          .b_device_sub_class = 14,
+          .b_device_protocol = 16,
+          .b_max_packet_size0 = 5,
+          .id_vendor = 9,
+          .id_product = 8,
+          .bcd_device = 7,
+          .i_manufacturer = 6,
+          .i_product = 5,
+          .i_serial_number = 0x12,
+          .b_num_configurations = 1,
+      });
+      usb.ExpectGetConfiguration(5);
+      usb.ExpectGetConfigurationDescriptorLength(ZX_OK, 5, sizeof(*descriptors));
+      usb.ExpectGetConfigurationDescriptor(
+          ZX_OK, 5,
+          std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(descriptors),
+              reinterpret_cast<const uint8_t*>(descriptors) + sizeof(*descriptors)));
+      usb.ExpectGetDeviceId(10);
+      ExpectConfigureEndpoints(usb);
     });
-    usb_.ExpectGetConfiguration(5);
-    usb_.ExpectGetConfigurationDescriptorLength(ZX_OK, 5, sizeof(*descriptors));
-    usb_.ExpectGetConfigurationDescriptor(
-        ZX_OK, 5,
-        std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(descriptors),
-                             reinterpret_cast<const uint8_t*>(descriptors) + sizeof(*descriptors)));
-    usb_.ExpectGetDeviceId(10);
-    ExpectConfigureEndpoints();
-    ASSERT_OK(usb_composite::UsbComposite::Create(nullptr, fake_parent_.get()));
-    composite_ = fake_parent_->GetLatestChild();
-    dut_ = composite_->GetDeviceContext<usb_composite::UsbComposite>();
-
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      composite_->InitOp();
-      EXPECT_OK(composite_->WaitUntilInitReplyCalled());
-      EXPECT_TRUE(composite_->InitReplyCalled());
-    });
-    EXPECT_TRUE(result.is_ok());
+    ASSERT_OK(driver_test_.StartDriver());
   }
 
-  void TearDown() override {
-    auto result = fdf::RunOnDispatcherSync(dispatcher_->async_dispatcher(), [&]() {
-      device_async_remove(composite_);
-      mock_ddk::ReleaseFlaggedDevices(fake_parent_.get());
-    });
-    EXPECT_TRUE(result.is_ok());
-  }
+  void TearDown() override { EXPECT_OK(driver_test_.StopDriver()); }
 
   struct init_test_expected_values_t {
     std::string name;
@@ -86,39 +101,73 @@ class UsbCompositeTest : public zxtest::Test {
     const uint8_t* start;
   };
   void InitTest(std::vector<init_test_expected_values_t> expected) {
-    EXPECT_EQ(composite_->child_count(), expected.size());
-    size_t i = 0;
-    for (const auto& child : composite_->children()) {
-      EXPECT_STREQ(child->name(), expected[i].name);
+    driver_test_.RunInNodeContext([&](fdf_testing::TestNode& node) {
+      ASSERT_EQ(node.children().size(), 1u);
+      ASSERT_TRUE(node.children().contains(kCompositeNodeName));
+      fdf_testing::TestNode::ChildrenMap& interfaces =
+          node.children().at(kCompositeNodeName).children();
+      EXPECT_EQ(interfaces.size(), expected.size());
+      for (const auto& e : expected) {
+        EXPECT_TRUE(interfaces.contains(e.name), "Missing child node %s", e.name.c_str());
+      }
+    });
 
-      auto* intf = child->GetDeviceContext<UsbInterface>();
-      ASSERT_EQ(intf->UsbGetDescriptorsLength(), expected[i].length);
-      std::vector<uint8_t> desc(expected[i].length);
-      size_t actual;
-      intf->UsbGetDescriptors(desc.data(), desc.size(), &actual);
-      EXPECT_EQ(actual, desc.size());
-      EXPECT_BYTES_EQ(expected[i].start, desc.data(), desc.size());
-
-      i++;
-    }
+    // Interfaces are stored in the order they were published.
+    driver_test_.RunInDriverContext([&](UsbComposite& driver) {
+      fbl::AutoLock _(&driver.lock_);
+      ASSERT_EQ(driver.interfaces_.size(), expected.size());
+      for (size_t i = 0; i < expected.size(); i++) {
+        UsbInterface* intf = driver.interfaces_[i].get();
+        ASSERT_EQ(intf->UsbGetDescriptorsLength(), expected[i].length);
+        std::vector<uint8_t> desc(expected[i].length);
+        size_t actual;
+        intf->UsbGetDescriptors(desc.data(), desc.size(), &actual);
+        EXPECT_EQ(actual, desc.size());
+        EXPECT_BYTES_EQ(expected[i].start, desc.data(), desc.size());
+      }
+    });
   }
 
   void SetClaimed(uint8_t interface_id) {
-    fbl::AutoLock _(&dut_->lock_);
-    dut_->interface_statuses_[interface_id] = UsbComposite::InterfaceStatus::CLAIMED;
+    driver_test_.RunInDriverContext([interface_id](UsbComposite& driver) {
+      fbl::AutoLock _(&driver.lock_);
+      driver.interface_statuses_[interface_id] = UsbComposite::InterfaceStatus::CLAIMED;
+    });
+  }
+
+  // Waits until the child node |name| has been removed and the driver has destroyed the
+  // corresponding interface.
+  void WaitForInterfaceRemoved(const std::string& name) {
+    while (true) {
+      bool node_present = driver_test_.RunInNodeContext<bool>([&](fdf_testing::TestNode& node) {
+        auto composite = node.children().find(kCompositeNodeName);
+        if (composite == node.children().end()) {
+          return false;
+        }
+        return composite->second.children().contains(name);
+      });
+      bool removal_pending = driver_test_.RunInDriverContext<bool>([](UsbComposite& driver) {
+        fbl::AutoLock _(&driver.lock_);
+        return !driver.removed_interfaces_.empty();
+      });
+      if (!node_present && !removal_pending) {
+        return;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+  }
+
+  // Runs |task| with the parent's mock USB protocol.
+  void WithUsb(fit::callback<void(MockUsb&)> task) {
+    driver_test_.RunInEnvironmentTypeContext(
+        [task = std::move(task)](Environment& env) mutable { task(env.usb()); });
   }
 
  protected:
-  MockUsb usb_;
-  MockDevice* composite_;
-  usb_composite::UsbComposite* dut_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
 
  private:
-  void ExpectConfigureEndpoints();
-
-  std::shared_ptr<MockDevice> fake_parent_ = MockDevice::FakeRootParent();
-  fdf::UnownedSynchronizedDispatcher dispatcher_ =
-      fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
+  void ExpectConfigureEndpoints(MockUsb& usb);
 };
 
 constexpr struct interface_config_t {
@@ -299,10 +348,10 @@ constexpr struct interface_config_t {
 using NoAssociationCompositeTest = UsbCompositeTest<&kTestInterface>;
 
 template <>
-void NoAssociationCompositeTest::ExpectConfigureEndpoints() {
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_2, kTestInterface.ss_companion2, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_1, kTestInterface.ss_companion1, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_1, {}, true);
+void NoAssociationCompositeTest::ExpectConfigureEndpoints(MockUsb& usb) {
+  usb.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_2, kTestInterface.ss_companion2, true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep1_1, kTestInterface.ss_companion1, true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_1, {}, true);
 }
 
 TEST_F(NoAssociationCompositeTest, InitTest) {
@@ -328,45 +377,48 @@ TEST_F(NoAssociationCompositeTest, InitTest) {
 }
 
 TEST_F(NoAssociationCompositeTest, ClaimInterfaceTest) {
-  // GetInterfaceById failed
-  EXPECT_EQ(dut_->ClaimInterface(3), ZX_ERR_INVALID_ARGS);
+  driver_test_.RunInDriverContext([](UsbComposite& driver) {
+    // GetInterfaceById failed
+    EXPECT_EQ(driver.ClaimInterface(3), ZX_ERR_INVALID_ARGS);
 
-  // Success
-  MockDevice* intf = nullptr;
-  for (const auto& child : composite_->children()) {
-    if (std::strcmp(child->name(), "ifc-002")) {
-      intf = child.get();
-      break;
-    }
-  }
-  ASSERT_NOT_NULL(intf);
-  EXPECT_OK(dut_->ClaimInterface(2));
-  intf->AsyncRemoveCalled();
+    // Success
+    EXPECT_OK(driver.ClaimInterface(2));
+  });
+  // Claiming an interface that has a child node removes that node, after which the interface is
+  // destroyed.
+  WaitForInterfaceRemoved("ifc-002");
 
   // Already claimed.
   SetClaimed(1);
-  EXPECT_EQ(dut_->ClaimInterface(1), ZX_ERR_ALREADY_BOUND);
+  driver_test_.RunInDriverContext(
+      [](UsbComposite& driver) { EXPECT_EQ(driver.ClaimInterface(1), ZX_ERR_ALREADY_BOUND); });
 }
 
 TEST_F(NoAssociationCompositeTest, SetInterfaceTest) {
   // Success
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_alt1_1, {}, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_1, {}, false);
-  usb_.ExpectControlOut(ZX_OK, kStandardInterfaceOut,
-                        fidl::ToUnderlying(fdescriptor::StandardRequest::kSetInterface), 1, 1,
-                        ZX_TIME_INFINITE, std::vector<uint8_t>{});
-  EXPECT_OK(dut_->SetInterface(1, 1));
+  WithUsb([](MockUsb& usb) {
+    usb.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_alt1_1, {}, true);
+    usb.ExpectEnableEndpoint(ZX_OK, kTestInterface.ep2_1, {}, false);
+    usb.ExpectControlOut(ZX_OK, kStandardInterfaceOut,
+                         fidl::ToUnderlying(fdescriptor::StandardRequest::kSetInterface), 1, 1,
+                         ZX_TIME_INFINITE, std::vector<uint8_t>{});
+  });
+  driver_test_.RunInDriverContext([](UsbComposite& driver) {
+    EXPECT_OK(driver.SetInterface(1, 1));
 
-  // interface_id not found
-  EXPECT_EQ(dut_->SetInterface(3, 1), ZX_ERR_INVALID_ARGS);
+    // interface_id not found
+    EXPECT_EQ(driver.SetInterface(3, 1), ZX_ERR_INVALID_ARGS);
+  });
 }
 
 TEST_F(NoAssociationCompositeTest, GetAdditionalDescriptorListTest) {
-  uint8_t desc_list[sizeof(kTestInterface.interface3)];
-  size_t actual;
-  EXPECT_OK(dut_->GetAdditionalDescriptorList(1, desc_list, sizeof(desc_list), &actual));
-  EXPECT_EQ(actual, sizeof(desc_list));
-  EXPECT_BYTES_EQ(desc_list, &kTestInterface.interface3, actual);
+  driver_test_.RunInDriverContext([](UsbComposite& driver) {
+    uint8_t desc_list[sizeof(kTestInterface.interface3)];
+    size_t actual;
+    EXPECT_OK(driver.GetAdditionalDescriptorList(1, desc_list, sizeof(desc_list), &actual));
+    EXPECT_EQ(actual, sizeof(desc_list));
+    EXPECT_BYTES_EQ(desc_list, &kTestInterface.interface3, actual);
+  });
 }
 
 constexpr struct assoc_config_t {
@@ -560,10 +612,10 @@ constexpr struct assoc_config_t {
 using AssociationCompositeTest = UsbCompositeTest<&kTestAssociation>;
 
 template <>
-void AssociationCompositeTest::ExpectConfigureEndpoints() {
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep1_2, kTestAssociation.ss_companion2, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep1_1, kTestAssociation.ss_companion1, true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep2_1, {}, true);
+void AssociationCompositeTest::ExpectConfigureEndpoints(MockUsb& usb) {
+  usb.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep1_2, kTestAssociation.ss_companion2, true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep1_1, kTestAssociation.ss_companion1, true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestAssociation.ep2_1, {}, true);
 }
 
 TEST_F(AssociationCompositeTest, InitTest) {
@@ -786,12 +838,12 @@ constexpr struct two_assoc_config_t {
 using TwoAssociationCompositeTest = UsbCompositeTest<&kTestTwoAssociation>;
 
 template <>
-void TwoAssociationCompositeTest::ExpectConfigureEndpoints() {
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_2, kTestTwoAssociation.ss_companion2,
-                            true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_1, kTestTwoAssociation.ss_companion1,
-                            true);
-  usb_.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep2_1, {}, true);
+void TwoAssociationCompositeTest::ExpectConfigureEndpoints(MockUsb& usb) {
+  usb.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_2, kTestTwoAssociation.ss_companion2,
+                           true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep1_1, kTestTwoAssociation.ss_companion1,
+                           true);
+  usb.ExpectEnableEndpoint(ZX_OK, kTestTwoAssociation.ep2_1, {}, true);
 }
 
 TEST_F(TwoAssociationCompositeTest, InitTest) {

@@ -5,24 +5,27 @@
 #include "src/devices/usb/drivers/usb-composite/usb-interface.h"
 
 #include <lib/async-loop/cpp/loop.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/zx/time.h>
 
 #include <queue>
 #include <vector>
 
+#include <fbl/alloc_checker.h>
 #include <zxtest/zxtest.h>
 
-#include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/devices/usb/drivers/usb-composite/test-helper.h"
 
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 namespace usb_composite {
 
-void UsbComposite::DdkInit(ddk::InitTxn txn) { txn.Reply(ZX_OK); }
-void UsbComposite::DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
-void UsbComposite::DdkChildPreRelease(void* child_ctx) {}
-void UsbComposite::DdkRelease() { delete this; }
+// usb-composite.cc isn't compiled into this test, so stub out the driver lifecycle. The composite
+// is never started here.
+UsbComposite::UsbComposite() : fdf::DriverBase2(kDriverName) {}
+UsbComposite::~UsbComposite() = default;
+zx::result<> UsbComposite::Start(fdf::DriverContext context) { return zx::error(ZX_ERR_INTERNAL); }
+void UsbComposite::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 std::queue<std::tuple<uint8_t, uint8_t*, size_t>> expect_get_additional_descriptor_list_;
 void ExpectGetAdditionalDescriptorList(uint8_t last_interface_id, uint8_t* desc_list,
@@ -64,33 +67,20 @@ zx_status_t UsbComposite::SetInterface(uint8_t interface_id, uint8_t alt_setting
   return ZX_OK;
 }
 
-std::atomic_uint32_t interface_count_ = 0;
-void UsbComposite::RemoveInterface(UsbInterface* interface) {
-  EXPECT_GT(interface_count_.load(), 0);
-  interface_count_--;
-}
+// Only called once a published interface's child node is removed, which these tests never do.
+void UsbComposite::RemoveInterface(UsbInterface* interface) { ADD_FAILURE(); }
 
 template <auto* descriptors>
 class UsbInterfaceTest : public zxtest::Test {
  public:
-  void SetUp() override {
-    fake_parent_->AddProtocol(ZX_PROTOCOL_USB, usb_.GetProto()->ops, usb_.GetProto()->ctx);
-    auto composite = std::make_unique<UsbComposite>(fake_parent_.get());
-    EXPECT_OK(composite->DdkAdd("composite", DEVICE_ADD_NON_BINDABLE));
-    composite.release();
-    composite_dev_ = fake_parent_->GetLatestChild();
-    composite_ = composite_dev_->GetDeviceContext<UsbComposite>();
-  }
-
   void TearDown() override {
     EXPECT_TRUE(expect_get_additional_descriptor_list_.empty());
     EXPECT_TRUE(expect_claim_interface_.empty());
     EXPECT_TRUE(expect_set_interface_.empty());
 
-    device_async_remove(composite_dev_);
-    mock_ddk::ReleaseFlaggedDevices(fake_parent_.get());
-
-    EXPECT_EQ(interface_count_.load(), 0);
+    // The interface holds a pointer to the composite, so it must go first.
+    dut_.reset();
+    composite_.reset();
   }
 
   void InitTest();
@@ -108,40 +98,42 @@ class UsbInterfaceTest : public zxtest::Test {
  protected:
   MockUsb usb_;
 
-  usb_composite::UsbInterface* dut_;
   ddk::UsbProtocolClient usb_client_;
-  UsbComposite* composite_;
+  // Never started; only used for its descriptors and the stubbed methods above.
+  std::unique_ptr<UsbComposite> composite_ = std::make_unique<UsbComposite>();
   ddk::UsbCompositeProtocolClient composite_client_;
+  std::unique_ptr<usb_composite::UsbInterface> dut_;
 
  private:
   template <typename T>
   void SetUpInterface(const T* descriptor, size_t desc_length) {
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb::Usb>();
     ASSERT_OK(endpoints);
-    std::unique_ptr<UsbInterface> ifc;
-    EXPECT_OK(UsbInterface::Create(
-        composite_dev_, composite_, ddk::UsbProtocolClient(fake_parent_.get()),
-        std::move(endpoints->client), descriptor, desc_length, loop_.dispatcher(), &ifc));
-    ASSERT_NOT_NULL(ifc);
+    zx::result ifc = UsbInterface::Create(composite_.get(), ddk::UsbProtocolClient(usb_.GetProto()),
+                                          std::move(endpoints->client), descriptor, desc_length,
+                                          loop_.dispatcher());
+    ASSERT_OK(ifc);
+    dut_ = std::move(ifc.value());
 
-    EXPECT_OK(ifc->DdkAdd("test-interface", DEVICE_ADD_NON_BINDABLE));
-    ifc.release();
-    interface_count_.fetch_add(1);
-    auto* child = composite_dev_->GetLatestChild();
-    dut_ = child->GetDeviceContext<UsbInterface>();
-
-    usb_client_ = ddk::UsbProtocolClient(child);
+    // Fetch the Banjo protocols the same way a child driver would, through the compat callbacks.
+    compat::DeviceServer::GenericProtocol generic_usb = dut_->usb_banjo_server_.callback()();
+    usb_protocol_t usb_proto;
+    usb_proto.ops = static_cast<const usb_protocol_ops_t*>(generic_usb.ops);
+    usb_proto.ctx = generic_usb.ctx;
+    usb_client_ = ddk::UsbProtocolClient(&usb_proto);
     ASSERT_TRUE(usb_client_.is_valid());
 
-    usb_composite_protocol_t proto;
-    dut_->DdkGetProtocol(ZX_PROTOCOL_USB_COMPOSITE, &proto);
-    composite_client_ = ddk::UsbCompositeProtocolClient(&proto);
+    compat::DeviceServer::GenericProtocol generic_composite =
+        dut_->usb_composite_banjo_server_.callback()();
+    usb_composite_protocol_t composite_proto;
+    composite_proto.ops = static_cast<const usb_composite_protocol_ops_t*>(generic_composite.ops);
+    composite_proto.ctx = generic_composite.ctx;
+    composite_client_ = ddk::UsbCompositeProtocolClient(&composite_proto);
     ASSERT_TRUE(composite_client_.is_valid());
   }
 
+  fdf_testing::ScopedGlobalLogger logger_;
   async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
-  std::shared_ptr<MockDevice> fake_parent_ = MockDevice::FakeRootParent();
-  MockDevice* composite_dev_;
 };
 
 // The interface configuration corresponding to a Interface with two endpoints and one alternate

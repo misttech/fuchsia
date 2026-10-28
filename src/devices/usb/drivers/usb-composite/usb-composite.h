@@ -5,35 +5,35 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_USB_COMPOSITE_USB_COMPOSITE_H_
 #define SRC_DEVICES_USB_DRIVERS_USB_COMPOSITE_USB_COMPOSITE_H_
 
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fuchsia/hardware/usb/cpp/banjo.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/incoming/cpp/namespace.h>
 
-#include <ddktl/device.h>
-#include <ddktl/init-txn.h>
+#include <memory>
+#include <vector>
+
 #include <fbl/array.h>
 #include <fbl/mutex.h>
-#include <fbl/vector.h>
 #include <usb/usb.h>
 
 namespace usb_composite {
 
-class UsbComposite;
 class UsbInterface;
-using UsbCompositeType =
-    ddk::Device<UsbComposite, ddk::Initializable, ddk::ChildPreReleaseable, ddk::Unbindable>;
 
-// This class represents a USB composite device and manages creating devmgr devices
-// for multiple USB interfaces.
-class UsbComposite : public UsbCompositeType {
+// This class represents a USB composite device and manages creating child nodes for multiple USB
+// interfaces.
+class UsbComposite : public fdf::DriverBase2 {
  public:
-  UsbComposite(zx_device_t* parent) : UsbCompositeType(parent), usb_(parent) {}
+  static constexpr std::string_view kDriverName = "usb-composite";
 
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
+  // Defined out of line because UsbInterface is incomplete here.
+  UsbComposite();
+  ~UsbComposite() override;
 
-  // Device protocol implementation.
-  void DdkInit(ddk::InitTxn txn);
-  void DdkUnbind(ddk::UnbindTxn txn);
-  void DdkChildPreRelease(void* child_ctx);
-  void DdkRelease();
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   zx_status_t ClaimInterface(uint8_t interface_id);
   zx_status_t SetInterface(uint8_t interface_id, uint8_t alt_setting);
@@ -45,6 +45,8 @@ class UsbComposite : public UsbCompositeType {
     return reinterpret_cast<usb_configuration_descriptor_t*>(config_desc_.data());
   }
 
+  // Called by |interface| once its child node has been removed. Destroys |interface|. Must be
+  // called on the driver dispatcher.
   void RemoveInterface(UsbInterface* interface);
 
  private:
@@ -64,22 +66,44 @@ class UsbComposite : public UsbCompositeType {
 
   zx_status_t Init();
 
+  // Publishes |interface| as a child node named |name| with the given bind |properties|.
+  zx_status_t PublishInterface(std::unique_ptr<UsbInterface> interface, const char* name,
+                               std::vector<fuchsia_driver_framework::NodeProperty2> properties);
   zx_status_t AddInterface(const usb_interface_descriptor_t* interface_desc, size_t length);
   zx_status_t AddInterfaceAssoc(const usb_interface_assoc_descriptor_t* assoc_desc, size_t length);
   zx_status_t AddInterfaces();
   UsbInterface* GetInterfaceById(uint8_t interface_id) __TA_REQUIRES(lock_);
   bool RemoveInterfaceById(uint8_t interface_id) __TA_REQUIRES(lock_);
 
+  // Removes |interface| from |interfaces_| or |removed_interfaces_| and returns ownership of it.
+  std::unique_ptr<UsbInterface> TakeInterface(UsbInterface* interface) __TA_REQUIRES(lock_);
+
+  // Destroys all interfaces, which removes their child nodes and services. Must be called on the
+  // driver dispatcher.
+  void RemoveAllInterfaces() __TA_EXCLUDES(lock_);
+
+  // The driver's incoming namespace. Used to connect each interface to the parent's
+  // fuchsia.hardware.usb/Usb protocol.
+  std::shared_ptr<fdf::Namespace> incoming_;
+
   // Our parent's USB protocol.
-  const ddk::UsbProtocolClient usb_;
-  // Array of all our USB interfaces.
-  fbl::Vector<UsbInterface*> interfaces_ __TA_GUARDED(lock_);
+  ddk::UsbProtocolClient usb_;
+
+  fidl::ClientEnd<fuchsia_driver_framework::Node> composite_node_;
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> composite_node_controller_;
+
+  // All of our published USB interfaces.
+  std::vector<std::unique_ptr<UsbInterface>> interfaces_ __TA_GUARDED(lock_);
+
+  // Interfaces whose node removal has been requested (e.g. because another interface claimed
+  // them) but whose child driver may still be using them. They are destroyed in
+  // RemoveInterface() once the node is gone.
+  std::vector<std::unique_ptr<UsbInterface>> removed_interfaces_ __TA_GUARDED(lock_);
 
   InterfaceStatus interface_statuses_[UINT8_MAX] __TA_GUARDED(lock_) = {};
 
   usb_device_descriptor_t device_desc_;
   fbl::Array<uint8_t> config_desc_;
-
   fbl::Mutex lock_;
 };
 
