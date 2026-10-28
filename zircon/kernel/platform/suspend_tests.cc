@@ -241,7 +241,7 @@ bool cpu_suspend_one_wakes_another() {
 //
 // Note, this test only exercises the resume path that reinitializes the CPU's interrupt state on
 // platforms where suspending a CPU may power it down.
-[[maybe_unused]] bool cpu_suspend_sync_exec() {
+bool cpu_suspend_sync_exec() {
   BEGIN_TEST;
 
   constexpr zx_duration_mono_t kTimeout = ZX_SEC(10);
@@ -299,6 +299,17 @@ bool cpu_suspend_one_wakes_another() {
   const cpu_num_t cpu_b = BOOT_CPU_ID;
   active_cpus &= ~cpu_num_to_mask(BOOT_CPU_ID);
   const cpu_num_t cpu_a = remove_cpu_from_mask(active_cpus);
+
+  // Run this thread on CPU B for the duration of the test.  Otherwise, this thread may be running
+  // on CPU A when it resumes thread A.  If thread A then preempts it before it has resumed thread
+  // B, thread A would spin, with interrupts disabled, waiting for thread B, which this thread can
+  // no longer resume because it is stuck in CPU A's run queue.  CPU A would make no progress until
+  // another CPU happened to steal this thread, and the lockup detector would report CPU A.
+  auto restore_affinity = fit::defer(
+      [previous_affinity = Thread::Current::Get()->SetCpuAffinity(cpu_num_to_mask(cpu_b))]() {
+        Thread::Current::Get()->SetCpuAffinity(previous_affinity);
+      });
+  ASSERT_EQ(cpu_b, arch_curr_cpu_num());
 
   Arg arg{.target = cpu_a};
 
@@ -387,8 +398,7 @@ UNITTEST_START_TESTCASE(platform_suspend_tests)
 UNITTEST("cpu_suspend_not_supported", cpu_suspend_not_supported)
 UNITTEST("cpu_suspend_pending_ipi", cpu_suspend_pending_ipi)
 UNITTEST("cpu_suspend_one_wakes_another", cpu_suspend_one_wakes_another)
-// TODO(https://fxbug.dev/578943720): Re-enable once lockup_detector OOPS on Sorrel is resolved.
-// UNITTEST("cpu_suspend_sync_exec", cpu_suspend_sync_exec)
+UNITTEST("cpu_suspend_sync_exec", cpu_suspend_sync_exec)
 UNITTEST("system_suspend_not_supported", system_suspend_not_supported)
 UNITTEST("system_suspend_pending_ipi", system_suspend_pending_ipi)
 UNITTEST_END_TESTCASE(platform_suspend_tests, "platform_suspend_tests", "platform suspend tests")
