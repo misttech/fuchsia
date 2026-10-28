@@ -459,6 +459,9 @@ function diff_file_relpath() {
     # Most archives carry timestamp information of their contents.
     # One way to make this reproducible is to force a magic date/time
     # while archiving, which effectively removes time variance.
+    # tarmaker copies file contents and mtimes from //prebuilt in the
+    # checkout, so these match between two builds of the same checkout.
+    qemu.tar.gz | femu.tar.gz) expect="match"; diff_binary "$left" "$right" ;;
     *.tar | *.tar.gz | *.tgz) expect="diff"; diff_binary "$left" "$right" ;;
 
     # Ignore ninja logs, as they bear timestamps,

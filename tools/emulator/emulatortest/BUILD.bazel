@@ -1,0 +1,35 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+go_library(
+    name = "emulatortest",
+    testonly = True,
+    srcs = ["emulatortest.go"],
+    # @bazel2gn:skip
+    data = ["//tools/emulator:test_data"] + select({
+        # emulator.ResizeRawImage() callers use simg2img to resize sparse
+        # images.
+        "//build/bazel/platforms:is_linux_x64": ["//src/storage/lib/sparse/rust:simg2img_files"],
+        "//conditions:default": [],
+    }),
+    importpath = "go.fuchsia.dev/fuchsia/tools/emulator/emulatortest",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/bringup/bin/console-launcher/qemu-tests:__pkg__",
+        "//src/devices/block/drivers/ufs/test/e2e:__pkg__",
+        "//src/recovery/simulator:__pkg__",
+        "//src/tests:__subpackages__",
+        "//zircon/system/ulib/uart/test:__subpackages__",
+    ],
+    deps = [
+        "//tools/emulator",
+        "//tools/lib/productbundle",
+        "//tools/virtual_device:proto",
+    ],
+)
