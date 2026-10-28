@@ -1,0 +1,47 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_check_cfg_build_flags.bzl", "rustc_check_cfg_build_flags")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_check_cfg_build_flags(
+    name = "check_cfg_flags",
+    cfgs = ['rcu_backend, values("rseq", "atomic")'],
+)
+
+rustc_binary(
+    name = "bin_rseq",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    build_flags = [
+        ":check_cfg_flags",
+        "//build/config/rust/lints:deny_unused_results",
+    ],
+    crate_name = "fuchsia_rcu_benchmarks_rseq",
+    edition = "2024",
+    rustc_flags = ["--cfg=rcu_backend=\"rseq\""],
+    deps = [
+        "//src/developer/fuchsia-criterion",
+        "//src/lib/fuchsia-rcu",
+    ],
+)
+
+rustc_binary(
+    name = "bin_atomic",
+    testonly = True,
+    srcs = ["src/main.rs"],
+    build_flags = [
+        ":check_cfg_flags",
+        "//build/config/rust/lints:deny_unused_results",
+    ],
+    crate_name = "fuchsia_rcu_benchmarks_atomic",
+    edition = "2024",
+    rustc_flags = ["--cfg=rcu_backend=\"atomic\""],
+    deps = [
+        "//src/developer/fuchsia-criterion",
+        "//src/lib/fuchsia-rcu:fuchsia-rcu-atomic",
+    ],
+)
