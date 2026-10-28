@@ -8,10 +8,11 @@ import logging
 import os
 import random
 import tempfile
+import uuid
 
 import fuchsia_base_test
 from honeydew.device_classes import android_device
-from mobly import test_runner
+from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -23,7 +24,8 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         num_iterations (int): Number of random commands to run.
 
     Optional Mobly Test Params:
-        random_seed (int): Seed for the random number generator for test reproducibility.
+        random_seed (int): Seed for the random number generator for test
+            reproducibility.
     """
 
     dut: android_device.AndroidDevice
@@ -43,23 +45,21 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         assert isinstance(self.dut, android_device.AndroidDevice)
-        # Ensure ADB is supported and enabled on this device before starting the test
-        # (raises NotSupportedError or NotEnabledError otherwise).
+        # Ensure ADB is supported and enabled on this device.
         _ = self.dut.adb
+
         # TODO(b/564946370): Remove this unbind once AndroidDevice.adb's
-        # temporary su_root monkey-patch is removed.
+        # root/unroot/use_adb_root match Honeydew ADB transport.
         for attr in ("root", "unroot", "use_adb_root"):
             self.dut.adb.__dict__.pop(attr, None)
 
         # Seed the random generator for reproducibility.
-        # Allow seeding via user_params.
         seed = self.user_params.get("random_seed")
         if seed is None:
-            # Generate a random seed
             seed = random.randrange(1000000)
         else:
             seed = int(seed)
-        _LOGGER.info(f"Using random seed: {seed}")
+        _LOGGER.info("Using random seed: %d", seed)
         random.seed(seed)
 
         # Define all candidate command methods
@@ -78,7 +78,7 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
             _LOGGER.info("ADB logcat is supported")
         except Exception as e:
             _LOGGER.warning(
-                f"ADB logcat is not supported: {e}. Skipping in random test."
+                "ADB logcat is not supported: %s. Skipping in random test.", e
             )
 
     async def _test_logic(self, iteration: int) -> None:
@@ -97,12 +97,17 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
     # --- Individual Command Implementations ---
 
     async def _cmd_shell_echo(self) -> None:
+        """Runs a shell echo command and asserts expected stdout."""
         _LOGGER.info("Running: adb shell echo")
         output = self.dut.adb.run(["shell", "echo", "hello"])
-        if "hello" not in output:
-            raise Exception(f"Unexpected output: {output}")
+        asserts.assert_in(
+            "hello",
+            output,
+            msg=f"Unexpected output from adb shell echo: {output}",
+        )
 
     async def _cmd_reboot(self) -> None:
+        """Reboots the device via ADB and waits for recovery."""
         _LOGGER.info("Running: adb reboot")
         self.dut.ffx.notify_intentional_disconnect()
         self.dut.adb.run(["reboot"])
@@ -114,6 +119,7 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Device is back online after reboot.")
 
     async def _cmd_root_unroot_toggle(self) -> None:
+        """Toggles between root and shell user via adb root/unroot."""
         _LOGGER.info("Running: adb root/unroot toggle")
         if self.dut.adb.is_su_root:
             self.dut.adb.su_unroot()
@@ -127,19 +133,24 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Switching to root")
         self.dut.adb.root()
         output = self.dut.adb.run(["shell", "id"])
-        if "uid=0(root)" not in output:
-            _LOGGER.warning(
-                f"adb root did not switch to root user. output: {output}"
-            )
+        asserts.assert_in(
+            "uid=0(root)",
+            output,
+            msg=f"Expected root user (uid=0) but got: {output}",
+        )
 
     async def _unroot(self) -> None:
         _LOGGER.info("Switching to unroot")
         self.dut.adb.unroot()
         output = self.dut.adb.run(["shell", "id"])
-        if "uid=2000(shell)" not in output:
-            raise Exception(f"Expected shell user (uid=2000) but got: {output}")
+        asserts.assert_in(
+            "uid=2000(shell)",
+            output,
+            msg=f"Expected shell user (uid=2000) but got: {output}",
+        )
 
     async def _cmd_su_root_unroot_toggle(self) -> None:
+        """Toggles between su_root and su_unroot."""
         _LOGGER.info("Running: adb su_root/su_unroot toggle")
         if self.dut.adb.is_root:
             await self._unroot()
@@ -152,59 +163,78 @@ class AdbRandomStressTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Switching to su_root")
         self.dut.adb.su_root()
         output = self.dut.adb.run(["shell", "id"])
-        if "uid=0(root)" not in output:
-            raise Exception(
-                f"Expected root user (uid=0) via su_root but got: {output}"
-            )
+        asserts.assert_in(
+            "uid=0(root)",
+            output,
+            msg=f"Expected root user (uid=0) via su_root but got: {output}",
+        )
 
     async def _su_unroot(self) -> None:
         _LOGGER.info("Switching to su_unroot")
         self.dut.adb.su_unroot()
         output = self.dut.adb.run(["shell", "id"])
-        if "uid=2000(shell)" not in output:
-            raise Exception(
-                f"Expected shell user (uid=2000) after su_unroot but got: {output}"
-            )
+        asserts.assert_in(
+            "uid=2000(shell)",
+            output,
+            msg=(
+                f"Expected shell user (uid=2000) after su_unroot but got: "
+                f"{output}"
+            ),
+        )
 
     async def _cmd_push_pull(self) -> None:
+        """Pushes a file to device, pulls it back, and verifies content."""
         _LOGGER.info("Running: adb push/pull")
-        content = f"Random content {random.randint(1000, 9999)}"
-        remote_file = "/tmp/adb_test_rand.txt"
+        unique_token = uuid.uuid4().hex[:8]
+        content = (
+            f"Random content {random.randint(1000, 9999)} - {unique_token}\n"
+        )
+        remote_file = f"/tmp/adb_test_rand_{unique_token}.txt"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            local_file = os.path.join(tmpdir, "adb_test_rand.txt")
-            with open(local_file, "w") as f:
+            local_file = os.path.join(
+                tmpdir, f"adb_test_rand_{unique_token}.txt"
+            )
+            with open(local_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
             try:
                 self.dut.adb.run(["push", local_file, remote_file])
 
-                # To test pull, we want to make sure we are pulling to a clean state.
-                # We can remove the local file first.
+                # To test pull, ensure pulling into a clean state by removing
+                # the local file first.
                 os.remove(local_file)
 
                 self.dut.adb.run(["pull", remote_file, local_file])
-                with open(local_file, "r") as f_in:
+                with open(local_file, "r", encoding="utf-8") as f_in:
                     pulled_content = f_in.read()
 
-                if pulled_content != content:
-                    raise Exception(
-                        f"Content mismatch: {pulled_content} != {content}"
-                    )
+                asserts.assert_equal(
+                    pulled_content,
+                    content,
+                    msg=f"Content mismatch: {pulled_content} != {content}",
+                )
             finally:
-                # We only need to clean up remote file here.
-                # Local files in tmpdir are automatically cleaned up when exiting the 'with' block.
+                # Clean up the remote file; local files in tmpdir are
+                # automatically removed on exiting the with block.
                 try:
                     self.dut.adb.run(["shell", "rm", "-f", remote_file])
                 except Exception as e:
-                    _LOGGER.warning(f"Failed to clean up remote file: {e}")
+                    _LOGGER.warning(
+                        "Failed to clean up remote file %s: %s",
+                        remote_file,
+                        e,
+                    )
 
     async def _cmd_logcat(self) -> None:
+        """Runs adb logcat -d and verifies non-empty output."""
         _LOGGER.info("Running: adb logcat -d")
         output = self.dut.adb.run(["logcat", "-d"])
-        # We just verify it returns something (or at least doesn't error)
+        asserts.assert_is_not_none(output, msg="Logcat output was None")
         _LOGGER.info(
-            f"Logcat returned {len(output)} chars of output (preview: {output[:100]}...)"
+            "Logcat returned %d chars of output (preview: %s...)",
+            len(output),
+            output[:100],
         )
 
 
