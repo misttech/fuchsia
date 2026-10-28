@@ -128,11 +128,6 @@
 	url = https://chromium.googlesource.com/external/github.com/g-truc/glm
 	name = external/github.com/g-truc/glm
 	ignore = all
-[submodule "third_party/go"]
-	path = third_party/go
-	url = https://fuchsia.googlesource.com/third_party/go
-	name = third_party/go
-	ignore = all
 [submodule "third_party/googletest/src"]
 	path = third_party/googletest/src
 	url = https://fuchsia.googlesource.com/third_party/github.com/google/googletest
