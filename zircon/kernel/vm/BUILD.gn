@@ -96,14 +96,11 @@ kernel_bindgen_crate("evictor-bindings") {
     "Evictor_EvictionLevel",
     "Evictor_EvictionTarget",
     "Evictor_EvictedPageCounts",
-    "Evictor_EvictionResult",
     "ktl::atomic",
     "std::atomic",
   ]
   type_blocklist = [
     "AutounsignalEvent",
-    "Evictor_TestFreePagesFunction",
-    "Evictor_TestReclaimFunction",
     "Thread",
   ]
   opaque_types = [
@@ -1696,7 +1693,6 @@ source_set("tests") {
   sources = [
     "unittests/aspace_unittest.cc",
     "unittests/continuous_attribution_unittest.cc",
-    "unittests/evictor_unittest.cc",
     "unittests/slab_unittest.cc",
     "unittests/test_helper.cc",
     "unittests/test_helper_ffi.cc",

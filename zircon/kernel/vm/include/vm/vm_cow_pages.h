@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_COW_PAGES_H_
 
 #include <assert.h>
+#include <lib/fit/result.h>
 #include <lib/page/size.h>
 #include <lib/user_copy/user_ptr.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -121,6 +122,7 @@ enum class VmCowReclaimFailure : uint8_t {
   IncorrectPage,
   Other,
 };
+using VmCowReclaimResult = fit::result<VmCowReclaimFailure, VmCowReclaimSuccess>;
 
 enum class PageSourceType : uint8_t {
   // The VmCowPages is not directly backed by a page_source_.
