@@ -668,7 +668,8 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   void BindLayerImage(LayerObject& layer, allocation::GlobalImageId id);
 
   // Releases `ids` through the buffer collection importers and forgets their
-  // import tokens.  Called when a frame's release fence signals.
+  // import tokens. Called when a frame's release fence signals, or synchronously
+  // from `ReleaseImageImmediately()` and `ReleaseImageImmediately2()`.
   void ReleaseImages(std::span<const allocation::GlobalImageId> ids);
 
   // TODO(https://fxbug.dev/523371761): after transition to Flatland2 UberStruct schema is complete,

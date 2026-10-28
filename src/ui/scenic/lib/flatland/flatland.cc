@@ -11,8 +11,6 @@
 #include <lib/async/time.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
-#include <lib/ui/scenic/cpp/view_identity.h>
-#include <lib/zx/eventpair.h>
 #include <limits.h>
 #include <zircon/errors.h>
 
@@ -24,7 +22,6 @@
 #include <span>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -37,7 +34,6 @@
 #include "src/ui/scenic/lib/utils/validate_eventpair.h"
 
 #include <glm/gtc/constants.hpp>
-#include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 using fuchsia_ui_composition::FlatlandError;
@@ -2944,10 +2940,8 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
     image_objects_.erase(image_it);
   }
 
-  // Release the image from all importers immediately.
-  for (auto& importer : buffer_collection_importers_) {
-    importer->ReleaseBufferImage(identifier);
-  }
+  // Release the image from all importers immediately, and drop its import token.
+  ReleaseImages({&identifier, 1});
 }
 
 void Flatland::ReleaseImageImmediately2(ReleaseImageImmediately2RequestView request,
@@ -2955,8 +2949,6 @@ void Flatland::ReleaseImageImmediately2(ReleaseImageImmediately2RequestView requ
   ReleaseImageImmediately2(ImageId(request->image_id.value));
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".  See TODO in CreateLayer.
 void Flatland::ReleaseImageImmediately2(ImageId image_id) {
   if (!config_.use_trusted_flatland_api) {
     error_reporter_->ERROR()
@@ -2972,8 +2964,46 @@ void Flatland::ReleaseImageImmediately2(ImageId image_id) {
     return;
   }
 
-  error_reporter_->ERROR() << "ReleaseImageImmediately2: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+  if (image_id == kInvalidImageId) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately2 called with image_id " << kInvalidImageId;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = images2_.find(image_id);
+  if (it == images2_.end()) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately2 failed, image_id " << image_id
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  const allocation::GlobalImageId global_id = it->second;
+  images2_.erase(it);
+
+  // Forcibly unbind the image from every layer that references it. Each layer keeps its mode and
+  // properties, so it draws nothing until its next `SetLayerImage()`. The binding's release fence
+  // is staged for the next `Present()`.
+  for (auto& [handle, layer] : layer_objects_) {
+    if (layer.image_mode.image_id == global_id) {
+      UnbindLayerImage(layer);
+    }
+  }
+
+  // Immediate release bypasses the deferred release in `ReleaseImageObject()` on purpose: this is
+  // the trusted, synchronous path. With every binding gone, the only remaining ref is the one held
+  // by the `images2_` entry erased above.
+  {
+    auto image_it = image_objects_.find(global_id);
+    FX_CHECK(image_it != image_objects_.end() && image_it->second.ref_count == 1);
+    image_objects_.erase(image_it);
+  }
+
+  // Release the image from all importers immediately, and drop its import token.
+  ReleaseImages({&global_id, 1});
+
+  FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImageImmediately2() session_id=" << session_id_
+                       << "  client_image_id=" << image_id << "  global_image_id=" << global_id;
 }
 
 void Flatland::CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& completer) {
