@@ -254,6 +254,34 @@ TEST_F(TransferRingHarness, Peek) {
   ASSERT_TRUE(result->RCS());
 }
 
+TEST_F(TransferRingHarness, PhysToVirtUnmappedAddressReturnsNullptr) {
+  auto ring = this->ring();
+  EXPECT_EQ(ring->PhysToVirt(0), nullptr);
+  EXPECT_EQ(ring->PhysToVirt(0xdeadbeefdeadbeefULL), nullptr);
+  EXPECT_EQ(ring->PhysToVirt(UINT64_MAX), nullptr);
+}
+
+TEST_F(TransferRingHarness, VirtToPhysUnmappedAddressReturnsZero) {
+  auto ring = this->ring();
+  TRB stack_trb{};
+  EXPECT_EQ(ring->VirtToPhys(nullptr), 0u);
+  EXPECT_EQ(ring->VirtToPhys(&stack_trb), 0u);
+}
+
+TEST_F(TransferRingHarness, CompleteTRBWithUnmappedPhysAddressFails) {
+  auto ring = this->ring();
+  Normal trb;
+  auto context = ring->AllocateContext();
+  ASSERT_OK(ring->AddTRB(trb, std::move(context)));
+
+  TRB* unmapped_trb = ring->PhysToVirt(0xdeadbeefdeadbeefULL);
+  ASSERT_EQ(unmapped_trb, nullptr);
+
+  std::unique_ptr<TRBContext> completed_context;
+  EXPECT_EQ(ring->CompleteTRB(unmapped_trb, &completed_context), ZX_ERR_IO);
+  EXPECT_NE(completed_context, nullptr);
+}
+
 TEST_F(TransferRingHarness, First) {
   ContiguousTRBInfo info;
   TRB a;
