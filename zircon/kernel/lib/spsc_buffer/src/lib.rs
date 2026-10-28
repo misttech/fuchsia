@@ -209,7 +209,8 @@ impl<A: Allocator + Default> Buffer<A> {
     }
 
     /// Returns the size of the backing storage.
-    pub fn size(&self) -> u32 {
+    #[inline]
+    pub const fn size(&self) -> u32 {
         self.size as u32
     }
 
@@ -217,7 +218,23 @@ impl<A: Allocator + Default> Buffer<A> {
     ///
     /// Any data written into this block will not be visible to readers until `commit` is called on
     /// the returned `Reservation`.
+    #[inline]
     pub fn reserve(&mut self, size: u32) -> Result<Reservation<'_>, Status> {
+        // SAFETY: `&mut self` guarantees exclusive producer access.
+        unsafe { self.reserve_shared(size) }
+    }
+
+    /// Reserves a block of the given size in the buffer via a shared reference.
+    ///
+    /// Any data written into this block will not be visible to readers until `commit` is called on
+    /// the returned `Reservation`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that there is at most one active producer reservation on `self` at a
+    /// time (no concurrent calls to `reserve` or `reserve_shared`, and no live `Reservation`
+    /// overlapping with another call to `reserve` or `reserve_shared`).
+    pub unsafe fn reserve_shared(&self, size: u32) -> Result<Reservation<'_>, Status> {
         if size == 0 || size > Self::MAX_STORAGE_SIZE {
             return Err(Status::INVALID_ARGS);
         }
@@ -241,15 +258,23 @@ impl<A: Allocator + Default> Buffer<A> {
         let ring_break_distance = storage_len - write_offset;
         let bytes_before_break = cmp::min(size, ring_break_distance);
 
-        // SAFETY: The creator of Buffer must ensure that `storage` points to a valid memory region
-        // of `size` bytes.
-        let storage_slice = unsafe { slice::from_raw_parts_mut(self.storage, self.size) };
-        let (left, right) = storage_slice.split_at_mut(write_offset as usize);
-        let region1 = &mut right[..bytes_before_break as usize];
+        // SAFETY: The creator of `Buffer` guarantees that `storage` points to a valid memory
+        // region of `self.size` bytes, the caller guarantees single-producer exclusivity, and
+        // `available_space >= size` (loaded with `Ordering::Acquire` from `combined_pointers`)
+        // guarantees that the writable sub-ranges are disjoint from any unread bytes currently
+        // accessed by the consumer.
+        let region1 = unsafe {
+            slice::from_raw_parts_mut(
+                self.storage.add(write_offset as usize),
+                bytes_before_break as usize,
+            )
+        };
 
         let region2 = if bytes_before_break < size {
             let region2_len = size - bytes_before_break;
-            &mut left[..region2_len as usize]
+            // SAFETY: See above; the wrapped-around prefix `[0..region2_len)` is within
+            // `available_space` and disjoint from `region1` and any unread consumer bytes.
+            unsafe { slice::from_raw_parts_mut(self.storage, region2_len as usize) }
         } else {
             &mut []
         };
@@ -304,15 +329,20 @@ impl<A: Allocator + Default> Buffer<A> {
         let ring_break_distance = self.size - read_offset;
         let bytes_before_break = cmp::min(amount_to_copy, ring_break_distance);
 
-        // SAFETY: The creator of Buffer must ensure that `storage` points to a valid memory region
-        // of `size` bytes.
-        let storage_slice = unsafe { slice::from_raw_parts(self.storage, self.size) };
-        let slice1 = &storage_slice[read_offset..read_offset + bytes_before_break];
+        // SAFETY: The creator of `Buffer` guarantees that `storage` points to a valid memory
+        // region of `self.size` bytes, and `amount_to_copy <= available_data` (loaded with
+        // `Ordering::Acquire` from `combined_pointers`) guarantees that the readable sub-ranges
+        // have been initialized and committed by the producer and are disjoint from any
+        // concurrent producer reservation until `advance_read_pointer` releases them.
+        let slice1 =
+            unsafe { slice::from_raw_parts(self.storage.add(read_offset), bytes_before_break) };
         copy_fn(0, slice1)?;
 
         if bytes_before_break < amount_to_copy {
             let bytes_after_break = amount_to_copy - bytes_before_break;
-            let slice2 = &storage_slice[..bytes_after_break];
+            // SAFETY: See above; the wrapped-around prefix `[0..bytes_after_break)` is within
+            // `available_data` and disjoint from any concurrent producer reservation.
+            let slice2 = unsafe { slice::from_raw_parts(self.storage, bytes_after_break) };
             copy_fn(bytes_before_break as u32, slice2)?;
         }
 
@@ -482,6 +512,16 @@ impl Buffer<NoOpAllocator> {
             size: 0,
             _phantom: core::marker::PhantomData,
         }
+    }
+
+    /// Resets the buffer to empty and returns the raw storage pointer and size.
+    #[inline]
+    pub fn take_raw_parts(&mut self) -> (*mut u8, usize) {
+        let storage = self.storage;
+        let size = self.size;
+        self.storage = core::ptr::null_mut();
+        self.size = 0;
+        (storage, size)
     }
 }
 

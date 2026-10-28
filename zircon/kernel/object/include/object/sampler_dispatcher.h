@@ -21,11 +21,7 @@
 class SamplerDispatcher;
 extern "C" {
 zx_status_t cpp_sampler_dispatcher_create(
-    const zx_sampler_config_t* config,
     ffi::Uninitialized<KernelHandle<SamplerDispatcher>>* handle_out);
-zx_status_t cpp_sampler_dispatcher_start();
-zx_status_t cpp_sampler_dispatcher_stop();
-zx_status_t cpp_sampler_dispatcher_read_user(void* ptr, size_t len, size_t* actual_out);
 }
 
 // A Sampler manages sampling threads and writing the results out to per cpu buffers.
@@ -63,7 +59,7 @@ class SamplerDispatcher final : public Dispatcher {
 
  private:
   friend zx_status_t cpp_sampler_dispatcher_create(
-      const zx_sampler_config_t*, ffi::Uninitialized<KernelHandle<SamplerDispatcher>>*);
+      ffi::Uninitialized<KernelHandle<SamplerDispatcher>>*);
   SamplerDispatcher();
 
   OpaqueStorage<kSamplerDispatcherStateSize, kSamplerDispatcherStateAlign> opaque_storage_;

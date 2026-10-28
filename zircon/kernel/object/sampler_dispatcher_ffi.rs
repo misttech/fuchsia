@@ -7,28 +7,30 @@
 use super::handle::KernelHandle;
 use super::sampler_dispatcher::{SamplerDispatcher, SamplerDispatcherState};
 use core::mem::MaybeUninit;
-use zx_types::{zx_sampler_config_t, zx_status_t};
+use zx_types::zx_status_t;
 
 // C++ FFI declarations
 unsafe extern "C" {
-    /// Calls into C++ implementation to create a SamplerDispatcher.
+    /// Calls into C++ implementation to allocate and initialize a `SamplerDispatcher`.
+    ///
+    /// # Safety
+    ///
+    /// `handle_out` must point to a valid, writable `MaybeUninit<KernelHandle<SamplerDispatcher>>`
+    /// that will be initialized on `ZX_OK`.
     pub fn cpp_sampler_dispatcher_create(
-        config: *const zx_sampler_config_t,
         handle_out: *mut MaybeUninit<KernelHandle<SamplerDispatcher>>,
     ) -> zx_status_t;
+}
 
-    /// Calls into C++ implementation to start sampling.
-    pub fn cpp_sampler_dispatcher_start() -> zx_status_t;
-
-    /// Calls into C++ implementation to stop sampling.
-    pub fn cpp_sampler_dispatcher_stop() -> zx_status_t;
-
-    /// Calls into C++ implementation to read sampled records into user memory.
-    pub fn cpp_sampler_dispatcher_read_user(
-        ptr: *mut core::ffi::c_void,
-        len: usize,
-        actual_out: *mut usize,
-    ) -> zx_status_t;
+/// Destroys the global thread sampler state when the last `SamplerDispatcher` handle is closed.
+///
+/// # Safety
+///
+/// The caller must ensure that `disp` is a valid, non-null, properly aligned reference to a
+/// live [`SamplerDispatcher`] with no concurrent mutable aliases.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_sampler_dispatcher_on_zero_handles(disp: &SamplerDispatcher) {
+    disp.on_zero_handles();
 }
 
 // Trampolines from C++ into Rust SamplerDispatcherState

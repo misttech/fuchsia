@@ -4,12 +4,6 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-source_set("tests") {
-  sources = [ "thread_sampler_tests.cc" ]
-  deps = [
-    "//zircon/kernel/lib/page",
-    "//zircon/kernel/lib/thread_sampler",
-    "//zircon/kernel/lib/unittest",
-    "//zircon/kernel/lib/user_copy",
-  ]
+group("tests") {
+  testonly = true
 }

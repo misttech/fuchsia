@@ -5,22 +5,90 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//build/rust/rustc_bindgen.gni")
+import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [
     "lib/percpu_writer/buffer.h",
+    "lib/percpu_writer/buffer_types.h",
     "lib/percpu_writer/kernel_aspace_allocator.h",
   ]
   public_deps = [ "//zircon/kernel/lib/ktl" ]
+}
+
+rustc_bindgen("percpu_writer-bindings.bindgen") {
+  visibility = [ ":*" ]
+  output_name = "percpu_writer_bindings.rs"
+  headers = [ "include/lib/percpu_writer/buffer_types.h" ]
+  deps = [ ":headers" ]
+  cpp = true
+
+  notice_year = "2026"
+  type_allowlist = [
+    "percpu_writer::DroppedRecordStats",
+    "percpu_writer::DroppedRecordDurationEvent",
+  ]
+  type_blocklist = [ "zx_instant_boot_ticks_t" ]
+  function_blocklist = [ ".*" ]
+  std_derives = [
+    "partialeq",
+    "eq",
+  ]
+  auto_derive_traits = [ [
+        "percpu_writer_DroppedRecordDurationEvent",
+        [
+          "FromBytes",
+          "IntoBytes",
+          "Immutable",
+          "KnownLayout",
+        ],
+      ] ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [
+    "use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};",
+    "use zx_types::zx_instant_boot_ticks_t;",
+  ]
+}
+
+kernel_rust_crate("percpu_writer-bindings") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/*",
+  ]
+  _bindgen_outputs = get_target_outputs(":percpu_writer-bindings.bindgen")
+  source_root = "buffer_types.rs"
+  sources = [ "buffer_types.rs" ] + _bindgen_outputs
+  inputs = _bindgen_outputs
+  rustenv = [ "PERCPU_WRITER_BINDINGS_RS=" +
+              rebase_path(_bindgen_outputs[0], root_build_dir) ]
+  deps = [
+    ":percpu_writer-bindings.bindgen",
+    "//sdk/rust/zx-types",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/bin/rustenv_path",
+  ]
 }
 
 kernel_rust_mod("percpu_writer-rs") {
   sources = [
     "allocator.rs",
     "allocator_ffi.rs",
+    "buffer.rs",
   ]
-  deps = [ "//zircon/kernel/lib/page:page-rs" ]
+  deps = [
+    ":percpu_writer-bindings",
+    "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
+    "//src/lib/kstring",
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/lib/page:page-rs",
+    "//zircon/kernel/lib/spsc_buffer:spsc-buffer-rs",
+  ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
 
 source_set("percpu_writer") {

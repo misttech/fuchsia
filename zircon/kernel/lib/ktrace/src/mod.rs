@@ -70,11 +70,6 @@ impl KTraceState {
 #[unsafe(no_mangle)]
 pub static GLOBAL_KTRACE_STATE: KTraceState = KTraceState::new();
 
-declare_interned_category!(META_CAT, "kernel:meta", extern);
-declare_interned_string!(DROP_STATS_REF, "drop_stats", extern);
-declare_interned_string!(NUM_RECORDS_REF, "num_records", extern);
-declare_interned_string!(NUM_BYTES_REF, "num_bytes", extern);
-
 unsafe extern "C" {
     fn cpp_ktrace_get_active_instance() -> *mut ffi::c_void;
     #[cfg(ktest)]
@@ -415,63 +410,9 @@ impl<'a, const N: usize> ErasedScope for KTraceScope<'a, N> {
     }
 }
 
-// LINT.IfChange(DroppedRecordDurationEvent)
-#[repr(C)]
-struct DroppedRecordDurationEvent {
-    header: u64,
-    start: InstantBootTicks,
-    process_id: u64,
-    thread_id: u64,
-    num_dropped_arg: u64,
-    bytes_dropped_arg: u64,
-    end: InstantBootTicks,
-}
-const _: () = assert!(size_of::<DroppedRecordDurationEvent>() == 56);
-// LINT.ThenChange(//zircon/kernel/lib/percpu_writer/include/lib/percpu_writer/buffer.h:DroppedRecordDurationEvent)
-
-// LINT.IfChange(DroppedRecordStats)
-/// This struct keeps track of the duration, number, and size of trace records dropped when the
-/// buffer is full. These statistics are emitted to the trace buffer as a duration as soon as
-/// space is available to do so, at which point the values are reset to 0, or false in the case
-/// of has_dropped.
-#[repr(C)]
-#[derive(Default, Debug, Clone)]
-pub struct DroppedRecordStats {
-    pub first_dropped: InstantBootTicks,
-    pub last_dropped: InstantBootTicks,
-
-    /// By storing num_dropped and bytes_dropped in 32-bit values, we ensure that they can each
-    /// be stored in a single 64-bit word in the FXT record we emit when space is available.
-    pub num_dropped: u32,
-    pub bytes_dropped: u32,
-    pub has_dropped: bool,
-}
-const _: () = assert!(size_of::<DroppedRecordStats>() == 32);
-// LINT.ThenChange(//zircon/kernel/lib/percpu_writer/include/lib/percpu_writer/buffer.h:DroppedRecordStats)
-
-impl DroppedRecordStats {
-    pub fn reset(&mut self) {
-        self.first_dropped = InstantBootTicks(0);
-        self.last_dropped = InstantBootTicks(0);
-        self.num_dropped = 0;
-        self.bytes_dropped = 0;
-        self.has_dropped = false;
-    }
-
-    pub fn track(&mut self, now: InstantBootTicks, size: u32) {
-        if !self.has_dropped {
-            self.first_dropped = now;
-            self.has_dropped = true;
-        }
-        self.last_dropped = now;
-        self.num_dropped = self.num_dropped.wrapping_add(1);
-        self.bytes_dropped = self.bytes_dropped.wrapping_add(size);
-    }
-
-    pub fn has_dropped(&self) -> bool {
-        self.has_dropped
-    }
-}
+// KTraceBuffer wraps per-CPU buffers allocated by the C++ ktrace subsystem, which tracks
+// dropped records using percpu_writer's DroppedRecordStats across the FFI boundary.
+use crate::percpu_writer::{DroppedRecordDurationEvent, DroppedRecordStats, serialize_drop_stats};
 
 /// A Rust implementation of `percpu_writer::Buffer` that wraps an existing
 /// `spsc_buffer::Buffer` and tracks dropped trace records.
@@ -570,7 +511,7 @@ impl KTraceBuffer {
         match self.buffer_mut().reserve(total_size) {
             Err(status) => {
                 let now = KTrace::timestamp();
-                self.drop_stats_mut().track(now, size);
+                self.drop_stats_mut().track(now.0, size);
                 Err(status)
             }
             Ok(mut res) => {
@@ -617,34 +558,12 @@ impl KTraceBuffer {
     }
 
     fn serialize_drop_stats(&self) -> DroppedRecordDurationEvent {
-        let record_size_words = (size_of::<DroppedRecordDurationEvent>() / 8) as u16;
-        let mut header = EventRecordHeader::default();
-        header
-            .set_record_size(record_size_words)
-            .set_event_type(EventType::DurationComplete)
-            .set_arg_count(2)
-            .set_thread_ref(self.cpu_ref_header_entry as u8)
-            .set_category_ref(META_CAT.label().id())
-            .set_name_ref(DROP_STATS_REF.id());
-
-        let drop_stats = self.drop_stats();
-        let mut num_dropped_arg =
-            ArgumentHeader::for_argument(NUM_RECORDS_REF.id(), 1, ArgumentType::Uint32);
-        num_dropped_arg.set_value_bits(drop_stats.num_dropped);
-
-        let mut bytes_dropped_arg =
-            ArgumentHeader::for_argument(NUM_BYTES_REF.id(), 1, ArgumentType::Uint32);
-        bytes_dropped_arg.set_value_bits(drop_stats.bytes_dropped);
-
-        DroppedRecordDurationEvent {
-            header: header.bits(),
-            start: drop_stats.first_dropped,
-            process_id: self.process_koid,
-            thread_id: self.thread_koid,
-            num_dropped_arg: num_dropped_arg.bits(),
-            bytes_dropped_arg: bytes_dropped_arg.bits(),
-            end: drop_stats.last_dropped,
-        }
+        serialize_drop_stats(
+            self.drop_stats(),
+            self.cpu_ref_header_entry as u8,
+            self.process_koid,
+            self.thread_koid,
+        )
     }
 }
 
@@ -1227,6 +1146,7 @@ mod tests {
 
     use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, max_num_cpus};
     use crate::kernel::thread::{FxtRef, ThreadPtr};
+    use crate::percpu_writer::buffer::{DROP_STATS_REF, META_CAT, NUM_BYTES_REF, NUM_RECORDS_REF};
     use core::sync::atomic::Ordering;
     use core::{ffi, ptr};
     use spsc_buffer::Buffer;

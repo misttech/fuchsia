@@ -97,6 +97,11 @@ unsafe extern "C" {
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_current_active_aspace() -> *mut VmAspace;
     fn cpp_thread_current_switch_aspace(aspace: *mut VmAspace) -> *mut VmAspace;
+    pub fn cpp_thread_signal_sample_stack(
+        timer: *mut super::timer::Timer,
+        now: zx_instant_mono_t,
+        session_id: *mut c_void,
+    );
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,

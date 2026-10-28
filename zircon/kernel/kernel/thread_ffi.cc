@@ -611,4 +611,9 @@ FFI_ALWAYS_INLINE void cpp_scoped_thread_exception_context_destroy(
     ScopedThreadExceptionContext* context) {
   ktl::destroy_at(context);
 }
+
+void cpp_thread_signal_sample_stack(Timer* timer, zx_instant_mono_t now, void* session_id) {
+  Thread::SignalSampleStack(timer, now, session_id);
+}
+
 }  // extern "C"

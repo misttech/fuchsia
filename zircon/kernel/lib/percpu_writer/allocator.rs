@@ -7,6 +7,11 @@
 //! Kernel address space allocator for `percpu_writer` buffers.
 
 mod allocator_ffi;
+pub mod buffer;
+
+pub use buffer::{
+    Buffer, DroppedRecordDurationEvent, DroppedRecordStats, Reservation, serialize_drop_stats,
+};
 
 use crate::vm::arch_vm_aspace::{ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE};
 use crate::vm::pmm::{ALLOC_FLAG_ANY, ALLOC_FLAG_CAN_WAIT};
