@@ -1159,7 +1159,7 @@ alias(
     name = "sysroot_library_dist",
     actual = select({
         "@@//build/bazel/toolchains/clang:asan_variant": ":sysroot_library_dist.asan",
-        "//conditions:default": ":sysroot_library_dist.novariant",
+        "@@//build/bazel/toolchains/clang:novariant": ":sysroot_library_dist.novariant",
     }),
     visibility = ["//visibility:public"],
 )

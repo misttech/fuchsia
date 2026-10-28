@@ -1533,6 +1533,7 @@ def _generate_sysroot_dist_targets(
                 )"""
             )
         )
+        # LINT.IfChange(sysroot_variants)
         if variant:
             select_entries[
                 f"@@//build/bazel/toolchains/clang:{variant}_variant"
@@ -1540,8 +1541,9 @@ def _generate_sysroot_dist_targets(
 
     if "" in dist_files and "" in debug_files:
         select_entries[
-            "//conditions:default"
+            "@@//build/bazel/toolchains/clang:novariant"
         ] = ":sysroot_library_dist.novariant"
+    # LINT.ThenChange(//build/bazel/toolchains/clang/BUILD.bazel:sysroot_variants)
 
     if select_entries:
         select_dict_lines = "".join(

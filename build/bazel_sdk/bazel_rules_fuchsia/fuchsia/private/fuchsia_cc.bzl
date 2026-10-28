@@ -18,6 +18,10 @@ load(
     "@fuchsia_rules_common//debug_symbols:providers.bzl",
     "FuchsiaDebugSymbolInfo",
 )
+load(
+    "@fuchsia_rules_common//packages:clang_package_resources.bzl",
+    "get_variant_dest_select_map",
+)
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
@@ -140,6 +144,7 @@ def _fuchsia_cc_impl(ctx):
     ] + get_runfiles_shared_lib_binary_info(
         # TODO(https://fxbug.dev/532024842): Consider collecting from @rules_cc providers instead.
         runfiles = ctx.attr.native_target[DefaultInfo].default_runfiles,
+        shared_lib_dest = ctx.attr.shared_lib_dest,
         exclude_libs = [
             # target_in might be a shared library, but exclude it since it was
             # already added above.
@@ -162,7 +167,7 @@ def _fuchsia_cc_impl(ctx):
         FuchsiaUnstrippedBinariesInfo(binaries = unstripped_binaries),
     ]
 
-fuchsia_cc = rule(
+_fuchsia_cc = rule(
     implementation = _fuchsia_cc_impl,
     toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
     doc = """Attaches fuchsia-specific metadata to native cc_* targets.
@@ -178,6 +183,10 @@ fuchsia_cc = rule(
             doc = "The path to install the built binary, defaults to bin/",
             default = "bin/",
             mandatory = False,
+        ),
+        "shared_lib_dest": attr.string(
+            doc = "The install path of shared libraries, relative to //pkg.",
+            default = "lib",
         ),
         "native_target": attr.label(
             doc = "The underlying cc_* target.",
@@ -233,6 +242,11 @@ fuchsia_cc = rule(
         ),
     } | COMPATIBILITY.FUCHSIA_ATTRS,
 )
+
+def fuchsia_cc(*, clang_root_label = "@fuchsia_clang", **kwargs):
+    if "shared_lib_dest" not in kwargs:
+        kwargs["shared_lib_dest"] = select(get_variant_dest_select_map(clang_root_label))
+    _fuchsia_cc(**kwargs)
 
 def data_for_features(features):
     data = [

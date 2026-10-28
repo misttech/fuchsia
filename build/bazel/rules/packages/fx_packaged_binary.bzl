@@ -38,21 +38,14 @@ load(
 )
 load(
     "@fuchsia_rules_common//packages:clang_package_resources.bzl",
-    "get_clang_package_resources",
+    "get_variant_dest_select_map",
 )
 load(
     "@fuchsia_rules_common//packages:providers.bzl",
     "FuchsiaPackageResourcesInfo",
 )
-load("@prebuilt_clang//:generated_constants.bzl", clang_constants = "constants")
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 load("@rules_rust//rust:defs.bzl", "rust_common")
-
-_SUPPORTED_CPUS = [
-    "arm64",
-    "riscv64",
-    "x64",
-]
 
 def _fx_packaged_binary_impl(ctx):
     if CcSharedLibraryInfo in ctx.attr.binary:
@@ -175,18 +168,12 @@ _fx_packaged_binary = rule(
 )
 
 def _fx_packaged_binary_macro_impl(name, visibility, **kwargs):
-    clang_package_resources = get_clang_package_resources(
-        clang_repo_prefix = "@prebuilt_clang//",
-        lib_clang_internal_dir = clang_constants.lib_clang_internal_dir,
-        supported_cpus = _SUPPORTED_CPUS,
-    )
-
     _fx_packaged_binary(
         name = name,
         visibility = visibility,
         # `select()` cannot be used as `default` in `attr.string()` on `_fx_packaged_binary`,
         # so it must be passed at target instantiation time here in the symbolic macro.
-        shared_lib_dest = select(clang_package_resources.sanitizers_dest_select_map),
+        shared_lib_dest = select(get_variant_dest_select_map("@prebuilt_clang//")),
         **kwargs
     )
 

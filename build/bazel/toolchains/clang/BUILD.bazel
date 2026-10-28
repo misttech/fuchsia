@@ -63,6 +63,13 @@ fuchsia_package_resource_group(
 # like `@prebuilt_clang`. Exposing these aliases in the root module (`@@//`)
 # allows `local_path_override` repositories to select on `@prebuilt_clang`'s
 # sanitizer variant config_settings via `@@//build/bazel/toolchains/clang:...`.
+# LINT.IfChange(sysroot_variants)
+alias(
+    name = "novariant",
+    actual = "@prebuilt_clang//:novariant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
 alias(
     name = "asan_variant",
     actual = "@prebuilt_clang//:asan_variant",
@@ -74,3 +81,31 @@ alias(
     actual = "@prebuilt_clang//:hwasan_variant",
     visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
 )
+
+alias(
+    name = "asan-ubsan_variant",
+    actual = "@prebuilt_clang//:asan-ubsan_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
+alias(
+    name = "hwasan-ubsan_variant",
+    actual = "@prebuilt_clang//:hwasan-ubsan_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
+alias(
+    name = "ubsan_variant",
+    actual = "@prebuilt_clang//:ubsan_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+
+alias(
+    name = "coverage_variant",
+    actual = "@prebuilt_clang//:coverage_variant",
+    visibility = ["@fuchsia_platform_sysroot//:__pkg__"],
+)
+# LINT.ThenChange(
+#   //build/bazel/scripts/workspace_utils.py:sysroot_variants,
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:variant_config_settings,
+# )

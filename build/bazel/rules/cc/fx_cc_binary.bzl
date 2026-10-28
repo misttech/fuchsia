@@ -87,7 +87,10 @@ fx_cc_binary = macro(
 
             TODO(b/568698143): Apply the features to dependencies too with
             a transition, like `transitive_features` in the SDK
-            `fuchsia_cc_binary()`.
+            `fuchsia_cc_binary()`. Note that until a transition is used,
+            this attribute also cannot be used with `fx_packaged_binary`,
+            because packaging rules select the variant library directory
+            from the build configuration.
             """,
             default = False,
             configurable = False,

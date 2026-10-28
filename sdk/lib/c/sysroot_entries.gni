@@ -155,15 +155,45 @@ foreach(lib, sysroot_stub_libs) {
 # This corresponds to the metadata that will go into each instrumented
 # (and non-instrumented) version of the C library.
 
+# LINT.IfChange(sysroot_variants)
 sysroot_instrumented_libc_entries = []
 sysroot_variants = [
   "",
   "asan",
 ]
 
+_optional_sysroot_variants = [
+  "asan-ubsan",
+  "ubsan",
+  "coverage",
+]
+
 if (target_cpu == "arm64") {
   # TODO(https://fxbug.dev/327442322): Support hwasan for x64 and riscv64.
   sysroot_variants += [ "hwasan" ]
+  _optional_sysroot_variants += [ "hwasan-ubsan" ]
+}
+
+# Only build the extra instrumented C library variants when they are
+# actually requested for Fuchsia userland targets via `select_variant`,
+# avoiding the build time overhead of compiling all 5 (or 7 on arm64)
+# variants in default builds.
+#
+# Only plain global variants are eligible (marked by fuchsia_toolchain_candidate
+# in //build/config/BUILDCONFIG.gn), matching how the Fuchsia default toolchain
+# variant is selected. Selectors with target-subsetting filters (e.g. dir,
+# target_type, output_name, testonly) or host/kernel selectors cannot and
+# should not trigger sysroot variant additions.
+foreach(selector, select_variant_canonical) {
+  if (selector.variant != false &&
+      defined(selector.fuchsia_toolchain_candidate)) {
+    _variant = string_replace(selector.variant, "-fuzzer", "")
+    if (_optional_sysroot_variants + [ _variant ] - [ _variant ] !=
+        _optional_sysroot_variants) {
+      _optional_sysroot_variants -= [ _variant ]
+      sysroot_variants += [ _variant ]
+    }
+  }
 }
 
 foreach(variant, sysroot_variants) {
@@ -207,3 +237,12 @@ foreach(variant, sysroot_variants) {
     },
   ]
 }
+# Keep in sync with:
+#   //build/bazel/scripts/workspace_utils.py
+#   //build/bazel/toolchains/clang/BUILD.bazel
+#   //build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/generate_sdk_build_rules.bzl
+# LINT.ThenChange(
+#   //sdk/lib/c/BUILD.gn:sysroot_variants,
+#   //build/toolchain/zircon/BUILD.gn:sysroot_variants,
+#   //build/config/BUILDCONFIG.gn:sysroot_variants,
+# )

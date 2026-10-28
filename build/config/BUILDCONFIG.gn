@@ -218,6 +218,7 @@ _fuzzer_remove_shared_configs = [ "//build/config:symbol_no_undefined" ]
 # RTTI be enabled everywhere, and then get the vptr checking everywhere
 # too.
 # LINT.IfChange(ubsan)
+# In Bazel, this corresponds to -frtti in sanitizer.bzl:ubsan_feature.
 _ubsan_remove_common_configs = [ "//build/config:no_rtti" ]
 
 # LINT.ThenChange(//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:ubsan)
@@ -1096,11 +1097,14 @@ if (_host_toolchain_variant_name == false ||
 #
 # IMPORTANT: KEEP THIS IN SYNC WITH //sdk/lib/c/sysroot_entries.gni
 #
+# LINT.IfChange(sysroot_variants)
 toolchain_variant.libprefix = ""
 if (toolchain_variant.instrumented) {
   toolchain_variant.libprefix =
       string_replace(toolchain_variant.name, "-fuzzer", "") + "/"
 }
+
+# LINT.ThenChange(//sdk/lib/c/sysroot_entries.gni:sysroot_variants)
 
 # [START toolchain_is_variables]
 is_android = false

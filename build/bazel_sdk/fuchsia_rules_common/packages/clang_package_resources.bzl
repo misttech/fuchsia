@@ -36,6 +36,7 @@ details and an example.
 # IMPORTANT: The keys in these maps depend on the config_setting() targets
 # defined through the define_clang_sanitizer_config_settings() function!
 #
+# LINT.IfChange(variant_config_settings)
 _LIBCXX_SRCS_MAP = {
     "arm64": {
         "{clang_repo}:arm64_novariant": [
@@ -43,7 +44,25 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
         ],
+        "{clang_repo}:arm64_ubsan_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:arm64_coverage_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/libunwind.so.1",
+        ],
         "{clang_repo}:arm64_asan_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libunwind.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan+noexcept/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan+noexcept/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/asan+noexcept/libunwind.so.1",
+        ],
+        "{clang_repo}:arm64_asan-ubsan_variant": [
             "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++.so.2",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libc++abi.so.1",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/asan/libunwind.so.1",
@@ -59,6 +78,14 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan+noexcept/libc++abi.so.1",
             "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan+noexcept/libunwind.so.1",
         ],
+        "{clang_repo}:arm64_hwasan-ubsan_variant": [
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan/libunwind.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan+noexcept/libc++.so.2",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan+noexcept/libc++abi.so.1",
+            "{clang_repo}:lib/aarch64-unknown-fuchsia/hwasan+noexcept/libunwind.so.1",
+        ],
         "//conditions:default": [],
     },
     "riscv64": {
@@ -67,7 +94,25 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
         ],
+        "{clang_repo}:riscv64_ubsan_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:riscv64_coverage_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/libunwind.so.1",
+        ],
         "{clang_repo}:riscv64_asan_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libunwind.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan+noexcept/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan+noexcept/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/asan+noexcept/libunwind.so.1",
+        ],
+        "{clang_repo}:riscv64_asan-ubsan_variant": [
             "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libc++.so.2",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libc++abi.so.1",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/asan/libunwind.so.1",
@@ -83,6 +128,14 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan+noexcept/libc++abi.so.1",
             "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan+noexcept/libunwind.so.1",
         ],
+        "{clang_repo}:riscv64_hwasan-ubsan_variant": [
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan/libunwind.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan+noexcept/libc++.so.2",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan+noexcept/libc++abi.so.1",
+            "{clang_repo}:lib/riscv64-unknown-fuchsia/hwasan+noexcept/libunwind.so.1",
+        ],
         "//conditions:default": [],
     },
     "x64": {
@@ -91,7 +144,25 @@ _LIBCXX_SRCS_MAP = {
             "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
             "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
         ],
+        "{clang_repo}:x64_ubsan_variant": [
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
+        ],
+        "{clang_repo}:x64_coverage_variant": [
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/libunwind.so.1",
+        ],
         "{clang_repo}:x64_asan_variant": [
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libunwind.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan+noexcept/libc++.so.2",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan+noexcept/libc++abi.so.1",
+            "{clang_repo}:lib/x86_64-unknown-fuchsia/asan+noexcept/libunwind.so.1",
+        ],
+        "{clang_repo}:x64_asan-ubsan_variant": [
             "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++.so.2",
             "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libc++abi.so.1",
             "{clang_repo}:lib/x86_64-unknown-fuchsia/asan/libunwind.so.1",
@@ -109,7 +180,11 @@ _LIBCXX_SRCS_MAP = {
 # in a select() statement for the "dest" field of fuchsia_package_resource_group().
 _LIBCXX_DEST_SELECT_MAP = {
     "{clang_repo}:asan_variant": "lib/asan",
+    "{clang_repo}:asan-ubsan_variant": "lib/asan-ubsan",
     "{clang_repo}:hwasan_variant": "lib/hwasan",
+    "{clang_repo}:hwasan-ubsan_variant": "lib/hwasan-ubsan",
+    "{clang_repo}:ubsan_variant": "lib/ubsan",
+    "{clang_repo}:coverage_variant": "lib/coverage",
     "//conditions:default": "lib",
 }
 
@@ -120,18 +195,32 @@ _LIBCXX_DEST_SELECT_MAP = {
 _LIBCXX_STRIP_PREFIX_MAP = {
     "arm64": {
         "{clang_repo}:arm64_novariant": "lib/aarch64-unknown-fuchsia",
+        "{clang_repo}:arm64_ubsan_variant": "lib/aarch64-unknown-fuchsia",
+        "{clang_repo}:arm64_coverage_variant": "lib/aarch64-unknown-fuchsia",
         "{clang_repo}:arm64_asan_variant": "lib/aarch64-unknown-fuchsia/asan",
+        "{clang_repo}:arm64_asan-ubsan_variant": "lib/aarch64-unknown-fuchsia/asan",
         "{clang_repo}:arm64_hwasan_variant": "lib/aarch64-unknown-fuchsia/hwasan",
+        "{clang_repo}:arm64_hwasan-ubsan_variant": "lib/aarch64-unknown-fuchsia/hwasan",
+        "//conditions:default": "",
     },
     "riscv64": {
         "{clang_repo}:riscv64_novariant": "lib/riscv64-unknown-fuchsia",
+        "{clang_repo}:riscv64_ubsan_variant": "lib/riscv64-unknown-fuchsia",
+        "{clang_repo}:riscv64_coverage_variant": "lib/riscv64-unknown-fuchsia",
         "{clang_repo}:riscv64_asan_variant": "lib/riscv64-unknown-fuchsia/asan",
+        "{clang_repo}:riscv64_asan-ubsan_variant": "lib/riscv64-unknown-fuchsia/asan",
         "{clang_repo}:riscv64_hwasan_variant": "lib/riscv64-unknown-fuchsia/hwasan",
+        "{clang_repo}:riscv64_hwasan-ubsan_variant": "lib/riscv64-unknown-fuchsia/hwasan",
+        "//conditions:default": "",
     },
     "x64": {
         "{clang_repo}:x64_novariant": "lib/x86_64-unknown-fuchsia",
+        "{clang_repo}:x64_ubsan_variant": "lib/x86_64-unknown-fuchsia",
+        "{clang_repo}:x64_coverage_variant": "lib/x86_64-unknown-fuchsia",
         "{clang_repo}:x64_asan_variant": "lib/x86_64-unknown-fuchsia/asan",
-        "{clang_repo}:x64_hwasan_variant": "",  # hwasan not supported on x64.
+        "{clang_repo}:x64_asan-ubsan_variant": "lib/x86_64-unknown-fuchsia/asan",
+        # NOTE: hwasan is not supported on x64.
+        "//conditions:default": "",
     },
 }
 
@@ -142,8 +231,17 @@ _SANITIZERS_SRCS_MAP = {
         "{clang_repo}:arm64_asan_variant": [
             "{clang_repo}:{clang_lib_dir}/aarch64-unknown-fuchsia/libclang_rt.asan.so",
         ],
+        "{clang_repo}:arm64_asan-ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/aarch64-unknown-fuchsia/libclang_rt.asan.so",
+        ],
         "{clang_repo}:arm64_hwasan_variant": [
             "{clang_repo}:{clang_lib_dir}/aarch64-unknown-fuchsia/libclang_rt.hwasan.so",
+        ],
+        "{clang_repo}:arm64_hwasan-ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/aarch64-unknown-fuchsia/libclang_rt.hwasan.so",
+        ],
+        "{clang_repo}:arm64_ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/aarch64-unknown-fuchsia/libclang_rt.ubsan_standalone.so",
         ],
         "//conditions:default": [],
     },
@@ -151,8 +249,17 @@ _SANITIZERS_SRCS_MAP = {
         "{clang_repo}:riscv64_asan_variant": [
             "{clang_repo}:{clang_lib_dir}/riscv64-unknown-fuchsia/libclang_rt.asan.so",
         ],
+        "{clang_repo}:riscv64_asan-ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/riscv64-unknown-fuchsia/libclang_rt.asan.so",
+        ],
         "{clang_repo}:riscv64_hwasan_variant": [
             "{clang_repo}:{clang_lib_dir}/riscv64-unknown-fuchsia/libclang_rt.hwasan.so",
+        ],
+        "{clang_repo}:riscv64_hwasan-ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/riscv64-unknown-fuchsia/libclang_rt.hwasan.so",
+        ],
+        "{clang_repo}:riscv64_ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/riscv64-unknown-fuchsia/libclang_rt.ubsan_standalone.so",
         ],
         "//conditions:default": [],
     },
@@ -160,14 +267,23 @@ _SANITIZERS_SRCS_MAP = {
         "{clang_repo}:x64_asan_variant": [
             "{clang_repo}:{clang_lib_dir}/x86_64-unknown-fuchsia/libclang_rt.asan.so",
         ],
-        # NOTE: hwasan is not supported on x64.
+        "{clang_repo}:x64_asan-ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/x86_64-unknown-fuchsia/libclang_rt.asan.so",
+        ],
+        "{clang_repo}:x64_ubsan_variant": [
+            "{clang_repo}:{clang_lib_dir}/x86_64-unknown-fuchsia/libclang_rt.ubsan_standalone.so",
+        ],
         "//conditions:default": [],
     },
 }
 
 _SANITIZERS_DEST_SELECT_MAP = {
     "{clang_repo}:asan_variant": "lib/asan",
+    "{clang_repo}:asan-ubsan_variant": "lib/asan-ubsan",
     "{clang_repo}:hwasan_variant": "lib/hwasan",
+    "{clang_repo}:hwasan-ubsan_variant": "lib/hwasan-ubsan",
+    "{clang_repo}:ubsan_variant": "lib/ubsan",
+    "{clang_repo}:coverage_variant": "lib/coverage",
     "//conditions:default": "lib",
 }
 
@@ -182,6 +298,9 @@ _SANITIZERS_STRIP_PREFIX_MAP = {
         "{clang_repo}:x64_build": "{clang_lib_dir}/x86_64-unknown-fuchsia",
     },
 }
+# LINT.ThenChange(
+#   //build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang/sanitizer.bzl:variant_config_settings,
+# )
 
 def _filter_cpu_config_label_map(d, supported_cpus):
     """Filter a { cpu -> { config_label -> value } } map according to a list of valid cpus.
@@ -320,3 +439,16 @@ def get_clang_package_resources(clang_repo_prefix, lib_clang_internal_dir, suppo
         sanitizers_dest_select_map = _format_dest_selects(_SANITIZERS_DEST_SELECT_MAP, **format_args),
         sanitizers_strip_prefix_select_map = _filter_and_format_strip_prefixes(_SANITIZERS_STRIP_PREFIX_MAP, supported_cpus, **format_args),
     )
+
+def get_variant_dest_select_map(clang_repo_prefix):
+    """Return a select() map choosing the variant library directory (e.g. 'lib/asan' vs 'lib').
+
+    Args:
+        clang_repo_prefix: Either an empty string or a Clang repository prefix
+            such as "@fuchsia_clang//" or "@fuchsia_clang".
+    Returns:
+        A `{ config_label -> install_path }` dictionary suitable for `select()`.
+    """
+    if clang_repo_prefix and not clang_repo_prefix.endswith("//"):
+        clang_repo_prefix = clang_repo_prefix + "//"
+    return _format_dest_selects(_SANITIZERS_DEST_SELECT_MAP, clang_repo = clang_repo_prefix)

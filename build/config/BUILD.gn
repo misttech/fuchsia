@@ -620,6 +620,8 @@ config("optimize_profile") {
 # LINT.ThenChange(BUILD.bazel:optimize_profile)
 
 # LINT.IfChange(optimize_coverage)
+# Matches -O1 in toolchain_utils.bzl:coverage_feature and -Copt-level=1 in
+# template.bazelrc.
 config("optimize_coverage") {
   cflags = [ "-O1" ]
   ldflags = cflags

@@ -151,6 +151,9 @@ variant("asan") {
     ]
   }
 
+  # Uses :variant-libprefix ("-dynamic-linker=asan/ld.so.1"). In Bazel, this
+  # corresponds to "-Wl,-dynamic-linker=asan/ld.so.1" (or "asan-ubsan/ld.so.1"
+  # when ubsan is enabled) in sanitizer.bzl:asan_feature.
   configs = [
     ":variant-libprefix",
     ":asan.rustflags",
@@ -347,6 +350,10 @@ variant("ubsan") {
   if (_prebuilt_runtime && toolchain_variant.tags + [ "asan" ] - [ "asan" ] ==
                            toolchain_variant.tags) {
     executable_deps = [ ":ubsan_default_options" ]
+
+    # In GN, standalone ubsan uses :variant-libprefix ("ubsan/ld.so.1").
+    # In Bazel, standalone ubsan uses ubsan/ld.so.1 via
+    # sanitizer.bzl:ubsan_feature.
     configs += [
       ":variant-libprefix",
       ":ubsan.rustflags",
@@ -371,6 +378,10 @@ variant("sancov") {
 # LINT.IfChange(tsan)
 variant("tsan") {
   c_family_flags = [ "-fsanitize=thread" ]
+
+  # In GN, tsan on Fuchsia includes :variant-libprefix ("tsan/ld.so.1").
+  # In Bazel, tsan is currently host-only so no Fuchsia dynamic linker flag
+  # is set in sanitizer.bzl:tsan_feature.
   configs = [
     ":variant-libprefix",
     ":tsan.rustflags",
@@ -390,6 +401,11 @@ sanitizer_default_options("tsan_default_options") {
 # LINT.IfChange(hwasan)
 variant("hwasan") {
   c_family_flags = [ "-fsanitize=hwaddress" ]
+
+  # Uses :variant-libprefix ("-dynamic-linker=hwasan/ld.so.1"). In Bazel, this
+  # corresponds to "-Wl,-dynamic-linker=hwasan/ld.so.1" (or
+  # "hwasan-ubsan/ld.so.1" when ubsan is enabled) in
+  # sanitizer.bzl:hwasan_feature.
   configs = [
     ":variant-libprefix",
     ":hwasan.rustflags",

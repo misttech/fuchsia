@@ -244,11 +244,24 @@ def compute_clang_features(
                             flags = [
                                 # The statically-linked profiling runtime depends on libzircon.
                                 "-lzircon",
-                                # Note: Unlike GN, which installs coverage shared libraries and a
-                                # copy of ld.so.1 under /pkg/lib/coverage/, Bazel's fx_packaged_binary
-                                # installs ld.so.1 and instrumented shared libraries in /pkg/lib/.
                             ],
                         ),
+                    ],
+                ),
+            ] if is_fuchsia else []
+        ) + (
+            [
+                flag_set(
+                    actions = action_names.all_link_actions,
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-Wl,-dynamic-linker=coverage/ld.so.1",
+                            ],
+                        ),
+                    ],
+                    with_features = [
+                        with_feature_set(not_features = ["asan", "hwasan", "ubsan"]),
                     ],
                 ),
             ] if is_fuchsia else []

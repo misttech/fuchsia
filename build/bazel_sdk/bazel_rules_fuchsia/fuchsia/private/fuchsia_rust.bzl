@@ -5,6 +5,10 @@
 """Wrappers for providing FuchsiaPackageResourcesInfo for rust binaries."""
 
 load("@fuchsia_rules_common//:utils.bzl", "make_resource_struct")
+load(
+    "@fuchsia_rules_common//packages:clang_package_resources.bzl",
+    "get_variant_dest_select_map",
+)
 load(":providers.bzl", "FuchsiaPackageResourcesInfo", "FuchsiaUnstrippedBinaryInfo")
 load(":utils.bzl", "get_runfiles", "is_lib")
 
@@ -20,7 +24,7 @@ def _fuchsia_wrap_rust_impl(ctx):
             resources.extend(data[FuchsiaPackageResourcesInfo].resources)
     for file in get_runfiles(ctx.attr.native_target):
         if is_lib(file):
-            resources.append(make_resource_struct(src = file, dest = "lib/" + file.basename))
+            resources.append(make_resource_struct(src = file, dest = ctx.attr.shared_lib_dest + "/" + file.basename))
     return [
         FuchsiaPackageResourcesInfo(resources = resources),
         FuchsiaUnstrippedBinaryInfo(
@@ -40,6 +44,10 @@ _fuchsia_wrap_rust_binary = rule(
         "bin_name": attr.string(
             doc = "The name of the executable to place under bin/.",
             mandatory = True,
+        ),
+        "shared_lib_dest": attr.string(
+            doc = "The install path of shared libraries, relative to //pkg.",
+            default = "lib",
         ),
         "native_target": attr.label(
             doc = "The underlying cc_* target.",
@@ -75,6 +83,9 @@ def fuchsia_wrap_rust_binary(
         clang_root_label: Optionally override the root label of the fuchsia clang repo.
         **kwargs: Misc arguments (like testonly and visibility) to forward to the underlying rule.
     """
+
+    if "shared_lib_dest" not in kwargs:
+        kwargs["shared_lib_dest"] = select(get_variant_dest_select_map(clang_root_label))
 
     _fuchsia_wrap_rust_binary(
         name = name,

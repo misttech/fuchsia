@@ -291,7 +291,10 @@ if (current_toolchain == default_toolchain) {
         ]
       }
 
-      # LINT.ThenChange(//build/toolchain/zircon/BUILD.gn:sysroot_variants)
+      # LINT.ThenChange(
+      #   //build/toolchain/zircon/BUILD.gn:sysroot_variants,
+      #   //sdk/lib/c/sysroot_entries.gni:sysroot_variants,
+      # )
     }
   }
 } else if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {

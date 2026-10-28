@@ -35,7 +35,10 @@ if (current_toolchain == default_toolchain) {
         "ubsan",
       ]
 
-      # LINT.ThenChange(//sdk/lib/c/BUILD.gn:sysroot_variants)
+      # LINT.ThenChange(
+      #   //sdk/lib/c/BUILD.gn:sysroot_variants,
+      #   //sdk/lib/c/sysroot_entries.gni:sysroot_variants,
+      # )
     }
   }
 }

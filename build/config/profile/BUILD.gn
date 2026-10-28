@@ -109,6 +109,8 @@ compiler_config("variant-libprefix") {
 
   # Even specialized environments that don't use the prebuilt runtime still
   # expect to use the libprefix-based placement of shared libraries.
+  # In Bazel, this corresponds to -Wl,-dynamic-linker=coverage/ld.so.1 in
+  # toolchain_utils.bzl:coverage_feature.
   if (is_fuchsia && !is_kernel) {
     linker_flags = [ "-dynamic-linker=${toolchain_variant.libprefix}ld.so.1" ]
   }
