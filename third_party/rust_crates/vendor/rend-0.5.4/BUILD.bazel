@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.5.4",
     deps = [
-        "//third_party/rust_crates/vendor/bytecheck-0.8.2:bytecheck",
+        "//third_party/rust_crates/vendor/bytecheck-0.8.3:bytecheck",
     ],
 )

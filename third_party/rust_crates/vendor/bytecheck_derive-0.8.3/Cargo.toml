@@ -12,8 +12,8 @@
 [package]
 edition = "2021"
 rust-version = "1.81"
-name = "bytecheck"
-version = "0.8.2"
+name = "bytecheck_derive"
+version = "0.8.3"
 authors = ["David Koloski <djkoloski@gmail.com>"]
 build = false
 autolib = false
@@ -21,8 +21,8 @@ autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
-description = "Memory validation framework for Rust"
-documentation = "https://docs.rs/bytecheck"
+description = "Derive macro for bytecheck"
+documentation = "https://docs.rs/bytecheck_derive"
 readme = "README.md"
 keywords = [
     "no_std",
@@ -37,32 +37,27 @@ categories = [
 license = "MIT"
 repository = "https://github.com/rkyv/bytecheck"
 
-[features]
-default = ["simdutf8"]
-
 [lib]
-name = "bytecheck"
+name = "bytecheck_derive"
 path = "src/lib.rs"
+proc-macro = true
 
-[dependencies.bytecheck_derive]
-version = "=0.8.2"
-default-features = false
-
-[dependencies.ptr_meta]
-version = "0.3"
-default-features = false
-
-[dependencies.rancor]
-version = "0.1"
-default-features = false
-
-[dependencies.simdutf8]
-version = "0.1"
-optional = true
-default-features = false
-
-[dependencies.uuid-1]
+[dependencies.proc-macro2]
 version = "1"
-optional = true
 default-features = false
-package = "uuid"
+
+[dependencies.quote]
+version = "1"
+default-features = false
+
+[dependencies.syn]
+version = "3.0"
+features = [
+    "clone-impls",
+    "derive",
+    "full",
+    "parsing",
+    "printing",
+    "proc-macro",
+]
+default-features = false

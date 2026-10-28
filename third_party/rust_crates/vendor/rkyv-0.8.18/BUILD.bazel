@@ -83,7 +83,7 @@ rust_library(
     }),
     version = "0.8.18",
     deps = [
-        "//third_party/rust_crates/vendor/bytecheck-0.8.2:bytecheck",
+        "//third_party/rust_crates/vendor/bytecheck-0.8.3:bytecheck",
         "//third_party/rust_crates/vendor/hashbrown-0.17.1:hashbrown",
         "//third_party/rust_crates/vendor/munge-0.4.7:munge",
         "//third_party/rust_crates/vendor/ptr_meta-0.3.1:ptr_meta",

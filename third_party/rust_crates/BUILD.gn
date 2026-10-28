@@ -5475,22 +5475,22 @@ rustc_library("bumpalo-v3_20_3") {
   applicable_licenses = [ ":bumpalo-v3_20_3.license" ]
 }
 
-license("bytecheck-v0_8_2.license") {
+license("bytecheck-v0_8_3.license") {
   public_package_name = "bytecheck"
-  license_files = [ "//third_party/rust_crates/vendor/bytecheck-0.8.2/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/bytecheck-0.8.3/LICENSE" ]
 }
 
-rustc_library("bytecheck-v0_8_2") {
+rustc_library("bytecheck-v0_8_3") {
   crate_name = "bytecheck"
-  source_root = "//third_party/rust_crates/vendor/bytecheck-0.8.2/src/lib.rs"
-  output_name = "bytecheck-8fb745e982828bfc"
+  source_root = "//third_party/rust_crates/vendor/bytecheck-0.8.3/src/lib.rs"
+  output_name = "bytecheck-614ab0e17b0a9417"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bytecheck_derive-v0_8_2($host_toolchain)" ]
+  deps += [ ":bytecheck_derive-v0_8_3($host_toolchain)" ]
   deps += [ ":ptr_meta-v0_3_1" ]
   deps += [ ":rancor-v0_1_3" ]
   deps += [ ":simdutf8-v0_1_5" ]
@@ -5499,27 +5499,27 @@ rustc_library("bytecheck-v0_8_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8fb745e982828bfc",
-    "-Cextra-filename=-8fb745e982828bfc",
+    "-Cmetadata=614ab0e17b0a9417",
+    "-Cextra-filename=-614ab0e17b0a9417",
     "--cfg=feature=\"simdutf8\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bytecheck-v0_8_2.license" ]
+  applicable_licenses = [ ":bytecheck-v0_8_3.license" ]
 }
 
-license("bytecheck_derive-v0_8_2.license") {
+license("bytecheck_derive-v0_8_3.license") {
   public_package_name = "bytecheck_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/bytecheck_derive-0.8.2/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/bytecheck_derive-0.8.3/LICENSE" ]
 }
 
-rustc_macro("bytecheck_derive-v0_8_2") {
+rustc_macro("bytecheck_derive-v0_8_3") {
   crate_name = "bytecheck_derive"
   source_root =
-      "//third_party/rust_crates/vendor/bytecheck_derive-0.8.2/src/lib.rs"
-  output_name = "bytecheck_derive-c398979304168794"
+      "//third_party/rust_crates/vendor/bytecheck_derive-0.8.3/src/lib.rs"
+  output_name = "bytecheck_derive-d9fe44a6259de20b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -5528,19 +5528,19 @@ rustc_macro("bytecheck_derive-v0_8_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_107" ]
   deps += [ ":quote-v1_0_47" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_6" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c398979304168794",
-    "-Cextra-filename=-c398979304168794",
+    "-Cmetadata=d9fe44a6259de20b",
+    "-Cextra-filename=-d9fe44a6259de20b",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":bytecheck_derive-v0_8_2.license" ]
+  applicable_licenses = [ ":bytecheck_derive-v0_8_3.license" ]
 }
 
 license("bytecount-v0_6_9.license") {
@@ -19002,7 +19002,7 @@ rustc_library("rend-v0_5_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bytecheck-v0_8_2" ]
+  deps += [ ":bytecheck-v0_8_3" ]
 
   rustenv = []
 
@@ -19251,7 +19251,7 @@ rustc_library("rkyv-v0_8_18") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":bytecheck-v0_8_2" ]
+  deps += [ ":bytecheck-v0_8_3" ]
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":indexmap-v2_14_2" ]
