@@ -1,0 +1,27 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The test component and package (`:regulatory_region_integration_test_component`
+# and `:regulatory-region-integration-tests`) stay in BUILD.gn because they use
+# RealmBuilder and `//src/lib/fuchsia-component-test/realm_builder_server` is
+# not in Bazel.
+rustc_test(
+    name = "test",
+    srcs = ["src/lib.rs"],
+    crate_name = "regulatory_region_integration_test",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.location.namedplace:fuchsia.location.namedplace_rust",
+        "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-component",
+        "//src/lib/fuchsia-component-test:fuchsia-component-test-lib",  # @bazel2gn:path_overwrite://src/lib/fuchsia-component-test
+        "//third_party/rust_crates/vendor:anyhow",
+    ],
+)
