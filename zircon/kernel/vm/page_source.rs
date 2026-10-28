@@ -290,4 +290,80 @@ impl PageSource {
         // SAFETY: The C++ helper only inspects the status value.
         unsafe { bindings::cpp_page_source_is_valid_internal_failure_code(error_status.into_raw()) }
     }
+
+    /// Prints state of the page source and any pending requests. The maximum number of requests
+    /// printed is capped by `max_items`.
+    pub fn dump(&self, depth: u32, max_items: u32) {
+        // SAFETY: `self.as_raw()` points to an initialized C++ `PageSource`.
+        unsafe {
+            bindings::cpp_page_source_dump(self.as_raw(), depth, max_items);
+        }
+    }
+}
+
+/// Kernel console `vm_page_source` command implementation.
+#[cfg(console_enabled)]
+mod console {
+    use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
+    use core::ffi::c_int;
+    use kprint::kprintln;
+    use zx_status::Status;
+
+    /// Console command handler for `k vm_page_source`.
+    ///
+    /// # Safety
+    ///
+    /// - `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc`
+    ///   initialized `CmdArgs` entries for the duration of the call.
+    /// - For the `dump` subcommand, `argv[2].arg_uint` must be the aligned address of a live
+    ///   `PageSource` that remains valid for the duration of the call.
+    unsafe extern "C" fn cmd_page_source(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
+        if argc <= 0 || argv.is_null() {
+            return Status::INTERNAL.into_raw();
+        }
+        // SAFETY: `argv` is non-null and points to `argc` initialized `CmdArgs` entries from the
+        // console dispatcher.
+        let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+        let cmd_name = args[0].as_str();
+        let usage = || -> c_int {
+            kprintln!("usage:");
+            kprintln!("{:s} dump <address>", cmd_name);
+            Status::INTERNAL.into_raw()
+        };
+        let not_enough_args = || -> c_int {
+            kprintln!("not enough arguments");
+            usage()
+        };
+
+        if args.len() < 2 {
+            return not_enough_args();
+        }
+
+        if args[1].as_str() == "dump" {
+            if args.len() < 3 {
+                return not_enough_args();
+            }
+            let ps =
+                core::ptr::with_exposed_provenance::<super::PageSource>(args[2].arg_uint as usize);
+            if ps.is_null() || !ps.is_aligned() {
+                kprintln!("invalid address");
+                return usage();
+            }
+            // SAFETY: Console debugging command dumping a user-supplied `PageSource` pointer.
+            unsafe { (*ps).dump(0, u32::MAX) };
+        } else {
+            kprintln!("unknown command");
+            return usage();
+        }
+
+        zx_status::sys::ZX_OK
+    }
+
+    static_command!(
+        PS_OBJECT,
+        c"vm_page_source".as_ptr(),
+        c"page source debug commands".as_ptr(),
+        cmd_page_source,
+        CMD_AVAIL_NORMAL
+    );
 }

@@ -162,7 +162,8 @@ impl VmObject {
 
     #[inline]
     pub fn lock_ref(&self) -> &VmObjectMutex {
-        // SAFETY: The pointer returned by cpp_vm_object_lock is valid for reads for the lifetime of self.
+        // SAFETY: The pointer returned by cpp_vm_object_lock is valid for reads for the lifetime of
+        // self.
         unsafe { &*bindings::cpp_vm_object_lock(self.as_raw()).cast::<VmObjectMutex>() }
     }
 
@@ -1095,6 +1096,93 @@ impl VmObject {
         };
         (Status::ok(status), out_actual)
     }
+}
+
+/// Kernel console `vm_object` command implementation.
+#[cfg(console_enabled)]
+mod console {
+    use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
+    use core::ffi::c_int;
+    use kprint::kprintln;
+    use zx_status::Status;
+
+    // TODO(https://fxbug.dev/408878701): add option to dump by koid.
+    /// Console command handler for `k vm_object`.
+    ///
+    /// # Safety
+    ///
+    /// - `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc`
+    ///   initialized `CmdArgs` entries for the duration of the call.
+    /// - For the `dump` and `dump_pages` subcommands, `argv[2].arg_uint` must be the aligned
+    ///   address of a live `VmObject` that remains valid for the duration of the call.
+    unsafe extern "C" fn cmd_vm_object(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
+        if argc <= 0 || argv.is_null() {
+            return Status::INTERNAL.into_raw();
+        }
+        // SAFETY: `argv` is non-null and points to `argc` initialized `CmdArgs` entries from the
+        // console dispatcher.
+        let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+        let cmd_name = args[0].as_str();
+        let usage_msg = || -> c_int {
+            kprintln!("usage:");
+            kprintln!("{:s} dump <address>", cmd_name);
+            kprintln!("{:s} dump_pages <address>", cmd_name);
+            Status::INTERNAL.into_raw()
+        };
+
+        if args.len() < 2 {
+            kprintln!("not enough arguments");
+            return usage_msg();
+        }
+
+        let subcmd = args[1].as_str();
+        if subcmd == "dump" {
+            if args.len() < 3 {
+                kprintln!("not enough arguments");
+                return usage_msg();
+            }
+
+            let o =
+                core::ptr::with_exposed_provenance::<super::VmObject>(args[2].arg_uint as usize);
+
+            if o.is_null() || !o.is_aligned() {
+                kprintln!("invalid address");
+                return usage_msg();
+            }
+
+            // SAFETY: Console debugging command dumping a user-supplied `VmObject` pointer.
+            unsafe { (*o).dump(0, false) };
+        } else if subcmd == "dump_pages" {
+            if args.len() < 3 {
+                kprintln!("not enough arguments");
+                return usage_msg();
+            }
+
+            let o =
+                core::ptr::with_exposed_provenance::<super::VmObject>(args[2].arg_uint as usize);
+
+            if o.is_null() || !o.is_aligned() {
+                kprintln!("invalid address");
+                return usage_msg();
+            }
+
+            // SAFETY: Console debugging command dumping a user-supplied `VmObject` pointer.
+            unsafe { (*o).dump(0, true) };
+        } else {
+            kprintln!("unknown command");
+            return usage_msg();
+        }
+
+        zx_status::sys::ZX_OK
+    }
+
+    static_command!(
+        VM_OBJECT,
+        c"vm_object".as_ptr(),
+        c"vm object debug commands".as_ptr(),
+        cmd_vm_object,
+        CMD_AVAIL_NORMAL
+    );
 }
 
 impl HasRefCount for VmObject {

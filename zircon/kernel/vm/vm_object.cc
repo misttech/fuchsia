@@ -8,7 +8,6 @@
 #include <align.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <lib/console.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
@@ -345,57 +344,3 @@ void VmObject::RangeChangeUpdateMappingsLocked(uint64_t offset, uint64_t len, Ra
         return ZX_ERR_NEXT;
       });
 }
-
-// TODO(https://fxbug.dev/408878701): add option to dump by koid.
-static int cmd_vm_object(int argc, const cmd_args* argv, uint32_t flags) {
-  auto usage_msg = [argv]() {
-    printf("usage:\n");
-    printf("%s dump <address>\n", argv[0].str);
-    printf("%s dump_pages <address>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  };
-
-  if (argc < 2) {
-    printf("not enough arguments\n");
-    return usage_msg();
-  }
-
-  if (!strcmp(argv[1].str, "dump")) {
-    if (argc < 3) {
-      printf("not enough arguments\n");
-      return usage_msg();
-    }
-
-    VmObject* o = reinterpret_cast<VmObject*>(argv[2].u);
-
-    if (o == NULL) {
-      printf("invalid address\n");
-      return usage_msg();
-    }
-
-    o->Dump(0, false);
-  } else if (!strcmp(argv[1].str, "dump_pages")) {
-    if (argc < 3) {
-      printf("not enough arguments\n");
-      return usage_msg();
-    }
-
-    VmObject* o = reinterpret_cast<VmObject*>(argv[2].u);
-
-    if (o == NULL) {
-      printf("invalid address\n");
-      return usage_msg();
-    }
-
-    o->Dump(0, true);
-  } else {
-    printf("unknown command\n");
-    return usage_msg();
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("vm_object", "vm object debug commands", &cmd_vm_object)
-STATIC_COMMAND_END(vm_object)

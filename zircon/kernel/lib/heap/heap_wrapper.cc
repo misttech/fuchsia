@@ -9,8 +9,8 @@
 #include <assert.h>
 #include <debug.h>
 #include <lib/cmpctmalloc.h>
-#include <lib/console.h>
 #include <lib/heap.h>
+#include <lib/heap_ffi.h>
 #include <lib/heap_internal.h>
 #include <lib/heap_profile.h>
 #include <lib/instrumentation/asan.h>
@@ -25,8 +25,10 @@
 
 #include <arch/ops.h>
 #include <fbl/intrusive_double_list.h>
+#include <kernel/ffi.h>
 #include <kernel/spinlock.h>
 #include <kernel/thread.h>
+#include <ktl/atomic.h>
 #include <phys/handoff/heap.h>
 #include <vm/physmap.h>
 #include <vm/pmm.h>
@@ -46,8 +48,12 @@ static_assert(
     !(KERNEL_MEMORY_PROFILER && HEAP_COLLECT_STATS),
     "Kernel memory profiler and heap collect statistics cannot be enabled at the same time.");
 
-/* heap tracing */
-static bool heap_trace = false;
+// Heap allocation tracing flag. Accessed atomically from both C++ (`ktl::atomic<bool>`) and the
+// Rust `k heap trace` console command (`AtomicBool`).
+extern "C" constinit ktl::atomic<bool> heap_trace = false;
+static_assert(ktl::atomic<bool>::is_always_lock_free);
+static_assert(sizeof(ktl::atomic<bool>) == 1);
+static_assert(alignof(ktl::atomic<bool>) == 1);
 
 // keep a list of unique caller:size sites in a list
 namespace {
@@ -215,7 +221,7 @@ void heap_init() {
   cmpct_init();
 }
 
-void* malloc(size_t size) {
+__NO_INLINE void* malloc(size_t size) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
 
@@ -224,7 +230,7 @@ void* malloc(size_t size) {
   void* ptr = cmpct_alloc(size);
   add_alloc_stat(__GET_CALLER(), size, ptr);
 
-  if (unlikely(heap_trace)) {
+  if (unlikely(heap_trace.load(ktl::memory_order_relaxed))) {
     printf("caller %p malloc %zu -> %p\n", __GET_CALLER(), size, ptr);
   }
 
@@ -235,7 +241,7 @@ void* malloc(size_t size) {
   return ptr;
 }
 
-void* memalign(size_t alignment, size_t size) {
+__NO_INLINE void* memalign(size_t alignment, size_t size) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
 
@@ -243,7 +249,7 @@ void* memalign(size_t alignment, size_t size) {
 
   void* ptr = cmpct_memalign(alignment, size);
   add_alloc_stat(__GET_CALLER(), size, ptr);
-  if (unlikely(heap_trace)) {
+  if (unlikely(heap_trace.load(ktl::memory_order_relaxed))) {
     printf("caller %p memalign %zu, %zu -> %p\n", __GET_CALLER(), alignment, size, ptr);
   }
 
@@ -254,7 +260,7 @@ void* memalign(size_t alignment, size_t size) {
   return ptr;
 }
 
-void* calloc(size_t count, size_t size) {
+__NO_INLINE void* calloc(size_t count, size_t size) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
   DEBUG_ASSERT(Thread::Current::memory_allocation_state().IsEnabled());
 
@@ -267,17 +273,17 @@ void* calloc(size_t count, size_t size) {
   if (likely(ptr)) {
     memset(ptr, 0, realsize);
   }
-  if (unlikely(heap_trace)) {
+  if (unlikely(heap_trace.load(ktl::memory_order_relaxed))) {
     printf("caller %p calloc %zu, %zu -> %p\n", __GET_CALLER(), count, size, ptr);
   }
   return ptr;
 }
 
-void free(void* ptr) {
+__NO_INLINE void free(void* ptr) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
 
   LTRACEF("ptr %p\n", ptr);
-  if (unlikely(heap_trace)) {
+  if (unlikely(heap_trace.load(ktl::memory_order_relaxed))) {
     printf("caller %p free %p\n", __GET_CALLER(), ptr);
   }
   add_free_stat(ptr);
@@ -285,11 +291,11 @@ void free(void* ptr) {
   cmpct_free(ptr);
 }
 
-void sized_free(void* ptr, size_t s) {
+__NO_INLINE void sized_free(void* ptr, size_t s) {
   DEBUG_ASSERT(!arch_blocking_disallowed());
 
   LTRACEF("ptr %p size %lu\n", ptr, s);
-  if (unlikely(heap_trace)) {
+  if (unlikely(heap_trace.load(ktl::memory_order_relaxed))) {
     printf("caller %p free %p size %lu\n", __GET_CALLER(), ptr, s);
   }
   add_free_stat(ptr);
@@ -426,55 +432,12 @@ void heap_report_alloc_failure(size_t size) {
       PmmNode::AllocFailure{.type = PmmNode::AllocFailure::Type::Heap, .size = size});
 }
 
-#include <lib/console.h>
+extern "C" {
 
-static int cmd_heap(int argc, const cmd_args* argv, uint32_t flags);
+void cpp_heap_dump(CmpctDumpOptions options) { heap_dump(options); }
 
-STATIC_COMMAND_START
-STATIC_COMMAND_MASKED("heap", "heap debug commands", &cmd_heap, CMD_AVAIL_ALWAYS)
-STATIC_COMMAND_END(heap)
+void cpp_heap_dump_stats() { dump_stats(); }
 
-static int cmd_heap(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-  usage:
-    printf("usage:\n");
-    printf("\t%s info [-v]\n", argv[0].str);
-    if (HEAP_COLLECT_STATS) {
-      printf("\t%s stats\n", argv[0].str);
-    }
-    if (!(flags & CMD_FLAG_PANIC)) {
-      printf("\t%s trace\n", argv[0].str);
-      printf("\t%s trim\n", argv[0].str);
-      printf("\t%s test\n", argv[0].str);
-    }
-    return -1;
-  }
+void cpp_heap_test() { heap_test(); }
 
-  if (strcmp(argv[1].str, "info") == 0) {
-    CmpctDumpOptions options =
-        flags & CMD_FLAG_PANIC ? CmpctDumpOptions::PanicTime : CmpctDumpOptions::None;
-
-    for (int i = 2; i < argc; ++i) {
-      if (strcmp(argv[i].str, "-v") == 0) {
-        options |= CmpctDumpOptions::Verbose;
-      } else {
-        printf("unrecognized option (\"%s\") for info command\n", argv[i].str);
-        goto usage;
-      }
-    }
-
-    heap_dump(options);
-  } else if (HEAP_COLLECT_STATS && strcmp(argv[1].str, "stats") == 0) {
-    dump_stats();
-  } else if (!(flags & CMD_FLAG_PANIC) && strcmp(argv[1].str, "test") == 0) {
-    heap_test();
-  } else if (!(flags & CMD_FLAG_PANIC) && strcmp(argv[1].str, "trace") == 0) {
-    heap_trace = !heap_trace;
-    printf("heap trace is now %s\n", heap_trace ? "on" : "off");
-  } else {
-    printf("unrecognized command\n");
-    goto usage;
-  }
-
-  return 0;
-}
+}  // extern "C"

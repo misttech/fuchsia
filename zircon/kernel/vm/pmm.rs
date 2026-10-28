@@ -256,6 +256,242 @@ pub fn get_page_compression() -> Option<&'static crate::vm::compression::VmCompr
     node().get_page_compression()
 }
 
+/// Kernel console `pmm` command implementation.
+#[cfg(console_enabled)]
+mod console {
+    use super::{node, pmm_checker_check_all_free_pages};
+    use crate::console::{CMD_AVAIL_ALWAYS, CMD_FLAG_PANIC, CmdArgs, static_command};
+    use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
+    use crate::kernel::timer::{Timer, ZX_CLOCK_MONOTONIC};
+    use crate::platform_rs::timer::{DurationMono, InstantUnknown, current_mono_time};
+    use crate::vm::pmm_checker::{CheckFailAction, PmmChecker};
+    use crate::vm::vm_aspace::VmAspace;
+    use core::ffi::{c_int, c_void};
+    use core::pin::Pin;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use kprint::kprintln;
+    use ksync::KOnceCell;
+    use zx_status::Status;
+
+    ksync::declare_singleton_mutex!(DumpFreeMemLock);
+
+    /// Repeating timer used by `k pmm free` to periodically dump the free memory count.
+    static DUMP_FREE_MEM_TIMER: KOnceCell<Timer, DumpFreeMemLock> = KOnceCell::new();
+
+    /// Returns a pinned reference to the lazily-initialized `DUMP_FREE_MEM_TIMER`.
+    fn dump_free_mem_timer() -> Pin<&'static Timer> {
+        ksync::lock!(let mut guard = DumpFreeMemLock::get().lock());
+        // SAFETY: `guard.token()` / `guard.token_mut()` belongs to the `DumpFreeMemLock` singleton
+        // guarding `DUMP_FREE_MEM_TIMER`, which is pinned in static memory and never mutated or
+        // dropped after initialization. Checking `get` before `get_or_pin_init` ensures we never
+        // form `&mut Timer` once a shared `&'static Timer` reference has been handed out.
+        unsafe {
+            let timer: *const Timer = match DUMP_FREE_MEM_TIMER.get(guard.token()) {
+                Some(timer) => timer,
+                None => DUMP_FREE_MEM_TIMER
+                    .get_or_pin_init(Timer::init(ZX_CLOCK_MONOTONIC), guard.token_mut())
+                    .unwrap(),
+            };
+            Pin::new_unchecked(&*timer)
+        }
+    }
+
+    /// Timer callback that dumps the PMM free count and rearms itself after 1 second.
+    ///
+    /// # Safety
+    ///
+    /// `t` must be non-null and point to the valid, initialized, pinned `Timer` in
+    /// `DUMP_FREE_MEM_TIMER` for the duration of the call, invoked by the kernel timer subsystem.
+    unsafe extern "C" fn pmm_dump_timer(t: *mut Timer, now: i64, _arg: *mut c_void) {
+        let deadline = now.saturating_add(DurationMono::from_seconds(1).into_nanos());
+        // SAFETY: `t` points to the pinned `Timer` in `DUMP_FREE_MEM_TIMER`, and `Timer` methods
+        // only take `&self` (`Pin<&Timer>`).
+        unsafe {
+            Pin::new_unchecked(&*t).set_oneshot(deadline, pmm_dump_timer, core::ptr::null_mut());
+        }
+        node().dump_free();
+    }
+
+    /// Configures and arms the PMM free-page checker.
+    fn pmm_checker_enable(fill_size: usize, action: CheckFailAction) {
+        assert!(PmmChecker::is_valid_fill_size(fill_size));
+
+        // Enable filling of pages going forward.
+        // SAFETY: `PmmChecker::is_valid_fill_size(fill_size)` was asserted above, console commands
+        // are serialized by the console's command lock, and the checker is only configured during
+        // boot (before the console runs) or by this `pmm checker enable` console command.
+        if !unsafe { node().enable_free_page_filling(fill_size, action) } {
+            kprintln!("Checker already configured, requested fill size and action ignored.");
+        }
+
+        // From this point on, pages will be filled when they are freed.  However, the free list
+        // may still have a lot of unfilled pages so make a pass over them and fill them all.
+        node().fill_free_pages_and_arm();
+
+        // All free pages have now been filled with `fill_size` and the checker is armed.
+    }
+
+    /// Returns whether the PMM free-page checker is currently armed.
+    fn pmm_checker_is_enabled() -> bool {
+        // SAFETY: Console commands are serialized by the console's command lock, and the checker is
+        // only armed during boot (before the console runs) or by the console's `pmm checker enable`
+        // command, so this cannot race with `PmmChecker::arm`.
+        unsafe { node().checker().is_armed() }
+    }
+
+    /// Prints the status of the PMM free-page checker to standard output.
+    fn pmm_checker_print_status() {
+        // SAFETY: Console commands are serialized by the console's command lock, and the checker is
+        // only armed during boot (before the console runs) or by the console's `pmm checker enable`
+        // command, so this cannot race with `PmmChecker::arm`.
+        unsafe { node().checker().print_status_stdout() };
+    }
+
+    /// Prints usage information for the `pmm` console command.
+    fn cmd_usage(cmd_name: &str, is_panic: bool) -> c_int {
+        kprintln!("usage:");
+        kprintln!("{:s} dump                                     : dump pmm info ", cmd_name);
+        if !is_panic {
+            kprintln!(
+                "{:s} free                                     : periodically dump free mem count",
+                cmd_name
+            );
+            kprintln!(
+                "{:s} drop_user_pt                             : drop all user hardware page \
+                 tables",
+                cmd_name
+            );
+            kprintln!(
+                "{:s} checker status                           : prints the status of the pmm \
+                 checker",
+                cmd_name
+            );
+            kprintln!(
+                "{:s} checker enable [<size>] [oops|panic]     : enables the pmm checker with \
+                 optional fill size and optional action",
+                cmd_name
+            );
+            kprintln!(
+                "{:s} checker check                            : forces a check of all free pages \
+                 in the pmm",
+                cmd_name
+            );
+        }
+        Status::INTERNAL.into_raw()
+    }
+
+    /// Console command handler for `k pmm`.
+    ///
+    /// # Safety
+    ///
+    /// `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc` initialized
+    /// `CmdArgs` entries for the duration of the call.
+    unsafe extern "C" fn cmd_pmm(argc: c_int, argv: *const CmdArgs, flags: u32) -> c_int {
+        if argc <= 0 || argv.is_null() {
+            return Status::INTERNAL.into_raw();
+        }
+        let is_panic = (flags & CMD_FLAG_PANIC) != 0;
+        // SAFETY: `argv` is non-null and points to `argc` initialized `CmdArgs` entries from the
+        // console dispatcher.
+        let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+        let name = args[0].as_str();
+
+        if args.len() < 2 {
+            kprintln!("not enough arguments");
+            return cmd_usage(name, is_panic);
+        }
+
+        if args[1].as_str() == "dump" {
+            node().dump(is_panic);
+        } else if is_panic {
+            // No other operations will work during a panic.
+            kprintln!("Only the \"arenas\" command is available during a panic.");
+            return cmd_usage(name, is_panic);
+        } else if args[1].as_str() == "free" {
+            static SHOW_MEM: AtomicBool = AtomicBool::new(false);
+
+            if !SHOW_MEM.load(Ordering::Relaxed) {
+                kprintln!("pmm free: issue the same command to stop.");
+                let deadline = current_mono_time() + DurationMono::from_seconds(1);
+                let slack =
+                    TimerSlack::new(DurationMono::from_millis(20).into(), SlackMode::Center);
+                let slack_deadline = Deadline::new(InstantUnknown(deadline.0), slack);
+                // SAFETY: `DUMP_FREE_MEM_TIMER` is pinned in static memory and `pmm_dump_timer` is
+                // a valid callback.
+                unsafe {
+                    dump_free_mem_timer().set_deadline(
+                        &slack_deadline,
+                        pmm_dump_timer,
+                        core::ptr::null_mut(),
+                    );
+                }
+                SHOW_MEM.store(true, Ordering::Relaxed);
+            } else {
+                dump_free_mem_timer().cancel();
+                SHOW_MEM.store(false, Ordering::Relaxed);
+            }
+        } else if args[1].as_str() == "drop_user_pt" {
+            VmAspace::drop_all_user_page_tables();
+        } else if args[1].as_str() == "checker" {
+            if args.len() < 3 || args.len() > 5 {
+                return cmd_usage(name, is_panic);
+            }
+            if args[2].as_str() == "status" {
+                pmm_checker_print_status();
+            } else if args[2].as_str() == "enable" {
+                let mut fill_size = page::SIZE;
+                let mut action = PmmChecker::DEFAULT_ACTION;
+                if args.len() >= 4 {
+                    fill_size = args[3].arg_uint as usize;
+                    if !PmmChecker::is_valid_fill_size(fill_size) {
+                        kprintln!(
+                            "error: fill size must be a multiple of 8 and be between 8 and \
+                             kPageSize, inclusive"
+                        );
+                        return Status::INTERNAL.into_raw();
+                    }
+                }
+                if args.len() == 5 {
+                    action = match args[4].as_str() {
+                        "oops" => CheckFailAction::Oops,
+                        "panic" => CheckFailAction::Panic,
+                        _ => {
+                            kprintln!("error: invalid action");
+                            return Status::INTERNAL.into_raw();
+                        }
+                    };
+                }
+                pmm_checker_enable(fill_size, action);
+                // No need to print status as enabling automatically prints status.
+            } else if args[2].as_str() == "check" {
+                if !pmm_checker_is_enabled() {
+                    kprintln!("error: pmm checker is not enabled");
+                    return Status::INTERNAL.into_raw();
+                }
+                kprintln!("checking all free pages...");
+                pmm_checker_check_all_free_pages();
+                kprintln!("done");
+            } else {
+                return cmd_usage(name, is_panic);
+            }
+        } else {
+            kprintln!("unknown command");
+
+            return cmd_usage(name, is_panic);
+        }
+
+        zx_status::sys::ZX_OK
+    }
+
+    static_command!(
+        PMM,
+        c"pmm".as_ptr(),
+        c"physical memory manager".as_ptr(),
+        cmd_pmm,
+        CMD_AVAIL_ALWAYS
+    );
+}
+
 /// Unit tests for PMM.
 #[cfg(ktest)]
 #[unittest::suite(name = "pmm_rust")]

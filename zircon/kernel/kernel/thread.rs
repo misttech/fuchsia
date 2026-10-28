@@ -96,6 +96,7 @@ unsafe extern "C" {
     fn cpp_thread_lock_guard_destroy(guard: *mut lock_guard_bindings::ThreadLockGuard);
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_current_active_aspace() -> *mut VmAspace;
+    fn cpp_thread_current_switch_aspace(aspace: *mut VmAspace) -> *mut VmAspace;
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_etc(
         deadline: *const crate::kernel::deadline::Deadline,
@@ -3409,6 +3410,33 @@ pub unsafe fn current_active_aspace<'a>() -> Option<&'a VmAspace> {
     // SAFETY: `cpp_thread_current_active_aspace` returns the active `VmAspace*` pointer, which
     // is guaranteed by the caller to remain valid for `'a`.
     unsafe { cpp_thread_current_active_aspace().as_ref() }
+}
+
+/// Switches the current thread's address space pointer without performing a hardware context
+/// switch.
+///
+/// # Safety
+///
+/// The caller must ensure `aspace` remains valid while attached to the current thread.
+pub unsafe fn current_switch_aspace(aspace: &VmAspace) -> *mut VmAspace {
+    let ptr = core::ptr::from_ref(aspace).cast_mut();
+    // SAFETY: Caller guarantees `aspace` remains valid while attached to the current thread.
+    unsafe { cpp_thread_current_switch_aspace(ptr) }
+}
+
+/// Clears the current thread's address space pointer without performing a hardware context
+/// switch.
+///
+/// Note: This helper is only used by test and kernel debugging code (such as `k vmm` console
+/// commands) to detach a test address space from a kernel thread.
+///
+/// # Safety
+///
+/// The caller must ensure the current thread can safely run without an attached user address
+/// space.
+pub unsafe fn current_clear_aspace() -> *mut VmAspace {
+    // SAFETY: Caller guarantees clearing the current thread's address space pointer is valid.
+    unsafe { cpp_thread_current_switch_aspace(core::ptr::null_mut()) }
 }
 
 /// Sets the current thread's restricted mode state pointer.

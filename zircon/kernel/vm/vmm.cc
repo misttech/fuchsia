@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <lib/affine/ratio.h>
-#include <lib/console.h>
 #include <lib/ktrace.h>
 #include <lib/zircon-internal/macros.h>
 #include <string.h>
@@ -147,111 +146,6 @@ void vmm_set_active_aspace(VmAspace* aspace) {
   VmAspace* old = t->switch_aspace(aspace);
   vmm_context_switch(old, t->active_aspace());
 }
-
-static fbl::RefPtr<VmAspace> test_aspace;
-
-static int cmd_vmm(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-  notenoughargs:
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s aspaces\n", argv[0].str);
-    printf("%s kaspace\n", argv[0].str);
-    printf("%s alloc <size> <align_pow2>\n", argv[0].str);
-    printf("%s alloc_physical <paddr> <size> <align_pow2>\n", argv[0].str);
-    printf("%s alloc_contig <size> <align_pow2>\n", argv[0].str);
-    printf("%s free_region <address>\n", argv[0].str);
-    printf("%s create_aspace\n", argv[0].str);
-    printf("%s create_test_aspace\n", argv[0].str);
-    printf("%s free_aspace <address>\n", argv[0].str);
-    printf("%s set_test_aspace <address>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!test_aspace) {
-    test_aspace = fbl::RefPtr(VmAspace::kernel_aspace());
-  }
-
-  if (!strcmp(argv[1].str, "aspaces")) {
-    VmAspace::DumpAllAspaces(true);
-  } else if (!strcmp(argv[1].str, "kaspace")) {
-    VmAspace::kernel_aspace()->Dump(true);
-  } else if (!strcmp(argv[1].str, "alloc_physical")) {
-    if (argc < 4) {
-      goto notenoughargs;
-    }
-
-    void* ptr = (void*)0x99;
-    uint8_t align = (argc >= 5) ? (uint8_t)argv[4].u : 0u;
-    zx_status_t err = test_aspace->AllocPhysical(
-        "physical test", argv[3].u, &ptr, align, argv[2].u, 0,
-        ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
-    printf("VmAspace::AllocPhysical returns %d, ptr %p\n", err, ptr);
-  } else if (!strcmp(argv[1].str, "alloc_contig")) {
-    if (argc < 3) {
-      goto notenoughargs;
-    }
-
-    void* ptr = (void*)0x99;
-    uint8_t align = (argc >= 4) ? (uint8_t)argv[3].u : 0u;
-    zx_status_t err =
-        test_aspace->AllocContiguous("contig test", argv[2].u, &ptr, align, 0,
-                                     ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
-    printf("VmAspace::AllocContiguous returns %d, ptr %p\n", err, ptr);
-  } else if (!strcmp(argv[1].str, "free_region")) {
-    if (argc < 2) {
-      goto notenoughargs;
-    }
-
-    zx_status_t err = test_aspace->FreeRegion(reinterpret_cast<vaddr_t>(argv[2].u));
-    printf("VmAspace::FreeRegion returns %d\n", err);
-  } else if (!strcmp(argv[1].str, "create_aspace")) {
-    fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test");
-    printf("VmAspace::Create aspace %p\n", aspace.get());
-  } else if (!strcmp(argv[1].str, "create_test_aspace")) {
-    fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test");
-    printf("VmAspace::Create aspace %p\n", aspace.get());
-
-    test_aspace = aspace;
-    Thread::Current::switch_aspace(aspace.get());
-    Thread::Current::Sleep(1);  // XXX hack to force it to reschedule and thus load the aspace
-  } else if (!strcmp(argv[1].str, "free_aspace")) {
-    if (argc < 2) {
-      goto notenoughargs;
-    }
-
-    fbl::RefPtr<VmAspace> aspace = fbl::RefPtr((VmAspace*)(void*)argv[2].u);
-    if (test_aspace == aspace) {
-      test_aspace = nullptr;
-    }
-
-    if (Thread::Current::active_aspace() == aspace.get()) {
-      Thread::Current::switch_aspace(nullptr);
-      Thread::Current::Sleep(1);  // hack
-    }
-
-    zx_status_t err = aspace->Destroy();
-    printf("VmAspace::Destroy() returns %d\n", err);
-  } else if (!strcmp(argv[1].str, "set_test_aspace")) {
-    if (argc < 2) {
-      goto notenoughargs;
-    }
-
-    test_aspace = fbl::RefPtr((VmAspace*)(void*)argv[2].u);
-    Thread::Current::switch_aspace(test_aspace.get());
-    Thread::Current::Sleep(1);  // XXX hack to force it to reschedule and thus load the aspace
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("vmm", "virtual memory manager", &cmd_vmm)
-STATIC_COMMAND_END(vmm)
 
 extern "C" {
 

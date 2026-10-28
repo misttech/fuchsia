@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/dump/depth_printer.h>
 #include <lib/page/size.h>
@@ -644,30 +643,3 @@ void MultiPageRequest::CancelRequests() {
   read_active_ = false;
   dirty_active_ = false;
 }
-
-static int cmd_page_source(int argc, const cmd_args* argv, uint32_t flags) {
-  if (argc < 2) {
-  notenoughargs:
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s dump <address>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!strcmp(argv[1].str, "dump")) {
-    if (argc < 3) {
-      goto notenoughargs;
-    }
-    reinterpret_cast<PageSource*>(argv[2].u)->Dump(0, UINT32_MAX);
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("vm_page_source", "page source debug commands", &cmd_page_source)
-STATIC_COMMAND_END(ps_object)

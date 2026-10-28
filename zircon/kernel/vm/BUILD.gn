@@ -986,6 +986,7 @@ kernel_bindgen_crate("page-source-bindings") {
     "cpp_page_source_is_valid_external_failure_code",
     "cpp_page_source_is_valid_internal_failure_code",
     "cpp_page_source_paged_vmo_lock_is_held",
+    "cpp_page_source_dump",
   ]
   type_allowlist = [
     "MultiPageRequest",

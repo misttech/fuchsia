@@ -10,7 +10,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <lib/boot-options/boot-options.h>
-#include <lib/console.h>
 #include <lib/counters.h>
 #include <lib/ktrace.h>
 #include <lib/memalloc/range.h>
@@ -29,7 +28,6 @@
 #include <fbl/intrusive_double_list.h>
 #include <kernel/mp.h>
 #include <kernel/mutex.h>
-#include <kernel/timer.h>
 #include <ktl/algorithm.h>
 #include <lk/init.h>
 #include <vm/compression.h>
@@ -160,23 +158,6 @@ void pmm_checker_check_all_free_pages() { Pmm::Node().CheckAllFreePages(); }
 void pmm_asan_poison_all_free_pages() { Pmm::Node().PoisonAllFreePages(); }
 #endif
 
-static void pmm_checker_enable(size_t fill_size, CheckFailAction action) {
-  // Enable filling of pages going forward.
-  if (!Pmm::Node().EnableFreePageFilling(fill_size, action)) {
-    printf("Checker already configured, requested fill size and action ignored.\n");
-  }
-
-  // From this point on, pages will be filled when they are freed.  However, the free list may still
-  // have a lot of unfilled pages so make a pass over them and fill them all.
-  Pmm::Node().FillFreePagesAndArm();
-
-  // All free pages have now been filled with |fill_size| and the checker is armed.
-}
-
-static bool pmm_checker_is_enabled() { return Pmm::Node().Checker()->IsArmed(); }
-
-static void pmm_checker_print_status() { Pmm::Node().Checker()->PrintStatus(stdout); }
-
 void pmm_checker_init_from_cmdline() {
   bool enabled = false;
   switch (BootOptions::Get()->pmm_checker_enabled) {
@@ -214,12 +195,6 @@ void pmm_checker_init_from_cmdline() {
   }
 }
 
-static void pmm_dump_timer(Timer* t, zx_instant_mono_t now, void*) {
-  zx_instant_mono_t deadline = zx_time_add_duration(now, ZX_SEC(1));
-  t->SetOneshot(deadline, &pmm_dump_timer, nullptr);
-  Pmm::Node().DumpFree();
-}
-
 LK_INIT_HOOK(
     pmm_boot_memory,
     [](unsigned int /*level*/) {
@@ -232,111 +207,3 @@ LK_INIT_HOOK(
       boot_memory_bytes.Set(Pmm::Node().CountFreePages() * kPageSize);
     },
     LK_INIT_LEVEL_USER - 1)
-
-static Timer dump_free_mem_timer;
-
-static int cmd_usage(const char* cmd_name, bool is_panic) {
-  printf("usage:\n");
-  printf("%s dump                                     : dump pmm info \n", cmd_name);
-  if (!is_panic) {
-    printf("%s free                                     : periodically dump free mem count\n",
-           cmd_name);
-    printf("%s drop_user_pt                             : drop all user hardware page tables\n",
-           cmd_name);
-    printf("%s checker status                           : prints the status of the pmm checker\n",
-           cmd_name);
-    printf(
-        "%s checker enable [<size>] [oops|panic]     : enables the pmm checker with optional "
-        "fill size and optional action\n",
-        cmd_name);
-    printf(
-        "%s checker check                            : forces a check of all free pages in the "
-        "pmm\n",
-        cmd_name);
-  }
-  return ZX_ERR_INTERNAL;
-}
-
-static int cmd_pmm(int argc, const cmd_args* argv, uint32_t flags) {
-  const bool is_panic = flags & CMD_FLAG_PANIC;
-  const char* name = argv[0].str;
-
-  if (argc < 2) {
-    printf("not enough arguments\n");
-    return cmd_usage(name, is_panic);
-  }
-
-  if (!strcmp(argv[1].str, "dump")) {
-    Pmm::Node().Dump(is_panic);
-  } else if (is_panic) {
-    // No other operations will work during a panic.
-    printf("Only the \"arenas\" command is available during a panic.\n");
-    return cmd_usage(name, is_panic);
-  } else if (!strcmp(argv[1].str, "free")) {
-    static bool show_mem = false;
-
-    if (!show_mem) {
-      printf("pmm free: issue the same command to stop.\n");
-      zx_instant_mono_t deadline = zx_time_add_duration(current_mono_time(), ZX_SEC(1));
-      const TimerSlack slack{ZX_MSEC(20), TIMER_SLACK_CENTER};
-      const Deadline slackDeadline(deadline, slack);
-      dump_free_mem_timer.Set(slackDeadline, &pmm_dump_timer, nullptr);
-      show_mem = true;
-    } else {
-      dump_free_mem_timer.Cancel();
-      show_mem = false;
-    }
-  } else if (!strcmp(argv[1].str, "drop_user_pt")) {
-    VmAspace::DropAllUserPageTables();
-  } else if (!strcmp(argv[1].str, "checker")) {
-    if (argc < 3 || argc > 5) {
-      return cmd_usage(name, is_panic);
-    }
-    if (!strcmp(argv[2].str, "status")) {
-      pmm_checker_print_status();
-    } else if (!strcmp(argv[2].str, "enable")) {
-      size_t fill_size = kPageSize;
-      CheckFailAction action = PmmChecker::kDefaultAction;
-      if (argc >= 4) {
-        fill_size = argv[3].u;
-        if (!PmmChecker::IsValidFillSize(fill_size)) {
-          printf(
-              "error: fill size must be a multiple of 8 and be between 8 and kPageSize, "
-              "inclusive\n");
-          return ZX_ERR_INTERNAL;
-        }
-      }
-      if (argc == 5) {
-        BootOptions opts;
-        if (opts.Parse(argv[4].str, &BootOptions::pmm_checker_action)) {
-          action = opts.pmm_checker_action;
-        } else {
-          printf("error: invalid action\n");
-          return ZX_ERR_INTERNAL;
-        }
-      }
-      pmm_checker_enable(fill_size, action);
-      // No need to print status as enabling automatically prints status.
-    } else if (!strcmp(argv[2].str, "check")) {
-      if (!pmm_checker_is_enabled()) {
-        printf("error: pmm checker is not enabled\n");
-        return ZX_ERR_INTERNAL;
-      }
-      printf("checking all free pages...\n");
-      pmm_checker_check_all_free_pages();
-      printf("done\n");
-    } else {
-      return cmd_usage(name, is_panic);
-    }
-  } else {
-    printf("unknown command\n");
-
-    return cmd_usage(name, is_panic);
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND_MASKED("pmm", "physical memory manager", &cmd_pmm, CMD_AVAIL_ALWAYS)
-STATIC_COMMAND_END(pmm)

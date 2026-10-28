@@ -369,6 +369,11 @@ FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_active_aspace() {
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_switch_aspace(VmAspace* aspace) {
+  return Thread::Current::switch_aspace(aspace);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_current_memory_allocation_state_enable() {
   return Thread::Current::memory_allocation_state().Enable();
 }

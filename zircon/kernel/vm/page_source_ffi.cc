@@ -98,4 +98,8 @@ FFI_ALWAYS_INLINE bool cpp_page_source_paged_vmo_lock_is_held(PageSource* page_s
   return page_source->paged_vmo_lock()->lock().IsHeld();
 }
 
+void cpp_page_source_dump(const PageSource* page_source, uint32_t depth, uint32_t max_items) {
+  page_source->Dump(depth, max_items);
+}
+
 }  // extern "C"

@@ -38,6 +38,7 @@ bool cpp_page_source_is_valid_internal_failure_code(zx_status_t status);
 // Returns whether the calling thread holds |page_source|'s paged VMO lock. Intended for debug
 // assertions in callers that are required to hold that lock.
 bool cpp_page_source_paged_vmo_lock_is_held(PageSource* page_source);
+void cpp_page_source_dump(const PageSource* page_source, uint32_t depth, uint32_t max_items);
 
 __END_CDECLS
 

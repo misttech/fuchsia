@@ -12,7 +12,6 @@
 #include <inttypes.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/cmpctmalloc.h>
-#include <lib/console.h>
 #include <lib/crypto/global_prng.h>
 #include <lib/instrumentation/asan.h>
 #include <lib/zircon-internal/macros.h>
@@ -229,88 +228,6 @@ paddr_t vaddr_to_paddr(const void* va) {
 
   return pa;
 }
-
-static int cmd_vm(int argc, const cmd_args* argv, uint32_t) {
-  if (argc < 2) {
-  notenoughargs:
-    printf("not enough arguments\n");
-  usage:
-    printf("usage:\n");
-    printf("%s phys2virt <address>\n", argv[0].str);
-    printf("%s virt2phys <address>\n", argv[0].str);
-    printf("%s map <phys> <virt> <count> <flags>\n", argv[0].str);
-    printf("%s unmap <virt> <count>\n", argv[0].str);
-    return ZX_ERR_INTERNAL;
-  }
-
-  if (!strcmp(argv[1].str, "phys2virt")) {
-    if (argc < 3) {
-      goto notenoughargs;
-    }
-
-    if (!is_physmap_phys_addr(argv[2].u)) {
-      printf("address isn't in physmap\n");
-      return -1;
-    }
-
-    void* ptr = paddr_to_physmap((paddr_t)argv[2].u);
-    printf("paddr_to_physmap returns %p\n", ptr);
-  } else if (!strcmp(argv[1].str, "virt2phys")) {
-    if (argc < 3) {
-      goto notenoughargs;
-    }
-
-    if (!is_kernel_address(reinterpret_cast<vaddr_t>(argv[2].u))) {
-      printf("ERROR: outside of kernel address space\n");
-      return -1;
-    }
-
-    paddr_t pa;
-    arch_mmu_flags_t mmu_flags;
-    zx_status_t err = VmAspace::kernel_aspace()->arch_aspace().Query(argv[2].u, &pa, &mmu_flags);
-    printf("arch_mmu_query returns %d\n", err);
-    if (err >= 0) {
-      printf("\tpa %#" PRIxPTR ", flags %#x\n", pa, mmu_flags);
-    }
-  } else if (!strcmp(argv[1].str, "map")) {
-    if (argc < 6) {
-      goto notenoughargs;
-    }
-
-    if (!is_kernel_address(reinterpret_cast<vaddr_t>(argv[3].u))) {
-      printf("ERROR: outside of kernel address space\n");
-      return -1;
-    }
-
-    auto err = VmAspace::kernel_aspace()->arch_aspace().MapContiguous(
-        argv[3].u, argv[2].u, (uint)argv[4].u, static_cast<arch_mmu_flags_t>(argv[5].u));
-    printf("arch_mmu_map returns %d\n", err);
-  } else if (!strcmp(argv[1].str, "unmap")) {
-    if (argc < 4) {
-      goto notenoughargs;
-    }
-
-    if (!is_kernel_address(reinterpret_cast<vaddr_t>(argv[2].u))) {
-      printf("ERROR: outside of kernel address space\n");
-      return -1;
-    }
-
-    // Strictly only attempt to unmap exactly what the user requested, they can deal with any
-    // failure that might result.
-    auto err = VmAspace::kernel_aspace()->arch_aspace().Unmap(
-        argv[2].u, (uint)argv[3].u, ArchVmAspaceInterface::ArchUnmapOptions::None);
-    printf("arch_mmu_unmap returns %d\n", err);
-  } else {
-    printf("unknown command\n");
-    goto usage;
-  }
-
-  return ZX_OK;
-}
-
-STATIC_COMMAND_START
-STATIC_COMMAND("vm", "vm commands", &cmd_vm)
-STATIC_COMMAND_END(vm)
 
 extern "C" {
 paddr_t cpp_vaddr_to_paddr(const void* va);

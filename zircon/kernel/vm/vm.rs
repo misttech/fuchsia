@@ -130,3 +130,138 @@ pub unsafe extern "C" fn rust_vm_address_region_kernel_heap_init(
     // SAFETY: `KERNEL_HEAP_VMAR` is initialized.
     unsafe { KERNEL_HEAP_VMAR.get_unchecked() }
 }
+
+/// Kernel console `vm` command implementation.
+#[cfg(console_enabled)]
+mod console {
+    use crate::arch_rs::vm::is_kernel_address;
+    use crate::console::{CMD_AVAIL_NORMAL, CmdArgs, static_command};
+    use crate::kernel::types::PAddr;
+    use crate::vm::arch_vm_aspace::{ARCH_UNMAP_OPTION_NONE, ArchMmuFlags};
+    use crate::vm::physmap::{is_physmap_phys_addr, paddr_to_physmap};
+    use crate::vm::vm_aspace::VmAspace;
+    use core::ffi::{c_int, c_void};
+    use kprint::kprintln;
+    use zx_status::Status;
+
+    /// Console command handler for `k vm`.
+    ///
+    /// # Safety
+    ///
+    /// - `argc` must be `>= 1` and `argv` must be non-null and valid for reads of `argc`
+    ///   initialized `CmdArgs` entries for the duration of the call.
+    /// - For the `map` and `unmap` subcommands, the caller-supplied physical and kernel virtual
+    ///   address ranges must be valid to map or unmap in the kernel address space without
+    ///   corrupting active kernel mappings.
+    unsafe extern "C" fn cmd_vm(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
+        if argc <= 0 || argv.is_null() {
+            return Status::INTERNAL.into_raw();
+        }
+        // SAFETY: `argv` is non-null and points to `argc` initialized `CmdArgs` entries from the
+        // console dispatcher.
+        let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+        let cmd_name = args[0].as_str();
+        let usage = || -> c_int {
+            kprintln!("usage:");
+            kprintln!("{:s} phys2virt <address>", cmd_name);
+            kprintln!("{:s} virt2phys <address>", cmd_name);
+            kprintln!("{:s} map <phys> <virt> <count> <flags>", cmd_name);
+            kprintln!("{:s} unmap <virt> <count>", cmd_name);
+            Status::INTERNAL.into_raw()
+        };
+        let not_enough_args = || -> c_int {
+            kprintln!("not enough arguments");
+            usage()
+        };
+
+        if args.len() < 2 {
+            return not_enough_args();
+        }
+
+        let subcmd = args[1].as_str();
+        if subcmd == "phys2virt" {
+            if args.len() < 3 {
+                return not_enough_args();
+            }
+
+            if !is_physmap_phys_addr(PAddr(args[2].arg_uint as usize)) {
+                kprintln!("address isn't in physmap");
+                return -1;
+            }
+
+            let ptr = core::ptr::with_exposed_provenance::<c_void>(
+                paddr_to_physmap(PAddr(args[2].arg_uint as usize)).0,
+            );
+            kprintln!("paddr_to_physmap returns {:p}", ptr);
+        } else if subcmd == "virt2phys" {
+            if args.len() < 3 {
+                return not_enough_args();
+            }
+
+            if !is_kernel_address(args[2].arg_uint as usize) {
+                kprintln!("ERROR: outside of kernel address space");
+                return -1;
+            }
+
+            match VmAspace::kernel_aspace().arch_aspace().query(args[2].arg_uint as usize) {
+                Ok((pa, mmu_flags)) => {
+                    kprintln!("arch_mmu_query returns {}", zx_status::sys::ZX_OK);
+                    kprintln!("\tpa {:#x}, flags {:#x}", pa.0, mmu_flags);
+                }
+                Err(s) => {
+                    kprintln!("arch_mmu_query returns {}", s.into_raw());
+                }
+            }
+        } else if subcmd == "map" {
+            if args.len() < 6 {
+                return not_enough_args();
+            }
+
+            if !is_kernel_address(args[3].arg_uint as usize) {
+                kprintln!("ERROR: outside of kernel address space");
+                return -1;
+            }
+
+            // SAFETY: Console debugging command mapping user-specified physical pages into
+            // kernel virtual address space.
+            let err = Status::result_into_raw(unsafe {
+                VmAspace::kernel_aspace().arch_aspace().map_contiguous(
+                    args[3].arg_uint as usize,
+                    PAddr(args[2].arg_uint as usize),
+                    args[4].arg_uint as u32 as usize,
+                    args[5].arg_uint as ArchMmuFlags,
+                )
+            });
+            kprintln!("arch_mmu_map returns {}", err);
+        } else if subcmd == "unmap" {
+            if args.len() < 4 {
+                return not_enough_args();
+            }
+
+            if !is_kernel_address(args[2].arg_uint as usize) {
+                kprintln!("ERROR: outside of kernel address space");
+                return -1;
+            }
+
+            // Strictly only attempt to unmap exactly what the user requested, they can deal with
+            // any failure that might result.
+            // SAFETY: Console debugging command unmapping user-specified kernel virtual
+            // address range.
+            let err = Status::result_into_raw(unsafe {
+                VmAspace::kernel_aspace().arch_aspace().unmap(
+                    args[2].arg_uint as usize,
+                    args[3].arg_uint as u32 as usize,
+                    ARCH_UNMAP_OPTION_NONE,
+                )
+            });
+            kprintln!("arch_mmu_unmap returns {}", err);
+        } else {
+            kprintln!("unknown command");
+            return usage();
+        }
+
+        zx_status::sys::ZX_OK
+    }
+
+    static_command!(VM, c"vm".as_ptr(), c"vm commands".as_ptr(), cmd_vm, CMD_AVAIL_NORMAL);
+}

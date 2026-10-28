@@ -56,6 +56,7 @@ FFI_ALWAYS_INLINE void cpp_thread_dump_all(const char* match_owner, bool full);
 FFI_ALWAYS_INLINE void cpp_thread_dump_all_during_panic(const char* match_owner, bool full);
 FFI_ALWAYS_INLINE void cpp_thread_current_reschedule();
 FFI_ALWAYS_INLINE zx_instant_mono_t cpp_scheduler_state_finish_time(const SchedulerState* state);
+FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_switch_aspace(VmAspace* aspace);
 
 FFI_ALWAYS_INLINE zx_status_t cpp_thread_restricted_kick(Thread* thread);
 FFI_ALWAYS_INLINE void cpp_thread_set_memory_stall_state_inactive(Thread* thread);
