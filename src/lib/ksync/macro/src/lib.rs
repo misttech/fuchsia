@@ -64,49 +64,109 @@ fn parse_mutex_or_brwlock_args(
     errors: &mut Vec<syn::Error>,
     attr_name: &str,
 ) {
-    let nested = match meta_list
-        .parse_args_with(Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
-    {
-        Ok(nested) => nested,
-        Err(_) => match meta_list.parse_args::<Type>() {
-            Ok(ty) => {
-                *custom_class = Some(ty);
-                return;
-            }
-            Err(e) => {
-                errors.push(e);
-                return;
-            }
-        },
+    // `untracked` is only meaningful for `#[mutex]`: `BrwLockPi` has no untracked storage type
+    // and the brwlock codegen always registers a lock class.
+    let supports_untracked = attr_name == "mutex";
+    let accepted_args = if supports_untracked {
+        "`LockClass`, `untracked`, or `flags = <expr>`"
+    } else {
+        "`LockClass` or `flags = <expr>`"
     };
+    let mut untracked_span = None;
 
-    for meta in nested {
-        match meta {
-            syn::Meta::NameValue(nv) if nv.path.is_ident("flags") => {
-                *custom_flags = Some(nv.value);
-            }
-            syn::Meta::Path(path) if path.is_ident("untracked") => {
-                *is_untracked = true;
-            }
-            syn::Meta::Path(path) => {
-                *custom_class = Some(Type::Path(TypePath { attrs: Vec::new(), qself: None, path }));
-            }
-            syn::Meta::List(list) => {
-                let tokens = quote! { #list };
-                match syn::parse2::<Type>(tokens) {
-                    Ok(ty) => *custom_class = Some(ty),
-                    Err(e) => errors.push(e),
+    if let Err(e) = meta_list.parse_args_with(|input: syn::parse::ParseStream<'_>| {
+        if input.is_empty() {
+            return Err(syn::Error::new(
+                meta_list.span(),
+                format!("#[{attr_name}] attribute accepts {accepted_args}"),
+            ));
+        }
+
+        while !input.is_empty() {
+            if input.peek(Ident) && input.peek2(syn::Token![=]) {
+                let key: Ident = input.parse()?;
+                let _: syn::Token![=] = input.parse()?;
+                // Consume the value regardless of the key so that parsing (and diagnostics for
+                // the remaining arguments) can continue past an unknown key.
+                let value: syn::Expr = input.parse()?;
+                if key != "flags" {
+                    errors.push(syn::Error::new(
+                        key.span(),
+                        format!("#[{attr_name}] attribute accepts {accepted_args}"),
+                    ));
+                } else if custom_flags.is_some() {
+                    errors.push(syn::Error::new(
+                        key.span(),
+                        format!("Duplicate `flags` argument in #[{attr_name}] attribute"),
+                    ));
+                } else {
+                    *custom_flags = Some(value);
+                }
+            } else {
+                let ty: Type = input.parse()?;
+                if let Type::Path(tp) = &ty
+                    && tp.qself.is_none()
+                    && tp.path.is_ident("untracked")
+                {
+                    if !supports_untracked {
+                        errors.push(syn::Error::new(
+                            ty.span(),
+                            format!(
+                                "#[{attr_name}] does not support `untracked`; brwlocks are \
+                                 always tracked by lockdep"
+                            ),
+                        ));
+                    } else if *is_untracked {
+                        errors.push(syn::Error::new(
+                            ty.span(),
+                            format!("Duplicate `untracked` argument in #[{attr_name}] attribute"),
+                        ));
+                    } else {
+                        *is_untracked = true;
+                        untracked_span = Some(ty.span());
+                    }
+                } else if custom_class.is_some() {
+                    errors.push(syn::Error::new(
+                        ty.span(),
+                        format!("Duplicate `LockClass` argument in #[{attr_name}] attribute"),
+                    ));
+                } else {
+                    *custom_class = Some(ty);
                 }
             }
-            other => {
-                errors.push(syn::Error::new(
-                    other.span(),
-                    format!(
-                        "#[{attr_name}] attribute accepts `LockClass`, `untracked`, `flags = <expr>`, or combinations thereof"
-                    ),
-                ));
+
+            if !input.is_empty() {
+                let _: syn::Token![,] = input.parse()?;
             }
         }
+
+        Ok(())
+    }) {
+        errors.push(e);
+    }
+
+    if let (Some(class), Some(flags)) = (custom_class.as_ref(), custom_flags.as_ref()) {
+        let mut error = syn::Error::new(
+            flags.span(),
+            format!(
+                "#[{attr_name}] cannot combine `flags = ...` with an explicit `LockClass`; the \
+                 flags of an explicit lock class are fixed where that class is registered"
+            ),
+        );
+        error.combine(syn::Error::new(class.span(), "explicit `LockClass` specified here"));
+        errors.push(error);
+    }
+
+    if let (Some(class), Some(untracked_span)) = (custom_class.as_ref(), untracked_span) {
+        let mut error = syn::Error::new(
+            untracked_span,
+            format!(
+                "#[{attr_name}] cannot combine `untracked` with an explicit `LockClass`; whether \
+                 an explicit lock class is tracked is fixed where that class is registered"
+            ),
+        );
+        error.combine(syn::Error::new(class.span(), "explicit `LockClass` specified here"));
+        errors.push(error);
     }
 }
 
@@ -127,6 +187,17 @@ fn parse_field_attributes(
 
     field.attrs.retain(|attr| {
         if attr.path().is_ident("mutex") {
+            if analysis.is_brwlock {
+                errors.push(syn::Error::new(
+                    attr.span(),
+                    "Field cannot have both #[mutex] and #[brwlock] attributes",
+                ));
+                return false;
+            }
+            if analysis.is_mutex {
+                errors.push(syn::Error::new(attr.span(), "Duplicate #[mutex] attribute on field"));
+                return false;
+            }
             analysis.is_mutex = true;
             if let syn::Meta::List(meta_list) = &attr.meta {
                 parse_mutex_or_brwlock_args(
@@ -141,11 +212,23 @@ fn parse_field_attributes(
                 errors.push(syn::Error::new(
                     attr.meta.span(),
                     "#[mutex] attribute must be either #[mutex], #[mutex(LockClass)], \
-                     #[mutex(untracked)], #[mutex(flags = ...)], or #[mutex(LockClass, flags = ...)].",
+                     #[mutex(untracked)], or #[mutex(flags = ...)].",
                 ));
             }
             false
         } else if attr.path().is_ident("brwlock") {
+            if analysis.is_mutex {
+                errors.push(syn::Error::new(
+                    attr.span(),
+                    "Field cannot have both #[mutex] and #[brwlock] attributes",
+                ));
+                return false;
+            }
+            if analysis.is_brwlock {
+                errors
+                    .push(syn::Error::new(attr.span(), "Duplicate #[brwlock] attribute on field"));
+                return false;
+            }
             analysis.is_brwlock = true;
             if let syn::Meta::List(meta_list) = &attr.meta {
                 parse_mutex_or_brwlock_args(
@@ -159,8 +242,8 @@ fn parse_field_attributes(
             } else if !matches!(attr.meta, syn::Meta::Path(_)) {
                 errors.push(syn::Error::new(
                     attr.meta.span(),
-                    "#[brwlock] attribute must be either #[brwlock], #[brwlock(LockClass)], \
-                     #[brwlock(flags = ...)], or #[brwlock(LockClass, flags = ...)].",
+                    "#[brwlock] attribute must be either #[brwlock], #[brwlock(LockClass)], or \
+                     #[brwlock(flags = ...)].",
                 ));
             }
             false
@@ -788,6 +871,63 @@ fn generate_field_code(
     code
 }
 
+/// Resolves the lock class marker type for a `#[mutex]` / `#[brwlock]` field: the explicit
+/// `custom_class` if one was given, otherwise a `<Struct><Field>Class` marker to be generated.
+fn resolve_lock_class(
+    custom_class: Option<&Type>,
+    struct_ident: &Ident,
+    mu_camel: &str,
+    field_ident: &Ident,
+    generics_info: &GenericsInfo<'_>,
+    generated_names: &mut std::collections::HashSet<String>,
+    errors: &mut Vec<syn::Error>,
+) -> (Ident, proc_macro2::TokenStream) {
+    match custom_class {
+        Some(ty) => {
+            // This uniqueness check is purely syntactic (token spelling): a proc-macro has no
+            // type information, so `Class` vs. `self::Class` or a type alias are not detected.
+            let class_str = quote! { #ty }.to_string();
+            if !generated_names.insert(class_str.clone()) {
+                errors.push(syn::Error::new(
+                    ty.span(),
+                    format!(
+                        "Lock class `{class_str}` is already used by another lock field of this \
+                         struct; each lock field needs a distinct lock class"
+                    ),
+                ));
+            }
+            let ident = if let syn::Type::Path(syn::TypePath { path, .. }) = ty {
+                path.segments
+                    .last()
+                    .map(|s| s.ident.clone())
+                    .unwrap_or_else(|| format_ident!("CustomClass"))
+            } else {
+                format_ident!("CustomClass")
+            };
+            (ident, quote! { #ty })
+        }
+        None => {
+            let class_name = format!("{struct_ident}{mu_camel}Class");
+            check_unique_name(
+                &class_name,
+                field_ident.span(),
+                field_ident,
+                "class",
+                generated_names,
+                errors,
+            );
+            let ident = format_ident!("{class_name}");
+            let ty = if generics_info.class_ty_params.is_empty() {
+                quote! { #ident }
+            } else {
+                let class_ty_params = &generics_info.class_ty_params;
+                quote! { #ident <#(#class_ty_params),*> }
+            };
+            (ident, ty)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn generate_lock_class_registration(
     struct_ident: &Ident,
@@ -1029,12 +1169,18 @@ fn generate_pinned_guard_struct(
 ///
 /// # Attributes
 ///
-/// - `#[mutex]` / `#[mutex(CustomClass, flags = ...)]`: Marks a `KMutex`, `KSpinlock`, or
-///   `KMonitoredSpinlock` field and generates a lock class and `lock_<name>()` / `guard_<name>()`
-///   methods.
-/// - `#[brwlock]` / `#[brwlock(flags = ...)]`: Marks a `BrwLockPi` field and generates a lock class
-///   and `read_<name>()` / `write_<name>()` / `guard_read_<name>()` / `guard_write_<name>()`
-///   methods.
+/// - `#[mutex]` / `#[mutex(flags = ...)]` / `#[mutex(CustomClass)]`: Marks a `KMutex`,
+///   `KSpinlock`, or `KMonitoredSpinlock` field and generates `lock_<name>()` / `guard_<name>()`
+///   methods. Without `CustomClass`, a lock class is generated and registered with the raw lock's
+///   flags plus `flags`; with `CustomClass`, the field uses that existing lock class (whose flags
+///   are fixed where it is registered, so `flags` cannot be combined with it).
+/// - `#[mutex(untracked)]`: Marks a `KMutex` field whose generated lock class is not registered
+///   with lockdep (`ID` is null); cannot be combined with `flags` or `CustomClass`. Fields of an
+///   untracked storage type (e.g. `KMutex<RawMutexStorage>`) are untracked implicitly.
+/// - `#[brwlock]` / `#[brwlock(flags = ...)]` / `#[brwlock(CustomClass)]`: Marks a `BrwLockPi`
+///   field and generates `read_<name>()` / `write_<name>()` / `guard_read_<name>()` /
+///   `guard_write_<name>()` methods, with the same lock class rules as `#[mutex]` (except that
+///   `untracked` is not supported).
 /// - `#[guarded_by(lock1)]` or `#[guarded_by(lock1, lock2, ...)]`: Wraps a field in `KCell` (or
 ///   parameterizes a `KOnceCell<T>` field) with the lock class (or tuple of lock classes) of the
 ///   specified lock(s).
@@ -1218,15 +1364,19 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
                         field.ty.span(),
                         "Brwlock field must be of type BrwLockPi",
                     ));
-                }
-                if analysis.is_untracked && analysis.custom_flags.is_some() {
+                } else if let Type::Path(type_path) = &field.ty
+                    && let Some(last_segment) = type_path.path.segments.last()
+                    && !matches!(last_segment.arguments, syn::PathArguments::None)
+                {
                     errors.push(syn::Error::new(
-                        field.ident.as_ref().unwrap().span(),
-                        "untracked brwlocks cannot specify lockdep flags",
+                        last_segment.arguments.span(),
+                        "BrwLockPi does not accept generic arguments in #[guarded] struct \
+                         definitions; specify a custom lock class with #[brwlock(LockClass)] \
+                         instead",
                     ));
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                brwlock_fields.push((field.clone(), analysis.custom_flags, analysis.is_untracked));
+                brwlock_fields.push((field.clone(), analysis.custom_class, analysis.custom_flags));
             } else if !analysis.guarded_by.is_empty() {
                 let konce_cell_inner_ty = if is_konce_cell_type(&field.ty) {
                     match extract_konce_cell_inner_type(&field.ty) {
@@ -1301,47 +1451,15 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             &mut errors,
         );
 
-        let (class_ident, class_type) = match custom_class {
-            Some(ref ty) => {
-                let class_str = quote! { #ty }.to_string();
-                check_unique_name(
-                    &class_str,
-                    ty.span(),
-                    &field_ident,
-                    "class",
-                    &mut generated_names,
-                    &mut errors,
-                );
-                let ident = if let syn::Type::Path(syn::TypePath { path, .. }) = ty {
-                    path.segments
-                        .last()
-                        .map(|s| s.ident.clone())
-                        .unwrap_or_else(|| format_ident!("CustomClass"))
-                } else {
-                    format_ident!("CustomClass")
-                };
-                (ident, quote! { #ty })
-            }
-            None => {
-                let class_name = format!("{struct_ident}{mu_camel}Class");
-                check_unique_name(
-                    &class_name,
-                    field_ident.span(),
-                    &field_ident,
-                    "class",
-                    &mut generated_names,
-                    &mut errors,
-                );
-                let ident = format_ident!("{class_name}");
-                let ty = if generics_info.class_ty_params.is_empty() {
-                    quote! { #ident }
-                } else {
-                    let class_ty_params = &generics_info.class_ty_params;
-                    quote! { #ident <#(#class_ty_params),*> }
-                };
-                (ident, ty)
-            }
-        };
+        let (class_ident, class_type) = resolve_lock_class(
+            custom_class.as_ref(),
+            struct_ident,
+            &mu_camel,
+            &field_ident,
+            &generics_info,
+            &mut generated_names,
+            &mut errors,
+        );
 
         let is_phantom = is_phantom_mutex_type(&field.ty);
         if is_phantom && custom_class.is_none() {
@@ -1363,22 +1481,13 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         });
     }
 
-    for (field, custom_flags, is_untracked) in brwlock_fields {
+    for (field, custom_class, custom_flags) in brwlock_fields {
         let field_ident = field.ident.unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
-        let class_name = format!("{struct_ident}{mu_camel}Class");
         let read_guard_name = format!("{struct_ident}{mu_camel}ReadGuard");
         let write_guard_name = format!("{struct_ident}{mu_camel}WriteGuard");
 
-        check_unique_name(
-            &class_name,
-            field_ident.span(),
-            &field_ident,
-            "class",
-            &mut generated_names,
-            &mut errors,
-        );
         check_unique_name(
             &read_guard_name,
             field_ident.span(),
@@ -1396,23 +1505,26 @@ fn guarded_impl(input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
             &mut errors,
         );
 
-        let class_ident = format_ident!("{class_name}");
-        let class_type = if generics_info.class_ty_params.is_empty() {
-            quote! { #class_ident }
-        } else {
-            let class_ty_params = &generics_info.class_ty_params;
-            quote! { #class_ident <#(#class_ty_params),*> }
-        };
+        let (class_ident, class_type) = resolve_lock_class(
+            custom_class.as_ref(),
+            struct_ident,
+            &mu_camel,
+            &field_ident,
+            &generics_info,
+            &mut generated_names,
+            &mut errors,
+        );
 
         brwlock_fields_processed.push(MutexField {
             ident: field_ident,
             class_ident,
             class_type,
             mutex_type: quote! { ::ksync::RawBrwLockPi },
-            custom_class: None,
+            custom_class,
             custom_flags,
             is_phantom: false,
-            is_untracked,
+            // `untracked` is rejected on `#[brwlock]`; brwlock classes are always registered.
+            is_untracked: false,
         });
     }
 
@@ -2860,7 +2972,9 @@ mod tests {
         .to_string();
         assert!(
             err_dup_class.contains("compile_error")
-                && err_dup_class.contains("duplicate class name 'SharedCustomClass'"),
+                && err_dup_class.contains(
+                    "Lock class `SharedCustomClass` is already used by another lock field"
+                ),
             "unexpected output: {err_dup_class}"
         );
 
@@ -2962,5 +3076,267 @@ mod tests {
         assert!(!out_explicit.contains("compile_error"), "unexpected error: {out_explicit}");
         assert!(!out_explicit.contains("rust_lock_classes"), "unexpected section: {out_explicit}");
         assert!(out_explicit.contains("null_mut"), "expected null_mut ID: {out_explicit}");
+    }
+
+    #[test]
+    fn test_explicit_lock_class_with_flags_compile_errors() {
+        // An explicit lock class's flags are fixed where it is registered, so `flags = ...` must
+        // be rejected rather than silently ignored, including for generic `CustomClass<T>` types.
+        for (attr, lock_ty) in [("mutex", quote! { KMutex }), ("brwlock", quote! { BrwLockPi })] {
+            let attr_ident = format_ident!("{attr}");
+            for args in [
+                quote! { CustomClass, flags = lockdep::LOCK_FLAGS_NESTABLE },
+                quote! { CustomClass<T>, flags = lockdep::LOCK_FLAGS_NESTABLE },
+                quote! { flags = lockdep::LOCK_FLAGS_NESTABLE, CustomClass<T> },
+            ] {
+                let err = guarded_impl(quote! {
+                    struct BadExplicitClassFlags<T> {
+                        #[#attr_ident(#args)]
+                        lock: #lock_ty,
+                        #[guarded_by(lock)]
+                        val: T,
+                    }
+                })
+                .to_string();
+                assert!(
+                    err.contains("compile_error")
+                        && err.contains(&format!(
+                            "#[{attr}] cannot combine `flags = ...` with an explicit `LockClass`"
+                        ))
+                        && err.contains("explicit `LockClass` specified here"),
+                    "unexpected output for #[{attr}({args})]: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_explicit_lock_class_with_untracked_compile_errors() {
+        // Whether an explicit lock class is tracked is fixed where it is registered, so
+        // `untracked` must be rejected rather than silently ignored.
+        for args in [
+            quote! { CustomClass, untracked },
+            quote! { untracked, CustomClass<T> },
+            quote! { CustomClass<T>, untracked },
+        ] {
+            let err = guarded_impl(quote! {
+                struct BadExplicitClassUntracked<T> {
+                    #[mutex(#args)]
+                    lock: KMutex,
+                    #[guarded_by(lock)]
+                    val: T,
+                }
+            })
+            .to_string();
+            assert!(
+                err.contains("compile_error")
+                    && err.contains(
+                        "#[mutex] cannot combine `untracked` with an explicit `LockClass`"
+                    )
+                    && err.contains("explicit `LockClass` specified here"),
+                "unexpected output for #[mutex({args})]: {err}"
+            );
+        }
+
+        // An explicit class on an untracked *storage* type is fine: the storage type, not the
+        // attribute, decides that the field is untracked.
+        let ok = guarded_impl(quote! {
+            struct ExplicitClassUntrackedStorage {
+                #[mutex(CustomClass)]
+                lock: KMutex<RawMutexStorage>,
+                #[guarded_by(lock)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!ok.contains("compile_error"), "unexpected error: {ok}");
+    }
+
+    #[test]
+    fn test_brwlock_untracked_compile_errors() {
+        // `BrwLockPi` has no untracked storage type and brwlock classes are always registered,
+        // so `untracked` is rejected on `#[brwlock]` instead of being parsed and ignored.
+        for args in [quote! { untracked }, quote! { untracked, flags = lockdep::LOCK_FLAGS_LEAF }] {
+            let err = guarded_impl(quote! {
+                struct BadBrwLockUntracked {
+                    #[brwlock(#args)]
+                    lock: BrwLockPi,
+                    #[guarded_by(lock)]
+                    val: u32,
+                }
+            })
+            .to_string();
+            assert!(
+                err.contains("compile_error")
+                    && err.contains("#[brwlock] does not support `untracked`"),
+                "unexpected output for #[brwlock({args})]: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_lock_attribute_arg_does_not_abort_parsing() {
+        // An unknown `key = value` argument is reported, but the remaining arguments are still
+        // parsed so that their diagnostics are not lost.
+        let err = guarded_impl(quote! {
+            struct BadUnknownKey {
+                #[mutex(bogus = 1, CustomClass, flags = lockdep::LOCK_FLAGS_NESTABLE)]
+                lock: KMutex,
+                #[guarded_by(lock)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err.contains("compile_error")
+                && err.contains("#[mutex] attribute accepts `LockClass`, `untracked`, or")
+                && err
+                    .contains("#[mutex] cannot combine `flags = ...` with an explicit `LockClass`"),
+            "unexpected output: {err}"
+        );
+
+        let err_brwlock = guarded_impl(quote! {
+            struct BadUnknownKeyBrwLock {
+                #[brwlock(bogus = 1)]
+                lock: BrwLockPi,
+                #[guarded_by(lock)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_brwlock.contains("compile_error")
+                && err_brwlock.contains("#[brwlock] attribute accepts `LockClass` or"),
+            "unexpected output: {err_brwlock}"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_lock_attribute_args_compile_errors() {
+        for (attr, lock_ty) in [("mutex", quote! { KMutex }), ("brwlock", quote! { BrwLockPi })] {
+            let attr_ident = format_ident!("{attr}");
+
+            // 1. Duplicate `flags = ...` in a single attribute.
+            let err_dup_flags = guarded_impl(quote! {
+                struct BadDupFlags {
+                    #[#attr_ident(
+                        flags = lockdep::LOCK_FLAGS_NESTABLE,
+                        flags = lockdep::LOCK_FLAGS_LEAF,
+                    )]
+                    lock: #lock_ty,
+                    #[guarded_by(lock)]
+                    val: u32,
+                }
+            })
+            .to_string();
+            assert!(
+                err_dup_flags.contains("compile_error")
+                    && err_dup_flags
+                        .contains(&format!("Duplicate `flags` argument in #[{attr}] attribute")),
+                "unexpected output for duplicate flags on #[{attr}]: {err_dup_flags}"
+            );
+
+            // 2. Duplicate explicit `LockClass` in a single attribute.
+            let err_dup_class = guarded_impl(quote! {
+                struct BadDupClass {
+                    #[#attr_ident(ClassA, ClassB)]
+                    lock: #lock_ty,
+                    #[guarded_by(lock)]
+                    val: u32,
+                }
+            })
+            .to_string();
+            assert!(
+                err_dup_class.contains("compile_error")
+                    && err_dup_class.contains(&format!(
+                        "Duplicate `LockClass` argument in #[{attr}] attribute"
+                    )),
+                "unexpected output for duplicate class on #[{attr}]: {err_dup_class}"
+            );
+
+            // 3. Repeated `#[mutex]` / `#[brwlock]` attributes on the same field.
+            let err_dup_attr = guarded_impl(quote! {
+                struct BadDupAttr {
+                    #[#attr_ident(ClassA)]
+                    #[#attr_ident(flags = lockdep::LOCK_FLAGS_NESTABLE)]
+                    lock: #lock_ty,
+                    #[guarded_by(lock)]
+                    val: u32,
+                }
+            })
+            .to_string();
+            assert!(
+                err_dup_attr.contains("compile_error")
+                    && err_dup_attr.contains(&format!("Duplicate #[{attr}] attribute on field")),
+                "unexpected output for duplicate #[{attr}] attribute: {err_dup_attr}"
+            );
+        }
+
+        // 4. Combining `#[mutex]` and `#[brwlock]` on the same field.
+        let err_mixed = guarded_impl(quote! {
+            struct BadMixedAttr {
+                #[mutex]
+                #[brwlock]
+                lock: KMutex,
+                #[guarded_by(lock)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(
+            err_mixed.contains("compile_error")
+                && err_mixed.contains("Field cannot have both #[mutex] and #[brwlock] attributes"),
+            "unexpected output for mixed #[mutex]/#[brwlock]: {err_mixed}"
+        );
+    }
+
+    #[test]
+    fn test_explicit_brwlock_class_is_used() {
+        let output = guarded_impl(quote! {
+            struct ExplicitBrwLockClass {
+                #[brwlock(CustomBrwLockClass)]
+                lock: BrwLockPi,
+                #[guarded_by(lock)]
+                val: u32,
+            }
+        })
+        .to_string();
+        assert!(!output.contains("compile_error"), "unexpected output: {output}");
+        // The explicit class is used for the field and its guarded KCell, and no class is
+        // generated or registered.
+        assert!(output.contains("BrwLockPi < CustomBrwLockClass >"), "unexpected output: {output}");
+        assert!(
+            output.contains("KCell < u32 , CustomBrwLockClass >"),
+            "unexpected output: {output}"
+        );
+        assert!(
+            !output.contains("ExplicitBrwLockClassLockClass")
+                && !output.contains("EXPLICITBRWLOCKCLASS_LOCK_REGISTRATION")
+                && !output.contains("rust_lock_classes"),
+            "unexpected output: {output}"
+        );
+
+        // Passing generic arguments directly on `BrwLockPi<...>` in a `#[guarded]` struct is
+        // rejected with a compile error directing the caller to `#[brwlock(LockClass)]`.
+        for attr in [quote! { #[brwlock] }, quote! { #[brwlock(CustomBrwLockClass)] }] {
+            let err = guarded_impl(quote! {
+                struct BadBrwLockGenericArgs {
+                    #attr
+                    lock: BrwLockPi<CustomBrwLockClass>,
+                    #[guarded_by(lock)]
+                    val: u32,
+                }
+            })
+            .to_string();
+            assert!(
+                err.contains("compile_error")
+                    && err.contains(
+                        "BrwLockPi does not accept generic arguments in #[guarded] struct \
+                         definitions; specify a custom lock class with #[brwlock(LockClass)] \
+                         instead"
+                    ),
+                "unexpected output for {attr}: {err}"
+            );
+        }
     }
 }

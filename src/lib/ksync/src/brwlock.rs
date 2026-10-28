@@ -412,7 +412,6 @@ mod tests {
         run_test(4, 2);
     }
 
-    #[allow(dead_code)]
     struct CustomBrwLockClass;
     impl lockdep::LockClass for CustomBrwLockClass {
         const ID: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -421,7 +420,7 @@ mod tests {
     #[guarded]
     struct CustomBrwLockStruct {
         #[brwlock(CustomBrwLockClass)]
-        lock: BrwLockPi<CustomBrwLockClass>,
+        lock: BrwLockPi,
         #[guarded_by(lock)]
         value: u32,
     }
@@ -433,8 +432,20 @@ mod tests {
             value: 42.into(),
         }));
 
-        lock!(let guard = s.read_lock());
-        assert_eq!(*guard.value(), 42);
+        {
+            lock!(let guard = s.read_lock());
+            let _: &crate::LockToken<'_, CustomBrwLockClass> = guard.token();
+            assert_eq!(*guard.value(), 42);
+        }
+        {
+            lock!(let mut guard = s.write_lock());
+            let _: &crate::LockToken<'_, CustomBrwLockClass> = guard.token();
+            *guard.as_mut().value_mut() = 99;
+        }
+        {
+            lock!(let guard = s.read_lock());
+            assert_eq!(*guard.value(), 99);
+        }
     }
 
     #[guarded]
