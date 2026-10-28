@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
 
@@ -369,6 +370,62 @@ TEST(PtraceTest, PtraceAttachDeniedWithoutSelinuxCapSysPtrace) {
     EXPECT_THAT(kill(tracee_pid, SIGKILL), SyscallSucceeds());
     test_helper::ForkResult tracee_result =
         helper.WaitForChild(tracee_pid, /*expected_exit_status=*/0, SIGKILL);
+    EXPECT_TRUE(tracee_result.determined_result);
+  }));
+}
+
+// Dropping privileges (changing the effective UID/GID, e.g. as Android zygote does when
+// specializing an app process) makes a process non-dumpable. Attaching to a non-dumpable process
+// requires `CAP_SYS_PTRACE`, and this check precedes the SELinux `ptrace_access_check()` hook, so
+// an unprivileged tracer is denied with EPERM without the SELinux `process { ptrace }` permission
+// being checked or audited, even though the policy denies it.
+TEST(PtraceTest, PtraceAttachNonDumpableDeniedWithoutSelinuxCheck) {
+  constexpr char kSecurityContext[] = "test_u:test_r:test_ptrace_drop_privs_t:s0";
+  constexpr uid_t kUnprivilegedUid = 1000;
+  constexpr gid_t kUnprivilegedGid = 1000;
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kSecurityContext, [&] {
+    auto drop_privileges = [&] {
+      ASSERT_THAT(setresgid(kUnprivilegedGid, kUnprivilegedGid, kUnprivilegedGid),
+                  SyscallSucceeds());
+      ASSERT_THAT(setresuid(kUnprivilegedUid, kUnprivilegedUid, kUnprivilegedUid),
+                  SyscallSucceeds());
+    };
+
+    test_helper::ForkHelper helper;
+    helper.OnlyWaitForForkedChildren();
+
+    pid_t tracee_pid = helper.RunInForkedProcess([&] {
+      ASSERT_EQ(prctl(PR_GET_DUMPABLE), 1);
+      ASSERT_NO_FATAL_FAILURE(drop_privileges());
+      EXPECT_EQ(prctl(PR_GET_DUMPABLE), 0);
+      // Stop until the tracer has run, then exit normally so that any `EXPECT_*` failures above
+      // are reported through the exit status.
+      raise(SIGSTOP);
+    });
+    ASSERT_GT(tracee_pid, 0);
+
+    // Wait for the tracee to have dropped its privileges.
+    int wstatus;
+    ASSERT_THAT(waitpid(tracee_pid, &wstatus, WUNTRACED), SyscallSucceeds());
+    ASSERT_TRUE(WIFSTOPPED(wstatus));
+
+    pid_t tracer_pid = helper.RunInForkedProcess([&] {
+      ASSERT_NO_FATAL_FAILURE(drop_privileges());
+
+      // The tracer has the same UID/GID as the tracee, but no `CAP_SYS_PTRACE` with which to
+      // override the tracee being non-dumpable.
+      EXPECT_THAT(ptrace(PTRACE_ATTACH, tracee_pid, nullptr, nullptr),
+                  SyscallFailsWithErrno(EPERM));
+    });
+    test_helper::ForkResult tracer_result = helper.WaitForChild(tracer_pid);
+    EXPECT_TRUE(tracer_result.determined_result);
+
+    // Resume the tracee and wait for it to exit normally.
+    EXPECT_THAT(kill(tracee_pid, SIGCONT), SyscallSucceeds());
+    test_helper::ForkResult tracee_result = helper.WaitForChild(tracee_pid);
     EXPECT_TRUE(tracee_result.determined_result);
   }));
 }

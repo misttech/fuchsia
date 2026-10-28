@@ -42,6 +42,10 @@
                 "PtraceTest.PtraceExecVanillaCapCheckUsesCachedCreds",
                 "PtraceTest.PtraceExecSelinuxCapCheckUsesCachedCreds",
 
+                // TODO: https://fxbug.dev/575528397 - Reset the "dumpable" attribute when the
+                // effective or filesystem UID/GID change.
+                "PtraceTest.PtraceAttachNonDumpableDeniedWithoutSelinuxCheck",
+
                 // TODO: https://fxbug.dev/574857992 - Reject subsequent writes with EBUSY even if
                 // the initial write failed.
                 "SeLinuxFsContext.OneRequestPerInstanceFailedWrite",
