@@ -15,7 +15,6 @@ fx_cc_binary(
     deps = [
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",
-        "//sdk/lib/fdio",
         "//zircon/system/ulib/closure-queue",
         "//zircon/system/ulib/zxtest",
     ],

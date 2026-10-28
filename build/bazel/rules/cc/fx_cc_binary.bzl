@@ -45,7 +45,13 @@ def _fx_cc_binary_impl(
         kwargs = kwargs | {"features": features},
         name = name,
         cc_rule_name = "cc_binary",
-        build_flags = build_flags,
+        # LINT.IfChange(fdio_config)
+        # Link libfdio.so into Fuchsia executables by default. This is a no-op
+        # for host binaries (fdio_config has no deps there) and for shared
+        # libraries (executable_link_deps are ignored for them). Targets can
+        # opt out with disable_build_flags.
+        build_flags = [Label("//build/config/fuchsia:fdio_config")] + build_flags,
+        # LINT.ThenChange(//build/bazel/config/BUILD.gn:fdio_config)
         disable_build_flags = disable_build_flags,
 
         # cc_binary() produces a shared library if linkshared=True, or
@@ -69,6 +75,14 @@ fx_cc_binary = macro(
     # `cc_binary()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_binary,
     attrs = {
+        # Override the configurable `linkshared` inherited from cc_binary():
+        # symbolic macros see configurable values as select() objects (which
+        # are always truthy), but target_type must be known at loading time.
+        "linkshared": attr.bool(
+            doc = "Produce a shared library instead of an executable.",
+            default = False,
+            configurable = False,
+        ),
         "public_configs": attr.string_list(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],

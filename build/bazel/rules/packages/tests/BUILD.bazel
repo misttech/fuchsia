@@ -270,6 +270,7 @@ verify_fx_test_unstripped_binaries(
     testonly = True,
     expected_basenames = [
         "example_test_bin",
+        "libfdio.so",
     ],
     test = ":example_test",
 )
@@ -280,6 +281,7 @@ verify_fx_test_unstripped_binaries(
     expected_basenames = [
         "example_second_test_bin",
         "example_test_bin",
+        "libfdio.so",
     ],
     test = ":example_multi_unittest_package",
 )
@@ -332,6 +334,7 @@ verify_fx_test_unstripped_binaries(
     expected_basenames = [
         "example_second_test_bin",
         "example_test_bin",
+        "libfdio.so",
     ],
     test = ":example_test_with_subpackage",
 )
@@ -927,6 +930,7 @@ verify_fx_test_unstripped_binaries(
     expected_basenames = [
         "example_second_test_bin",
         "example_test_bin",
+        "libfdio.so",
     ],
     test = ":example_unittest_package_with_packaged_binary_resource",
 )
@@ -1088,6 +1092,7 @@ fx_cc_binary(
     testonly = True,
     srcs = ["example_test.cc"],
     build_flags = [":example_extra_linker_flags_alias"],
+    disable_build_flags = ["//build/config/fuchsia:fdio_config"],
     tags = ["manual"],
 )
 
@@ -1130,6 +1135,7 @@ fx_cc_binary(
     testonly = True,
     srcs = ["example_test.cc"],
     data = [":libexample_shared_with_extra_linker_flags.so"],
+    disable_build_flags = ["//build/config/fuchsia:fdio_config"],
     tags = ["manual"],
 )
 
@@ -1165,7 +1171,10 @@ fx_cc_binary(
     srcs = ["example_test.cc"],
     build_flags = [":example_extra_linker_flags_wrapper"],
     data = [":libexample_shared_with_exec_only_extra_linker_flags.so"],
-    disable_build_flags = [":example_extra_linker_flags_wrapper"],
+    disable_build_flags = [
+        ":example_extra_linker_flags_wrapper",
+        "//build/config/fuchsia:fdio_config",
+    ],
     tags = ["manual"],
 )
 

@@ -51,7 +51,6 @@ fx_cc_binary(
         "//sdk/lib/async-loop:async-loop-cpp",
         "//sdk/lib/async-loop:async-loop-default",
         "//sdk/lib/component/outgoing/cpp",
-        "//sdk/lib/fdio",
         "//sdk/lib/syslog/cpp",
     ],
 )

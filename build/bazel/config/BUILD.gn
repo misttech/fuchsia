@@ -49,6 +49,17 @@ generated_file("bazel_default_configs_json") {
   outputs = [ "$root_build_dir/bazel_default_configs/${_config_name}.json" ]
   output_conversion = "json"
 
+  # LINT.IfChange(fdio_config)
+  # Exclude //build/config/fuchsia:fdio_config because it injects a C++
+  # library dependency (//sdk/lib/fdio) that cannot be attached to
+  # cc_toolchain without forming a dependency cycle; fx_cc_binary() applies
+  # it via build_flags instead. Add it first so the removal does not fail
+  # when it is absent (e.g. for host toolchains).
+  default_executable_configs += [ "//build/config/fuchsia:fdio_config" ]
+  default_executable_configs -= [ "//build/config/fuchsia:fdio_config" ]
+
+  # LINT.ThenChange(//build/bazel/rules/cc/fx_cc_binary.bzl:fdio_config)
+
   # Keep these definitions in sync with the set_defaults() calls in
   # //build/config/BUILDCONFIG.gn
   contents = {

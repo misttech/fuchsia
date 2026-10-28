@@ -4,6 +4,7 @@
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
+load("@fuchsia_rules_common//build_flags:extra_linker_flags.bzl", "extra_linker_flags")
 load("//build/bazel/config/derived:compilation_modes.bzl", "is_release")
 
 package(default_applicable_licenses = ["//:license"])
@@ -43,13 +44,12 @@ build_flags(
 # LINT.ThenChange(BUILD.gn:shared_library_config)
 
 # LINT.IfChange(fdio_config)
-build_flags(
+extra_linker_flags(
     name = "fdio_config",
-    # This config is only a marker that is used to signal that a given executable
-    # should link with fdio. With fdio now getting built in this very build, there
-    # need to be a proper dependency.
-    # See the override of the `executable` template in
-    # //build/config/BUILDCONFIG.gni where that build edge is added.
+    executable_link_deps = select({
+        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/fuchsia/BUILD.gn:fdio_config)

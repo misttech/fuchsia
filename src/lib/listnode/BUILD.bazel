@@ -38,10 +38,7 @@ fx_cc_binary(
     deps = [
         ":listnode",
         "//zircon/system/ulib/zxtest",
-    ] + select({
-        "@platforms//os:fuchsia": ["//sdk/lib/fdio"],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # TODO(https://fxbug.dev/574121341): Run in GN too.

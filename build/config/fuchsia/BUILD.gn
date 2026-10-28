@@ -182,6 +182,10 @@ config("fdio_config") {
   # need to be a proper dependency.
   # See the override of the `executable` template in
   # //build/config/BUILDCONFIG.gni where that build edge is added.
+  #
+  # The Bazel equivalent is an extra_linker_flags() target that adds the
+  # //sdk/lib/fdio dependency directly through executable_link_deps, and
+  # fx_cc_binary() applies it via build_flags.
 }
 
 # LINT.ThenChange(//build/config/fuchsia/BUILD.bazel:fdio_config)
