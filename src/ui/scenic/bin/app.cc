@@ -678,9 +678,16 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
           const zx_status_t status = flatland_compositor_->SetDisplayPowerMode(display_id, mode);
           // Frames scheduled while dark were skipped, not rendered, so the display is
           // showing the black config committed at power-off. Render the current scene
-          // now rather than leaving it black until some client presents.
+          // now rather than leaving it black until some client presents. Skip this when
+          // the scene has no renderables: the forced frame would only re-commit black,
+          // and `DefaultFrameScheduler` allows one frame in flight, so an empty frame
+          // waiting on the first post-wake vsync would delay the waking client's first
+          // real frame by a vsync period.
           if (status == ZX_OK && was_dark && !flatland_compositor_->IsDisplayDark(display_id)) {
-            frame_scheduler_.ForceRenderFrame();
+            if (auto primary_display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering();
+                primary_display && !flatland_engine_->GetRenderables(*primary_display).empty()) {
+              frame_scheduler_.ForceRenderFrame();
+            }
           }
           return status;
         });
