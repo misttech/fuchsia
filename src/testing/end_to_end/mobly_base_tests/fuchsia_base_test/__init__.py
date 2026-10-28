@@ -340,8 +340,8 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             device: FuchsiaDevice object.
         """
         switch, outlet = self._lookup_power_switch(device)
-        usb_power_hub, port = self._lookup_usb_power_hub(device)
-        if switch is None and usb_power_hub is None:
+        hub, port = self._lookup_usb_power_hub(device)
+        if switch is None and hub is None:
             return
 
         # Host-side check only; does not touch any auxiliary device.
@@ -362,16 +362,23 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         if switch is not None:
             try:
                 switch.power_on(outlet=outlet)
-            except Exception as err:
+            except (power_switch.PowerSwitchError, errors.HoneydewError) as err:
+                # `HoneydewError` covers e.g. `HoneydewTimeoutError` from
+                # `host_shell.run()`, which implementations do not wrap.
                 _LOGGER.warning(
                     "Failed to power on power switch for %s with error: %s",
                     device.device_name,
                     err,
                 )
-        if usb_power_hub is not None:
+        if hub is not None:
             try:
-                usb_power_hub.power_on(port=port)
-            except Exception as err:
+                hub.power_on(port=port)
+            except (
+                usb_power_hub.UsbPowerHubError,
+                errors.HoneydewError,
+            ) as err:
+                # `HoneydewError` covers e.g. `HoneydewTimeoutError` from
+                # `host_shell.run()`, which implementations do not wrap.
                 _LOGGER.warning(
                     "Failed to power on USB power hub for %s with error: %s",
                     device.device_name,
@@ -453,7 +460,15 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         for fx_device in self.fuchsia_devices:
             try:
                 await fx_device.snapshot(directory=directory)
-            except Exception as err:
+            except errors.FIDL_ERRORS + (
+                RuntimeError,
+                OSError,
+                errors.HoneydewError,
+            ) as err:
+                # Errors raised by `FuchsiaDevice.snapshot()` on failure to
+                # talk to the device (`RuntimeError` is raised by the native
+                # Fuchsia-Controller bindings for internal errors), and
+                # `OSError` on failure to save the snapshot file.
                 _LOGGER.exception(
                     "Unable to take snapshot of %s. Failed with error: %s",
                     fx_device.device_name,
@@ -677,7 +692,13 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         for fx_device in self.fuchsia_devices:
             try:
                 await fx_device.log_message_to_device(message, level)
-            except Exception as err:
+            except errors.FIDL_ERRORS + (
+                RuntimeError,
+                errors.HoneydewError,
+            ) as err:
+                # Errors raised by `FuchsiaDevice.log_message_to_device()` on
+                # failure to talk to the device. `RuntimeError` is raised by the
+                # native Fuchsia-Controller bindings for internal errors.
                 _LOGGER.exception(
                     "Unable to log message '%s' on '%s'. Failed with error: %s",
                     message,
