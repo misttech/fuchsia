@@ -20,8 +20,12 @@ var bazelSelectConditionToGN = map[string]string{
 	"@platforms//os:fuchsia":                            "is_fuchsia",
 	"@platforms//os:linux":                              "is_linux",
 	"@platforms//cpu:x86_64":                            `current_cpu == "x64"`,
+	"@platforms//cpu:arm":                               `current_cpu == "arm"`,
+	"@platforms//cpu:armv7":                             `current_cpu == "arm"`,
 	"@platforms//cpu:arm64":                             `current_cpu == "arm64"`,
+	"@platforms//cpu:aarch64":                           `current_cpu == "arm64"`,
 	"@platforms//cpu:riscv64":                           `current_cpu == "riscv64"`,
+	"//build/bazel/platforms:linux_flavor_starnix":      "is_linux && !is_host",
 	"//build/bazel/platforms:is_host_os":                "is_host",
 	"//build/bazel/platforms:is_fuchsia_with_sdk_rules": "false", // GN build is always platform.
 	"//build/bazel/platforms:is_fuchsia_platform":       "is_fuchsia",

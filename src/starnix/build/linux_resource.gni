@@ -1,0 +1,153 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/dist/resource.gni")
+
+# Declares a Starnix Linux binary resource to be included in a Fuchsia package.
+#
+# This is the GN counterpart of `linux_resource()` in
+# `//src/starnix/containers/linux_resource.bzl`, used by `bazel2gn`.
+#
+# Parameters
+#
+#   src (optional if arch32_src is set)
+#     [label] Label of the Linux binary target to build in
+#     `//build/toolchain:linux_${target_cpu}` (unless a toolchain is already
+#     specified on the label).
+#
+#   dest (required when src is set)
+#     [string] Package-relative installation path for `src` (for example,
+#     `"data/tests/hello_starnix"`). Must not be empty or start with `/`.
+#
+#   bin_output_name (optional)
+#     [string] Filename produced by `src` in its toolchain's `$root_out_dir`.
+#     Defaults to `get_label_info(src, "name")`.
+#
+#   arch32_src (optional)
+#     [label] Label of an optional 32-bit ARM Linux binary target to build in
+#     `//build/toolchain:linux_arm` (only supported when
+#     `target_cpu == "arm64"`).
+#
+#   arch32_dest (required when arch32_src is set)
+#     [string] Package-relative installation path for `arch32_src`. Must not be
+#     empty or start with `/`.
+#
+#   arch32_bin_output_name (optional)
+#     [string] Filename produced by `arch32_src` in its toolchain's
+#     `$root_out_dir`. Defaults to `get_label_info(arch32_src, "name")`.
+#
+#   assert_no_deps, testonly, visibility
+#     Standard GN meanings.
+template("linux_resource") {
+  if (is_host) {
+    group(target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      not_needed(invoker, "*")
+    }
+  } else {
+    _main_target_name = target_name
+    assert(defined(invoker.src) || defined(invoker.arch32_src),
+           "linux_resource() requires `src` or `arch32_src`")
+
+    _files = []
+    _deps = []
+
+    if (defined(invoker.src)) {
+      assert(defined(invoker.dest) && invoker.dest != "",
+             "`dest` must be set to a non-empty path when `src` is set")
+      assert(rebase_path(invoker.dest, "foo") != invoker.dest,
+             "`dest` in linux_resource() cannot start with /")
+
+      if (string_replace(invoker.src, "(", "") != invoker.src) {
+        _bin_label = invoker.src
+      } else {
+        _bin_label = "${invoker.src}(//build/toolchain:linux_${target_cpu})"
+      }
+      _bin_out_dir = get_label_info(_bin_label, "root_out_dir")
+      if (defined(invoker.bin_output_name)) {
+        _output_name = invoker.bin_output_name
+      } else {
+        _output_name = get_label_info(_bin_label, "name")
+      }
+
+      _files += [
+        {
+          source = "${_bin_out_dir}/${_output_name}"
+          dest = invoker.dest
+        },
+      ]
+      _deps += [ _bin_label ]
+    } else {
+      assert(!defined(invoker.dest),
+             "`dest` in linux_resource() requires `src`")
+      assert(!defined(invoker.bin_output_name),
+             "`bin_output_name` in linux_resource() requires `src`")
+    }
+
+    if (defined(invoker.arch32_src)) {
+      assert(target_cpu == "arm64",
+             "`arch32_src` in linux_resource() is only supported on arm64")
+      assert(
+          defined(invoker.arch32_dest) && invoker.arch32_dest != "",
+          "`arch32_dest` must be set to a non-empty path when `arch32_src` is set")
+      assert(rebase_path(invoker.arch32_dest, "foo") != invoker.arch32_dest,
+             "`arch32_dest` in linux_resource() cannot start with /")
+
+      if (string_replace(invoker.arch32_src, "(", "") != invoker.arch32_src) {
+        _arch32_label = invoker.arch32_src
+      } else {
+        _arch32_label = "${invoker.arch32_src}(//build/toolchain:linux_arm)"
+      }
+      _arch32_out_dir = get_label_info(_arch32_label, "root_out_dir")
+      if (defined(invoker.arch32_bin_output_name)) {
+        _arch32_output_name = invoker.arch32_bin_output_name
+      } else {
+        _arch32_output_name = get_label_info(_arch32_label, "name")
+      }
+
+      _files += [
+        {
+          source = "${_arch32_out_dir}/${_arch32_output_name}"
+          dest = invoker.arch32_dest
+        },
+      ]
+      _deps += [ _arch32_label ]
+    } else {
+      assert(!defined(invoker.arch32_dest),
+             "`arch32_dest` in linux_resource() requires `arch32_src`")
+      assert(
+          !defined(invoker.arch32_bin_output_name),
+          "`arch32_bin_output_name` in linux_resource() requires `arch32_src`")
+    }
+
+    if (defined(invoker.assert_no_deps)) {
+      _assert_target = "${_main_target_name}.assert_no_deps"
+      group(_assert_target) {
+        forward_variables_from(invoker,
+                               [
+                                 "assert_no_deps",
+                                 "testonly",
+                               ])
+        visibility = [ ":${_main_target_name}" ]
+        deps = _deps
+      }
+      _deps += [ ":${_assert_target}" ]
+    }
+
+    resource_group(_main_target_name) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      allow_binary_output_dir = true
+      files = _files
+      deps = _deps
+    }
+  }
+}

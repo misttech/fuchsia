@@ -695,7 +695,16 @@ func indexGNBinaryOutputNames(f *syntax.File) (map[string]string, error) {
 		rawOut, hasRawOut := rawOutputNameFromStmt(stmt, call)
 
 		switch fn.Name {
-		case "cc_binary", "fx_cc_binary", "cc_binary_host_tool", "idk_cc_binary_host_tool",
+		case "cc_binary", "fx_cc_binary":
+			outName := name
+			if hasRawOut {
+				outName = rawOut
+			}
+			if unskippedCallBoolTrue(call, "linkshared") {
+				outName = strings.TrimSuffix(outName, ".so") + ".so"
+			}
+			outputs[name] = outName
+		case "cc_binary_host_tool", "idk_cc_binary_host_tool",
 			"go_binary", "go_binary_host_tool", "idk_go_binary_host_tool":
 			if hasRawOut {
 				outputs[name] = rawOut

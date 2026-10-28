@@ -54,6 +54,9 @@ func FileToGN(f *syntax.File) ([]string, error) {
 	if err := resolveComponentTargets(f); err != nil {
 		return nil, err
 	}
+	if err := resolveLinuxResourceTargets(f); err != nil {
+		return nil, err
+	}
 	var lines []string
 	for _, stmt := range f.Stmts {
 		stmtLines, err := StmtToGN(stmt)
@@ -357,6 +360,12 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 		}
 		return fxUnittestPackageToGN(expr)
 	}
+	if bazelRule == "linux_resource" {
+		if len(rawAttrs) > 0 {
+			return nil, fmt.Errorf("raw_attribute annotation is not supported on %s", bazelRule)
+		}
+		return linuxResourceToGN(expr)
+	}
 
 	attrsToOmit := attrsToOmitByRules[bazelRule]
 	unsupportedAttrs := unsupportedAttrsByRules[bazelRule]
@@ -366,6 +375,7 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	var remainingArgs []*syntax.BinaryExpr
 	var wrappingConditions []string
 	var hasWithUnitTests bool
+	var isLinkShared bool
 	for _, arg := range expr.Args {
 		binaryExpr, ok := arg.(*syntax.BinaryExpr)
 		if !ok || binaryExpr.Op != syntax.EQ {
@@ -425,6 +435,19 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 			// Regardless of its value, `alwayslink` is not field in GN, so ignore it.
 			continue
 		}
+		isCCBinary := bazelRule == "cc_binary" || bazelRule == "fx_cc_binary"
+		if isCCBinary && ident.Name == "linkshared" {
+			rhsIdent, ok := unwrapParenExpr(binaryExpr.Y).(*syntax.Ident)
+			if !ok || (rhsIdent.Name != "True" && rhsIdent.Name != "False") {
+				return nil, fmt.Errorf("linkshared must be set to True or False, got %T", binaryExpr.Y)
+			}
+			if rhsIdent.Name == "True" {
+				gnTemplateName = "loadable_module"
+				isLinkShared = true
+			}
+			// Regardless of its value, `linkshared` is not a field in GN, so ignore it.
+			continue
+		}
 		remainingArgs = append(remainingArgs, binaryExpr)
 	}
 	if name == "" {
@@ -445,6 +468,13 @@ func callExprToGN(expr *syntax.CallExpr, stmtComments *syntax.Comments) ([]strin
 	}
 
 	ret := []string{fmt.Sprintf("%s(%s) {", gnTemplateName, name)}
+	if isLinkShared {
+		// GN `loadable_module()` automatically appends `.so`, so strip a trailing
+		// `.so` from `name` into `output_name` to avoid `<name>.so.so`.
+		if baseName, hasSOSuffix := strings.CutSuffix(strings.Trim(name, `"`), ".so"); hasSOSuffix && !hasRawOutputNameAttr(rawAttrs) {
+			ret = append(ret, indent([]string{fmt.Sprintf("output_name = %s", gnQuote(baseName))}, 1)...)
+		}
+	}
 
 	// `aspect_hints` maps to `deps` in GN, but Buildifier places `aspect_hints`
 	// near the top of the target before `deps` or `implementation_deps`. If

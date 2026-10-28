@@ -136,6 +136,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"compiled_action":     "compiled_action",
 	"fidlgentest_go_test": "fidlgentest_go_test",
 	"genrule":             "action",
+	"linux_resource":      "linux_resource",
 	"metrics_registry":    "metrics_registry",
 	"package":             "package",
 	"test_suite":          "group",
@@ -281,6 +282,14 @@ var ccCommonAttrMap = map[string]string{
 	"copts": "configs", // Strings are converted to configs by `bazelCOptToGNConfig()`.
 }
 
+// ccBinAttrMap maps from attribute names in Bazel CC binary rules to GN parameter names.
+// Unlike `cc_library` (where Bazel's `linkopts` propagates publicly to dependents while GN's
+// `ldflags` does not), binary targets have no downstream linkers, so `linkopts` maps directly to
+// `ldflags`.
+var ccBinAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
+	"linkopts": "ldflags",
+})
+
 // ccLibAttrMap maps from attribute names in Bazel CC library rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
@@ -301,7 +310,7 @@ var buildFlagsAttrMap = map[string]string{
 
 // fxCcBinaryAttrMap maps from attribute names in `fx_cc_binary()` to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
-var fxCcBinaryAttrMap = mustMergeMaps(ccCommonAttrMap, buildFlagsAttrMap)
+var fxCcBinaryAttrMap = mustMergeMaps(ccBinAttrMap, buildFlagsAttrMap)
 
 // fxCcLibAttrMap maps from attribute names in `fx_cc_library()` to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
@@ -422,6 +431,9 @@ var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxInIDKAttrMap)
 // idkFIDLAttrMap maps from attribute name in Bazel IDK FIDL rules to GN parameter names.
 var idkFIDLAttrMap = mustMergeMaps(idkAttrMap, fidlAttrMap)
 
+// idkCcBinHostToolAttrMap maps from attribute names in Bazel IDK C++ host binary rules to GN parameter names.
+var idkCcBinHostToolAttrMap = mustMergeMaps(idkAttrMap, ccBinAttrMap)
+
 // idkRustBinAttrMap maps from attribute name in Bazel IDK Rust binary rules to GN parameter names.
 var idkRustBinAttrMap = mustMergeMaps(idkAttrMap, rustBinAttrMap)
 
@@ -455,10 +467,11 @@ var attrMapsByRules = map[string]map[string]string{
 	"py_binary": pythonBinAttrMap,
 
 	// C++
-	"cc_library":    ccLibAttrMap,
-	"cc_binary":     ccCommonAttrMap,
-	"fx_cc_binary":  fxCcBinaryAttrMap,
-	"fx_cc_library": fxCcLibAttrMap,
+	"cc_library":          ccLibAttrMap,
+	"cc_binary":           ccBinAttrMap,
+	"cc_binary_host_tool": ccBinAttrMap,
+	"fx_cc_binary":        fxCcBinaryAttrMap,
+	"fx_cc_library":       fxCcLibAttrMap,
 
 	// C++ Zircon
 	"cc_shared_library_zx": ccLibAttrMap,
@@ -490,7 +503,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"idk_cc_source_library_zx":   idkZxAttrMap,
 	"idk_cc_static_library":      idkCcAttrMap,
 	"idk_cc_static_library_zx":   idkZxAttrMap,
-	"idk_cc_binary_host_tool":    idkAttrMap,
+	"idk_cc_binary_host_tool":    idkCcBinHostToolAttrMap,
 	"idk_go_binary_host_tool":    idkAttrMap,
 	"idk_rustc_binary_host_tool": idkRustBinAttrMap,
 
@@ -548,7 +561,14 @@ var specialTokens = map[syntax.Token]string{
 // "//build/bazel/platforms:fuchsia_platform_x64" may be more appropriate
 // than using a list of "@platforms//os:fuchsia" and "@platforms//cpu:x86_64".
 var bazelConstraintsToGNConditions = map[string]string{
-	"@platforms//os:fuchsia": "is_fuchsia",
+	"@platforms//os:fuchsia":                       "is_fuchsia",
+	"//build/bazel/platforms:linux_flavor_starnix": "is_linux && !is_host",
+	"@platforms//cpu:arm":                          `current_cpu == "arm"`,
+	"@platforms//cpu:armv7":                        `current_cpu == "arm"`,
+	"@platforms//cpu:arm64":                        `current_cpu == "arm64"`,
+	"@platforms//cpu:aarch64":                      `current_cpu == "arm64"`,
+	"@platforms//cpu:riscv64":                      `current_cpu == "riscv64"`,
+	"@platforms//cpu:x86_64":                       `current_cpu == "x64"`,
 }
 var bazelConstraintListVarsToGNConditions = map[string]string{
 	"HOST_CONSTRAINTS":    "is_host",

@@ -812,6 +812,27 @@ go_binary(
 	}
 }`,
 		},
+		{
+			name: "starnix linux flavor and cpu constraints",
+			bazel: `
+fx_cc_binary(
+	name = "starnix_arm_bin",
+	srcs = [
+		"main.cc",
+	],
+	target_compatible_with = [
+		"//build/bazel/platforms:linux_flavor_starnix",
+		"@platforms//cpu:arm",
+	],
+)`,
+			wantGN: `if (is_linux && !is_host && current_cpu == "arm") {
+	executable("starnix_arm_bin") {
+		sources = [
+			"main.cc",
+		]
+	}
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
@@ -1731,6 +1752,40 @@ func TestCCConversion(t *testing.T) {
 			wantGN: `static_library("foo") {
 	configs += [
 		"//build/config:gn_foo",
+	]
+}`,
+		},
+		{
+			name: "cc_binary linkopts and linkshared",
+			bazel: `cc_binary(
+	name = "libfoo.so",
+	srcs = ["foo.cc"],
+	linkopts = ["-nostdlib"],
+	linkshared = True,
+)
+
+fx_cc_binary(
+	name = "bar",
+	srcs = ["bar.cc"],
+	linkopts = ["-static"],
+	linkshared = False,
+)
+`,
+			wantGN: `loadable_module("libfoo.so") {
+	output_name = "libfoo"
+	sources = [
+		"foo.cc",
+	]
+	ldflags = [
+		"-nostdlib",
+	]
+}
+executable("bar") {
+	sources = [
+		"bar.cc",
+	]
+	ldflags = [
+		"-static",
 	]
 }`,
 		},

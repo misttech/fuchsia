@@ -54,6 +54,12 @@ motivation, and comment annotations.
     binaries) with a `-gn` suffix on `package_name`.
 -   [`genrule.go`](./genrule.go): Converts `genrule` `cmd` strings starting with
     `$(location //path/to:tool)` into GN `script` and `args`.
+-   [`linux_resource.go`](./linux_resource.go): Converts Starnix
+    `linux_resource` targets into GN `linux_resource` targets (from
+    `//src/starnix/build/linux_resource.gni`), propagates non-default same-file
+    binary output names (`bin_output_name` / `arch32_bin_output_name`), and
+    auto-wraps same-file Linux binaries consumed exclusively by
+    `linux_resource` in `if (is_linux && !is_host)`.
 -   [`rust_check_cfg.go`](./rust_check_cfg.go): Converts
     `rustc_check_cfg_build_flags` macro calls into GN `config` targets with
     `--check-cfg=cfg(...)` in `rustflags`.
@@ -155,9 +161,12 @@ When adding support for a Bazel rule or attribute, check all five touchpoints:
 -   **Avoid unnecessary `BUILD.gn` writes**: When `--check_only` is false and
     the formatted output matches the existing `BUILD.gn`, do not touch
     `BUILD.gn` on disk so `ninja` / `gn gen` timestamps remain clean.
--   **`cc_library` vs. `source_set`**: `cc_library` and `fx_cc_library` map to
-    `static_library` by default. They only convert to `source_set` when
-    `alwayslink = True` is set on the Bazel target.
+-   **`cc_library` vs. `source_set` and `cc_binary` vs. `loadable_module`**:
+    `cc_library` and `fx_cc_library` map to `static_library` by default, and
+    only convert to `source_set` when `alwayslink = True` is set. Similarly,
+    `cc_binary` and `fx_cc_binary` map to `executable` by default, and convert
+    to `loadable_module` when `linkshared = True` is set (stripping any trailing
+    `.so` from `name` into `output_name` so GN does not produce `<name>.so.so`).
 -   **Same-package visibility (`":*"`)**: Bazel grants implicit same-package
     visibility, whereas GN does not. `ensureSamePackageVisibility` injects
     `":*"` into restricted GN visibility lists unless `"*"`, `"//*"`, `":*"`, or

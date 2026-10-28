@@ -214,6 +214,89 @@ when its package is Bazel-only and has no GN consumer (its
 `fx_component_manifest()` will then be skipped automatically unless used by
 another un-skipped target).
 
+#### Starnix Linux binaries
+
+Starnix Linux binaries and shared objects packaged into Fuchsia components use
+standard binary rules (`fx_cc_binary()`, `cc_binary()`, `rustc_binary()`)
+paired with `linux_resource()` (from
+`//src/starnix/containers:linux_resource.bzl`), which syncs to GN's
+`linux_resource()` template (from `//src/starnix/build/linux_resource.gni`):
+
+*   On C++ binary rules (`fx_cc_binary()`, `cc_binary()`,
+    `cc_binary_host_tool()`, and `idk_cc_binary_host_tool()`), `linkopts` maps
+    to GN `ldflags`, and `linkshared = True` on `fx_cc_binary()` / `cc_binary()`
+    maps to GN `loadable_module()`.
+*   When a `linux_resource()` references a binary target in the same
+    `BUILD.bazel` file that has no non-`linux_resource()` GN consumers,
+    `bazel2gn` automatically wraps the binary in
+    `if (is_linux && !is_host) { ... }` in `BUILD.gn` (unless an OS constraint
+    such as `"//build/bazel/platforms:linux_flavor_starnix"` is already
+    specified in `target_compatible_with`), and passes `bin_output_name` /
+    `arch32_bin_output_name` to `linux_resource()` whenever the GN binary's
+    output filename differs from its target name.
+*   `arch32_src = select({"@platforms//cpu:arm64": ":<bin32>",
+    "//conditions:default": None})` with `arch32_dest` syncs to an
+    `if (target_cpu == "arm64") { ... }` block inside `linux_resource()`.
+
+```bzl
+fx_cc_binary(
+    name = "hello_starnix_bin_bin",
+    srcs = select({
+        "@platforms//cpu:x86_64": ["hello_x64.S"],
+        "@platforms//cpu:arm64": ["hello_aarch64.S"],
+        "@platforms//cpu:riscv64": ["hello_riscv64.S"],
+    }),
+    disable_instrumentation = True,
+    disable_syslog_backend = True,
+    linkopts = [
+        "-nostdlib",
+        "-nostartfiles",
+        "-static",
+        "-Wno-unused-command-line-argument",
+    ],
+    tags = ["manual"],
+)
+
+linux_resource(
+    name = "hello_starnix_bin",
+    src = ":hello_starnix_bin_bin",
+    dest = "data/tests/hello_starnix",
+    visibility = ["//src/starnix/kernel/core:__pkg__"],
+)
+```
+
+is synced to:
+
+```gn
+if (is_linux && !is_host) {
+  executable("hello_starnix_bin_bin") {
+    if (current_cpu == "x64") {
+      sources = [ "hello_x64.S" ]
+    } else if (current_cpu == "arm64") {
+      sources = [ "hello_aarch64.S" ]
+    } else if (current_cpu == "riscv64") {
+      sources = [ "hello_riscv64.S" ]
+    }
+    exclude_toolchain_tags = [ "instrumented" ]
+    disable_syslog_backend = true
+    ldflags = [
+      "-nostdlib",
+      "-nostartfiles",
+      "-static",
+      "-Wno-unused-command-line-argument",
+    ]
+  }
+}
+linux_resource("hello_starnix_bin") {
+  src = ":hello_starnix_bin_bin"
+  dest = "data/tests/hello_starnix"
+  visibility = [
+    ":*",
+    "//src/starnix/kernel/core:*",
+  ]
+}
+```
+
 #### Tests
 
 While a library is used in both build systems, its tests run in both (see
