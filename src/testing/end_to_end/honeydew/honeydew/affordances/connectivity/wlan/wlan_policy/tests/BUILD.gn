@@ -10,7 +10,6 @@ assert(is_host, "Python only supported in host toolchains.")
 python_mobly_test("functional_tests") {
   main_source = "functional_tests.py"
   libraries = [
-    "//src/testing/end_to_end/antlion",
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
     "//src/testing/end_to_end/mobly_controller/legacy_access_point",
