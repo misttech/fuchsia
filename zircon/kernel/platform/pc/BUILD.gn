@@ -23,7 +23,6 @@ source_set("pc") {
   deps = [
     ":platform_pc",
     "//sdk/lib/zbi-format",
-    "//src/lib/lazy_init",
     "//src/lib/zbitl",
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/dev/hw_rng/intel_rng",
@@ -46,7 +45,6 @@ source_set("pc") {
     "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/kernel/platform:headers",
     "//zircon/system/ulib/explicit-memory",
-    "//zircon/system/ulib/ram-crashlog",
     "//zircon/system/ulib/uart",
     "//zircon/third_party/ulib/cksum",
   ]
@@ -81,6 +79,7 @@ kernel_rust_mod("platform_pc") {
     "memory.rs",
     "mod.rs",
     "pic.rs",
+    "platform.rs",
     "power.rs",
     "smbios.rs",
     "timer.rs",

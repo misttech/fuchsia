@@ -22,14 +22,18 @@ use crate::object::{
     MessagePacket, ProcessDispatcher, ThreadDispatcher, VmAddressRegionDispatcher,
     VmObjectDispatcher, get_root_job_handle, start_root_job_observer,
 };
+use crate::platform_rs::crashlog::PlatformCrashlog;
 use crate::platform_rs::timer::{current_mono_time, timer_current_mono_ticks};
 use crate::vm::pmm::{ALLOC_FLAG_ANY, ALLOC_FLAG_CAN_WAIT};
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use boot_options::BootOptions;
 use core::cmp::min;
-use core::ffi::c_void;
-use core::mem;
+use core::ffi::{c_char, c_int, c_void};
+use core::marker::PhantomData;
+use core::ops::Deref;
+use core::ptr::from_mut;
+use core::{mem, slice};
 use debug::{dprintf, kernel_oops};
 use elf::{initial_stack_pointer, map_handoff_elf};
 use fbl::{RefPtr, Vector};
@@ -37,7 +41,7 @@ use page::SIZE as PAGE_SIZE;
 use resource::get_resource_handle;
 #[cfg(all(target_arch = "aarch64", debug_assertions))]
 use userabi_ffi::arm64_print_midr_cpu_name;
-use userabi_ffi::{File, HandoffEndElf, PlatformCrashlog, boot_options_show};
+use userabi_ffi::{HandoffEndElf, boot_options_show};
 #[cfg(enable_entropy_collector_test)]
 use userabi_ffi::{entropy_vmo, entropy_vmo_stream_size, entropy_was_lost};
 use zr::{defer, slice_from_raw_parts_mut};
@@ -106,6 +110,49 @@ impl VmoBuffer {
 
     fn stream_size(&self) -> usize {
         self.offset
+    }
+}
+
+struct File<'a> {
+    file: libc::stdio::FILE,
+    _marker: PhantomData<&'a mut ()>,
+}
+
+/// # Safety
+///
+/// `ptr` must point to a valid, exclusively accessed (unaliased) `VmoBuffer` for the duration of
+/// the call, and `str` must be null or point to `len` readable bytes not overlapping `*ptr`.
+unsafe extern "C" fn file_write_trampoline(
+    ptr: *mut c_void,
+    str: *const c_char,
+    len: usize,
+) -> c_int {
+    // SAFETY: `ptr` was created from `&mut VmoBuffer` in `File::new` and is exclusively borrowed
+    // for the duration of the call. When `str` is non-null, `core::slice::from_raw_parts`
+    // preserves the valid C++ kernel pointer even when `len == 0` so `VmObjectPaged::Write`'s
+    // `is_kernel_address` check succeeds.
+    let (writer, slice) = unsafe {
+        let slice = if str.is_null() { &[] } else { slice::from_raw_parts(str.cast::<u8>(), len) };
+        (&mut *ptr.cast::<VmoBuffer>(), slice)
+    };
+    writer.write(slice)
+}
+
+impl<'a> File<'a> {
+    fn new(writer: &'a mut VmoBuffer) -> Self {
+        // SAFETY: `file_write_trampoline` is sound to call with `from_mut(writer).cast()` for the
+        // `'a` lifetime bound to `Self`.
+        let file =
+            unsafe { libc::stdio::FILE::new(Some(file_write_trampoline), from_mut(writer).cast()) };
+        Self { file, _marker: PhantomData }
+    }
+}
+
+impl Deref for File<'_> {
+    type Target = libc::stdio::FILE;
+
+    fn deref(&self) -> &Self::Target {
+        &self.file
     }
 }
 
@@ -248,14 +295,19 @@ fn get_job_handle() -> Option<HandleOwner> {
 fn crashlog_to_vmo() -> Result<(RefPtr<VmObject>, usize), Status> {
     let crashlog = PlatformCrashlog::get();
 
-    let size = crashlog.recover(None);
+    // SAFETY: `crashlog_to_vmo` runs once during `userboot_init` before
+    // `enable_crashlog_uptime_updates(true)` or `finalize` is invoked.
+    let size = unsafe { crashlog.recover(None) };
     let aligned_size = VmObject::round_size(size as u64)?;
     let crashlog_vmo = VmObjectPaged::create(ALLOC_FLAG_ANY, 0, aligned_size)?;
 
     if size != 0 {
         let mut vmo_buffer = VmoBuffer::from_vmo(crashlog_vmo.clone());
-        let mut vmo_file = File::new(&mut vmo_buffer);
-        crashlog.recover(Some(&mut vmo_file));
+        let vmo_file = File::new(&mut vmo_buffer);
+        // SAFETY: See `recover(None)` safety comment above.
+        unsafe {
+            crashlog.recover(Some(&vmo_file));
+        }
     }
 
     let _ = crashlog_vmo.set_name(CRASHLOG_VMO_NAME);
@@ -313,8 +365,8 @@ fn bootstrap_vmos(
     // Boot options
     {
         let mut boot_options = VmoBuffer::new()?;
-        let mut boot_options_file = File::new(&mut boot_options);
-        boot_options_show(/*defaults=*/ false, &mut boot_options_file);
+        let boot_options_file = File::new(&mut boot_options);
+        boot_options_show(/*defaults=*/ false, &boot_options_file);
         let _ = boot_options.vmo().set_name(BOOT_OPTIONS_VMO_NAME);
         let boot_options_handle =
             get_vmo_handle(Some(boot_options.vmo()), false, boot_options.stream_size() as u64)?;
@@ -352,11 +404,11 @@ fn bootstrap_vmos(
     {
         const MIDR_TXT: &[u8] = b"midr.txt";
         let mut midr_txt = VmoBuffer::new()?;
-        let mut midr_txt_file = File::new(&mut midr_txt);
+        let midr_txt_file = File::new(&mut midr_txt);
         #[cfg(all(target_arch = "aarch64", debug_assertions))]
-        arm64_print_midr_cpu_name(&mut midr_txt_file);
+        arm64_print_midr_cpu_name(&midr_txt_file);
         #[cfg(not(all(target_arch = "aarch64", debug_assertions)))]
-        let _ = &mut midr_txt_file;
+        let _ = &midr_txt_file;
         if midr_txt.stream_size() > 0 {
             let _ = midr_txt.vmo().set_name(MIDR_TXT);
         }

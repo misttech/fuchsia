@@ -73,9 +73,9 @@
 #include <zircon/syscalls/smc.h>
 #include <zircon/types.h>
 
-#include <platform/mapped_crashlog.h>
-
 #define LOCAL_TRACE 0
+
+extern "C" void rust_mapped_crashlog_bind(void* base, size_t size);
 
 static ktl::atomic<int> panic_started;
 static ktl::atomic<int> halted;
@@ -87,9 +87,6 @@ static bool cpu_suspend_supported = false;
 static bool system_suspend_supported = false;
 
 namespace {
-
-lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
-    mapped_crashlog;
 
 // Used for |platform_suspend_cpu| coordination.
 ControlRegion gControlRegion;
@@ -457,7 +454,7 @@ static void allocate_persistent_ram(ktl::span<ktl::byte> range) {
     // If we have not already configured a non-trivial crashlog implementation
     // for the platform, make sure that crashlog gets its minimum allocation, or
     // all of the RAM if it cannot meet even its minimum allocation.
-    size_t crashlog_chunks = !PlatformCrashlog::HasNonTrivialImpl()
+    size_t crashlog_chunks = !rust_platform_crashlog_has_non_trivial_impl()
                                  ? ktl::min(persistent_chunks_available,
                                             kMinCrashlogSize / kPersistentRamAllocationGranularity)
                                  : 0;
@@ -486,8 +483,7 @@ static void allocate_persistent_ram(ktl::span<ktl::byte> range) {
   // Configure up the crashlog RAM
   if (crashlog_size > 0) {
     dprintf(INFO, "Crashlog configured with %" PRIu64 " bytes\n", crashlog_size);
-    mapped_crashlog.Initialize(ktl::span{range.data(), crashlog_size});
-    PlatformCrashlog::Bind(mapped_crashlog.Get());
+    rust_mapped_crashlog_bind(range.data(), crashlog_size);
   }
 
   ktl::byte* leftover_base = range.data() + crashlog_size;

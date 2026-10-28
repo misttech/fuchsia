@@ -6,35 +6,20 @@
 
 #include "generic_riscv64_ffi.h"
 
-#include <lib/lazy_init/lazy_init.h>
 #include <lib/system-topology.h>
 #include <platform.h>
 #include <zircon/types.h>
 
 #include <dev/init.h>
 #include <kernel/cpu_distance_map.h>
-#include <kernel/ffi.h>
 #include <kernel/topology.h>
-#include <ktl/byte.h>
 #include <ktl/iterator.h>
 #include <ktl/optional.h>
-#include <ktl/span.h>
 #include <phys/handoff/handoff.h>
-#include <platform/crashlog.h>
-#include <platform/mapped_crashlog.h>
 #include <platform/timer.h>
 #include <platform/uart.h>
 
 #include <ktl/enforce.h>
-
-namespace {
-
-// The platform's crashlog implementation, backed by the persistent RAM range
-// that the Rust platform carves out for it.
-lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
-    gMappedCrashlog;
-
-}  // anonymous namespace
 
 // <platform/efi.h>, whose declaration needs the EFI library headers this
 // platform does not otherwise use.
@@ -188,15 +173,3 @@ void topology_init() {
 }
 
 ktl::optional<uint32_t> PlatformUartGetIrqNumber(uint32_t irq_num) { return irq_num; }
-
-// C++ helpers for the Rust platform.
-
-extern "C" {
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE void cpp_mapped_crashlog_bind(void* base, size_t size) {
-  gMappedCrashlog.Initialize(ktl::span{static_cast<ktl::byte*>(base), size});
-  PlatformCrashlog::Bind(gMappedCrashlog.Get());
-}
-
-}  // extern "C"
