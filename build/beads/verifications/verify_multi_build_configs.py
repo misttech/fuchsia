@@ -26,16 +26,11 @@ import threading
 import time
 import typing as T
 
+from build.bazel.scripts import build_utils
+from build.beads.scripts import compare_utils
+from build.beads.verifications import verify_build_commands
+
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/scripts"))
-import compare_utils
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/verifications"))
-import verify_build_commands
 
 DEFAULT_MANIFEST_RELPATH = pathlib.Path(
     "build/beads/verifications/targets_to_compare.json"

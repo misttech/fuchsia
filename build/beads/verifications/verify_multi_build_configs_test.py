@@ -9,18 +9,15 @@ import io
 import json
 import pathlib
 import subprocess
-import sys
 import tempfile
 import unittest
 from unittest import mock
 
-_FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/scripts"))
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/verifications"))
-
-import compare_utils
-import verify_build_commands
-import verify_multi_build_configs
+from build.beads.scripts import compare_utils
+from build.beads.verifications import (
+    verify_build_commands,
+    verify_multi_build_configs,
+)
 
 
 class VerifyMultiBuildConfigsTest(unittest.TestCase):

@@ -2,13 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from build.bazel.scripts import build_utils
+
 _FUCHSIA_DIR = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
 
 _PREBUILT_GN = _FUCHSIA_DIR / "prebuilt/third_party/gn/linux-x64/gn"
 

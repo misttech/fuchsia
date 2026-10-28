@@ -6,8 +6,7 @@ import pathlib
 import tempfile
 import unittest
 
-import normalize_clang_args
-import path_normalizer
+from build.beads.scripts import normalize_clang_args, path_normalizer
 
 
 class MockPathNormalizer(path_normalizer.PathNormalizer):

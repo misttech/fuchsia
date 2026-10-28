@@ -13,9 +13,12 @@ import sys
 import tempfile
 import typing as T
 
-import build_utils
-import compare_utils
-from compare_utils import CompareCommandsQuery, ConfiguredBazelLabel
+from build.bazel.scripts import build_utils
+from build.beads.scripts import compare_utils
+from build.beads.scripts.compare_utils import (
+    CompareCommandsQuery,
+    ConfiguredBazelLabel,
+)
 
 # Enable debug logging.
 _DEBUG = False
@@ -25,8 +28,6 @@ _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
 # Path to the default Ninja binary.
 _DEFAULT_NINJA_BIN = _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
 
 
 def debug(s: T.Any) -> None:

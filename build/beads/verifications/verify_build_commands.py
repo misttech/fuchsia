@@ -17,15 +17,11 @@ import typing as T
 
 _DEBUG = False
 
+from build.bazel.scripts import build_utils
+from build.beads.scripts import compare_utils, flags_differences
+from build.beads.scripts.compare_utils import CompareCommandsResult
+
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/scripts"))
-import compare_utils
-import flags_differences
-from compare_utils import CompareCommandsResult
 
 BEADS_TOOLCHAINS_FILENAME = "beads_toolchains.json"
 

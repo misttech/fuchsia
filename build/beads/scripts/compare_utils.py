@@ -7,23 +7,20 @@ import dataclasses
 import os
 import pathlib
 import shlex
-import sys
 import typing as T
+
+from build.api import gn_ninja_outputs
+from build.bazel.scripts import bazel_build_args, build_utils
+from build.bazel.scripts.build_utils import BazelLauncher, NinjaRunner
+from build.beads.scripts import (
+    normalize_clang_args,
+    normalize_rustc_args,
+    path_normalizer,
+    shell_utils,
+)
 
 # Root directory of the Fuchsia source tree.
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
-import gn_ninja_outputs
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import bazel_build_args
-import build_utils
-import normalize_clang_args
-import normalize_rustc_args
-import path_normalizer
-import shell_utils
-from build_utils import BazelLauncher, NinjaRunner
 
 # When packaged into a python_binary zipapp (.pyz), bazel_build_args._EXPAND_BUILD_ARGS_JSON_CQUERY_PATH
 # resolves relative to the zip archive, which does not exist on the filesystem for Bazel cquery.

@@ -8,7 +8,7 @@ Library to normalize clang and lld command arguments for C, C++, Assembly, and L
 import os
 import shlex
 
-import path_normalizer
+from build.beads.scripts import path_normalizer
 
 # Action types supported for normalization.
 ACTION_C_COMPILE = "c_compile"

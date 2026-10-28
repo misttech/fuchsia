@@ -8,7 +8,7 @@ Library to normalize rustc command arguments.
 import os
 import shlex
 
-import path_normalizer
+from build.beads.scripts import path_normalizer
 
 # List of args to ignore when comparing GN and Bazel commands.
 _ARGS_TO_IGNORE = (

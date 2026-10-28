@@ -11,7 +11,7 @@ import pathlib
 import re
 import sys
 
-import gn_runner
+from build.beads.scripts import gn_runner
 
 # Debug flag to enable verbose output.
 _DEBUG = False

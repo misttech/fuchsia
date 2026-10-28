@@ -4,7 +4,7 @@
 
 import unittest
 
-import flags_differences
+from build.beads.scripts import flags_differences
 
 
 def simple_flags_categorizer(flag: str) -> str:

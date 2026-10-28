@@ -4,7 +4,11 @@
 
 import unittest
 
-from shell_utils import ParsedShellCommand, ShellCommand, find_command_with_tool
+from build.beads.scripts.shell_utils import (
+    ParsedShellCommand,
+    ShellCommand,
+    find_command_with_tool,
+)
 
 
 class TestShellCommand(unittest.TestCase):

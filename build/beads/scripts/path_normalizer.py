@@ -7,12 +7,11 @@ Path normalization utilities for GN and Bazel build command comparisons.
 
 import os
 import pathlib
-import sys
 import typing as T
 
+from build.bazel.scripts import build_utils
+
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
 
 
 class PathNormalizer(T.Protocol):

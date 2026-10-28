@@ -5,7 +5,7 @@
 import unittest
 from pathlib import Path
 
-import gn_runner
+from build.beads.scripts import gn_runner
 
 
 class TestGnRunner(unittest.TestCase):

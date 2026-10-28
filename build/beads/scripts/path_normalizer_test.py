@@ -6,7 +6,7 @@ import pathlib
 import tempfile
 import unittest
 
-import path_normalizer
+from build.beads.scripts import path_normalizer
 
 
 class MockBazelPaths:

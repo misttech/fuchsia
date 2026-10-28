@@ -4,20 +4,15 @@
 
 import json
 import pathlib
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-# Root directory of the Fuchsia source tree.
-_FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
-
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
-import compare_utils
-from build_utils import MockCommandRunner, NinjaRunner
-from compare_utils import (
+from build.bazel.scripts import build_utils
+from build.bazel.scripts.build_utils import MockCommandRunner, NinjaRunner
+from build.beads.scripts import compare_utils
+from build.beads.scripts.compare_utils import (
     ACTION_C_COMPILE,
     ACTION_CPP_COMPILE,
     ACTION_CPP_LINK,
