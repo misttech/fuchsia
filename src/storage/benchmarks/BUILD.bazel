@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "framework",
+    testonly = True,
+    srcs = [
+        "src/block_device.rs",
+        "src/directory_benchmarks.rs",
+        "src/filesystem.rs",
+        "src/io_benchmarks.rs",
+        "src/lib.rs",
+        "src/testing.rs",
+    ],
+    crate_name = "storage_benchmarks",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/storage/benchmarks/host:__pkg__",
+        "//src/storage/benchmarks/starnix:__pkg__",
+        "//src/storage/benchmarks/verity:__pkg__",
+    ],
+    deps = [
+        "//src/performance/lib/fuchsiaperf",
+        "//src/storage/lib/trace",
+        "//third_party/rust_crates/forks/prettytable-rs:prettytable",  # @bazel2gn:path_overwrite://third_party/rust_crates:prettytable-rs
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:rand",
+        "//third_party/rust_crates/vendor:rand_xorshift",
+        "//third_party/rust_crates/vendor:regex",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+    ] + select({
+        "@platforms//os:fuchsia": ["//src/storage/lib/fs_management/rust:fs_management"],
+        "//conditions:default": [],
+    }),
+)
+
+rustc_test(
+    name = "framework_test",
+    # Propagates `tmp_storage.shard.cml` to `fx_unittest_package` in Bazel and
+    # maps to `deps` in GN via bazel2gn.
+    aspect_hints = ["//src/sys/test_runners:tmp_storage"],
+    crate = ":framework",
+    crate_name = "storage_benchmarks_lib_test",
+    edition = "2024",
+    deps = ["//src/lib/fuchsia"],
+)
+
+fx_unittest_package(
+    name = "storage-benchmarks-framework-tests",
+    unit_tests = [":framework_test"],
+    visibility = ["//src/storage:__pkg__"],
+)

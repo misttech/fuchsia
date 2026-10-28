@@ -12,6 +12,7 @@ test_suite(
     name = "target_tests",
     target_compatible_with = ["@platforms//os:fuchsia"],
     tests = [
+        "//src/storage/benchmarks:storage-benchmarks-framework-tests",
         "//src/storage/fxfs/trace:fxfs-trace-tests-package",
         "//src/storage/lib/sparse/rust:sparse-test",
         "//src/storage/lib/units:storage-units-tests",

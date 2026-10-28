@@ -97,6 +97,8 @@ package_group(
         "//src/lib/diagnostics/log/rust",
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
         "//src/lib/intl/strings",
+        "//src/storage/benchmarks",
+        "//src/storage/benchmarks/host",
         "//src/storage/fxfs/unicode",
         "//src/sys/lib/cm_fidl_validator",
         "//src/sys/pkg/lib/fuchsia-pkg",

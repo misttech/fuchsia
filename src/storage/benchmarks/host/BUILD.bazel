@@ -1,0 +1,33 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "host-storage-benchmarks",
+    testonly = True,
+    srcs = [
+        "src/erofs.rs",
+        "src/main.rs",
+    ],
+    binary_name = "storage-benchmarks",
+    edition = "2024",
+    proc_macro_deps = [
+        "//third_party/rust_crates/vendor:async-trait",
+    ],
+    target_compatible_with = HOST_OS_CONSTRAINTS,  # @bazel2gn:skip
+    visibility = ["//src/storage/benchmarks/starnix:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/storage/benchmarks:framework",
+        "//src/storage/lib/trace",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:libc",
+        "//third_party/rust_crates/vendor:regex",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
