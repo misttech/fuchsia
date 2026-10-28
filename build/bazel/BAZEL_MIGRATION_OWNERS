@@ -2,7 +2,10 @@
 # OWNERS approval rights on Bazel migration related files.
 #
 # TODO(jayzhuang): Remove these patterns after the majority of migration is done.
+aniramakri@google.com
 brunodalbo@google.com
+haydennix@google.com
 lindkvist@google.com
+mjramos@google.com
 waynechou@google.com
 weijliao@google.com
