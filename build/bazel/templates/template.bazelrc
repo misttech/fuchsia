@@ -195,6 +195,11 @@ build --@rules_python//python/config_settings:venvs_use_declare_symlink=no
 build --per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/re2.*/.*@-Wno-deprecated-declarations
 
+# Suppress warnings when compiling protobuf (e.g. protoc and upb), matching
+# config("protobuf_warnings") in //build/secondary/third_party/protobuf/BUILD.gn.
+build --per_file_copt=external/protobuf.*/.*@-Wno-extra-semi,-Wno-deprecated-declarations,-Wno-sign-compare
+build --host_per_file_copt=external/protobuf.*/.*@-Wno-extra-semi,-Wno-deprecated-declarations,-Wno-sign-compare
+
 # Ignore upstream BUILD/BUILD.bazel files inside third_party/boringssl/src and
 # third_party/perfetto so that Fuchsia BUILD.bazel files can reference upstream
 # sources directly without crossing subpackage boundaries.
