@@ -226,6 +226,16 @@ failure_mode_checks:
   log_types: ["serialLogType"]
   skip_passed_task: true
 
+# For https://fxbug.dev/527997914.
+# Matches driver_manager reboots triggered when a root driver in a critical
+# driver host crashes.
+# LINT.IfChange(driver_host_crashed_reboot)
+- kind: "string_in_log"
+  string: "driver host crashed. Rebooting system."
+  log_types: ["serialLogType"]
+  skip_all_passed_tests: true
+# LINT.ThenChange(//src/devices/bin/driver_manager/node.cc:driver_host_crashed_reboot)
+
 # For https://fxbug.dev/486245491
 # LINT.IfChange(no_response_tefmo)
 - kind: "string_in_log"

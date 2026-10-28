@@ -3123,8 +3123,10 @@ void Node::OnDriverHostFidlError(fidl::UnbindInfo info) {
 
   bool is_crash = (info.status() != ZX_OK && info.status() != ZX_ERR_CANCELED);
   if (is_crash && is_driver_host_root_ && node_manager_.has_value()) {
+    // LINT.IfChange(driver_host_crashed_reboot)
     fdf_log::error("Node {} driver host crashed. Rebooting system.", name());
     node_manager_.value()->RebootSystem();
+    // LINT.ThenChange(//tools/testing/tefmocheck/check-configs.yaml:driver_host_crashed_reboot)
   }
 
   // If the driver fails to bind to the node, don't remove the node.
