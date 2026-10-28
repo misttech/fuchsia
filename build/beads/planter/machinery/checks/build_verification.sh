@@ -524,6 +524,22 @@ def bazel_target_args(pkg_dirs):
     return (["--"] + pos + neg) if neg else pos
 
 
+# Pin the @gn_targets repository the way `fx build --fuchsia_platform` / `--host` do
+# (tools/devshell/build). Otherwise @gn_targets resolves to whatever directory the last Ninja
+# bazel_action() pointed the workspace symlink at (e.g. ninja_delayed_action.gn_targets), which
+# may lack package-tool and cmc, so every fx_package()/fx_test() fails analysis with
+# "no such package '@@gn_targets+//.../package-tool'" regardless of the BUILD files.
+def gn_targets_override(config):
+    if config == "host":
+        path = os.path.join(workdir, "build/bazel/local_repositories/empty_gn_targets")
+    else:
+        build_dir = (read(".fx-build-dir") or "").strip()
+        if not build_dir:
+            return []
+        path = os.path.join(workdir, build_dir, "build/bazel/tests_json.gn_targets")
+    return [f"--override_repository=gn_targets+={path}"] if os.path.isdir(path) else []
+
+
 def fmt_cmd(cmd):
     return shlex.join(["fx"] + cmd[1:])
 
@@ -540,12 +556,18 @@ if fuchsia_bazel_dirs:
     steps.append((
         "bazel_build_fuchsia",
         [fx, "bazel", "build", "--config=fuchsia_platform", "--config=remote", "--noexpand_test_suites"]
+        + gn_targets_override("fuchsia_platform")
         + bazel_target_args(fuchsia_bazel_dirs),
     ))
 if host_dirs:
-    steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host", "--config=remote"] + bazel_target_args(host_dirs)))
+    steps.append((
+        "bazel_build_host",
+        [fx, "bazel", "build", "--config=host", "--config=remote"]
+        + gn_targets_override("host")
+        + bazel_target_args(host_dirs),
+    ))
 if exported_tests["host_tests"]:
-    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host", "--config=remote"] + exported_tests["host_tests"]))
+    steps.append(("bazel_test_host", [fx, "bazel", "test", "--config=host", "--config=remote"] + gn_targets_override("host") + exported_tests["host_tests"]))
 if exported_tests["host_tests"] or exported_tests["target_tests"]:
     steps.append(("bazel_tests_exported", None))  # Checks <build dir>/tests.json after gn_build.
 

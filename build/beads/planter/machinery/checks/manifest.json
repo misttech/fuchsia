@@ -108,6 +108,12 @@
             "description": "Errors when a migrated Rust library gains a unit test that did not exist in GN: a BUILD.bazel rustc_test(crate = \":<lib>\") without own srcs, or with_unit_tests on the rustc_library/rustc_binary, whose crate sources contain no test functions (#[test], #[cfg(test)], #[<runtime>::test]) while the library's GN target at $PLANTER_CHANGE_BASE had no with_unit_tests or GN <name>_test (speculative_empty_unit_test); such tests produce empty test binaries and packages, also copied into BUILD.gn by bazel2gn, that no suite runs.",
             "script_file": "speculative_unit_test.sh",
             "enabled": true
+        },
+        {
+            "name": "cc_header_deps_and_annotations",
+            "description": "Warns when a BUILD.bazel in a target directory gains a # @bazel2gn: directive (skip, raw_attribute, raw_overwrite, value_overwrite, path_overwrite) without a human comment above the target, attribute, or list entry (or the opening line of the list a closing-bracket directive sits on) explaining why Bazel and GN differ (undocumented_bazel2gn_directive; one comment may cover a stacked group, and a documented directive covers identical ones in the same file; directives already present at $PLANTER_CHANGE_BASE are ignored), and flags C/C++ libraries (fx_cc_library, cc_library, idk_cc_source_library*) that list in implementation_deps a dependency whose headers a local hdrs file #includes, which must be in deps so bazel2gn emits GN public_deps (public_header_dep_in_implementation_deps: ERROR for FIDL <lib>_hlcpp/<lib>_cpp bindings matched by <fuchsia/.../cpp/...> or <fidl/<lib>/cpp/...>, WARNING for <x/...> or <lib/x/...> includes matching a label's package directory name).",
+            "script_file": "cc_header_deps_and_annotations.sh",
+            "enabled": true
         }
     ]
 }
