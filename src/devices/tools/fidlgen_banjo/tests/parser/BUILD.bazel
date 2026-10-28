@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "parser_bin",
+    srcs = ["main.rs"],
+    crate_root = "main.rs",
+    edition = "2024",
+    deps = [
+        "//src/devices/lib/fidl-ir:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)

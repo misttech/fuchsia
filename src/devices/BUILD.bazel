@@ -1,0 +1,15 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+package(default_applicable_licenses = ["//:license"])
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    tests = [
+        "//src/devices/tools/fidlgen_banjo:fidlgen_banjo_lib_test",
+    ],
+)

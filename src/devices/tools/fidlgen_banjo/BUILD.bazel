@@ -1,0 +1,82 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = ["src/main.rs"],
+    crate_name = "fidlgen_banjo",
+    edition = "2024",
+    visibility = ["//build/banjo:__pkg__"],  # @bazel2gn:skip
+    deps = [
+        ":lib",
+        "//src/devices/lib/fidl-ir:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/backends/c.rs",
+        "src/backends/cpp.rs",
+        "src/backends/cpp_internal.rs",
+        "src/backends/cpp_mock.rs",
+        "src/backends/mod.rs",
+        "src/backends/rust.rs",
+        "src/backends/util.rs",
+        "src/lib.rs",
+    ],
+    compile_data = [
+        "src/backends/templates/c/body.h",
+        "src/backends/templates/c/callback.h",
+        "src/backends/templates/c/header.h",
+        "src/backends/templates/c/proto_transform.h",
+        "src/backends/templates/c/protocol.h",
+        "src/backends/templates/c/protocol_ops.h",
+        "src/backends/templates/c/struct.h",
+        "src/backends/templates/cpp/base_protocol.h",
+        "src/backends/templates/cpp/example.h",
+        "src/backends/templates/cpp/footer.h",
+        "src/backends/templates/cpp/header.h",
+        "src/backends/templates/cpp/interface.h",
+        "src/backends/templates/cpp/internal.h",
+        "src/backends/templates/cpp/internal_decl.h",
+        "src/backends/templates/cpp/internal_protocol.h",
+        "src/backends/templates/cpp/internal_static_assert.h",
+        "src/backends/templates/cpp/mock.h",
+        "src/backends/templates/cpp/mock_expect.h",
+        "src/backends/templates/cpp/mock_header.h",
+        "src/backends/templates/cpp/proto_transform.h",
+        "src/backends/templates/cpp/protocol.h",
+        "src/backends/templates/rust/body.rs",
+        "src/backends/templates/rust/enum.rs",
+        "src/backends/templates/rust/header.rs",
+        "src/backends/templates/rust/protocol.rs",
+        "src/backends/templates/rust/struct.rs",
+        "src/backends/templates/rust/union.rs",
+    ],
+    crate_name = "fidlgen_banjo_lib",
+    edition = "2024",
+    visibility = ["//src/devices/tools/fidlgen_banjo/tests:__pkg__"],
+    deps = [
+        "//src/devices/lib/fidl-ir:lib",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:heck",
+    ],
+)
+
+host_rustc_test(
+    name = "fidlgen_banjo_lib_test",
+    crate = ":lib",
+    edition = "2024",
+    visibility = ["//src/devices:__pkg__"],
+)
