@@ -147,7 +147,7 @@
                 "AllInetTests/SimpleTcpSocketTest.NonBlockingConnect_PollWrNorm/1",
                 "AllInetTests/UdpSocketControlMessagesTest.SetAndReceivePktInfo/2",
                 "AllInetTests/UdpSocketTest.DisconnectAfterBindToUnspecAndConnect/1",
-                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastIPPacketInfo/*",
+                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastIPPacketInfo/0",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.SendWithProtNoneBufEfaults/*",
             ],
         },
@@ -1435,6 +1435,9 @@
 
                 // TODO(https://fxbug.dev/578126238): Times out waiting on /dev/fuse when second fstatat is not rejected with EACCES.
                 "FuseTest.RequestUsesFilesystemIDs",
+
+                // TODO(https://fxbug.dev/578697183): Re-enable once IpMulticastIPPacketInfo uses RecvMsgTimeout.
+                "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastIPPacketInfo/1",
             ],
         },
     ],
