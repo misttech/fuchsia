@@ -91,7 +91,7 @@ rust_library(
         "//third_party/rust_crates/vendor/hyper-1.12.0:hyper",
         "//third_party/rust_crates/vendor/hyper-util-0.1.21:hyper_util",
         "//third_party/rust_crates/vendor/itertools-0.14.0:itertools",
-        "//third_party/rust_crates/vendor/log-0.4.29:log",
+        "//third_party/rust_crates/vendor/log-0.4.34:log",
         "//third_party/rust_crates/vendor/p256-0.14.0:p256",
         "//third_party/rust_crates/vendor/pin-project-1.1.13:pin_project",
         "//third_party/rust_crates/vendor/pkcs8-0.11.0:pkcs8",

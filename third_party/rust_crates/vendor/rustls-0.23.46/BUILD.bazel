@@ -88,7 +88,7 @@ rust_library(
     deps = [
         ":build_script_build",
         "//third_party/rust_crates/forks/zeroize",
-        "//third_party/rust_crates/vendor/log-0.4.29:log",
+        "//third_party/rust_crates/vendor/log-0.4.34:log",
         "//third_party/rust_crates/vendor/once_cell-1.21.4:once_cell",
         "//third_party/rust_crates/vendor/ring-0.17.14:ring",
         "//third_party/rust_crates/vendor/rustls-pki-types-1.15.1:rustls_pki_types",

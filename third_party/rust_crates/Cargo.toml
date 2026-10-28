@@ -153,7 +153,7 @@ libc = { version = "0.2.190", features = ["extra_traits"] }
 libm = "0.2.16"
 linked-hash-map = "0.5.6"
 lock_api = { version = "0.4.14", features = ["serde"] }
-log = { version = "0.4.29", features = ["kv", "std"] }
+log = { version = "0.4.34", features = ["kv", "std"] }
 lru = "0.18.5"
 macro_rules_attribute = "0.2.2"
 maplit = "1.0"

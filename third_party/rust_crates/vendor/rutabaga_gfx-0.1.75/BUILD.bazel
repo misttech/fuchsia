@@ -79,7 +79,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/libc-0.2.190:libc",
         "//third_party/rust_crates/vendor/cfg-if-1.0.5:cfg_if",
-        "//third_party/rust_crates/vendor/log-0.4.29:log",
+        "//third_party/rust_crates/vendor/log-0.4.34:log",
         "//third_party/rust_crates/vendor/mesa3d_util-0.1.75:mesa3d_util",
         "//third_party/rust_crates/vendor/serde-1.0.229:serde",
         "//third_party/rust_crates/vendor/serde_json-1.0.151:serde_json",
