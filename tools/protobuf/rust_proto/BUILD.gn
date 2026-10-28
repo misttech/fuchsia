@@ -34,6 +34,11 @@ if (is_host) {
   rustc_binary("prost_build_standalone") {
     sources = [ "src/main.rs" ]
     edition = "2024"
+    visibility = [
+      ":*",
+      "//src/*",
+      "//vendor/google/*",
+    ]
     deps = [
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",

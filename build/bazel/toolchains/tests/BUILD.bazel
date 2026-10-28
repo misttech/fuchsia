@@ -5,14 +5,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 filegroup(
     name = "tests",
     srcs = [":build"],
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
 )
 
 # A stamp group used to ensure that all dependencies are properly

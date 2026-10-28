@@ -4,13 +4,11 @@
 
 load("@rules_python//python:defs.bzl", "py_binary")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 py_binary(
     name = "check_outputs",
     srcs = ["check-outputs.py"],
     main = "check-outputs.py",
+    visibility = ["//zircon/tools/zither:__pkg__"],
 )

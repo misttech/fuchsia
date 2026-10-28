@@ -1,10 +1,6 @@
 {
     "entries": [
         {
-            "path": "boards/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "boards/arm64/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
@@ -45,14 +41,6 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "build/bazel/aspects/tests/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/bazel/assembly/assembly_input_bundles/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "build/bazel/assembly/partitions_configurations/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
@@ -61,15 +49,7 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "build/bazel/platforms/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "build/bazel/toolchains/clang/prebuilt_clang.BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/bazel/toolchains/tests/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -85,19 +65,7 @@
             "path_prefix": "build/bazel_sdk/tests/"
         },
         {
-            "path": "build/config/rust/lints/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/cpp/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "build/images/guest/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/info/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -105,15 +73,7 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "build/sdk/generate_version_history/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "build/secondary/third_party/perfetto/protos/third_party/pprof/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/tools/json_merge/example/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -131,10 +91,6 @@
         },
         {
             "path": "examples/drivers/template/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "examples/fidl/fuchsia.examples.docs/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -198,23 +154,7 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "sdk/lib/fdio/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "sdk/lib/inspect/testing/cpp/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "sdk/rust/zx-status-ext/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "sdk/rust/zx-status/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "sdk/rust/zx-types/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -1185,10 +1125,6 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "tools/build/gndoc/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "tools/cargo-gnaw/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
@@ -1197,87 +1133,11 @@
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "tools/devshell/lib/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "tools/fidl/fidl_ir/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
-            "path": "tools/fidl/fidldoc/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/fidl/fidlgen_rust/codegen/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/fidl/fidlmerge/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/fidl/lib/fidlgen/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/fidl/lib/fidlgen_cpp/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/fidl/measure-tape/src/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/lib/agents/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/lib/isatty/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/mdlint/core/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/mdlint/rules/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/pretty_serial/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/protobuf/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/protobuf/rust_proto/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "tools/rust_extract/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "zircon/kernel/phys/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "zircon/system/ulib/affine/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "zircon/system/ulib/ddk-platform-defs/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "zircon/system/ulib/fzl/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "zircon/system/ulib/trace-engine/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         },
         {
@@ -1290,10 +1150,6 @@
         },
         {
             "path": "zircon/third_party/ulib/safemath/BUILD.bazel",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "zircon/tools/zither/scripts/BUILD.bazel",
             "bug": "https://fxbug.dev/570203009"
         }
     ]

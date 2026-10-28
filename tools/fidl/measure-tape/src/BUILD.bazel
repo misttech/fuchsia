@@ -7,10 +7,7 @@ load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 go_library(
     name = "measurer",
@@ -23,7 +20,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/measurer",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:private"],
     deps = [
         "//tools/fidl/lib/fidlgen",
     ],
@@ -46,7 +42,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/utils",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:private"],
     deps = [
         ":measurer",
         "//tools/fidl/lib/fidlgen",
@@ -60,7 +55,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/hlcpp",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:private"],
     deps = [
         ":measurer",
         ":utils",
@@ -75,7 +69,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src/rust",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:private"],
     deps = [
         ":measurer",
         ":utils",
@@ -90,7 +83,6 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/fidl/measure-tape/src",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:private"],
     deps = [
         ":hlcpp",
         ":measurer",
@@ -103,4 +95,5 @@ go_binary_host_tool(
     name = "measure-tape",
     embed = [":main_lib"],
     target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools/fidl/measure-tape:__pkg__"],
 )

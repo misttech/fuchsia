@@ -33,5 +33,15 @@ import("//build/tools/bazel2gn/bazel_migration.gni")
 rustc_library("zx-status-ext") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
+  visibility = [
+    ":*",
+    "//sdk/rust/zx:*",
+    "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:*",
+    "//src/connectivity/overnet/lib/core:*",
+    "//src/developer/ffx/tools/playground:*",
+    "//src/developer/remote-control/test:*",
+    "//src/lib/fuchsia-fs:*",
+    "//vendor/google/*",
+  ]
   deps = [ "//sdk/rust/zx-status" ]
 }

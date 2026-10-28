@@ -5,10 +5,7 @@
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 py_library(
     name = "generate_version_history",
@@ -23,5 +20,9 @@ py_binary(
     srcs = ["cmd.py"],
     main = "cmd.py",
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//build/sdk:__subpackages__",
+        "//sdk:__pkg__",
+    ],
     deps = [":generate_version_history"],
 )

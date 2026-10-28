@@ -6,10 +6,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 cc_library(
     name = "ddk-platform-defs",
@@ -20,4 +17,17 @@ cc_library(
         "include",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
+    # TODO(https://fxbug.dev/578180585): Consider package group(s) for [some of] these.
+    visibility = [
+        "//sdk/lib/driver/devicetree:__subpackages__",
+        "//src/devices:__subpackages__",
+        "//src/firmware:__subpackages__",
+        "//src/graphics:__subpackages__",
+        "//src/lib/ddk:__pkg__",
+        "//src/media:__subpackages__",
+        "//src/ui/backlight/drivers:__subpackages__",
+        "//src/ui/input/drivers:__subpackages__",
+        "//vendor/google:__subpackages__",
+        "//zircon/kernel:__subpackages__",
+    ],
 )

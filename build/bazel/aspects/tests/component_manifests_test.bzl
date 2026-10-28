@@ -20,6 +20,8 @@ load(
     "expect_includes",
 )
 
+visibility("private")
+
 def _empty_target_impl(_ctx):
     pass
 
@@ -320,7 +322,7 @@ def component_manifests_test_suite(name):
 
     native.test_suite(
         name = name,
-        visibility = ["//visibility:public"],
+        visibility = ["//visibility:private"],
         tests = [
             ":expected_includes_component_barrier_test",
             ":expected_includes_empty_test",

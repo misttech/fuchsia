@@ -4,10 +4,7 @@
 
 load("//build/tools/json_merge:json_merge.bzl", "json_merge")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 json_merge(
     name = "merged.json",
@@ -16,4 +13,5 @@ json_merge(
         "rgb.json",
     ],
     minify = True,
+    visibility = ["//build/tools/json_merge:__pkg__"],
 )

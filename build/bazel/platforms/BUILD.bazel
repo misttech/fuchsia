@@ -58,10 +58,7 @@ _flags_for_fuchsia_platform_arm64 = platform_flags_map["fuchsia_platform_arm64"]
 _flags_for_fuchsia_platform_riscv64 = platform_flags_map["fuchsia_platform_riscv64"]
 # LINT.ThenChange(//build/bazel/scripts/workspace_utils.py:bazel_platforms_list)
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 # The `//build/bazel/platforms:common` platform should be used for
 # the default build configuration, and will contain all build
@@ -70,6 +67,7 @@ package(
 platform(
     name = "common",
     constraint_values = [],
+    visibility = ["//:__subpackages__"],
 )
 
 # The //build/bazel/platforms:host platform is used to target
@@ -77,11 +75,13 @@ platform(
 alias(
     name = "host",
     actual = ":" + build_config.host_tag_alt,
+    visibility = ["//:__subpackages__"],
 )
 
 alias(
     name = "default",
     actual = ":fuchsia_sdk_" + fuchsia_target_cpu,
+    visibility = ["//:__subpackages__"],
 )
 
 # The following platforms will be used to generate binaries
@@ -103,6 +103,7 @@ platform(
         ":fuchsia_artifacts_build_with_sdk_rules",
     ],
     flags = _flags_for_fuchsia_sdk_x64,
+    visibility = ["//:__subpackages__"],
 )
 
 platform(
@@ -113,6 +114,7 @@ platform(
         ":fuchsia_artifacts_build_with_sdk_rules",
     ],
     flags = _flags_for_fuchsia_sdk_arm64,
+    visibility = ["//:__subpackages__"],
 )
 
 platform(
@@ -123,6 +125,7 @@ platform(
         ":fuchsia_artifacts_build_with_sdk_rules",
     ],
     flags = _flags_for_fuchsia_sdk_riscv64,
+    visibility = ["//:__subpackages__"],
 )
 
 # The fuchsia_platform_$cpu platform definitions are used to
@@ -138,6 +141,7 @@ platform(
         ":fuchsia_artifacts_build_without_sdk_rules",
     ],
     flags = _flags_for_fuchsia_platform_x64,
+    visibility = ["//:__subpackages__"],
 )
 
 platform(
@@ -148,6 +152,7 @@ platform(
         ":fuchsia_artifacts_build_without_sdk_rules",
     ],
     flags = _flags_for_fuchsia_platform_arm64,
+    visibility = ["//:__subpackages__"],
 )
 
 platform(
@@ -158,6 +163,7 @@ platform(
         ":fuchsia_artifacts_build_without_sdk_rules",
     ],
     flags = _flags_for_fuchsia_platform_riscv64,
+    visibility = ["//:__subpackages__"],
 )
 
 # Host platform definitions.
@@ -196,6 +202,7 @@ platform(
     ],
     exec_properties = _linux_x64_exec_properties,
     flags = _flags_for_linux_x64,
+    visibility = ["//:__subpackages__"],
 )
 
 platform(
@@ -205,6 +212,7 @@ platform(
         "@platforms//cpu:arm64",
     ],
     flags = _flags_for_linux_arm64,
+    visibility = ["//:__subpackages__"],
 )
 
 # TODO(https://fxbug.dev/484422864): Make these standalone platforms that use
@@ -212,11 +220,13 @@ platform(
 alias(
     name = "host_linux_x64",
     actual = ":linux_x64",
+    visibility = ["//:__subpackages__"],
 )
 
 alias(
     name = "host_linux_arm64",
     actual = ":linux_arm64",
+    visibility = ["//:__subpackages__"],
 )
 
 # Configuration conditions for the platform values above.
@@ -229,6 +239,10 @@ config_setting(
         "@platforms//os:fuchsia",
         ":fuchsia_artifacts_build_with_sdk_rules",
     ],
+    visibility = [
+        "//:__subpackages__",
+        "@googletest_fuchsia_sdk//:__subpackages__",
+    ],
 )
 
 config_setting(
@@ -236,6 +250,10 @@ config_setting(
     constraint_values = [
         "@platforms//os:fuchsia",
         ":fuchsia_artifacts_build_without_sdk_rules",
+    ],
+    visibility = [
+        "//:__subpackages__",
+        "@googletest_fuchsia_sdk//:__subpackages__",
     ],
 )
 
@@ -245,6 +263,7 @@ config_setting(
         "@platforms//os:fuchsia",
         "@platforms//cpu:x86_64",
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 config_setting(
@@ -253,6 +272,7 @@ config_setting(
         "@platforms//os:fuchsia",
         "@platforms//cpu:arm64",
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 config_setting(
@@ -261,6 +281,7 @@ config_setting(
         "@platforms//os:fuchsia",
         "@platforms//cpu:riscv64",
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 config_setting(
@@ -269,6 +290,7 @@ config_setting(
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 config_setting(
@@ -277,6 +299,7 @@ config_setting(
         "@platforms//os:linux",
         "@platforms//cpu:arm64",
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 # Use this to match the host operating system, independent of its CPU.
@@ -287,6 +310,7 @@ config_setting(
     constraint_values = [
         build_config.host_platform_os_constraint,
     ],
+    visibility = ["//:__subpackages__"],
 )
 
 # A constraint dimension which indiciates whether Fuchsia artifacts
@@ -300,9 +324,17 @@ constraint_setting(
 constraint_value(
     name = "fuchsia_artifacts_build_without_sdk_rules",
     constraint_setting = ":fuchsia_artifacts_build_mode",
+    visibility = [
+        "//:__subpackages__",
+        "@prebuilt_clang//:__subpackages__",
+    ],
 )
 
 constraint_value(
     name = "fuchsia_artifacts_build_with_sdk_rules",
     constraint_setting = ":fuchsia_artifacts_build_mode",
+    visibility = [
+        "//:__subpackages__",
+        "@fuchsia_clang//:__subpackages__",
+    ],
 )

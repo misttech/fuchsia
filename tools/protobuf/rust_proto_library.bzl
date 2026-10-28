@@ -11,6 +11,11 @@ template.
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
+visibility([
+    "//src/starnix/modules/perfetto_consumer/lib/perfetto/...",
+    "//src/sys/pkg/lib/update-package/...",
+])
+
 def _include_dir_to_exec_path(include_dir):
     """Converts a source-absolute GN-style directory to an execroot path."""
     if not include_dir.startswith("//"):

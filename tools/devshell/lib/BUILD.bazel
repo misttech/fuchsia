@@ -2,9 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
-exports_files(["agents.txt"])
+exports_files(
+    ["agents.txt"],
+    visibility = [
+        "//src/lib/agents:__pkg__",
+        "//tools/lib/agents:__pkg__",
+    ],
+)

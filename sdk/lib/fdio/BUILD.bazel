@@ -6,12 +6,12 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//build/bazel/rules/cc:fx_cc_library.bzl", "fx_cc_library")
 load("//build/bazel/rules/idk:idk_cc_prebuilt_library.bzl", "idk_cc_shared_library_zx")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
-exports_files(["fdio.ld"])
+exports_files(
+    ["fdio.ld"],
+    visibility = ["//build/bazel/rules/idk/private:__pkg__"],
+)
 
 cc_library(
     name = "cleanpath",
@@ -113,6 +113,11 @@ idk_cc_shared_library_zx(
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     version_script = ":fdio.ld",
+    # Used in-tree and by @googletest_fuchsia_sdk//pkg/fdio.
+    visibility = [
+        "//:__subpackages__",
+        "@googletest_fuchsia_sdk//pkg/fdio:__pkg__",  # @bazel2gn:skip
+    ],
 )
 
 fx_cc_library(
@@ -123,6 +128,13 @@ fx_cc_library(
     ],
     includes = ["include"],
     public_configs = [":fdio_includes"],  # For bazel2gn conversion only.
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//sdk/lib/ld:__pkg__",
+        "//src/storage/blobfs:__pkg__",
+        "//src/storage/lib/vfs/cpp:__pkg__",
+        # Used in GN only (synced via bazel2gn).
+        "//third_party/abseil-cpp/absl/time/internal/cctz:__pkg__",
+        "//third_party/cobalt/third_party/abseil-cpp/absl/time/internal/cctz:__pkg__",
+    ],
     alwayslink = True,
 )

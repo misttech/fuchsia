@@ -4,14 +4,20 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "zx-status-ext",
     srcs = ["src/lib.rs"],
     edition = "2024",
+    visibility = [
+        "//sdk/rust/zx:__pkg__",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:__pkg__",
+        "//src/connectivity/overnet/lib/core:__pkg__",
+        "//src/developer/ffx/tools/playground:__pkg__",
+        "//src/developer/remote-control/test:__pkg__",
+        "//src/lib/fuchsia-fs:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
     deps = ["//sdk/rust/zx-status"],
 )

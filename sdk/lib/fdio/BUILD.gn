@@ -145,6 +145,7 @@ if (is_fuchsia) {
     inputs = [ "fdio.ld" ]
     ldflags =
         [ "-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir) ]
+    visibility = [ "//*" ]
     sdk = "shared"
   }
 }
@@ -154,5 +155,12 @@ source_set("constants") {
     "include/lib/fdio/processargs.h",
   ]
   public_configs = [ ":fdio_includes" ]
-  visibility = [ "*" ]
+  visibility = [
+    ":*",
+    "//sdk/lib/ld:*",
+    "//src/storage/blobfs:*",
+    "//src/storage/lib/vfs/cpp:*",
+    "//third_party/abseil-cpp/absl/time/internal/cctz:*",
+    "//third_party/cobalt/third_party/abseil-cpp/absl/time/internal/cctz:*",
+  ]
 }

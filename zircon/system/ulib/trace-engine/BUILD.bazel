@@ -4,10 +4,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 cc_library(
     name = "trace-engine",
@@ -33,6 +30,12 @@ cc_library(
     ],
     includes = ["include"],
     target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/lib/trace/rust:__pkg__",
+        "//src/storage/lib/vfs/rust:__pkg__",
+        "//zircon/system/ulib/trace:__pkg__",
+        "//zircon/system/ulib/trace-provider:__pkg__",
+    ],
     deps = [
         "//sdk/lib/async",
         "//sdk/lib/async:async-cpp",

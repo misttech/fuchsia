@@ -4,10 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 go_library(
     name = "isatty",
@@ -18,4 +15,8 @@ go_library(
         "isatty_stub.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/lib/isatty",
+    visibility = [
+        "//tools/integration/fint:__pkg__",
+        "//tools/lib/color:__pkg__",
+    ],
 )

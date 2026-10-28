@@ -5,10 +5,7 @@
 load(":assert_no_deps_test.bzl", "assert_no_deps_test_suite")
 load(":component_manifests_test.bzl", "component_manifests_test_suite")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 assert_no_deps_test_suite(
     name = "assert_no_deps_test",
@@ -24,4 +21,5 @@ test_suite(
         ":assert_no_deps_test",
         ":component_manifests_test",
     ],
+    visibility = ["//build/bazel/rules/tests:__pkg__"],
 )

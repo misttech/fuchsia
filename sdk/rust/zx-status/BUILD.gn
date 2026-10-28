@@ -44,6 +44,7 @@ rustc_library("zx-status") {
   sources = [ "src/lib.rs" ]
   edition = "2024"
   version = "0.1.0"
+  visibility = [ "//*" ]
   with_unit_tests = true
   deps = [ "//sdk/rust/zx-types" ]
 }

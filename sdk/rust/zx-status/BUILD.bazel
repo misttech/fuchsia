@@ -4,16 +4,14 @@
 
 load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 rustc_library(
     name = "zx-status",
     srcs = ["src/lib.rs"],
     edition = "2024",
     version = "0.1.0",
+    visibility = ["//:__subpackages__"],
     with_host_unit_tests = True,
     deps = ["//sdk/rust/zx-types"],
 )

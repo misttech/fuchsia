@@ -40,6 +40,9 @@ host_cc_test(
     srcs = [
         "test.cc",
     ],
+    test_data = [
+        "//build/tools/json_merge/example:merged.json",
+    ],
     visibility = [
         "//build/tools:__pkg__",
     ],

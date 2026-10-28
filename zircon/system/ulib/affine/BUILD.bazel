@@ -4,10 +4,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 cc_library(
     name = "affine",
@@ -25,4 +22,9 @@ cc_library(
         "include",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src:__subpackages__",
+        "//vendor/google:__subpackages__",
+        "//zircon:__subpackages__",
+    ],
 )

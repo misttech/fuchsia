@@ -34,4 +34,9 @@ go_library("isatty") {
     "isatty_linux.go",
     "isatty_stub.go",
   ]
+  visibility = [
+    ":*",
+    "//tools/integration/fint:*",
+    "//tools/lib/color:*",
+  ]
 }

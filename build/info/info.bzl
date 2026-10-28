@@ -119,12 +119,17 @@ _get_build_info_version_rule = rule(
     },
 )
 
-def get_build_info_version(name):
+def get_build_info_version(*, name, visibility = None):
     """A target that outputs a text file describing the current build configuration."""
     if build_info_version != "":
-        _get_build_info_version_rule(name = name, output = "build_info_version.txt")
+        _get_build_info_version_rule(
+            name = name,
+            output = "build_info_version.txt",
+            visibility = visibility,
+        )
     else:
         native.alias(
             name = name,
             actual = "//build/info:latest_commit_date",
+            visibility = visibility,
         )

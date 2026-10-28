@@ -1,14 +1,6 @@
 {
     "entries": [
         {
-            "path": "build/bazel/aspects/tests/assert_no_deps_test.bzl",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "build/bazel/aspects/tests/component_manifests_test.bzl",
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
             "path": "build/bazel/bazel_sdk/BUILD.bazel",
             "targets": [
                 "idk_to_bazel_sdk"
@@ -500,13 +492,6 @@
             "path": "sdk/lib/driver/devicetree/examples/example-visitor2/BUILD.bazel",
             "targets": [
                 "example-visitor2"
-            ],
-            "bug": "https://fxbug.dev/570203009"
-        },
-        {
-            "path": "sdk/lib/fdio/BUILD.bazel",
-            "targets": [
-                "constants"
             ],
             "bug": "https://fxbug.dev/570203009"
         },

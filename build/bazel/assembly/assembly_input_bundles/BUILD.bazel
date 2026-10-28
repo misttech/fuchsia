@@ -7,9 +7,16 @@ load(
     "platform_artifacts_from_fuchsia_platform",
 )
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
+package(default_applicable_licenses = ["//:license"])
+
+package_group(
+    name = "assembly_input_bundle_users",
+    packages = [
+        "//build/...",
+        "//products/...",
+        "//src/security/...",
+        "//vendor/...",
+    ],
 )
 
 # These targets are provided for use with @rules_fuchsia targets.  They source the platform
@@ -18,11 +25,13 @@ package(
 platform_artifacts_from_fuchsia_platform(
     name = "platform_bringup",
     platform_artifacts = "//bundles/assembly:bringup",
+    visibility = [":assembly_input_bundle_users"],
 )
 
 platform_artifacts_from_fuchsia_platform(
     name = "platform",
     platform_artifacts = "//bundles/assembly:platform",
+    visibility = [":assembly_input_bundle_users"],
 )
 
 # TODO(https://fxbug.dev/483063916): Remove these aliases when all references
@@ -30,14 +39,17 @@ platform_artifacts_from_fuchsia_platform(
 alias(
     name = "platform_user",
     actual = ":platform",
+    visibility = [":assembly_input_bundle_users"],
 )
 
 alias(
     name = "platform_userdebug",
     actual = ":platform",
+    visibility = [":assembly_input_bundle_users"],
 )
 
 alias(
     name = "platform_eng",
     actual = ":platform",
+    visibility = [":assembly_input_bundle_users"],
 )

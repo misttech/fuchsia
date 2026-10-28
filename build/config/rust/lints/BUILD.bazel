@@ -5,15 +5,17 @@
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
 load("@rules_rust//rust:defs.bzl", "rust_lint_config")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 # LINT.IfChange(allow_default)
 build_flags(
     name = "allow_default",
     rustflags = ["-Aunknown_lints"],
+    # Used in-tree and by @fuchsia_build_info//default_build_flags.
+    visibility = [
+        "//:__subpackages__",
+        "@fuchsia_build_info//:__subpackages__",
+    ],
 )
 # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:allow_default)
 
@@ -46,6 +48,11 @@ build_flags(
         "-Dinvalid_value",
         "-Dunused_must_use",
     ],
+    # Used in-tree and by @fuchsia_build_info//default_build_flags.
+    visibility = [
+        "//:__subpackages__",
+        "@fuchsia_build_info//:__subpackages__",
+    ],
 )
 # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:deny_default)
 
@@ -53,6 +60,7 @@ build_flags(
 build_flags(
     name = "deny_unused_results",
     rustflags = ["-Dunused_results"],
+    visibility = ["//:__subpackages__"],
 )
 # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:deny_unused_results)
 
@@ -65,6 +73,11 @@ build_flags(
         "-Amismatched_lifetime_syntaxes",
         "-Arustdoc::redundant_explicit_links",
     ],
+    # Used in-tree and by @fuchsia_build_info//default_build_flags.
+    visibility = [
+        "//:__subpackages__",
+        "@fuchsia_build_info//:__subpackages__",
+    ],
 )
 # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:toolchain_roll_exceptions)
 
@@ -75,6 +88,11 @@ build_flags(
         "-Wmissing_unsafe_on_extern",
         "-Wunsafe_attr_outside_unsafe",
         "-Wunused_crate_dependencies",
+    ],
+    # Used in-tree and by @fuchsia_build_info//default_build_flags.
+    visibility = [
+        "//:__subpackages__",
+        "@fuchsia_build_info//:__subpackages__",
     ],
 )
 # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:warn_default)
@@ -139,12 +157,14 @@ rust_lint_config(
     name = "clippy_warn_default",
     clippy = _CLIPPY_WARN_DEFAULT,
     rustc = _RUSTC_LINT_CONFIGS,
+    visibility = ["//:__subpackages__"],
 )
 
 rust_lint_config(
     name = "clippy_warn_production",
     clippy = _CLIPPY_WARN_PRODUCTION,
     rustc = _RUSTC_LINT_CONFIGS,
+    visibility = ["//:__subpackages__"],
 )
 
 rust_lint_config(
@@ -161,4 +181,5 @@ rust_lint_config(
         "all": "warn",
     },
     rustc = _RUSTC_LINT_CONFIGS,
+    visibility = ["//:__subpackages__"],
 )

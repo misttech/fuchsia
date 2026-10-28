@@ -2,57 +2,73 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//visibility:public"],
+package(default_applicable_licenses = ["//:license"])
+
+package_group(
+    name = "board_users",
+    packages = [
+        "//examples/...",
+        "//products/...",
+        "//vendor/...",
+    ],
 )
 
 alias(
     name = "x64",
     actual = "//boards/x64",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "x64_reduced_perf_variation",
     actual = "//boards/x64:reduced_perf_variation",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "arm64",
     actual = "//boards/arm64",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "qemu-arm64",
     actual = "//boards/qemu-arm64",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "vim3",
     actual = "//boards/vim3",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "vim3_reduced_perf_variation",
     actual = "//boards/vim3:reduced_perf_variation",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "vim3_recovery",
     actual = "//boards/vim3:vim3_recovery",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "riscv64",
     actual = "//boards/riscv64",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "pkvm-x64",
     actual = "//boards/pkvm:x64",
+    visibility = [":board_users"],
 )
 
 alias(
     name = "pkvm-arm64",
     actual = "//boards/pkvm:arm64",
+    visibility = [":board_users"],
 )

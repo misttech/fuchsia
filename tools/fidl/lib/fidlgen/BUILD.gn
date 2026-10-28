@@ -104,6 +104,11 @@ if (is_host) {
       "types.go",
       "write_file_if_changed.go",
     ]
+    visibility = [
+      ":*",
+      "//tools/fidl/*",
+      "//zircon/tools/*",
+    ]
   }
 }
 if (is_host) {

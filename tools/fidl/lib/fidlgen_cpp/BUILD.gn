@@ -58,6 +58,12 @@ if (is_host) {
       "union.go",
       "zircon_names.go",
     ]
+    visibility = [
+      ":*",
+      "//tools/fidl/*",
+      "//tools/pkgstats/debugdump:*",
+      "//zircon/tools/zither:*",
+    ]
     deps = [ "//tools/fidl/lib/fidlgen" ]
   }
 }

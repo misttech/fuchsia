@@ -57,6 +57,11 @@ if (is_host) {
   python_binary("generate_version_history_bin") {
     sources = [ "cmd.py" ]
     main_source = "cmd.py"
+    visibility = [
+      ":*",
+      "//build/sdk/*",
+      "//sdk:*",
+    ]
     deps = [ ":generate_version_history" ]
   }
 }

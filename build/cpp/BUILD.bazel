@@ -4,13 +4,11 @@
 
 load("@rules_python//python:defs.bzl", "py_binary")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//build/bazel/rules/idk/private:__subpackages__"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 py_binary(
     name = "verify_pragma_once",
     srcs = ["verify_pragma_once.py"],
     main = "verify_pragma_once.py",
+    visibility = ["//build/bazel/rules/idk/private:__pkg__"],
 )

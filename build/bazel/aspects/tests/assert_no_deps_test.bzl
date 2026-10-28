@@ -5,6 +5,8 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//build/bazel/aspects:assert_no_deps.bzl", "TransitiveDepsInfo", "assert_no_deps_aspect")
 
+visibility("private")
+
 def _dummy_lib_impl(_ctx):
     pass
 
@@ -211,7 +213,7 @@ def assert_no_deps_test_suite(name):
 
     native.test_suite(
         name = name,
-        visibility = ["//visibility:public"],
+        visibility = ["//visibility:private"],
         tests = [
             ":success_test",
             ":direct_deps_failure_test",
