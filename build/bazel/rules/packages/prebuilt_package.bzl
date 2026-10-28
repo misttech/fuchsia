@@ -21,7 +21,7 @@ prebuilt_package = rule(
             mandatory = True,
         ),
         "_package_tool": attr.label(
-            default = "@gn_targets//toolchain_host_x64/src/sys/pkg/bin/package-tool",
+            default = "//src/sys/pkg/bin/package-tool",
             executable = True,
             cfg = "exec",
         ),

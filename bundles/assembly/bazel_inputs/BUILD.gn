@@ -40,7 +40,6 @@ _AIB_TOOLS_DEPS = [
   "//src/storage/bin/fvm:bazel_input($host_toolchain)",
   "//src/storage/blobfs/tools:bazel_input($host_toolchain)",
   "//src/storage/fxfs/fxfs_pbtool:bazel_input($host_toolchain)",
-  "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
   "//tools/configc:bazel_input($host_toolchain)",
   "//zircon/tools/zbi:bazel_input($host_toolchain)",
 ]

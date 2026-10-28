@@ -83,6 +83,7 @@ rustc_library(
         "//src/sys/pkg/bin/pkg-resolver:__pkg__",
         "//src/sys/pkg/lib/fuchsia-pkg-testing:__pkg__",
         "//src/sys/pkg/lib/fuchsia-repo:__pkg__",
+        "//src/sys/pkg/lib/package-tool:__pkg__",
         "//src/sys/pkg/lib/tuf:__pkg__",
     ],
     deps = [

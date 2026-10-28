@@ -43,10 +43,7 @@ if (is_fuchsia) {
 if (is_host) {
   group("host_tests") {
     testonly = true
-    public_deps = [
-      "package-tool:host_tests",
-      "system-updater:host_tests",
-    ]
+    public_deps = [ "system-updater:host_tests" ]
   }
 }
 

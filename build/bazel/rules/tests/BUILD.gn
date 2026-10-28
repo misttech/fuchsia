@@ -44,11 +44,6 @@ bazel_build_action("tests") {
     },
   ]
   bazel_config = "fuchsia_platform"
-  deps = [
-    # The following are currently needed by `fx_package()`.
-    # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
-    "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
-  ]
 }
 
 bazel_build_action("quick_tests") {
@@ -61,9 +56,4 @@ bazel_build_action("quick_tests") {
     },
   ]
   bazel_config = "fuchsia_platform"
-  deps = [
-    # The following are currently needed by `fx_package()`.
-    # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
-    "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
-  ]
 }

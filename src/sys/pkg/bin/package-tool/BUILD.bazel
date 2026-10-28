@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "rustc_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+# TODO(https://fxbug.dev/576944236): Disable instrumentation (asan, coverage,
+# profile) for this tool once Rust rules support it, matching the former GN
+# `exclude_toolchain_tags`. Instrumenting it has a large negative impact on
+# performance.
+rustc_binary_host_tool(
+    name = "package-tool",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//build/bazel/rules/packages:__pkg__"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/sys/pkg/lib/package-tool",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+    ],
+)
+
+host_rustc_test(
+    name = "package-tool_test",
+    crate = ":package-tool",
+    crate_name = "package_tool_bin_test",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//src/sys/pkg:__pkg__"],
+)

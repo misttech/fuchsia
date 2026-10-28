@@ -49,8 +49,7 @@ _build_fuchsia_package = rule(
     """,
     attrs = COMMON_BUILD_FUCHSIA_PACKAGE_ATTRIBUTES | {
         "_package_tool": attr.label(
-            # TODO(b/519244675): Replace with a Bazel label once `package-tool` is migrated to Bazel.
-            default = "@gn_targets//toolchain_host_x64/src/sys/pkg/bin/package-tool",
+            default = "//src/sys/pkg/bin/package-tool",
             executable = True,
             cfg = "exec",
         ),

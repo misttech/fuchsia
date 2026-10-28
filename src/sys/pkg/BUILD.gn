@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
+
 group("pkg") {
   testonly = true
   deps = [
@@ -42,9 +44,14 @@ if (is_fuchsia) {
 }
 
 if (is_host) {
+  bazel_test_suite("bazel_host_tests") {
+    host_tests = [ "//src/sys/pkg:host_tests" ]
+  }
+
   group("host_tests") {
     testonly = true
     public_deps = [
+      ":bazel_host_tests",
       "bin:host_tests",
       "lib:host_tests",
       "scripts:host_tests",

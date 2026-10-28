@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -10,4 +12,12 @@ exports_files(
         "meta/no_update_checker.system_update_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
+)
+
+test_suite(
+    name = "host_tests",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    tests = [
+        "//src/sys/pkg/bin/package-tool:package-tool_test",
+    ],
 )

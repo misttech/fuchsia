@@ -1,0 +1,56 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/rust:rustc_library.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests of this library stay in BUILD.gn for now, because they
+# depend on //src/developer/ffx/lib/pkg:empty-repo-keys and
+# //src/developer/ffx/lib/pkg:empty-repo-metadata, which are not in Bazel yet.
+# LINT.IfChange(package_tool)
+rustc_library(
+    name = "package-tool",
+    srcs = [
+        "src/args.rs",
+        "src/lib.rs",
+        "src/package_archive.rs",
+        "src/package_build.rs",
+        "src/repo_create.rs",
+        "src/repo_publish.rs",
+    ],
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = [
+        "//src/developer/ffx/plugins:__subpackages__",
+        "//src/sys/pkg:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/assembly/product_bundle",
+        "//src/lib/buf-read-ext",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-lockfile:lib",
+        "//src/lib/tempfile-ext",
+        "//src/lib/versioning/version-history/rust",
+        "//src/lib/versioning/version-history/rust/data",
+        "//src/sys/pkg/lib/far/rust:fuchsia-archive",
+        "//src/sys/pkg/lib/fuchsia-merkle",
+        "//src/sys/pkg/lib/fuchsia-pkg",
+        "//src/sys/pkg/lib/fuchsia-repo",
+        "//third_party/rust_crates/forks/tuf-0.3.0-beta14:tuf",  # @bazel2gn:path_overwrite://third_party/rust_crates:tuf
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:argh",
+        "//third_party/rust_crates/vendor:async-fs",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+)
+# LINT.ThenChange(BUILD.gn:package_tool_test)

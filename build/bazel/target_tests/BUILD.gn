@@ -30,10 +30,6 @@ bazel_action("target_tests") {
   export_test_packages = true
 
   deps = [
-    # The following are currently needed by `fx_package()`.
-    # TODO(b/519244675): Remove once `package-tool` is migrated to Bazel.
-    "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
-
     # The following is needed by `fuchsia_structured_config_rust_lib()`.
     # TODO(wittrock): Remove once configc is migrated to Bazel.
     "//tools/configc:bazel_input($host_toolchain)",
