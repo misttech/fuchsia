@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:790
+From //build/config/BUILDCONFIG.gn:787
 
 ### allowed_test_device_types
 
@@ -902,7 +902,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -4090,7 +4090,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:548
+From //build/config/BUILDCONFIG.gn:545
 
 ### fat_lto_objects
 
@@ -4699,7 +4699,7 @@ To override the set of CPU architectures, see `idk_buildable_cpus`.
 Do not use the `platform_version` member directly.
 LINT.IfChange
 
-**Current value (from the default):** `[28, 29, 30, 31, 32, 33, "NEXT"]`
+**Current value (from the default):** `[29, 30, 31, 32, 33, "NEXT"]`
 
 From //build/config/fuchsia/platform_version.gni:44
 
@@ -5062,7 +5062,7 @@ Each element of the list is one variant, which is a scope defining:
   tags = ["coverage", "coverage_clang", "coverage_rust", "debugdata", "instrumented", "llvm-profdata", "needs-writable-globals"]
 }, {
   configs = ["//build/config/profile:coverage-rust"]
-  tags = ["coverage", "coverage_rust", "debugdata", "instrumented", "needs-writable-globals"]
+  tags = ["coverage", "coverage_rust", "debugdata", "instrumented", "llvm-profdata", "needs-writable-globals"]
 }, {
   configs = ["//build/config/profile:coverage-cts"]
   tags = ["coverage", "coverage_clang", "debugdata", "instrumented", "llvm-profdata"]
@@ -5071,7 +5071,7 @@ Each element of the list is one variant, which is a scope defining:
   tags = ["debugdata", "instrumented", "llvm-profdata", "needs-writable-globals", "profile"]
 }, {
   configs = ["//build/config/profile:profile-rust"]
-  tags = ["debugdata", "instrumented", "needs-writable-globals", "profile"]
+  tags = ["debugdata", "instrumented", "llvm-profdata", "needs-writable-globals", "profile"]
 }, {
   configs = ["//build/config/profile:profile-use"]
   tags = ["instrumented"]
@@ -8211,7 +8211,7 @@ Valid alternatives vary by machine, but include "linuxboot".
 
 **Current value (from the default):** `"linuxboot"`
 
-From //zircon/kernel/phys/qemu.gni:150
+From //zircon/kernel/phys/qemu.gni:101
 
 ### rbe_extra_reproxy_configs
 
@@ -8690,7 +8690,7 @@ From //sdk/config.gni:16
 Identifier for the Core SDK.
 LINT.IfChange
 
-**Current value (from the default):** `"33.99991231.0.1"`
+**Current value (from the default):** `"34.99991231.0.1"`
 
 From //sdk/config.gni:8
 
@@ -8832,7 +8832,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:780
+From //build/config/BUILDCONFIG.gn:777
 
 ### select_variant_canonical
 
@@ -8842,7 +8842,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:785
+From //build/config/BUILDCONFIG.gn:782
 
 ### select_variant_shortcuts
 
@@ -8919,7 +8919,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:555
+From //build/config/BUILDCONFIG.gn:552
 
 ### skip_buildtools_check
 
@@ -9034,72 +9034,6 @@ LINT.IfChange
 **Current value (from the default):** `false`
 
 From //src/starnix/lib/starnix_sync/build/args.gni:9
-
-### sysmem_contiguous_guard_page_count
-
-**Current value (from the default):** `-1`
-
-From //src/sysmem/server/BUILD.gn:25
-
-### sysmem_contiguous_guard_pages_fatal
-
-**Current value (from the default):** `false`
-
-From //src/sysmem/server/BUILD.gn:23
-
-### sysmem_contiguous_guard_pages_internal
-
-**Current value (from the default):** `false`
-
-From //src/sysmem/server/BUILD.gn:24
-
-### sysmem_contiguous_guard_pages_unused
-
-**Current value (from the default):** `false`
-
-From //src/sysmem/server/BUILD.gn:26
-
-### sysmem_contiguous_guard_pages_unused_cycle_seconds
-
-**Current value (from the default):** `600`
-
-From //src/sysmem/server/BUILD.gn:28
-
-### sysmem_contiguous_guard_pages_unused_fraction_denominator
-
-**Current value (from the default):** `128`
-
-From //src/sysmem/server/BUILD.gn:27
-
-### sysmem_contiguous_memory_size
-
-**Current value (from the default):** `-1`
-
-From //src/sysmem/server/BUILD.gn:19
-
-### sysmem_contiguous_memory_size_percent
-
-**Current value (from the default):** `5`
-
-From //src/sysmem/server/BUILD.gn:20
-
-### sysmem_protected_memory_size
-
-**Current value (from the default):** `0`
-
-From //src/sysmem/server/BUILD.gn:21
-
-### sysmem_protected_memory_size_percent
-
-**Current value (from the default):** `-1`
-
-From //src/sysmem/server/BUILD.gn:22
-
-### sysmem_protected_ranges_disable_dynamic
-
-**Current value (from the default):** `false`
-
-From //src/sysmem/server/BUILD.gn:29
 
 ### target_cpu
 
@@ -9262,7 +9196,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:967
+From //build/config/BUILDCONFIG.gn:964
 
 ### truncate_build_info_commit_date
 
@@ -9725,7 +9659,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:984
+From //build/config/BUILDCONFIG.gn:981
 
 ### zircon_tracelog
 
