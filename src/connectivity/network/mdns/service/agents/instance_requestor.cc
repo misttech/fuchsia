@@ -353,6 +353,10 @@ void InstanceRequestor::ReceiveTxtResource(const DnsResource& resource, MdnsReso
 
 void InstanceRequestor::ReceiveAResource(const DnsResource& resource, MdnsResourceSection section,
                                          TargetInfo* target_info, uint32_t scope_id) {
+  if (resource.a_.address_.address_.is_loopback()) {
+    return;
+  }
+
   inet::SocketAddress address(resource.a_.address_.address_, inet::IpPort(), scope_id);
 
   if (resource.time_to_live_ == 0) {
@@ -377,6 +381,10 @@ void InstanceRequestor::ReceiveAResource(const DnsResource& resource, MdnsResour
 void InstanceRequestor::ReceiveAaaaResource(const DnsResource& resource,
                                             MdnsResourceSection section, TargetInfo* target_info,
                                             uint32_t scope_id) {
+  if (resource.aaaa_.address_.address_.is_loopback()) {
+    return;
+  }
+
   inet::SocketAddress address(resource.aaaa_.address_.address_, inet::IpPort(), scope_id);
 
   if (resource.time_to_live_ == 0) {
@@ -486,12 +494,16 @@ void InstanceRequestor::OnChangeLocalServiceInstance(const Mdns::ServiceInstance
     return;
   }
 
-  FX_DCHECK(!instance.addresses_.empty());
+  if (instance.addresses_.empty()) {
+    OnRemoveLocalServiceInstance(instance.service_name_, instance.instance_name_, from_proxy);
+    return;
+  }
 
   auto instance_full_name =
       MdnsNames::InstanceFullName(instance.instance_name_, instance.service_name_);
   auto iter = instance_infos_by_full_name_.find(instance_full_name);
   if (iter == instance_infos_by_full_name_.end()) {
+    OnAddLocalServiceInstance(instance, from_proxy);
     return;
   }
 

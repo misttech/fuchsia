@@ -131,7 +131,6 @@ where
 
     pub(crate) async fn on_netstack_added_address(&self, subnet: Subnet) -> Result<(), Error> {
         debug!("Netstack added address: {:?}", subnet);
-        let subnet_addr = subnet.addr;
 
         let should_skip = {
             let driver_state = self.driver_state.lock();
@@ -162,17 +161,6 @@ where
                 .context("on_netstack_added_address")?;
         }
 
-        let driver_state = self.driver_state.lock();
-        if let Some(srp_discovery_proxy) = &driver_state.srp_discovery_proxy {
-            if driver_state
-                .ot_instance
-                .ip6_get_unicast_addresses()
-                .any(|entry| *entry.addr() == subnet_addr)
-            {
-                srp_discovery_proxy.add_local_address(subnet_addr);
-            }
-        }
-
         Ok(())
     }
 
@@ -180,10 +168,6 @@ where
         debug!("Netstack removed address: {:?}", subnet);
 
         let driver_state = self.driver_state.lock();
-
-        if let Some(srp_discovery_proxy) = &driver_state.srp_discovery_proxy {
-            srp_discovery_proxy.remove_local_address(subnet.addr);
-        }
 
         driver_state
             .ot_instance

@@ -66,11 +66,15 @@ void HostNameResolver::ReceiveResource(const DnsResource& resource, MdnsResource
   }
 
   if (resource.type_ == DnsType::kA) {
-    addresses_.insert(HostAddress(resource.a_.address_.address_, sender_address.interface_id(),
-                                  zx::sec(resource.time_to_live_)));
+    if (!resource.a_.address_.address_.is_loopback()) {
+      addresses_.insert(HostAddress(resource.a_.address_.address_, sender_address.interface_id(),
+                                    zx::sec(resource.time_to_live_)));
+    }
   } else if (resource.type_ == DnsType::kAaaa) {
-    addresses_.insert(HostAddress(resource.aaaa_.address_.address_, sender_address.interface_id(),
-                                  zx::sec(resource.time_to_live_)));
+    if (!resource.aaaa_.address_.address_.is_loopback()) {
+      addresses_.insert(HostAddress(resource.aaaa_.address_.address_, sender_address.interface_id(),
+                                    zx::sec(resource.time_to_live_)));
+    }
   }
 }
 

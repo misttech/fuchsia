@@ -112,7 +112,7 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
       }
       break;
     case DnsType::kA:
-      if (resource.name_ == target_full_name_) {
+      if (resource.name_ == target_full_name_ && !resource.a_.address_.address_.is_loopback()) {
         auto socket_address = MdnsFidlUtil::CreateSocketAddressV4(
             inet::SocketAddress(resource.a_.address_.address_, port_));
         instance_.set_ipv4_endpoint(socket_address);
@@ -134,7 +134,7 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
       }
       break;
     case DnsType::kAaaa:
-      if (resource.name_ == target_full_name_) {
+      if (resource.name_ == target_full_name_ && !resource.aaaa_.address_.address_.is_loopback()) {
         // Add scope_id only to link local addresses.
         uint32_t scope_id = 0;
         if (resource.aaaa_.address_.address_.is_link_local()) {

@@ -507,5 +507,37 @@ TEST_F(HostNameResolverTest, NoLocalProxyHost) {
   EXPECT_FALSE(callback_called);
 }
 
+// Tests that loopback A and AAAA records received from the wire are ignored.
+TEST_F(HostNameResolverTest, IgnoreWireLoopbackAddresses) {
+  bool callback_called = false;
+  HostNameResolver under_test(
+      this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal, kExcludeLocalProxies,
+      timeout, [&callback_called](const DnsName& host_name, std::vector<HostAddress> addresses) {
+        callback_called = true;
+      });
+  SetAgent(under_test);
+
+  under_test.Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kA);
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kAaaa);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(timeout, timeout);
+  ExpectNoOther();
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 200, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWireless, IpVersions::kV4);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV4Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV6Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.EndOfMessage();
+
+  EXPECT_FALSE(callback_called);
+  ExpectNoOther();
+}
+
 }  // namespace test
 }  // namespace mdns

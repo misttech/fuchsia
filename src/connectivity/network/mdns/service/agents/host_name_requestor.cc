@@ -79,9 +79,15 @@ void HostNameRequestor::ReceiveResource(const DnsResource& resource, MdnsResourc
 
   HostAddress address;
   if (resource.type_ == DnsType::kA) {
+    if (resource.a_.address_.address_.is_loopback()) {
+      return;
+    }
     address = HostAddress(resource.a_.address_.address_, sender_address.interface_id(),
                           zx::sec(resource.time_to_live_));
   } else if (resource.type_ == DnsType::kAaaa) {
+    if (resource.aaaa_.address_.address_.is_loopback()) {
+      return;
+    }
     address = HostAddress(resource.aaaa_.address_.address_, sender_address.interface_id(),
                           zx::sec(resource.time_to_live_));
   } else {

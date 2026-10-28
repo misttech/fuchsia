@@ -485,5 +485,48 @@ TEST_F(InstanceResolverTest, NoTxtRecordTimesOut) {
   EXPECT_FALSE(instance_from_callback.has_text_strings());
 }
 
+TEST_F(InstanceResolverTest, IgnoreWireLoopbackAddresses) {
+  fuchsia::net::mdns::ServiceInstance instance_from_callback;
+  bool callback_called = false;
+
+  ServiceInstanceResolver under_test(
+      this, kServiceName, kInstanceName, now(), Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+      kIncludeLocalProxies,
+      [&instance_from_callback, &callback_called](fuchsia::net::mdns::ServiceInstance instance) {
+        instance_from_callback = std::move(instance);
+        callback_called = true;
+      });
+
+  SetAgent(under_test);
+  under_test.Start(kLocalHostFullName);
+
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kTxt, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
+                              inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
+  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
+                     sender_address, false);
+
+  ExpectQueryCall(DnsType::kAaaa, kHostFullName, Media::kBoth, IpVersions::kBoth, now(),
+                  kAdditionalInterval, kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+
+  // Loopback A and AAAA records received from the wire must be ignored.
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV4Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV6Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.EndOfMessage();
+
+  EXPECT_FALSE(callback_called);
+  ExpectNoOther();
+}
+
 }  // namespace test
 }  // namespace mdns

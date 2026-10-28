@@ -785,4 +785,35 @@ TEST_F(HostNameRequestorTest, SubscriberUnsubscribesDuringAddressesChanged) {
   ExpectRemoveAgentCall();
 }
 
+// Tests that loopback A and AAAA records received from the wire are ignored.
+TEST_F(HostNameRequestorTest, IgnoreWireLoopbackAddresses) {
+  HostNameRequestor under_test(this, kHostName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                               kExcludeLocalProxies);
+  SetAgent(under_test);
+
+  under_test.Start(kLocalHostFullName);
+
+  Subscriber subscriber;
+  under_test.AddSubscriber(&subscriber);
+  EXPECT_FALSE(subscriber.addresses_changed_called());
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kA);
+  ExpectQuestion(message.get(), kHostFullName, DnsType::kAaaa);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectNoOther();
+
+  ReplyAddress sender_address(
+      inet::SocketAddress(192, 168, 1, 200, inet::IpPort::From_uint16_t(5353)),
+      inet::IpAddress(192, 168, 1, 100), kInterfaceId, Media::kWireless, IpVersions::kV4);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV4Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV6Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.EndOfMessage();
+
+  EXPECT_FALSE(subscriber.addresses_changed_called());
+  ExpectNoOther();
+}
+
 }  // namespace mdns::test

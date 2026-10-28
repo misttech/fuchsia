@@ -57,7 +57,6 @@ enum DnssdUpdate {
 pub struct DiscoveryProxy {
     update_receiver: Mutex<mpsc::Receiver<DnssdUpdate>>,
     subscriptions: Arc<Mutex<HashMap<CString, Task<Result>>>>,
-    local_addresses: Mutex<Vec<std::net::Ipv6Addr>>,
 }
 
 /// Returns `true` if the address is a unicast address with link-local scope.
@@ -121,11 +120,7 @@ impl DiscoveryProxy {
 
         info!(tag = "srp_discovery_proxy"; "DiscoveryProxy Started");
 
-        Ok(DiscoveryProxy {
-            update_receiver: Mutex::new(update_receiver),
-            subscriptions,
-            local_addresses: Mutex::new(Vec::new()),
-        })
+        Ok(DiscoveryProxy { update_receiver: Mutex::new(update_receiver), subscriptions })
     }
 
     fn dnssd_unsubscribed_from(
@@ -587,7 +582,6 @@ impl DiscoveryProxy {
         addresses: T,
     ) -> (Vec<ot::Ip6Address>, Option<u16>) {
         let mut ret_port: Option<u16> = None;
-        let mut is_local = false;
         let mut addresses = addresses
             .into_iter()
             .flat_map(|x| {
@@ -609,21 +603,10 @@ impl DiscoveryProxy {
                     if should_proxy_address(&addr) {
                         return Some(addr);
                     }
-                    if addr.is_loopback() {
-                        is_local = true;
-                        return None;
-                    }
                 }
                 None
             })
             .collect::<Vec<_>>();
-        if is_local {
-            addresses = self
-                .get_local_addresses()
-                .iter()
-                .map(|x| ot::Ip6Address::from(x.octets()))
-                .collect::<Vec<_>>();
-        }
         addresses.sort();
         (addresses, ret_port)
     }
@@ -633,7 +616,6 @@ impl DiscoveryProxy {
         &self,
         addresses: T,
     ) -> Vec<ot::Ip6Address> {
-        let mut is_local = false;
         let mut addresses = addresses
             .into_iter()
             .flat_map(|x| {
@@ -642,38 +624,12 @@ impl DiscoveryProxy {
                     if should_proxy_address(&addr) {
                         return Some(addr);
                     }
-                    if addr.is_loopback() {
-                        is_local = true;
-                        return None;
-                    }
                 }
                 None
             })
             .collect::<Vec<_>>();
-        if is_local {
-            addresses = self
-                .get_local_addresses()
-                .iter()
-                .map(|x| ot::Ip6Address::from(x.octets()))
-                .collect::<Vec<_>>();
-        }
         addresses.sort();
         addresses
-    }
-
-    fn get_local_addresses(&self) -> Vec<std::net::Ipv6Addr> {
-        self.local_addresses.lock().clone()
-    }
-
-    pub fn add_local_address(&self, addr: std::net::Ipv6Addr) {
-        let mut local_addresses = self.local_addresses.lock();
-        if !ipv6addr_is_unicast_link_local(&addr) && !local_addresses.contains(&addr) {
-            local_addresses.push(addr);
-        }
-    }
-
-    pub fn remove_local_address(&self, addr: std::net::Ipv6Addr) {
-        self.local_addresses.lock().retain(|x| x != &addr);
     }
 }
 
@@ -722,5 +678,88 @@ mod test {
         assert!(!should_proxy_address(&Ipv6Addr::new(0xfe81, 0xdb8, 0, 0, 0, 0, 0, 1)));
         assert!(!should_proxy_address(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)));
         assert!(!should_proxy_address(&Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)));
+    }
+
+    #[test]
+    fn test_process_addresses_from_socket_addresses() {
+        let (_sender, receiver) = mpsc::channel(1);
+        let routable_addr = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2);
+        let proxy = DiscoveryProxy {
+            update_receiver: Mutex::new(receiver),
+            subscriptions: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        let loopback_sock =
+            fidl_fuchsia_net::SocketAddress::Ipv6(fidl_fuchsia_net::Ipv6SocketAddress {
+                address: fidl_fuchsia_net::Ipv6Address { addr: Ipv6Addr::LOCALHOST.octets() },
+                port: 1234,
+                zone_index: 1,
+            });
+        let link_local_sock =
+            fidl_fuchsia_net::SocketAddress::Ipv6(fidl_fuchsia_net::Ipv6SocketAddress {
+                address: fidl_fuchsia_net::Ipv6Address {
+                    addr: Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1).octets(),
+                },
+                port: 1234,
+                zone_index: 1,
+            });
+        let routable_sock =
+            fidl_fuchsia_net::SocketAddress::Ipv6(fidl_fuchsia_net::Ipv6SocketAddress {
+                address: fidl_fuchsia_net::Ipv6Address { addr: routable_addr.octets() },
+                port: 5678,
+                zone_index: 0,
+            });
+
+        // Loopback and link-local socket addresses must be filtered out.
+        let (addrs, port) =
+            proxy.process_addresses_from_socket_addresses(vec![loopback_sock, link_local_sock]);
+        assert_eq!(addrs, Vec::<ot::Ip6Address>::new());
+        assert_eq!(port, Some(1234));
+
+        // Routable IPv6 socket addresses are preserved.
+        let (addrs, port) = proxy.process_addresses_from_socket_addresses(vec![routable_sock]);
+        assert_eq!(addrs, vec![ot::Ip6Address::from(routable_addr.octets())]);
+        assert_eq!(port, Some(5678));
+    }
+
+    #[test]
+    fn test_process_addresses_from_host_addresses() {
+        let (_sender, receiver) = mpsc::channel(1);
+        let routable_addr = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 2);
+        let proxy = DiscoveryProxy {
+            update_receiver: Mutex::new(receiver),
+            subscriptions: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        let loopback_host = HostAddress {
+            address: fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                addr: Ipv6Addr::LOCALHOST.octets(),
+            }),
+            interface: 1,
+            ttl: 120,
+        };
+        let link_local_host = HostAddress {
+            address: fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                addr: Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1).octets(),
+            }),
+            interface: 1,
+            ttl: 120,
+        };
+        let routable_host = HostAddress {
+            address: fidl_fuchsia_net::IpAddress::Ipv6(fidl_fuchsia_net::Ipv6Address {
+                addr: routable_addr.octets(),
+            }),
+            interface: 1,
+            ttl: 120,
+        };
+
+        // Loopback and link-local HostAddress entries must be filtered out.
+        let addrs =
+            proxy.process_addresses_from_host_addresses(vec![loopback_host, link_local_host]);
+        assert_eq!(addrs, Vec::<ot::Ip6Address>::new());
+
+        // Routable IPv6 HostAddress entries are preserved.
+        let addrs = proxy.process_addresses_from_host_addresses(vec![routable_host]);
+        assert_eq!(addrs, vec![ot::Ip6Address::from(routable_addr.octets())]);
     }
 }

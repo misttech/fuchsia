@@ -81,6 +81,8 @@ class MdnsInterfaceTransceiver {
   // Sets the list of all addresses for the interface.
   void SetInterfaceAddresses(const std::vector<IpSubnet>& interface_addresses);
 
+  const std::vector<IpSubnet>& interface_addresses() const { return interface_addresses_; }
+
   // Determines if |address| is link local by checking if it is in any of the subnets
   // listed in |interface_addresses_| or is link-local.
   bool IsOnLocalSubnet(const inet::IpAddress& address) const;

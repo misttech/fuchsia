@@ -114,11 +114,22 @@ void MdnsTransceiver::LogTraffic() {
 
 std::vector<HostAddress> MdnsTransceiver::LocalHostAddresses() {
   std::vector<HostAddress> result;
+  std::unordered_set<uint32_t> seen_interfaces;
 
-  result.emplace_back(inet::IpAddress::kV6Loopback, 1,
-                      zx::sec(mdns::DnsResource::kShortTimeToLive));
-  result.emplace_back(inet::IpAddress::kV4Loopback, 1,
-                      zx::sec(mdns::DnsResource::kShortTimeToLive));
+  for (const auto& [address, interface] : interface_transceivers_by_address_) {
+    FX_DCHECK(interface);
+    if (!seen_interfaces.insert(interface->id()).second) {
+      continue;
+    }
+
+    for (const auto& subnet : interface->interface_addresses()) {
+      const inet::IpAddress& addr = subnet.address();
+      if (addr.is_valid() && !addr.is_loopback()) {
+        result.emplace_back(addr, interface->id(), zx::sec(mdns::DnsResource::kShortTimeToLive));
+      }
+    }
+  }
+
   return result;
 }
 
@@ -276,6 +287,7 @@ void MdnsTransceiver::OnInterfacesEvent(fuchsia::net::interfaces::Event event) {
           }
         }
       } else if (change.has_addresses() && properties.online()) {
+        const auto prev_local_host_addresses = LocalHostAddresses();
         std::unordered_set<inet::IpAddress> addresses;
         addresses.reserve(properties.addresses().size());
         for (const auto& address : properties.addresses()) {
@@ -286,11 +298,14 @@ void MdnsTransceiver::OnInterfacesEvent(fuchsia::net::interfaces::Event event) {
           // This could be a lookup, but we might as well erase from the set to keep the set as
           // small as possible.
           if (addresses.erase(previous_address) == 0) {
-            link_change |= StopInterfaceTransceiver(previous_address);
+            StopInterfaceTransceiver(previous_address);
           }
         }
 
-        link_change |= StartInterfaceTransceivers(properties);
+        StartInterfaceTransceivers(properties);
+        // Notify on local host address changes so LocalHostAddresses() consumers are updated even
+        // when only non-link-local IPv6 addresses change (which do not start/stop transceivers).
+        link_change = LocalHostAddresses() != prev_local_host_addresses;
       }
       break;
     }

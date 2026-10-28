@@ -6,6 +6,7 @@
 
 #include <lib/zx/time.h>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/connectivity/network/mdns/service/common/mdns_names.h"
@@ -17,6 +18,9 @@
 
 namespace mdns::test {
 
+using ::testing::Eq;
+using ::testing::Pointee;
+
 class InstanceRequestorTest : public AgentTest {
  public:
   InstanceRequestorTest() = default;
@@ -27,6 +31,10 @@ class InstanceRequestorTest : public AgentTest {
     struct InstanceId {
       InstanceId(const DnsName& service, const DnsLabel& instance)
           : service_(service), instance_(instance) {}
+
+      bool operator==(const InstanceId& other) const {
+        return service_ == other.service_ && instance_ == other.instance_;
+      }
 
       DnsName service_;
       DnsLabel instance_;
@@ -749,6 +757,68 @@ TEST_F(InstanceRequestorTest, LocalInstance) {
   subscriber.ExpectNoOther();
 }
 
+// Tests the behavior of the requestor when local service instances have empty address lists.
+TEST_F(InstanceRequestorTest, LocalInstanceEmptyAddresses) {
+  InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kIncludeLocal,
+                               kExcludeLocalProxies);
+  SetAgent(under_test);
+  SetLocalHostAddresses(kHostAddresses);
+
+  Subscriber subscriber;
+  under_test.AddSubscriber(&subscriber);
+
+  under_test.Start(kLocalHostFullName);
+
+  // Expect a PTR question on start.
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber.ExpectQueryCalled(DnsType::kPtr);
+  subscriber.ExpectNoOther();
+
+  // Adding or changing a local service instance with an empty address list when not yet
+  // discovered should not crash or notify subscribers.
+  under_test.OnAddLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, {}, kText), kFromLocalHost);
+  subscriber.ExpectNoOther();
+
+  under_test.OnChangeLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, {}, kText), kFromLocalHost);
+  subscriber.ExpectNoOther();
+
+  // When addresses become available via |OnChangeLocalServiceInstance|, the instance should be
+  // added and reported as discovered.
+  under_test.OnChangeLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, kSocketAddresses, kText),
+      kFromLocalHost);
+
+  auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  EXPECT_THAT(params, Pointee(Eq(ServiceInstance(kServiceName, kInstanceName, kLocalHostName,
+                                                 kSocketAddressesReversed, kText))));
+  subscriber.ExpectNoOther();
+
+  // |OnChangeLocalServiceInstance| with an empty address list on an existing instance should
+  // remove the instance and notify subscribers that it was lost.
+  under_test.OnChangeLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, {}, kText), kFromLocalHost);
+  auto lost_params = subscriber.ExpectInstanceLostCalled();
+  EXPECT_THAT(lost_params, Pointee(Eq(Subscriber::InstanceId(kServiceName, kInstanceName))));
+  subscriber.ExpectNoOther();
+
+  // When addresses become available again via |OnChangeLocalServiceInstance|, the instance should
+  // be reported as discovered again.
+  under_test.OnChangeLocalServiceInstance(
+      ServiceInstance(kServiceName, kInstanceName, kLocalHostName, kSocketAddresses, kText),
+      kFromLocalHost);
+  params = subscriber.ExpectInstanceDiscoveredCalled();
+  EXPECT_THAT(params, Pointee(Eq(ServiceInstance(kServiceName, kInstanceName, kLocalHostName,
+                                                 kSocketAddressesReversed, kText))));
+  subscriber.ExpectNoOther();
+}
+
 // Tests the behavior of the requestor when configured to discover services on a local proxy host.
 TEST_F(InstanceRequestorTest, LocalProxyInstance) {
   InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
@@ -1309,6 +1379,61 @@ TEST_F(InstanceRequestorTest, ResponseSansAddressesV6) {
                       {inet::SocketAddress(sender_address.socket_address().address(), kPort, 1)},
                       kText, 0, 0),
       *params);
+
+  subscriber.ExpectNoOther();
+}
+
+// Tests that loopback A and AAAA records received from the wire are ignored.
+TEST_F(InstanceRequestorTest, IgnoreWireLoopbackAddresses) {
+  InstanceRequestor under_test(this, kServiceName, Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+                               kExcludeLocalProxies);
+  SetAgent(under_test);
+
+  Subscriber subscriber;
+  under_test.AddSubscriber(&subscriber);
+
+  under_test.Start(kLocalHostFullName);
+
+  auto message = ExpectOutboundMessage(ReplyAddress::Multicast(Media::kBoth, IpVersions::kBoth));
+  ExpectQuestion(message.get(), kServiceFullName, DnsType::kPtr);
+  ExpectNoOtherQuestionOrResource(message.get());
+  ExpectPostTaskForTime(kMinDelay, kMinDelay);
+  ExpectNoOther();
+
+  subscriber.ExpectQueryCalled(DnsType::kPtr);
+  subscriber.ExpectNoOther();
+
+  ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
+                              inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
+  // Receive a publication without an address record so the instance is not reported as discovered
+  // until a valid address record arrives.
+  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
+                     sender_address, /*include_txt=*/true, /*include_address=*/false);
+
+  ExpectQueryCall(DnsType::kA, kHostFullName, Media::kBoth, IpVersions::kBoth, now(),
+                  kAdditionalInterval, kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kAaaa, kHostFullName, Media::kBoth, IpVersions::kBoth, now(),
+                  kAdditionalInterval, kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  subscriber.ExpectNoOther();
+
+  // Receive loopback A and AAAA records from the wire; they must be ignored.
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV4Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.ReceiveResource(DnsResource(kHostFullName, inet::IpAddress::kV6Loopback),
+                             MdnsResourceSection::kAnswer, sender_address);
+  under_test.EndOfMessage();
+
+  subscriber.ExpectNoOther();
+
+  // Receive a valid address record and verify only the non-loopback address is reported.
+  ReceiveAddress(under_test, kHostFullName, sender_address);
+
+  auto params = subscriber.ExpectInstanceDiscoveredCalled();
+  ASSERT_THAT(
+      params,
+      Pointee(Eq(ServiceInstance(
+          kServiceName, kInstanceName, kHostName,
+          {inet::SocketAddress(sender_address.socket_address().address(), kPort, 1)}, kText))));
 
   subscriber.ExpectNoOther();
 }
