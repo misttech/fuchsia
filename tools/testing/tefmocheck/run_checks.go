@@ -36,17 +36,25 @@ func appendFailureReason(primary *runtests.FailureReason, extra *runtests.Failur
 }
 
 // RunChecks runs the given checks on the given TestingOutputs.
-// A failed test means the Check() returned true. After the first failed test, all
-// later Checks() will be skipped. Tests will not be returned for skipped or passed checks.
-// Rationale: In order for these bugs to be useful, we want a failure to be associated only with the most
-// specific, helpful failure modes, which then get routed to specific bugs. Hence only a single failure
-// is returned.
+// A failed test means the Check() returned true. All matching checks are
+// incorporated into FailureReason.Errors on matching failing tests and test
+// cases, but after the first non-flake failed check, no further synthetic test
+// cases or top-level tests will be emitted. Tests will not be returned for
+// skipped or passed checks.
+// Rationale: In order for the bugs associated with top-level check tests to be
+// useful, we want a failure to be associated only with the most specific,
+// helpful failure modes, which then get routed to specific bugs. Hence only a
+// single non-flake top-level failure test is returned. However, adding
+// additional entries to FailureReason.Errors on existing failing tests does not
+// cause additional bugs to be filed, so we include all matching checks there
+// for extra context.
 // Rationale for not returning passed tests:
 // We want to be able to add many checks without cluttering the output test summary
-// with noise. Our flake detection system will identify a test that appears a a failure on
+// with noise. Our flake detection system will identify a test that appears as a failure on
 // one run of a swarming task, and then disappears on other runs of that same task as a flake.
 func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string) ([]runtests.TestDetails, error) {
 	var checkTests []runtests.TestDetails
+	reachedFailure := false
 	for _, check := range checks {
 		if failed := check.Check(to); !failed {
 			continue
@@ -123,6 +131,13 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 			if attributedTestName != "" && !foundMatch {
 				log.Printf("Warning: targeted check %s attributed to test %q but test not found in summary", check.Name(), attributedTestName)
 			}
+		}
+
+		// We run more specific checks first, so once we have our first non-flake
+		// failure, we only enrich FailureReason.Errors above and skip emitting
+		// further synthetic test cases or top-level check tests.
+		if reachedFailure {
+			continue
 		}
 
 		// Block 2: Legacy block gated on check.EmitSyntheticTestCase()
@@ -209,9 +224,7 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 			// If this check was a flake, continue to see if we get another failure.
 			continue
 		}
-		// We run more specific checks first, so it's not useful to run any checks
-		// once we have our first failure.
-		break
+		reachedFailure = true
 	}
 	return checkTests, nil
 }

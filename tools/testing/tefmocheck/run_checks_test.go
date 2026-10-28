@@ -59,24 +59,6 @@ func (c alwaysFalseCheck) OutputFiles() []string {
 	return []string{}
 }
 
-type alwaysPanicCheck struct{ baseCheck }
-
-func (c alwaysPanicCheck) Check(*TestingOutputs) bool {
-	panic("oh dear")
-}
-
-func (c alwaysPanicCheck) Name() string {
-	return "always_panic"
-}
-
-func (c alwaysPanicCheck) DebugText() string {
-	return ""
-}
-
-func (c alwaysPanicCheck) OutputFiles() []string {
-	return []string{}
-}
-
 type alwaysFlakeCheck struct{ baseCheck }
 
 func (c alwaysFlakeCheck) Check(*TestingOutputs) bool {
@@ -115,7 +97,6 @@ func TestRunChecks(t *testing.T) {
 	falseCheck := alwaysFalseCheck{}
 	outputsDir := t.TempDir()
 	trueCheck := alwaysTrueCheck{outputsDir: outputsDir}
-	panicCheck := alwaysPanicCheck{}
 	flakeCheck := alwaysFlakeCheck{}
 	infraFailCheck := infraFailureCheck{}
 
@@ -127,7 +108,7 @@ func TestRunChecks(t *testing.T) {
 		{
 			name: "mixed_checks",
 			checks: []FailureModeCheck{
-				flakeCheck, falseCheck, trueCheck, panicCheck,
+				flakeCheck, falseCheck, trueCheck, infraFailCheck,
 			},
 			want: []runtests.TestDetails{
 				{
@@ -633,25 +614,37 @@ func TestRunChecks_GlobalEnrichment(t *testing.T) {
 		},
 	}
 
-	check := mockCheck{name: "global_check", failureReason: "global failure reason"}
-	wantErrMsg := check.FailureReason()
+	check1 := mockCheck{name: "global_check_1", failureReason: "global failure reason 1"}
+	check2 := mockCheck{name: "global_check_2", failureReason: "global failure reason 2"}
 
-	if _, err := RunChecks([]FailureModeCheck{check}, &TestingOutputs{TestSummary: &summary}, outputsDir); err != nil {
+	got, err := RunChecks([]FailureModeCheck{check1, check2}, &TestingOutputs{TestSummary: &summary}, outputsDir)
+	if err != nil {
 		t.Fatalf("RunChecks() failed: %v", err)
 	}
+	if len(got) != 1 || got[0].Name != checkTestNamePrefix+check1.Name() {
+		t.Errorf("RunChecks() returned top-level tests %+v, want only %q", got, checkTestNamePrefix+check1.Name())
+	}
 
-	// 1. failing_test_mixed_cases: top-level test and both failing cases preserve pre-existing error at index 0 and append check error.
+	// 1. failing_test_mixed_cases: top-level test and both failing cases preserve pre-existing error at index 0 and append both check errors.
 	t0 := &summary.Tests[0]
 	if len(t0.Cases) != 4 {
 		t.Errorf("len(t0.Cases) = %d, want 4", len(t0.Cases))
 	}
-	if t0.FailureReason == nil || len(t0.FailureReason.Errors) != 2 || t0.FailureReason.Errors[0] != preexistingErr || t0.FailureReason.Errors[1].Message != wantErrMsg {
-		t.Errorf("t0.FailureReason = %+v, want pre-existing error preserved at [0] and %q at [1]", t0.FailureReason, wantErrMsg)
+	wantErrors := []*runtests.FailureReasonError{
+		preexistingErr,
+		{Message: check1.FailureReason()},
+		{Message: check2.FailureReason()},
 	}
-	for i, caseIdx := range []int{0, 1} {
-		tc := &t0.Cases[caseIdx]
-		if tc.FailureReason == nil || len(tc.FailureReason.Errors) != 2 || tc.FailureReason.Errors[0] != preexistingErr || tc.FailureReason.Errors[1].Message != wantErrMsg {
-			t.Errorf("t0.Cases[%d].FailureReason = %+v, want pre-existing error preserved at [0] and %q at [1]", i, tc.FailureReason, wantErrMsg)
+	if t0.FailureReason == nil {
+		t.Errorf("t0.FailureReason = nil, want %+v", wantErrors)
+	} else if diff := cmp.Diff(wantErrors, t0.FailureReason.Errors); diff != "" {
+		t.Errorf("t0.FailureReason.Errors diff (-want +got):\n%s", diff)
+	}
+	for i, tc := range t0.Cases[:2] {
+		if tc.FailureReason == nil {
+			t.Errorf("t0.Cases[%d].FailureReason = nil, want %+v", i, wantErrors)
+		} else if diff := cmp.Diff(wantErrors, tc.FailureReason.Errors); diff != "" {
+			t.Errorf("t0.Cases[%d].FailureReason.Errors diff (-want +got):\n%s", i, diff)
 		}
 	}
 	// Passed_case and skipped_case are not enriched.
@@ -791,4 +784,53 @@ func TestRunChecks_Exoneration(t *testing.T) {
 	if len(summary.Tests[0].Cases) != 2 {
 		t.Fatalf("len(summary.Tests[0].Cases) = %d, want 2", len(summary.Tests[0].Cases))
 	}
+
+	t.Run("after_non_exoneration_check", func(t *testing.T) {
+		summary := runtests.TestSummary{
+			Tests: []runtests.TestDetails{
+				{
+					Name:   "failing_test",
+					Status: runtests.TestFailure,
+					TestResult: runtests.TestResult{
+						Cases: []runtests.TestCaseResult{
+							{
+								CaseName: "failed_case",
+								Status:   runtests.TestFailure,
+							},
+							{
+								CaseName: "passed_case",
+								Status:   runtests.TestSuccess,
+							},
+						},
+					},
+				},
+			},
+		}
+		to := TestingOutputs{
+			TestSummary: &summary,
+		}
+		nonExonerationCheck := mockCheck{name: "first_failure_check", failureReason: "first failure"}
+		exonCheck := exonerationCheck{testName: "failing_test"}
+
+		got, err := RunChecks([]FailureModeCheck{nonExonerationCheck, exonCheck}, &to, outputsDir)
+		if err != nil {
+			t.Fatalf("RunChecks() failed: %v", err)
+		}
+
+		// The non-exoneration check should still emit its top-level synthetic test.
+		if len(got) != 1 || got[0].Name != checkTestNamePrefix+nonExonerationCheck.Name() {
+			t.Fatalf("RunChecks() returned %+v, want only %q", got, checkTestNamePrefix+nonExonerationCheck.Name())
+		}
+
+		// The subsequent exoneration check should still exonerate the test and its failing case.
+		if summary.Tests[0].Status != runtests.TestExonerated {
+			t.Errorf("summary.Tests[0].Status = %v, want %v", summary.Tests[0].Status, runtests.TestExonerated)
+		}
+		if summary.Tests[0].Cases[0].Status != runtests.TestExonerated {
+			t.Errorf("summary.Tests[0].Cases[0].Status = %v, want %v", summary.Tests[0].Cases[0].Status, runtests.TestExonerated)
+		}
+		if summary.Tests[0].Cases[1].Status != runtests.TestSuccess {
+			t.Errorf("summary.Tests[0].Cases[1].Status = %v, want %v", summary.Tests[0].Cases[1].Status, runtests.TestSuccess)
+		}
+	})
 }

@@ -117,8 +117,8 @@ func main() {
 	}
 
 	// These should be ordered from most specific to least specific. If an earlier
-	// check finds a failure mode, then we skip running later checks because we assume
-	// they'll add no useful information.
+	// check finds a failure mode, we skip emitting top-level check tests for later
+	// checks, though all matching checks are recorded in FailureReason.Errors.
 	checks := []tefmocheck.FailureModeCheck{}
 
 	// Parse FailureModeChecks from external sources if provided.
