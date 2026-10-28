@@ -1,0 +1,111 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/components:fx_component.bzl", "fx_component", "fx_component_manifest")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:rustc_binary.bzl", "rustc_binary")
+load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_binary(
+    name = "bin",
+    srcs = [
+        "src/fidl_service.rs",
+        "src/main.rs",
+        "src/profile.rs",
+        "src/profile_registrar.rs",
+        "src/rfcomm/inspect.rs",
+        "src/rfcomm/mod.rs",
+        "src/rfcomm/server.rs",
+        "src/rfcomm/session/channel.rs",
+        "src/rfcomm/session/mod.rs",
+        "src/rfcomm/session/multiplexer.rs",
+        "src/rfcomm/test_util.rs",
+        "src/rfcomm/types.rs",
+        "src/types.rs",
+    ],
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate_name = "bt_rfcomm",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust",
+        "//sdk/fidl/fuchsia.bluetooth.rfcomm.test:fuchsia.bluetooth.rfcomm.test_rust",
+        "//sdk/lib/scheduler/rust",
+        "//sdk/rust/zx",
+        "//src/connectivity/bluetooth/lib/bt-rfcomm",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//src/lib/async-utils",
+        "//src/lib/diagnostics/inspect/derive",
+        "//src/lib/diagnostics/inspect/runtime/rust",
+        "//src/lib/diagnostics/inspect/rust:fuchsia-inspect",  # @bazel2gn:path_overwrite://src/lib/diagnostics/inspect/rust
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/lib/windowed-stats",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+fx_packaged_binary(
+    name = "bin_packaged_bin",
+    binary = ":bin",
+    binary_name = "bt_rfcomm",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component_manifest(
+    name = "manifest",
+    component_name = "bt-rfcomm",
+    includes = [
+        "//sdk/lib/inspect:client.shard",
+        "//sdk/lib/syslog:client.shard",
+    ],
+    manifest = "meta/bt-rfcomm.cml",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+)
+
+fx_component(
+    name = "component",
+    compiled_manifest = ":manifest",
+    component_name = "bt-rfcomm",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/connectivity/bluetooth/profiles/tests/bt-hfp-audio-gateway-integration-tests:__pkg__",
+        "//src/connectivity/bluetooth/profiles/tests/bt-rfcomm-integration-tests:__pkg__",
+        "//src/connectivity/bluetooth/testing/bt-test-harness:__pkg__",
+        "//src/connectivity/bluetooth/tests/bt-manifest-integration-tests:__pkg__",
+    ],
+    deps = [":bin_packaged_bin"],
+)
+
+# @bazel2gn:raw_attribute:output_name = "bt_rfcomm_bin_test"
+rustc_test(
+    name = "bin_test",
+    build_flags = ["//build/config/rust/lints:deny_unused_results"],
+    crate = ":bin",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        "//src/connectivity/bluetooth/lib/async-helpers:async-test-helpers",
+        "//src/connectivity/bluetooth/testing/bt-channel-test-support",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:test-case",
+    ],
+)
+
+fx_unittest_package(
+    name = "bt-rfcomm-tests",
+    unit_tests = [":bin_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)

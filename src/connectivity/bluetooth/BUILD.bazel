@@ -32,6 +32,7 @@ test_suite(
         "//src/connectivity/bluetooth/profiles/bt-avrcp-target:bt-avrcp-target-tests",
         "//src/connectivity/bluetooth/profiles/bt-map-mce:bt-map-mce-unittests",
         "//src/connectivity/bluetooth/profiles/bt-peripheral-hub:bt-peripheral-hub-tests",
+        "//src/connectivity/bluetooth/profiles/bt-rfcomm:bt-rfcomm-tests",
         "//src/connectivity/bluetooth/testing/bt-affordances/affordances:fuchsia_bt_test_affordances_tests",
         "//src/connectivity/bluetooth/testing/test-call-manager:test-call-manager-tests",
         "//src/connectivity/bluetooth/testing/test-harness-tests:test-harness-crate-tests",
